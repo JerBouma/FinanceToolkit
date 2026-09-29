@@ -374,7 +374,9 @@ def _shifted_period(date: str, period_code: str, buffer_periods: int = 0) -> pd.
     if not isinstance(period, pd.Period):
         raise ValueError(f"'{date}' is not a valid date, expected YYYY-MM-DD.")
 
-    return period - buffer_periods
+    # A range ending at the period is the typed way to step back: Period arithmetic
+    # is described by the stubs as possibly yielding an offset instead.
+    return pd.period_range(end=period, periods=buffer_periods + 1)[0]
 
 
 def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) -> str:
@@ -474,7 +476,7 @@ def collect_oecd_data(
             end=coverage_end,
             parameters=cache_parameters,
         )
-        cached_data = plan.cached.get(cache_entity)
+        cached_data = plan.cached_frame(cache_entity)
 
         if plan.fully_cached and cached_data is not None and not cached_data.empty:
             return cached_data

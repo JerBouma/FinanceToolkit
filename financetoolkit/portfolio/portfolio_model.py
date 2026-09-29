@@ -28,7 +28,7 @@ def read_portfolio_dataset(
     column_mapping: dict[str, str],
     currency_columns: list[str] | str | None = None,
     costs_columns: list[str] | None = None,
-) -> tuple[pd.DataFrame, str, str, str, str, str, str]:
+) -> tuple[pd.DataFrame, str, str, str, str, str, str, str]:
     """
     Read and preprocess a portfolio dataset from Excel files.
 

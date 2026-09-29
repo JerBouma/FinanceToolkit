@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import overload
+
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
@@ -23,6 +25,14 @@ MINIMUM_CUSUM_OBSERVATIONS = 3
 
 # The conventional 5% significance level used for the "Reject" boolean flags.
 SIGNIFICANCE_LEVEL = 0.05
+
+
+@overload
+def get_arch_lm_test(returns: pd.Series, lags: int = 5) -> pd.Series: ...
+
+
+@overload
+def get_arch_lm_test(returns: pd.DataFrame, lags: int = 5) -> pd.DataFrame: ...
 
 
 def get_arch_lm_test(
@@ -89,9 +99,15 @@ def get_arch_lm_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_jarque_bera_test(
-    returns: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+@overload
+def get_jarque_bera_test(returns: pd.Series) -> pd.Series: ...
+
+
+@overload
+def get_jarque_bera_test(returns: pd.DataFrame) -> pd.DataFrame: ...
+
+
+def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
     Calculate the Jarque-Bera test for normality, via
     `statsmodels.stats.stattools.jarque_bera`.
@@ -154,6 +170,18 @@ def get_jarque_bera_test(
         )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+@overload
+def get_ljung_box_test(
+    returns: pd.Series, lags: int = 10, model_df: int = 0
+) -> pd.Series: ...
+
+
+@overload
+def get_ljung_box_test(
+    returns: pd.DataFrame, lags: int = 10, model_df: int = 0
+) -> pd.DataFrame: ...
 
 
 def get_ljung_box_test(
@@ -259,6 +287,14 @@ def get_ljung_box_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@overload
+def get_variance_ratio_test(returns: pd.Series, q: int = 2) -> pd.Series: ...
+
+
+@overload
+def get_variance_ratio_test(returns: pd.DataFrame, q: int = 2) -> pd.DataFrame: ...
+
+
 def get_variance_ratio_test(
     returns: pd.Series | pd.DataFrame, q: int = 2
 ) -> pd.Series | pd.DataFrame:
@@ -359,9 +395,15 @@ def get_variance_ratio_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_cusum_test(
-    returns: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+@overload
+def get_cusum_test(returns: pd.Series) -> pd.Series: ...
+
+
+@overload
+def get_cusum_test(returns: pd.DataFrame) -> pd.DataFrame: ...
+
+
+def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
     Calculate the CUSUM test for the stability of the mean of returns over time, via
     `statsmodels.stats.diagnostic.breaks_cusumolsresid`.

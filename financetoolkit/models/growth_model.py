@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import overload
+
 import pandas as pd
 
 # pylint: disable=too-many-locals
@@ -9,7 +11,7 @@ import pandas as pd
 
 def get_present_value_of_growth_opportunities(
     weighted_average_cost_of_capital: pd.DataFrame,
-    earnings_per_share: pd.DataFrame,
+    earnings_per_share: pd.Series | pd.DataFrame,
     close_prices: pd.DataFrame,
     calculate_daily: bool = False,
 ) -> pd.DataFrame:
@@ -28,7 +30,7 @@ def get_present_value_of_growth_opportunities(
 
     Args:
         weighted_average_cost_of_capital (pd.DataFrame): The weighted average cost of capital.
-        earnings_per_share (pd.DataFrame): The earnings per share.
+        earnings_per_share (pd.Series | pd.DataFrame): The earnings per share.
         close_prices (pd.DataFrame): The close prices.
         calculate_daily (bool): Whether to calculate the PVGO on a daily basis. If False, the PVGO is calculated
         based on the provided close_prices DataFrame.
@@ -58,6 +60,24 @@ def get_present_value_of_growth_opportunities(
         ).ffill()
 
     return close_prices - earnings_wacc_ratio
+
+
+@overload
+def get_sustainable_growth_rate(
+    return_on_equity: float, retention_ratio: float
+) -> float: ...
+
+
+@overload
+def get_sustainable_growth_rate(
+    return_on_equity: pd.Series, retention_ratio: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_sustainable_growth_rate(
+    return_on_equity: pd.DataFrame, retention_ratio: pd.DataFrame
+) -> pd.DataFrame: ...
 
 
 def get_sustainable_growth_rate(
@@ -90,6 +110,24 @@ def get_sustainable_growth_rate(
     improving profitability, reducing the dividend payout, or increasing leverage.
     """
     return return_on_equity * retention_ratio
+
+
+@overload
+def get_internal_growth_rate(
+    return_on_assets: float, retention_ratio: float
+) -> float: ...
+
+
+@overload
+def get_internal_growth_rate(
+    return_on_assets: pd.Series, retention_ratio: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_internal_growth_rate(
+    return_on_assets: pd.DataFrame, retention_ratio: pd.DataFrame
+) -> pd.DataFrame: ...
 
 
 def get_internal_growth_rate(

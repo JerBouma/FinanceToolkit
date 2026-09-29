@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import warnings
+from typing import Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,9 @@ from statsmodels.tools.sm_exceptions import IterationLimitWarning
 
 TWO_DIMENSIONAL = 2
 COV_TYPES = ("nonrobust", "HC0", "HC1", "HC2", "HC3", "cluster", "HAC")
+# The subset of statsmodels' cov_type literals this module exposes; typed so the
+# validated string can be handed to `.fit(cov_type=...)` as the literal it expects.
+StatsmodelsCovType = Literal["nonrobust", "HC0", "HC1", "HC2", "HC3", "cluster", "HAC"]
 
 # Cluster-robust standard errors require at least 2 distinct clusters.
 MINIMUM_CLUSTERS = 2
@@ -36,10 +40,10 @@ def _to_design_matrix(
     handing it to `statsmodels`.
     """
     if isinstance(x, pd.DataFrame):
-        feature_names = list(x.columns)
+        feature_names = [str(column) for column in x.columns]
         values = x.to_numpy(dtype=float)
     elif isinstance(x, pd.Series):
-        feature_names = [x.name if x.name is not None else "X1"]
+        feature_names = [str(x.name) if x.name is not None else "X1"]
         values = x.to_numpy(dtype=float).reshape(-1, 1)
     elif isinstance(x, np.ndarray):
         values = x if x.ndim == TWO_DIMENSIONAL else x.reshape(-1, 1)
@@ -87,7 +91,7 @@ def _validate_design(x: np.ndarray, y: np.ndarray) -> None:
 
 def _cov_type_and_kwds(
     cov_type: str, clusters: np.ndarray | None, maxlags: int | None = None
-) -> tuple[str, dict]:
+) -> tuple[StatsmodelsCovType, dict]:
     if cov_type not in COV_TYPES:
         raise ValueError(f"cov_type must be one of {COV_TYPES}, received {cov_type!r}.")
 
@@ -99,7 +103,8 @@ def _cov_type_and_kwds(
         return "HAC", {"maxlags": maxlags}
 
     if cov_type != "cluster":
-        return cov_type, {}
+        # Validated against COV_TYPES above, which is exactly the literal set.
+        return cast(StatsmodelsCovType, cov_type), {}
 
     if clusters is None:
         raise ValueError("clusters must be provided when cov_type='cluster'.")

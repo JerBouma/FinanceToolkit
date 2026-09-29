@@ -3,6 +3,8 @@
 __docformat__ = "google"
 
 import contextlib
+from datetime import date
+from typing import overload
 
 import pandas as pd
 
@@ -71,10 +73,39 @@ def get_date_bounds(
     return (min(dates), max(dates))
 
 
+# The cache holds Series and DataFrames alike, and both helpers hand back the kind
+# they were given; the overloads let a caller that stores frames keep a frame.
+@overload
+def slice_frame(
+    data: pd.DataFrame,
+    start: str | date | None = None,
+    end: str | date | None = None,
+    date_axis: int = 0,
+) -> pd.DataFrame: ...
+
+
+@overload
+def slice_frame(
+    data: pd.Series,
+    start: str | date | None = None,
+    end: str | date | None = None,
+    date_axis: int = 0,
+) -> pd.Series: ...
+
+
+@overload
 def slice_frame(
     data: pd.DataFrame | pd.Series,
-    start: str | None = None,
-    end: str | None = None,
+    start: str | date | None = None,
+    end: str | date | None = None,
+    date_axis: int = 0,
+) -> pd.DataFrame | pd.Series: ...
+
+
+def slice_frame(
+    data: pd.DataFrame | pd.Series,
+    start: str | date | None = None,
+    end: str | date | None = None,
     date_axis: int = 0,
 ) -> pd.DataFrame | pd.Series:
     """
@@ -87,8 +118,8 @@ def slice_frame(
 
     Args:
         data (pd.DataFrame | pd.Series): The frame to slice.
-        start (str | None): Inclusive start of the window. None leaves it open.
-        end (str | None): Inclusive end of the window. None leaves it open.
+        start (str | date | None): Inclusive start of the window. None leaves it open.
+        end (str | date | None): Inclusive end of the window. None leaves it open.
         date_axis (int): 0 when the index holds the dates, 1 when the columns do.
 
     Returns:
@@ -116,6 +147,26 @@ def slice_frame(
         mask.append(within_start and within_end)
 
     return data.loc[mask] if date_axis == 0 else data.loc[:, mask]
+
+
+@overload
+def merge_frames(
+    existing: pd.DataFrame | None, incoming: pd.DataFrame, date_axis: int = 0
+) -> pd.DataFrame: ...
+
+
+@overload
+def merge_frames(
+    existing: pd.Series | None, incoming: pd.Series, date_axis: int = 0
+) -> pd.Series: ...
+
+
+@overload
+def merge_frames(
+    existing: pd.DataFrame | pd.Series | None,
+    incoming: pd.DataFrame | pd.Series,
+    date_axis: int = 0,
+) -> pd.DataFrame | pd.Series: ...
 
 
 def merge_frames(

@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import warnings
+from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -75,6 +76,52 @@ def convert_annualized_rate_to_period(
         )
 
     return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
+
+
+# finalize_dataset hands back the same container it was given: every step (rolling,
+# growth, rounding, slicing, country filtering) preserves Series-ness and
+# DataFrame-ness, which the overloads spell out so controllers annotated with one
+# of the two need no narrowing.
+@overload
+def finalize_dataset(
+    dataset: pd.DataFrame,
+    start_date: str | None,
+    end_date: str | None,
+    default_rounding: int | None,
+    growth: bool = False,
+    lag: int | list[int] = 1,
+    rounding: int | None = None,
+    standardize: bool = False,
+    axis: str = "columns",
+    row_slice: bool = False,
+    apply_slice: bool = True,
+    rolling: int | None = None,
+    trailing: int | None = None,
+    dropna: bool = False,
+    countries: list[str] | str | None = None,
+    indicator_name: str = "",
+) -> pd.DataFrame: ...
+
+
+@overload
+def finalize_dataset(
+    dataset: pd.Series,
+    start_date: str | None,
+    end_date: str | None,
+    default_rounding: int | None,
+    growth: bool = False,
+    lag: int | list[int] = 1,
+    rounding: int | None = None,
+    standardize: bool = False,
+    axis: str = "columns",
+    row_slice: bool = False,
+    apply_slice: bool = True,
+    rolling: int | None = None,
+    trailing: int | None = None,
+    dropna: bool = False,
+    countries: list[str] | str | None = None,
+    indicator_name: str = "",
+) -> pd.Series: ...
 
 
 def finalize_dataset(
@@ -197,6 +244,88 @@ def finalize_dataset(
     return dataset
 
 
+def to_period_index(index: pd.Index) -> pd.PeriodIndex:
+    """
+    Returns the given index as a PeriodIndex, which is what every period based
+    calculation in the package expects its historical data to be indexed by.
+
+    Historical data is period indexed from the moment it is collected, so this is a
+    check rather than a conversion: a frame that lost its PeriodIndex somewhere along
+    the way (for example through a reset_index) would otherwise fail deep inside a
+    calculation with an unhelpful AttributeError on `asfreq`.
+
+    Args:
+        index (pd.Index): The index of a historical dataset.
+
+    Returns:
+        pd.PeriodIndex: The same index, narrowed to a PeriodIndex.
+
+    Raises:
+        TypeError: If the index is not a PeriodIndex.
+    """
+    if not isinstance(index, pd.PeriodIndex):
+        raise TypeError(
+            f"Expected a PeriodIndex, got {type(index).__name__}. Historical data must "
+            "be indexed by periods for period based calculations."
+        )
+
+    return index
+
+
+def to_multi_index(index: pd.Index) -> pd.MultiIndex:
+    """
+    Returns the given index as a MultiIndex, for the places that reshape a frame
+    (an unstack, a concat with keys) and then operate on the resulting levels.
+
+    Args:
+        index (pd.Index): The index or columns of a reshaped dataset.
+
+    Returns:
+        pd.MultiIndex: The same index, narrowed to a MultiIndex.
+
+    Raises:
+        TypeError: If the index is not a MultiIndex.
+    """
+    if not isinstance(index, pd.MultiIndex):
+        raise TypeError(
+            f"Expected a MultiIndex but received {type(index).__name__}; the "
+            "reshaping step before this point did not produce the expected levels."
+        )
+
+    return index
+
+
+def to_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
+    """
+    Returns the given index as a DatetimeIndex, the counterpart of `to_period_index`
+    for the within-period helpers that nest each observation under its period.
+
+    Args:
+        index (pd.Index): The index of a historical dataset.
+
+    Returns:
+        pd.DatetimeIndex: The same index, narrowed to a DatetimeIndex.
+
+    Raises:
+        TypeError: If the index is not a DatetimeIndex.
+    """
+    if not isinstance(index, pd.DatetimeIndex):
+        raise TypeError(
+            f"Expected a DatetimeIndex, got {type(index).__name__}. Within-period "
+            "calculations start from timestamp indexed data."
+        )
+
+    return index
+
+
+@overload
+def apply_rounding(dataset: pd.DataFrame, rounding: int | None) -> pd.DataFrame: ...
+
+
+@overload
+def apply_rounding(dataset: pd.Series, rounding: int | None) -> pd.Series: ...
+
+
 def apply_rounding(
     dataset: pd.Series | pd.DataFrame, rounding: int | None
 ) -> pd.Series | pd.DataFrame:
@@ -225,13 +354,38 @@ def bounded_ffill(
     gap surfaces as a NaN growth/return rather than a fabricated flat one.
     """
     if isinstance(dataset, pd.DataFrame):
-        filled = dataset.ffill(axis=axis, limit=1)
-        has_future_data = dataset.bfill(axis=axis).notna()
+        # pandas accepts the "rows"/"index"/"columns" aliases the callers use, but its
+        # stubs only spell out the numeric form.
+        axis_number = 0 if axis in ("rows", "index") else 1
+        filled = dataset.ffill(axis=axis_number, limit=1)
+        has_future_data = dataset.bfill(axis=axis_number).notna()
     else:
         filled = dataset.ffill(limit=1)
         has_future_data = dataset.bfill().notna()
 
     return filled.where(has_future_data, dataset)
+
+
+# The overloads spell out that the growth, standardisation and rounding helpers hand
+# back the same container they were given: a DataFrame in is a DataFrame out. Without
+# them every controller attribute typed as a DataFrame would have to accept a Series
+# too, purely because the helper is shared between the two.
+@overload
+def calculate_growth(
+    dataset: pd.DataFrame,
+    lag: int | list[int] = 1,
+    rounding: int | None = 4,
+    axis: str = "columns",
+) -> pd.DataFrame: ...
+
+
+@overload
+def calculate_growth(
+    dataset: pd.Series,
+    lag: int | list[int] = 1,
+    rounding: int | None = 4,
+    axis: str = "columns",
+) -> pd.Series: ...
 
 
 def calculate_growth(
@@ -323,6 +477,18 @@ def calculate_growth(
     dataset = bounded_ffill(dataset, axis=axis)
 
     return apply_rounding(dataset.pct_change(periods=lag, axis=axis), rounding)
+
+
+@overload
+def calculate_standardization(
+    dataset: pd.DataFrame, rounding: int | None = 4, axis: str = "columns"
+) -> pd.DataFrame: ...
+
+
+@overload
+def calculate_standardization(
+    dataset: pd.Series, rounding: int | None = 4, axis: str = "columns"
+) -> pd.Series: ...
 
 
 def calculate_standardization(

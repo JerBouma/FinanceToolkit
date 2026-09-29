@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import overload
+
 import numpy as np
 import pandas as pd
 
@@ -58,7 +60,7 @@ def calculate_stock_prices(
     down_movement: float,
     period_length: int,
     show_unique_combinations: bool = True,
-):
+) -> pd.DataFrame:
     """
     Calculates stock prices at each node.
 
@@ -163,32 +165,40 @@ def calculate_stock_prices(
     return combinations_df
 
 
-def get_call_option_payoffs(stock_price: float, strike_price: float):
+def get_call_option_payoffs(
+    stock_price: float | pd.Series | np.ndarray, strike_price: float
+) -> float | pd.Series | np.ndarray:
     """
     Calculates call option payoffs at maturity.
 
     Args:
-        stock_price (float): Stock price
+        stock_price (float | pd.Series | np.ndarray): Stock price, or a range of stock
+            prices to evaluate the payoff over.
         strike_price (float): Option strike price
 
     Returns:
-        float: Call option payoff at maturity
+        float | pd.Series | np.ndarray: Call option payoff at maturity, in the
+            shape of the stock price input.
     """
     call_option_payoff = np.maximum(stock_price - strike_price, 0)
 
     return call_option_payoff
 
 
-def get_put_option_payoffs(stock_price: float, strike_price: float):
+def get_put_option_payoffs(
+    stock_price: float | pd.Series | np.ndarray, strike_price: float
+) -> float | pd.Series | np.ndarray:
     """
     Calculates put option payoffs at maturity.
 
     Args:
-        stock_price (float): Stock price
+        stock_price (float | pd.Series | np.ndarray): Stock price, or a range of stock
+            prices to evaluate the payoff over.
         strike_price (float): Option strike price
 
     Returns:
-        float: Put option payoff at maturity
+        float | pd.Series | np.ndarray: Put option payoff at maturity, in the
+            shape of the stock price input.
     """
     put_option_payoff = np.maximum(strike_price - stock_price, 0)
 
@@ -323,10 +333,30 @@ def get_option_payoffs(
     return option_payoffs
 
 
+# A payoff evaluated over a range of prices (a Series) is a Series of payoffs, one per
+# price, while a single price gives a single payoff; the overloads make that explicit.
+@overload
+def get_strategy_payoff(
+    stock_price: pd.Series, legs: list[dict[str, float | bool | str]]
+) -> pd.Series: ...
+
+
+@overload
+def get_strategy_payoff(
+    stock_price: float, legs: list[dict[str, float | bool | str]]
+) -> float: ...
+
+
+@overload
+def get_strategy_payoff(
+    stock_price: np.ndarray, legs: list[dict[str, float | bool | str]]
+) -> np.ndarray: ...
+
+
 def get_strategy_payoff(
     stock_price: float | pd.Series | np.ndarray,
     legs: list[dict[str, float | bool | str]],
-) -> float | pd.Series:
+) -> float | pd.Series | np.ndarray:
     """
     Calculate the net expiration profit and loss (P&L) of a multi-leg option (and,
     optionally, stock) strategy.

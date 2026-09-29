@@ -27,6 +27,7 @@ from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
 
@@ -54,7 +55,7 @@ class Econometrics:
     def __init__(
         self,
         tickers: str | list[str],
-        historical_data: pd.DataFrame = pd.DataFrame(),
+        historical_data: dict[str, pd.DataFrame] | None = None,
         intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
@@ -66,7 +67,7 @@ class Econometrics:
 
         Args:
             tickers (str | list[str]): The tickers to use for the Toolkit instance.
-            historical_data (pd.DataFrame, optional): The historical data containing all periods.
+            historical_data (dict[str, pd.DataFrame] | None, optional): The historical data per period.
                 Defaults to pd.DataFrame().
             intraday_period (str | None, optional): The intraday period used for within-period calculations.
                 Defaults to None.
@@ -85,7 +86,9 @@ class Econometrics:
         toolkit.econometrics.get_augmented_dickey_fuller(period='yearly')
         ```
         """
-        self._historical_data = historical_data
+        # Mirrors the Risk controller: the Toolkit always passes the period dict, and an
+        # explicit empty dict keeps the daily lookups below raising a plain KeyError.
+        self._historical_data = historical_data if historical_data is not None else {}
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
@@ -205,7 +208,9 @@ class Econometrics:
 
         result = diagnostics_model.get_arch_lm_test(returns, lags=lags)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -291,7 +296,9 @@ class Econometrics:
 
         result = diagnostics_model.get_jarque_bera_test(returns)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -380,7 +387,9 @@ class Econometrics:
 
         result = diagnostics_model.get_ljung_box_test(returns, lags=lags)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -471,7 +480,9 @@ class Econometrics:
 
         result = diagnostics_model.get_variance_ratio_test(returns, q=q)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -570,7 +581,9 @@ class Econometrics:
 
         result = diagnostics_model.get_cusum_test(returns)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
@@ -796,7 +809,9 @@ class Econometrics:
             }
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -893,7 +908,9 @@ class Econometrics:
             }
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -980,7 +997,9 @@ class Econometrics:
             }
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1087,7 +1106,9 @@ class Econometrics:
             }
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_engle_granger_cointegration(
@@ -1171,7 +1192,9 @@ class Econometrics:
         result = pd.DataFrame(rows).T
         result.index = result.index.set_names(["Dependent", "Independent"])
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_johansen_cointegration(
@@ -1258,7 +1281,9 @@ class Econometrics:
             prices[tickers], det_order=det_order, k_ar_diff=k_ar_diff
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_granger_causality(
@@ -1341,7 +1366,9 @@ class Econometrics:
         result = pd.DataFrame(rows).T
         result.index = result.index.set_names(["Dependent", "Independent"])
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1450,7 +1477,9 @@ class Econometrics:
             actual, forecast_a, forecast_b, loss=loss, horizon=1
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_ols(
@@ -1566,8 +1595,9 @@ class Econometrics:
             maxlags=maxlags,
         )
 
-        return regression_model.regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -1671,8 +1701,9 @@ class Econometrics:
             maxlags=maxlags,
         )
 
-        return regression_model.regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -1757,8 +1788,9 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return regression_model.regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -1843,8 +1875,9 @@ class Econometrics:
             direction, returns[independent_tickers], add_constant=add_constant
         )
 
-        return regression_model.binary_regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.binary_regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -1929,8 +1962,9 @@ class Econometrics:
             direction, returns[independent_tickers], add_constant=add_constant
         )
 
-        return regression_model.binary_regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.binary_regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -2015,8 +2049,9 @@ class Econometrics:
             n_bootstrap=n_bootstrap,
         )
 
-        return regression_model.quantile_regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.quantile_regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -2119,8 +2154,9 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return fama_macbeth_model.fama_macbeth_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            fama_macbeth_model.fama_macbeth_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     def _fit_ols_result(
@@ -2223,7 +2259,9 @@ class Econometrics:
         result = pd.DataFrame(rows).T
         result.index = result.index.set_names(["Ticker A", "Ticker B"])
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_f_test(
@@ -2306,7 +2344,9 @@ class Econometrics:
             restricted_result, unrestricted_result
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_likelihood_ratio_test(
@@ -2390,7 +2430,9 @@ class Econometrics:
             restricted_result, unrestricted_result
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_wald_test(
@@ -2498,7 +2540,9 @@ class Econometrics:
             result, restriction_matrix_values, restriction_values_array
         )
 
-        return wald_result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            wald_result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_hausman_wu_test(
@@ -2588,7 +2632,9 @@ class Econometrics:
             ),
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     def _get_ols_result(
         self,
@@ -2696,7 +2742,9 @@ class Econometrics:
 
         test_result = specification_tests_model.get_breusch_pagan_test(result)
 
-        return test_result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            test_result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_white_test(
@@ -2771,7 +2819,9 @@ class Econometrics:
 
         test_result = specification_tests_model.get_white_test(result)
 
-        return test_result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            test_result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_durbin_watson_test(
@@ -2915,7 +2965,9 @@ class Econometrics:
 
         test_result = specification_tests_model.get_vif(returns[tickers])
 
-        return test_result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            test_result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_ramsey_reset_test(
@@ -2995,7 +3047,9 @@ class Econometrics:
             result, power=power
         )
 
-        return test_result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            test_result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_chow_test(
@@ -3089,7 +3143,9 @@ class Econometrics:
             if isinstance(index, pd.PeriodIndex)
             else pd.DatetimeIndex(index)
         )
-        break_index = int(timestamps.searchsorted(pd.Timestamp(break_date)))
+        break_index = int(
+            timestamps.searchsorted(pd.Timestamp(break_date).to_datetime64())
+        )
 
         test_result = specification_tests_model.get_chow_test(
             result_full,
@@ -3099,7 +3155,9 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return test_result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            test_result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_iv_2sls(
@@ -3200,8 +3258,9 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return regression_model.regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -3327,8 +3386,9 @@ class Econometrics:
             outcome, treated, post, add_constant=add_constant
         )
 
-        return regression_model.regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -3421,9 +3481,10 @@ class Econometrics:
             kernel=kernel,
         )
 
-        return causal_inference_model.regression_discontinuity_summary_table(
-            result
-        ).round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            causal_inference_model.regression_discontinuity_summary_table(result),
+            rounding if rounding is not None else self._rounding,
+        )
 
     @handle_errors
     def get_propensity_score_matching(
@@ -3524,8 +3585,9 @@ class Econometrics:
             add_constant=add_constant,
         )
 
-        return causal_inference_model.propensity_score_matching_summary(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            causal_inference_model.propensity_score_matching_summary(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -3630,8 +3692,9 @@ class Econometrics:
             treatment_period=treatment_period,
         )
 
-        return causal_inference_model.synthetic_control_summary(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            causal_inference_model.synthetic_control_summary(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     def _get_panel_data(
@@ -3879,7 +3942,7 @@ class Econometrics:
             time_rows.index = [f"Time Effect: {time}" for time in time_rows.index]
             summary = pd.concat([summary, time_rows])
 
-        return summary.round(rounding)
+        return apply_rounding(summary, rounding)
 
     @handle_errors
     def get_random_effects(
@@ -3967,8 +4030,9 @@ class Econometrics:
 
         result = panel_data_model.get_random_effects(y_panel, x_panel)
 
-        return regression_model.regression_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            regression_model.regression_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -4054,7 +4118,9 @@ class Econometrics:
 
         result = panel_data_model.get_hausman_test(y_panel, x_panel)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_arima_forecast(
@@ -4151,7 +4217,9 @@ class Econometrics:
         )
         result.index.name = "Step"
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_var_forecast(
@@ -4319,8 +4387,9 @@ class Econometrics:
             var_result, periods=periods, orthogonalized=orthogonalized
         )
 
-        return time_series_model.irf_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            time_series_model.irf_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -4402,8 +4471,9 @@ class Econometrics:
             var_result, periods=periods
         )
 
-        return time_series_model.variance_decomposition_summary_table(result).round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            time_series_model.variance_decomposition_summary_table(result),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors
@@ -4570,7 +4640,9 @@ class Econometrics:
         result = pd.Series(values, name="RMSE")
         result.index = result.index.set_names(["Ticker A", "Ticker B"])
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_mae(
@@ -4635,7 +4707,9 @@ class Econometrics:
         result = pd.Series(values, name="MAE")
         result.index = result.index.set_names(["Ticker A", "Ticker B"])
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_out_of_sample_validation(
@@ -4792,7 +4866,9 @@ class Econometrics:
 
         result = pd.DataFrame(columns)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_event_study(
@@ -4904,4 +4980,6 @@ class Econometrics:
             }
         )
 
-        return summary.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            summary, rounding if rounding is not None else self._rounding
+        )

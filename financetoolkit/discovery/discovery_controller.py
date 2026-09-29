@@ -21,7 +21,7 @@ logger_model.setup_logger()
 logger = logger_model.get_logger()
 
 # Used as the Toolkit's default API key when set as an environment variable.
-API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", None)
+API_KEY: str | None = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY")
 
 
 class Discovery:

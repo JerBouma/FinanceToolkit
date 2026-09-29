@@ -79,8 +79,8 @@ def run_in_parallel(
         variable when set and DEFAULT_MAX_WORKERS otherwise.
 
     Returns:
-        list: The worker results in the same order as worker_args. Workers that
-        collect their results into a shared dictionary simply produce a list of None.
+        list: The worker results in the same order as worker_args, which is how the
+        collection functions hand per-ticker results back without sharing state.
     """
     worker_args = list(worker_args)
 
@@ -150,10 +150,10 @@ def convert_period_end_dates_to_calendar_periods(
         calendar_periods = (end_dates.to_period("M") - 1).asfreq("Q")
     else:
         fiscal_periods = end_dates.to_period("Y")
-        calendar_periods = pd.PeriodIndex(
-            (end_dates.year - (end_dates.month < 6).astype(int)).astype(str),  # noqa
-            freq="Y",
-        )
+        # A fiscal year ending before June is labelled with the previous calendar
+        # year; shifting back five months lands January to May in that year and
+        # leaves June to December where they are.
+        calendar_periods = (end_dates.to_period("M") - 5).asfreq("Y")
 
     shifted_mask = calendar_periods != fiscal_periods
 

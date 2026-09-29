@@ -10,6 +10,7 @@ from financetoolkit.portfolio import helpers, overview_model, portfolio_model
 from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.statistics_model import to_period_index
 
 logger = logger_model.get_logger()
 
@@ -1006,7 +1007,9 @@ class Portfolio:
             try:
                 self._positions_overview = overview_model.create_positions_overview(
                     portfolio_tickers=self._tickers,
-                    period_dates=self._daily_historical_data.index.get_level_values(0),
+                    period_dates=to_period_index(
+                        self._daily_historical_data.index.get_level_values(0)
+                    ),
                     portfolio_dataset=self._transactions_overview,
                     historical_prices=self._daily_historical_data,
                     volume_column=self._volume_column,

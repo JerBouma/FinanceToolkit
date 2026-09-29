@@ -24,7 +24,7 @@ from financetoolkit.fixedincome import (
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
-from financetoolkit.utilities.statistics_model import finalize_dataset
+from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = logger_model.get_logger()
 
@@ -352,7 +352,7 @@ class FixedIncome:
                 frequency,
             )
 
-        return pd.Series(bond_statistics).round(self._rounding)
+        return apply_rounding(pd.Series(bond_statistics), self._rounding)
 
     def get_present_value(
         self,
@@ -768,7 +768,7 @@ class FixedIncome:
                 frequency,
             )
 
-        return yield_to_maturities_df.round(self._rounding)
+        return apply_rounding(yield_to_maturities_df, self._rounding)
 
     def get_forward_rate(
         self,
@@ -885,7 +885,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return forward_rates_df.round(self._rounding)
+        return apply_rounding(forward_rates_df, self._rounding)
 
     def get_par_yield(
         self,
@@ -988,7 +988,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return par_yields_series.round(self._rounding)
+        return apply_rounding(par_yields_series, self._rounding)
 
     def get_yield_curve_spread(
         self,
@@ -1094,7 +1094,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return yield_curve_spreads_df.round(self._rounding)
+        return apply_rounding(yield_curve_spreads_df, self._rounding)
 
     def get_breakeven_inflation_rate(
         self,
@@ -1208,7 +1208,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in real_rates_series.items()},
             )
 
-        return breakeven_inflation_rates_series.round(self._rounding)
+        return apply_rounding(breakeven_inflation_rates_series, self._rounding)
 
     def get_z_spread(
         self,
@@ -1338,7 +1338,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return z_spreads_df.round(self._rounding)
+        return apply_rounding(z_spreads_df, self._rounding)
 
     def get_bond_equivalent_yield(
         self,
@@ -1446,7 +1446,7 @@ class FixedIncome:
                 list(days_to_maturity),
             )
 
-        return bond_equivalent_yields_df.round(self._rounding)
+        return apply_rounding(bond_equivalent_yields_df, self._rounding)
 
     def get_key_rate_duration(
         self,
@@ -1571,7 +1571,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return key_rate_durations_df.round(self._rounding)
+        return apply_rounding(key_rate_durations_df, self._rounding)
 
     def get_taylor_price_change(
         self,
@@ -1690,7 +1690,7 @@ class FixedIncome:
                 f"{yield_change * 100}",
             )
 
-        return price_changes_df.round(self._rounding)
+        return apply_rounding(price_changes_df, self._rounding)
 
     def get_derivative_price(
         self,
@@ -1926,8 +1926,8 @@ class FixedIncome:
 
             derivative_payoffs_df.index.name = "Strike Rate"
 
-            return derivative_prices_df.round(2), derivative_payoffs_df.round(
-                self._rounding
+            return derivative_prices_df.round(2), apply_rounding(
+                derivative_payoffs_df, self._rounding
             )
 
         return derivative_prices_df.round(2)

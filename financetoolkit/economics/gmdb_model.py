@@ -7,6 +7,7 @@ from pandas.io.stata import StataReader
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
+from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
 
 GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/data/final/data_final.dta?raw=True"
@@ -61,7 +62,7 @@ def collect_global_macro_database_dataset(
     gmd_dataset["year"] = pd.PeriodIndex(gmd_dataset["year"].astype(int), freq="Y")
     gmd_dataset = gmd_dataset.set_index(["year", "countryname"])
     gmd_dataset.index.names = [None] * gmd_dataset.index.nlevels
-    gmd_dataset = gmd_dataset.unstack(level=1)
+    gmd_dataset = to_dataframe(gmd_dataset.unstack(level=1))
 
     gmd_dataset = gmd_dataset.sort_index(axis=1)
 

@@ -193,11 +193,8 @@ python-version = "3.13"
 # than suppressed inline so that a future typing cleanup can flip them back on one at
 # a time. The high-signal rules (unresolved references and imports, invalid type
 # forms, unused ignore comments) all remain at their default severity.
-invalid-argument-type = "ignore"
-invalid-return-type = "ignore"
-invalid-assignment = "ignore"
-unresolved-attribute = "ignore"
-no-matching-overload = "ignore"
+invalid-argument-type = "warn"
+invalid-return-type = "warn"
 
 [tool.codespell]
 ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar'

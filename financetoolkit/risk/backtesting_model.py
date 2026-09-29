@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import overload
+
 import numpy as np
 import pandas as pd
 from scipy import special, stats
@@ -15,6 +17,22 @@ def _align(returns: pd.Series, var_estimates: pd.Series) -> pd.DataFrame:
     aligned.columns = ["returns", "var"]
 
     return aligned
+
+
+@overload
+def get_kupiec_test(
+    returns: pd.DataFrame,
+    var_estimates: pd.Series | pd.DataFrame,
+    alpha: float,
+) -> pd.DataFrame: ...
+
+
+@overload
+def get_kupiec_test(
+    returns: pd.Series,
+    var_estimates: pd.Series | pd.DataFrame,
+    alpha: float,
+) -> pd.Series: ...
 
 
 def get_kupiec_test(
@@ -61,6 +79,8 @@ def get_kupiec_test(
             }
         )
     if isinstance(returns, pd.Series):
+        if not isinstance(var_estimates, pd.Series):
+            raise TypeError("A Series of returns needs a Series of VaR estimates.")
         aligned = _align(returns, var_estimates)
         breaches = int((aligned["returns"] < aligned["var"]).sum())
         n = len(aligned)
@@ -85,6 +105,20 @@ def get_kupiec_test(
         return pd.Series({"Kupiec Statistic": lr_statistic, "P-Value": p_value})
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+@overload
+def get_christoffersen_test(
+    returns: pd.DataFrame,
+    var_estimates: pd.Series | pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+@overload
+def get_christoffersen_test(
+    returns: pd.Series,
+    var_estimates: pd.Series | pd.DataFrame,
+) -> pd.Series: ...
 
 
 def get_christoffersen_test(
@@ -125,6 +159,8 @@ def get_christoffersen_test(
             }
         )
     if isinstance(returns, pd.Series):
+        if not isinstance(var_estimates, pd.Series):
+            raise TypeError("A Series of returns needs a Series of VaR estimates.")
         aligned = _align(returns, var_estimates)
         breach = (aligned["returns"] < aligned["var"]).astype(int).to_numpy()
 
@@ -160,6 +196,28 @@ def get_christoffersen_test(
         return pd.Series({"Christoffersen Statistic": lr_statistic, "P-Value": p_value})
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+@overload
+def get_acerbi_szekely_test(
+    returns: pd.DataFrame,
+    var_estimates: pd.Series | pd.DataFrame,
+    cvar_estimates: pd.Series | pd.DataFrame,
+    alpha: float,
+    n_bootstrap: int = 1000,
+    random_state: int = 42,
+) -> pd.DataFrame: ...
+
+
+@overload
+def get_acerbi_szekely_test(
+    returns: pd.Series,
+    var_estimates: pd.Series | pd.DataFrame,
+    cvar_estimates: pd.Series | pd.DataFrame,
+    alpha: float,
+    n_bootstrap: int = 1000,
+    random_state: int = 42,
+) -> pd.Series: ...
 
 
 def get_acerbi_szekely_test(

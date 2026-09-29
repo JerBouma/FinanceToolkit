@@ -14,6 +14,7 @@ from financetoolkit.technicals import (
 )
 from financetoolkit.technicals.helpers import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
     calculate_growth,
     calculate_standardization,
     finalize_dataset,
@@ -37,7 +38,7 @@ class Technicals:
     def __init__(
         self,
         tickers: str | list[str],
-        historical_data: pd.DataFrame,
+        historical_data: dict[str, pd.DataFrame],
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -47,7 +48,7 @@ class Technicals:
 
         Args:
             tickers (str | list[str]): The tickers to use for the calculation.
-            historical_data (pd.DataFrame): The historical data containing all periods.
+            historical_data (dict[str, pd.DataFrame]): The historical data per period.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             start_date (str | None, optional): The start date to use for the calculation. Defaults to None.
             end_date (str | None, optional): The end date to use for the calculation. Defaults to None.
@@ -182,8 +183,8 @@ class Technicals:
             axis=1,
         )
 
-        self._all_indicators = self._all_indicators.round(
-            rounding if rounding else self._rounding
+        self._all_indicators = apply_rounding(
+            self._all_indicators, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if growth:
@@ -336,8 +337,8 @@ class Technicals:
 
         self._breadth_indicators = pd.concat(breadth_indicators, axis=1)
 
-        self._breadth_indicators = self._breadth_indicators.round(
-            rounding if rounding else self._rounding
+        self._breadth_indicators = apply_rounding(
+            self._breadth_indicators, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if growth:
@@ -1615,8 +1616,8 @@ class Technicals:
 
         self._momentum_indicators = pd.concat(momentum_indicators, axis=1)
 
-        self._momentum_indicators = self._momentum_indicators.round(
-            rounding if rounding else self._rounding
+        self._momentum_indicators = apply_rounding(
+            self._momentum_indicators, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if growth:
@@ -4490,8 +4491,8 @@ class Technicals:
 
         self._overlap_indicators = pd.concat(overlap_indicators, axis=1)
 
-        self._overlap_indicators = self._overlap_indicators.round(
-            rounding if rounding else self._rounding
+        self._overlap_indicators = apply_rounding(
+            self._overlap_indicators, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if growth:
@@ -6409,8 +6410,8 @@ class Technicals:
 
         self._volatility_indicators = pd.concat(volatility_indicators, axis=1)
 
-        self._volatility_indicators = self._volatility_indicators.round(
-            rounding if rounding else self._rounding
+        self._volatility_indicators = apply_rounding(
+            self._volatility_indicators, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if growth:
@@ -6580,7 +6581,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-    ) -> pd.Series:
+    ) -> pd.DataFrame:
         """
         Calculate the Average True Range (ATR) of a given price series.
 
@@ -6614,7 +6615,7 @@ class Technicals:
                 values. Defaults to False.
 
         Returns:
-            pd.Series: ATR values or ATR growth rate (if growth is True).
+            pd.DataFrame: ATR values per ticker or ATR growth rate (if growth is True).
                 A pandas Series containing the calculated Average True Range values or growth rate for each period.
 
         Formula:
@@ -7191,7 +7192,9 @@ class Technicals:
             .sort_index(axis=1)
         )
 
-        return volatility_cone_df.round(rounding if rounding else self._rounding)
+        return apply_rounding(
+            volatility_cone_df, rounding if rounding else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors

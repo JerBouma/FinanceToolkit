@@ -23,9 +23,10 @@ from financetoolkit.models import (
 )
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import liquidity_model, profitability_model, valuation_model
-from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.dataframe_model import concat_frames, filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
     calculate_growth,
     calculate_standardization,
     finalize_dataset,
@@ -45,8 +46,8 @@ class Models:
     def __init__(
         self,
         tickers: str | list[str],
-        historical_data: pd.DataFrame,
-        risk_free_rate_data: pd.DataFrame,
+        historical_data: dict[str, pd.DataFrame],
+        risk_free_rate_data: dict[str, pd.DataFrame],
         balance: pd.DataFrame,
         income: pd.DataFrame,
         cash: pd.DataFrame,
@@ -60,8 +61,8 @@ class Models:
 
         Args:
             tickers (str | list[str]): The ticker(s) to use for the models.
-            historical_data (pd.DataFrame): The historical data containing all periods.
-            risk_free_rate_data (pd.DataFrame): The risk free rate data.
+            historical_data (dict[str, pd.DataFrame]): The historical data per period.
+            risk_free_rate_data (dict[str, pd.DataFrame]): The risk free rate data per period.
             balance (pd.DataFrame): The balance sheet data.
             income (pd.DataFrame): The income statement data.
             cash (pd.DataFrame): The cash flow statement data.
@@ -234,8 +235,8 @@ class Models:
                 axis="columns",
             )
 
-        self._dupont_analysis = self._dupont_analysis.round(
-            rounding if rounding else self._rounding
+        self._dupont_analysis = apply_rounding(
+            self._dupont_analysis, rounding if rounding else self._rounding
         )
 
         if standardize:
@@ -410,8 +411,8 @@ class Models:
                 axis="columns",
             )
 
-        self._extended_dupont_analysis = self._extended_dupont_analysis.round(
-            rounding if rounding else self._rounding
+        self._extended_dupont_analysis = apply_rounding(
+            self._extended_dupont_analysis, rounding if rounding else self._rounding
         )
 
         if standardize:
@@ -568,8 +569,8 @@ class Models:
                 rounding=rounding if rounding else self._rounding,
             )
 
-        self._enterprise_value_breakdown = self._enterprise_value_breakdown.round(
-            rounding if rounding else self._rounding
+        self._enterprise_value_breakdown = apply_rounding(
+            self._enterprise_value_breakdown, rounding if rounding else self._rounding
         )
 
         if standardize:
@@ -735,7 +736,7 @@ class Models:
         )
 
         tobins_q_results = (
-            pd.concat(tobins_q_ratio)
+            concat_frames(tobins_q_ratio)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -945,10 +946,9 @@ class Models:
                 axis="columns",
             )
 
-        self._weighted_average_cost_of_capital = (
-            self._weighted_average_cost_of_capital.round(
-                rounding if rounding else self._rounding
-            )
+        self._weighted_average_cost_of_capital = apply_rounding(
+            self._weighted_average_cost_of_capital,
+            rounding if rounding else self._rounding,
         )
 
         if standardize:
@@ -1154,7 +1154,7 @@ class Models:
         )
 
         eva_results = (
-            pd.concat(eva)
+            concat_frames(eva)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -1327,7 +1327,7 @@ class Models:
         )
 
         mva_results = (
-            pd.concat(mva)
+            concat_frames(mva)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -1452,7 +1452,7 @@ class Models:
                 )
             growth_rate_dict = growth_rate
         else:
-            growth_rate_dict = {}
+            growth_rate_dict = dict.fromkeys(self._tickers, growth_rate)
 
         if isinstance(perpetual_growth_rate, list):
             if len(perpetual_growth_rate) != len(self._tickers):
@@ -1470,7 +1470,9 @@ class Models:
                 )
             perpetual_growth_rate_dict = perpetual_growth_rate
         else:
-            perpetual_growth_rate_dict = {}
+            perpetual_growth_rate_dict = dict.fromkeys(
+                self._tickers, perpetual_growth_rate
+            )
 
         if isinstance(weighted_average_cost_of_capital, list):
             if len(weighted_average_cost_of_capital) != len(self._tickers):
@@ -1488,17 +1490,13 @@ class Models:
                 )
             wacc_dict = weighted_average_cost_of_capital
         else:
-            wacc_dict = {}
+            wacc_dict = dict.fromkeys(self._tickers, weighted_average_cost_of_capital)
 
         intrinsic_values_dict = {}
         for ticker in self._tickers:
-            perpetual_growth_rate_float = perpetual_growth_rate_dict.get(
-                ticker, perpetual_growth_rate
-            )
-            growth_rate_float = growth_rate_dict.get(ticker, growth_rate)
-            weighted_average_cost_of_capital_float = wacc_dict.get(
-                ticker, weighted_average_cost_of_capital
-            )
+            perpetual_growth_rate_float = perpetual_growth_rate_dict[ticker]
+            growth_rate_float = growth_rate_dict[ticker]
+            weighted_average_cost_of_capital_float = wacc_dict[ticker]
             cash_flow_series = self._cash_flow_statement.loc[
                 ticker, cash_flow_type
             ].dropna()
@@ -1688,7 +1686,7 @@ class Models:
         )
 
         fcff_results = (
-            pd.concat(fcff)
+            concat_frames(fcff)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -1833,7 +1831,7 @@ class Models:
         )
 
         fcfe_results = (
-            pd.concat(fcfe)
+            concat_frames(fcfe)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -1971,8 +1969,8 @@ class Models:
 
         gorden_growth_model_df = pd.DataFrame(gorden_growth_model)
 
-        gorden_growth_model_df = gorden_growth_model_df.round(
-            rounding if rounding else self._rounding
+        gorden_growth_model_df = apply_rounding(
+            gorden_growth_model_df, rounding if rounding else self._rounding
         )
 
         return gorden_growth_model_df.loc[self._start_date :]
@@ -2071,7 +2069,7 @@ class Models:
                 )
             rate_of_return_dict = rate_of_return
         else:
-            rate_of_return_dict = {}
+            rate_of_return_dict = dict.fromkeys(self._tickers, rate_of_return)
 
         if isinstance(high_growth_rate, list):
             if len(high_growth_rate) != len(self._tickers):
@@ -2088,7 +2086,7 @@ class Models:
                 )
             high_growth_rate_dict = high_growth_rate
         else:
-            high_growth_rate_dict = {}
+            high_growth_rate_dict = dict.fromkeys(self._tickers, high_growth_rate)
 
         if isinstance(stable_growth_rate, list):
             if len(stable_growth_rate) != len(self._tickers):
@@ -2105,15 +2103,13 @@ class Models:
                 )
             stable_growth_rate_dict = stable_growth_rate
         else:
-            stable_growth_rate_dict = {}
+            stable_growth_rate_dict = dict.fromkeys(self._tickers, stable_growth_rate)
 
         two_stage_ddm_dict = {}
         for ticker in self._tickers:
-            rate_of_return_float = rate_of_return_dict.get(ticker, rate_of_return)
-            high_growth_rate_float = high_growth_rate_dict.get(ticker, high_growth_rate)
-            stable_growth_rate_float = stable_growth_rate_dict.get(
-                ticker, stable_growth_rate
-            )
+            rate_of_return_float = rate_of_return_dict[ticker]
+            high_growth_rate_float = high_growth_rate_dict[ticker]
+            stable_growth_rate_float = stable_growth_rate_dict[ticker]
             dividends_per_share_series = dividends_per_share[ticker].dropna()
             base_dividend = (
                 dividends_per_share_series.iloc[-1]
@@ -2280,7 +2276,7 @@ class Models:
         )
 
         residual_income_results = (
-            pd.concat(residual_income)
+            concat_frames(residual_income)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -2523,7 +2519,7 @@ class Models:
         )
 
         altman_results = (
-            pd.concat(altman_z_score)
+            concat_frames(altman_z_score)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -2770,7 +2766,9 @@ class Models:
         )
 
         piotroski_results = (
-            pd.concat(piotroski_score).swaplevel(0, 1).reindex(self._tickers, level=0)
+            concat_frames(piotroski_score)
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
         )
 
         # Every criterion is a boolean comparison, so a period for which the statements have not been reported yet compares NaN against a number, evaluates to False and scores a perfect zero — the worst possible F-Score — rather than being reported as missing. Mask those periods out; must cover every field feeding any of the nine criteria, not just ROA/CFO/accruals.  # noqa: E501
@@ -3086,7 +3084,7 @@ class Models:
         )
 
         beneish_results = (
-            pd.concat(beneish_m_score)
+            concat_frames(beneish_m_score)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -3359,7 +3357,7 @@ class Models:
         )
 
         ohlson_results = (
-            pd.concat(ohlson_o_score)
+            concat_frames(ohlson_o_score)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -3541,7 +3539,7 @@ class Models:
         )
 
         zmijewski_results = (
-            pd.concat(zmijewski_score)
+            concat_frames(zmijewski_score)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -3745,7 +3743,7 @@ class Models:
         )
 
         springate_results = (
-            pd.concat(springate_score)
+            concat_frames(springate_score)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -3925,7 +3923,7 @@ class Models:
         )
 
         grover_results = (
-            pd.concat(grover_score)
+            concat_frames(grover_score)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -4249,7 +4247,7 @@ class Models:
         )
 
         fulmer_results = (
-            pd.concat(fulmer_h_score)
+            concat_frames(fulmer_h_score)
             .dropna(axis=1, how="all")
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
@@ -4349,22 +4347,21 @@ class Models:
         )
 
         # Preferred Dividends Paid is reported on the cash flow statement using the cash-flow-impact convention (an outflow is negative), while the Earnings per Share formula subtracts a positive-magnitude figure — without the absolute value the preferred dividends would be added back to Net Income instead of deducted from it  # noqa: E501
-        dividends = (
-            self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :].abs()
-            if include_dividends
-            else 0
-        )
-
         net_income = (
             self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
             if trailing
             else self._income_statement.loc[:, "Net Income", :]
         )
-        preferred_dividends = (
-            dividends.T.rolling(trailing).sum().T
-            if trailing and include_dividends
-            else dividends
-        )
+
+        if include_dividends:
+            dividends = self._cash_flow_statement.loc[
+                :, "Preferred Dividends Paid", :
+            ].abs()
+            preferred_dividends = (
+                dividends.T.rolling(trailing).sum().T if trailing else dividends
+            )
+        else:
+            preferred_dividends = 0
         avg_shares = (
             average_shares.T.rolling(trailing).mean().T if trailing else average_shares
         )
@@ -4405,7 +4402,7 @@ class Models:
                 )
             return pvgo.loc[self._start_date :]
 
-        pvgo = pvgo.round(rounding if rounding else self._rounding)
+        pvgo = apply_rounding(pvgo, rounding if rounding else self._rounding)
 
         if standardize:
             pvgo = calculate_standardization(

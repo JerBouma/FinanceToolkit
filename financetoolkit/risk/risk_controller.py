@@ -24,6 +24,7 @@ from financetoolkit.risk import (
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
     convert_annualized_rate_to_period,
     finalize_dataset,
 )
@@ -37,7 +38,7 @@ MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 # pylint: disable=too-many-boolean-expressions
 
 
-def _as_scalar(value: float | np.ndarray | pd.Series) -> float:
+def _as_scalar(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
     """
     Reduces a Value at Risk or Conditional Value at Risk estimate to a single float.
 
@@ -46,7 +47,7 @@ def _as_scalar(value: float | np.ndarray | pd.Series) -> float:
     would otherwise raise a TypeError before it reaches the backtest.
 
     Args:
-        value (float | np.ndarray | pd.Series): the estimate to reduce.
+        value (float | np.ndarray | pd.Series | pd.DataFrame): the estimate to reduce.
 
     Returns:
         float: the estimate as a single float.
@@ -64,8 +65,8 @@ class Risk:
     def __init__(
         self,
         tickers: str | list[str],
-        historical_data: pd.DataFrame = pd.DataFrame(),
-        risk_free_rate_data: pd.DataFrame = pd.DataFrame(),
+        historical_data: dict[str, pd.DataFrame] | None = None,
+        risk_free_rate_data: dict[str, pd.Series] | None = None,
         intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
@@ -77,10 +78,10 @@ class Risk:
 
         Args:
             tickers (str | list[str]): The tickers to use for the Toolkit instance.
-            historical_data (pd.DataFrame, optional): The historical data containing all periods.
-                Defaults to pd.DataFrame().
-            risk_free_rate_data (pd.DataFrame, optional): The risk free rate data to use for the
-                Excess Volatility calculations. Defaults to pd.DataFrame().
+            historical_data (dict[str, pd.DataFrame] | None, optional): The historical data per period.
+                Defaults to None, which is treated as an empty dictionary.
+            risk_free_rate_data (dict[str, pd.Series] | None, optional): The annualized risk free rate
+                per period frequency, used for the Excess Volatility calculations. Defaults to None.
             intraday_period (str | None, optional): The intraday period used for within-period calculations.
                 Defaults to None.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
@@ -106,12 +107,15 @@ class Risk:
         | 2021   | -0.0256 | -0.0211 |
         | 2022   | -0.0373 | -0.0385 |
         """
-        self._historical_data = historical_data
+        self._historical_data = historical_data if historical_data is not None else {}
         # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
-        self._risk_free_rate_data = {
-            frequency: convert_annualized_rate_to_period(rate, frequency)
-            for frequency, rate in risk_free_rate_data.items()
-        }
+        self._risk_free_rate_data: dict[str, pd.Series] = {}
+        for frequency, rate in (risk_free_rate_data or {}).items():
+            period_rate = convert_annualized_rate_to_period(rate, frequency)
+            # The conversion is also typed for scalars; a Series in gives a Series out.
+            if not isinstance(period_rate, pd.Series):
+                raise TypeError(f"Expected a risk free rate series for {frequency}.")
+            self._risk_free_rate_data[frequency] = period_rate
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
@@ -1841,7 +1845,9 @@ class Risk:
             index=["Omega", "Alpha", "Beta"],
         )
 
-        return parameters.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            parameters, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2162,7 +2168,9 @@ class Risk:
             index=["Omega", "Alpha", "Gamma", "Beta"],
         )
 
-        return parameters.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            parameters, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2483,7 +2491,9 @@ class Risk:
             index=["Omega", "Alpha", "Gamma", "Beta"],
         )
 
-        return parameters.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            parameters, rounding if rounding is not None else self._rounding
+        )
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
         # Reads the plain period-frequency history rather than the "within period" multi-index, so period="daily" simply means daily observations here and (unlike every within-period method above) needs no intraday data.  # noqa: E501
@@ -2598,7 +2608,9 @@ class Risk:
             returns[ticker_a], returns[ticker_b], q=q, method=method, dof=dof
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_copula_parameters(
@@ -2722,7 +2734,9 @@ class Risk:
                 fit_functions[copula](returns[ticker_a], returns[ticker_b])
             )
 
-            return result.round(rounding if rounding is not None else self._rounding)
+            return apply_rounding(
+                result, rounding if rounding is not None else self._rounding
+            )
 
         results = {
             (pair_a, pair_b): fit_functions[copula](returns[pair_a], returns[pair_b])
@@ -2732,7 +2746,9 @@ class Risk:
         result_df = pd.DataFrame(results).T
         result_df.index.names = ["Ticker A", "Ticker B"]
 
-        return result_df.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result_df, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_copula_simulation(
@@ -2870,8 +2886,8 @@ class Risk:
                 empirical_margins,
             )
 
-            return simulation.round(
-                rounding if rounding is not None else self._rounding
+            return apply_rounding(
+                simulation, rounding if rounding is not None else self._rounding
             )
 
         simulation = pd.concat(
@@ -2890,7 +2906,9 @@ class Risk:
         )
         simulation.columns.names = ["Ticker A", "Ticker B", None]
 
-        return simulation.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            simulation, rounding if rounding is not None else self._rounding
+        )
 
     @staticmethod
     def _simulate_copula_pair(
@@ -3007,8 +3025,8 @@ class Risk:
                 ticker_a, ticker_b, returns, fit_functions
             )
 
-            return comparison_df.round(
-                rounding if rounding is not None else self._rounding
+            return apply_rounding(
+                comparison_df, rounding if rounding is not None else self._rounding
             )
 
         # One row per pair: only the lowest-AIC family, which sorts first, is kept.
@@ -3024,8 +3042,8 @@ class Risk:
         comparison_df = comparison_df.reset_index(level="Best Copula")
 
         if show_full_results:
-            return comparison_df.round(
-                rounding if rounding is not None else self._rounding
+            return apply_rounding(
+                comparison_df, rounding if rounding is not None else self._rounding
             )
 
         tickers = sorted({ticker for pair in ticker_pairs for ticker in pair})
@@ -3133,7 +3151,9 @@ class Risk:
             returns[ticker], returns[conditioning_ticker], alpha=alpha
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     def _get_portfolio_weights(
         self, returns: pd.DataFrame, weights: dict[str, float] | pd.Series | None
@@ -3253,7 +3273,9 @@ class Risk:
         )
         marginal_var.name = "Marginal VaR"
 
-        return marginal_var.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            marginal_var, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_component_value_at_risk(
@@ -3346,7 +3368,9 @@ class Risk:
         component_var.loc["Portfolio"] = component_var.sum()
         component_var.name = "Component VaR"
 
-        return component_var.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            component_var, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3470,7 +3494,9 @@ class Risk:
 
         result = pd.concat(results, axis=0) if len(results) > 1 else results[0]
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3603,7 +3629,9 @@ class Risk:
             returns, rolling_var, rolling_cvar, alpha, n_bootstrap, random_state
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3937,7 +3965,9 @@ class Risk:
 
         result = risk_model.get_hill_estimator(returns, k=k, tail=tail)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4577,7 +4607,9 @@ class Risk:
 
         result = market_liquidity_model.get_roll_spread(close_prices)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -5124,8 +5156,8 @@ class Risk:
             lambda column: risk_model.get_autocorrelation(column, lags=lags)
         )
 
-        return autocorrelation.round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            autocorrelation, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors
@@ -5179,6 +5211,6 @@ class Risk:
             lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)
         )
 
-        return hurst_exponent.round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            hurst_exponent, rounding if rounding is not None else self._rounding
         )

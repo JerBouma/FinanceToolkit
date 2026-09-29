@@ -23,6 +23,7 @@ from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
     calculate_growth,
     calculate_standardization,
     finalize_dataset,
@@ -252,8 +253,8 @@ class Ratios:
             ]
         )
 
-        self._all_ratios = self._all_ratios.round(
-            rounding if rounding else self._rounding
+        self._all_ratios = apply_rounding(
+            self._all_ratios, rounding if rounding else self._rounding
         )
 
         # Sorted again so the index follows the financial statements' order.
@@ -402,6 +403,10 @@ class Ratios:
             self._available_custom_ratios_options.sort()
 
             return self._available_custom_ratios_options
+
+        # The guard at the top already returned when no dictionary was given, so this
+        # only spells that out for the type checker.
+        custom_ratios_dict = custom_ratios_dict or {}
 
         custom_ratios = pd.DataFrame(
             0,
@@ -604,68 +609,68 @@ class Ratios:
         if not days:
             days = 365 / 4 if self._quarterly else 365
 
-        efficiency_ratios: dict = {}
+        efficiency_ratios_dict: dict = {}
 
-        efficiency_ratios["Days of Inventory Outstanding"] = (
+        efficiency_ratios_dict["Days of Inventory Outstanding"] = (
             self.get_days_of_inventory_outstanding(days=days, trailing=trailing)
         )
-        efficiency_ratios["Days of Sales Outstanding"] = (
+        efficiency_ratios_dict["Days of Sales Outstanding"] = (
             self.get_days_of_sales_outstanding(days=days, trailing=trailing)
         )
-        efficiency_ratios["Operating Cycle"] = self.get_operating_cycle(
+        efficiency_ratios_dict["Operating Cycle"] = self.get_operating_cycle(
             days=days, trailing=trailing
         )
-        efficiency_ratios["Days of Accounts Payable Outstanding"] = (
+        efficiency_ratios_dict["Days of Accounts Payable Outstanding"] = (
             self.get_days_of_accounts_payable_outstanding(days=days, trailing=trailing)
         )
-        efficiency_ratios["Cash Conversion Cycle"] = self.get_cash_conversion_cycle(
-            days=days, trailing=trailing
+        efficiency_ratios_dict["Cash Conversion Cycle"] = (
+            self.get_cash_conversion_cycle(days=days, trailing=trailing)
         )
-        efficiency_ratios["Cash Conversion Efficiency"] = (
+        efficiency_ratios_dict["Cash Conversion Efficiency"] = (
             self.get_cash_conversion_efficiency(trailing=trailing)
         )
-        efficiency_ratios["Receivables Turnover"] = self.get_receivables_turnover(
+        efficiency_ratios_dict["Receivables Turnover"] = self.get_receivables_turnover(
             trailing=trailing
         )
-        efficiency_ratios["Inventory Turnover Ratio"] = (
+        efficiency_ratios_dict["Inventory Turnover Ratio"] = (
             self.get_inventory_turnover_ratio(trailing=trailing)
         )
-        efficiency_ratios["Accounts Payable Turnover Ratio"] = (
+        efficiency_ratios_dict["Accounts Payable Turnover Ratio"] = (
             self.get_accounts_payables_turnover_ratio(trailing=trailing)
         )
-        efficiency_ratios["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio(
+        efficiency_ratios_dict["SGA-to-Revenue Ratio"] = self.get_sga_to_revenue_ratio(
             trailing=trailing
         )
-        efficiency_ratios["Fixed Asset Turnover"] = self.get_fixed_asset_turnover(
+        efficiency_ratios_dict["Fixed Asset Turnover"] = self.get_fixed_asset_turnover(
             trailing=trailing
         )
-        efficiency_ratios["Asset Turnover Ratio"] = self.get_asset_turnover_ratio(
+        efficiency_ratios_dict["Asset Turnover Ratio"] = self.get_asset_turnover_ratio(
             trailing=trailing
         )
-        efficiency_ratios["Operating Ratio"] = self.get_operating_ratio(
+        efficiency_ratios_dict["Operating Ratio"] = self.get_operating_ratio(
             trailing=trailing
         )
-        efficiency_ratios["R&D Intensity Ratio"] = (
+        efficiency_ratios_dict["R&D Intensity Ratio"] = (
             self.get_research_and_development_ratio(trailing=trailing)
         )
-        efficiency_ratios["S&M to Revenue Ratio"] = (
+        efficiency_ratios_dict["S&M to Revenue Ratio"] = (
             self.get_selling_and_marketing_ratio(trailing=trailing)
         )
-        efficiency_ratios["G&A to Revenue Ratio"] = (
+        efficiency_ratios_dict["G&A to Revenue Ratio"] = (
             self.get_general_and_administrative_ratio(trailing=trailing)
         )
-        efficiency_ratios["SBC to Revenue Ratio"] = (
+        efficiency_ratios_dict["SBC to Revenue Ratio"] = (
             self.get_stock_based_compensation_ratio(trailing=trailing)
         )
-        efficiency_ratios["Deferred Revenue Ratio"] = self.get_deferred_revenue_ratio(
-            trailing=trailing
+        efficiency_ratios_dict["Deferred Revenue Ratio"] = (
+            self.get_deferred_revenue_ratio(trailing=trailing)
         )
-        efficiency_ratios["Working Capital Turnover Ratio"] = (
+        efficiency_ratios_dict["Working Capital Turnover Ratio"] = (
             self.get_working_capital_turnover_ratio(trailing=trailing)
         )
 
         self._efficiency_ratios = (
-            pd.concat(efficiency_ratios)
+            pd.concat(efficiency_ratios_dict)
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -2603,29 +2608,31 @@ class Ratios:
         | Operating Cash Flow to Sales Ratio |  0.2844    |  0.3098     |  0.2884    |  0.3024     |  0.2679     |
         | Short Term Coverage Ratio          | -4.7495    | -3.9423     | -4.1291    | -4.1839     | -4.5755     |
         """
-        liquidity_ratios: dict = {}
+        liquidity_ratios_dict: dict = {}
 
-        liquidity_ratios["Current Ratio"] = self.get_current_ratio(trailing=trailing)
-        liquidity_ratios["Quick Ratio"] = self.get_quick_ratio(trailing=trailing)
-        liquidity_ratios["Cash Ratio"] = self.get_cash_ratio(trailing=trailing)
-        liquidity_ratios["Working Capital"] = self.get_working_capital(
+        liquidity_ratios_dict["Current Ratio"] = self.get_current_ratio(
             trailing=trailing
         )
-        liquidity_ratios["Operating Cash Flow Ratio"] = (
+        liquidity_ratios_dict["Quick Ratio"] = self.get_quick_ratio(trailing=trailing)
+        liquidity_ratios_dict["Cash Ratio"] = self.get_cash_ratio(trailing=trailing)
+        liquidity_ratios_dict["Working Capital"] = self.get_working_capital(
+            trailing=trailing
+        )
+        liquidity_ratios_dict["Operating Cash Flow Ratio"] = (
             self.get_operating_cash_flow_ratio(trailing=trailing)
         )
-        liquidity_ratios["Operating Cash Flow to Sales Ratio"] = (
+        liquidity_ratios_dict["Operating Cash Flow to Sales Ratio"] = (
             self.get_operating_cash_flow_sales_ratio(trailing=trailing)
         )
-        liquidity_ratios["Short Term Coverage Ratio"] = (
+        liquidity_ratios_dict["Short Term Coverage Ratio"] = (
             self.get_short_term_coverage_ratio(trailing=trailing)
         )
-        liquidity_ratios["Defensive Interval Ratio"] = (
+        liquidity_ratios_dict["Defensive Interval Ratio"] = (
             self.get_defensive_interval_ratio(trailing=trailing)
         )
 
         self._liquidity_ratios = (
-            pd.concat(liquidity_ratios)
+            pd.concat(liquidity_ratios_dict)
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -3494,72 +3501,74 @@ class Ratios:
         | Cash Tax Rate                               | 0.2324 | 0.1643 | 0.1642 |  0.2114 | 0.3267 |
         | Tax Rate Divergence                         | 0.0994 | 0.0023 | 0.017  | -0.0295 | 0.1706 |
         """
-        profitability_ratios: dict = {}
+        profitability_ratios_dict: dict = {}
 
-        profitability_ratios["Gross Margin"] = self.get_gross_margin(trailing=trailing)
-        profitability_ratios["Operating Margin"] = self.get_operating_margin(
+        profitability_ratios_dict["Gross Margin"] = self.get_gross_margin(
             trailing=trailing
         )
-        profitability_ratios["Net Profit Margin"] = self.get_net_profit_margin(
+        profitability_ratios_dict["Operating Margin"] = self.get_operating_margin(
             trailing=trailing
         )
-        profitability_ratios["EBITDA Margin"] = self.get_ebitda_margin(
+        profitability_ratios_dict["Net Profit Margin"] = self.get_net_profit_margin(
             trailing=trailing
         )
-        profitability_ratios["Free Cash Flow Margin"] = self.get_free_cash_flow_margin(
+        profitability_ratios_dict["EBITDA Margin"] = self.get_ebitda_margin(
             trailing=trailing
         )
-        profitability_ratios["Interest Coverage Ratio"] = (
+        profitability_ratios_dict["Free Cash Flow Margin"] = (
+            self.get_free_cash_flow_margin(trailing=trailing)
+        )
+        profitability_ratios_dict["Interest Coverage Ratio"] = (
             self.get_interest_coverage_ratio(trailing=trailing)
         )
-        profitability_ratios["Income Before Tax Profit Margin"] = (
+        profitability_ratios_dict["Income Before Tax Profit Margin"] = (
             self.get_income_before_tax_profit_margin(trailing=trailing)
         )
-        profitability_ratios["Effective Tax Rate"] = self.get_effective_tax_rate(
+        profitability_ratios_dict["Effective Tax Rate"] = self.get_effective_tax_rate(
             trailing=trailing
         )
-        profitability_ratios["Return on Assets"] = self.get_return_on_assets(
+        profitability_ratios_dict["Return on Assets"] = self.get_return_on_assets(
             trailing=trailing
         )
-        profitability_ratios["Cash Return on Assets"] = self.get_cash_return_on_assets(
+        profitability_ratios_dict["Cash Return on Assets"] = (
+            self.get_cash_return_on_assets(trailing=trailing)
+        )
+        profitability_ratios_dict["Return on Equity"] = self.get_return_on_equity(
             trailing=trailing
         )
-        profitability_ratios["Return on Equity"] = self.get_return_on_equity(
-            trailing=trailing
-        )
-        profitability_ratios["Return on Invested Capital"] = (
+        profitability_ratios_dict["Return on Invested Capital"] = (
             self.get_return_on_invested_capital(trailing=trailing)
         )
-        profitability_ratios["Return on Capital Employed"] = (
+        profitability_ratios_dict["Return on Capital Employed"] = (
             self.get_return_on_capital_employed(trailing=trailing)
         )
-        profitability_ratios["Return on Tangible Assets"] = (
+        profitability_ratios_dict["Return on Tangible Assets"] = (
             self.get_return_on_tangible_assets(trailing=trailing)
         )
-        profitability_ratios["Income Quality Ratio"] = self.get_income_quality_ratio(
+        profitability_ratios_dict["Income Quality Ratio"] = (
+            self.get_income_quality_ratio(trailing=trailing)
+        )
+        profitability_ratios_dict["Net Income per EBT"] = self.get_net_income_per_ebt(
             trailing=trailing
         )
-        profitability_ratios["Net Income per EBT"] = self.get_net_income_per_ebt(
-            trailing=trailing
-        )
-        profitability_ratios["Free Cash Flow to Operating Cash Flow Ratio"] = (
+        profitability_ratios_dict["Free Cash Flow to Operating Cash Flow Ratio"] = (
             self.get_free_cash_flow_operating_cash_flow_ratio(trailing=trailing)
         )
-        profitability_ratios["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT(
+        profitability_ratios_dict["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT(
             trailing=trailing
         )
-        profitability_ratios["EBIT to Revenue"] = self.get_EBIT_to_revenue(
+        profitability_ratios_dict["EBIT to Revenue"] = self.get_EBIT_to_revenue(
             trailing=trailing
         )
-        profitability_ratios["Cash Tax Rate"] = self.get_cash_tax_rate(
+        profitability_ratios_dict["Cash Tax Rate"] = self.get_cash_tax_rate(
             trailing=trailing
         )
-        profitability_ratios["Tax Rate Divergence"] = self.get_tax_rate_divergence(
+        profitability_ratios_dict["Tax Rate Divergence"] = self.get_tax_rate_divergence(
             trailing=trailing
         )
 
         self._profitability_ratios = (
-            pd.concat(profitability_ratios)
+            pd.concat(profitability_ratios_dict)
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -5701,53 +5710,53 @@ class Ratios:
         | Dividend CAPEX Coverage Ratio     |  -4.0716 |  -4.781  |  -4.2543 |  -4.7913 |  -3.9623 |
         | Debt-to-Capital Ratio             |   0.6839 |   0.7233 |   0.666  |   0.6764 |   0.6038 |
         """
-        solvency_ratios: dict = {}
+        solvency_ratios_dict: dict = {}
 
-        solvency_ratios["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio(
+        solvency_ratios_dict["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio(
             trailing=trailing
         )
-        solvency_ratios["Asset Coverage Ratio"] = self.get_asset_coverage_ratio(
+        solvency_ratios_dict["Asset Coverage Ratio"] = self.get_asset_coverage_ratio(
             trailing=trailing
         )
-        solvency_ratios["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio(
+        solvency_ratios_dict["Debt-to-Equity Ratio"] = self.get_debt_to_equity_ratio(
             trailing=trailing
         )
-        solvency_ratios["Debt Service Coverage Ratio"] = (
+        solvency_ratios_dict["Debt Service Coverage Ratio"] = (
             self.get_debt_service_coverage_ratio(trailing=trailing)
         )
-        solvency_ratios["Equity Multiplier"] = self.get_equity_multiplier(
+        solvency_ratios_dict["Equity Multiplier"] = self.get_equity_multiplier(
             trailing=trailing
         )
-        solvency_ratios["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
+        solvency_ratios_dict["Free Cash Flow Yield"] = self.get_free_cash_flow_yield(
             diluted=diluted, trailing=trailing
         )
-        solvency_ratios["Net-Debt to EBITDA Ratio"] = self.get_net_debt_to_ebitda_ratio(
-            trailing=trailing
+        solvency_ratios_dict["Net-Debt to EBITDA Ratio"] = (
+            self.get_net_debt_to_ebitda_ratio(trailing=trailing)
         )
-        solvency_ratios["Gross Debt to EBITDA Ratio"] = (
+        solvency_ratios_dict["Gross Debt to EBITDA Ratio"] = (
             self.get_gross_debt_to_ebitda_ratio(trailing=trailing)
         )
-        solvency_ratios["Cash Flow Coverage Ratio"] = self.get_cash_flow_coverage_ratio(
+        solvency_ratios_dict["Cash Flow Coverage Ratio"] = (
+            self.get_cash_flow_coverage_ratio(trailing=trailing)
+        )
+        solvency_ratios_dict["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio(
             trailing=trailing
         )
-        solvency_ratios["CAPEX Coverage Ratio"] = self.get_capex_coverage_ratio(
-            trailing=trailing
-        )
-        solvency_ratios["Dividend CAPEX Coverage Ratio"] = (
+        solvency_ratios_dict["Dividend CAPEX Coverage Ratio"] = (
             self.get_capex_dividend_coverage_ratio(trailing=trailing)
         )
-        solvency_ratios["Debt-to-Capital Ratio"] = self.get_debt_to_capital_ratio(
+        solvency_ratios_dict["Debt-to-Capital Ratio"] = self.get_debt_to_capital_ratio(
             trailing=trailing
         )
-        solvency_ratios["Preferred Dividend Coverage Ratio"] = (
+        solvency_ratios_dict["Preferred Dividend Coverage Ratio"] = (
             self.get_preferred_dividend_coverage_ratio(trailing=trailing)
         )
-        solvency_ratios["Interest Paid to Expense Ratio"] = (
+        solvency_ratios_dict["Interest Paid to Expense Ratio"] = (
             self.get_interest_paid_to_expense_ratio(trailing=trailing)
         )
 
         self._solvency_ratios = (
-            pd.concat(solvency_ratios)
+            pd.concat(solvency_ratios_dict)
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")
@@ -7267,38 +7276,38 @@ class Ratios:
         | Shareholder Yield           |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0251     |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10 |  1.02405e+11 |  8.8751e+10 |  9.7119e+10 |  8.5904e+10 |
         """
-        valuation_ratios: dict = {}
+        valuation_ratios_dict: dict = {}
 
-        valuation_ratios["Earnings per Share"] = self.get_earnings_per_share(
+        valuation_ratios_dict["Earnings per Share"] = self.get_earnings_per_share(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Revenue per Share"] = self.get_revenue_per_share(
+        valuation_ratios_dict["Revenue per Share"] = self.get_revenue_per_share(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Price-to-Earnings"] = self.get_price_to_earnings_ratio(
+        valuation_ratios_dict["Price-to-Earnings"] = self.get_price_to_earnings_ratio(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Price-to-Earnings-Growth"] = (
+        valuation_ratios_dict["Price-to-Earnings-Growth"] = (
             self.get_price_to_earnings_growth_ratio(
                 include_dividends=include_dividends, diluted=diluted
             )
         )
-        valuation_ratios["Book Value per Share"] = self.get_book_value_per_share(
+        valuation_ratios_dict["Book Value per Share"] = self.get_book_value_per_share(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Price-to-Book"] = self.get_price_to_book_ratio(
+        valuation_ratios_dict["Price-to-Book"] = self.get_price_to_book_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Interest Debt per Share"] = self.get_interest_debt_per_share(
+        valuation_ratios_dict["Interest Debt per Share"] = (
+            self.get_interest_debt_per_share(diluted=diluted, trailing=trailing)
+        )
+        valuation_ratios_dict["CAPEX per Share"] = self.get_capex_per_share(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["CAPEX per Share"] = self.get_capex_per_share(
-            diluted=diluted, trailing=trailing
-        )
-        valuation_ratios["Earnings Yield"] = self.get_earnings_yield(
+        valuation_ratios_dict["Earnings Yield"] = self.get_earnings_yield(
             include_dividends=include_dividends, diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Dividend Payout Ratio"] = self.get_dividend_payout_ratio(
+        valuation_ratios_dict["Dividend Payout Ratio"] = self.get_dividend_payout_ratio(
             trailing=trailing
         )
 
@@ -7306,63 +7315,63 @@ class Ratios:
         dividend_yield_columns = [
             column
             for column in dividend_yield.columns
-            if column in valuation_ratios["Dividend Payout Ratio"].columns
+            if column in valuation_ratios_dict["Dividend Payout Ratio"].columns
         ]
-        valuation_ratios["Dividend Yield"] = dividend_yield.loc[
+        valuation_ratios_dict["Dividend Yield"] = dividend_yield.loc[
             :, dividend_yield_columns
         ]
 
-        valuation_ratios["Weighted Dividend Yield"] = self.get_weighted_dividend_yield(
+        valuation_ratios_dict["Weighted Dividend Yield"] = (
+            self.get_weighted_dividend_yield(diluted=diluted, trailing=trailing)
+        )
+        valuation_ratios_dict["Price-to-Cash-Flow"] = self.get_price_to_cash_flow_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Price-to-Cash-Flow"] = self.get_price_to_cash_flow_ratio(
-            diluted=diluted, trailing=trailing
-        )
-        valuation_ratios["Price-to-Free-Cash-Flow"] = (
+        valuation_ratios_dict["Price-to-Free-Cash-Flow"] = (
             self.get_price_to_free_cash_flow_ratio(diluted=diluted, trailing=trailing)
         )
-        valuation_ratios["Price-to-Sales"] = self.get_price_to_sales_ratio(
+        valuation_ratios_dict["Price-to-Sales"] = self.get_price_to_sales_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Market Cap"] = self.get_market_cap(
+        valuation_ratios_dict["Market Cap"] = self.get_market_cap(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Enterprise Value"] = self.get_enterprise_value(
+        valuation_ratios_dict["Enterprise Value"] = self.get_enterprise_value(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["EV-to-Sales"] = self.get_ev_to_sales_ratio(
+        valuation_ratios_dict["EV-to-Sales"] = self.get_ev_to_sales_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["EV-to-EBIT"] = self.get_ev_to_ebit(
+        valuation_ratios_dict["EV-to-EBIT"] = self.get_ev_to_ebit(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(
+        valuation_ratios_dict["EV-to-EBITDA"] = self.get_ev_to_ebitda_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["EV-to-Operating-Cash-Flow"] = (
+        valuation_ratios_dict["EV-to-Operating-Cash-Flow"] = (
             self.get_ev_to_operating_cashflow_ratio(diluted=diluted, trailing=trailing)
         )
-        valuation_ratios["Tangible Asset Value"] = self.get_tangible_asset_value(
+        valuation_ratios_dict["Tangible Asset Value"] = self.get_tangible_asset_value(
             trailing=trailing
         )
-        valuation_ratios["Net Current Asset Value"] = self.get_net_current_asset_value(
-            trailing=trailing
+        valuation_ratios_dict["Net Current Asset Value"] = (
+            self.get_net_current_asset_value(trailing=trailing)
         )
-        valuation_ratios["EV-to-Free-Cash-Flow"] = self.get_ev_to_free_cash_flow_ratio(
+        valuation_ratios_dict["EV-to-Free-Cash-Flow"] = (
+            self.get_ev_to_free_cash_flow_ratio(diluted=diluted, trailing=trailing)
+        )
+        valuation_ratios_dict["Buyback Yield"] = self.get_buyback_yield(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Buyback Yield"] = self.get_buyback_yield(
+        valuation_ratios_dict["Shareholder Yield"] = self.get_shareholder_yield(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios["Shareholder Yield"] = self.get_shareholder_yield(
-            diluted=diluted, trailing=trailing
-        )
-        valuation_ratios["SBC-Adjusted Free Cash Flow"] = (
+        valuation_ratios_dict["SBC-Adjusted Free Cash Flow"] = (
             self.get_sbc_adjusted_free_cash_flow(trailing=trailing)
         )
 
         self._valuation_ratios = (
-            pd.concat(valuation_ratios)
+            pd.concat(valuation_ratios_dict)
             .swaplevel(0, 1)
             .sort_index(level=0, sort_remaining=False)
             .dropna(axis="columns", how="all")

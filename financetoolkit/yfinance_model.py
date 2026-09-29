@@ -97,6 +97,11 @@ def get_financial_statement(
         )
         return pd.DataFrame(columns=[error_code])
 
+    if not isinstance(financial_statement, pd.DataFrame):
+        # yfinance only hands back a dict when asked with as_dict=True, which never
+        # happens here; treating anything else as "no data" keeps the fallback path.
+        return pd.DataFrame()
+
     if financial_statement.empty:
         error_code = (
             "YFINANCE RATE LIMIT OR NO DATA FOUND FALLBACK"
@@ -431,7 +436,7 @@ def get_historical_statistics(ticker: str) -> pd.Series:
                     statistics[timestamp_data] = timestamp
 
         except (KeyError, ValueError):
-            return pd.DataFrame()
+            return pd.Series()
 
         columns = {
             "currency": "Currency",
@@ -461,4 +466,4 @@ def get_historical_statistics(ticker: str) -> pd.Series:
 
         return stats_df
 
-    return pd.DataFrame()
+    return pd.Series()

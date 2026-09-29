@@ -2,6 +2,9 @@
 
 __docformat__ = "google"
 
+from collections.abc import Mapping
+from typing import overload
+
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
@@ -27,16 +30,18 @@ def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFr
     return combined_df.sort_index(level=0, sort_remaining=False)
 
 
-def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
+def equal_length(
+    dataset1: pd.DataFrame, dataset2: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Equalize the length of two datasets by adding zeros to the beginning of the shorter dataset.
 
     Args:
-        dataset1 (pd.Series): The first dataset to be equalized.
-        dataset2 (pd.Series): The second dataset to be equalized.
+        dataset1 (pd.DataFrame): The first dataset to be equalized, with periods as columns.
+        dataset2 (pd.DataFrame): The second dataset to be equalized, with periods as columns.
 
     Returns:
-        pd.Series, pd.Series: The equalized datasets.
+        tuple[pd.DataFrame, pd.DataFrame]: The equalized datasets.
     """
     if int(dataset1.columns[0]) > int(dataset2.columns[0]):
         for value in range(
@@ -52,6 +57,24 @@ def equal_length(dataset1: pd.Series, dataset2: pd.Series) -> pd.Series:
         dataset2 = dataset2.sort_index()
 
     return dataset1, dataset2
+
+
+@overload
+def filter_columns(
+    result: pd.DataFrame, show_columns: list[str] | None
+) -> pd.DataFrame: ...
+
+
+@overload
+def filter_columns(result: pd.Series, show_columns: list[str] | None) -> pd.Series: ...
+
+
+@overload
+def filter_columns(result: dict, show_columns: list[str] | None) -> dict: ...
+
+
+@overload
+def filter_columns(result: object, show_columns: list[str] | None) -> object: ...
 
 
 def filter_columns(
@@ -204,3 +227,81 @@ def _filter_dataframe_columns(
         all_available,
     )
     return df
+
+
+def to_dataframe(data: object) -> pd.DataFrame:
+    """
+    Narrows a pandas result to a DataFrame, for the operations the stubs describe as
+    returning a Series or a DataFrame (an unstack, a row lookup, a column selection)
+    at the places where the shape of the data guarantees a DataFrame.
+
+    Args:
+        data (object): The pandas result to narrow.
+
+    Returns:
+        pd.DataFrame: The same object, narrowed to a DataFrame.
+
+    Raises:
+        TypeError: If the result is not a DataFrame.
+    """
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError(
+            f"Expected a DataFrame but received {type(data).__name__}; the data does "
+            "not have the shape this calculation relies on."
+        )
+
+    return data
+
+
+def to_series(data: object) -> pd.Series:
+    """
+    The Series counterpart of `to_dataframe`, for the operations the stubs describe
+    as returning a Series or a DataFrame at the places where a Series is guaranteed.
+
+    Args:
+        data (object): The pandas result to narrow.
+
+    Returns:
+        pd.Series: The same object, narrowed to a Series.
+
+    Raises:
+        TypeError: If the result is not a Series.
+    """
+    if not isinstance(data, pd.Series):
+        raise TypeError(
+            f"Expected a Series but received {type(data).__name__}; the data does not "
+            "have the shape this calculation relies on."
+        )
+
+    return data
+
+
+def concat_frames(frames: Mapping[str, object]) -> pd.DataFrame:
+    """
+    Stacks a mapping of DataFrames into one DataFrame keyed by the mapping's keys.
+
+    The model functions are annotated for scalar, Series and DataFrame inputs alike, so
+    their results carry that wide union even though the controllers only ever hand them
+    DataFrames. Narrowing happens here, once, instead of at every call site, and a
+    result that is not a DataFrame fails with a clear message rather than inside
+    pandas' concat.
+
+    Args:
+        frames (Mapping[str, object]): The results, keyed by the metric name.
+
+    Returns:
+        pd.DataFrame: The stacked DataFrame with the metric name as the outer index.
+
+    Raises:
+        TypeError: If one of the results is not a DataFrame.
+    """
+    dataframes: dict[str, pd.DataFrame] = {}
+
+    for name, frame in frames.items():
+        if not isinstance(frame, pd.DataFrame):
+            raise TypeError(
+                f"Expected a DataFrame for '{name}', got {type(frame).__name__}."
+            )
+        dataframes[name] = frame
+
+    return pd.concat(dataframes)

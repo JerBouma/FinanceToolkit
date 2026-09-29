@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 from collections.abc import Callable
+from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -36,6 +37,28 @@ def _newey_west_long_run_variance(residuals: np.ndarray, lags: int) -> float:
         variance += 2 * weight * autocovariance
 
     return variance
+
+
+@overload
+def get_diebold_mariano_test(
+    actual: pd.Series,
+    forecast_a: pd.Series,
+    forecast_b: pd.Series,
+    loss: str = "squared",
+    horizon: int = 1,
+    small_sample_correction: bool = True,
+) -> pd.Series: ...
+
+
+@overload
+def get_diebold_mariano_test(
+    actual: pd.DataFrame,
+    forecast_a: pd.DataFrame,
+    forecast_b: pd.DataFrame,
+    loss: str = "squared",
+    horizon: int = 1,
+    small_sample_correction: bool = True,
+) -> pd.DataFrame: ...
 
 
 def get_diebold_mariano_test(
@@ -195,25 +218,37 @@ def get_diebold_mariano_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@overload
 def get_volatility_forecast(
-    returns: pd.Series,
+    returns: pd.Series, method: str, window_size: int, lambda_: float
+) -> pd.Series: ...
+
+
+@overload
+def get_volatility_forecast(
+    returns: pd.DataFrame, method: str, window_size: int, lambda_: float
+) -> pd.DataFrame: ...
+
+
+def get_volatility_forecast(
+    returns: pd.Series | pd.DataFrame,
     method: str,
     window_size: int,
     lambda_: float,
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame:
     """
     One-period-ahead Variance forecast, lagged by one period so it can be compared
     to the realized squared return out-of-sample -- the forecast half of the
     Diebold-Mariano test in `get_diebold_mariano_test`.
 
     Args:
-        returns (pd.Series): The asset's return series.
+        returns (pd.Series | pd.DataFrame): The asset's return series, or one column per asset.
         method (str): The forecasting method, one of "ewma" or "rolling".
         window_size (int): The rolling window size used by the "rolling" method.
         lambda_ (float): The decay factor used by the "ewma" method.
 
     Returns:
-        pd.Series: The lagged Variance forecast.
+        pd.Series | pd.DataFrame: The lagged Variance forecast, shaped like `returns`.
     """
     if method == "ewma":
         volatility = risk_model.get_ewma_volatility(returns, lambda_)

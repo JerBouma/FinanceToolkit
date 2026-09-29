@@ -148,13 +148,13 @@ def get_commodity_forward_curve(
         return pd.DataFrame()
 
     forward_curve = pd.DataFrame(curve)
-    forward_curve.index = pd.to_datetime(forward_curve.index)
+    expiration_dates = pd.to_datetime(forward_curve.index)
 
     # Cached contracts are already tz-naive, and tz_localize(None) rejects those.
-    if forward_curve.index.tz is not None:
-        forward_curve.index = forward_curve.index.tz_localize(None)
+    if expiration_dates.tz is not None:
+        expiration_dates = expiration_dates.tz_localize(None)
 
-    forward_curve.index = forward_curve.index.to_period(freq="D")
+    forward_curve.index = expiration_dates.to_period(freq="D")
     forward_curve.index.name = "Date"
     forward_curve = forward_curve.sort_index()
 

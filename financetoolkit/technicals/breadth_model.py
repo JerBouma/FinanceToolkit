@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import overload
+
 import numpy as np
 import pandas as pd
 
@@ -55,7 +57,17 @@ def get_mcclellan_oscillator(
     return short_ema - long_ema
 
 
-def get_advancers_decliners(prices_close: pd.Series) -> pd.Series:
+@overload
+def get_advancers_decliners(prices_close: pd.Series) -> pd.Series: ...
+
+
+@overload
+def get_advancers_decliners(prices_close: pd.DataFrame) -> pd.DataFrame: ...
+
+
+def get_advancers_decliners(
+    prices_close: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate a daily advance/decline signal for a given price series.
 
@@ -79,14 +91,18 @@ def get_advancers_decliners(prices_close: pd.Series) -> pd.Series:
           intended to feed `get_mcclellan_oscillator` for a single ticker.
 
     Args:
-        prices_close (pd.Series): Series of closing prices.
+        prices_close (pd.Series | pd.DataFrame): Closing prices, one column per ticker
+            when a DataFrame is given.
 
     Returns:
-        pd.Series: Advance/decline signal values (+1, 0 or -1).
+        pd.Series | pd.DataFrame: Advance/decline signal values (+1, 0 or -1), in the
+            shape of the input.
     """
     price_change = prices_close.diff(1)
 
-    return np.sign(price_change).fillna(0)
+    # apply() hands a ufunc straight to pandas, which keeps the Series or DataFrame
+    # (np.sign called directly is typed as returning a bare array).
+    return price_change.apply(np.sign).fillna(0)
 
 
 def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
@@ -118,7 +134,7 @@ def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
         pd.Series: OBV values.
     """
     price_diff = prices_close.diff(1)
-    direction = np.sign(price_diff).fillna(0)
+    direction = price_diff.apply(np.sign).fillna(0)
     obv = direction * volumes
 
     return obv.cumsum()

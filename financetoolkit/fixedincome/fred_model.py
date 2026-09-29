@@ -48,7 +48,7 @@ def fetch_single_series(
             start=start_date,
             end=end_date,
         )
-        cached_data = plan.cached.get(series_id)
+        cached_data = plan.cached_frame(series_id)
         fetch_span = plan.get_fetch_span(series_id)
 
         if fetch_span is None:

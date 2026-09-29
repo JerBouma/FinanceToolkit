@@ -20,7 +20,11 @@ from financetoolkit.options import (
 from financetoolkit.ratios import valuation_model
 from financetoolkit.risk import risk_model
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import calculate_standardization
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    calculate_standardization,
+    to_period_index,
+)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals,cell-var-from-loop
 # pylint: disable=line-too-long,too-many-public-methods
@@ -108,7 +112,7 @@ class Options:
         yearly_volatility = risk_model.get_volatility(
             self._daily_historical["Return"], "yearly"
         )
-        year_labels = self._daily_historical.index.asfreq("Y")
+        year_labels = to_period_index(self._daily_historical.index).asfreq("Y")
         self._volatility = yearly_volatility.reindex(year_labels)
         self._volatility.index = self._daily_historical.index
 
@@ -562,8 +566,8 @@ class Options:
 
         implied_volatility_df = pd.DataFrame(implied_volatility).unstack().dropna()
 
-        implied_volatility_df = implied_volatility_df.round(
-            rounding if rounding else self._rounding
+        implied_volatility_df = apply_rounding(
+            implied_volatility_df, rounding if rounding else self._rounding
         )
 
         if standardize:
@@ -802,7 +806,9 @@ class Options:
         )
         volatility_surface.index.names = ["Ticker", "Strike Price"]
 
-        return volatility_surface.round(rounding if rounding else self._rounding)
+        return apply_rounding(
+            volatility_surface, rounding if rounding else self._rounding
+        )
 
     def get_risk_neutral_density(
         self,
@@ -1003,7 +1009,7 @@ class Options:
         density_df = pd.concat(density, axis=1)
         density_df.index.name = "Strike Price"
 
-        return density_df.round(rounding if rounding else self._rounding)
+        return apply_rounding(density_df, rounding if rounding else self._rounding)
 
     def get_binomial_model(
         self,
@@ -1137,7 +1143,7 @@ class Options:
             strike_price_range=strike_price_range,
         )
 
-        binomial_trees: dict[str, dict[float, dict[float, float]]] = {}
+        binomial_trees: dict[str, dict[float, pd.DataFrame]] = {}
         binomial_trees_statistics: dict[str, dict[float, dict[str, float]]] = {
             "Up Movement": {},
             "Down Movement": {},
@@ -1151,7 +1157,6 @@ class Options:
             binomial_trees[ticker] = {}
 
             for strike_price in strike_prices:
-                binomial_trees[ticker][strike_price] = {}
                 dividend_yield_value[ticker] = (
                     dividend_yield
                     if dividend_yield is not None
@@ -1334,16 +1339,14 @@ class Options:
             else self._risk_free_rate.loc[start_date]
         )
 
-        stock_price_simulation: dict[str, dict[float, dict[float, float]]] = {}
-        stock_price_statistics: dict[str, dict[float, dict[str, float]]] = {
+        stock_price_simulation: dict[str, pd.DataFrame] = {}
+        stock_price_statistics: dict[str, dict[str, float]] = {
             "Up Movement": {},
             "Down Movement": {},
         }
 
         logger.info("Simulating Stock Prices")
         for ticker in self._tickers:
-            stock_price_simulation[ticker] = {}
-
             (
                 up_movement,
                 down_movement,
@@ -2536,7 +2539,7 @@ class Options:
         legs: list[dict[str, float | bool | str]],
         start_date: str | None = None,
         stock_price_range: float = 0.5,
-        stock_price_step_size: float = 1,
+        stock_price_step_size: int = 1,
         rounding: int | None = None,
     ):
         """
@@ -2576,7 +2579,7 @@ class Options:
             stock_price_range (float): The percentage range to use for the stock prices at expiration. Defaults
             to 0.5 which equals 50% and thus results in stock prices from 50 to 150 if the current stock price is
             100.
-            stock_price_step_size (float): The step size to use for the stock prices at expiration. Defaults to 1.
+            stock_price_step_size (int): The step size to use for the stock prices at expiration. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
@@ -2626,8 +2629,8 @@ class Options:
         strategy_payoff_df = pd.DataFrame(strategy_payoff)
         strategy_payoff_df.index.name = "Stock Price"
 
-        strategy_payoff_df = strategy_payoff_df.round(
-            rounding if rounding else self._rounding
+        strategy_payoff_df = apply_rounding(
+            strategy_payoff_df, rounding if rounding else self._rounding
         )
 
         return strategy_payoff_df

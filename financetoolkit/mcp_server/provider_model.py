@@ -378,7 +378,7 @@ class ToolkitProvider:
         start_date: str,
         end_date: str,
         quarterly: bool,
-        benchmark_ticker: str,
+        benchmark_ticker: str | None,
         api_key: str = "",
         fred_api_key: str = "",
     ) -> Toolkit:
@@ -399,7 +399,8 @@ class ToolkitProvider:
             end_date (str): End date for the Toolkit (format YYYY-MM-DD).
             quarterly (bool): Whether to initialize the Toolkit for quarterly (True)
                 or yearly (False) statements.
-            benchmark_ticker (str): Benchmark ticker symbol to use for comparative analysis.
+            benchmark_ticker (str | None): Benchmark ticker symbol to use for comparative analysis,
+                or None to run without a benchmark.
             api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
             fred_api_key (str, optional): FRED API key, used by the Toolkit's
                 `.economics`/`.fixedincome` properties. Optional. Defaults to "".
@@ -431,7 +432,7 @@ class ToolkitProvider:
                     "non-conflicting fallback could be found. Setting benchmark_ticker to None.",
                     benchmark_ticker,
                 )
-                benchmark_ticker = None  # type: ignore[assignment]
+                benchmark_ticker = None
 
         # Keyed by hashed FMP+FRED key so one user's Toolkit never reaches another.
         effective_key = api_key or self._api_key

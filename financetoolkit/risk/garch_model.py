@@ -1,5 +1,7 @@
 """GARCH Model"""
 
+from typing import overload
+
 import numpy as np
 import pandas as pd
 from scipy import optimize
@@ -135,7 +137,7 @@ def garch_log_maximization(
 
 def get_garch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
-) -> list:
+) -> np.ndarray:
     """
     Estimates the weights (parameters) for a GARCH(p, q) model using multi-start optimization.
 
@@ -155,7 +157,7 @@ def get_garch_weights(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        list: A list with the weights [omega, alpha, beta]. If the fit fails to converge
+        np.ndarray: The weights [omega, alpha, beta]. If the fit fails to converge
         from every starting point, this is `[nan, nan, nan]` (see `_fit_multi_start`).
     """
     if isinstance(returns, pd.DataFrame):
@@ -182,6 +184,31 @@ def get_garch_weights(
 
     # Seeded so fitted parameters are reproducible across runs.
     return _fit_multi_start(wrapper_func, bounds, initial_guess, "GARCH")
+
+
+# A DataFrame of returns comes back as a DataFrame of conditional variances (one
+# column per ticker), while a Series or array is fitted as a single array of values;
+# the overloads make that visible to callers that slice the result by date.
+@overload
+def get_garch(
+    returns: pd.DataFrame,
+    weights: np.ndarray | list | None = None,
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
+    p: int = 1,
+    q: int = 1,
+) -> pd.DataFrame: ...
+
+
+@overload
+def get_garch(
+    returns: np.ndarray | pd.Series,
+    weights: np.ndarray | list | None = None,
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
+    p: int = 1,
+    q: int = 1,
+) -> np.ndarray: ...
 
 
 def get_garch(
@@ -287,7 +314,7 @@ def get_garch(
 
 def get_garch_forecast(
     returns: pd.Series | pd.DataFrame | np.ndarray,
-    weights: list | None = None,
+    weights: list | np.ndarray | None = None,
     time_steps: int = 10,
     p: int = 1,
     q: int = 1,
@@ -400,7 +427,7 @@ def gjr_garch_log_maximization(
 
 def get_gjr_garch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
-) -> list:
+) -> np.ndarray:
     """
     Estimates the weights (parameters) for a GJR-GARCH(1, 1, 1) model using multi-start
     optimization.
@@ -421,7 +448,7 @@ def get_gjr_garch_weights(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        list: A list with the weights [omega, alpha, gamma, beta]. If the fit fails to
+        np.ndarray: The weights [omega, alpha, gamma, beta]. If the fit fails to
         converge from every starting point, this is `[nan, nan, nan, nan]` (see
         `_fit_multi_start`).
     """
@@ -448,6 +475,31 @@ def get_gjr_garch_weights(
         return gjr_garch_log_maximization(parameters, returns, t, p, q)
 
     return _fit_multi_start(wrapper_func, bounds, initial_guess, "GJR-GARCH")
+
+
+# A DataFrame of returns comes back as a DataFrame of conditional variances (one
+# column per ticker), while a Series or array is fitted as a single array of values;
+# the overloads make that visible to callers that slice the result by date.
+@overload
+def get_gjr_garch(
+    returns: pd.DataFrame,
+    weights: np.ndarray | list | None = None,
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
+    p: int = 1,
+    q: int = 1,
+) -> pd.DataFrame: ...
+
+
+@overload
+def get_gjr_garch(
+    returns: np.ndarray | pd.Series,
+    weights: np.ndarray | list | None = None,
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
+    p: int = 1,
+    q: int = 1,
+) -> np.ndarray: ...
 
 
 def get_gjr_garch(
@@ -558,7 +610,7 @@ def get_gjr_garch(
 
 def get_gjr_garch_forecast(
     returns: pd.Series | pd.DataFrame | np.ndarray,
-    weights: list | None = None,
+    weights: list | np.ndarray | None = None,
     time_steps: int = 10,
     p: int = 1,
     q: int = 1,
@@ -677,7 +729,7 @@ def egarch_log_maximization(
 
 def get_egarch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
-) -> list:
+) -> np.ndarray:
     """
     Estimates the weights (parameters) for an EGARCH(1, 1) model using multi-start
     optimization.
@@ -693,7 +745,7 @@ def get_egarch_weights(
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
     Returns:
-        list: A list with the weights [omega, alpha, gamma, beta]. If the fit fails to
+        np.ndarray: The weights [omega, alpha, gamma, beta]. If the fit fails to
         converge from every starting point, this is `[nan, nan, nan, nan]` (see
         `_fit_multi_start`).
     """
@@ -713,6 +765,31 @@ def get_egarch_weights(
         return egarch_log_maximization(parameters, returns, t, p, q)
 
     return _fit_multi_start(wrapper_func, bounds, initial_guess, "EGARCH")
+
+
+# A DataFrame of returns comes back as a DataFrame of conditional variances (one
+# column per ticker), while a Series or array is fitted as a single array of values;
+# the overloads make that visible to callers that slice the result by date.
+@overload
+def get_egarch(
+    returns: pd.DataFrame,
+    weights: np.ndarray | list | None = None,
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
+    p: int = 1,
+    q: int = 1,
+) -> pd.DataFrame: ...
+
+
+@overload
+def get_egarch(
+    returns: np.ndarray | pd.Series,
+    weights: np.ndarray | list | None = None,
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
+    p: int = 1,
+    q: int = 1,
+) -> np.ndarray: ...
 
 
 def get_egarch(
@@ -832,7 +909,7 @@ def get_egarch(
 
 def get_egarch_forecast(
     returns: pd.Series | pd.DataFrame | np.ndarray,
-    weights: list | None = None,
+    weights: list | np.ndarray | None = None,
     time_steps: int = 10,
     p: int = 1,
     q: int = 1,

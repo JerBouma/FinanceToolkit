@@ -479,15 +479,23 @@ class ToolRegistry:
         provider = self._provider
         blocked_periods_for_tool = self._blocked_periods.get(tool_name, frozenset())
 
-        if method_to_cls:
-            method_param_names = {
-                m: inspector.get_method_param_names(method_to_cls.get(m) or cls, m)
-                for m in group_methods
-            }
-        else:
-            method_param_names = {
-                m: inspector.get_method_param_names(cls, m) for m in group_methods
-            }
+        def owning_class(method_name: str) -> type:
+            # Dispatch groups map each method to its controller; plain groups share
+            # one class. A method with neither is a registry configuration error.
+            owner = (method_to_cls.get(method_name) if method_to_cls else None) or cls
+
+            if owner is None:
+                raise ValueError(
+                    f"No controller class is registered for method {method_name!r} "
+                    f"of tool {tool_name!r}."
+                )
+
+            return owner
+
+        method_param_names = {
+            m: inspector.get_method_param_names(owning_class(m), m)
+            for m in group_methods
+        }
         param_meta = [(p.name, p.annotation, p.default) for p in extra_params]
         all_indicators = group_methods
 
@@ -744,7 +752,10 @@ class ToolRegistry:
             )
         )
 
-        wrapper.__signature__ = inspect.Signature(sig_params, return_annotation=str)
+        # inspect honours __signature__ on any callable, the function type just does not declare it.
+        wrapper.__signature__ = inspect.Signature(  # ty: ignore[unresolved-attribute]
+            sig_params, return_annotation=str
+        )
         wrapper.__annotations__ = {p.name: p.annotation for p in sig_params}
         wrapper.__annotations__["return"] = str
 

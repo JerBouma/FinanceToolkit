@@ -8,6 +8,7 @@ import pandas as pd
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
+    to_period_index,
 )
 
 # The natural logarithm of 2, used by Parkinson, Garman-Klass and Yang-Zhang.
@@ -58,7 +59,7 @@ def _group_and_scale(
     dates = (
         groups
         if groups is not None
-        else daily_term.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(daily_term.index).asfreq(PERIOD_TRANSLATION[period])
     )
     grouped = daily_term.groupby(dates)
 

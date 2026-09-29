@@ -7,6 +7,8 @@ import pandas as pd
 from linearmodels.panel import PanelOLS, RandomEffects
 from scipy import stats
 
+from financetoolkit.utilities.statistics_model import to_multi_index
+
 # pylint: disable=too-many-locals
 
 # (entity, time) levels are simultaneously meaningful, unlike the nested case.
@@ -59,7 +61,9 @@ def _to_panel_series(data: pd.Series | pd.DataFrame, label: str) -> pd.Series:
             f"{type(data).__name__}."
         )
 
-    series.index = _normalize_time_level(series.index.set_names(["entity", "time"]))
+    series.index = _normalize_time_level(
+        to_multi_index(series.index).set_names(["entity", "time"])
+    )
     return series.astype(float)
 
 
@@ -77,7 +81,9 @@ def _to_panel_frame(data: pd.Series | pd.DataFrame, label: str) -> pd.DataFrame:
         and data.index.nlevels == ENTITY_TIME_INDEX_LEVELS
     ):
         frame = data.copy()
-        frame.index = _normalize_time_level(frame.index.set_names(["entity", "time"]))
+        frame.index = _normalize_time_level(
+            to_multi_index(frame.index).set_names(["entity", "time"])
+        )
         return frame.astype(float)
 
     series = _to_panel_series(data, label)

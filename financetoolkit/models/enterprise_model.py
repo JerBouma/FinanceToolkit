@@ -5,15 +5,16 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.ratios import valuation_model
+from financetoolkit.utilities.dataframe_model import concat_frames
 
 
 def get_enterprise_value_breakdown(
-    share_price: float | pd.Series,
-    shares_outstanding: float | pd.Series,
-    total_debt: float | pd.Series,
-    minority_interest: float | pd.Series,
-    preferred_equity: float | pd.Series,
-    cash_and_cash_equivalents: float | pd.Series,
+    share_price: pd.Series,
+    shares_outstanding: pd.Series,
+    total_debt: pd.Series,
+    minority_interest: pd.Series,
+    preferred_equity: pd.Series,
+    cash_and_cash_equivalents: pd.Series,
 ) -> pd.DataFrame:
     """
     The Enterprise Value breakdown corresponds to the following components:
@@ -30,12 +31,12 @@ def get_enterprise_value_breakdown(
         funds, short-term government bonds, or Treasury bills a company possesses.
 
     Args:
-        share_price (float | pd.Series): The share price of the company.
-        shares_outstanding (float | pd.Series): The total shares outstanding of the company.
-        total_debt (float | pd.Series): The total debt of the company.
-        minority_interest (float | pd.Series): The minority interest of the company.
-        preferred_equity (float | pd.Series): The preferred equity of the company.
-        cash_and_cash_equivalents (float | pd.Series): The cash and cash equivalents of the company.
+        share_price (pd.Series): The share price of the company.
+        shares_outstanding (pd.Series): The total shares outstanding of the company.
+        total_debt (pd.Series): The total debt of the company.
+        minority_interest (pd.Series): The minority interest of the company.
+        preferred_equity (pd.Series): The preferred equity of the company.
+        cash_and_cash_equivalents (pd.Series): The cash and cash equivalents of the company.
 
     Returns:
         pd.DataFrame: the Enterprise Value breakdown.
@@ -67,7 +68,7 @@ def get_enterprise_value_breakdown(
 
     if isinstance(enterprise_value, pd.DataFrame):
         return (
-            pd.concat(components)
+            concat_frames(components)
             .swaplevel(1, 0)
             .sort_index(level=0, sort_remaining=False)
         )

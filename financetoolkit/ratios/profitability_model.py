@@ -2,10 +2,26 @@
 
 __docformat__ = "google"
 
+from typing import overload
+
 import pandas as pd
 
 
-def get_gross_margin(revenue: pd.Series, cost_of_goods_sold: pd.Series) -> pd.Series:
+@overload
+def get_gross_margin(
+    revenue: pd.Series, cost_of_goods_sold: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_gross_margin(
+    revenue: pd.DataFrame, cost_of_goods_sold: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_gross_margin(
+    revenue: pd.Series | pd.DataFrame, cost_of_goods_sold: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the gross margin, a profitability ratio that measures the percentage of
     revenue that exceeds the cost of goods sold.
@@ -20,7 +36,21 @@ def get_gross_margin(revenue: pd.Series, cost_of_goods_sold: pd.Series) -> pd.Se
     return (revenue - cost_of_goods_sold) / revenue
 
 
-def get_operating_margin(operating_income: pd.Series, revenue: pd.Series) -> pd.Series:
+@overload
+def get_operating_margin(
+    operating_income: pd.Series, revenue: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_operating_margin(
+    operating_income: pd.DataFrame, revenue: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_operating_margin(
+    operating_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the operating margin, a profitability ratio that measures the percentage of
     revenue that remains after deducting operating expenses.
@@ -35,7 +65,19 @@ def get_operating_margin(operating_income: pd.Series, revenue: pd.Series) -> pd.
     return operating_income / revenue
 
 
-def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Series:
+@overload
+def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Series: ...
+
+
+@overload
+def get_net_profit_margin(
+    net_income: pd.DataFrame, revenue: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_net_profit_margin(
+    net_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the net profit margin, a profitability ratio that measures the percentage
     of profit a company earns per dollar of revenue.
@@ -50,11 +92,27 @@ def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Serie
     return net_income / revenue
 
 
+@overload
 def get_ebitda_margin(
     operating_income: pd.Series,
     depreciation_and_amortization: pd.Series,
     revenue: pd.Series,
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_ebitda_margin(
+    operating_income: pd.DataFrame,
+    depreciation_and_amortization: pd.DataFrame,
+    revenue: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_ebitda_margin(
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    revenue: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the EBITDA margin, a profitability ratio that measures the percentage of
     revenue that remains as earnings before interest, taxes, depreciation and
@@ -84,9 +142,22 @@ def get_ebitda_margin(
     return (operating_income + depreciation_and_amortization) / revenue
 
 
+@overload
 def get_interest_coverage_ratio(
     operating_income: pd.Series, interest_expense: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_interest_coverage_ratio(
+    operating_income: pd.DataFrame, interest_expense: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_interest_coverage_ratio(
+    operating_income: pd.Series | pd.DataFrame,
+    interest_expense: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Compute the Interest Coverage Ratio, a metric that reveals a company's ability to
     cover its interest expenses out of its operating profit. It measures how many times
@@ -109,9 +180,22 @@ def get_interest_coverage_ratio(
     return operating_income / interest_expense
 
 
+@overload
 def get_interest_burden_ratio(
     income_before_tax: pd.Series, operating_income: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_interest_burden_ratio(
+    income_before_tax: pd.DataFrame, operating_income: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_interest_burden_ratio(
+    income_before_tax: pd.Series | pd.DataFrame,
+    operating_income: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Compute the Interest Burden Ratio, the component of the extended (five-step) DuPont
     decomposition that isolates the drag interest expense places on operating profit.
@@ -142,9 +226,21 @@ def get_interest_burden_ratio(
     return income_before_tax / operating_income
 
 
+@overload
 def get_income_before_tax_profit_margin(
     income_before_tax: pd.Series, revenue: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_income_before_tax_profit_margin(
+    income_before_tax: pd.DataFrame, revenue: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_income_before_tax_profit_margin(
+    income_before_tax: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to its revenue,
     indicating how much profit a company makes before paying taxes on its earnings.
@@ -159,9 +255,22 @@ def get_income_before_tax_profit_margin(
     return income_before_tax / revenue
 
 
+@overload
 def get_effective_tax_rate(
     income_tax_expense: pd.Series, income_before_tax: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_effective_tax_rate(
+    income_tax_expense: pd.DataFrame, income_before_tax: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_effective_tax_rate(
+    income_tax_expense: pd.Series | pd.DataFrame,
+    income_before_tax: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the effective tax rate, a financial ratio that measures the percentage of pretax income
     that is paid as taxes.
@@ -176,9 +285,21 @@ def get_effective_tax_rate(
     return income_tax_expense / income_before_tax
 
 
+@overload
 def get_return_on_assets(
     net_income: pd.Series, average_total_assets: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_return_on_assets(
+    net_income: pd.DataFrame, average_total_assets: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_return_on_assets(
+    net_income: pd.Series | pd.DataFrame, average_total_assets: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the return on assets (ROA), a profitability ratio that measures how
     efficiently a company uses its assets to generate profits.
@@ -194,9 +315,22 @@ def get_return_on_assets(
     return net_income / average_total_assets
 
 
+@overload
 def get_cash_return_on_assets(
     operating_cash_flow: pd.Series, average_total_assets: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_cash_return_on_assets(
+    operating_cash_flow: pd.DataFrame, average_total_assets: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_cash_return_on_assets(
+    operating_cash_flow: pd.Series | pd.DataFrame,
+    average_total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the cash return on assets (Cash ROA), a profitability ratio that measures
     how efficiently a company uses its assets to generate operating cash flow.
@@ -225,10 +359,21 @@ def get_cash_return_on_assets(
     return operating_cash_flow / average_total_assets
 
 
+@overload
 def get_return_on_equity(
-    net_income: pd.Series,
-    average_total_equity: pd.Series,
-) -> pd.Series:
+    net_income: pd.Series, average_total_equity: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_return_on_equity(
+    net_income: pd.DataFrame, average_total_equity: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_return_on_equity(
+    net_income: pd.Series | pd.DataFrame, average_total_equity: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the return on equity (ROE), a profitability ratio that measures how
     efficiently a company generates profits using its shareholders' equity.
@@ -244,12 +389,30 @@ def get_return_on_equity(
     return net_income / average_total_equity
 
 
+@overload
 def get_return_on_invested_capital(
     net_income: pd.Series,
-    dividends: pd.Series,
+    dividends: pd.Series | float,
     average_total_equity: pd.Series,
     average_total_debt: pd.Series,
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_return_on_invested_capital(
+    net_income: pd.DataFrame,
+    dividends: pd.Series | float,
+    average_total_equity: pd.DataFrame,
+    average_total_debt: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_return_on_invested_capital(
+    net_income: pd.Series | pd.DataFrame,
+    dividends: pd.Series | float,
+    average_total_equity: pd.Series | pd.DataFrame,
+    average_total_debt: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the return on invested capital, a financial ratio that measures the company's return on
     the capital invested in it, including both equity and debt.
@@ -282,10 +445,22 @@ def get_return_on_invested_capital(
     return (net_income - dividends) / (average_total_equity + average_total_debt)
 
 
+@overload
 def get_income_quality_ratio(
-    cash_flow_from_operating_activities: pd.Series,
-    net_income: pd.Series,
-) -> pd.Series:
+    cash_flow_from_operating_activities: pd.Series, net_income: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_income_quality_ratio(
+    cash_flow_from_operating_activities: pd.DataFrame, net_income: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_income_quality_ratio(
+    cash_flow_from_operating_activities: pd.Series | pd.DataFrame,
+    net_income: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculates the income quality ratio, which measures the cash flow from operating
     activities relative to the net income of the company.
@@ -301,12 +476,30 @@ def get_income_quality_ratio(
     return cash_flow_from_operating_activities / net_income
 
 
+@overload
 def get_return_on_tangible_assets(
     net_income: pd.Series,
     average_total_assets: pd.Series,
     average_intangible_assets: pd.Series,
     average_total_liabilities: pd.Series,
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_return_on_tangible_assets(
+    net_income: pd.DataFrame,
+    average_total_assets: pd.DataFrame,
+    average_intangible_assets: pd.DataFrame,
+    average_total_liabilities: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_return_on_tangible_assets(
+    net_income: pd.Series | pd.DataFrame,
+    average_total_assets: pd.Series | pd.DataFrame,
+    average_intangible_assets: pd.Series | pd.DataFrame,
+    average_total_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the return on tangible assets, which measures the amount of profit
     generated relative to a company's net tangible assets (i.e. its tangible book
@@ -345,13 +538,33 @@ def get_return_on_tangible_assets(
     return net_income / average_tangible_assets
 
 
+@overload
 def get_return_on_capital_employed(
     net_income: pd.Series,
     interest_expense: pd.Series,
     tax_expense: pd.Series,
     total_assets: pd.Series,
     total_current_liabilities: pd.Series,
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_return_on_capital_employed(
+    net_income: pd.DataFrame,
+    interest_expense: pd.DataFrame,
+    tax_expense: pd.DataFrame,
+    total_assets: pd.DataFrame,
+    total_current_liabilities: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_return_on_capital_employed(
+    net_income: pd.Series | pd.DataFrame,
+    interest_expense: pd.Series | pd.DataFrame,
+    tax_expense: pd.Series | pd.DataFrame,
+    total_assets: pd.Series | pd.DataFrame,
+    total_current_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the return on capital employed (ROCE), a profitability ratio that measures
     the amount of return a company generates from the capital it has invested in the business.
@@ -371,9 +584,21 @@ def get_return_on_capital_employed(
     )
 
 
+@overload
 def get_net_income_per_ebt(
     net_income: pd.Series, income_tax_expense: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_net_income_per_ebt(
+    net_income: pd.DataFrame, income_tax_expense: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_net_income_per_ebt(
+    net_income: pd.Series | pd.DataFrame, income_tax_expense: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the net income per earnings before taxes (EBT), a profitability ratio that
     measures the net income generated for each dollar of EBT.
@@ -388,9 +613,22 @@ def get_net_income_per_ebt(
     return net_income / (net_income + income_tax_expense)
 
 
+@overload
 def get_free_cash_flow_operating_cash_flow_ratio(
     free_cash_flow: pd.Series, operating_cash_flow: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_free_cash_flow_operating_cash_flow_ratio(
+    free_cash_flow: pd.DataFrame, operating_cash_flow: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_free_cash_flow_operating_cash_flow_ratio(
+    free_cash_flow: pd.Series | pd.DataFrame,
+    operating_cash_flow: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the free cash flow to operating cash flow ratio, a profitability
     ratio that measures the amount of free cash flow a company generates
@@ -406,9 +644,21 @@ def get_free_cash_flow_operating_cash_flow_ratio(
     return free_cash_flow / operating_cash_flow
 
 
+@overload
 def get_free_cash_flow_margin(
     free_cash_flow: pd.Series, revenue: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_free_cash_flow_margin(
+    free_cash_flow: pd.DataFrame, revenue: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_free_cash_flow_margin(
+    free_cash_flow: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the free cash flow margin, a profitability ratio that measures the
     percentage of revenue that is converted into free cash flow.
@@ -434,9 +684,21 @@ def get_free_cash_flow_margin(
     return free_cash_flow / revenue
 
 
+@overload
 def get_tax_burden_ratio(
     net_income: pd.Series, income_before_tax: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_tax_burden_ratio(
+    net_income: pd.DataFrame, income_before_tax: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_tax_burden_ratio(
+    net_income: pd.Series | pd.DataFrame, income_before_tax: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the tax burden ratio, which is the ratio of a company's
     net income to its income before tax, indicating how much of a
@@ -452,10 +714,22 @@ def get_tax_burden_ratio(
     return net_income / income_before_tax
 
 
+@overload
 def get_EBT_to_EBIT(
-    earnings_before_tax: pd.Series,
-    earnings_before_interest_and_taxes: pd.Series,
-) -> pd.Series:
+    earnings_before_tax: pd.Series, earnings_before_interest_and_taxes: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_EBT_to_EBIT(
+    earnings_before_tax: pd.DataFrame, earnings_before_interest_and_taxes: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_EBT_to_EBIT(
+    earnings_before_tax: pd.Series | pd.DataFrame,
+    earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its earnings before
     interest and taxes, indicating how much of a company's earnings are generated before paying interest on debt.
@@ -470,9 +744,22 @@ def get_EBT_to_EBIT(
     return earnings_before_tax / earnings_before_interest_and_taxes
 
 
+@overload
 def get_EBIT_to_revenue(
     earnings_before_interest_and_taxes: pd.Series, revenue: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_EBIT_to_revenue(
+    earnings_before_interest_and_taxes: pd.DataFrame, revenue: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_EBIT_to_revenue(
+    earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
+    revenue: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the EBITperRevenue, which is the ratio of a company's earnings
     before interest and taxes to its revenue, indicating how much profit a
@@ -489,9 +776,22 @@ def get_EBIT_to_revenue(
     return earnings_before_interest_and_taxes / revenue
 
 
+@overload
 def get_cash_tax_rate(
     income_taxes_paid: pd.Series, income_before_tax: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_cash_tax_rate(
+    income_taxes_paid: pd.DataFrame, income_before_tax: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_cash_tax_rate(
+    income_taxes_paid: pd.Series | pd.DataFrame,
+    income_before_tax: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the cash tax rate, which measures the percentage of pretax income that
     is actually paid out in cash taxes, as opposed to the accrual-based effective tax
@@ -508,9 +808,22 @@ def get_cash_tax_rate(
     return income_taxes_paid / income_before_tax
 
 
+@overload
 def get_tax_rate_divergence(
     cash_tax_rate: pd.Series, effective_tax_rate: pd.Series
-) -> pd.Series:
+) -> pd.Series: ...
+
+
+@overload
+def get_tax_rate_divergence(
+    cash_tax_rate: pd.DataFrame, effective_tax_rate: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_tax_rate_divergence(
+    cash_tax_rate: pd.Series | pd.DataFrame,
+    effective_tax_rate: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the tax rate divergence, which measures the difference between the cash
     tax rate and the accrual-based effective tax rate.

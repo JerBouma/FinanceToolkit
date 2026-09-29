@@ -110,7 +110,7 @@ def get_treasury_rates(
             start=start_date_value.strftime("%Y-%m-%d"),
             end=end_date_value.strftime("%Y-%m-%d"),
         )
-        cached_rates = plan.cached.get("united_states")
+        cached_rates = plan.cached_frame("united_states")
         fetch_span = plan.get_fetch_span("united_states")
 
         if fetch_span is None:

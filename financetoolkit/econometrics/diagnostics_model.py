@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -81,7 +82,14 @@ def get_arch_lm_test(
             return pd.Series({"ARCH-LM Statistic": np.nan, "P-Value": np.nan})
 
         try:
-            lm_statistic, p_value, _, _ = het_arch(residuals, nlags=lags)
+            # het_arch calls acorr_lm, which on statsmodels 0.15 announces a result object for 0.16; the tuple used here is unaffected until then.  # noqa: E501
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="acorr_lm currently returns",
+                    category=FutureWarning,
+                )
+                lm_statistic, p_value, _, _ = het_arch(residuals, nlags=lags)
         except (ValueError, np.linalg.LinAlgError):
             return pd.Series({"ARCH-LM Statistic": np.nan, "P-Value": np.nan})
 

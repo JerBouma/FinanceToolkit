@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
@@ -39,12 +40,12 @@ def _validate_numeric_inputs(**kwargs) -> None:
 
 
 def get_d1(
-    stock_price: float | pd.Series,
-    strike_price: float | pd.Series,
-    risk_free_rate: float | pd.Series,
-    volatility: float | pd.Series,
-    time_to_expiration: float | pd.Series,
-    dividend_yield: float | pd.Series = 0,
+    stock_price: float | pd.Series | np.ndarray,
+    strike_price: float | pd.Series | np.ndarray,
+    risk_free_rate: float | pd.Series | np.ndarray,
+    volatility: float | pd.Series | np.ndarray,
+    time_to_expiration: float | pd.Series | np.ndarray,
+    dividend_yield: float | pd.Series | np.ndarray = 0,
 ):
     """
     Calculate d1 in the Black-Scholes model for option pricing.
@@ -69,9 +70,9 @@ def get_d1(
 
 
 def get_d2(
-    d1: float | pd.Series,
-    volatility: float | pd.Series,
-    time_to_expiration: float | pd.Series,
+    d1: float | pd.Series | np.ndarray,
+    volatility: float | pd.Series | np.ndarray,
+    time_to_expiration: float | pd.Series | np.ndarray,
 ):
     """
     Calculate d2 in the Black-Scholes model for option pricing.
@@ -90,12 +91,12 @@ def get_d2(
 
 
 def get_black_scholes(
-    stock_price: float | pd.Series,
-    strike_price: float | pd.Series,
-    risk_free_rate: float | pd.Series,
-    volatility: float | pd.Series,
-    time_to_expiration: float | pd.Series,
-    dividend_yield: float | pd.Series = 0,
+    stock_price: float | pd.Series | np.ndarray,
+    strike_price: float | pd.Series | np.ndarray,
+    risk_free_rate: float | pd.Series | np.ndarray,
+    volatility: float | pd.Series | np.ndarray,
+    time_to_expiration: float | pd.Series | np.ndarray,
+    dividend_yield: float | pd.Series | np.ndarray = 0,
     put_option: bool = False,
 ):
     """

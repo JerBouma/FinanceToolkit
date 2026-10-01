@@ -30,7 +30,7 @@ def get_option_expiry_dates(ticker: str) -> list[str]:
         if cached_dates is not None:
             return cached_dates
 
-    expiry_dates = yf.Ticker(ticker).options
+    expiry_dates = list(yf.Ticker(ticker).options)
 
     if cache is not None and expiry_dates:
         cache.set(

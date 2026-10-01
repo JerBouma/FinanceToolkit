@@ -7,6 +7,7 @@ import os
 import pathlib
 import subprocess
 import sys
+from typing import Literal
 
 import anyio
 import uvicorn
@@ -31,6 +32,14 @@ from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.mcp_server.registry_controller import ToolRegistry
 from financetoolkit.mcp_server.tools_model import UtilityToolRegistry
 from financetoolkit.utilities.logger_model import get_logger, setup_logger
+
+# The transports FastMCP serves on, keyed by the name used on the command line and
+# in MCP_TRANSPORT; the values carry the literal type FastMCP's `run` is typed with.
+TRANSPORTS: dict[str, Literal["stdio", "sse", "streamable-http"]] = {
+    "stdio": "stdio",
+    "sse": "sse",
+    "streamable-http": "streamable-http",
+}
 
 # Attached before any module-level log call and before FastMCP is imported.
 setup_logger()
@@ -259,7 +268,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--transport",
-        choices=["stdio", "sse", "streamable-http"],
+        choices=list(TRANSPORTS),
         help="The transport to serve on. Defaults to MCP_TRANSPORT, then stdio.",
     )
     parser.add_argument(
@@ -281,6 +290,13 @@ def main() -> None:
     arguments = parser.parse_args()
 
     transport = arguments.transport or os.environ.get("MCP_TRANSPORT", "stdio")
+
+    # The command line is restricted by argparse, but the environment variable is
+    # not, and FastMCP only accepts these three transports.
+    if transport not in TRANSPORTS:
+        raise ValueError(
+            f"Unknown MCP transport {transport!r}; choose one of {', '.join(TRANSPORTS)}."
+        )
     get_logger().info(f"Starting MCP server on transport {transport}")
 
     if transport in ("sse", "streamable-http"):
@@ -326,7 +342,7 @@ def main() -> None:
         server = uvicorn.Server(config)
         anyio.run(server.serve)
     else:
-        mcp.run(transport=transport)
+        mcp.run(transport=TRANSPORTS[transport])
 
 
 def inspector() -> None:

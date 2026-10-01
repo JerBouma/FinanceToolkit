@@ -24,6 +24,7 @@ from financetoolkit.risk import (
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
     convert_annualized_rate_to_period,
     finalize_dataset,
 )
@@ -37,7 +38,7 @@ MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 # pylint: disable=too-many-boolean-expressions
 
 
-def _as_scalar(value: float | np.ndarray | pd.Series) -> float:
+def _as_scalar(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
     """
     Reduces a Value at Risk or Conditional Value at Risk estimate to a single float.
 
@@ -46,7 +47,7 @@ def _as_scalar(value: float | np.ndarray | pd.Series) -> float:
     would otherwise raise a TypeError before it reaches the backtest.
 
     Args:
-        value (float | np.ndarray | pd.Series): the estimate to reduce.
+        value (float | np.ndarray | pd.Series | pd.DataFrame): the estimate to reduce.
 
     Returns:
         float: the estimate as a single float.
@@ -64,8 +65,8 @@ class Risk:
     def __init__(
         self,
         tickers: str | list[str],
-        historical_data: pd.DataFrame = pd.DataFrame(),
-        risk_free_rate_data: pd.DataFrame = pd.DataFrame(),
+        historical_data: dict[str, pd.DataFrame] | None = None,
+        risk_free_rate_data: dict[str, pd.Series] | None = None,
         intraday_period: str | None = None,
         quarterly: bool = False,
         rounding: int | None = 4,
@@ -77,10 +78,10 @@ class Risk:
 
         Args:
             tickers (str | list[str]): The tickers to use for the Toolkit instance.
-            historical_data (pd.DataFrame, optional): The historical data containing all periods.
-                Defaults to pd.DataFrame().
-            risk_free_rate_data (pd.DataFrame, optional): The risk free rate data to use for the
-                Excess Volatility calculations. Defaults to pd.DataFrame().
+            historical_data (dict[str, pd.DataFrame] | None, optional): The historical data per period.
+                Defaults to None, which is treated as an empty dictionary.
+            risk_free_rate_data (dict[str, pd.Series] | None, optional): The annualized risk free rate
+                per period frequency, used for the Excess Volatility calculations. Defaults to None.
             intraday_period (str | None, optional): The intraday period used for within-period calculations.
                 Defaults to None.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
@@ -106,12 +107,15 @@ class Risk:
         | 2021   | -0.0256 | -0.0211 |
         | 2022   | -0.0373 | -0.0385 |
         """
-        self._historical_data = historical_data
+        self._historical_data = historical_data if historical_data is not None else {}
         # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
-        self._risk_free_rate_data = {
-            frequency: convert_annualized_rate_to_period(rate, frequency)
-            for frequency, rate in risk_free_rate_data.items()
-        }
+        self._risk_free_rate_data: dict[str, pd.Series] = {}
+        for frequency, rate in (risk_free_rate_data or {}).items():
+            period_rate = convert_annualized_rate_to_period(rate, frequency)
+            # The conversion is also typed for scalars; a Series in gives a Series out.
+            if not isinstance(period_rate, pd.Series):
+                raise TypeError(f"Expected a risk free rate series for {frequency}.")
+            self._risk_free_rate_data[frequency] = period_rate
         self._tickers = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
@@ -138,7 +142,35 @@ class Risk:
             intraday_period=intraday_period,
         )
 
+        # Memo for the return slices handed to the calculations, keyed by (period,
+        # within_period): nearly every method starts from that slice and the MCP server
+        # collects many metrics per session. Neither frame is mutated after this point.
+        self._data_cache: dict[tuple[str, bool], pd.DataFrame] = {}
+
     @handle_portfolio
+    def _get_returns(self, period: str, within_period: bool) -> pd.DataFrame:
+        """
+        The Return slice a calculation runs on, memoized per (period, within_period)
+        pair (see `_data_cache` in `__init__`).
+
+        The whole-series slice drops the incomplete rows: a resampled series starts
+        with a NaN return (there is no previous period to compare against) and the
+        statistics computed over the entire series (quantiles, moments, drawdowns)
+        would propagate that single NaN to the result. The within-period frames carry
+        no such row because the first observation of each period is compared against
+        the last of the previous one.
+        """
+        key = (period, within_period)
+
+        if key not in self._data_cache:
+            self._data_cache[key] = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"].dropna()
+            )
+
+        return self._data_cache[key]
+
     @handle_errors
     def collect_all_metrics(
         self,
@@ -204,6 +236,7 @@ class Risk:
         risk_metrics = {
             "Value at Risk": self.get_value_at_risk(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -211,6 +244,7 @@ class Risk:
             ),
             "Conditional Value at Risk": self.get_conditional_value_at_risk(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -218,6 +252,7 @@ class Risk:
             ),
             "Entropic Value at Risk": self.get_entropic_value_at_risk(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -225,6 +260,7 @@ class Risk:
             ),
             "Conditional Drawdown at Risk": self.get_conditional_drawdown_at_risk(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -232,6 +268,7 @@ class Risk:
             ),
             "Tail Ratio": self.get_tail_ratio(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -239,6 +276,7 @@ class Risk:
             ),
             "Maximum Drawdown": self.get_maximum_drawdown(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -246,6 +284,7 @@ class Risk:
             ),
             "Maximum Drawdown Duration": self.get_maximum_drawdown_duration(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -253,6 +292,7 @@ class Risk:
             ),
             "Maximum Drawdown Recovery Time": self.get_maximum_drawdown_recovery_time(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -265,6 +305,9 @@ class Risk:
                 lag=lag,
                 standardize=standardize,
             ),
+            # GARCH stays a whole-series fit: it models the conditional variance of the
+            # per-period returns, and a per-period refit would also break on the lone
+            # boundary observation the first period of a date range typically holds.
             "GARCH": self.get_garch(
                 period=period,
                 rounding=rounding,
@@ -274,6 +317,7 @@ class Risk:
             ),
             "Skewness": self.get_skewness(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -281,6 +325,7 @@ class Risk:
             ),
             "Kurtosis": self.get_kurtosis(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -288,6 +333,7 @@ class Risk:
             ),
             "Downside Deviation": self.get_downside_deviation(
                 period=period,
+                within_period=True,
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -347,7 +393,7 @@ class Risk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        within_period: bool = True,
+        within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -371,12 +417,13 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             alpha (float, optional): The confidence level for VaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate VaR within the specified period or for the entire
             period. Thus whether to look at the VaR within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, VaR is
             calculated over a rolling window of this many periods across the full return history instead
             of per `period` (e.g. a rolling 60-day VaR). Only available for
@@ -411,7 +458,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_value_at_risk()
+        toolkit.risk.get_value_at_risk(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -431,14 +478,27 @@ class Risk:
         | 2022 | -0.0518 | -0.0713 |
         | 2023 | -0.0271 | -0.054  |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         if rolling and distribution != "historic":
             raise ValueError(
@@ -451,11 +511,7 @@ class Risk:
             returns = self._historical_data[period]["Return"]
             value_at_risk = var_model.get_rolling_var_historic(returns, alpha, rolling)
         else:
-            returns = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            )
+            returns = self._get_returns(period, within_period)
 
             if distribution == "historic":
                 value_at_risk = var_model.get_var_historic(returns, alpha)
@@ -499,7 +555,7 @@ class Risk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        within_period: bool = True,
+        within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -523,12 +579,13 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             alpha (float, optional): The confidence level for CVaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, CVaR is
             calculated over a rolling window of this many periods across the full return history instead
             of per `period` (e.g. a rolling 60-day CVaR). Only available for
@@ -560,7 +617,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_conditional_value_at_risk()
+        toolkit.risk.get_conditional_value_at_risk(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -580,14 +637,27 @@ class Risk:
         | 2022 | -0.0685 | -0.0914 |
         | 2023 | -0.0397 | -0.0747 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         if rolling and distribution != "historic":
             raise ValueError(
@@ -602,11 +672,7 @@ class Risk:
                 returns, alpha, rolling
             )
         else:
-            returns = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            )
+            returns = self._get_returns(period, within_period)
 
             if distribution == "historic":
                 conditional_value_at_risk = cvar_model.get_cvar_historic(returns, alpha)
@@ -656,7 +722,7 @@ class Risk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        within_period: bool = True,
+        within_period: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -677,12 +743,13 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             alpha (float, optional): The confidence level for EVaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate EVaR within the specified period or for the entire
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -705,7 +772,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_entropic_value_at_risk()
+        toolkit.risk.get_entropic_value_at_risk(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -725,20 +792,29 @@ class Risk:
         | 2022 | -0.0758 | -0.1012 | -0.0362 |
         | 2023 | -0.0471 | -0.0793 | -0.0188 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
+        returns = self._get_returns(period, within_period)
 
         entropic_value_at_risk = evar_model.get_evar_gaussian(returns, alpha)
 
@@ -766,7 +842,7 @@ class Risk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        within_period: bool = True,
+        within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -786,12 +862,13 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             alpha (float, optional): The confidence level for CDaR calculation (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CDaR within the specified period or for the entire
             period. Thus whether to look at the CDaR within a specific year (if period = 'yearly') or look at the entirety
-            of all years. Defaults to True.
+            of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, CDaR is
             calculated over a rolling window of this many periods across the full return history instead
             of per `period`. Defaults to None.
@@ -817,7 +894,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_conditional_drawdown_at_risk()
+        toolkit.risk.get_conditional_drawdown_at_risk(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -831,14 +908,27 @@ class Risk:
         | 2025 | -0.2721 | -0.4558 |     -0.1459 |
         | 2026 | -0.1869 | -0.2267 |     -0.072  |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         if rolling:
             returns = self._historical_data[period]["Return"]
@@ -848,11 +938,7 @@ class Risk:
                 )
             )
         else:
-            returns = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            )
+            returns = self._get_returns(period, within_period)
 
             conditional_drawdown_at_risk = risk_model.get_conditional_drawdown_at_risk(
                 returns, alpha
@@ -882,7 +968,7 @@ class Risk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        within_period: bool = True,
+        within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -901,12 +987,14 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             alpha (float, optional): The percentile used to define each tail (e.g., 0.05 uses the 5th and
             95th percentile). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate the Tail Ratio within the specified period or
             for the entire period. Thus whether to look at the Tail Ratio within a specific year (if period =
-            'yearly') or look at the entirety of all years. Defaults to True.
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Tail
             Ratio is calculated over a rolling window of this many periods across the full return history
             instead of per `period`. Defaults to None.
@@ -933,7 +1021,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_tail_ratio()
+        toolkit.risk.get_tail_ratio(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -947,24 +1035,33 @@ class Risk:
         | 2025 | 0.9359 | 1.0702 |      0.93   |
         | 2026 | 1.0012 | 0.9592 |      0.8828 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         if rolling:
             returns = self._historical_data[period]["Return"]
             tail_ratio = risk_model.get_rolling_tail_ratio(returns, alpha, rolling)
         else:
-            returns = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            )
+            returns = self._get_returns(period, within_period)
 
             tail_ratio = risk_model.get_tail_ratio(returns, alpha)
 
@@ -989,7 +1086,7 @@ class Risk:
     def get_maximum_drawdown(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1007,10 +1104,12 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Maximum Drawdown within the specified period
             or for the entire period. Thus whether to look at the Maximum Drawdown within a specific year
-            (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            (if period = 'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Maximum Drawdown values over time.
             Defaults to False.
@@ -1034,7 +1133,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_maximum_drawdown()
+        toolkit.risk.get_maximum_drawdown(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -1054,20 +1153,29 @@ class Risk:
         | 2022 | -0.5198 | -0.7272 |
         | 2023 | -0.1964 | -0.2823 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
+        returns = self._get_returns(period, within_period)
 
         maximum_drawdown = risk_model.get_max_drawdown(returns)
 
@@ -1092,7 +1200,7 @@ class Risk:
     def get_maximum_drawdown_duration(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1108,10 +1216,12 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the duration within the specified period or
             for the entire period. Thus whether to look at the duration within a specific year (if period =
-            'yearly') or look at the entirety of all years. Defaults to True.
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the duration values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1134,7 +1244,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_maximum_drawdown_duration()
+        toolkit.risk.get_maximum_drawdown_duration(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -1148,20 +1258,29 @@ class Risk:
         | 2025 |     52 |     57 |          34 |
         | 2026 |     24 |     64 |          43 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
+        returns = self._get_returns(period, within_period)
 
         maximum_drawdown_duration = risk_model.get_max_drawdown_duration(returns)
 
@@ -1188,7 +1307,7 @@ class Risk:
     def get_maximum_drawdown_recovery_time(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1205,10 +1324,12 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the recovery time within the specified period
             or for the entire period. Thus whether to look at the recovery time within a specific year (if
-            period = 'yearly') or look at the entirety of all years. Defaults to True.
+            period = 'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the recovery time values over time.
             Defaults to False.
@@ -1233,7 +1354,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_maximum_drawdown_recovery_time()
+        toolkit.risk.get_maximum_drawdown_recovery_time(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -1247,20 +1368,29 @@ class Risk:
         | 2025 |    135 |    114 |          55 |
         | 2026 |     40 |    nan |          11 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        )
+        returns = self._get_returns(period, within_period)
 
         maximum_drawdown_recovery_time = risk_model.get_max_drawdown_recovery_time(
             returns
@@ -1417,7 +1547,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             time_steps (int, optional): Time steps to calculate GARCH for.
             optimization_t (int, optional): Time steps to optimize GARCH for. It is only used if no weights are given.
             within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
@@ -1463,24 +1593,23 @@ class Risk:
         | 2026Q2 | 0.0265 | 0.1523 |      0.0054 |
         | 2026Q3 | 0.0266 | 0.1507 |      0.0083 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
             )
-            .dropna()
-            .replace(0, 1e-100)
-        )
+
+        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
 
         garch_sigma_2 = garch_model.get_garch(
             returns=returns,
@@ -1535,7 +1664,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             time_steps (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for.
             within_period (bool, optional): Whether to calculate GARCH within each specified period or all
             at once. Thus whether to look at the GARCH within each specific year (if period = 'yearly') or
@@ -1582,24 +1711,23 @@ class Risk:
         | 2028Q4 | 0.0266 | 0.1747 |      0.0065 |
         | 2029Q1 | 0.0266 | 0.1747 |      0.0066 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
             )
-            .dropna()
-            .replace(0, 1e-100)
-        )
+
+        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
 
         sigma_2_forecast = garch_model.get_garch_forecast(
             returns, None, time_steps
@@ -1668,7 +1796,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1698,14 +1826,12 @@ class Risk:
         | Alpha | 0.0038 | 0.143  |      0.1528 |
         | Beta  | 0.278  | 0.0677 |      0.6939 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
 
         returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
 
@@ -1719,7 +1845,9 @@ class Risk:
             index=["Omega", "Alpha", "Beta"],
         )
 
-        return parameters.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            parameters, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -1751,7 +1879,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             time_steps (int, optional): Time steps to calculate GJR-GARCH for.
             optimization_t (int, optional): Time steps to optimize GJR-GARCH for. It is only used if no
             weights are given.
@@ -1799,24 +1927,23 @@ class Risk:
         | 2026Q2 | 0.0267 | 0.1506 |      0.0066 |
         | 2026Q3 | 0.0265 | 0.1513 |      0.0061 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
             )
-            .dropna()
-            .replace(0, 1e-100)
-        )
+
+        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
 
         gjr_garch_sigma_2 = garch_model.get_gjr_garch(
             returns=returns,
@@ -1865,7 +1992,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             time_steps (int, optional): Time steps to calculate GJR-GARCH and to forecast sigma_2 values for.
             within_period (bool, optional): Whether to calculate GJR-GARCH within each specified period or
             all at once. Defaults to False.
@@ -1912,24 +2039,23 @@ class Risk:
         | 2028Q4 | 0.0278 | 0.168  |      0.0104 |
         | 2029Q1 | 0.0279 | 0.168  |      0.0105 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
             )
-            .dropna()
-            .replace(0, 1e-100)
-        )
+
+        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
 
         sigma_2_forecast = garch_model.get_gjr_garch_forecast(
             returns, None, time_steps
@@ -1991,7 +2117,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -2023,14 +2149,12 @@ class Risk:
         | Gamma | 0.0428 | -0.0828 |      1      |
         | Beta  | 0.7156 |  0.0711 |      0      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
 
         returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
 
@@ -2044,7 +2168,9 @@ class Risk:
             index=["Omega", "Alpha", "Gamma", "Beta"],
         )
 
-        return parameters.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            parameters, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -2076,7 +2202,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             time_steps (int, optional): Time steps to calculate EGARCH for.
             optimization_t (int, optional): Time steps to optimize EGARCH for. It is only used if no
             weights are given.
@@ -2124,24 +2250,23 @@ class Risk:
         | 2026Q2 | 0.0251 | 0.1238 |      0.0079 |
         | 2026Q3 | 0.0261 | 0.1672 |      0.0053 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
             )
-            .dropna()
-            .replace(0, 1e-100)
-        )
+
+        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
 
         egarch_sigma_2 = garch_model.get_egarch(
             returns=returns,
@@ -2189,7 +2314,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             time_steps (int, optional): Time steps to calculate EGARCH and to forecast sigma_2 values for.
             within_period (bool, optional): Whether to calculate EGARCH within each specified period or
             all at once. Defaults to False.
@@ -2236,24 +2361,23 @@ class Risk:
         | 2028Q4 | 0.0255 | 0.1447 |      0.0067 |
         | 2029Q1 | 0.0255 | 0.1447 |      0.0067 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
-
-        returns = (
-            (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
             )
-            .dropna()
-            .replace(0, 1e-100)
-        )
+
+        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
 
         sigma_2_forecast = garch_model.get_egarch_forecast(
             returns, None, time_steps
@@ -2313,7 +2437,7 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -2348,14 +2472,12 @@ class Risk:
         | Gamma |  0.0286 |  0.3887 |     -0.4054 |
         | Beta  |  0.0196 |  0.0844 |      0.0651 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
 
         returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
 
@@ -2369,7 +2491,9 @@ class Risk:
             index=["Omega", "Alpha", "Gamma", "Beta"],
         )
 
-        return parameters.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            parameters, rounding if rounding is not None else self._rounding
+        )
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
         # Reads the plain period-frequency history rather than the "within period" multi-index, so period="daily" simply means daily observations here and (unlike every within-period method above) needs no intraday data.  # noqa: E501
@@ -2484,7 +2608,9 @@ class Risk:
             returns[ticker_a], returns[ticker_b], q=q, method=method, dof=dof
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_copula_parameters(
@@ -2608,7 +2734,9 @@ class Risk:
                 fit_functions[copula](returns[ticker_a], returns[ticker_b])
             )
 
-            return result.round(rounding if rounding is not None else self._rounding)
+            return apply_rounding(
+                result, rounding if rounding is not None else self._rounding
+            )
 
         results = {
             (pair_a, pair_b): fit_functions[copula](returns[pair_a], returns[pair_b])
@@ -2618,7 +2746,9 @@ class Risk:
         result_df = pd.DataFrame(results).T
         result_df.index.names = ["Ticker A", "Ticker B"]
 
-        return result_df.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result_df, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_copula_simulation(
@@ -2756,8 +2886,8 @@ class Risk:
                 empirical_margins,
             )
 
-            return simulation.round(
-                rounding if rounding is not None else self._rounding
+            return apply_rounding(
+                simulation, rounding if rounding is not None else self._rounding
             )
 
         simulation = pd.concat(
@@ -2776,7 +2906,9 @@ class Risk:
         )
         simulation.columns.names = ["Ticker A", "Ticker B", None]
 
-        return simulation.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            simulation, rounding if rounding is not None else self._rounding
+        )
 
     @staticmethod
     def _simulate_copula_pair(
@@ -2893,8 +3025,8 @@ class Risk:
                 ticker_a, ticker_b, returns, fit_functions
             )
 
-            return comparison_df.round(
-                rounding if rounding is not None else self._rounding
+            return apply_rounding(
+                comparison_df, rounding if rounding is not None else self._rounding
             )
 
         # One row per pair: only the lowest-AIC family, which sorts first, is kept.
@@ -2910,8 +3042,8 @@ class Risk:
         comparison_df = comparison_df.reset_index(level="Best Copula")
 
         if show_full_results:
-            return comparison_df.round(
-                rounding if rounding is not None else self._rounding
+            return apply_rounding(
+                comparison_df, rounding if rounding is not None else self._rounding
             )
 
         tickers = sorted({ticker for pair in ticker_pairs for ticker in pair})
@@ -3019,7 +3151,9 @@ class Risk:
             returns[ticker], returns[conditioning_ticker], alpha=alpha
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     def _get_portfolio_weights(
         self, returns: pd.DataFrame, weights: dict[str, float] | pd.Series | None
@@ -3093,7 +3227,8 @@ class Risk:
             uses equal weights across every ticker in the Toolkit instance (excluding
             the "Portfolio" and "Benchmark" pseudo-tickers, if present).
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily", since a whole-series estimate needs far more observations than a single
+                quarter or year holds.
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
@@ -3129,7 +3264,7 @@ class Risk:
         | TSLA |        -0.0698 |
         | MSFT |        -0.0331 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
         weights_series = self._get_portfolio_weights(returns, weights)
 
@@ -3138,7 +3273,9 @@ class Risk:
         )
         marginal_var.name = "Marginal VaR"
 
-        return marginal_var.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            marginal_var, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_component_value_at_risk(
@@ -3182,7 +3319,8 @@ class Risk:
             uses equal weights across every ticker in the Toolkit instance (excluding
             the "Portfolio" and "Benchmark" pseudo-tickers, if present).
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily", since a whole-series estimate needs far more observations than a single
+                quarter or year holds.
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
             Defaults to 0.05.
@@ -3220,7 +3358,7 @@ class Risk:
         | MSFT      |          -0.0066 |
         | Portfolio |          -0.0531 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
         returns = self._get_price_column(period, column)
         weights_series = self._get_portfolio_weights(returns, weights)
 
@@ -3230,7 +3368,9 @@ class Risk:
         component_var.loc["Portfolio"] = component_var.sum()
         component_var.name = "Component VaR"
 
-        return component_var.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            component_var, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3354,7 +3494,9 @@ class Risk:
 
         result = pd.concat(results, axis=0) if len(results) > 1 else results[0]
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3487,14 +3629,16 @@ class Risk:
             returns, rolling_var, rolling_cvar, alpha, n_bootstrap, random_state
         )
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
     def get_skewness(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -3516,10 +3660,12 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Skewness within the specified period or for the
             entire period. Thus whether to look at the Skewness within a specific year (if period = 'yearly') or look
-            at the entirety of all years. Defaults to True.
+            at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, Skewness is
             calculated over a rolling window of this many periods across the full return history instead of
             per `period`. Defaults to None.
@@ -3546,7 +3692,7 @@ class Risk:
 
         toolkit = Toolkit(["MSFT", "AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_skewness()
+        toolkit.risk.get_skewness(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -3559,24 +3705,33 @@ class Risk:
         | 2022 |  0.1478 |  0.3164 | -0.0263 |
         | 2023 |  0.5252 |  0.0318 | -0.0972 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         if rolling:
             returns = self._historical_data[period]["Return"]
             skewness = risk_model.get_rolling_skewness(returns, rolling)
         else:
-            returns = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            )
+            returns = self._get_returns(period, within_period)
 
             skewness = risk_model.get_skewness(returns)
 
@@ -3601,7 +3756,7 @@ class Risk:
     def get_kurtosis(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         fisher: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -3627,10 +3782,12 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Kurtosis within the specified period or for the
             entire period. Thus whether to look at the Kurtosis within a specific year (if period = 'yearly') or look
-            at the entirety of all years. Defaults to True.
+            at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             fisher (bool, optional): Whether to use Fisher's definition of kurtosis (kurtosis = 0.0
             for a normal distribution). Defaults to False.
             rolling (int, optional): The rolling window size to use for the calculation. If set, Kurtosis is
@@ -3659,7 +3816,7 @@ class Risk:
 
         toolkit = Toolkit(["MSFT", "AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_kurtosis()
+        toolkit.risk.get_kurtosis(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -3672,24 +3829,33 @@ class Risk:
         | 2022 | 3.852  |  4.0085 | 3.3553 |
         | 2023 | 4.2908 |  4.4568 | 4.07   |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         if rolling:
             returns = self._historical_data[period]["Return"]
             kurtosis = risk_model.get_rolling_kurtosis(returns, rolling, fisher=fisher)
         else:
-            returns = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            )
+            returns = self._get_returns(period, within_period)
 
             kurtosis = risk_model.get_kurtosis(returns, fisher=fisher)
 
@@ -3714,7 +3880,7 @@ class Risk:
     def get_hill_estimator(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         k: int | float = 0.1,
         tail: str = "left",
         rounding: int | None = None,
@@ -3739,9 +3905,11 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the estimator within the specified period
-            or for the entire period. Defaults to True.
+            or for the entire period. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             k (int | float, optional): The number of upper order statistics to use. If a float in (0, 1)
             it is interpreted as the fraction of the strictly positive observations to use. Defaults to
             0.1 (the top 10%).
@@ -3777,24 +3945,29 @@ class Risk:
         | Standard Error         | 1.018  | 1.9079 |      0.8256 |
         | Observations Used (k)  | 7      | 7      |      7      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
 
-        returns = (
-            self._within_historical_data[period]["Return"]
-            if within_period
-            else self._historical_data[period]["Return"]
-        ).dropna()
+        returns = self._get_returns(period, within_period).dropna()
 
         result = risk_model.get_hill_estimator(returns, k=k, tail=tail)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4224,7 +4397,7 @@ class Risk:
     def get_amihud_illiquidity(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         scale: float = 1_000_000,
         rounding: int | None = None,
         growth: bool = False,
@@ -4249,9 +4422,10 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             within_period (bool, optional): Whether to calculate the ratio within the specified period or
-            for the entire period. Defaults to True.
+            for the entire period. Defaults to False. Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             scale (float, optional): A multiplier applied to the resulting ratio purely for readability.
             Defaults to 1,000,000.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4295,14 +4469,27 @@ class Risk:
         price move -- the default `scale` of 1,000,000 (as used in Amihud's original
         1980s/1990s-era paper) would round these to 0.0 at the default precision.
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         source_data = (
             self._within_historical_data[period]
@@ -4338,7 +4525,7 @@ class Risk:
     def get_roll_spread(
         self,
         period: str | None = None,
-        within_period: bool = True,
+        within_period: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -4360,9 +4547,10 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                "daily".
             within_period (bool, optional): Whether to calculate the spread within the specified period or
-            for the entire period. Defaults to True.
+            for the entire period. Defaults to False. Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
@@ -4395,14 +4583,21 @@ class Risk:
         | Autocovariance  | -2.7396 | -6.7598 |     -4.7167 |
         | Valid Estimate  |  1      |  1      |      1      |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
 
         close_prices = (
             self._within_historical_data[period]["Close"]
@@ -4412,7 +4607,9 @@ class Risk:
 
         result = market_liquidity_model.get_roll_spread(close_prices)
 
-        return result.round(rounding if rounding is not None else self._rounding)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -4520,7 +4717,7 @@ class Risk:
         self,
         period: str | None = None,
         minimum_acceptable_return: float = 0.0,
-        within_period: bool = True,
+        within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -4539,12 +4736,14 @@ class Risk:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+                Defaults to "daily".
             minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as the
             threshold below which returns are considered downside. Defaults to 0.0.
             within_period (bool, optional): Whether to calculate the Downside Deviation within the specified
             period or for the entire period. Thus whether to look at the Downside Deviation within a specific
-            year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Downside
             Deviation is calculated over a rolling window of this many periods across the full return history
             instead of per `period`. Defaults to None.
@@ -4572,7 +4771,7 @@ class Risk:
 
         toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.risk.get_downside_deviation()
+        toolkit.risk.get_downside_deviation(period="yearly", within_period=True)
         ```
 
         Which returns:
@@ -4586,14 +4785,27 @@ class Risk:
         | 2025 | 0.0146 | 0.0257 |      0.0096 |
         | 2026 | 0.0123 | 0.0165 |      0.0061 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
+        period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
 
         if rolling:
             returns = self._historical_data[period]["Return"]
@@ -4601,11 +4813,7 @@ class Risk:
                 returns, rolling, minimum_acceptable_return
             )
         else:
-            returns = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            )
+            returns = self._get_returns(period, within_period)
 
             downside_deviation = risk_model.get_downside_deviation(
                 returns, minimum_acceptable_return
@@ -4948,8 +5156,8 @@ class Risk:
             lambda column: risk_model.get_autocorrelation(column, lags=lags)
         )
 
-        return autocorrelation.round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            autocorrelation, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors
@@ -5003,6 +5211,6 @@ class Risk:
             lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)
         )
 
-        return hurst_exponent.round(
-            rounding if rounding is not None else self._rounding
+        return apply_rounding(
+            hurst_exponent, rounding if rounding is not None else self._rounding
         )

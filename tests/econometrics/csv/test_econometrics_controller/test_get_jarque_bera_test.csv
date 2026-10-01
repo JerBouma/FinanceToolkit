@@ -1,9 +1,3 @@
-,,AAPL,MSFT
-2019,Jarque-Bera Statistic,,
-2019,P-Value,,
-2020,Jarque-Bera Statistic,139.2465,416.886
-2020,P-Value,0.0,0.0
-2021,Jarque-Bera Statistic,1.4147,1.0652
-2021,P-Value,0.4929,0.5871
-2022,Jarque-Bera Statistic,14.8413,8.5024
-2022,P-Value,0.0006,0.0142
+,AAPL,MSFT
+Jarque-Bera Statistic,508.6716,1282.2381
+P-Value,0.0,0.0

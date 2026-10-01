@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import contextlib
+from datetime import date
 
 import pandas as pd
 
@@ -73,8 +74,8 @@ def get_date_bounds(
 
 def slice_frame(
     data: pd.DataFrame | pd.Series,
-    start: str | None = None,
-    end: str | None = None,
+    start: str | date | None = None,
+    end: str | date | None = None,
     date_axis: int = 0,
 ) -> pd.DataFrame | pd.Series:
     """
@@ -87,8 +88,8 @@ def slice_frame(
 
     Args:
         data (pd.DataFrame | pd.Series): The frame to slice.
-        start (str | None): Inclusive start of the window. None leaves it open.
-        end (str | None): Inclusive end of the window. None leaves it open.
+        start (str | date | None): Inclusive start of the window. None leaves it open.
+        end (str | date | None): Inclusive end of the window. None leaves it open.
         date_axis (int): 0 when the index holds the dates, 1 when the columns do.
 
     Returns:

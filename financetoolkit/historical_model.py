@@ -4,8 +4,6 @@ __docformat__ = "google"
 
 import contextlib
 import importlib.util
-import threading
-import time
 
 import numpy as np
 import pandas as pd
@@ -17,6 +15,7 @@ from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     apply_rounding,
+    to_period_index,
 )
 
 logger = logger_model.get_logger()
@@ -63,7 +62,9 @@ def _first_observed_date(data: pd.DataFrame) -> pd.Timestamp | None:
         return None
 
     index = (
-        data.index.to_timestamp() if hasattr(data.index, "to_timestamp") else data.index
+        data.index.to_timestamp()
+        if isinstance(data.index, pd.PeriodIndex)
+        else data.index
     )
 
     if not isinstance(index, pd.DatetimeIndex):
@@ -157,7 +158,9 @@ def _covers_requested_range(
         return True
 
     observed_index = (
-        data.index.to_timestamp() if hasattr(data.index, "to_timestamp") else data.index
+        data.index.to_timestamp()
+        if isinstance(data.index, pd.PeriodIndex)
+        else data.index
     )
 
     covered_days = (observed_index.max() - observed_index.min()).days
@@ -199,8 +202,8 @@ def get_historical_data(
     opposes limits to Free plans (e.g. no tickers from outside the American exchanges) and in some cases
     Yahoo Finance has a broader universe.
 
-    By using threading, multiple API calls can be made at the same time, which speeds up the process
-    significantly. For example, collecting historical data of 100 tickers takes around 10 seconds.
+    By using a bounded pool of worker threads (see helpers.run_in_parallel), multiple API calls can
+    be made at the same time, which speeds up the process significantly for larger ticker universes.
 
     Args:
         tickers (list of str): A list of one or more ticker symbols to retrieve data for.
@@ -291,28 +294,35 @@ def get_historical_data(
             if plan is None:
                 continue
 
-            cached_data = plan.cached.get(ticker)
+            cached_data = plan.cached_frame(ticker)
 
             if cached_data is not None and not cached_data.empty:
                 return source, cached_data, plan.get_fetch_span(ticker)
 
         return None, None, None
 
-    def worker(ticker, historical_data_dict, historical_data_error_dict):
+    def worker(ticker):
         cached_source, cached_data, fetch_span = (
             resolve_from_cache(ticker) if cache_plans else (None, None, None)
         )
         cache_source = None
+        # The provider credited with the data in the retrieval log; the cache source
+        # differs from it for intraday data, which is never listed there.
+        provider = None
 
         if cached_data is not None and fetch_span is None:
-            historical_data_dict[ticker] = helpers.enrich_historical_data(
-                historical_data=cached_data,
-                start=start,
-                end=end,
-                return_column=return_column,
+            # Fully served from the cache, so no provider fetched anything for it.
+            return (
+                ticker,
+                helpers.enrich_historical_data(
+                    historical_data=cached_data,
+                    start=start,
+                    end=end,
+                    return_column=return_column,
+                ),
+                None,
+                True,
             )
-
-            return
 
         fetch_start = fetch_span[0].strftime("%Y-%m-%d") if fetch_span else start
         fetch_end = fetch_span[1].strftime("%Y-%m-%d") if fetch_span else end
@@ -396,7 +406,7 @@ def get_historical_data(
                     historical_data = pd.DataFrame()
 
                 if not historical_data.empty:
-                    fmp_tickers.append(ticker)
+                    provider = policy_model.FINANCIAL_MODELING_PREP
                     cache_source = policy_model.FINANCIAL_MODELING_PREP
 
                 attempted_fmp = True
@@ -421,10 +431,10 @@ def get_historical_data(
                 ):
                     # Yahoo is no better -- a young ticker rather than a capped response -- so keep what FinancialModelingPrep returned.  # noqa: E501
                     historical_data = truncated_data
-                    fmp_tickers.append(ticker)
+                    provider = policy_model.FINANCIAL_MODELING_PREP
                     cache_source = policy_model.FINANCIAL_MODELING_PREP
                 elif not historical_data.empty:
-                    yf_tickers.append(ticker)
+                    provider = policy_model.YAHOO_FINANCE
                     cache_source = policy_model.YAHOO_FINANCE
 
         if cache is not None and cache_source and not historical_data.empty:
@@ -456,12 +466,7 @@ def get_historical_data(
                 return_column=return_column,
             )
 
-        if historical_data.empty:
-            no_data.append(ticker)
-            historical_data_error_dict[ticker] = historical_data
-            historical_data_dict[ticker] = empty_historical_data
-        if not historical_data.empty:
-            historical_data_dict[ticker] = historical_data
+        return ticker, historical_data, provider, False
 
     if isinstance(tickers, str):
         ticker_list = [tickers]
@@ -476,7 +481,6 @@ def get_historical_data(
     fmp_tickers: list[str] = []
     yf_tickers: list[str] = []
     no_data: list[str] = []
-    threads = []
 
     # One plan per allowed provider, since either may have served an earlier run.
     cache_plans = (
@@ -501,19 +505,25 @@ def get_historical_data(
     ):
         logger.info("%s from the cache for %d ticker(s)", log_message, len(ticker_list))
 
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
 
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, historical_data_dict, historical_data_error_dict),
-        )
-        thread.start()
-        threads.append(thread)
+    for ticker, historical_data, provider, served_from_cache in results:
+        if served_from_cache:
+            historical_data_dict[ticker] = historical_data
+            continue
 
-    for thread in threads:
-        thread.join()
+        if provider == policy_model.FINANCIAL_MODELING_PREP:
+            fmp_tickers.append(ticker)
+        elif provider == policy_model.YAHOO_FINANCE:
+            yf_tickers.append(ticker)
+
+        if historical_data.empty:
+            # The (possibly error-carrying) empty frame is kept for the error reporting, while the pipeline itself receives the placeholder frame it expects for a ticker without data.  # noqa: E501
+            no_data.append(ticker)
+            historical_data_error_dict[ticker] = historical_data
+            historical_data_dict[ticker] = empty_historical_data
+        else:
+            historical_data_dict[ticker] = historical_data
 
     if show_errors:
         error_model.check_for_error_messages(
@@ -637,7 +647,7 @@ def convert_daily_to_other_period(
     period_str = PERIOD_TRANSLATION[period]
 
     daily_historical_data.index.name = "Date"
-    dates = daily_historical_data.index.asfreq(period_str)
+    dates = to_period_index(daily_historical_data.index).asfreq(period_str)
     daily_historical_data = daily_historical_data.reset_index()
 
     # Each column has to be aggregated on its own terms. Taking the last value of the period for every column would report the final day's Open, High, Low and Volume as if they described the whole period.  # noqa: E501
@@ -676,11 +686,13 @@ def convert_daily_to_other_period(
     if "Cumulative Return" in period_historical_data:
         if start:
             start = max(
-                pd.Period(start).asfreq(period_str), period_historical_data.index[0]
+                pd.PeriodIndex([start], freq=period_str)[0],
+                period_historical_data.index[0],
             )
         if end:
             end = min(
-                pd.Period(end).asfreq(period_str), period_historical_data.index[-1]
+                pd.PeriodIndex([end], freq=period_str)[0],
+                period_historical_data.index[-1],
             )
 
         adjusted_return = period_historical_data.loc[start:end, "Return"]
@@ -744,7 +756,7 @@ def get_historical_statistics(
         with the ticker symbol(s) as the first level and the statistics as the second level.
     """
 
-    def worker(ticker, historical_statistics_dict):
+    def worker(ticker):
         historical_statistics = pd.DataFrame()
 
         if historical_statistics.empty:
@@ -758,10 +770,7 @@ def get_historical_statistics(
                 api_key=api_key,
             )
 
-        if historical_statistics.empty:
-            no_data.append(ticker)
-        if not historical_statistics.empty:
-            historical_statistics_dict[ticker] = historical_statistics
+        return ticker, historical_statistics
 
     if isinstance(tickers, str):
         ticker_list = [tickers]
@@ -771,23 +780,12 @@ def get_historical_statistics(
         raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
 
     logger.info("%s for %d ticker(s)", log_message, len(ticker_list))
-    historical_statistics_dict: dict[str, pd.DataFrame] = {}
-    no_data: list[str] = []
-    threads = []
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
 
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
-
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, historical_statistics_dict),
-        )
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    historical_statistics_dict: dict[str, pd.DataFrame] = {
+        ticker: statistics for ticker, statistics in results if not statistics.empty
+    }
+    no_data: list[str] = [ticker for ticker, statistics in results if statistics.empty]
 
     historical_statistics_dict = (
         error_model.check_for_error_messages(

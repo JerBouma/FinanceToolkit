@@ -169,6 +169,31 @@ class CachePlan:
         """
         return [entity for entity, gaps in self.missing.items() if gaps]
 
+    def cached_frame(self, entity: str) -> pd.DataFrame | None:
+        """
+        The cached data for `entity` narrowed to a DataFrame, for the datasets that
+        only ever store frames; None when nothing is cached for it.
+
+        Args:
+            entity (str): The entity (ticker, series id, country) to look up.
+
+        Returns:
+            pd.DataFrame | None: The cached frame, or None when absent.
+
+        Raises:
+            TypeError: If the cached entry is a Series, which means the dataset is
+                written by one code path and read by another that disagree on shape.
+        """
+        cached = self.cached.get(entity)
+
+        if cached is not None and not isinstance(cached, pd.DataFrame):
+            raise TypeError(
+                f"The cached entry for {entity!r} is a {type(cached).__name__}, but a "
+                "DataFrame was expected."
+            )
+
+        return cached
+
     @property
     def fully_cached(self) -> bool:
         """
@@ -736,7 +761,8 @@ class Cache:
         if not self._enabled or self._backend is None:
             return {"enabled": False, "location": str(self._location)}
 
-        statistics = self._backend.get_statistics()
+        # The backend only reports row counts; the flags added here widen the value type.
+        statistics: dict[str, Any] = dict(self._backend.get_statistics())
         statistics["enabled"] = True
         statistics["location"] = str(self._location)
 

@@ -315,11 +315,13 @@ class Recorder:
         record_mode: str,
         display_limit: int = DISPLAY_LIMIT,
         rewrite_expected: bool = False,
+        rewrite_failing: bool = False,
     ) -> None:
         self.__path_template = path_template
         self.__record_mode = record_mode
         self.__display_limit = display_limit
         self.__rewrite_expected = rewrite_expected
+        self.__rewrite_failing = rewrite_failing
 
         self.__record_list: list[Record] = list()
 
@@ -378,7 +380,11 @@ class Recorder:
             else:
                 raise Exception(f"Unknown `record-mode` : {record_mode}")
 
-            if save or rewrite_expected:
+            if (
+                save
+                or rewrite_expected
+                or (self.__rewrite_failing and record.record_changed)
+            ):
                 record.persist()
 
 
@@ -452,6 +458,17 @@ def pytest_addoption(parser: Parser):
         help="To force `record_stdout` and `recorder` to rewrite all files.",
     )
     parser.addoption(
+        "--rewrite-failing",
+        action="store_true",
+        help=(
+            "To make `recorder` rewrite only the records that fail comparison, "
+            "leaving records that still match (within float tolerance) untouched. "
+            "This is the safe way to regenerate recordings after a behavioural "
+            "change: `--rewrite-expected` also rewrites unrelated files whose "
+            "last digits drift between platforms."
+        ),
+    )
+    parser.addoption(
         "--autodoc",
         action="store_true",
         default=False,
@@ -469,6 +486,12 @@ def pytest_addoption(parser: Parser):
 def rewrite_expected(request: SubRequest) -> bool:
     """Force rewriting of all expected data by : `record_stdout` and `recorder`."""
     return request.config.getoption("--rewrite-expected")
+
+
+@pytest.fixture(scope="session")  # type: ignore
+def rewrite_failing(request: SubRequest) -> bool:
+    """Make `recorder` rewrite only the records that fail comparison."""
+    return request.config.getoption("--rewrite-failing")
 
 
 @pytest.fixture(scope="session")
@@ -574,6 +597,7 @@ def record_stdout(
 def recorder(
     disable_recording: bool,
     rewrite_expected: bool,
+    rewrite_failing: bool,
     record_mode: str,
     request: SubRequest,
     live_mode: bool,
@@ -596,7 +620,10 @@ def recorder(
         )
     else:
         recorder = Recorder(
-            path_template, record_mode, rewrite_expected=rewrite_expected
+            path_template,
+            record_mode,
+            rewrite_expected=rewrite_expected,
+            rewrite_failing=rewrite_failing,
         )
         yield recorder
         recorder.persist()
@@ -690,7 +717,13 @@ def fixedincome_module():
 
 
 @pytest.fixture(scope="session")
-def economics_module():
+def economics_module(live_mode):
+    # Session-scoped fixtures are set up before the autouse skip fixture in
+    # tests/economics/conftest.py, so without this guard an offline run errors
+    # during fixture setup instead of skipping.
+    if not live_mode:
+        pytest.skip("Economics tests require --live flag")
+
     from financetoolkit.economics import economics_controller
 
     return economics_controller.Economics(

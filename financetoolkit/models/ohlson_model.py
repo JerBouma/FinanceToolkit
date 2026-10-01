@@ -40,7 +40,12 @@ def get_log_of_total_assets(
       probability derived from it) is not an exact reproduction of Ohlson (1980) and should not be
       compared directly to probabilities reported in studies that do apply the deflator.
     """
-    return np.log(total_assets)
+    # np.log keeps the pandas container at runtime, but the ufunc stubs describe an
+    # ndarray; the ufunc fast path of `.apply` produces the same values with a typed result.
+    if isinstance(total_assets, pd.Series | pd.DataFrame):
+        return total_assets.apply(np.log)
+
+    return float(np.log(total_assets))
 
 
 def get_total_liabilities_to_total_assets_ratio(

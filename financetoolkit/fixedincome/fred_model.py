@@ -1,10 +1,9 @@
 """FRED Model"""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import numpy as np
 import pandas as pd
 
+from financetoolkit import helpers
 from financetoolkit.cache import frame_model, policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities.requests_model import get_request
@@ -49,7 +48,7 @@ def fetch_single_series(
             start=start_date,
             end=end_date,
         )
-        cached_data = plan.cached.get(series_id)
+        cached_data = plan.cached_frame(series_id)
         fetch_span = plan.get_fetch_span(series_id)
 
         if fetch_span is None:
@@ -150,19 +149,12 @@ def get_fred_data(
     if isinstance(fred_series_id, str):
         fred_series_id = [fred_series_id]
 
-    frames: dict[str, pd.DataFrame] = {}
-    with ThreadPoolExecutor(max_workers=len(fred_series_id)) as executor:
-        future_to_sid = {
-            executor.submit(
-                fetch_single_series, sid, start_date, end_date, api_key
-            ): sid
-            for sid in fred_series_id
-        }
-        for future in as_completed(future_to_sid):
-            sid = future_to_sid[future]
-            frames[sid] = future.result()
+    frames = helpers.run_in_parallel(
+        fetch_single_series,
+        [(sid, start_date, end_date, api_key) for sid in fred_series_id],
+    )
 
-    fred_data = pd.concat([frames[sid] for sid in fred_series_id], axis=1)
+    fred_data = pd.concat(frames, axis=1)
     fred_data = fred_data.interpolate(limit_area="inside")
 
     return fred_data

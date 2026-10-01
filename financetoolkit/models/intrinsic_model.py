@@ -155,8 +155,9 @@ def get_gorden_growth_model(
 
 
 def get_graham_number(
-    earnings_per_share: pd.Series, book_value_per_share: pd.Series
-) -> pd.Series:
+    earnings_per_share: pd.Series | pd.DataFrame,
+    book_value_per_share: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the Graham Number, a conservative estimate of a stock's fair value based
     on its earnings and book value, as devised by Benjamin Graham.

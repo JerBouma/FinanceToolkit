@@ -15,7 +15,9 @@ ALPHA_CONSTRAINT = 0.5
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
-def get_cvar_historic(returns: pd.Series | pd.DataFrame, alpha: float) -> pd.Series:
+def get_cvar_historic(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the historical Conditional Value at Risk (CVaR) of returns.
 
@@ -79,7 +81,7 @@ def get_rolling_cvar_historic(
 
 def get_cvar_gaussian(
     returns: pd.Series | pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on the gaussian distribution.
 
@@ -115,7 +117,7 @@ def get_cvar_gaussian(
 
 def get_cvar_studentt(
     returns: pd.Series | pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on the Student-T distribution.
 
@@ -252,7 +254,7 @@ def get_cvar_logistic(
 
 def get_cvar_cornish_fisher(
     returns: pd.Series | pd.DataFrame, alpha: float, number_of_quantiles: int = 1000
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on the Cornish-Fisher
     (modified Gaussian) expansion.

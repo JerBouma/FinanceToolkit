@@ -409,7 +409,7 @@ tool_groups:
 
   - tool_name:    "risk"
     display_name: "Risk Metrics"
-    description:  "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility incl. close_to_close/parkinson/garman_klass/rogers_satchell/yang_zhang estimators, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility incl. close_to_close/parkinson/garman_klass/rogers_satchell/yang_zhang estimators, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports period='daily' for whole-series calculations; rolling and per-period outputs use weekly, monthly, quarterly, or yearly."
     module_name:  "risk"
     category:     "ticker"
 
@@ -692,8 +692,10 @@ utility_tools:
 # Listing a period here causes the wrapper to return an informative error
 # instead of raising a confusing KeyError or returning empty data.
 # ──────────────────────────────────────────────────────────────────────────────
+# Risk (and econometrics) tools are no longer listed: their methods compute over the
+# entire daily return series by default (within_period=False), which needs no intraday
+# data. Performance metrics remain per-period by construction, and the server never
+# fetches intraday data, so a daily period cannot work there.
 blocked_periods:
   performance:
-    - "daily"
-  risk:
     - "daily"

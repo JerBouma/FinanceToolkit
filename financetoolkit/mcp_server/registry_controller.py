@@ -11,6 +11,7 @@ from __future__ import annotations
 import difflib
 import importlib
 import inspect
+import time
 import types
 import typing
 from datetime import datetime, timedelta
@@ -478,15 +479,23 @@ class ToolRegistry:
         provider = self._provider
         blocked_periods_for_tool = self._blocked_periods.get(tool_name, frozenset())
 
-        if method_to_cls:
-            method_param_names = {
-                m: inspector.get_method_param_names(method_to_cls.get(m) or cls, m)
-                for m in group_methods
-            }
-        else:
-            method_param_names = {
-                m: inspector.get_method_param_names(cls, m) for m in group_methods
-            }
+        def owning_class(method_name: str) -> type:
+            # Dispatch groups map each method to its controller; plain groups share
+            # one class. A method with neither is a registry configuration error.
+            owner = (method_to_cls.get(method_name) if method_to_cls else None) or cls
+
+            if owner is None:
+                raise ValueError(
+                    f"No controller class is registered for method {method_name!r} "
+                    f"of tool {tool_name!r}."
+                )
+
+            return owner
+
+        method_param_names = {
+            m: inspector.get_method_param_names(owning_class(m), m)
+            for m in group_methods
+        }
         param_meta = [(p.name, p.annotation, p.default) for p in extra_params]
         all_indicators = group_methods
 
@@ -622,6 +631,7 @@ class ToolRegistry:
                 dispatch_module, dispatch_category = module_name, category
 
             try:
+                call_started = time.perf_counter()
                 result = provider.call_method(
                     module_name=dispatch_module,
                     method_name=method_name,
@@ -633,6 +643,16 @@ class ToolRegistry:
                     quarterly=quarterly,
                     benchmark_ticker=benchmark_ticker,
                     **method_kwargs,
+                )
+                # Per-call timing at debug level, so a "tool X is slow" report can be
+                # diagnosed from the logs alone (a first call pays for data collection,
+                # a repeat call should be near-instant off the provider cache).
+                logger.debug(
+                    "Tool %s (%s) took %.0f ms for %d ticker(s)",
+                    tool_name,
+                    method_name,
+                    (time.perf_counter() - call_started) * 1000,
+                    len(tickers) if tickers else 0,
                 )
                 if show_columns is not None:
                     result = _filter_columns(result, show_columns)
@@ -672,7 +692,9 @@ class ToolRegistry:
         POS = P.POSITIONAL_OR_KEYWORD
         indicator_choices = group_methods
         indicator_ann = (
-            typing.Literal[tuple(indicator_choices)] if indicator_choices else str
+            typing.Literal[tuple(indicator_choices)]  # ty: ignore[invalid-type-form]
+            if indicator_choices
+            else str
         )
         indicator_default = P.empty
         indicator_param = P(
@@ -859,10 +881,13 @@ class ToolRegistry:
         """
         total = 0
         for spec in self.build_router_group_specs():
+            # Each group becomes a single router tool, so this is a success flag rather than a count; failures
+            # are already logged as a warning by _register_router_group.
             registered = self._register_router_group(spec)
-            logger.info(
-                f"Registered router group '{spec.tool_name}' ({spec.module_name}) → {registered} tool(s)"
-            )
+            if registered:
+                logger.info(
+                    f"Registered router group '{spec.tool_name}' ({spec.module_name})"
+                )
             total += registered
         logger.info(f"Total master tools registered: {total}")
         return total

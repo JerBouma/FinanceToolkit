@@ -14,7 +14,7 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 
 def get_var_historic(
     returns: pd.Series | pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the historical Value at Risk (VaR) of returns.
 
@@ -54,8 +54,8 @@ def get_var_historic(
 
 
 def get_var_gaussian(
-    returns, alpha: float, cornish_fisher: bool = False
-) -> pd.Series | pd.DataFrame:
+    returns: pd.Series | pd.DataFrame, alpha: float, cornish_fisher: bool = False
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Value at Risk (VaR) of returns based on the gaussian distribution.
 
@@ -244,7 +244,9 @@ def get_var_evt(
     return pd.Series(value_at_risk, index=returns.columns)
 
 
-def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
+def get_var_studentt(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Value at Risk (VaR) of returns based on the Student-T distribution.
 
@@ -304,7 +306,7 @@ def get_var_studentt(returns, alpha: float) -> pd.Series | pd.DataFrame:
 
 def get_var_cornish_fisher(
     returns: pd.Series | pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Value at Risk (VaR) of returns based on the Cornish-Fisher (modified
     Gaussian) expansion.

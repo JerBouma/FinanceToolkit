@@ -11,9 +11,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The 3.15 job runs against the pre-release interpreter (the classifiers claim
+    # support up to 3.15) and is allowed to fail until 3.15 and the compiled
+    # dependencies ship final wheels, so it cannot block a PR.
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+        experimental: [false]
+        include:
+          - python-version: "3.15"
+            experimental: true
 
     steps:
       - uses: actions/checkout@v4
@@ -21,12 +29,34 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: ${{ matrix.experimental }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # Until scipy (pulled in via statsmodels) has wheels for the pre-release
+      # interpreter it has to be compiled from source, which needs system libraries
+      # the runner lacks and gains nothing, so the job is skipped until then. The
+      # lock file is checked rather than PyPI because uv sync only installs the
+      # wheels recorded there: new wheels count once uv.lock is refreshed.
+      - name: Check for scipy wheels
+        id: wheels
+        if: matrix.experimental
+        run: |
+          tag="cp$(echo '${{ matrix.python-version }}' | tr -d .)"
+          if python -c "import sys, tomllib; sys.exit(not any('-$tag-' in w['url'] for p in tomllib.load(open('uv.lock', 'rb'))['package'] if p['name'] == 'scipy' for w in p.get('wheels', [])))"; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::uv.lock has no $tag scipy wheels yet, skipping the Python ${{ matrix.python-version }} tests."
+          fi
 
       - name: Install dependencies
+        if: steps.wheels.outputs.available != 'false'
         run: uv sync --extra mcp
 
       - name: Test with pytest
-        run: uv run pytest --timeout=60
+        if: steps.wheels.outputs.available != 'false'
+        run: uv run pytest -n auto --timeout=60

@@ -40,6 +40,24 @@ def test_get_variance_ratio_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_variance_ratio_test(period="monthly", q=4))
 
 
+def test_default_period_is_daily(econometrics_module):
+    # The Toolkit instance here has no intraday data, so a daily default only works
+    # because within_period defaults to False.
+    pd.testing.assert_frame_equal(
+        econometrics_module.get_jarque_bera_test(),
+        econometrics_module.get_jarque_bera_test(period="daily", within_period=False),
+    )
+
+
+def test_within_period_daily_requires_intraday(econometrics_module):
+    # Nesting observations inside a single day needs intraday data, which this Toolkit
+    # instance does not have. @handle_errors returns an empty Series rather than
+    # propagating the ValueError.
+    assert econometrics_module.get_jarque_bera_test(
+        period="daily", within_period=True
+    ).empty
+
+
 def test_get_augmented_dickey_fuller(recorder, econometrics_module):
     recorder.capture(
         econometrics_module.get_augmented_dickey_fuller(period="quarterly")

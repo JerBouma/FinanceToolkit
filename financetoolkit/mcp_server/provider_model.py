@@ -41,6 +41,54 @@ try:
 except metadata.PackageNotFoundError:  # pragma: no cover - running from a checkout
     TOOLKIT_VERSION = "unknown"
 
+# Tried in order when the benchmark is the only requested ticker, so there is still something to analyse.
+FALLBACK_BENCHMARKS = ["SPY", "QQQ", "^GSPC", "IWM", "DIA", "VTI"]
+
+
+def resolve_benchmark_ticker(
+    tickers: list[str], benchmark_ticker: str | None
+) -> tuple[str | None, str | None]:
+    """
+    Decide which benchmark the Toolkit is built with when it overlaps the tickers.
+
+    The Toolkit drops a ticker that is also the benchmark and reports it under
+    "Benchmark" instead. That is kept whenever another ticker remains, so the
+    benchmark is always the one that was asked for: silently swapping it made
+    "Benchmark" a different security (e.g. QQQ instead of SPY) and skewed every
+    benchmark-based metric. Only when the benchmark is the sole ticker, which would
+    leave nothing to analyse, is a fallback benchmark used.
+
+    Args:
+        tickers (list[str]): The requested ticker symbols.
+        benchmark_ticker (str | None): The requested benchmark ticker.
+
+    Returns:
+        tuple[str | None, str | None]: The benchmark to build the Toolkit with, and a
+            note for the response describing what happened (None when nothing did).
+    """
+    upper_tickers = [ticker.upper() for ticker in tickers]
+
+    if not benchmark_ticker or benchmark_ticker.upper() not in upper_tickers:
+        return benchmark_ticker, None
+
+    if any(ticker != benchmark_ticker.upper() for ticker in upper_tickers):
+        return benchmark_ticker, (
+            f"{benchmark_ticker} is the benchmark, so its data is reported under "
+            f"'Benchmark' rather than as a separate {benchmark_ticker} column."
+        )
+
+    for candidate in FALLBACK_BENCHMARKS:
+        if candidate.upper() not in upper_tickers:
+            return candidate, (
+                f"{benchmark_ticker} was requested as both the ticker and the benchmark, "
+                f"so {candidate} is used as the benchmark: 'Benchmark' refers to {candidate}."
+            )
+
+    return None, (
+        f"{benchmark_ticker} was requested as both the ticker and the benchmark, so the "
+        "results are calculated without a benchmark."
+    )
+
 
 class ToolkitProvider:
     """
@@ -292,13 +340,20 @@ class ToolkitProvider:
         fred_api_key: str = "",
     ) -> list[str]:
         """Return human-readable notes describing data transformations applied to
-        the most recent result for the given Toolkit instance (fiscal-year
-        relabelling and currency conversion).
+        the most recent result for the given Toolkit instance (benchmark handling,
+        fiscal-year relabelling and currency conversion).
 
         Returns an empty list when no transformations were applied or when the
-        Toolkit instance has not yet fetched any financial statements.
+        Toolkit instance has not yet fetched any financial statements, apart from
+        the benchmark note, which depends on the request alone.
         """
         notes: list[str] = []
+
+        # Derived from the request alone, so it is reported even when the data fetch below fails.
+        _, benchmark_note = resolve_benchmark_ticker(tickers, benchmark_ticker)
+        if benchmark_note:
+            notes.append(benchmark_note)
+
         try:
             effective_key = resolve_api_key() or api_key or self._api_key
             effective_fred_key = (
@@ -410,29 +465,12 @@ class ToolkitProvider:
         """
         upper_tickers = [t.upper() for t in tickers]
 
-        # The Toolkit drops a ticker that is also the benchmark, so pick another one.
-        if benchmark_ticker and benchmark_ticker.upper() in upper_tickers:
-            fallback_benchmarks = ["SPY", "QQQ", "^GSPC", "IWM", "DIA", "VTI"]
-            resolved_benchmark: str | None = None
-            for candidate in fallback_benchmarks:
-                if candidate.upper() not in upper_tickers:
-                    resolved_benchmark = candidate
-                    break
-            if resolved_benchmark:
-                logger.info(
-                    "benchmark_ticker '%s' conflicts with a requested ticker. "
-                    "Automatically switching benchmark to '%s'.",
-                    benchmark_ticker,
-                    resolved_benchmark,
-                )
-                benchmark_ticker = resolved_benchmark
-            else:
-                logger.warning(
-                    "benchmark_ticker '%s' conflicts with a requested ticker and no "
-                    "non-conflicting fallback could be found. Setting benchmark_ticker to None.",
-                    benchmark_ticker,
-                )
-                benchmark_ticker = None
+        # The note half is surfaced to the model by get_transformation_notes.
+        benchmark_ticker, benchmark_note = resolve_benchmark_ticker(
+            tickers, benchmark_ticker
+        )
+        if benchmark_note:
+            logger.info(benchmark_note)
 
         # Keyed by hashed FMP+FRED key so one user's Toolkit never reaches another.
         effective_key = api_key or self._api_key
@@ -618,12 +656,11 @@ class ToolkitProvider:
             key_hash = hashlib.sha256((effective_key or "").encode()).hexdigest()
             cache_key = f"discovery|{key_hash}"
         else:
-            fred_key_hash = hashlib.sha256(
-                (effective_fred_key or "").encode()
+            # FixedIncome also holds the FMP key (treasury rates), so both keys are part of the cache key.
+            key_hash = hashlib.sha256(
+                f"{effective_key or ''}|{effective_fred_key or ''}".encode()
             ).hexdigest()
-            cache_key = (
-                f"{module_name}|{start_date}|{end_date}|{quarterly}|{fred_key_hash}"
-            )
+            cache_key = f"{module_name}|{start_date}|{end_date}|{quarterly}|{key_hash}"
 
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
@@ -639,7 +676,9 @@ class ToolkitProvider:
                         cache=self._cache,
                     )
                 elif module_name == "fixedincome":
+                    # get_treasury_rates is served by FMP, so without the key it silently returns no data.
                     instance = FixedIncome(
+                        api_key=effective_key,
                         start_date=start_date,
                         end_date=end_date,
                         quarterly=quarterly,

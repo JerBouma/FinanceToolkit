@@ -36,6 +36,12 @@ jobs:
         with:
           enable-cache: true
 
+      # Without 3.15 wheels, scipy (via statsmodels) is compiled from source and
+      # needs a BLAS library, which the runner image does not ship.
+      - name: Install build dependencies for source builds
+        if: matrix.experimental
+        run: sudo apt-get update && sudo apt-get install -y libopenblas-dev pkg-config
+
       - name: Install dependencies
         run: uv sync --extra mcp
 

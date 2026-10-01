@@ -30,7 +30,7 @@ repos:
   - repo: local
     hooks:
       - id: uv-check
-        name: uv check (ty)
+        name: ty
         entry: uv check --preview-features check-command
         language: python
         types: [python]

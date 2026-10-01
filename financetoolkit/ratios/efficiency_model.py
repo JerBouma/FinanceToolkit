@@ -2,26 +2,18 @@
 
 __docformat__ = "google"
 
-from typing import overload
+from typing import TypeVar, overload
 
 import pandas as pd
 
-
-@overload
-def get_asset_turnover_ratio(
-    sales: pd.Series, average_total_assets: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_asset_turnover_ratio(
-    sales: pd.DataFrame, average_total_assets: pd.DataFrame
-) -> pd.DataFrame: ...
+# The calculations return whichever type they are given: a Series for one company,
+# a DataFrame for several. Mixed or scalar inputs keep their own @overload stubs.
+SeriesOrFrame = TypeVar("SeriesOrFrame", pd.Series, pd.DataFrame)
 
 
 def get_asset_turnover_ratio(
-    sales: pd.Series | pd.DataFrame, average_total_assets: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    sales: SeriesOrFrame, average_total_assets: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the asset turnover ratio, an efficiency ratio that measures how
     efficiently a company uses its assets to generate sales.
@@ -37,22 +29,9 @@ def get_asset_turnover_ratio(
     return sales / average_total_assets
 
 
-@overload
 def get_inventory_turnover_ratio(
-    cost_of_goods_sold: pd.Series, average_inventory: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_inventory_turnover_ratio(
-    cost_of_goods_sold: pd.DataFrame, average_inventory: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_inventory_turnover_ratio(
-    cost_of_goods_sold: pd.Series | pd.DataFrame,
-    average_inventory: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    cost_of_goods_sold: SeriesOrFrame, average_inventory: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the inventory turnover ratio, an efficiency ratio that measures
     how quickly a company sells its inventory.
@@ -141,22 +120,9 @@ def get_days_of_sales_outstanding(
     return average_accounts_receivable / net_credit_sales * days
 
 
-@overload
 def get_operating_cycle(
-    days_of_inventory: pd.Series, days_of_sales_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_cycle(
-    days_of_inventory: pd.DataFrame, days_of_sales_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_operating_cycle(
-    days_of_inventory: pd.Series | pd.DataFrame,
-    days_of_sales_outstanding: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    days_of_inventory: SeriesOrFrame, days_of_sales_outstanding: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the operating cycle, an efficiency ratio that measures the average
     number of days it takes a company to turn its inventory into cash.
@@ -171,22 +137,9 @@ def get_operating_cycle(
     return days_of_inventory + days_of_sales_outstanding
 
 
-@overload
 def get_accounts_payables_turnover_ratio(
-    cost_of_goods_sold: pd.Series, average_accounts_payable: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_accounts_payables_turnover_ratio(
-    cost_of_goods_sold: pd.DataFrame, average_accounts_payable: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_accounts_payables_turnover_ratio(
-    cost_of_goods_sold: pd.Series | pd.DataFrame,
-    average_accounts_payable: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    cost_of_goods_sold: SeriesOrFrame, average_accounts_payable: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
     quickly a company pays its suppliers.
@@ -238,27 +191,11 @@ def get_days_of_accounts_payable_outstanding(
     return average_accounts_payable / cost_of_goods_sold * days
 
 
-@overload
 def get_cash_conversion_cycle(
-    days_inventory: pd.Series,
-    days_sales_outstanding: pd.Series,
-    days_payables_outstanding: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_cash_conversion_cycle(
-    days_inventory: pd.DataFrame,
-    days_sales_outstanding: pd.DataFrame,
-    days_payables_outstanding: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_cash_conversion_cycle(
-    days_inventory: pd.Series | pd.DataFrame,
-    days_sales_outstanding: pd.Series | pd.DataFrame,
-    days_payables_outstanding: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    days_inventory: SeriesOrFrame,
+    days_sales_outstanding: SeriesOrFrame,
+    days_payables_outstanding: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
     its investments in inventory and accounts receivable into cash, while considering the time it takes to pay
@@ -275,22 +212,9 @@ def get_cash_conversion_cycle(
     return days_inventory + days_sales_outstanding - days_payables_outstanding
 
 
-@overload
 def get_receivables_turnover(
-    average_accounts_receivable: pd.Series, net_credit_sales: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_receivables_turnover(
-    average_accounts_receivable: pd.DataFrame, net_credit_sales: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_receivables_turnover(
-    average_accounts_receivable: pd.Series | pd.DataFrame,
-    net_credit_sales: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    average_accounts_receivable: SeriesOrFrame, net_credit_sales: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the receivables turnover, an efficiency ratio that measures how many
     times per period a company collects its average accounts receivable, i.e. how
@@ -315,21 +239,9 @@ def get_receivables_turnover(
     return net_credit_sales / average_accounts_receivable
 
 
-@overload
 def get_sga_to_revenue_ratio(
-    sga_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_sga_to_revenue_ratio(
-    sga_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_sga_to_revenue_ratio(
-    sga_expenses: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    sga_expenses: SeriesOrFrame, revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculates the sales, general, and administrative (SG&A) expenses to revenue ratio,
     which measures the SG&A expenses relative to the revenue of the company.
@@ -344,22 +256,9 @@ def get_sga_to_revenue_ratio(
     return sga_expenses / revenue
 
 
-@overload
 def get_fixed_asset_turnover(
-    net_sales: pd.Series, average_net_fixed_assets: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_fixed_asset_turnover(
-    net_sales: pd.DataFrame, average_net_fixed_assets: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_fixed_asset_turnover(
-    net_sales: pd.Series | pd.DataFrame,
-    average_net_fixed_assets: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    net_sales: SeriesOrFrame, average_net_fixed_assets: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
     measures how efficiently a company uses its fixed assets to generate sales.
@@ -374,21 +273,9 @@ def get_fixed_asset_turnover(
     return net_sales / average_net_fixed_assets
 
 
-@overload
 def get_operating_margin(
-    operating_income: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_margin(
-    operating_income: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_operating_margin(
-    operating_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    operating_income: SeriesOrFrame, revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the operating margin, a financial metric that measures the
     percentage of revenue that remains after covering operating expenses.
@@ -404,25 +291,11 @@ def get_operating_margin(
     return operating_income / revenue
 
 
-@overload
 def get_operating_ratio(
-    operating_expenses: pd.Series, cost_of_goods_sold: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_ratio(
-    operating_expenses: pd.DataFrame,
-    cost_of_goods_sold: pd.DataFrame,
-    revenue: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_operating_ratio(
-    operating_expenses: pd.Series | pd.DataFrame,
-    cost_of_goods_sold: pd.Series | pd.DataFrame,
-    revenue: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    operating_expenses: SeriesOrFrame,
+    cost_of_goods_sold: SeriesOrFrame,
+    revenue: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculate the operating ratio, a financial metric that measures the efficiency
     of a company's operations by comparing its operating expenses to its revenue.
@@ -456,22 +329,9 @@ def get_cash_conversion_efficiency(
     return operating_cash_flow / revenue
 
 
-@overload
 def get_research_and_development_ratio(
-    research_and_development_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_research_and_development_ratio(
-    research_and_development_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_research_and_development_ratio(
-    research_and_development_expenses: pd.Series | pd.DataFrame,
-    revenue: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    research_and_development_expenses: SeriesOrFrame, revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the research and development (R&D) intensity ratio, an efficiency ratio
     that measures how much a company reinvests in research and development relative
@@ -492,22 +352,9 @@ def get_research_and_development_ratio(
     return research_and_development_expenses / revenue
 
 
-@overload
 def get_selling_and_marketing_ratio(
-    selling_and_marketing_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_selling_and_marketing_ratio(
-    selling_and_marketing_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_selling_and_marketing_ratio(
-    selling_and_marketing_expenses: pd.Series | pd.DataFrame,
-    revenue: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    selling_and_marketing_expenses: SeriesOrFrame, revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the selling and marketing (S&M) expenses to revenue ratio, an efficiency
     ratio that measures the proportion of revenue spent on selling and marketing
@@ -528,22 +375,9 @@ def get_selling_and_marketing_ratio(
     return selling_and_marketing_expenses / revenue
 
 
-@overload
 def get_general_and_administrative_ratio(
-    general_and_administrative_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_general_and_administrative_ratio(
-    general_and_administrative_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_general_and_administrative_ratio(
-    general_and_administrative_expenses: pd.Series | pd.DataFrame,
-    revenue: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    general_and_administrative_expenses: SeriesOrFrame, revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the general and administrative (G&A) expenses to revenue ratio, an
     efficiency ratio that measures the proportion of revenue spent on general and
@@ -564,22 +398,9 @@ def get_general_and_administrative_ratio(
     return general_and_administrative_expenses / revenue
 
 
-@overload
 def get_stock_based_compensation_ratio(
-    stock_based_compensation: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_stock_based_compensation_ratio(
-    stock_based_compensation: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_stock_based_compensation_ratio(
-    stock_based_compensation: pd.Series | pd.DataFrame,
-    revenue: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    stock_based_compensation: SeriesOrFrame, revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency
     ratio that measures how much of a company's revenue is being used to compensate
@@ -600,21 +421,9 @@ def get_stock_based_compensation_ratio(
     return stock_based_compensation / revenue
 
 
-@overload
 def get_working_capital_turnover_ratio(
-    revenue: pd.Series, average_working_capital: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_working_capital_turnover_ratio(
-    revenue: pd.DataFrame, average_working_capital: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_working_capital_turnover_ratio(
-    revenue: pd.Series | pd.DataFrame, average_working_capital: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    revenue: SeriesOrFrame, average_working_capital: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the working capital turnover ratio, an efficiency ratio that measures how
     effectively a company uses its working capital to generate revenue.
@@ -642,21 +451,9 @@ def get_working_capital_turnover_ratio(
     return revenue / average_working_capital
 
 
-@overload
 def get_deferred_revenue_ratio(
-    deferred_revenue: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_deferred_revenue_ratio(
-    deferred_revenue: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_deferred_revenue_ratio(
-    deferred_revenue: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    deferred_revenue: SeriesOrFrame, revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the deferred revenue ratio, an efficiency ratio that measures the size
     of a company's deferred revenue (payments collected for goods or services not yet

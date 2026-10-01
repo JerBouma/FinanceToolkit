@@ -2,9 +2,13 @@
 
 __docformat__ = "google"
 
-from typing import overload
+from typing import TypeVar, overload
 
 import pandas as pd
+
+# The calculations return whichever type they are given: a Series for one company,
+# a DataFrame for several. Mixed or scalar inputs keep their own @overload stubs.
+SeriesOrFrame = TypeVar("SeriesOrFrame", pd.Series, pd.DataFrame)
 
 
 @overload
@@ -43,22 +47,9 @@ def get_earnings_per_share(
     return (net_income - preferred_dividends) / average_outstanding_shares
 
 
-@overload
 def get_revenue_per_share(
-    total_revenue: pd.Series, shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_revenue_per_share(
-    total_revenue: pd.DataFrame, shares_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_revenue_per_share(
-    total_revenue: pd.Series | pd.DataFrame,
-    shares_outstanding: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    total_revenue: SeriesOrFrame, shares_outstanding: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the revenue per share, a valuation ratio that measures the amount of
     revenue generated per outstanding share of a company's stock.
@@ -73,21 +64,9 @@ def get_revenue_per_share(
     return total_revenue / shares_outstanding
 
 
-@overload
 def get_price_to_earnings_ratio(
-    stock_price: pd.Series, earnings_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_earnings_ratio(
-    stock_price: pd.DataFrame, earnings_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_price_to_earnings_ratio(
-    stock_price: pd.Series | pd.DataFrame, earnings_per_share: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    stock_price: SeriesOrFrame, earnings_per_share: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the price earnings ratio (P/E), a valuation ratio that compares a company's
     stock price to its earnings per share.
@@ -166,27 +145,11 @@ def get_estimated_eps_growth_rate(
     return (estimated_eps - trailing_eps) / abs(trailing_eps)
 
 
-@overload
 def get_book_value_per_share(
-    total_shareholder_equity: pd.Series,
-    preferred_equity: pd.Series,
-    common_shares_outstanding: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_book_value_per_share(
-    total_shareholder_equity: pd.DataFrame,
-    preferred_equity: pd.DataFrame,
-    common_shares_outstanding: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_book_value_per_share(
-    total_shareholder_equity: pd.Series | pd.DataFrame,
-    preferred_equity: pd.Series | pd.DataFrame,
-    common_shares_outstanding: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    total_shareholder_equity: SeriesOrFrame,
+    preferred_equity: SeriesOrFrame,
+    common_shares_outstanding: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculate the book value per share, a valuation ratio that measures the amount of
     common equity value per share outstanding.
@@ -202,22 +165,9 @@ def get_book_value_per_share(
     return (total_shareholder_equity - preferred_equity) / common_shares_outstanding
 
 
-@overload
 def get_price_to_book_ratio(
-    price_per_share: pd.Series, book_value_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_book_ratio(
-    price_per_share: pd.DataFrame, book_value_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_price_to_book_ratio(
-    price_per_share: pd.Series | pd.DataFrame,
-    book_value_per_share: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    price_per_share: SeriesOrFrame, book_value_per_share: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the price to book ratio, a valuation ratio that compares a company's market
     price to its book value per share.
@@ -232,25 +182,11 @@ def get_price_to_book_ratio(
     return price_per_share / book_value_per_share
 
 
-@overload
 def get_interest_debt_per_share(
-    interest_expense: pd.Series, total_debt: pd.Series, shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_interest_debt_per_share(
-    interest_expense: pd.DataFrame,
-    total_debt: pd.DataFrame,
-    shares_outstanding: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_interest_debt_per_share(
-    interest_expense: pd.Series | pd.DataFrame,
-    total_debt: pd.Series | pd.DataFrame,
-    shares_outstanding: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    interest_expense: SeriesOrFrame,
+    total_debt: SeriesOrFrame,
+    shares_outstanding: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculate the interest debt per share, a valuation ratio that measures the
     combined interest expense and debt burden of a company per outstanding share
@@ -274,22 +210,9 @@ def get_interest_debt_per_share(
     return (interest_expense + total_debt) / shares_outstanding
 
 
-@overload
 def get_capex_per_share(
-    capital_expenditures: pd.Series, shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_capex_per_share(
-    capital_expenditures: pd.DataFrame, shares_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_capex_per_share(
-    capital_expenditures: pd.Series | pd.DataFrame,
-    shares_outstanding: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    capital_expenditures: SeriesOrFrame, shares_outstanding: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the capex per share, a valuation ratio that measures the amount of
     capital expenditures made per outstanding share of a company's stock.
@@ -304,19 +227,9 @@ def get_capex_per_share(
     return capital_expenditures / shares_outstanding
 
 
-@overload
-def get_dividend_yield(dividends: pd.Series, stock_price: pd.Series) -> pd.Series: ...
-
-
-@overload
 def get_dividend_yield(
-    dividends: pd.DataFrame, stock_price: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_dividend_yield(
-    dividends: pd.Series | pd.DataFrame, stock_price: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    dividends: SeriesOrFrame, stock_price: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the dividend yield ratio, a valuation ratio that measures the amount of
     dividends distributed per share of stock relative to the stock's price.
@@ -331,25 +244,11 @@ def get_dividend_yield(
     return dividends / stock_price
 
 
-@overload
 def get_weighted_dividend_yield(
-    dividends_paid: pd.Series, shares_outstanding: pd.Series, stock_price: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_weighted_dividend_yield(
-    dividends_paid: pd.DataFrame,
-    shares_outstanding: pd.DataFrame,
-    stock_price: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_weighted_dividend_yield(
-    dividends_paid: pd.Series | pd.DataFrame,
-    shares_outstanding: pd.Series | pd.DataFrame,
-    stock_price: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    dividends_paid: SeriesOrFrame,
+    shares_outstanding: SeriesOrFrame,
+    stock_price: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculate the weighted dividend yield ratio, a valuation ratio that measures the amount of
     dividends distributed per share of stock relative to the stock's price.
@@ -368,21 +267,9 @@ def get_weighted_dividend_yield(
     return (dividends_paid / shares_outstanding) / stock_price
 
 
-@overload
 def get_price_to_cash_flow_ratio(
-    market_cap: pd.Series, operations_cash_flow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_cash_flow_ratio(
-    market_cap: pd.DataFrame, operations_cash_flow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_price_to_cash_flow_ratio(
-    market_cap: pd.Series | pd.DataFrame, operations_cash_flow: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    market_cap: SeriesOrFrame, operations_cash_flow: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the price to cash flow ratio, a valuation ratio that compares a company's market
     price to its cash flow per share.
@@ -397,21 +284,9 @@ def get_price_to_cash_flow_ratio(
     return market_cap / operations_cash_flow
 
 
-@overload
 def get_price_to_free_cash_flow_ratio(
-    market_cap: pd.Series, free_cash_flow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_free_cash_flow_ratio(
-    market_cap: pd.DataFrame, free_cash_flow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_price_to_free_cash_flow_ratio(
-    market_cap: pd.Series | pd.DataFrame, free_cash_flow: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    market_cap: SeriesOrFrame, free_cash_flow: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the price to free cash flow ratio, a valuation ratio that compares a company's market
     price to its free cash flow per share.
@@ -426,21 +301,9 @@ def get_price_to_free_cash_flow_ratio(
     return market_cap / free_cash_flow
 
 
-@overload
 def get_price_to_sales_ratio(
-    market_cap: pd.Series, total_revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_sales_ratio(
-    market_cap: pd.DataFrame, total_revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_price_to_sales_ratio(
-    market_cap: pd.Series | pd.DataFrame, total_revenue: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    market_cap: SeriesOrFrame, total_revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the price to sales ratio (P/S), a valuation ratio that compares a
     company's market capitalization to its total revenue.
@@ -470,22 +333,9 @@ def get_price_to_sales_ratio(
     return market_cap / total_revenue
 
 
-@overload
 def get_market_cap(
-    share_price: pd.Series, total_shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_market_cap(
-    share_price: pd.DataFrame, total_shares_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_market_cap(
-    share_price: pd.Series | pd.DataFrame,
-    total_shares_outstanding: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    share_price: SeriesOrFrame, total_shares_outstanding: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculates the market capitalization of the company.
 
@@ -501,33 +351,13 @@ def get_market_cap(
     return share_price * total_shares_outstanding
 
 
-@overload
 def get_enterprise_value(
-    market_cap: pd.Series,
-    total_debt: pd.Series,
-    minority_interest: pd.Series,
-    preferred_equity: pd.Series,
-    cash_and_cash_equivalents: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_enterprise_value(
-    market_cap: pd.DataFrame,
-    total_debt: pd.DataFrame,
-    minority_interest: pd.DataFrame,
-    preferred_equity: pd.DataFrame,
-    cash_and_cash_equivalents: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_enterprise_value(
-    market_cap: pd.Series | pd.DataFrame,
-    total_debt: pd.Series | pd.DataFrame,
-    minority_interest: pd.Series | pd.DataFrame,
-    preferred_equity: pd.Series | pd.DataFrame,
-    cash_and_cash_equivalents: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    market_cap: SeriesOrFrame,
+    total_debt: SeriesOrFrame,
+    minority_interest: SeriesOrFrame,
+    preferred_equity: SeriesOrFrame,
+    cash_and_cash_equivalents: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
     is a measure of a company's total value, often used as a more comprehensive
@@ -556,21 +386,9 @@ def get_enterprise_value(
     )
 
 
-@overload
 def get_ev_to_sales_ratio(
-    enterprise_value: pd.Series, total_revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_sales_ratio(
-    enterprise_value: pd.DataFrame, total_revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_ev_to_sales_ratio(
-    enterprise_value: pd.Series | pd.DataFrame, total_revenue: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    enterprise_value: SeriesOrFrame, total_revenue: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the EV to sales ratio, a valuation ratio that compares a company's enterprise value
     (EV) to its total revenue.
@@ -585,27 +403,11 @@ def get_ev_to_sales_ratio(
     return enterprise_value / total_revenue
 
 
-@overload
 def get_ev_to_ebitda_ratio(
-    enterprise_value: pd.Series,
-    operating_income: pd.Series,
-    depreciation_and_amortization: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_ebitda_ratio(
-    enterprise_value: pd.DataFrame,
-    operating_income: pd.DataFrame,
-    depreciation_and_amortization: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_ev_to_ebitda_ratio(
-    enterprise_value: pd.Series | pd.DataFrame,
-    operating_income: pd.Series | pd.DataFrame,
-    depreciation_and_amortization: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    enterprise_value: SeriesOrFrame,
+    operating_income: SeriesOrFrame,
+    depreciation_and_amortization: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculates the enterprise value over EBITDA ratio, which is a valuation ratio
     that measures a company's total value (including debt and equity) relative to its
@@ -623,22 +425,9 @@ def get_ev_to_ebitda_ratio(
     return enterprise_value / (operating_income + depreciation_and_amortization)
 
 
-@overload
 def get_ev_to_operating_cashflow_ratio(
-    enterprise_value: pd.Series, operating_cashflow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_operating_cashflow_ratio(
-    enterprise_value: pd.DataFrame, operating_cashflow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_ev_to_operating_cashflow_ratio(
-    enterprise_value: pd.Series | pd.DataFrame,
-    operating_cashflow: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    enterprise_value: SeriesOrFrame, operating_cashflow: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculates the enterprise value over operating cash flow ratio, which is a valuation ratio
     that measures a company's total value (including debt and equity) relative to its
@@ -655,22 +444,9 @@ def get_ev_to_operating_cashflow_ratio(
     return enterprise_value / operating_cashflow
 
 
-@overload
 def get_earnings_yield(
-    earnings_per_share: pd.Series, market_price_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_earnings_yield(
-    earnings_per_share: pd.DataFrame, market_price_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_earnings_yield(
-    earnings_per_share: pd.Series | pd.DataFrame,
-    market_price_per_share: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    earnings_per_share: SeriesOrFrame, market_price_per_share: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculates the earnings yield ratio, which measures the earnings per share relative
     to the market price per share.
@@ -685,21 +461,9 @@ def get_earnings_yield(
     return earnings_per_share / market_price_per_share
 
 
-@overload
 def get_dividend_payout_ratio(
-    dividends: pd.Series, net_income: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_dividend_payout_ratio(
-    dividends: pd.DataFrame, net_income: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_dividend_payout_ratio(
-    dividends: pd.Series | pd.DataFrame, net_income: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    dividends: SeriesOrFrame, net_income: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculates the dividend payout ratio, which measures the proportion of net income paid out as
     dividends to shareholders.
@@ -714,17 +478,7 @@ def get_dividend_payout_ratio(
     return abs(dividends) / net_income
 
 
-@overload
-def get_reinvestment_ratio(dividend_payout_ratio: pd.Series) -> pd.Series: ...
-
-
-@overload
-def get_reinvestment_ratio(dividend_payout_ratio: pd.DataFrame) -> pd.DataFrame: ...
-
-
-def get_reinvestment_ratio(
-    dividend_payout_ratio: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+def get_reinvestment_ratio(dividend_payout_ratio: SeriesOrFrame) -> SeriesOrFrame:
     """
     Calculates the reinvestment ratio, which measures the proportion of net income
     retained by the company to reinvest in the business.
@@ -738,23 +492,11 @@ def get_reinvestment_ratio(
     return 1 - dividend_payout_ratio
 
 
-@overload
 def get_tangible_asset_value(
-    total_assets: pd.Series, total_liabilities: pd.Series, goodwill: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_tangible_asset_value(
-    total_assets: pd.DataFrame, total_liabilities: pd.DataFrame, goodwill: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_tangible_asset_value(
-    total_assets: pd.Series | pd.DataFrame,
-    total_liabilities: pd.Series | pd.DataFrame,
-    goodwill: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    total_assets: SeriesOrFrame,
+    total_liabilities: SeriesOrFrame,
+    goodwill: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculate the tangible asset value, which represents the total value of a company's assets
     that can be used to generate revenue.
@@ -770,22 +512,9 @@ def get_tangible_asset_value(
     return total_assets - total_liabilities - goodwill
 
 
-@overload
 def get_net_current_asset_value(
-    total_current_assets: pd.Series, total_liabilities: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_net_current_asset_value(
-    total_current_assets: pd.DataFrame, total_liabilities: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_net_current_asset_value(
-    total_current_assets: pd.Series | pd.DataFrame,
-    total_liabilities: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    total_current_assets: SeriesOrFrame, total_liabilities: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the net current asset value (Benjamin Graham's NCAV), which is the total value
     of a company's current assets minus its total liabilities (not just its current liabilities).
@@ -800,22 +529,9 @@ def get_net_current_asset_value(
     return total_current_assets - total_liabilities
 
 
-@overload
 def get_ev_to_ebit(
-    enterprise_value: pd.Series, earnings_before_interest_and_taxes: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_ebit(
-    enterprise_value: pd.DataFrame, earnings_before_interest_and_taxes: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_ev_to_ebit(
-    enterprise_value: pd.Series | pd.DataFrame,
-    earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    enterprise_value: SeriesOrFrame, earnings_before_interest_and_taxes: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the enterprise value multiplier, a financial ratio that measures the total value of a
     company's operations (including debt and equity) relative to its earnings before interest and taxes.
@@ -830,21 +546,9 @@ def get_ev_to_ebit(
     return enterprise_value / earnings_before_interest_and_taxes
 
 
-@overload
 def get_ev_to_free_cash_flow_ratio(
-    enterprise_value: pd.Series, free_cash_flow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_free_cash_flow_ratio(
-    enterprise_value: pd.DataFrame, free_cash_flow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_ev_to_free_cash_flow_ratio(
-    enterprise_value: pd.Series | pd.DataFrame, free_cash_flow: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    enterprise_value: SeriesOrFrame, free_cash_flow: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the EV to free cash flow ratio, a valuation ratio that compares a company's
     enterprise value (EV) to its free cash flow.
@@ -859,27 +563,11 @@ def get_ev_to_free_cash_flow_ratio(
     return enterprise_value / free_cash_flow
 
 
-@overload
 def get_buyback_yield(
-    repurchase_of_common_stock: pd.Series,
-    issuance_of_common_stock: pd.Series,
-    market_capitalization: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_buyback_yield(
-    repurchase_of_common_stock: pd.DataFrame,
-    issuance_of_common_stock: pd.DataFrame,
-    market_capitalization: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-def get_buyback_yield(
-    repurchase_of_common_stock: pd.Series | pd.DataFrame,
-    issuance_of_common_stock: pd.Series | pd.DataFrame,
-    market_capitalization: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    repurchase_of_common_stock: SeriesOrFrame,
+    issuance_of_common_stock: SeriesOrFrame,
+    market_capitalization: SeriesOrFrame,
+) -> SeriesOrFrame:
     """
     Calculate the buyback yield, a valuation ratio that measures the net amount of
     common stock repurchased (net of new shares issued) relative to the company's
@@ -905,21 +593,9 @@ def get_buyback_yield(
     )
 
 
-@overload
 def get_shareholder_yield(
-    dividend_yield: pd.Series, buyback_yield: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_shareholder_yield(
-    dividend_yield: pd.DataFrame, buyback_yield: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_shareholder_yield(
-    dividend_yield: pd.Series | pd.DataFrame, buyback_yield: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+    dividend_yield: SeriesOrFrame, buyback_yield: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the total shareholder yield, a valuation ratio that combines the dividend
     yield and the buyback yield to measure the total cash returned to shareholders
@@ -935,22 +611,9 @@ def get_shareholder_yield(
     return dividend_yield + buyback_yield
 
 
-@overload
 def get_sbc_adjusted_free_cash_flow(
-    free_cash_flow: pd.Series, stock_based_compensation: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_sbc_adjusted_free_cash_flow(
-    free_cash_flow: pd.DataFrame, stock_based_compensation: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_sbc_adjusted_free_cash_flow(
-    free_cash_flow: pd.Series | pd.DataFrame,
-    stock_based_compensation: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    free_cash_flow: SeriesOrFrame, stock_based_compensation: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the stock-based compensation (SBC) adjusted free cash flow, which
     deducts non-cash SBC expenses from free cash flow to give a more conservative

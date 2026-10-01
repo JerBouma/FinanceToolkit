@@ -3,10 +3,14 @@
 __docformat__ = "google"
 
 from math import fsum
-from typing import overload
+from typing import TypeVar
 
 import numpy as np
 import pandas as pd
+
+# The calculations return whichever type they are given: a Series for one company,
+# a DataFrame for several.
+SeriesOrFrame = TypeVar("SeriesOrFrame", pd.Series, pd.DataFrame)
 
 # pylint: disable=too-many-locals
 
@@ -155,22 +159,9 @@ def get_gorden_growth_model(
     return (dividends_per_share * (1 + growth_rate)) / (rate_of_return - growth_rate)
 
 
-@overload
 def get_graham_number(
-    earnings_per_share: pd.Series, book_value_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_graham_number(
-    earnings_per_share: pd.DataFrame, book_value_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
-def get_graham_number(
-    earnings_per_share: pd.Series | pd.DataFrame,
-    book_value_per_share: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    earnings_per_share: SeriesOrFrame, book_value_per_share: SeriesOrFrame
+) -> SeriesOrFrame:
     """
     Calculate the Graham Number, a conservative estimate of a stock's fair value based
     on its earnings and book value, as devised by Benjamin Graham.

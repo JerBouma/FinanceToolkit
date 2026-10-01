@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 from collections.abc import Mapping
-from typing import overload
 
 import pandas as pd
 
@@ -57,24 +56,6 @@ def equal_length(
         dataset2 = dataset2.sort_index()
 
     return dataset1, dataset2
-
-
-@overload
-def filter_columns(
-    result: pd.DataFrame, show_columns: list[str] | None
-) -> pd.DataFrame: ...
-
-
-@overload
-def filter_columns(result: pd.Series, show_columns: list[str] | None) -> pd.Series: ...
-
-
-@overload
-def filter_columns(result: dict, show_columns: list[str] | None) -> dict: ...
-
-
-@overload
-def filter_columns(result: object, show_columns: list[str] | None) -> object: ...
 
 
 def filter_columns(

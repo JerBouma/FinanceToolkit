@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -983,14 +982,6 @@ def get_elder_ray_index(
     return pd.concat(
         [bull_power, bear_power], keys=["Bull Power", "Bear Power"], axis=1
     )
-
-
-@overload
-def get_rate_of_change(prices_close: pd.Series, window: int) -> pd.Series: ...
-
-
-@overload
-def get_rate_of_change(prices_close: pd.DataFrame, window: int) -> pd.DataFrame: ...
 
 
 def get_rate_of_change(

@@ -2,21 +2,8 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import pandas as pd
-
-
-@overload
-def get_debt_to_assets_ratio(
-    total_debt: pd.Series, total_assets: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_debt_to_assets_ratio(
-    total_debt: pd.DataFrame, total_assets: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_debt_to_assets_ratio(
@@ -38,18 +25,6 @@ def get_debt_to_assets_ratio(
     return total_debt / total_assets
 
 
-@overload
-def get_debt_to_equity_ratio(
-    total_debt: pd.Series, total_equity: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_debt_to_equity_ratio(
-    total_debt: pd.DataFrame, total_equity: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_debt_to_equity_ratio(
     total_debt: pd.Series | pd.DataFrame, total_equity: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -65,22 +40,6 @@ def get_debt_to_equity_ratio(
         float | pd.Series: The debt to equity ratio value.
     """
     return total_debt / total_equity
-
-
-@overload
-def get_interest_coverage_ratio(
-    operating_income: pd.Series,
-    depreciation_and_amortization: pd.Series,
-    interest_expense: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_interest_coverage_ratio(
-    operating_income: pd.DataFrame,
-    depreciation_and_amortization: pd.DataFrame,
-    interest_expense: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_interest_coverage_ratio(
@@ -101,18 +60,6 @@ def get_interest_coverage_ratio(
         float | pd.Series: The interest coverage ratio value.
     """
     return (operating_income + depreciation_and_amortization) / interest_expense
-
-
-@overload
-def get_debt_service_coverage_ratio(
-    operating_income: pd.Series, current_liabilities: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_debt_service_coverage_ratio(
-    operating_income: pd.DataFrame, current_liabilities: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_debt_service_coverage_ratio(
@@ -147,18 +94,6 @@ def get_debt_service_coverage_ratio(
     return operating_income / current_liabilities
 
 
-@overload
-def get_equity_multiplier(
-    average_total_assets: pd.Series, average_total_equity: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_equity_multiplier(
-    average_total_assets: pd.DataFrame, average_total_equity: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_equity_multiplier(
     average_total_assets: pd.Series | pd.DataFrame,
     average_total_equity: pd.Series | pd.DataFrame,
@@ -181,18 +116,6 @@ def get_equity_multiplier(
     return average_total_assets / average_total_equity
 
 
-@overload
-def get_free_cash_flow_yield(
-    free_cash_flow: pd.Series, market_capitalization: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_free_cash_flow_yield(
-    free_cash_flow: pd.DataFrame, market_capitalization: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_free_cash_flow_yield(
     free_cash_flow: pd.Series | pd.DataFrame,
     market_capitalization: pd.Series | pd.DataFrame,
@@ -209,22 +132,6 @@ def get_free_cash_flow_yield(
         float | pd.Series: The free cash flow yield ratio.
     """
     return free_cash_flow / market_capitalization
-
-
-@overload
-def get_net_debt_to_ebitda_ratio(
-    operating_income: pd.Series,
-    depreciation_and_amortization: pd.Series,
-    net_debt: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_net_debt_to_ebitda_ratio(
-    operating_income: pd.DataFrame,
-    depreciation_and_amortization: pd.DataFrame,
-    net_debt: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_net_debt_to_ebitda_ratio(
@@ -245,22 +152,6 @@ def get_net_debt_to_ebitda_ratio(
         float | pd.Series: The net debt to EBITDA ratio.
     """
     return net_debt / (operating_income + depreciation_and_amortization)
-
-
-@overload
-def get_gross_debt_to_ebitda_ratio(
-    total_debt: pd.Series,
-    operating_income: pd.Series,
-    depreciation_and_amortization: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_gross_debt_to_ebitda_ratio(
-    total_debt: pd.DataFrame,
-    operating_income: pd.DataFrame,
-    depreciation_and_amortization: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_gross_debt_to_ebitda_ratio(
@@ -292,26 +183,6 @@ def get_gross_debt_to_ebitda_ratio(
         float | pd.Series: The gross debt to EBITDA ratio.
     """
     return total_debt / (operating_income + depreciation_and_amortization)
-
-
-@overload
-def get_asset_coverage_ratio(
-    total_assets: pd.Series,
-    intangible_assets: pd.Series,
-    current_liabilities: pd.Series,
-    short_term_debt: pd.Series,
-    total_debt: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_asset_coverage_ratio(
-    total_assets: pd.DataFrame,
-    intangible_assets: pd.DataFrame,
-    current_liabilities: pd.DataFrame,
-    short_term_debt: pd.DataFrame,
-    total_debt: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_asset_coverage_ratio(
@@ -355,18 +226,6 @@ def get_asset_coverage_ratio(
     ) / total_debt
 
 
-@overload
-def get_cash_flow_coverage_ratio(
-    operating_cash_flow: pd.Series, total_debt: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_cash_flow_coverage_ratio(
-    operating_cash_flow: pd.DataFrame, total_debt: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_cash_flow_coverage_ratio(
     operating_cash_flow: pd.Series | pd.DataFrame, total_debt: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -382,18 +241,6 @@ def get_cash_flow_coverage_ratio(
         float | pd.Series: The cash flow coverage ratio value.
     """
     return operating_cash_flow / total_debt
-
-
-@overload
-def get_capex_coverage_ratio(
-    cash_flow_from_operations: pd.Series, capital_expenditure: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_capex_coverage_ratio(
-    cash_flow_from_operations: pd.DataFrame, capital_expenditure: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_capex_coverage_ratio(
@@ -415,22 +262,6 @@ def get_capex_coverage_ratio(
     """
     # Capital Expenditure is reported as a negative cash outflow, so the magnitude is used to keep the ratio positive and consistent with "higher is better".  # noqa: E501
     return cash_flow_from_operations / abs(capital_expenditure)
-
-
-@overload
-def get_dividend_capex_coverage_ratio(
-    cash_flow_from_operations: pd.Series,
-    capital_expenditure: pd.Series,
-    dividends: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_dividend_capex_coverage_ratio(
-    cash_flow_from_operations: pd.DataFrame,
-    capital_expenditure: pd.DataFrame,
-    dividends: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_dividend_capex_coverage_ratio(
@@ -457,18 +288,6 @@ def get_dividend_capex_coverage_ratio(
     return cash_flow_from_operations / (abs(capital_expenditure) + abs(dividends))
 
 
-@overload
-def get_debt_to_capital_ratio(
-    total_debt: pd.Series, total_equity: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_debt_to_capital_ratio(
-    total_debt: pd.DataFrame, total_equity: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_debt_to_capital_ratio(
     total_debt: pd.Series | pd.DataFrame, total_equity: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -491,18 +310,6 @@ def get_debt_to_capital_ratio(
     return total_debt / (total_debt + total_equity)
 
 
-@overload
-def get_preferred_dividend_coverage_ratio(
-    net_income: pd.Series, preferred_dividends: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_preferred_dividend_coverage_ratio(
-    net_income: pd.DataFrame, preferred_dividends: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_preferred_dividend_coverage_ratio(
     net_income: pd.Series | pd.DataFrame, preferred_dividends: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -520,18 +327,6 @@ def get_preferred_dividend_coverage_ratio(
         float | pd.Series: The preferred dividend coverage ratio value.
     """
     return net_income / abs(preferred_dividends)
-
-
-@overload
-def get_interest_paid_to_expense_ratio(
-    interest_paid: pd.Series, interest_expense: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_interest_paid_to_expense_ratio(
-    interest_paid: pd.DataFrame, interest_expense: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_interest_paid_to_expense_ratio(

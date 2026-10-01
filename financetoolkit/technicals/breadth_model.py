@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -55,14 +54,6 @@ def get_mcclellan_oscillator(
     ).mean()
 
     return short_ema - long_ema
-
-
-@overload
-def get_advancers_decliners(prices_close: pd.Series) -> pd.Series: ...
-
-
-@overload
-def get_advancers_decliners(prices_close: pd.DataFrame) -> pd.DataFrame: ...
 
 
 def get_advancers_decliners(

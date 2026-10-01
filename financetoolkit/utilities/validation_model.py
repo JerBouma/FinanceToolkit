@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import re
 from collections import Counter
-from typing import overload
 
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
@@ -19,10 +18,6 @@ INTRADAY_PERIOD_OPTIONS = ["1min", "5min", "15min", "30min", "1hour"]
 PLACEHOLDER_API_KEY = "FINANCIAL_MODELING_PREP_KEY"
 
 
-@overload
-def resolve_api_key(api_key: str) -> str: ...
-@overload
-def resolve_api_key(api_key: str | None) -> str | None: ...
 def resolve_api_key(api_key: str | None) -> str | None:
     """
     Replaces the documentation placeholder API key with an empty key, reporting that

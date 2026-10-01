@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -52,14 +51,6 @@ def get_true_range(
     ).max(axis=1)
 
     return true_range
-
-
-@overload
-def get_wilder_moving_average(values: pd.Series, window: int) -> pd.Series: ...
-
-
-@overload
-def get_wilder_moving_average(values: pd.DataFrame, window: int) -> pd.DataFrame: ...
 
 
 def get_wilder_moving_average(

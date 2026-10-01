@@ -752,10 +752,7 @@ class ToolRegistry:
             )
         )
 
-        # inspect honours __signature__ on any callable, the function type just does not declare it.
-        wrapper.__signature__ = inspect.Signature(  # ty: ignore[unresolved-attribute]
-            sig_params, return_annotation=str
-        )
+        wrapper.__signature__ = inspect.Signature(sig_params, return_annotation=str)
         wrapper.__annotations__ = {p.name: p.annotation for p in sig_params}
         wrapper.__annotations__["return"] = str
 

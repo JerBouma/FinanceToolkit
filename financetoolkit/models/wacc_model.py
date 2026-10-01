@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -15,18 +14,6 @@ from financetoolkit.utilities.logger_model import get_logger
 logger = get_logger()
 
 # pylint: disable=too-many-locals
-
-
-@overload
-def get_cost_of_equity(
-    risk_free_rate: pd.Series, beta: pd.Series, benchmark_returns: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_cost_of_equity(
-    risk_free_rate: pd.Series, beta: pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.DataFrame: ...
 
 
 def get_cost_of_equity(

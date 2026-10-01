@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import warnings
-from typing import Literal, overload
 
 import pandas as pd
 
@@ -179,20 +178,6 @@ class Performance:
             )
 
         return self._within_historical_data[period]
-
-    @overload
-    def _get_column(
-        self,
-        period: str,
-        column: str,
-        within_period: bool,
-        benchmark: Literal[False] = False,
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def _get_column(
-        self, period: str, column: str, within_period: bool, benchmark: Literal[True]
-    ) -> pd.Series: ...
 
     def _get_column(
         self, period: str, column: str, within_period: bool, benchmark: bool = False

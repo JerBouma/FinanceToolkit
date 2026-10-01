@@ -2,21 +2,8 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import pandas as pd
-
-
-@overload
-def get_asset_turnover_ratio(
-    sales: pd.Series, average_total_assets: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_asset_turnover_ratio(
-    sales: pd.DataFrame, average_total_assets: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_asset_turnover_ratio(
@@ -35,18 +22,6 @@ def get_asset_turnover_ratio(
         float | pd.Series: The asset turnover ratio value.
     """
     return sales / average_total_assets
-
-
-@overload
-def get_inventory_turnover_ratio(
-    cost_of_goods_sold: pd.Series, average_inventory: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_inventory_turnover_ratio(
-    cost_of_goods_sold: pd.DataFrame, average_inventory: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_inventory_turnover_ratio(
@@ -68,20 +43,6 @@ def get_inventory_turnover_ratio(
     return cost_of_goods_sold / average_inventory
 
 
-@overload
-def get_days_of_inventory_outstanding(
-    average_inventory: pd.Series, cost_of_goods_sold: pd.Series, days: int | float = 365
-) -> pd.Series: ...
-
-
-@overload
-def get_days_of_inventory_outstanding(
-    average_inventory: pd.DataFrame,
-    cost_of_goods_sold: pd.DataFrame,
-    days: int | float = 365,
-) -> pd.DataFrame: ...
-
-
 def get_days_of_inventory_outstanding(
     average_inventory: pd.Series | pd.DataFrame,
     cost_of_goods_sold: pd.Series | pd.DataFrame,
@@ -101,22 +62,6 @@ def get_days_of_inventory_outstanding(
         float | pd.Series: The days sales in inventory ratio value.
     """
     return average_inventory / cost_of_goods_sold * days
-
-
-@overload
-def get_days_of_sales_outstanding(
-    average_accounts_receivable: pd.Series,
-    net_credit_sales: pd.Series,
-    days: int | float = 365,
-) -> pd.Series: ...
-
-
-@overload
-def get_days_of_sales_outstanding(
-    average_accounts_receivable: pd.DataFrame,
-    net_credit_sales: pd.DataFrame,
-    days: int | float = 365,
-) -> pd.DataFrame: ...
 
 
 def get_days_of_sales_outstanding(
@@ -141,18 +86,6 @@ def get_days_of_sales_outstanding(
     return average_accounts_receivable / net_credit_sales * days
 
 
-@overload
-def get_operating_cycle(
-    days_of_inventory: pd.Series, days_of_sales_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_cycle(
-    days_of_inventory: pd.DataFrame, days_of_sales_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_operating_cycle(
     days_of_inventory: pd.Series | pd.DataFrame,
     days_of_sales_outstanding: pd.Series | pd.DataFrame,
@@ -171,18 +104,6 @@ def get_operating_cycle(
     return days_of_inventory + days_of_sales_outstanding
 
 
-@overload
-def get_accounts_payables_turnover_ratio(
-    cost_of_goods_sold: pd.Series, average_accounts_payable: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_accounts_payables_turnover_ratio(
-    cost_of_goods_sold: pd.DataFrame, average_accounts_payable: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_accounts_payables_turnover_ratio(
     cost_of_goods_sold: pd.Series | pd.DataFrame,
     average_accounts_payable: pd.Series | pd.DataFrame,
@@ -199,22 +120,6 @@ def get_accounts_payables_turnover_ratio(
         float | pd.Series: The payables turnover ratio value.
     """
     return cost_of_goods_sold / average_accounts_payable
-
-
-@overload
-def get_days_of_accounts_payable_outstanding(
-    cost_of_goods_sold: pd.Series,
-    average_accounts_payable: pd.Series,
-    days: int | float = 365,
-) -> pd.Series: ...
-
-
-@overload
-def get_days_of_accounts_payable_outstanding(
-    cost_of_goods_sold: pd.DataFrame,
-    average_accounts_payable: pd.DataFrame,
-    days: int | float = 365,
-) -> pd.DataFrame: ...
 
 
 def get_days_of_accounts_payable_outstanding(
@@ -238,22 +143,6 @@ def get_days_of_accounts_payable_outstanding(
     return average_accounts_payable / cost_of_goods_sold * days
 
 
-@overload
-def get_cash_conversion_cycle(
-    days_inventory: pd.Series,
-    days_sales_outstanding: pd.Series,
-    days_payables_outstanding: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_cash_conversion_cycle(
-    days_inventory: pd.DataFrame,
-    days_sales_outstanding: pd.DataFrame,
-    days_payables_outstanding: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
 def get_cash_conversion_cycle(
     days_inventory: pd.Series | pd.DataFrame,
     days_sales_outstanding: pd.Series | pd.DataFrame,
@@ -273,18 +162,6 @@ def get_cash_conversion_cycle(
         float | pd.Series: The Cash Conversion Cycle value.
     """
     return days_inventory + days_sales_outstanding - days_payables_outstanding
-
-
-@overload
-def get_receivables_turnover(
-    average_accounts_receivable: pd.Series, net_credit_sales: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_receivables_turnover(
-    average_accounts_receivable: pd.DataFrame, net_credit_sales: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_receivables_turnover(
@@ -315,18 +192,6 @@ def get_receivables_turnover(
     return net_credit_sales / average_accounts_receivable
 
 
-@overload
-def get_sga_to_revenue_ratio(
-    sga_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_sga_to_revenue_ratio(
-    sga_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_sga_to_revenue_ratio(
     sga_expenses: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -342,18 +207,6 @@ def get_sga_to_revenue_ratio(
         float | pd.Series: The SG&A to revenue ratio.
     """
     return sga_expenses / revenue
-
-
-@overload
-def get_fixed_asset_turnover(
-    net_sales: pd.Series, average_net_fixed_assets: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_fixed_asset_turnover(
-    net_sales: pd.DataFrame, average_net_fixed_assets: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_fixed_asset_turnover(
@@ -374,18 +227,6 @@ def get_fixed_asset_turnover(
     return net_sales / average_net_fixed_assets
 
 
-@overload
-def get_operating_margin(
-    operating_income: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_margin(
-    operating_income: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_operating_margin(
     operating_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -402,20 +243,6 @@ def get_operating_margin(
         float or pd.Series: The operating ratio value.
     """
     return operating_income / revenue
-
-
-@overload
-def get_operating_ratio(
-    operating_expenses: pd.Series, cost_of_goods_sold: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_ratio(
-    operating_expenses: pd.DataFrame,
-    cost_of_goods_sold: pd.DataFrame,
-    revenue: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_operating_ratio(
@@ -456,18 +283,6 @@ def get_cash_conversion_efficiency(
     return operating_cash_flow / revenue
 
 
-@overload
-def get_research_and_development_ratio(
-    research_and_development_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_research_and_development_ratio(
-    research_and_development_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_research_and_development_ratio(
     research_and_development_expenses: pd.Series | pd.DataFrame,
     revenue: pd.Series | pd.DataFrame,
@@ -490,18 +305,6 @@ def get_research_and_development_ratio(
         float | pd.Series: The R&D intensity ratio value.
     """
     return research_and_development_expenses / revenue
-
-
-@overload
-def get_selling_and_marketing_ratio(
-    selling_and_marketing_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_selling_and_marketing_ratio(
-    selling_and_marketing_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_selling_and_marketing_ratio(
@@ -528,18 +331,6 @@ def get_selling_and_marketing_ratio(
     return selling_and_marketing_expenses / revenue
 
 
-@overload
-def get_general_and_administrative_ratio(
-    general_and_administrative_expenses: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_general_and_administrative_ratio(
-    general_and_administrative_expenses: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_general_and_administrative_ratio(
     general_and_administrative_expenses: pd.Series | pd.DataFrame,
     revenue: pd.Series | pd.DataFrame,
@@ -564,18 +355,6 @@ def get_general_and_administrative_ratio(
     return general_and_administrative_expenses / revenue
 
 
-@overload
-def get_stock_based_compensation_ratio(
-    stock_based_compensation: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_stock_based_compensation_ratio(
-    stock_based_compensation: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_stock_based_compensation_ratio(
     stock_based_compensation: pd.Series | pd.DataFrame,
     revenue: pd.Series | pd.DataFrame,
@@ -598,18 +377,6 @@ def get_stock_based_compensation_ratio(
         float | pd.Series: The SBC to revenue ratio value.
     """
     return stock_based_compensation / revenue
-
-
-@overload
-def get_working_capital_turnover_ratio(
-    revenue: pd.Series, average_working_capital: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_working_capital_turnover_ratio(
-    revenue: pd.DataFrame, average_working_capital: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_working_capital_turnover_ratio(
@@ -640,18 +407,6 @@ def get_working_capital_turnover_ratio(
         float | pd.Series: The working capital turnover ratio value.
     """
     return revenue / average_working_capital
-
-
-@overload
-def get_deferred_revenue_ratio(
-    deferred_revenue: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_deferred_revenue_ratio(
-    deferred_revenue: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_deferred_revenue_ratio(

@@ -2,21 +2,8 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import pandas as pd
-
-
-@overload
-def get_gross_margin(
-    revenue: pd.Series, cost_of_goods_sold: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_gross_margin(
-    revenue: pd.DataFrame, cost_of_goods_sold: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_gross_margin(
@@ -36,18 +23,6 @@ def get_gross_margin(
     return (revenue - cost_of_goods_sold) / revenue
 
 
-@overload
-def get_operating_margin(
-    operating_income: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_margin(
-    operating_income: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_operating_margin(
     operating_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -65,16 +40,6 @@ def get_operating_margin(
     return operating_income / revenue
 
 
-@overload
-def get_net_profit_margin(net_income: pd.Series, revenue: pd.Series) -> pd.Series: ...
-
-
-@overload
-def get_net_profit_margin(
-    net_income: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_net_profit_margin(
     net_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -90,22 +55,6 @@ def get_net_profit_margin(
         float | pd.Series: The net profit margin value as a percentage.
     """
     return net_income / revenue
-
-
-@overload
-def get_ebitda_margin(
-    operating_income: pd.Series,
-    depreciation_and_amortization: pd.Series,
-    revenue: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_ebitda_margin(
-    operating_income: pd.DataFrame,
-    depreciation_and_amortization: pd.DataFrame,
-    revenue: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_ebitda_margin(
@@ -142,18 +91,6 @@ def get_ebitda_margin(
     return (operating_income + depreciation_and_amortization) / revenue
 
 
-@overload
-def get_interest_coverage_ratio(
-    operating_income: pd.Series, interest_expense: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_interest_coverage_ratio(
-    operating_income: pd.DataFrame, interest_expense: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_interest_coverage_ratio(
     operating_income: pd.Series | pd.DataFrame,
     interest_expense: pd.Series | pd.DataFrame,
@@ -178,18 +115,6 @@ def get_interest_coverage_ratio(
         float | pd.Series: The Interest Coverage Ratio
     """
     return operating_income / interest_expense
-
-
-@overload
-def get_interest_burden_ratio(
-    income_before_tax: pd.Series, operating_income: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_interest_burden_ratio(
-    income_before_tax: pd.DataFrame, operating_income: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_interest_burden_ratio(
@@ -226,18 +151,6 @@ def get_interest_burden_ratio(
     return income_before_tax / operating_income
 
 
-@overload
-def get_income_before_tax_profit_margin(
-    income_before_tax: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_income_before_tax_profit_margin(
-    income_before_tax: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_income_before_tax_profit_margin(
     income_before_tax: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -253,18 +166,6 @@ def get_income_before_tax_profit_margin(
         float | pd.Series: The Pretax Profit Margin value.
     """
     return income_before_tax / revenue
-
-
-@overload
-def get_effective_tax_rate(
-    income_tax_expense: pd.Series, income_before_tax: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_effective_tax_rate(
-    income_tax_expense: pd.DataFrame, income_before_tax: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_effective_tax_rate(
@@ -285,18 +186,6 @@ def get_effective_tax_rate(
     return income_tax_expense / income_before_tax
 
 
-@overload
-def get_return_on_assets(
-    net_income: pd.Series, average_total_assets: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_return_on_assets(
-    net_income: pd.DataFrame, average_total_assets: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_return_on_assets(
     net_income: pd.Series | pd.DataFrame, average_total_assets: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -313,18 +202,6 @@ def get_return_on_assets(
         float | pd.Series: The ROA percentage value.
     """
     return net_income / average_total_assets
-
-
-@overload
-def get_cash_return_on_assets(
-    operating_cash_flow: pd.Series, average_total_assets: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_cash_return_on_assets(
-    operating_cash_flow: pd.DataFrame, average_total_assets: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_cash_return_on_assets(
@@ -359,18 +236,6 @@ def get_cash_return_on_assets(
     return operating_cash_flow / average_total_assets
 
 
-@overload
-def get_return_on_equity(
-    net_income: pd.Series, average_total_equity: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_return_on_equity(
-    net_income: pd.DataFrame, average_total_equity: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_return_on_equity(
     net_income: pd.Series | pd.DataFrame, average_total_equity: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -387,24 +252,6 @@ def get_return_on_equity(
         float | pd.Series: The ROE percentage value.
     """
     return net_income / average_total_equity
-
-
-@overload
-def get_return_on_invested_capital(
-    net_income: pd.Series,
-    dividends: pd.Series | float,
-    average_total_equity: pd.Series,
-    average_total_debt: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_return_on_invested_capital(
-    net_income: pd.DataFrame,
-    dividends: pd.Series | float,
-    average_total_equity: pd.DataFrame,
-    average_total_debt: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_return_on_invested_capital(
@@ -445,18 +292,6 @@ def get_return_on_invested_capital(
     return (net_income - dividends) / (average_total_equity + average_total_debt)
 
 
-@overload
-def get_income_quality_ratio(
-    cash_flow_from_operating_activities: pd.Series, net_income: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_income_quality_ratio(
-    cash_flow_from_operating_activities: pd.DataFrame, net_income: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_income_quality_ratio(
     cash_flow_from_operating_activities: pd.Series | pd.DataFrame,
     net_income: pd.Series | pd.DataFrame,
@@ -474,24 +309,6 @@ def get_income_quality_ratio(
         float | pd.Series: The income quality ratio.
     """
     return cash_flow_from_operating_activities / net_income
-
-
-@overload
-def get_return_on_tangible_assets(
-    net_income: pd.Series,
-    average_total_assets: pd.Series,
-    average_intangible_assets: pd.Series,
-    average_total_liabilities: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_return_on_tangible_assets(
-    net_income: pd.DataFrame,
-    average_total_assets: pd.DataFrame,
-    average_intangible_assets: pd.DataFrame,
-    average_total_liabilities: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_return_on_tangible_assets(
@@ -538,26 +355,6 @@ def get_return_on_tangible_assets(
     return net_income / average_tangible_assets
 
 
-@overload
-def get_return_on_capital_employed(
-    net_income: pd.Series,
-    interest_expense: pd.Series,
-    tax_expense: pd.Series,
-    total_assets: pd.Series,
-    total_current_liabilities: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_return_on_capital_employed(
-    net_income: pd.DataFrame,
-    interest_expense: pd.DataFrame,
-    tax_expense: pd.DataFrame,
-    total_assets: pd.DataFrame,
-    total_current_liabilities: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
 def get_return_on_capital_employed(
     net_income: pd.Series | pd.DataFrame,
     interest_expense: pd.Series | pd.DataFrame,
@@ -584,18 +381,6 @@ def get_return_on_capital_employed(
     )
 
 
-@overload
-def get_net_income_per_ebt(
-    net_income: pd.Series, income_tax_expense: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_net_income_per_ebt(
-    net_income: pd.DataFrame, income_tax_expense: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_net_income_per_ebt(
     net_income: pd.Series | pd.DataFrame, income_tax_expense: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -611,18 +396,6 @@ def get_net_income_per_ebt(
         float | pd.Series: The net income per EBT value.
     """
     return net_income / (net_income + income_tax_expense)
-
-
-@overload
-def get_free_cash_flow_operating_cash_flow_ratio(
-    free_cash_flow: pd.Series, operating_cash_flow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_free_cash_flow_operating_cash_flow_ratio(
-    free_cash_flow: pd.DataFrame, operating_cash_flow: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_free_cash_flow_operating_cash_flow_ratio(
@@ -642,18 +415,6 @@ def get_free_cash_flow_operating_cash_flow_ratio(
         float | pd.Series: The free cash flow to operating cash flow ratio value.
     """
     return free_cash_flow / operating_cash_flow
-
-
-@overload
-def get_free_cash_flow_margin(
-    free_cash_flow: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_free_cash_flow_margin(
-    free_cash_flow: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_free_cash_flow_margin(
@@ -684,18 +445,6 @@ def get_free_cash_flow_margin(
     return free_cash_flow / revenue
 
 
-@overload
-def get_tax_burden_ratio(
-    net_income: pd.Series, income_before_tax: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_tax_burden_ratio(
-    net_income: pd.DataFrame, income_before_tax: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_tax_burden_ratio(
     net_income: pd.Series | pd.DataFrame, income_before_tax: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -714,18 +463,6 @@ def get_tax_burden_ratio(
     return net_income / income_before_tax
 
 
-@overload
-def get_EBT_to_EBIT(
-    earnings_before_tax: pd.Series, earnings_before_interest_and_taxes: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_EBT_to_EBIT(
-    earnings_before_tax: pd.DataFrame, earnings_before_interest_and_taxes: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_EBT_to_EBIT(
     earnings_before_tax: pd.Series | pd.DataFrame,
     earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
@@ -742,18 +479,6 @@ def get_EBT_to_EBIT(
         float | pd.Series: The EBTperEBIT value.
     """
     return earnings_before_tax / earnings_before_interest_and_taxes
-
-
-@overload
-def get_EBIT_to_revenue(
-    earnings_before_interest_and_taxes: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_EBIT_to_revenue(
-    earnings_before_interest_and_taxes: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_EBIT_to_revenue(
@@ -776,18 +501,6 @@ def get_EBIT_to_revenue(
     return earnings_before_interest_and_taxes / revenue
 
 
-@overload
-def get_cash_tax_rate(
-    income_taxes_paid: pd.Series, income_before_tax: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_cash_tax_rate(
-    income_taxes_paid: pd.DataFrame, income_before_tax: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_cash_tax_rate(
     income_taxes_paid: pd.Series | pd.DataFrame,
     income_before_tax: pd.Series | pd.DataFrame,
@@ -806,18 +519,6 @@ def get_cash_tax_rate(
         float | pd.Series: The cash tax rate value.
     """
     return income_taxes_paid / income_before_tax
-
-
-@overload
-def get_tax_rate_divergence(
-    cash_tax_rate: pd.Series, effective_tax_rate: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_tax_rate_divergence(
-    cash_tax_rate: pd.DataFrame, effective_tax_rate: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_tax_rate_divergence(

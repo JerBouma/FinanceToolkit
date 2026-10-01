@@ -221,8 +221,7 @@ def handle_errors(func):
     # These steps are there to ensure the docstring of the function remains intact
     wrapper.__doc__ = func.__doc__
     wrapper.__name__ = func.__name__
-    # inspect honours __signature__ on any callable, the function type just does not declare it.
-    wrapper.__signature__ = inspect.signature(func)  # ty: ignore[unresolved-attribute]
+    wrapper.__signature__ = inspect.signature(func)
     wrapper.__module__ = func.__module__
 
     return wrapper

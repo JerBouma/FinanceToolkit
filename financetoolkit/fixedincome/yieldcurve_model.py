@@ -1,28 +1,9 @@
 """Yield Curve Model Module"""
 
-from typing import overload
-
 import numpy as np
 import pandas as pd
 
 # pylint: disable=unsubscriptable-object
-
-
-# The overloads state that scalar inputs give a scalar result, so a caller looping over
-# maturities can store the values in a plain dict of floats.
-@overload
-def get_forward_rate(
-    near_rate: float, far_rate: float, near_maturity: float, far_maturity: float
-) -> float: ...
-
-
-@overload
-def get_forward_rate(
-    near_rate: float | pd.Series,
-    far_rate: float | pd.Series,
-    near_maturity: float | pd.Series,
-    far_maturity: float | pd.Series,
-) -> float | pd.Series: ...
 
 
 def get_forward_rate(
@@ -191,16 +172,6 @@ def get_par_yield(
     return float(par_yield)
 
 
-@overload
-def get_yield_curve_spread(long_yield: float, short_yield: float) -> float: ...
-
-
-@overload
-def get_yield_curve_spread(
-    long_yield: float | pd.Series, short_yield: float | pd.Series
-) -> float | pd.Series: ...
-
-
 def get_yield_curve_spread(
     long_yield: float | pd.Series, short_yield: float | pd.Series
 ) -> float | pd.Series:
@@ -239,16 +210,6 @@ def get_yield_curve_spread(
             )
 
     return long_yield - short_yield
-
-
-@overload
-def get_breakeven_inflation_rate(nominal_yield: float, real_yield: float) -> float: ...
-
-
-@overload
-def get_breakeven_inflation_rate(
-    nominal_yield: float | pd.Series, real_yield: float | pd.Series
-) -> float | pd.Series: ...
 
 
 def get_breakeven_inflation_rate(

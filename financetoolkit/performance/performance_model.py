@@ -3,7 +3,6 @@
 import io
 import warnings
 import zipfile
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -28,18 +27,6 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
 # pylint: disable=isinstance-second-argument-not-valid-type
-
-
-@overload
-def get_covariance(
-    returns: pd.DataFrame, benchmark_returns: pd.Series | pd.DataFrame
-) -> pd.Series: ...
-
-
-@overload
-def get_covariance(
-    returns: pd.Series, benchmark_returns: pd.Series | pd.DataFrame
-) -> float: ...
 
 
 def get_covariance(
@@ -84,16 +71,6 @@ def get_covariance(
 
     # A rolling window object, which pairs with either a Series or a DataFrame.
     return returns.cov(benchmark_returns)
-
-
-@overload
-def get_beta(
-    returns: pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_beta(returns: pd.Series, benchmark_returns: pd.Series) -> float: ...
 
 
 def get_beta(
@@ -164,30 +141,6 @@ def get_rolling_beta(
     rolling_beta = rolling_cov.div(rolling_var, axis=0)
 
     return rolling_beta
-
-
-@overload
-def get_capital_asset_pricing_model(
-    risk_free_rate: pd.Series | float,
-    beta: pd.DataFrame,
-    benchmark_returns: pd.Series | float,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_capital_asset_pricing_model(
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series,
-    benchmark_returns: pd.Series | float,
-) -> pd.Series: ...
-
-
-@overload
-def get_capital_asset_pricing_model(
-    risk_free_rate: pd.Series | float,
-    beta: float,
-    benchmark_returns: pd.Series | float,
-) -> float: ...
 
 
 def get_capital_asset_pricing_model(
@@ -634,27 +587,6 @@ def get_fama_and_french_model_single(
     return regression_results, residuals
 
 
-@overload
-def get_alpha(
-    asset_returns: pd.DataFrame,
-    benchmark_returns: pd.Series | float,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_alpha(
-    asset_returns: pd.Series,
-    benchmark_returns: pd.Series | float,
-) -> pd.Series: ...
-
-
-@overload
-def get_alpha(
-    asset_returns: float,
-    benchmark_returns: pd.Series | float,
-) -> float: ...
-
-
 def get_alpha(
     asset_returns: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
@@ -711,33 +643,6 @@ def get_rolling_alpha(
     return (
         asset_returns.sub(benchmark_returns, axis=0).rolling(window=window_size).mean()
     )
-
-
-@overload
-def get_jensens_alpha(
-    asset_returns: pd.DataFrame,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-    benchmark_returns: pd.Series | float,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_jensens_alpha(
-    asset_returns: pd.Series,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-    benchmark_returns: pd.Series | float,
-) -> pd.Series: ...
-
-
-@overload
-def get_jensens_alpha(
-    asset_returns: float,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-    benchmark_returns: pd.Series | float,
-) -> float: ...
 
 
 def get_jensens_alpha(
@@ -799,30 +704,6 @@ def get_jensens_alpha(
     return jensens_alpha
 
 
-@overload
-def get_treynor_ratio(
-    asset_returns: pd.DataFrame,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_treynor_ratio(
-    asset_returns: pd.Series,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-) -> pd.Series: ...
-
-
-@overload
-def get_treynor_ratio(
-    asset_returns: float,
-    risk_free_rate: pd.Series | float,
-    beta: pd.Series | pd.DataFrame | float,
-) -> float: ...
-
-
 def get_treynor_ratio(
     asset_returns: pd.Series | pd.DataFrame | float,
     risk_free_rate: pd.Series | float,
@@ -874,14 +755,6 @@ def get_treynor_ratio(
         )
 
     return treynor_ratio
-
-
-@overload
-def get_sharpe_ratio(excess_returns: pd.DataFrame) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_sharpe_ratio(excess_returns: pd.Series) -> float: ...
 
 
 def get_sharpe_ratio(
@@ -953,36 +826,6 @@ def get_rolling_sharpe_ratio(
     )
 
     return sharpe_ratio
-
-
-@overload
-def get_probabilistic_sharpe_ratio(
-    sharpe_ratio: pd.DataFrame,
-    benchmark_sharpe_ratio: pd.Series | pd.DataFrame | float,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-    n_observations: pd.Series | pd.DataFrame | float | int,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_probabilistic_sharpe_ratio(
-    sharpe_ratio: pd.Series,
-    benchmark_sharpe_ratio: pd.Series | pd.DataFrame | float,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-    n_observations: pd.Series | pd.DataFrame | float | int,
-) -> pd.Series: ...
-
-
-@overload
-def get_probabilistic_sharpe_ratio(
-    sharpe_ratio: float,
-    benchmark_sharpe_ratio: pd.Series | pd.DataFrame | float,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-    n_observations: pd.Series | pd.DataFrame | float | int,
-) -> float: ...
 
 
 def get_probabilistic_sharpe_ratio(
@@ -1062,39 +905,6 @@ def get_probabilistic_sharpe_ratio(
         return pd.Series(probabilistic_sharpe_ratio, index=z_score.index)
 
     return probabilistic_sharpe_ratio
-
-
-@overload
-def get_deflated_sharpe_ratio(
-    sharpe_ratio: pd.DataFrame,
-    sharpe_ratio_variance: pd.Series | pd.DataFrame | float,
-    n_trials: pd.Series | pd.DataFrame | float | int,
-    n_observations: pd.Series | pd.DataFrame | float | int,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_deflated_sharpe_ratio(
-    sharpe_ratio: pd.Series,
-    sharpe_ratio_variance: pd.Series | pd.DataFrame | float,
-    n_trials: pd.Series | pd.DataFrame | float | int,
-    n_observations: pd.Series | pd.DataFrame | float | int,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-) -> pd.Series: ...
-
-
-@overload
-def get_deflated_sharpe_ratio(
-    sharpe_ratio: float,
-    sharpe_ratio_variance: pd.Series | pd.DataFrame | float,
-    n_trials: pd.Series | pd.DataFrame | float | int,
-    n_observations: pd.Series | pd.DataFrame | float | int,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-) -> float: ...
 
 
 def get_deflated_sharpe_ratio(
@@ -1190,14 +1000,6 @@ def get_deflated_sharpe_ratio(
         kurtosis=kurtosis,
         n_observations=n_observations,
     )
-
-
-@overload
-def get_sortino_ratio(excess_returns: pd.DataFrame) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_sortino_ratio(excess_returns: pd.Series) -> float: ...
 
 
 def get_sortino_ratio(
@@ -1321,24 +1123,6 @@ def get_ulcer_performance_index(
     return (excess_returns / ulcer_index).dropna()
 
 
-@overload
-def get_m2_ratio(
-    asset_returns: pd.DataFrame,
-    risk_free_rate: pd.Series,
-    asset_standard_deviation: pd.Series | pd.DataFrame,
-    benchmark_standard_deviation: pd.Series | float,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_m2_ratio(
-    asset_returns: pd.Series,
-    risk_free_rate: pd.Series,
-    asset_standard_deviation: pd.Series | pd.DataFrame,
-    benchmark_standard_deviation: pd.Series | float,
-) -> pd.Series: ...
-
-
 def get_m2_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,
@@ -1444,18 +1228,6 @@ def get_rolling_m2_ratio(
     )
 
 
-@overload
-def get_tracking_error(
-    asset_returns: pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_tracking_error(
-    asset_returns: pd.Series, benchmark_returns: pd.Series
-) -> float: ...
-
-
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
@@ -1515,18 +1287,6 @@ def get_rolling_tracking_error(
     return (
         asset_returns.sub(benchmark_returns, axis=0).rolling(window=window_size).std()
     )
-
-
-@overload
-def get_information_ratio(
-    asset_returns: pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_information_ratio(
-    asset_returns: pd.Series, benchmark_returns: pd.Series
-) -> float: ...
 
 
 def get_information_ratio(
@@ -2194,22 +1954,6 @@ def get_returns(
     return period_returns
 
 
-@overload
-def get_excess_return(
-    returns: pd.DataFrame,
-    risk_free_rate: pd.Series,
-    cumulative: bool = False,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_excess_return(
-    returns: pd.Series,
-    risk_free_rate: pd.Series,
-    cumulative: bool = False,
-) -> pd.Series: ...
-
-
 def get_excess_return(
     returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,
@@ -2562,30 +2306,6 @@ def get_fama_decomposition(
     return selectivity, diversification
 
 
-@overload
-def get_adjusted_sharpe_ratio(
-    sharpe_ratio: pd.DataFrame,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_adjusted_sharpe_ratio(
-    sharpe_ratio: pd.Series,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-) -> pd.Series: ...
-
-
-@overload
-def get_adjusted_sharpe_ratio(
-    sharpe_ratio: float,
-    skewness: pd.Series | pd.DataFrame | float,
-    kurtosis: pd.Series | pd.DataFrame | float,
-) -> float: ...
-
-
 def get_adjusted_sharpe_ratio(
     sharpe_ratio: pd.Series | pd.DataFrame | float,
     skewness: pd.Series | pd.DataFrame | float,
@@ -2718,20 +2438,6 @@ def get_starr_ratio(
         return starr_ratio.dropna()
 
     return starr_ratio
-
-
-@overload
-def get_rachev_ratio(
-    returns: pd.DataFrame,
-    alpha: float = 0.05,
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_rachev_ratio(
-    returns: pd.Series,
-    alpha: float = 0.05,
-) -> float: ...
 
 
 def get_rachev_ratio(

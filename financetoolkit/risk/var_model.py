@@ -1,7 +1,5 @@
 """Value at Risk Model"""
 
-from typing import overload
-
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -12,16 +10,6 @@ ALPHA_CONSTRAINT = 0.5
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
-
-
-@overload
-def get_var_historic(
-    returns: pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_var_historic(returns: pd.Series, alpha: float) -> float: ...
 
 
 def get_var_historic(
@@ -63,18 +51,6 @@ def get_var_historic(
         )  # The actual calculation without data wrangling
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
-
-
-@overload
-def get_var_gaussian(
-    returns: pd.DataFrame, alpha: float, cornish_fisher: bool = False
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_var_gaussian(
-    returns: pd.Series, alpha: float, cornish_fisher: bool = False
-) -> float: ...
 
 
 def get_var_gaussian(
@@ -268,16 +244,6 @@ def get_var_evt(
     return pd.Series(value_at_risk, index=returns.columns)
 
 
-@overload
-def get_var_studentt(
-    returns: pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_var_studentt(returns: pd.Series, alpha: float) -> float: ...
-
-
 def get_var_studentt(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame | float:
@@ -336,16 +302,6 @@ def get_var_studentt(
     za = stats.t.ppf(alpha, degrees_of_freedom)
 
     return scale * za + returns.mean()
-
-
-@overload
-def get_var_cornish_fisher(
-    returns: pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_var_cornish_fisher(returns: pd.Series, alpha: float) -> float: ...
 
 
 def get_var_cornish_fisher(

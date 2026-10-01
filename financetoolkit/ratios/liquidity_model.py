@@ -2,21 +2,8 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import pandas as pd
-
-
-@overload
-def get_current_ratio(
-    current_assets: pd.Series, current_liabilities: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_current_ratio(
-    current_assets: pd.DataFrame, current_liabilities: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_current_ratio(
@@ -37,24 +24,6 @@ def get_current_ratio(
         float | pd.Series: The current ratio value.
     """
     return current_assets / current_liabilities
-
-
-@overload
-def get_quick_ratio(
-    cash_and_equivalents: pd.Series,
-    marketable_securities: pd.Series,
-    accounts_receivable: pd.Series,
-    current_liabilities: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_quick_ratio(
-    cash_and_equivalents: pd.DataFrame,
-    marketable_securities: pd.DataFrame,
-    accounts_receivable: pd.DataFrame,
-    current_liabilities: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_quick_ratio(
@@ -94,22 +63,6 @@ def get_quick_ratio(
     ) / current_liabilities
 
 
-@overload
-def get_cash_ratio(
-    cash_and_equivalents: pd.Series,
-    marketable_securities: pd.Series,
-    current_liabilities: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_cash_ratio(
-    cash_and_equivalents: pd.DataFrame,
-    marketable_securities: pd.DataFrame,
-    current_liabilities: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
 def get_cash_ratio(
     cash_and_equivalents: pd.Series | pd.DataFrame,
     marketable_securities: pd.Series | pd.DataFrame,
@@ -128,24 +81,6 @@ def get_cash_ratio(
         float | pd.Series: The cash ratio value.
     """
     return (cash_and_equivalents + marketable_securities) / current_liabilities
-
-
-@overload
-def get_defensive_interval_ratio(
-    cash_and_equivalents: pd.Series,
-    marketable_securities: pd.Series,
-    accounts_receivable: pd.Series,
-    daily_operating_expenses: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_defensive_interval_ratio(
-    cash_and_equivalents: pd.DataFrame,
-    marketable_securities: pd.DataFrame,
-    accounts_receivable: pd.DataFrame,
-    daily_operating_expenses: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_defensive_interval_ratio(
@@ -191,18 +126,6 @@ def get_defensive_interval_ratio(
     ) / daily_operating_expenses
 
 
-@overload
-def get_working_capital(
-    current_assets: pd.Series, current_liabilities: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_working_capital(
-    current_assets: pd.DataFrame, current_liabilities: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_working_capital(
     current_assets: pd.Series | pd.DataFrame,
     current_liabilities: pd.Series | pd.DataFrame,
@@ -219,18 +142,6 @@ def get_working_capital(
         float | pd.Series: The working capital value.
     """
     return current_assets - current_liabilities
-
-
-@overload
-def get_operating_cash_flow_ratio(
-    operating_cash_flow: pd.Series, current_liabilities: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_cash_flow_ratio(
-    operating_cash_flow: pd.DataFrame, current_liabilities: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_operating_cash_flow_ratio(
@@ -251,18 +162,6 @@ def get_operating_cash_flow_ratio(
     return operating_cash_flow / current_liabilities
 
 
-@overload
-def get_operating_cash_flow_sales_ratio(
-    operating_cash_flow: pd.Series, revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_operating_cash_flow_sales_ratio(
-    operating_cash_flow: pd.DataFrame, revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_operating_cash_flow_sales_ratio(
     operating_cash_flow: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -278,18 +177,6 @@ def get_operating_cash_flow_sales_ratio(
         float | pd.Series: The operating cash flow to sales ratio value.
     """
     return operating_cash_flow / revenue
-
-
-@overload
-def get_short_term_coverage_ratio(
-    operating_cash_flow: pd.Series, short_term_debt: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_short_term_coverage_ratio(
-    operating_cash_flow: pd.DataFrame, short_term_debt: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_short_term_coverage_ratio(

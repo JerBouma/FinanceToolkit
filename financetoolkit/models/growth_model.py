@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import pandas as pd
 
@@ -62,24 +61,6 @@ def get_present_value_of_growth_opportunities(
     return close_prices - earnings_wacc_ratio
 
 
-@overload
-def get_sustainable_growth_rate(
-    return_on_equity: float, retention_ratio: float
-) -> float: ...
-
-
-@overload
-def get_sustainable_growth_rate(
-    return_on_equity: pd.Series, retention_ratio: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_sustainable_growth_rate(
-    return_on_equity: pd.DataFrame, retention_ratio: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_sustainable_growth_rate(
     return_on_equity: float | pd.Series | pd.DataFrame,
     retention_ratio: float | pd.Series | pd.DataFrame,
@@ -110,24 +91,6 @@ def get_sustainable_growth_rate(
     improving profitability, reducing the dividend payout, or increasing leverage.
     """
     return return_on_equity * retention_ratio
-
-
-@overload
-def get_internal_growth_rate(
-    return_on_assets: float, retention_ratio: float
-) -> float: ...
-
-
-@overload
-def get_internal_growth_rate(
-    return_on_assets: pd.Series, retention_ratio: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_internal_growth_rate(
-    return_on_assets: pd.DataFrame, retention_ratio: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_internal_growth_rate(

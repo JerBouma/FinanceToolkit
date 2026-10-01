@@ -2,25 +2,8 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import pandas as pd
-
-
-@overload
-def get_earnings_per_share(
-    net_income: pd.Series,
-    preferred_dividends: pd.Series | float,
-    average_outstanding_shares: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_earnings_per_share(
-    net_income: pd.DataFrame,
-    preferred_dividends: pd.Series | float,
-    average_outstanding_shares: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_earnings_per_share(
@@ -43,18 +26,6 @@ def get_earnings_per_share(
     return (net_income - preferred_dividends) / average_outstanding_shares
 
 
-@overload
-def get_revenue_per_share(
-    total_revenue: pd.Series, shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_revenue_per_share(
-    total_revenue: pd.DataFrame, shares_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_revenue_per_share(
     total_revenue: pd.Series | pd.DataFrame,
     shares_outstanding: pd.Series | pd.DataFrame,
@@ -73,18 +44,6 @@ def get_revenue_per_share(
     return total_revenue / shares_outstanding
 
 
-@overload
-def get_price_to_earnings_ratio(
-    stock_price: pd.Series, earnings_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_earnings_ratio(
-    stock_price: pd.DataFrame, earnings_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_price_to_earnings_ratio(
     stock_price: pd.Series | pd.DataFrame, earnings_per_share: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -100,18 +59,6 @@ def get_price_to_earnings_ratio(
         float | pd.Series: The P/E ratio value.
     """
     return stock_price / earnings_per_share
-
-
-@overload
-def get_price_to_earnings_growth_ratio(
-    price_earnings: pd.Series, growth_rate: pd.Series | float
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_earnings_growth_ratio(
-    price_earnings: pd.DataFrame, growth_rate: pd.DataFrame | float
-) -> pd.DataFrame: ...
 
 
 def get_price_to_earnings_growth_ratio(
@@ -166,22 +113,6 @@ def get_estimated_eps_growth_rate(
     return (estimated_eps - trailing_eps) / abs(trailing_eps)
 
 
-@overload
-def get_book_value_per_share(
-    total_shareholder_equity: pd.Series,
-    preferred_equity: pd.Series,
-    common_shares_outstanding: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_book_value_per_share(
-    total_shareholder_equity: pd.DataFrame,
-    preferred_equity: pd.DataFrame,
-    common_shares_outstanding: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
 def get_book_value_per_share(
     total_shareholder_equity: pd.Series | pd.DataFrame,
     preferred_equity: pd.Series | pd.DataFrame,
@@ -202,18 +133,6 @@ def get_book_value_per_share(
     return (total_shareholder_equity - preferred_equity) / common_shares_outstanding
 
 
-@overload
-def get_price_to_book_ratio(
-    price_per_share: pd.Series, book_value_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_book_ratio(
-    price_per_share: pd.DataFrame, book_value_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_price_to_book_ratio(
     price_per_share: pd.Series | pd.DataFrame,
     book_value_per_share: pd.Series | pd.DataFrame,
@@ -230,20 +149,6 @@ def get_price_to_book_ratio(
         float | pd.Series: The price to book ratio value.
     """
     return price_per_share / book_value_per_share
-
-
-@overload
-def get_interest_debt_per_share(
-    interest_expense: pd.Series, total_debt: pd.Series, shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_interest_debt_per_share(
-    interest_expense: pd.DataFrame,
-    total_debt: pd.DataFrame,
-    shares_outstanding: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_interest_debt_per_share(
@@ -274,18 +179,6 @@ def get_interest_debt_per_share(
     return (interest_expense + total_debt) / shares_outstanding
 
 
-@overload
-def get_capex_per_share(
-    capital_expenditures: pd.Series, shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_capex_per_share(
-    capital_expenditures: pd.DataFrame, shares_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_capex_per_share(
     capital_expenditures: pd.Series | pd.DataFrame,
     shares_outstanding: pd.Series | pd.DataFrame,
@@ -304,16 +197,6 @@ def get_capex_per_share(
     return capital_expenditures / shares_outstanding
 
 
-@overload
-def get_dividend_yield(dividends: pd.Series, stock_price: pd.Series) -> pd.Series: ...
-
-
-@overload
-def get_dividend_yield(
-    dividends: pd.DataFrame, stock_price: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_dividend_yield(
     dividends: pd.Series | pd.DataFrame, stock_price: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -329,20 +212,6 @@ def get_dividend_yield(
         float | pd.Series: The dividend yield percentage value.
     """
     return dividends / stock_price
-
-
-@overload
-def get_weighted_dividend_yield(
-    dividends_paid: pd.Series, shares_outstanding: pd.Series, stock_price: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_weighted_dividend_yield(
-    dividends_paid: pd.DataFrame,
-    shares_outstanding: pd.DataFrame,
-    stock_price: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_weighted_dividend_yield(
@@ -368,18 +237,6 @@ def get_weighted_dividend_yield(
     return (dividends_paid / shares_outstanding) / stock_price
 
 
-@overload
-def get_price_to_cash_flow_ratio(
-    market_cap: pd.Series, operations_cash_flow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_cash_flow_ratio(
-    market_cap: pd.DataFrame, operations_cash_flow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_price_to_cash_flow_ratio(
     market_cap: pd.Series | pd.DataFrame, operations_cash_flow: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -397,18 +254,6 @@ def get_price_to_cash_flow_ratio(
     return market_cap / operations_cash_flow
 
 
-@overload
-def get_price_to_free_cash_flow_ratio(
-    market_cap: pd.Series, free_cash_flow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_free_cash_flow_ratio(
-    market_cap: pd.DataFrame, free_cash_flow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_price_to_free_cash_flow_ratio(
     market_cap: pd.Series | pd.DataFrame, free_cash_flow: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -424,18 +269,6 @@ def get_price_to_free_cash_flow_ratio(
         float | pd.Series: The price to free cash flow ratio value.
     """
     return market_cap / free_cash_flow
-
-
-@overload
-def get_price_to_sales_ratio(
-    market_cap: pd.Series, total_revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_price_to_sales_ratio(
-    market_cap: pd.DataFrame, total_revenue: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_price_to_sales_ratio(
@@ -470,18 +303,6 @@ def get_price_to_sales_ratio(
     return market_cap / total_revenue
 
 
-@overload
-def get_market_cap(
-    share_price: pd.Series, total_shares_outstanding: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_market_cap(
-    share_price: pd.DataFrame, total_shares_outstanding: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_market_cap(
     share_price: pd.Series | pd.DataFrame,
     total_shares_outstanding: pd.Series | pd.DataFrame,
@@ -499,26 +320,6 @@ def get_market_cap(
         float | pd.Series: The market capitalization of the company.
     """
     return share_price * total_shares_outstanding
-
-
-@overload
-def get_enterprise_value(
-    market_cap: pd.Series,
-    total_debt: pd.Series,
-    minority_interest: pd.Series,
-    preferred_equity: pd.Series,
-    cash_and_cash_equivalents: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_enterprise_value(
-    market_cap: pd.DataFrame,
-    total_debt: pd.DataFrame,
-    minority_interest: pd.DataFrame,
-    preferred_equity: pd.DataFrame,
-    cash_and_cash_equivalents: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_enterprise_value(
@@ -556,18 +357,6 @@ def get_enterprise_value(
     )
 
 
-@overload
-def get_ev_to_sales_ratio(
-    enterprise_value: pd.Series, total_revenue: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_sales_ratio(
-    enterprise_value: pd.DataFrame, total_revenue: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_ev_to_sales_ratio(
     enterprise_value: pd.Series | pd.DataFrame, total_revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -583,22 +372,6 @@ def get_ev_to_sales_ratio(
         float | pd.Series: The EV to sales ratio value.
     """
     return enterprise_value / total_revenue
-
-
-@overload
-def get_ev_to_ebitda_ratio(
-    enterprise_value: pd.Series,
-    operating_income: pd.Series,
-    depreciation_and_amortization: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_ebitda_ratio(
-    enterprise_value: pd.DataFrame,
-    operating_income: pd.DataFrame,
-    depreciation_and_amortization: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_ev_to_ebitda_ratio(
@@ -623,18 +396,6 @@ def get_ev_to_ebitda_ratio(
     return enterprise_value / (operating_income + depreciation_and_amortization)
 
 
-@overload
-def get_ev_to_operating_cashflow_ratio(
-    enterprise_value: pd.Series, operating_cashflow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_operating_cashflow_ratio(
-    enterprise_value: pd.DataFrame, operating_cashflow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_ev_to_operating_cashflow_ratio(
     enterprise_value: pd.Series | pd.DataFrame,
     operating_cashflow: pd.Series | pd.DataFrame,
@@ -655,18 +416,6 @@ def get_ev_to_operating_cashflow_ratio(
     return enterprise_value / operating_cashflow
 
 
-@overload
-def get_earnings_yield(
-    earnings_per_share: pd.Series, market_price_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_earnings_yield(
-    earnings_per_share: pd.DataFrame, market_price_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_earnings_yield(
     earnings_per_share: pd.Series | pd.DataFrame,
     market_price_per_share: pd.Series | pd.DataFrame,
@@ -683,18 +432,6 @@ def get_earnings_yield(
         float | pd.Series: The earnings yield ratio.
     """
     return earnings_per_share / market_price_per_share
-
-
-@overload
-def get_dividend_payout_ratio(
-    dividends: pd.Series, net_income: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_dividend_payout_ratio(
-    dividends: pd.DataFrame, net_income: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_dividend_payout_ratio(
@@ -714,14 +451,6 @@ def get_dividend_payout_ratio(
     return abs(dividends) / net_income
 
 
-@overload
-def get_reinvestment_ratio(dividend_payout_ratio: pd.Series) -> pd.Series: ...
-
-
-@overload
-def get_reinvestment_ratio(dividend_payout_ratio: pd.DataFrame) -> pd.DataFrame: ...
-
-
 def get_reinvestment_ratio(
     dividend_payout_ratio: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
@@ -736,18 +465,6 @@ def get_reinvestment_ratio(
         float | pd.Series: The reinvestment ratio.
     """
     return 1 - dividend_payout_ratio
-
-
-@overload
-def get_tangible_asset_value(
-    total_assets: pd.Series, total_liabilities: pd.Series, goodwill: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_tangible_asset_value(
-    total_assets: pd.DataFrame, total_liabilities: pd.DataFrame, goodwill: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_tangible_asset_value(
@@ -770,18 +487,6 @@ def get_tangible_asset_value(
     return total_assets - total_liabilities - goodwill
 
 
-@overload
-def get_net_current_asset_value(
-    total_current_assets: pd.Series, total_liabilities: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_net_current_asset_value(
-    total_current_assets: pd.DataFrame, total_liabilities: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_net_current_asset_value(
     total_current_assets: pd.Series | pd.DataFrame,
     total_liabilities: pd.Series | pd.DataFrame,
@@ -798,18 +503,6 @@ def get_net_current_asset_value(
         float | pd.Series: The net current asset value.
     """
     return total_current_assets - total_liabilities
-
-
-@overload
-def get_ev_to_ebit(
-    enterprise_value: pd.Series, earnings_before_interest_and_taxes: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_ebit(
-    enterprise_value: pd.DataFrame, earnings_before_interest_and_taxes: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_ev_to_ebit(
@@ -830,18 +523,6 @@ def get_ev_to_ebit(
     return enterprise_value / earnings_before_interest_and_taxes
 
 
-@overload
-def get_ev_to_free_cash_flow_ratio(
-    enterprise_value: pd.Series, free_cash_flow: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_ev_to_free_cash_flow_ratio(
-    enterprise_value: pd.DataFrame, free_cash_flow: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_ev_to_free_cash_flow_ratio(
     enterprise_value: pd.Series | pd.DataFrame, free_cash_flow: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -857,22 +538,6 @@ def get_ev_to_free_cash_flow_ratio(
         float | pd.Series: The EV to free cash flow ratio value.
     """
     return enterprise_value / free_cash_flow
-
-
-@overload
-def get_buyback_yield(
-    repurchase_of_common_stock: pd.Series,
-    issuance_of_common_stock: pd.Series,
-    market_capitalization: pd.Series,
-) -> pd.Series: ...
-
-
-@overload
-def get_buyback_yield(
-    repurchase_of_common_stock: pd.DataFrame,
-    issuance_of_common_stock: pd.DataFrame,
-    market_capitalization: pd.DataFrame,
-) -> pd.DataFrame: ...
 
 
 def get_buyback_yield(
@@ -905,18 +570,6 @@ def get_buyback_yield(
     )
 
 
-@overload
-def get_shareholder_yield(
-    dividend_yield: pd.Series, buyback_yield: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_shareholder_yield(
-    dividend_yield: pd.DataFrame, buyback_yield: pd.DataFrame
-) -> pd.DataFrame: ...
-
-
 def get_shareholder_yield(
     dividend_yield: pd.Series | pd.DataFrame, buyback_yield: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
@@ -933,18 +586,6 @@ def get_shareholder_yield(
         float | pd.Series: The total shareholder yield value.
     """
     return dividend_yield + buyback_yield
-
-
-@overload
-def get_sbc_adjusted_free_cash_flow(
-    free_cash_flow: pd.Series, stock_based_compensation: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_sbc_adjusted_free_cash_flow(
-    free_cash_flow: pd.DataFrame, stock_based_compensation: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_sbc_adjusted_free_cash_flow(

@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -104,18 +103,6 @@ def get_amihud_illiquidity(
         return daily_illiquidity.mean() * scale
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
-
-
-@overload
-def get_roll_spread(
-    close_prices: pd.DataFrame,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_roll_spread(
-    close_prices: pd.Series,
-) -> pd.Series: ...
 
 
 def get_roll_spread(

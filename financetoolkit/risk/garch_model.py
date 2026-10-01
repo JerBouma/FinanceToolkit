@@ -1,7 +1,5 @@
 """GARCH Model"""
 
-from typing import overload
-
 import numpy as np
 import pandas as pd
 from scipy import optimize
@@ -184,31 +182,6 @@ def get_garch_weights(
 
     # Seeded so fitted parameters are reproducible across runs.
     return _fit_multi_start(wrapper_func, bounds, initial_guess, "GARCH")
-
-
-# A DataFrame of returns comes back as a DataFrame of conditional variances (one
-# column per ticker), while a Series or array is fitted as a single array of values;
-# the overloads make that visible to callers that slice the result by date.
-@overload
-def get_garch(
-    returns: pd.DataFrame,
-    weights: np.ndarray | list | None = None,
-    time_steps: int | None = None,
-    optimization_t: int | None = None,
-    p: int = 1,
-    q: int = 1,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_garch(
-    returns: np.ndarray | pd.Series,
-    weights: np.ndarray | list | None = None,
-    time_steps: int | None = None,
-    optimization_t: int | None = None,
-    p: int = 1,
-    q: int = 1,
-) -> np.ndarray: ...
 
 
 def get_garch(
@@ -477,31 +450,6 @@ def get_gjr_garch_weights(
     return _fit_multi_start(wrapper_func, bounds, initial_guess, "GJR-GARCH")
 
 
-# A DataFrame of returns comes back as a DataFrame of conditional variances (one
-# column per ticker), while a Series or array is fitted as a single array of values;
-# the overloads make that visible to callers that slice the result by date.
-@overload
-def get_gjr_garch(
-    returns: pd.DataFrame,
-    weights: np.ndarray | list | None = None,
-    time_steps: int | None = None,
-    optimization_t: int | None = None,
-    p: int = 1,
-    q: int = 1,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_gjr_garch(
-    returns: np.ndarray | pd.Series,
-    weights: np.ndarray | list | None = None,
-    time_steps: int | None = None,
-    optimization_t: int | None = None,
-    p: int = 1,
-    q: int = 1,
-) -> np.ndarray: ...
-
-
 def get_gjr_garch(
     returns: np.ndarray | pd.Series | pd.DataFrame,
     weights: np.ndarray | list | None = None,
@@ -765,31 +713,6 @@ def get_egarch_weights(
         return egarch_log_maximization(parameters, returns, t, p, q)
 
     return _fit_multi_start(wrapper_func, bounds, initial_guess, "EGARCH")
-
-
-# A DataFrame of returns comes back as a DataFrame of conditional variances (one
-# column per ticker), while a Series or array is fitted as a single array of values;
-# the overloads make that visible to callers that slice the result by date.
-@overload
-def get_egarch(
-    returns: pd.DataFrame,
-    weights: np.ndarray | list | None = None,
-    time_steps: int | None = None,
-    optimization_t: int | None = None,
-    p: int = 1,
-    q: int = 1,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_egarch(
-    returns: np.ndarray | pd.Series,
-    weights: np.ndarray | list | None = None,
-    time_steps: int | None = None,
-    optimization_t: int | None = None,
-    p: int = 1,
-    q: int = 1,
-) -> np.ndarray: ...
 
 
 def get_egarch(

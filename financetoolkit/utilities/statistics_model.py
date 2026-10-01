@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import warnings
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -76,52 +75,6 @@ def convert_annualized_rate_to_period(
         )
 
     return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
-
-
-# finalize_dataset hands back the same container it was given: every step (rolling,
-# growth, rounding, slicing, country filtering) preserves Series-ness and
-# DataFrame-ness, which the overloads spell out so controllers annotated with one
-# of the two need no narrowing.
-@overload
-def finalize_dataset(
-    dataset: pd.DataFrame,
-    start_date: str | None,
-    end_date: str | None,
-    default_rounding: int | None,
-    growth: bool = False,
-    lag: int | list[int] = 1,
-    rounding: int | None = None,
-    standardize: bool = False,
-    axis: str = "columns",
-    row_slice: bool = False,
-    apply_slice: bool = True,
-    rolling: int | None = None,
-    trailing: int | None = None,
-    dropna: bool = False,
-    countries: list[str] | str | None = None,
-    indicator_name: str = "",
-) -> pd.DataFrame: ...
-
-
-@overload
-def finalize_dataset(
-    dataset: pd.Series,
-    start_date: str | None,
-    end_date: str | None,
-    default_rounding: int | None,
-    growth: bool = False,
-    lag: int | list[int] = 1,
-    rounding: int | None = None,
-    standardize: bool = False,
-    axis: str = "columns",
-    row_slice: bool = False,
-    apply_slice: bool = True,
-    rolling: int | None = None,
-    trailing: int | None = None,
-    dropna: bool = False,
-    countries: list[str] | str | None = None,
-    indicator_name: str = "",
-) -> pd.Series: ...
 
 
 def finalize_dataset(
@@ -318,14 +271,6 @@ def to_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
     return index
 
 
-@overload
-def apply_rounding(dataset: pd.DataFrame, rounding: int | None) -> pd.DataFrame: ...
-
-
-@overload
-def apply_rounding(dataset: pd.Series, rounding: int | None) -> pd.Series: ...
-
-
 def apply_rounding(
     dataset: pd.Series | pd.DataFrame, rounding: int | None
 ) -> pd.Series | pd.DataFrame:
@@ -364,28 +309,6 @@ def bounded_ffill(
         has_future_data = dataset.bfill().notna()
 
     return filled.where(has_future_data, dataset)
-
-
-# The overloads spell out that the growth, standardisation and rounding helpers hand
-# back the same container they were given: a DataFrame in is a DataFrame out. Without
-# them every controller attribute typed as a DataFrame would have to accept a Series
-# too, purely because the helper is shared between the two.
-@overload
-def calculate_growth(
-    dataset: pd.DataFrame,
-    lag: int | list[int] = 1,
-    rounding: int | None = 4,
-    axis: str = "columns",
-) -> pd.DataFrame: ...
-
-
-@overload
-def calculate_growth(
-    dataset: pd.Series,
-    lag: int | list[int] = 1,
-    rounding: int | None = 4,
-    axis: str = "columns",
-) -> pd.Series: ...
 
 
 def calculate_growth(
@@ -477,18 +400,6 @@ def calculate_growth(
     dataset = bounded_ffill(dataset, axis=axis)
 
     return apply_rounding(dataset.pct_change(periods=lag, axis=axis), rounding)
-
-
-@overload
-def calculate_standardization(
-    dataset: pd.DataFrame, rounding: int | None = 4, axis: str = "columns"
-) -> pd.DataFrame: ...
-
-
-@overload
-def calculate_standardization(
-    dataset: pd.Series, rounding: int | None = 4, axis: str = "columns"
-) -> pd.Series: ...
 
 
 def calculate_standardization(

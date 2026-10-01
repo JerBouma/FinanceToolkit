@@ -1,7 +1,5 @@
 """Risk Model"""
 
-from typing import overload
-
 import numpy as np
 import pandas as pd
 
@@ -337,22 +335,6 @@ def get_rolling_volatility(
     return returns.rolling(window=window_size).std() * np.sqrt(volatility_window)
 
 
-@overload
-def get_volatility(
-    returns: pd.DataFrame,
-    period: str,
-    groups: pd.Series | np.ndarray | None = None,
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_volatility(
-    returns: pd.Series,
-    period: str,
-    groups: pd.Series | np.ndarray | None = None,
-) -> pd.Series: ...
-
-
 def get_volatility(
     returns: pd.Series | pd.DataFrame,
     period: str,
@@ -611,20 +593,6 @@ def _drawdown_trough(
     return computed, running_max, trough_position, all_nan
 
 
-@overload
-def get_max_drawdown_duration(
-    returns: pd.DataFrame,
-    method: str = "return",
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_max_drawdown_duration(
-    returns: pd.Series,
-    method: str = "return",
-) -> float: ...
-
-
 def get_max_drawdown_duration(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -707,20 +675,6 @@ def get_max_drawdown_duration(
         return float(trough_position - peak_position)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
-
-
-@overload
-def get_max_drawdown_recovery_time(
-    returns: pd.DataFrame,
-    method: str = "return",
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_max_drawdown_recovery_time(
-    returns: pd.Series,
-    method: str = "return",
-) -> float: ...
 
 
 def get_max_drawdown_recovery_time(
@@ -1168,22 +1122,6 @@ def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
         acf_values[lag] = covariance / variance
 
     return pd.Series(acf_values, name="Autocorrelation")
-
-
-@overload
-def get_hill_estimator(
-    returns: pd.DataFrame,
-    k: int | float = 0.1,
-    tail: str = "left",
-) -> pd.DataFrame: ...
-
-
-@overload
-def get_hill_estimator(
-    returns: pd.Series,
-    k: int | float = 0.1,
-    tail: str = "left",
-) -> pd.Series: ...
 
 
 def get_hill_estimator(

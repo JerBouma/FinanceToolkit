@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -331,26 +330,6 @@ def get_option_payoffs(
         return option_payoffs, up_movement, down_movement, risk_neutral_probability
 
     return option_payoffs
-
-
-# A payoff evaluated over a range of prices (a Series) is a Series of payoffs, one per
-# price, while a single price gives a single payoff; the overloads make that explicit.
-@overload
-def get_strategy_payoff(
-    stock_price: pd.Series, legs: list[dict[str, float | bool | str]]
-) -> pd.Series: ...
-
-
-@overload
-def get_strategy_payoff(
-    stock_price: float, legs: list[dict[str, float | bool | str]]
-) -> float: ...
-
-
-@overload
-def get_strategy_payoff(
-    stock_price: np.ndarray, legs: list[dict[str, float | bool | str]]
-) -> np.ndarray: ...
 
 
 def get_strategy_payoff(

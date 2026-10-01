@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 from math import fsum
-from typing import overload
 
 import numpy as np
 import pandas as pd
@@ -153,18 +152,6 @@ def get_gorden_growth_model(
     Statistics, Vol. 41, No. 2, 1959, pp. 99-105.
     """
     return (dividends_per_share * (1 + growth_rate)) / (rate_of_return - growth_rate)
-
-
-@overload
-def get_graham_number(
-    earnings_per_share: pd.Series, book_value_per_share: pd.Series
-) -> pd.Series: ...
-
-
-@overload
-def get_graham_number(
-    earnings_per_share: pd.DataFrame, book_value_per_share: pd.DataFrame
-) -> pd.DataFrame: ...
 
 
 def get_graham_number(

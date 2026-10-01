@@ -1,7 +1,5 @@
 """Conditional Value at Risk Model"""
 
-from typing import overload
-
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -15,16 +13,6 @@ ALPHA_CONSTRAINT = 0.5
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
-
-
-@overload
-def get_cvar_historic(
-    returns: pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_cvar_historic(returns: pd.Series, alpha: float) -> float: ...
 
 
 def get_cvar_historic(
@@ -91,16 +79,6 @@ def get_rolling_cvar_historic(
     return returns.rolling(window=window_size).apply(_cvar, raw=True)
 
 
-@overload
-def get_cvar_gaussian(
-    returns: pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_cvar_gaussian(returns: pd.Series, alpha: float) -> float: ...
-
-
 def get_cvar_gaussian(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame | float:
@@ -135,16 +113,6 @@ def get_cvar_gaussian(
 
     za = stats.norm.ppf(alpha, 0, 1)
     return returns.std(ddof=0) * -stats.norm.pdf(za) / alpha + returns.mean()
-
-
-@overload
-def get_cvar_studentt(
-    returns: pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_cvar_studentt(returns: pd.Series, alpha: float) -> float: ...
 
 
 def get_cvar_studentt(
@@ -282,18 +250,6 @@ def get_cvar_logistic(
     scale = np.sqrt(3 * returns.std(ddof=0) ** 2 / np.pi**2)
 
     return -scale * np.log(((1 - alpha) ** (1 - 1 / alpha)) / alpha) + returns.mean()
-
-
-@overload
-def get_cvar_cornish_fisher(
-    returns: pd.DataFrame, alpha: float, number_of_quantiles: int = 1000
-) -> pd.Series | pd.DataFrame: ...
-
-
-@overload
-def get_cvar_cornish_fisher(
-    returns: pd.Series, alpha: float, number_of_quantiles: int = 1000
-) -> float: ...
 
 
 def get_cvar_cornish_fisher(

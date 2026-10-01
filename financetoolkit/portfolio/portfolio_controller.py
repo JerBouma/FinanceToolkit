@@ -807,7 +807,7 @@ class Portfolio:
                 "Failed to collect historical data. Please ensure you have provided valid tickers. "
                 "Yahoo Finance is unstable and has rate limits which you could have reached.\n"
                 "Therefore, consider obtaining an API key with the following link: "
-                "https://www.jeroenbouma.com/fmp. You can get 15% off by using the "
+                "https://www.jeroenbouma.com/fmp\nYou can get 15% off by using the "
                 "affiliate link which also supports the project."
             )
             return pd.DataFrame()

@@ -36,14 +36,27 @@ jobs:
         with:
           enable-cache: true
 
-      # Without 3.15 wheels, scipy (via statsmodels) is compiled from source and
-      # needs a BLAS library, which the runner image does not ship.
-      - name: Install build dependencies for source builds
+      # Until scipy (pulled in via statsmodels) has wheels for the pre-release
+      # interpreter it has to be compiled from source, which needs system libraries
+      # the runner lacks and gains nothing, so the job is skipped until then. The
+      # lock file is checked rather than PyPI because uv sync only installs the
+      # wheels recorded there: new wheels count once uv.lock is refreshed.
+      - name: Check for scipy wheels
+        id: wheels
         if: matrix.experimental
-        run: sudo apt-get update && sudo apt-get install -y libopenblas-dev pkg-config
+        run: |
+          tag="cp$(echo '${{ matrix.python-version }}' | tr -d .)"
+          if python -c "import sys, tomllib; sys.exit(not any('-$tag-' in w['url'] for p in tomllib.load(open('uv.lock', 'rb'))['package'] if p['name'] == 'scipy' for w in p.get('wheels', [])))"; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::uv.lock has no $tag scipy wheels yet, skipping the Python ${{ matrix.python-version }} tests."
+          fi
 
       - name: Install dependencies
+        if: steps.wheels.outputs.available != 'false'
         run: uv sync --extra mcp
 
       - name: Test with pytest
+        if: steps.wheels.outputs.available != 'false'
         run: uv run pytest -n auto --timeout=60

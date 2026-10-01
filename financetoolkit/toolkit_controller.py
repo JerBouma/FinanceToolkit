@@ -247,6 +247,9 @@ class Toolkit:
             api_key="FINANCIAL_MODELING_PREP_KEY")
         ```
         """
+        # A copied documentation example passes the placeholder key, treated as no key at all.
+        api_key = validation_model.resolve_api_key(api_key)
+
         self._api_key = api_key
         self._fred_api_key = fred_api_key
         self._risk_free_rate = risk_free_rate

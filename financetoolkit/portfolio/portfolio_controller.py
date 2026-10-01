@@ -9,7 +9,7 @@ import pandas as pd
 from financetoolkit.portfolio import helpers, overview_model, portfolio_model
 from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.statistics_model import to_period_index
 
 logger = logger_model.get_logger()
@@ -189,7 +189,8 @@ class Portfolio:
         self._transactions_overview: pd.DataFrame = pd.DataFrame()
 
         # Finance Toolkit Initialization
-        self._api_key: str = api_key
+        # A copied documentation example passes the placeholder key, treated as no key at all.
+        self._api_key: str = validation_model.resolve_api_key(api_key)
         self._tickers: list = []
         self._toolkit: Toolkit | None = None
         self._toolkit_instance: Toolkit | None = None

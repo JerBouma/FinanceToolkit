@@ -21,6 +21,7 @@ from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
+from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -127,7 +128,8 @@ class ToolkitProvider:
                 one is expected to pass False (see ``_resolve_cache_enabled`` in
                 ``mcp_controller``). Defaults to True.
         """
-        self._api_key = api_key
+        # A placeholder from the docs counts as no key, so tools answer with the "key required" message.
+        self._api_key = validation_model.resolve_api_key(api_key)
         self._fred_api_key = fred_api_key
         self._cache_enabled = cache_enabled
 

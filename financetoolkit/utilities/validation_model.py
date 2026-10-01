@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import re
 from collections import Counter
+from typing import overload
 
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
@@ -13,6 +14,41 @@ logger = logger_model.get_logger()
 RISK_FREE_RATE_OPTIONS = ["13w", "5y", "10y", "30y"]
 ENFORCE_SOURCE_OPTIONS = [None, "FinancialModelingPrep", "YahooFinance"]
 INTRADAY_PERIOD_OPTIONS = ["1min", "5min", "15min", "30min", "1hour"]
+
+# The api_key every documentation example uses, so receiving it verbatim means the example was copied without a key.
+PLACEHOLDER_API_KEY = "FINANCIAL_MODELING_PREP_KEY"
+
+
+@overload
+def resolve_api_key(api_key: str) -> str: ...
+@overload
+def resolve_api_key(api_key: str | None) -> str | None: ...
+def resolve_api_key(api_key: str | None) -> str | None:
+    """
+    Replaces the documentation placeholder API key with an empty key, reporting that
+    the placeholder was used and where to obtain an actual key. The placeholder would
+    otherwise reach FinancialModelingPrep and come back as a generic "invalid API key"
+    without telling the user that the example value was never replaced. With an empty
+    key every class behaves as it does when no key is given at all (e.g. the Toolkit
+    falls back to Yahoo Finance).
+
+    Args:
+        api_key (str | None): The FinancialModelingPrep API key as passed by the user.
+
+    Returns:
+        str | None: The API key unchanged, or an empty string when the placeholder was passed.
+    """
+    if isinstance(api_key, str) and api_key.strip() == PLACEHOLDER_API_KEY:
+        logger.error(
+            "The api_key is set to the placeholder value '%s' from the documentation examples "
+            "instead of an actual API key, so it is ignored. Obtain your API key for free and get "
+            "15%% off the Premium plans by using the following affiliate link.\nThis also supports "
+            "the project: https://www.jeroenbouma.com/fmp",
+            PLACEHOLDER_API_KEY,
+        )
+        return ""
+
+    return api_key
 
 
 def validate_toolkit_parameters(

@@ -22,7 +22,7 @@ from financetoolkit.fixedincome import (
     fred_model,
     yieldcurve_model,
 )
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
@@ -144,7 +144,8 @@ class FixedIncome:
         self._quarterly = quarterly
         self._rounding: int | None = rounding
         self._fred_api_key = fred_api_key
-        self._api_key = api_key
+        # A copied documentation example passes the placeholder key, treated as no key at all.
+        self._api_key = validation_model.resolve_api_key(api_key)
         self._cache = cache
 
         # Published once here so the FRED, ECB and Fed free functions read it back.

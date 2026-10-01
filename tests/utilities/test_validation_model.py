@@ -91,3 +91,39 @@ def test_enforced_fmp_with_api_key_passes():
 def test_invalid_intraday_period_raises():
     with pytest.raises(ValueError, match="valid intraday period"):
         validate(intraday_period="2min")
+
+
+def test_placeholder_api_key_is_dropped_and_reported(monkeypatch):
+    messages = []
+    monkeypatch.setattr(
+        validation_model.logger, "error", lambda msg, *args: messages.append(msg % args)
+    )
+
+    assert validation_model.resolve_api_key("FINANCIAL_MODELING_PREP_KEY") == ""
+    assert len(messages) == 1
+    assert "placeholder" in messages[0]
+    assert "https://www.jeroenbouma.com/fmp" in messages[0]
+
+
+@pytest.mark.parametrize("api_key", ["an-actual-key", "", None])
+def test_other_api_keys_are_left_alone(monkeypatch, api_key):
+    messages = []
+    monkeypatch.setattr(
+        validation_model.logger, "error", lambda msg, *args: messages.append(msg)
+    )
+
+    assert validation_model.resolve_api_key(api_key) == api_key
+    assert not messages
+
+
+def test_discovery_treats_the_placeholder_as_no_key():
+    from financetoolkit import Discovery
+
+    with pytest.raises(ValueError, match="API key from FinancialModelingPrep"):
+        Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+
+def test_fixedincome_treats_the_placeholder_as_no_key():
+    from financetoolkit import FixedIncome
+
+    assert FixedIncome(api_key="FINANCIAL_MODELING_PREP_KEY")._api_key == ""

@@ -47,9 +47,6 @@ dependencies = [
     "requests>=2.32",
     "yfinance",
     "openpyxl>=3.1",
-    # Portfolio is exported from the package root and reads its configuration with
-    # yaml at import time, so this is needed by a plain install, not just by the
-    # MCP server.
     "pyyaml>=6.0",
 ]
 
@@ -59,8 +56,6 @@ econometrics = [
     "linearmodels>=6.0",
 ]
 mcp = [
-    # The MCP server exposes every module, econometrics included, so it pulls
-    # in the optional extra rather than leaving those tools failing at runtime.
     "financetoolkit[econometrics]",
     "fastmcp>=3.4.2",
     "mcp[cli]>=1.27.0,<2",
@@ -161,10 +156,7 @@ lint.ignore = [
 exclude = ["conftest.py"]
 
 [tool.ruff.lint.per-file-ignores]
-# HTML template strings contain lines that cannot be wrapped
 "financetoolkit/mcp_server/auth_model.py" = ["E501"]
-# Test assertions commonly compare against literal thresholds/expected values, and
-# tests often import a specific function locally to keep a single test's scope clear
 "tests/**" = ["PLR2004", "PLC0415"]
 
 [tool.ruff.lint.isort]
@@ -186,13 +178,6 @@ include = ["financetoolkit"]
 python-version = "3.13"
 
 [tool.ty.rules]
-# The rules below are all variations of one theme: the pandas stubs describe most
-# operations as returning wide unions (e.g. `Series | DataFrame`, `Period | NaTType`),
-# which a numeric codebase like this one cannot satisfy without either a full
-# annotation overhaul or blanket per-line ignores. They are disabled wholesale rather
-# than suppressed inline so that a future typing cleanup can flip them back on one at
-# a time. The high-signal rules (unresolved references and imports, invalid type
-# forms, unused ignore comments) all remain at their default severity.
 invalid-argument-type = "ignore"
 invalid-return-type = "ignore"
 invalid-assignment = "ignore"

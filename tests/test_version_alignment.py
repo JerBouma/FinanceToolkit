@@ -35,3 +35,17 @@ def test_versions_are_aligned():
         assert (
             server_version == pyproject_version
         ), f"server.json ({server_version}) does not match pyproject.toml ({pyproject_version})"
+
+    # build-mcpb.sh restamps the bundle's own pyproject.toml at build time, but the
+    # committed copy is what people read in the repository, so it should not lag behind.
+    bundle_project = tomllib.loads(
+        (
+            PROJECT_ROOT / "financetoolkit" / "mcp_server" / "mcpb" / "pyproject.toml"
+        ).read_text()
+    )["project"]
+    assert (
+        bundle_project["version"] == pyproject_version
+    ), f"mcpb/pyproject.toml ({bundle_project['version']}) does not match pyproject.toml ({pyproject_version})"
+    assert (
+        f"financetoolkit[mcp]=={pyproject_version}" in bundle_project["dependencies"]
+    ), f"mcpb/pyproject.toml does not pin financetoolkit[mcp]=={pyproject_version}"

@@ -2,19 +2,27 @@
 
 __docformat__ = "google"
 
-
-from typing import TypeVar
+from typing import overload
 
 import pandas as pd
 
-# The calculations return whichever type they are given: a Series for one company,
-# a DataFrame for several. Mixed or scalar inputs keep their own @overload stubs.
-SeriesOrFrame = TypeVar("SeriesOrFrame", pd.Series, pd.DataFrame)
+
+@overload
+def get_current_ratio(
+    current_assets: pd.Series, current_liabilities: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_current_ratio(
+    current_assets: pd.DataFrame, current_liabilities: pd.DataFrame
+) -> pd.DataFrame: ...
 
 
 def get_current_ratio(
-    current_assets: SeriesOrFrame, current_liabilities: SeriesOrFrame
-) -> SeriesOrFrame:
+    current_assets: pd.Series | pd.DataFrame,
+    current_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the current ratio, a liquidity ratio that measures a company's ability
     to pay off its short-term liabilities with its current assets.
@@ -31,12 +39,30 @@ def get_current_ratio(
     return current_assets / current_liabilities
 
 
+@overload
 def get_quick_ratio(
-    cash_and_equivalents: SeriesOrFrame,
-    marketable_securities: SeriesOrFrame,
-    accounts_receivable: SeriesOrFrame,
-    current_liabilities: SeriesOrFrame,
-) -> SeriesOrFrame:
+    cash_and_equivalents: pd.Series,
+    marketable_securities: pd.Series,
+    accounts_receivable: pd.Series,
+    current_liabilities: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_quick_ratio(
+    cash_and_equivalents: pd.DataFrame,
+    marketable_securities: pd.DataFrame,
+    accounts_receivable: pd.DataFrame,
+    current_liabilities: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_quick_ratio(
+    cash_and_equivalents: pd.Series | pd.DataFrame,
+    marketable_securities: pd.Series | pd.DataFrame,
+    accounts_receivable: pd.Series | pd.DataFrame,
+    current_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the quick ratio (also known as the acid-test ratio), a more stringent
     measure of liquidity that excludes inventory from current assets.
@@ -68,11 +94,27 @@ def get_quick_ratio(
     ) / current_liabilities
 
 
+@overload
 def get_cash_ratio(
-    cash_and_equivalents: SeriesOrFrame,
-    marketable_securities: SeriesOrFrame,
-    current_liabilities: SeriesOrFrame,
-) -> SeriesOrFrame:
+    cash_and_equivalents: pd.Series,
+    marketable_securities: pd.Series,
+    current_liabilities: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_cash_ratio(
+    cash_and_equivalents: pd.DataFrame,
+    marketable_securities: pd.DataFrame,
+    current_liabilities: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_cash_ratio(
+    cash_and_equivalents: pd.Series | pd.DataFrame,
+    marketable_securities: pd.Series | pd.DataFrame,
+    current_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the cash ratio, a liquidity ratio that measures a company's ability
     to pay off its short-term liabilities with its cash and cash equivalents.
@@ -88,12 +130,30 @@ def get_cash_ratio(
     return (cash_and_equivalents + marketable_securities) / current_liabilities
 
 
+@overload
 def get_defensive_interval_ratio(
-    cash_and_equivalents: SeriesOrFrame,
-    marketable_securities: SeriesOrFrame,
-    accounts_receivable: SeriesOrFrame,
-    daily_operating_expenses: SeriesOrFrame,
-) -> SeriesOrFrame:
+    cash_and_equivalents: pd.Series,
+    marketable_securities: pd.Series,
+    accounts_receivable: pd.Series,
+    daily_operating_expenses: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_defensive_interval_ratio(
+    cash_and_equivalents: pd.DataFrame,
+    marketable_securities: pd.DataFrame,
+    accounts_receivable: pd.DataFrame,
+    daily_operating_expenses: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_defensive_interval_ratio(
+    cash_and_equivalents: pd.Series | pd.DataFrame,
+    marketable_securities: pd.Series | pd.DataFrame,
+    accounts_receivable: pd.Series | pd.DataFrame,
+    daily_operating_expenses: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the defensive interval ratio (DIR), a liquidity ratio that measures how
     many days a company could continue to cover its operating expenses using only its
@@ -131,9 +191,22 @@ def get_defensive_interval_ratio(
     ) / daily_operating_expenses
 
 
+@overload
 def get_working_capital(
-    current_assets: SeriesOrFrame, current_liabilities: SeriesOrFrame
-) -> SeriesOrFrame:
+    current_assets: pd.Series, current_liabilities: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_working_capital(
+    current_assets: pd.DataFrame, current_liabilities: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_working_capital(
+    current_assets: pd.Series | pd.DataFrame,
+    current_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the working capital, which is the difference between a company's current assets
     and current liabilities.
@@ -148,9 +221,22 @@ def get_working_capital(
     return current_assets - current_liabilities
 
 
+@overload
 def get_operating_cash_flow_ratio(
-    operating_cash_flow: SeriesOrFrame, current_liabilities: SeriesOrFrame
-) -> SeriesOrFrame:
+    operating_cash_flow: pd.Series, current_liabilities: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_operating_cash_flow_ratio(
+    operating_cash_flow: pd.DataFrame, current_liabilities: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_operating_cash_flow_ratio(
+    operating_cash_flow: pd.Series | pd.DataFrame,
+    current_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
     ability to pay off its current liabilities with its operating cash flow.
@@ -165,9 +251,21 @@ def get_operating_cash_flow_ratio(
     return operating_cash_flow / current_liabilities
 
 
+@overload
 def get_operating_cash_flow_sales_ratio(
-    operating_cash_flow: SeriesOrFrame, revenue: SeriesOrFrame
-) -> SeriesOrFrame:
+    operating_cash_flow: pd.Series, revenue: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_operating_cash_flow_sales_ratio(
+    operating_cash_flow: pd.DataFrame, revenue: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_operating_cash_flow_sales_ratio(
+    operating_cash_flow: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the operating cash flow to sales ratio, a liquidity ratio that measures the ability of a company to generate
     cash from its sales.
@@ -182,9 +280,22 @@ def get_operating_cash_flow_sales_ratio(
     return operating_cash_flow / revenue
 
 
+@overload
 def get_short_term_coverage_ratio(
-    operating_cash_flow: SeriesOrFrame, short_term_debt: SeriesOrFrame
-) -> SeriesOrFrame:
+    operating_cash_flow: pd.Series, short_term_debt: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_short_term_coverage_ratio(
+    operating_cash_flow: pd.DataFrame, short_term_debt: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_short_term_coverage_ratio(
+    operating_cash_flow: pd.Series | pd.DataFrame,
+    short_term_debt: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the short term coverage ratio, a liquidity ratio that measures a company's
     ability to pay off its short-term (current portion of) debt with its operating cash flow.

@@ -2,19 +2,26 @@
 
 __docformat__ = "google"
 
-
-from typing import TypeVar
+from typing import overload
 
 import pandas as pd
 
-# The calculations return whichever type they are given: a Series for one company,
-# a DataFrame for several. Mixed or scalar inputs keep their own @overload stubs.
-SeriesOrFrame = TypeVar("SeriesOrFrame", pd.Series, pd.DataFrame)
+
+@overload
+def get_debt_to_assets_ratio(
+    total_debt: pd.Series, total_assets: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_debt_to_assets_ratio(
+    total_debt: pd.DataFrame, total_assets: pd.DataFrame
+) -> pd.DataFrame: ...
 
 
 def get_debt_to_assets_ratio(
-    total_debt: SeriesOrFrame, total_assets: SeriesOrFrame
-) -> SeriesOrFrame:
+    total_debt: pd.Series | pd.DataFrame, total_assets: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the debt to assets ratio, a solvency ratio that measures the proportion of a
     company's assets that are financed by debt.
@@ -31,9 +38,21 @@ def get_debt_to_assets_ratio(
     return total_debt / total_assets
 
 
+@overload
 def get_debt_to_equity_ratio(
-    total_debt: SeriesOrFrame, total_equity: SeriesOrFrame
-) -> SeriesOrFrame:
+    total_debt: pd.Series, total_equity: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_debt_to_equity_ratio(
+    total_debt: pd.DataFrame, total_equity: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_debt_to_equity_ratio(
+    total_debt: pd.Series | pd.DataFrame, total_equity: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the debt to equity ratio, a solvency ratio that measures the
     proportion of a company's equity that is financed by debt.
@@ -48,11 +67,27 @@ def get_debt_to_equity_ratio(
     return total_debt / total_equity
 
 
+@overload
 def get_interest_coverage_ratio(
-    operating_income: SeriesOrFrame,
-    depreciation_and_amortization: SeriesOrFrame,
-    interest_expense: SeriesOrFrame,
-) -> SeriesOrFrame:
+    operating_income: pd.Series,
+    depreciation_and_amortization: pd.Series,
+    interest_expense: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_interest_coverage_ratio(
+    operating_income: pd.DataFrame,
+    depreciation_and_amortization: pd.DataFrame,
+    interest_expense: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_interest_coverage_ratio(
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    interest_expense: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the interest coverage ratio, a solvency ratio that measures a company's
     ability to pay its interest expenses on outstanding debt.
@@ -68,9 +103,22 @@ def get_interest_coverage_ratio(
     return (operating_income + depreciation_and_amortization) / interest_expense
 
 
+@overload
 def get_debt_service_coverage_ratio(
-    operating_income: SeriesOrFrame, current_liabilities: SeriesOrFrame
-) -> SeriesOrFrame:
+    operating_income: pd.Series, current_liabilities: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_debt_service_coverage_ratio(
+    operating_income: pd.DataFrame, current_liabilities: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_debt_service_coverage_ratio(
+    operating_income: pd.Series | pd.DataFrame,
+    current_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the debt service coverage ratio, a solvency ratio that measures a company's
     ability to service its debt with its net operating income.
@@ -99,9 +147,22 @@ def get_debt_service_coverage_ratio(
     return operating_income / current_liabilities
 
 
+@overload
 def get_equity_multiplier(
-    average_total_assets: SeriesOrFrame, average_total_equity: SeriesOrFrame
-) -> SeriesOrFrame:
+    average_total_assets: pd.Series, average_total_equity: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_equity_multiplier(
+    average_total_assets: pd.DataFrame, average_total_equity: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_equity_multiplier(
+    average_total_assets: pd.Series | pd.DataFrame,
+    average_total_equity: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the equity multiplier, a solvency ratio that measures the degree to which a company
     uses borrowed money (debt) to finance its operations and growth.
@@ -120,9 +181,22 @@ def get_equity_multiplier(
     return average_total_assets / average_total_equity
 
 
+@overload
 def get_free_cash_flow_yield(
-    free_cash_flow: SeriesOrFrame, market_capitalization: SeriesOrFrame
-) -> SeriesOrFrame:
+    free_cash_flow: pd.Series, market_capitalization: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_free_cash_flow_yield(
+    free_cash_flow: pd.DataFrame, market_capitalization: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_free_cash_flow_yield(
+    free_cash_flow: pd.Series | pd.DataFrame,
+    market_capitalization: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculates the free cash flow yield ratio, which measures the free cash flow
     relative to the market capitalization of the company.
@@ -137,11 +211,27 @@ def get_free_cash_flow_yield(
     return free_cash_flow / market_capitalization
 
 
+@overload
 def get_net_debt_to_ebitda_ratio(
-    operating_income: SeriesOrFrame,
-    depreciation_and_amortization: SeriesOrFrame,
-    net_debt: SeriesOrFrame,
-) -> SeriesOrFrame:
+    operating_income: pd.Series,
+    depreciation_and_amortization: pd.Series,
+    net_debt: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_net_debt_to_ebitda_ratio(
+    operating_income: pd.DataFrame,
+    depreciation_and_amortization: pd.DataFrame,
+    net_debt: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_net_debt_to_ebitda_ratio(
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    net_debt: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculates the net debt to EBITDA ratio, which measures the net debt of the company
     relative to its EBITDA.
@@ -157,11 +247,27 @@ def get_net_debt_to_ebitda_ratio(
     return net_debt / (operating_income + depreciation_and_amortization)
 
 
+@overload
 def get_gross_debt_to_ebitda_ratio(
-    total_debt: SeriesOrFrame,
-    operating_income: SeriesOrFrame,
-    depreciation_and_amortization: SeriesOrFrame,
-) -> SeriesOrFrame:
+    total_debt: pd.Series,
+    operating_income: pd.Series,
+    depreciation_and_amortization: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_gross_debt_to_ebitda_ratio(
+    total_debt: pd.DataFrame,
+    operating_income: pd.DataFrame,
+    depreciation_and_amortization: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_gross_debt_to_ebitda_ratio(
+    total_debt: pd.Series | pd.DataFrame,
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculates the gross debt to EBITDA ratio, which measures the total (gross) debt of
     the company relative to its EBITDA.
@@ -188,13 +294,33 @@ def get_gross_debt_to_ebitda_ratio(
     return total_debt / (operating_income + depreciation_and_amortization)
 
 
+@overload
 def get_asset_coverage_ratio(
-    total_assets: SeriesOrFrame,
-    intangible_assets: SeriesOrFrame,
-    current_liabilities: SeriesOrFrame,
-    short_term_debt: SeriesOrFrame,
-    total_debt: SeriesOrFrame,
-) -> SeriesOrFrame:
+    total_assets: pd.Series,
+    intangible_assets: pd.Series,
+    current_liabilities: pd.Series,
+    short_term_debt: pd.Series,
+    total_debt: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_asset_coverage_ratio(
+    total_assets: pd.DataFrame,
+    intangible_assets: pd.DataFrame,
+    current_liabilities: pd.DataFrame,
+    short_term_debt: pd.DataFrame,
+    total_debt: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_asset_coverage_ratio(
+    total_assets: pd.Series | pd.DataFrame,
+    intangible_assets: pd.Series | pd.DataFrame,
+    current_liabilities: pd.Series | pd.DataFrame,
+    short_term_debt: pd.Series | pd.DataFrame,
+    total_debt: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the asset coverage ratio, a solvency ratio that measures how well a
     company's tangible assets, after settling non-debt current liabilities, can cover
@@ -229,9 +355,21 @@ def get_asset_coverage_ratio(
     ) / total_debt
 
 
+@overload
 def get_cash_flow_coverage_ratio(
-    operating_cash_flow: SeriesOrFrame, total_debt: SeriesOrFrame
-) -> SeriesOrFrame:
+    operating_cash_flow: pd.Series, total_debt: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_cash_flow_coverage_ratio(
+    operating_cash_flow: pd.DataFrame, total_debt: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_cash_flow_coverage_ratio(
+    operating_cash_flow: pd.Series | pd.DataFrame, total_debt: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the cash flow coverage ratio, a solvency ratio that measures a company's ability to pay off its debt
     with its operating cash flow.
@@ -246,9 +384,22 @@ def get_cash_flow_coverage_ratio(
     return operating_cash_flow / total_debt
 
 
+@overload
 def get_capex_coverage_ratio(
-    cash_flow_from_operations: SeriesOrFrame, capital_expenditure: SeriesOrFrame
-) -> SeriesOrFrame:
+    cash_flow_from_operations: pd.Series, capital_expenditure: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_capex_coverage_ratio(
+    cash_flow_from_operations: pd.DataFrame, capital_expenditure: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_capex_coverage_ratio(
+    cash_flow_from_operations: pd.Series | pd.DataFrame,
+    capital_expenditure: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the capital expenditure coverage ratio, a solvency ratio that
     measures a company's ability to cover its capital expenditures with its
@@ -266,11 +417,27 @@ def get_capex_coverage_ratio(
     return cash_flow_from_operations / abs(capital_expenditure)
 
 
+@overload
 def get_dividend_capex_coverage_ratio(
-    cash_flow_from_operations: SeriesOrFrame,
-    capital_expenditure: SeriesOrFrame,
-    dividends: SeriesOrFrame,
-) -> SeriesOrFrame:
+    cash_flow_from_operations: pd.Series,
+    capital_expenditure: pd.Series,
+    dividends: pd.Series,
+) -> pd.Series: ...
+
+
+@overload
+def get_dividend_capex_coverage_ratio(
+    cash_flow_from_operations: pd.DataFrame,
+    capital_expenditure: pd.DataFrame,
+    dividends: pd.DataFrame,
+) -> pd.DataFrame: ...
+
+
+def get_dividend_capex_coverage_ratio(
+    cash_flow_from_operations: pd.Series | pd.DataFrame,
+    capital_expenditure: pd.Series | pd.DataFrame,
+    dividends: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the dividend paid and capex coverage ratio, a solvency ratio that
     measures a company's ability to cover both its capital expenditures and
@@ -290,9 +457,21 @@ def get_dividend_capex_coverage_ratio(
     return cash_flow_from_operations / (abs(capital_expenditure) + abs(dividends))
 
 
+@overload
 def get_debt_to_capital_ratio(
-    total_debt: SeriesOrFrame, total_equity: SeriesOrFrame
-) -> SeriesOrFrame:
+    total_debt: pd.Series, total_equity: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_debt_to_capital_ratio(
+    total_debt: pd.DataFrame, total_equity: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_debt_to_capital_ratio(
+    total_debt: pd.Series | pd.DataFrame, total_equity: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the debt to capital ratio, a solvency ratio that measures the proportion
     of a company's total capital (debt plus equity) that is financed by debt.
@@ -312,9 +491,21 @@ def get_debt_to_capital_ratio(
     return total_debt / (total_debt + total_equity)
 
 
+@overload
 def get_preferred_dividend_coverage_ratio(
-    net_income: SeriesOrFrame, preferred_dividends: SeriesOrFrame
-) -> SeriesOrFrame:
+    net_income: pd.Series, preferred_dividends: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_preferred_dividend_coverage_ratio(
+    net_income: pd.DataFrame, preferred_dividends: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_preferred_dividend_coverage_ratio(
+    net_income: pd.Series | pd.DataFrame, preferred_dividends: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the preferred dividend coverage ratio, a solvency ratio that measures a
     company's ability to pay dividends owed to preferred shareholders out of its net
@@ -331,9 +522,21 @@ def get_preferred_dividend_coverage_ratio(
     return net_income / abs(preferred_dividends)
 
 
+@overload
 def get_interest_paid_to_expense_ratio(
-    interest_paid: SeriesOrFrame, interest_expense: SeriesOrFrame
-) -> SeriesOrFrame:
+    interest_paid: pd.Series, interest_expense: pd.Series
+) -> pd.Series: ...
+
+
+@overload
+def get_interest_paid_to_expense_ratio(
+    interest_paid: pd.DataFrame, interest_expense: pd.DataFrame
+) -> pd.DataFrame: ...
+
+
+def get_interest_paid_to_expense_ratio(
+    interest_paid: pd.Series | pd.DataFrame, interest_expense: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the interest paid to interest expense ratio, which measures how much of
     the accrual-based interest expense reported on the income statement was actually

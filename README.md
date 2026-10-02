@@ -95,7 +95,7 @@ A basic example of how to use the Finance Toolkit is shown below. Every code sni
 from financetoolkit import Toolkit
 
 # Initialize the Toolkit for Apple and Microsoft
-companies = Toolkit(["AAPL", "MSFT"], api_key=API_KEY, start_date="2017-12-31")
+companies = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2017-12-31")
 ````
 
 Each ratio, indicator and metric has a corresponding function that can be called directly, for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`. Every module also has one or more `collect_` functions that return a whole category at once, e.g. `ratios.collect_profitability_ratios`, useful when you want everything in one call instead of assembling it metric by metric.

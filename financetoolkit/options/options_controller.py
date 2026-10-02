@@ -1296,7 +1296,7 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "ASML"], api_key=API_KEY)
+        toolkit = Toolkit(["AMZN", "ASML"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         stock_price_simulation = toolkit.options.get_stock_price_simulation(
             start_date='2020-06-22', timesteps=4

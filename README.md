@@ -112,7 +112,7 @@ Every module below also has a **How-To Guide notebook** and full **code document
 
 Before analyzing a ticker you often need to find it. The Discovery module is standalone and covers among other things lists of companies, cryptocurrencies, forex, commodities, ETFs and indices.
 ```python
-from financetoolkit import Discovery, Toolkit
+from financetoolkit import Discovery
 
 # Initialize the standalone Discovery module
 discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
@@ -125,9 +125,6 @@ semiconductors = discovery.get_stock_screener(
     market_cap_higher=100_000_000_000,
     is_etf=False,
 )
-
-# Analyze every company that was found with the Finance Toolkit
-chip_makers = Toolkit(semiconductors.index.tolist(), api_key="FINANCIAL_MODELING_PREP_KEY")
 ```
 
 The screener returns twelve companies, of which the five largest are shown below:
@@ -140,7 +137,7 @@ The screener returns twelve companies, of which the five largest are shown below
 | AMD      | Advanced Micro Devices, Inc. | 1028957518000 |  2.476 |   631.03 |       0.00 |
 | INTC     | Intel Corp.                  |  604977329655 |  2.231 |   119.94 |       0.00 |
 
-And below all twelve are ranked by market cap. Each of them is now part of `chip_makers`, ready for any of the analyses that follow.
+And below all twelve are ranked by market cap.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/discovery-dark.png">

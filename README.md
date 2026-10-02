@@ -117,24 +117,32 @@ from financetoolkit import Discovery
 # Initialize the standalone Discovery module
 discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-# Screen for stocks matching a set of criteria
-discovery.get_stock_screener(
-    market_cap_higher=1000000,
-    price_higher=100,
-    price_lower=200,
-    beta_higher=1,
-    beta_lower=1.5,
-    dividend_higher=1,
-)
+# Compare the Price-to-Earnings ratio of every sector on a given date
+discovery.get_sector_pe(date="2026-10-01")
 ```
 
 Which returns:
 
-| Symbol   | Name              |   Market Cap | Sector            | Industry               |   Beta |   Price |   Dividend | Exchange                | Country   |
-|:---------|:------------------|-------------:|:------------------|:-----------------------|-------:|--------:|-----------:|:-------------------------|:----------|
-| NKE      | NIKE, Inc.        | 163403295604 | Consumer Cyclical | Footwear & Accessories |  1.079 | 107.36  |       1.48 | New York Stock Exchange  | US        |
-| SAF.PA   | Safran SA         |  66234006559 | Industrials       | Aerospace & Defense    |  1.339 | 160.16  |       1.35 | Paris                    | FR        |
-| ROST     | Ross Stores, Inc. |  46724188589 | Consumer Cyclical | Apparel Retail         |  1.026 | 138.785 |       1.34 | NASDAQ Global Select     | US        |
+| Sector                 | Date       | Exchange   |   PE Ratio |
+|:-----------------------|:-----------|:-----------|-----------:|
+| Basic Materials        | 2026-10-01 | NASDAQ     |    23.2745 |
+| Communication Services | 2026-10-01 | NASDAQ     |    20.5596 |
+| Consumer Cyclical      | 2026-10-01 | NASDAQ     |    69.0156 |
+| Consumer Defensive     | 2026-10-01 | NASDAQ     |    34.2750 |
+| Energy                 | 2026-10-01 | NASDAQ     |    14.2246 |
+| Financial Services     | 2026-10-01 | NASDAQ     |    10.7610 |
+| Healthcare             | 2026-10-01 | NASDAQ     |    19.8003 |
+| Industrials            | 2026-10-01 | NASDAQ     |    18.5849 |
+| Real Estate            | 2026-10-01 | NASDAQ     |    36.9656 |
+| Technology             | 2026-10-01 | NASDAQ     |    48.5102 |
+| Utilities              | 2026-10-01 | NASDAQ     |    27.1417 |
+
+And below the sectors are ranked from the most to the least expensive, a quick way to see where valuations are stretched or cheap before searching for individual stocks.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/discovery-dark.png">
+  <img alt="Discovery" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/discovery-light.png">
+</picture>
 
 Furthermore, you can find in this module [stock screeners](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery/stock-screener), [sector/industry performance](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery/sector-performance) and [news feeds](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery/stock-market-news) and more. **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/discovery-notebook) and the full instrument discovery documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery).**
 
@@ -502,7 +510,7 @@ Regressing Apple's returns on a mix of its chip suppliers, megacap peers and two
 | XOM       |       -0.0291 |       0.0373 |       -0.7799 |    0.4364 |
 | PG        |        0.2858 |       0.0707 |        4.0393 |    0.0001 |
 
-And below each coefficient is shown, with the statistically significant ones (p < 0.05) highlighted.
+And below each coefficient is shown with its 95% confidence interval, with stars marking how significant it is.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-dark.png">

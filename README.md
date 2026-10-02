@@ -502,7 +502,14 @@ Regressing Apple's returns on a mix of its chip suppliers, megacap peers and two
 | XOM       |       -0.0291 |       0.0373 |       -0.7799 |    0.4364 |
 | PG        |        0.2858 |       0.0707 |        4.0393 |    0.0001 |
 
-Only `QCOM`, `SWKS`, `MSFT` and `GOOGL` come out statistically significant once every regressor is controlled for at once. The `econometrics` module covers 48 methods in total, including [unit root tests](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf) (ADF, KPSS, Phillips-Perron), [cointegration and Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/engle-granger-cointegration), [panel data estimators](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) (Fixed/Random Effects), [causal inference](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/propensity-score-matching-psm) (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching, Synthetic Control) and [time-series forecasting](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/arima-forecast) (ARIMA, VAR, VECM). **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/econometrics-notebook) and the full econometrics documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics).**
+And below each coefficient is shown with its 95% confidence interval. A stock is statistically significant when its interval does not cross zero.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-dark.png">
+  <img alt="Econometrics" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-light.png">
+</picture>
+
+Only `QCOM`, `SWKS`, `MSFT`, `GOOGL` and `PG` come out statistically significant once every regressor is controlled for at once. The `econometrics` module covers 48 methods in total, including [unit root tests](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf) (ADF, KPSS, Phillips-Perron), [cointegration and Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/engle-granger-cointegration), [panel data estimators](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) (Fixed/Random Effects), [causal inference](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/propensity-score-matching-psm) (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching, Synthetic Control) and [time-series forecasting](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/arima-forecast) (ARIMA, VAR, VECM). **Find the Notebook [here](https://www.jeroenbouma.com/projects/financetoolkit/econometrics-notebook) and the full econometrics documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics).**
 
 # MCP Server
 

@@ -134,8 +134,9 @@ class Toolkit:
         Args:
             tickers (list | str | None): A string or a list of strings containing the company ticker(s). E.g. 'TSLA' or 'MSFT'.
             Find tickers on various websites or via the FinanceDatabase: https://github.com/JerBouma/financedatabase. Defaults to None.
-            api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp. Defaults to
-            the value of the FINANCIAL_MODELING_PREP_API_KEY environment variable if set, otherwise an empty string.
+            api_key (str): An API key from FinancialModelingPrep. Obtain one at https://www.jeroenbouma.com/fmp or leave it
+            empty to use Yahoo Finance where possible. Defaults to the value of the FINANCIAL_MODELING_PREP_API_KEY
+            environment variable if set, otherwise an empty string.
             start_date (str | None): A string containing the start date of the data. Needs to be formatted as YYYY-MM-DD.
             Defaults to 5 years/quarters back from today depending on the 'quarterly' flag.
             end_date (str | None): A string containing the end date of the data. Needs to be formatted as YYYY-MM-DD.
@@ -152,8 +153,9 @@ class Toolkit:
             (CAPM, Alpha, Beta). Defaults to "SPY". Set to None to disable benchmark comparison.
             enforce_source (str | None): Enforce data source ('FinancialModelingPrep' or 'YahooFinance').
             Defaults to None (uses FMP if api_key provided, otherwise YahooFinance, with fallback).
-            historical (pd.DataFrame): Custom historical price data. See notebook:
-            https://www.jeroenbouma.com/projects/financetoolkit/external-datasets. Defaults to an empty DataFrame.
+            historical (pd.DataFrame): Custom historical price data. See
+            https://www.jeroenbouma.com/projects/financetoolkit/external-datasets for how to supply your own data.
+            Defaults to an empty DataFrame.
             balance (pd.DataFrame): Custom balance sheet data. See notebook link above. Defaults to an empty DataFrame.
             income (pd.DataFrame): Custom income statement data. See notebook link above. Defaults to an empty DataFrame.
             cash (pd.DataFrame): Custom cash flow statement data. See notebook link above. Defaults to an empty DataFrame.
@@ -321,7 +323,7 @@ class Toolkit:
                 logger.error(
                     "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
                     "and get 15% off the Premium plans by using the following affiliate link.\nThis also supports "
-                    "the project: https://www.jeroenbouma.com/fmp. Using Yahoo Finance as data source instead."
+                    "the project: https://www.jeroenbouma.com/fmp\nUsing Yahoo Finance as data source instead."
                 )
         else:
             self._fmp_plan = "Premium"

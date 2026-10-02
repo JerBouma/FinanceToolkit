@@ -88,7 +88,7 @@ class FixedIncome:
                 https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set via the FRED_API_KEY
                 environment variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
             api_key (str, optional): A FinancialModelingPrep API key used to retrieve the Treasury par yield
-                curve rates. Obtain one at https://www.jeroenbouma.com/fmp. Defaults to an empty string.
+                curve rates. Obtain one at https://www.jeroenbouma.com/fmp and pass it here. Defaults to an empty string.
             cache (Cache | None, optional): The incremental cache used for the FRED, ECB and Federal
                 Reserve requests this module makes. Defaults to None, which disables caching.
 
@@ -172,8 +172,7 @@ class FixedIncome:
             logger.warning(
                 "No FinancialModelingPrep API key found. Treasury par yield curve rates "
                 "require a key to access, obtain one (with 15% off) at "
-                "https://www.jeroenbouma.com/fmp. Once you have one, pass it via the "
-                "api_key argument."
+                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
             )
             raise ValueError(
                 "A FinancialModelingPrep API key is required to retrieve Treasury rates. "

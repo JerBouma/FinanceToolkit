@@ -2096,7 +2096,7 @@ class FixedIncome:
         fixedincome = FixedIncome(
             start_date='2024-01-01',
             end_date='2024-01-15',
-            api_key='FINANCIAL_MODELING_PREP_KEY',
+            api_key="FINANCIAL_MODELING_PREP_KEY",
         )
 
         fixedincome.get_treasury_rates()

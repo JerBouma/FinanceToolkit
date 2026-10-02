@@ -112,32 +112,35 @@ Every module below also has a **How-To Guide notebook** and full **code document
 
 Before analyzing a ticker you often need to find it. The Discovery module is standalone and covers among other things lists of companies, cryptocurrencies, forex, commodities, ETFs and indices.
 ```python
-from financetoolkit import Discovery
+from financetoolkit import Discovery, Toolkit
 
 # Initialize the standalone Discovery module
 discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-# Compare the Price-to-Earnings ratio of every sector on a given date
-discovery.get_sector_pe(date="2026-10-01")
+# Find US semiconductor companies worth more than $100 billion
+semiconductors = discovery.get_stock_screener(
+    industry="Semiconductors",
+    country="US",
+    exchange="NASDAQ",
+    market_cap_higher=100_000_000_000,
+    is_etf=False,
+)
+
+# Analyze every company that was found with the Finance Toolkit
+chip_makers = Toolkit(semiconductors.index.tolist(), api_key="FINANCIAL_MODELING_PREP_KEY")
 ```
 
-Which returns:
+The screener returns twelve companies, of which the five largest are shown below:
 
-| Sector                 | Date       | Exchange   |   PE Ratio |
-|:-----------------------|:-----------|:-----------|-----------:|
-| Basic Materials        | 2026-10-01 | NASDAQ     |    23.2745 |
-| Communication Services | 2026-10-01 | NASDAQ     |    20.5596 |
-| Consumer Cyclical      | 2026-10-01 | NASDAQ     |    69.0156 |
-| Consumer Defensive     | 2026-10-01 | NASDAQ     |    34.2750 |
-| Energy                 | 2026-10-01 | NASDAQ     |    14.2246 |
-| Financial Services     | 2026-10-01 | NASDAQ     |    10.7610 |
-| Healthcare             | 2026-10-01 | NASDAQ     |    19.8003 |
-| Industrials            | 2026-10-01 | NASDAQ     |    18.5849 |
-| Real Estate            | 2026-10-01 | NASDAQ     |    36.9656 |
-| Technology             | 2026-10-01 | NASDAQ     |    48.5102 |
-| Utilities              | 2026-10-01 | NASDAQ     |    27.1417 |
+| Symbol   | Name                         |    Market Cap |   Beta |    Price |   Dividend |
+|:---------|:-----------------------------|--------------:|-------:|---------:|-----------:|
+| NVDA     | NVIDIA Corporation           | 5677886820000 |  2.217 |   234.42 |       0.28 |
+| AVGO     | Broadcom Inc.                | 1688566002696 |  1.457 |   354.92 |       2.60 |
+| MU       | Micron Technology, Inc.      | 1212744628950 |  2.222 |  1073.81 |       0.53 |
+| AMD      | Advanced Micro Devices, Inc. | 1028957518000 |  2.476 |   631.03 |       0.00 |
+| INTC     | Intel Corp.                  |  604977329655 |  2.231 |   119.94 |       0.00 |
 
-And below the sectors are ranked from the most to the least expensive, a quick way to see where valuations are stretched or cheap before searching for individual stocks.
+And below all twelve are ranked by market cap. Each of them is now part of `chip_makers`, ready for any of the analyses that follow.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/discovery-dark.png">

@@ -502,7 +502,7 @@ Regressing Apple's returns on a mix of its chip suppliers, megacap peers and two
 | XOM       |       -0.0291 |       0.0373 |       -0.7799 |    0.4364 |
 | PG        |        0.2858 |       0.0707 |        4.0393 |    0.0001 |
 
-And below each coefficient is shown with its 95% confidence interval. A stock is statistically significant when its interval does not cross zero.
+And below each coefficient is shown, with the statistically significant ones (p < 0.05) highlighted.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-dark.png">

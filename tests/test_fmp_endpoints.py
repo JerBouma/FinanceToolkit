@@ -431,6 +431,20 @@ def test_economic_calendar_filters_by_country_name_or_code(calendar_requests):
     assert combined["Event"].tolist() == ["ECB Decision"]
 
 
+def test_economic_calendar_impact_all_keeps_every_release(calendar_requests):
+    economics_fmp_model, _ = calendar_requests
+
+    everything = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-09-30", impact="All"
+    )
+    high = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-09-30", impact="High"
+    )
+
+    assert len(everything) == 4
+    assert set(high["Impact"]) == {"High"}
+
+
 def test_economic_calendar_splits_long_ranges_into_windows(calendar_requests):
     economics_fmp_model, requested = calendar_requests
 

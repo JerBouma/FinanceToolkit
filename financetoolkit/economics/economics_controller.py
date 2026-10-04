@@ -6949,7 +6949,7 @@ class Economics:
             currencies (str | list[str], optional): The currencies to keep, e.g. "USD" or
                 ["USD", "EUR"]. Defaults to None, which keeps every currency.
             impact (str | list[str], optional): The market impact to keep: "Low", "Medium"
-                and/or "High". Defaults to None, which keeps every release.
+                and/or "High", or "All" for every release. Defaults to None, which keeps every release.
 
         Returns:
             pd.DataFrame: The economic data releases, indexed by date.

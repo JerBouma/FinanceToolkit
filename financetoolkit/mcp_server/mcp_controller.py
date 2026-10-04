@@ -172,6 +172,7 @@ def _build_mcp_app() -> FastMCP:
         direct_methods=configuration["direct_methods"],
         tool_groups=configuration["tool_groups"],
         blocked_periods=configuration.get("blocked_periods", {}),
+        method_defaults=configuration.get("method_defaults", {}),
     )
 
     utility_registry = UtilityToolRegistry(

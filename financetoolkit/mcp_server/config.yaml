@@ -465,7 +465,7 @@ tool_groups:
   # confidence indices, house/rent prices, exchange rates, share prices.
   - tool_name:       "macroeconomics"
     display_name:    "General Economy"
-    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator, get_commercial_real_estate_prices) — these require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html) and only return a 'United States' column regardless of the countries= argument. get_economic_calendar returns scheduled economic data releases (event, previous, estimate, actual, impact) rather than a country series; keep start_date/end_date to a few weeks and narrow it with countries=, currencies= (e.g. 'USD,EUR') and impact= ('High', 'Medium' or 'Low'), since one month of every country is over 2,000 releases. Its values are in the unit given in its Unit column, not decimals. Every rate and ratio this tool returns is a decimal fraction, not a percentage: an inflation rate of 4.1% comes back as 0.0412 and a debt-to-GDP ratio of 131.7% as 1.3173. Multiply by 100 before presenting them as percentages."
+    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator, get_commercial_real_estate_prices) — these require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html) and only return a 'United States' column regardless of the countries= argument. get_economic_calendar returns scheduled economic data releases (event, previous, estimate, actual, impact) rather than a country series. By default it returns only High impact releases from the past 23 days to the coming 7 days; narrow it with countries= (e.g. 'United States') and currencies= (e.g. 'USD,EUR'), pass impact='Medium' or 'High,Medium' for more, impact='All' for every release, and start_date/end_date for another window (keep it to a few weeks: one month of every country is over 2,000 releases). Its values are in the unit given in its Unit column, not decimals. Every rate and ratio this tool returns is a decimal fraction, not a percentage: an inflation rate of 4.1% comes back as 0.0412 and a debt-to-GDP ratio of 131.7% as 1.3173. Multiply by 100 before presenting them as percentages."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "general_economy"
@@ -714,3 +714,18 @@ utility_tools:
 blocked_periods:
   performance:
     - "daily"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MCP-only method defaults
+# Applied by the tool wrapper when the caller leaves a parameter unset, so a broad
+# question gets a focused, token-friendly answer. An explicit value always wins, and
+# the Python methods keep their own defaults. lookback_days/lookahead_days replace the
+# tool's default date range (five years) when the caller left both dates unset.
+# ──────────────────────────────────────────────────────────────────────────────
+method_defaults:
+  # One month of every country is over 2,000 releases (about 145,000 tokens); the
+  # high-impact releases of a 30-day window around today are typically 50 to 150.
+  get_economic_calendar:
+    impact: "High"
+    lookback_days: 23
+    lookahead_days: 7

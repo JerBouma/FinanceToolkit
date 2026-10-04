@@ -119,7 +119,7 @@ def get_economic_calendar(
         currencies (str | list[str], optional): The currencies to keep, e.g. "USD" or
             ["USD", "EUR"]. Defaults to None, which keeps all.
         impact (str | list[str], optional): The market impact to keep: "Low", "Medium" and/or
-            "High". Defaults to None, which keeps all.
+            "High", or "All" for every release. Defaults to None, which keeps all.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -172,7 +172,9 @@ def get_economic_calendar(
         ]
         country_codes = country_codes[economic_calendar.index]
 
-    if requested_impact := _as_list(impact):
+    # "All" asks for every release, which is how an MCP caller widens its High default.
+    requested_impact = _as_list(impact)
+    if requested_impact and "all" not in {level.lower() for level in requested_impact}:
         wanted = {level.lower() for level in requested_impact}
         economic_calendar = economic_calendar[
             economic_calendar["impact"].fillna("").str.lower().isin(wanted)

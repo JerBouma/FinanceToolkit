@@ -319,6 +319,7 @@ class ToolRegistry:
         direct_methods: list[str],
         tool_groups: list[dict[str, Any]],
         blocked_periods: dict[str, list[str]] | None = None,
+        method_defaults: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -342,6 +343,10 @@ class ToolRegistry:
                 exposed as top-level tools instead of via router groups.
             tool_groups (list[dict[str, Any]]): List of router group specifications
                 from the config dict.
+            blocked_periods (dict[str, list[str]] | None): Per tool, the periods it does not support.
+            method_defaults (dict[str, dict[str, Any]] | None): Per method, MCP-only defaults applied
+                when the caller leaves a parameter unset, plus an optional lookback_days and
+                lookahead_days window used when the caller leaves the dates at the tool default.
         """
         self._mcp = mcp
         self._provider = provider
@@ -357,6 +362,7 @@ class ToolRegistry:
             tool: frozenset(periods)
             for tool, periods in (blocked_periods or {}).items()
         }
+        self._method_defaults: dict[str, dict[str, Any]] = method_defaults or {}
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -605,6 +611,30 @@ class ToolRegistry:
                     if pname in disputed_params and val in (None, ""):
                         continue
                     method_kwargs[pname] = coerce_value(val, pann)
+
+            # MCP-only defaults (config.yaml method_defaults) keep a broad request small: they
+            # apply only to what the caller left unset, so an explicit value always wins. The
+            # dates count as unset when both are still the tool defaults.
+            method_defaults = self._method_defaults.get(method_name, {})
+            if (
+                "lookback_days" in method_defaults
+                or "lookahead_days" in method_defaults
+            ) and (start_date, end_date) == (inspector.start_date, inspector.end_date):
+                today = datetime.now()
+                start_date = (
+                    today - timedelta(days=int(method_defaults.get("lookback_days", 0)))
+                ).strftime("%Y-%m-%d")
+                end_date = (
+                    today
+                    + timedelta(days=int(method_defaults.get("lookahead_days", 0)))
+                ).strftime("%Y-%m-%d")
+            for pname, value in method_defaults.items():
+                if (
+                    pname not in ("lookback_days", "lookahead_days")
+                    and pname in accepted_params
+                    and method_kwargs.get(pname) in (None, "")
+                ):
+                    method_kwargs[pname] = value
 
             if kwargs:
                 logger.warning(

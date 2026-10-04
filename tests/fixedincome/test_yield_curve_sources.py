@@ -4,12 +4,23 @@ import pandas as pd
 import pytest
 import requests
 
+from financetoolkit.cache.cache_controller import clear_active_cache
 from financetoolkit.fixedincome import (
     boc_model,
     bundesbank_model,
     norgesbank_model,
     riksbank_model,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolate_from_the_active_cache():
+    """Start every test without an active cache, as another test (e.g. a Toolkit) may
+    have left one behind in the same worker, which would answer these fetches instead.
+    """
+    clear_active_cache()
+    yield
+    clear_active_cache()
 
 
 class FakeResponse:

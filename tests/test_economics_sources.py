@@ -22,6 +22,16 @@ from financetoolkit.economics import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_from_the_active_cache():
+    """Start every test without an active cache, as another test (e.g. a Toolkit) may
+    have left one behind in the same worker, which would answer these fetches instead.
+    """
+    clear_active_cache()
+    yield
+    clear_active_cache()
+
+
 class FakeResponse:
     """The parts of a requests.Response the models use."""
 

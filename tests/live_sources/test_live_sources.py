@@ -176,6 +176,11 @@ SOURCES = {
         "United Kingdom",
         "daily",
     ),
+    "ECB long-term convergence yields": (
+        lambda: ecb_model.get_long_term_convergence_yields(START, END),
+        "France",
+        "monthly",
+    ),
     "Bundesbank yield curve": (
         lambda: bundesbank_model.get_yield_curve(START, END).rename(
             columns={"2Y": "Germany"}

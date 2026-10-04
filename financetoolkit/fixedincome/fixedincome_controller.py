@@ -2164,7 +2164,10 @@ class FixedIncome:
           years.
         - Norway: Norges Bank's generic government bond yields, 3 to 10 years.
 
-        For other countries no official source publishes a daily curve without a key; see
+        With period="monthly", every other European Union member, such as France, Italy,
+        Spain, the Netherlands and Poland, is included with its 10-year yield, the long-term
+        interest rate for convergence purposes the ECB publishes monthly. For other
+        countries no official source publishes a curve without a key; see
         `get_government_bond_yield` for the monthly 3-month and 10-year rates of around
         forty countries from the OECD. Only the requested countries are retrieved, and
         only the days that are not cached yet.
@@ -2180,7 +2183,8 @@ class FixedIncome:
         Args:
             countries (list[str] | str | None, optional): The countries to retrieve, from
                 "United States", "Euro Area", "Germany", "United Kingdom", "Japan", "Canada",
-                "Sweden" and "Norway". Defaults to None, which retrieves every country.
+                "Sweden" and "Norway", and with period="monthly" any European Union member.
+                Defaults to None, which retrieves every country.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -2230,11 +2234,32 @@ class FixedIncome:
             else [countries] if isinstance(countries, str) else list(countries)
         )
 
-        if unavailable := [country for country in requested if country not in sources]:
+        # The 10-year yield of every other European Union member is published monthly, so a
+        # monthly request includes those as a curve of one maturity.
+        convergence_yields = (
+            economics_ecb_model.get_long_term_convergence_yields(
+                buffered_start_date(self._start_date, "monthly"), self._end_date
+            )
+            if period == "monthly"
+            else pd.DataFrame()
+        )
+        if countries is None and not convergence_yields.empty:
+            requested += [
+                country
+                for country in convergence_yields.columns
+                if country not in sources
+            ]
+
+        if unavailable := [
+            country
+            for country in requested
+            if country not in sources and country not in convergence_yields.columns
+        ]:
             logger.warning(
                 "No official daily yield curve is available for %s. The government bond yield "
-                "curve covers %s; get_government_bond_yield returns the monthly 3-month and "
-                "10-year rates of other countries.",
+                "curve covers %s daily, and the 10-year yield of every other European Union "
+                "member with period='monthly'; get_government_bond_yield returns the monthly "
+                "3-month and 10-year rates of around forty countries from the OECD.",
                 ", ".join(unavailable),
                 ", ".join(sources),
             )
@@ -2242,6 +2267,12 @@ class FixedIncome:
         curves = {}
         for country in requested:
             if country not in sources:
+                if country in convergence_yields.columns:
+                    curves[country] = (
+                        convergence_yields[[country]]
+                        .rename(columns={country: "10Y"})
+                        .dropna()
+                    )
                 continue
 
             curve = sources[country]()

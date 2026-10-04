@@ -182,6 +182,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{BANK_OF_CANADA}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{RIKSBANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{NORGES_BANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{EUROPEAN_CENTRAL_BANK}.convergence_yields": CachePolicy(
+        ttl_seconds=DAY, revision_days=93
+    ),
     f"{FEDERAL_RESERVE_BOARD}.series": CachePolicy(ttl_seconds=DAY),
     # The NBER dates a turning point months after the fact, a few times a decade.
     f"{NATIONAL_BUREAU_OF_ECONOMIC_RESEARCH}.business_cycle_dates": CachePolicy(

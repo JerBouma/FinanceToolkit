@@ -171,3 +171,45 @@ def test_treasury_rates_fall_back_without_a_working_key(monkeypatch):
         assert list(rates.columns) == ["1 Month", "10 Year"]
         assert rates.index.name == "Date"
         assert rates.iloc[0, 1] == pytest.approx(0.0528)
+
+
+def test_convergence_yields_keep_the_euro_series_of_adopters(monkeypatch):
+    from financetoolkit.economics import ecb_model
+
+    text = (
+        "KEY,REF_AREA,CURRENCY_TRANS,TIME_PERIOD,OBS_VALUE\n"
+        "x,HR,HRK,2026-07,9.99\nx,HR,EUR,2026-07,3.58\nx,FR,EUR,2026-07,3.85\nx,PL,PLN,2026-07,5.50\n"
+    )
+    monkeypatch.setattr(
+        ecb_model, "get_request", lambda url, timeout: FakeResponse(text=text)
+    )
+
+    yields = ecb_model.get_long_term_convergence_yields("2026-01-01", "2026-09-30")
+
+    assert yields.loc[pd.Period("2026-07", "M")].to_dict() == {
+        "France": pytest.approx(0.0385),
+        "Croatia": pytest.approx(0.0358),
+        "Poland": pytest.approx(0.055),
+    }
+
+
+def test_monthly_curve_includes_other_eu_members(monkeypatch):
+    from financetoolkit import FixedIncome
+    from financetoolkit.fixedincome import fixedincome_controller
+
+    months = pd.period_range("2026-07", "2026-08", freq="M")
+    convergence = pd.DataFrame(
+        {"France": [0.0385, 0.04], "Italy": [0.0388, 0.0399]}, index=months
+    )
+    monkeypatch.setattr(
+        fixedincome_controller.economics_ecb_model,
+        "get_long_term_convergence_yields",
+        lambda start, end: convergence,
+    )
+
+    curve = FixedIncome(
+        start_date="2026-07-01", end_date="2026-08-31"
+    ).get_government_bond_yield_curve(countries=["France"], period="monthly")
+
+    assert list(curve.columns) == [("France", "10Y")]
+    assert curve.iloc[-1, 0] == pytest.approx(0.04)

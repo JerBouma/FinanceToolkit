@@ -436,20 +436,20 @@ class Economics:
         economics = Economics(start_date='2025-01-01', end_date='2026-09-30')
 
         economics.get_gross_domestic_product_growth(
-            countries=['Euro Area', 'Germany', 'France', 'United Kingdom']
+            countries=['Euro Area', 'Germany', 'United Kingdom', 'United States', 'Japan']
         )
         ```
 
         Which returns:
 
-        |        |   Euro Area |   Germany |   France |   United Kingdom |
-        |:-------|------------:|----------:|---------:|-----------------:|
-        | 2025Q1 |       0.005 |     0.001 |    0.002 |            0.006 |
-        | 2025Q2 |       0     |     0     |    0.002 |            0     |
-        | 2025Q3 |       0.003 |     0     |    0.004 |            0.002 |
-        | 2025Q4 |       0.002 |     0.003 |    0.003 |            0     |
-        | 2026Q1 |       0     |     0.004 |   -0.002 |            0.006 |
-        | 2026Q2 |       0.006 |     0.003 |    0     |            0.005 |
+        |        |   Euro Area |   Germany |   United Kingdom |   United States |   Japan |
+        |:-------|------------:|----------:|-----------------:|----------------:|--------:|
+        | 2025Q1 |       0.005 |     0.001 |            0.006 |          0.0004 |  0.005  |
+        | 2025Q2 |       0     |     0     |            0     |          0.0099 |  0.0012 |
+        | 2025Q3 |       0.003 |     0     |            0.002 |          0.0096 | -0.0037 |
+        | 2025Q4 |       0.002 |     0.003 |            0     |          0.0005 |  0.0026 |
+        | 2026Q1 |       0     |     0.004 |            0.006 |          0.0062 |  0.0048 |
+        | 2026Q2 |       0.006 |     0.003 |            0.005 |          0.0055 |  0.0036 |
         """
         start_date = buffered_start_date(self._start_date, "monthly")
 

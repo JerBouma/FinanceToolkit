@@ -7,7 +7,11 @@ import io
 import pandas as pd
 
 from financetoolkit.cache import policy_model
-from financetoolkit.economics.helpers import collect_ranged_data, require_columns
+from financetoolkit.economics.helpers import (
+    COUNTRY_CODES,
+    collect_ranged_data,
+    require_columns,
+)
 from financetoolkit.utilities.requests_model import get_request
 
 BASE_URL = "https://data-api.ecb.europa.eu/service/data/"
@@ -175,4 +179,72 @@ def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
         start_date,
         end_date,
         columns=YIELD_CURVE_MATURITIES,
+    )
+
+
+def get_long_term_convergence_yields(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the monthly long-term interest rates for convergence purposes, the average
+    yield of a 10-year government bond of every European Union member, which the ECB
+    publishes for the Maastricht criteria. Only the months that are not cached yet are
+    requested.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The yields as decimals, indexed by month with a column per country.
+    """
+    description = "long-term interest rates for convergence purposes"
+
+    def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
+        # Monthly, so a request that starts at the beginning of a year repeats all year. The
+        # currency is left open, since members outside the euro area borrow in their own.
+        response = get_request(
+            f"{BASE_URL}IRS/M..L.L40.CI.0000..N.Z?format=csvdata&detail=dataonly"
+            f"&startPeriod={fetch_start[:4]}-01",
+            timeout=120,
+        )
+
+        if not response.text.strip():
+            return pd.DataFrame()
+
+        data = pd.read_csv(io.StringIO(response.text))
+        require_columns(
+            data,
+            {"REF_AREA", "CURRENCY_TRANS", "TIME_PERIOD", "OBS_VALUE"},
+            description,
+        )
+
+        # "EU" would be the euro area in the shared country names; it is not an issuer.
+        data = data[
+            data["REF_AREA"].isin(COUNTRY_CODES.keys()) & (data["REF_AREA"] != "EU")
+        ]
+        data["OBS_VALUE"] = pd.to_numeric(data["OBS_VALUE"], errors="coerce")
+
+        # A member that adopted the euro, such as Croatia or Bulgaria, has a series in its
+        # former currency next to the euro series for the months they overlap; the euro
+        # series is kept, so every country is one column.
+        data = data.sort_values(
+            "CURRENCY_TRANS", key=lambda currency: currency != "EUR"
+        ).drop_duplicates(subset=["TIME_PERIOD", "REF_AREA"], keep="first")
+        yields = data.pivot(index="TIME_PERIOD", columns="REF_AREA", values="OBS_VALUE")
+        yields = yields.rename(columns=COUNTRY_CODES)
+        yields.index = pd.PeriodIndex(yields.index, freq="M")
+        yields.index.name = None
+        yields.columns.name = None
+        yields = yields.sort_index()
+
+        # The ECB publishes the yields in percent.
+        return yields.loc[pd.Period(fetch_start, "M") : pd.Period(fetch_end, "M")] / 100
+
+    return collect_ranged_data(
+        source=policy_model.EUROPEAN_CENTRAL_BANK,
+        dataset="convergence_yields",
+        entity="IRS",
+        fetch=fetch,
+        start_date=start_date,
+        end_date=end_date,
+        description=description,
     )

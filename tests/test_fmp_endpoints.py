@@ -351,3 +351,124 @@ def test_etf_methods_do_not_remove_tickers_that_are_not_funds(
 
     assert holdings.empty
     assert toolkit._tickers == ["AAPL", "MSFT"]
+
+
+@pytest.fixture(name="calendar_requests")
+def fixture_calendar_requests(monkeypatch):
+    """Serve a small economic calendar and record the requested urls."""
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    requested: list[str] = []
+    releases = [
+        {
+            "date": "2026-09-04 12:30:00",
+            "country": "US",
+            "event": "Non Farm Payrolls",
+            "currency": "USD",
+            "impact": "High",
+        },
+        {
+            "date": "2026-09-04 08:00:00",
+            "country": "EU",
+            "event": "ECB Decision",
+            "currency": "EUR",
+            "impact": "High",
+        },
+        {
+            "date": "2026-09-05 09:00:00",
+            "country": "UK",
+            "event": "Retail Sales",
+            "currency": "GBP",
+            "impact": "Medium",
+        },
+        {
+            "date": "2026-09-05 02:00:00",
+            "country": "VN",
+            "event": "Inflation",
+            "currency": "VND",
+            "impact": "Low",
+        },
+    ]
+
+    def fake_get_cached_financial_data(
+        url, user_subscription="Free", sleep_timer=True
+    ):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame(releases)
+
+    monkeypatch.setattr(
+        economics_fmp_model, "get_cached_financial_data", fake_get_cached_financial_data
+    )
+
+    return economics_fmp_model, requested
+
+
+def test_economic_calendar_filters_by_country_name_or_code(calendar_requests):
+    economics_fmp_model, _ = calendar_requests
+
+    by_name = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-09-30", countries="United States"
+    )
+    by_code = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-09-30", countries="us"
+    )
+    combined = economics_fmp_model.get_economic_calendar(
+        "key",
+        "2026-09-01",
+        "2026-09-30",
+        countries=["Euro Area", "United Kingdom"],
+        currencies="EUR,GBP",
+        impact="High",
+    )
+
+    assert by_name.equals(by_code)
+    assert by_name["Event"].tolist() == ["Non Farm Payrolls"]
+    assert by_name[["Country", "Country Code"]].iloc[0].tolist() == [
+        "United States",
+        "US",
+    ]
+    # The UK release is Medium impact, so only the ECB decision is left.
+    assert combined["Event"].tolist() == ["ECB Decision"]
+
+
+def test_economic_calendar_splits_long_ranges_into_windows(calendar_requests):
+    economics_fmp_model, requested = calendar_requests
+
+    calendar = economics_fmp_model.get_economic_calendar(
+        "key", "2026-01-01", "2026-09-30"
+    )
+
+    # Requested in parallel, so in any order.
+    assert sorted(url.split("&from=")[1] for url in requested) == [
+        "2026-01-01&to=2026-03-31",
+        "2026-04-01&to=2026-06-29",
+        "2026-06-30&to=2026-09-27",
+        "2026-09-28&to=2026-09-30",
+    ]
+    # Every window returned the same releases; they are kept once.
+    assert len(calendar) == 4
+
+
+def test_economic_calendar_only_falls_back_to_requested_dates(
+    calendar_requests, monkeypatch
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics import gmdb_model
+
+    _, requested = calendar_requests
+    monkeypatch.setattr(
+        gmdb_model,
+        "collect_global_macro_database_dataset",
+        lambda cache=None: pd.DataFrame(),
+    )
+
+    Economics(
+        api_key="key", start_date="2026-09-20", end_date="2026-10-03"
+    ).get_economic_calendar()
+    Economics(api_key="key").get_economic_calendar()
+
+    # The first uses the dates it was created with, the second the endpoint's default
+    # rather than a hundred years of 90-day windows.
+    assert requested[0].endswith("&from=2026-09-20&to=2026-10-03")
+    assert requested[1].endswith("economic-calendar?apikey=key")
+    assert len(requested) == 2

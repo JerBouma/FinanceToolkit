@@ -131,6 +131,10 @@ class Economics:
         )
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
 
+        # The dates as passed, before the defaults are filled in: the economic calendar only
+        # falls back to dates that were asked for, not to the 100 year default.
+        self._requested_start_date = start_date
+        self._requested_end_date = end_date
         self._cache = cache
         # A copied documentation example passes the placeholder key, treated as no key at all.
         self._api_key = validation_model.resolve_api_key(api_key)
@@ -6907,7 +6911,12 @@ class Economics:
 
     @handle_errors
     def get_economic_calendar(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        countries: str | list[str] | None = None,
+        currencies: str | list[str] | None = None,
+        impact: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the scheduled releases of economic data for every country, such as
@@ -6916,19 +6925,31 @@ class Economics:
         and the change. The estimate versus the actual value is what moves markets: a
         release far from the consensus tends to cause the largest reaction.
 
+        The calendar covers well over a hundred countries, so it is best narrowed down:
+        select a date range and filter by country, currency and/or impact. The "Impact"
+        column rates how much a release usually moves the market (Low, Medium or High).
         Values are reported in the unit of the release, given in the "Unit" column (for
-        example "%" for an inflation rate), so they are not converted to decimals. The
-        "Impact" column rates how much a release usually moves the market (Low, Medium or
-        High). Countries are given as ISO codes, e.g. "US" or "DE".
+        example "%" for an inflation rate), so they are not converted to decimals.
 
-        Note that the date range is limited to a maximum of 90 days. This requires a
+        Without a start_date and end_date the dates this Economics instance was created
+        with are used, and without those the last 90 days. The endpoint returns at most 90
+        days per request, so a longer range is retrieved in 90-day windows. This requires a
         FinancialModelingPrep API key, passed via api_key when initializing.
 
         Also known as: economic calendar, macro calendar, economic releases.
 
         Args:
-            start_date (str, optional): The start date to filter data with. Defaults to None.
-            end_date (str, optional): The end date to filter data with. Defaults to None.
+            start_date (str, optional): The start date of the releases. Defaults to None, which
+                uses this instance's start_date when it was given.
+            end_date (str, optional): The end date of the releases. Defaults to None, which uses
+                this instance's end_date when it was given, otherwise today.
+            countries (str | list[str], optional): The countries to keep, as names (e.g.
+                "United States", "Germany", "Euro Area") or codes (e.g. "US", "DE", "EU").
+                Defaults to None, which keeps every country.
+            currencies (str | list[str], optional): The currencies to keep, e.g. "USD" or
+                ["USD", "EUR"]. Defaults to None, which keeps every currency.
+            impact (str | list[str], optional): The market impact to keep: "Low", "Medium"
+                and/or "High". Defaults to None, which keeps every release.
 
         Returns:
             pd.DataFrame: The economic data releases, indexed by date.
@@ -6940,25 +6961,35 @@ class Economics:
 
         economics = Economics(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        economic_calendar = economics.get_economic_calendar(start_date="2026-10-01", end_date="2026-10-03")
+        economic_calendar = economics.get_economic_calendar(
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+            countries=["United States", "Euro Area"],
+            impact="High",
+        )
 
-        economic_calendar.loc[economic_calendar["Country"] == "US", ["Event", "Previous", "Estimate", "Actual", "Impact"]].head()
+        economic_calendar[["Country", "Event", "Previous", "Estimate", "Actual"]].head()
         ```
 
         Which returns:
 
-        | Date                | Event                                  |   Previous |   Estimate |   Actual | Impact   |
-        |:--------------------|:---------------------------------------|-----------:|-----------:|---------:|:---------|
-        | 2026-10-01 09:30:00 | Challenger Job Cuts (Sep)              |     52.881 |         78 |   43.281 | Low      |
-        | 2026-10-01 12:30:00 | Initial Jobless Claims (Sep/26)        |    198     |        200 |  197     | High     |
-        | 2026-10-01 12:30:00 | Continuing Jobless Claims (Sep/19)     |   1712     |       1730 | 1701     | High     |
-        | 2026-10-01 12:30:00 | Jobless Claims 4-Week Average (Sep/26) |    202.5   |        199 |  200     | High     |
-        | 2026-10-01 13:05:00 | Fed Schmid Speech                      |    nan     |        nan |  nan     | Medium   |
+        | Date                | Country       | Event                       |   Previous |   Estimate |   Actual |
+        |:--------------------|:--------------|:----------------------------|-----------:|-----------:|---------:|
+        | 2026-09-01 14:00:00 | United States | ISM Manufacturing PMI (Aug) |     55.6   |       55.2 |   54.6   |
+        | 2026-09-01 14:00:00 | United States | JOLTs Job Openings (Jul)    |      7.182 |        7.3 |    7.271 |
+        | 2026-09-03 14:00:00 | United States | ISM Services PMI (Aug)      |     54.1   |       54.3 |   55.4   |
+        | 2026-09-04 12:30:00 | United States | Unemployment Rate (Aug)     |      4.1   |        4.1 |    4.1   |
+        | 2026-09-04 12:30:00 | United States | Non Farm Payrolls (Aug)     |     21     |       56   |  162     |
         """
         self._require_api_key()
 
         return economics_fmp_model.get_economic_calendar(
-            api_key=self._api_key, start_date=start_date, end_date=end_date
+            api_key=self._api_key,
+            start_date=start_date or self._requested_start_date,
+            end_date=end_date or self._requested_end_date,
+            countries=countries,
+            currencies=currencies,
+            impact=impact,
         )
 
     @handle_errors

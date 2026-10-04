@@ -169,9 +169,6 @@ def finalize_dataset(
     elif not growth:
         dataset = apply_rounding(dataset, rounding)
 
-    if dropna:
-        dataset = dataset.dropna(how="all", axis=0)
-
     if apply_slice:
         dataset = (
             dataset.loc[start_date:end_date]
@@ -193,6 +190,11 @@ def finalize_dataset(
         dataset = dataset[
             [country for country in countries if country not in missing_countries]
         ]
+
+    # After the country selection, so a row that is empty for every selected country goes
+    # too, such as a month only an unselected country has published yet.
+    if dropna:
+        dataset = dataset.dropna(how="all", axis=0)
 
     return dataset
 

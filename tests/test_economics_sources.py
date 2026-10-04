@@ -619,3 +619,29 @@ def test_a_fred_key_selects_fred_and_none_selects_the_keyless_source(monkeypatch
 
     assert with_key.get_mortgage_rate_30_year().iloc[0, 0] == 0.01
     assert without_key.get_mortgage_rate_30_year().iloc[0, 0] == 0.02
+
+
+def test_rows_empty_for_the_selected_countries_are_dropped():
+    from financetoolkit.utilities.statistics_model import finalize_dataset
+
+    months = pd.period_range("2026-06", "2026-09", freq="M")
+    data = pd.DataFrame(
+        {
+            "United Kingdom": [0.049, None, None, None],
+            "United States": [0.041, 0.041, 0.041, 0.042],
+        },
+        index=months,
+    )
+
+    result = finalize_dataset(
+        dataset=data,
+        start_date="2026-01-01",
+        end_date="2026-12-31",
+        default_rounding=4,
+        countries=["United Kingdom"],
+        axis="rows",
+        row_slice=True,
+        dropna=True,
+    )
+
+    assert list(result.index) == [pd.Period("2026-06", "M")]

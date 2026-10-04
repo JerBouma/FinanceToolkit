@@ -485,6 +485,7 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            dropna=True,
         )
 
     @handle_errors
@@ -3156,6 +3157,10 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=not oecd_source
+            and period is not None
+            and period.lower() == "monthly",
         )
 
     @handle_errors
@@ -3265,6 +3270,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=period == "monthly",
         )
 
     @handle_errors
@@ -4549,6 +4556,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=period != "yearly",
         )
 
     @handle_errors
@@ -4814,6 +4823,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=period.lower() in ("daily", "weekly"),
         )
 
     @handle_errors
@@ -4929,6 +4940,7 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            dropna=True,
         )
 
     @handle_errors
@@ -5532,6 +5544,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=monthly,
         )
 
     @handle_errors

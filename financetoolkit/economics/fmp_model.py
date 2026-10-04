@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import re
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -12,6 +13,14 @@ from financetoolkit.economics.helpers import COUNTRY_CODES
 
 # The endpoint returns at most this many days per request, so longer ranges are split.
 ECONOMIC_CALENDAR_WINDOW_DAYS = 90
+
+# Releases that are levels of a survey or an index rather than percentages, even where the
+# calendar labels their unit "%", unless the name says it is their rate of change.
+SURVEY_LEVEL_PATTERN = re.compile(
+    r"\bPMI\b|Confidence|Sentiment|Optimism|Climate|Expectations|Outlook|\bIndex\b(?!-)",
+    flags=re.IGNORECASE,
+)
+RATE_OF_CHANGE_PATTERN = re.compile(r"\b(?:YoY|MoM|QoQ)\b", flags=re.IGNORECASE)
 
 # The economic calendar uses two-letter country codes, named like the rest of the module.
 ECONOMIC_CALENDAR_COUNTRIES = COUNTRY_CODES
@@ -65,6 +74,7 @@ def get_economic_calendar(
     countries: str | list[str] | None = None,
     currencies: str | list[str] | None = None,
     impact: str | list[str] | None = None,
+    events: str | list[str] | None = None,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -88,6 +98,9 @@ def get_economic_calendar(
             ["USD", "EUR"]. Defaults to None, which keeps all.
         impact (str | list[str], optional): The market impact to keep: "Low", "Medium" and/or
             "High", or "All" for every release. Defaults to None, which keeps all.
+        events (str | list[str], optional): Parts of event names to keep, matched without
+            regard to case, e.g. "PMI" or ["CPI", "Unemployment"]. Defaults to None, which
+            keeps every event.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -150,6 +163,15 @@ def get_economic_calendar(
         ]
         country_codes = country_codes[economic_calendar.index]
 
+    if requested_events := _as_list(events):
+        # Matched as plain text, so a name like "S&P Global PMI" needs no escaping.
+        matches = pd.Series(False, index=economic_calendar.index)
+        names = economic_calendar["event"].fillna("").str.lower()
+        for event in requested_events:
+            matches |= names.str.contains(event.lower(), regex=False)
+        economic_calendar = economic_calendar[matches]
+        country_codes = country_codes[economic_calendar.index]
+
     economic_calendar = economic_calendar.rename(
         columns={
             "date": "Date",
@@ -169,12 +191,17 @@ def get_economic_calendar(
     # Percentages are decimals throughout the toolkit, so a release quoted in percent (an
     # inflation or unemployment rate, a policy rate) is divided by 100, as is the relative
     # change. Releases in other units (thousands of jobs, index points) keep their values.
+    # FMP also labels many survey levels "%", such as a PMI of 52.4 or a confidence index,
+    # so those are recognised by name and left as they are.
+    survey_level = economic_calendar["Event"].fillna("").str.contains(
+        SURVEY_LEVEL_PATTERN
+    ) & ~economic_calendar["Event"].fillna("").str.contains(RATE_OF_CHANGE_PATTERN)
     in_percent = (
         economic_calendar.get("Unit", pd.Series("", index=economic_calendar.index))
         .fillna("")
         .str.strip()
         == "%"
-    )
+    ) & ~survey_level
     for column in ["Previous", "Estimate", "Actual", "Change"]:
         if column in economic_calendar.columns:
             economic_calendar.loc[in_percent, column] = (

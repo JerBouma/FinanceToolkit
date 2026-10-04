@@ -645,3 +645,134 @@ def test_rows_empty_for_the_selected_countries_are_dropped():
     )
 
     assert list(result.index) == [pd.Period("2026-06", "M")]
+
+
+def test_bis_consumer_prices_are_named_and_in_decimals(monkeypatch):
+    text = "FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\nM,US,771,2026-08,3.4\nM,IN,771,2026-08,4.8\n"
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(text=text)
+
+    monkeypatch.setattr(bis_model, "get_request", fake)
+
+    rates = bis_model.get_consumer_prices("inflation_rate", "2025-06-15", "2026-09-30")
+
+    assert (
+        "WS_LONG_CPI/M..771/" in urls[0]
+        and "startPeriod=2025-06&endPeriod=2026-09" in urls[0]
+    )
+    assert rates.iloc[0].to_dict() == {
+        "India": pytest.approx(0.048),
+        "United States": pytest.approx(0.034),
+    }
+
+
+def test_ibge_unemployment_asks_for_json_and_is_in_decimals(monkeypatch):
+    from financetoolkit.economics import ibge_model
+
+    headers = []
+    rows = [
+        {"D3C": "Mês (Código)", "V": "Valor"},
+        {"D3C": "202607", "V": "5.3"},
+        {"D3C": "202608", "V": "5.3"},
+    ]
+
+    def fake(url, timeout, extra_headers):
+        headers.append(extra_headers)
+        return FakeResponse(rows)
+
+    monkeypatch.setattr(ibge_model, "get_request", fake)
+
+    rate = ibge_model.get_unemployment_rate()
+
+    assert headers[0] == {"Accept": "application/json"}
+    assert rate.loc[pd.Period("2026-08", "M"), "Brazil"] == pytest.approx(0.053)
+
+
+def test_ecb_requests_start_on_the_first_of_the_month(monkeypatch):
+    from financetoolkit.economics import ecb_model
+
+    urls = []
+    text = (
+        "KEY,TIME_PERIOD,OBS_VALUE\n"
+        "YC.B.U2.EUR.4F.G_N_C.SV_C_YM.SR_3M,2026-09-15,2.62\n"
+        "YC.B.U2.EUR.4F.G_N_C.SV_C_YM.SR_10Y,2026-09-15,4.19\n"
+        "YC.B.U2.EUR.4F.G_N_C.SV_C_YM.SR_10Y,2026-09-02,4.10\n"
+    )
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(text=text)
+
+    monkeypatch.setattr(ecb_model, "get_request", fake)
+
+    curve = ecb_model.get_yield_curve("2026-09-10", "2026-09-30")
+
+    # The same URL all month, so the portal can serve it from its cache; the range is
+    # applied afterwards.
+    assert urls[0].endswith("startPeriod=2026-09-01")
+    assert "SR_3M+SR_6M" in urls[0]
+    assert list(curve.index) == [pd.Period("2026-09-15", "D")]
+    assert curve.iloc[0].to_dict() == {
+        "3M": pytest.approx(0.0262),
+        "10Y": pytest.approx(0.0419),
+    }
+
+
+def test_calendar_events_filter_and_survey_levels(monkeypatch):
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    releases = pd.DataFrame(
+        [
+            {
+                "date": "2026-09-30 01:45:00",
+                "country": "CN",
+                "event": "PMI (Sep)",
+                "actual": 52.4,
+                "unit": "%",
+            },
+            {
+                "date": "2026-10-01 14:00:00",
+                "country": "US",
+                "event": "ISM Manufacturing PMI (Sep)",
+                "actual": 54.5,
+                "unit": "Points",
+            },
+            {
+                "date": "2026-09-26 12:30:00",
+                "country": "US",
+                "event": "Core PCE Price Index YoY (Aug)",
+                "actual": 3.0,
+                "unit": "%",
+            },
+            {
+                "date": "2026-09-01 14:00:00",
+                "country": "US",
+                "event": "Unemployment Rate (Aug)",
+                "actual": 4.1,
+                "unit": "%",
+            },
+        ]
+    ).assign(currency="USD", previous=None, estimate=None, impact="High")
+    monkeypatch.setattr(
+        economics_fmp_model,
+        "get_cached_financial_data",
+        lambda url, user_subscription="Free": releases.copy(),
+    )
+
+    pmis = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-10-03", events="pmi"
+    )
+    everything = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-10-03"
+    ).set_index("Event")
+
+    assert sorted(pmis["Event"]) == ["ISM Manufacturing PMI (Sep)", "PMI (Sep)"]
+    # A PMI labelled "%" stays a level; a rate of change of an index is a percentage.
+    assert everything.loc["PMI (Sep)", "Actual"] == 52.4
+    assert everything.loc["Core PCE Price Index YoY (Aug)", "Actual"] == pytest.approx(
+        0.03
+    )
+    assert everything.loc["Unemployment Rate (Aug)", "Actual"] == pytest.approx(0.041)

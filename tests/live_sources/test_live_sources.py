@@ -21,13 +21,20 @@ from financetoolkit.economics import (
     eurostat_model,
     frb_model,
     freddie_mac_model,
+    ibge_model,
     mof_model,
     nber_model,
     ons_model,
     sbj_model,
     treasury_model,
 )
-from financetoolkit.fixedincome import fed_model
+from financetoolkit.fixedincome import (
+    boc_model,
+    bundesbank_model,
+    fed_model,
+    norgesbank_model,
+    riksbank_model,
+)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("FINANCETOOLKIT_LIVE_SOURCES") != "1",
@@ -148,6 +155,52 @@ SOURCES = {
         frb_model.get_industrial_production_index,
         "United States",
         "monthly",
+    ),
+    "BIS consumer prices": (
+        lambda: bis_model.get_consumer_prices("inflation_rate", START, END),
+        "United States",
+        "monthly",
+    ),
+    "IBGE unemployment rate": (ibge_model.get_unemployment_rate, "Brazil", "monthly"),
+    "ECB yield curve": (
+        lambda: ecb_model.get_yield_curve(START, END).rename(
+            columns={"2Y": "Euro Area"}
+        ),
+        "Euro Area",
+        "daily",
+    ),
+    "Bank of England gilt curve": (
+        lambda: boe_model.get_yield_curve(START, END).rename(
+            columns={"5Y": "United Kingdom"}
+        ),
+        "United Kingdom",
+        "daily",
+    ),
+    "Bundesbank yield curve": (
+        lambda: bundesbank_model.get_yield_curve(START, END).rename(
+            columns={"2Y": "Germany"}
+        ),
+        "Germany",
+        "daily",
+    ),
+    "Bank of Canada yield curve": (
+        lambda: boc_model.get_yield_curve(START, END).rename(columns={"10Y": "Canada"}),
+        "Canada",
+        "daily",
+    ),
+    "Riksbank yield curve": (
+        lambda: riksbank_model.get_yield_curve(START, END).rename(
+            columns={"10Y": "Sweden"}
+        ),
+        "Sweden",
+        "daily",
+    ),
+    "Norges Bank yield curve": (
+        lambda: norgesbank_model.get_yield_curve(START, END).rename(
+            columns={"10Y": "Norway"}
+        ),
+        "Norway",
+        "daily",
     ),
     "New York Fed SOFR": (
         lambda: fed_model.get_secured_overnight_financing_rate()[["Rate"]].rename(

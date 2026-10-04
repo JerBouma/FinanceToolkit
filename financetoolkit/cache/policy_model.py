@@ -28,6 +28,11 @@ BUREAU_OF_LABOR_STATISTICS = "BLS"
 FREDDIE_MAC = "FreddieMac"
 FEDERAL_RESERVE_BOARD = "FederalReserveBoard"
 NATIONAL_BUREAU_OF_ECONOMIC_RESEARCH = "NBER"
+IBGE = "IBGE"
+BUNDESBANK = "Bundesbank"
+BANK_OF_CANADA = "BankOfCanada"
+RIKSBANK = "Riksbank"
+NORGES_BANK = "NorgesBank"
 
 # The market risk premium is published per country, so it is one cache entry. Its name
 # changed when the premiums became decimals (v2.3.0), so an entry cached in percent by an
@@ -151,6 +156,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.dataset": CachePolicy(
         ttl_seconds=DAY, revision_days=31
     ),
+    f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.consumer_prices": CachePolicy(
+        ttl_seconds=DAY, revision_days=365
+    ),
     f"{BANK_OF_ENGLAND}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{BANK_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{EUROPEAN_CENTRAL_BANK}.economics_series": CachePolicy(
@@ -167,6 +175,13 @@ POLICIES: dict[str, CachePolicy] = {
     f"{US_TREASURY}.par_yield_curve_real": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.par_yield_curve_real_year": CachePolicy(ttl_seconds=30 * DAY),
     f"{FREDDIE_MAC}.series": CachePolicy(ttl_seconds=DAY),
+    f"{IBGE}.series": CachePolicy(ttl_seconds=DAY),
+    # Daily bond yields; a rerun only asks for the last month, since yields are not revised
+    # but a holiday or late publication can leave the latest days open.
+    f"{BUNDESBANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{BANK_OF_CANADA}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{RIKSBANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{NORGES_BANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{FEDERAL_RESERVE_BOARD}.series": CachePolicy(ttl_seconds=DAY),
     # The NBER dates a turning point months after the fact, a few times a decade.
     f"{NATIONAL_BUREAU_OF_ECONOMIC_RESEARCH}.business_cycle_dates": CachePolicy(

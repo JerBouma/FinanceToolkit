@@ -20,9 +20,10 @@ HEADERS = {
     )
 }
 
+# The nominal par yields of gilts the database publishes daily, with their maturity.
+YIELD_CURVE_SERIES = {"IUDSNPY": "5Y", "IUDMNPY": "10Y", "IUDLNPY": "20Y"}
+
 SERIES = {
-    # Nominal par yield of a 10-year gilt, daily.
-    "long_term_interest_rate": "IUDMNPY",
     # Sterling Overnight Index Average (SONIA), daily.
     "overnight_rate": "IUDSOIA",
 }
@@ -35,22 +36,28 @@ EARLIEST_DATE = "1990-01-01"
 
 
 def collect_boe_series(
-    series_code: str, description: str, start_date: str, end_date: str
+    series_code: str,
+    description: str,
+    start_date: str,
+    end_date: str,
+    columns: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
-    Retrieves the days between two dates of a Bank of England database series. Only the
-    days that are not cached yet are requested.
+    Retrieves the days between two dates of one or more Bank of England database series
+    in a single request. Only the days that are not cached yet are requested.
 
     Args:
-        series_code (str): The series code, e.g. "IUDMNPY".
+        series_code (str): The series code, e.g. "IUDMNPY", or several separated by commas.
         description (str): What is retrieved, used in the log and error messages.
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
+        columns (dict[str, str] | None): The column name per series code. Defaults to None,
+            which names the single series "United Kingdom".
 
     Returns:
-        pd.DataFrame: A single "United Kingdom" column with the values as decimals,
-        indexed by day.
+        pd.DataFrame: The values as decimals, indexed by day.
     """
+    columns = columns or {series_code: COUNTRY}
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         # The database takes dates written as "01/Jan/2026".
@@ -79,16 +86,19 @@ def collect_boe_series(
                 f"({error}), which means the database returned something else."
             ) from error
 
-        require_columns(data, {"DATE", series_code}, description)
+        require_columns(data, {"DATE", *columns}, description)
 
         # Dates are written as "01 Sep 2026".
         index = pd.PeriodIndex(
-            pd.to_datetime(data["DATE"], format="%d %b %Y"), freq="D"
+            pd.to_datetime(data["DATE"], format="%d %b %Y"), freq="D", name=None
         )
-        values = pd.to_numeric(data[series_code], errors="coerce").to_numpy()
+        values = {
+            name: pd.to_numeric(data[code], errors="coerce").to_numpy() / 100
+            for code, name in columns.items()
+        }
 
         # The Bank of England publishes the rates in percent.
-        return pd.DataFrame({COUNTRY: values / 100}, index=index).sort_index()
+        return pd.DataFrame(values, index=index).sort_index()
 
     return collect_ranged_data(
         source=policy_model.BANK_OF_ENGLAND,
@@ -101,16 +111,45 @@ def collect_boe_series(
     )
 
 
+def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the daily nominal par yields of 5, 10 and 20-year UK government bonds
+    (gilts) in a single request.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The yields as decimals, indexed by day with a column per maturity.
+    """
+    return collect_boe_series(
+        ",".join(YIELD_CURVE_SERIES),
+        "gilt par yields",
+        start_date,
+        end_date,
+        columns=YIELD_CURVE_SERIES,
+    )
+
+
 def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the daily nominal par yield of a 10-year UK government bond (gilt).
+    Retrieves the daily nominal par yield of a 10-year UK government bond (gilt). It is
+    taken from the yield curve request, so both share one query.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
 
     Returns:
         pd.DataFrame: The yield as a decimal, indexed by day.
     """
-    return collect_boe_series(
-        SERIES["long_term_interest_rate"], "10-year gilt yield", start_date, end_date
-    )
+    yield_curve = get_yield_curve(start_date, end_date)
+
+    if yield_curve.empty:
+        return yield_curve
+
+    return yield_curve[["10Y"]].rename(columns={"10Y": COUNTRY}).dropna()
 
 
 def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:

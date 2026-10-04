@@ -9,17 +9,33 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
+import requests
 
 from financetoolkit.cache.cache_controller import Cache, set_active_cache
-from financetoolkit.economics import oecd_model
+from financetoolkit.economics import (
+    boe_model,
+    ecb_model as economics_ecb_model,
+    mof_model,
+    oecd_model,
+    treasury_model,
+)
+from financetoolkit.economics.helpers import (
+    buffered_start_date,
+    resample_to_period,
+    validate_period,
+)
 from financetoolkit.fixedincome import (
+    boc_model,
     bond_model,
+    bundesbank_model,
     derivative_model,
     ecb_model,
     euribor_model,
     fed_model,
     fmp_model,
     fred_model,
+    norgesbank_model,
+    riksbank_model,
     yieldcurve_model,
 )
 from financetoolkit.utilities import logger_model, validation_model
@@ -27,6 +43,39 @@ from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = logger_model.get_logger()
+
+# The Treasury's names for the maturities of the US par yield curve, in the labels the
+# government bond yield curve uses for every country.
+TREASURY_MATURITIES = {
+    "1 Mo": "1M",
+    "1.5 Month": "1.5M",
+    "2 Mo": "2M",
+    "3 Mo": "3M",
+    "4 Mo": "4M",
+    "6 Mo": "6M",
+    "1 Yr": "1Y",
+    "2 Yr": "2Y",
+    "3 Yr": "3Y",
+    "5 Yr": "5Y",
+    "7 Yr": "7Y",
+    "10 Yr": "10Y",
+    "20 Yr": "20Y",
+    "30 Yr": "30Y",
+}
+
+
+def _maturity_in_months(label: str) -> float:
+    """
+    Converts a maturity label such as "3M" or "10Y" into months, for sorting a curve.
+
+    Args:
+        label (str): The maturity label.
+
+    Returns:
+        float: The maturity in months.
+    """
+    return float(label[:-1]) * (12 if label.endswith("Y") else 1)
+
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
@@ -2039,6 +2088,228 @@ class FixedIncome:
             row_slice=True,
         )
 
+    def _get_country_yield_curves(self, start_date: str) -> dict:
+        """
+        Returns, per country, the function that retrieves its daily government bond yield
+        curve from the official source, so that only the requested countries are fetched.
+
+        Args:
+            start_date (str): The start date to retrieve from (YYYY-MM-DD).
+
+        Returns:
+            dict: The retrieval function per country.
+        """
+        end_date = self._end_date
+
+        def united_states() -> pd.DataFrame:
+            curve = treasury_model.get_yield_curve("nominal", start_date, end_date)
+            return curve.rename(columns=TREASURY_MATURITIES)[
+                [
+                    label
+                    for column, label in TREASURY_MATURITIES.items()
+                    if column in curve
+                ]
+            ]
+
+        def japan() -> pd.DataFrame:
+            # The Ministry of Finance publishes one file with the full history.
+            curve = mof_model.get_government_bond_yields()
+            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
+
+        return {
+            "United States": united_states,
+            "Euro Area": lambda: economics_ecb_model.get_yield_curve(
+                start_date, end_date
+            ),
+            "Germany": lambda: bundesbank_model.get_yield_curve(start_date, end_date),
+            "United Kingdom": lambda: boe_model.get_yield_curve(start_date, end_date),
+            "Japan": japan,
+            "Canada": lambda: boc_model.get_yield_curve(start_date, end_date),
+            "Sweden": lambda: riksbank_model.get_yield_curve(start_date, end_date),
+            "Norway": lambda: norgesbank_model.get_yield_curve(start_date, end_date),
+        }
+
+    @handle_errors
+    def get_government_bond_yield_curve(
+        self,
+        countries: list[str] | str | None = None,
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the government bond yield curve of a variety of countries, every maturity
+        a country's government borrows at, from treasury bills to bonds of 30 years and
+        more. The yield curve is the basis for discounting cash flows and pricing bonds,
+        and its shape is one of the most watched signals in markets: an inverted curve,
+        with short rates above long rates, has preceded most recessions.
+
+        Every curve comes from the official source without an API key:
+
+        - United States: the U.S. Department of the Treasury's par yield curve, 1 month to
+          30 years, from 1990.
+        - Euro Area: the yield curve the European Central Bank estimates from the bonds of
+          all euro area central governments, 3 months to 30 years, from 2004.
+        - Germany: the term structure the Deutsche Bundesbank estimates from listed federal
+          securities, 1 to 30 years.
+        - United Kingdom: the Bank of England's nominal par yields of gilts, 5, 10 and 20
+          years.
+        - Japan: the Ministry of Finance's Japanese government bond yields, 1 to 40 years,
+          from 1974.
+        - Canada: the Bank of Canada's treasury bill yields (1 month to 1 year, weekly) and
+          benchmark bond yields (2 to 30 years).
+        - Sweden: the Riksbank's treasury bill and government bond yields, 1 month to 10
+          years.
+        - Norway: Norges Bank's generic government bond yields, 3 to 10 years.
+
+        For other countries no official source publishes a daily curve without a key; see
+        `get_government_bond_yield` for the monthly 3-month and 10-year rates of around
+        forty countries from the OECD. Only the requested countries are retrieved, and
+        only the days that are not cached yet.
+
+        The yields are returned as decimal fractions per annum (0.0419 for 4.19%), with one
+        column per country and maturity, sorted from the shortest to the longest maturity.
+        Weekly and monthly periods take the yields on the last trading day of each period
+        (weeks end on Friday).
+
+        Also known as: yield curve, term structure of interest rates, sovereign curve,
+        treasury curve, bund curve, gilt curve, JGB curve.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to retrieve, from
+                "United States", "Euro Area", "Germany", "United Kingdom", "Japan", "Canada",
+                "Sweden" and "Norway". Defaults to None, which retrieves every country.
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: A DataFrame with the yields as decimals, indexed by date with a
+            column per country and maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-09-28', end_date='2026-10-01')
+
+        yield_curve = fixedincome.get_government_bond_yield_curve(
+            countries=['United States', 'Germany']
+        )
+
+        yield_curve['Germany'][['1Y', '2Y', '5Y', '10Y', '20Y', '30Y']]
+        ```
+
+        Which returns:
+
+        |            |     1Y |     2Y |     5Y |    10Y |    20Y |    30Y |
+        |:-----------|-------:|-------:|-------:|-------:|-------:|-------:|
+        | 2026-09-28 | 0.031  | 0.0332 | 0.0344 | 0.0369 | 0.0393 | 0.0401 |
+        | 2026-09-29 | 0.0307 | 0.0329 | 0.0341 | 0.0368 | 0.0394 | 0.0403 |
+        | 2026-09-30 | 0.0304 | 0.0324 | 0.0336 | 0.0364 | 0.039  | 0.0399 |
+        | 2026-10-01 | 0.0302 | 0.0321 | 0.0335 | 0.0366 | 0.0394 | 0.0403 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "government bond yield curve"
+        )
+        sources = self._get_country_yield_curves(
+            buffered_start_date(self._start_date, period)
+        )
+
+        requested = (
+            list(sources)
+            if countries is None
+            else [countries] if isinstance(countries, str) else list(countries)
+        )
+
+        if unavailable := [country for country in requested if country not in sources]:
+            logger.warning(
+                "No official daily yield curve is available for %s. The government bond yield "
+                "curve covers %s; get_government_bond_yield returns the monthly 3-month and "
+                "10-year rates of other countries.",
+                ", ".join(unavailable),
+                ", ".join(sources),
+            )
+
+        curves = {}
+        for country in requested:
+            if country not in sources:
+                continue
+
+            curve = sources[country]()
+
+            if curve.empty:
+                continue
+
+            curve = curve[sorted(curve.columns, key=_maturity_in_months)]
+            curves[country] = resample_to_period(curve.dropna(how="all"), period)
+
+        if not curves:
+            return pd.DataFrame()
+
+        yield_curve = pd.concat(curves, axis=1).sort_index()
+        yield_curve.index.name = None
+        yield_curve.columns.names = ["Country", "Maturity"]
+
+        return finalize_dataset(
+            dataset=yield_curve,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    def _get_keyless_treasury_rates(self) -> pd.DataFrame:
+        """
+        Retrieves the Treasury par yield curve from the U.S. Department of the Treasury, in
+        the maturities and column names FinancialModelingPrep uses.
+
+        Returns:
+            pd.DataFrame: The rates as decimals, indexed by date ("Date").
+        """
+        curve = treasury_model.get_yield_curve(
+            "nominal", self._start_date, self._end_date
+        )
+
+        if curve.empty:
+            return curve
+
+        # The Treasury's names for the maturities FinancialModelingPrep publishes.
+        maturities = {
+            "1 Mo": "1 Month",
+            "2 Mo": "2 Month",
+            "3 Mo": "3 Month",
+            "6 Mo": "6 Month",
+            "1 Yr": "1 Year",
+            "2 Yr": "2 Year",
+            "3 Yr": "3 Year",
+            "5 Yr": "5 Year",
+            "7 Yr": "7 Year",
+            "10 Yr": "10 Year",
+            "20 Yr": "20 Year",
+            "30 Yr": "30 Year",
+        }
+        treasury_rates = curve.rename(columns=maturities)[
+            [name for column, name in maturities.items() if column in curve.columns]
+        ]
+        treasury_rates.index.name = "Date"
+
+        return treasury_rates
+
     @handle_errors
     def get_treasury_rates(
         self,
@@ -2052,6 +2323,10 @@ class FixedIncome:
         U.S. Department of the Treasury, covering every maturity from 1 Month through 30 Year in
         a single dataset. This is the official, risk-free curve widely used as the discount curve
         for bond valuation and as the benchmark for credit spreads.
+
+        No API key is needed: with a FinancialModelingPrep API key the rates come from
+        FinancialModelingPrep, and without one, or when the key's plan does not include them,
+        from the U.S. Department of the Treasury directly, which gives the same figures.
 
         Also known as: the Treasury yield curve, the risk-free curve.
 
@@ -2093,11 +2368,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(
-            start_date='2024-01-01',
-            end_date='2024-01-15',
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-        )
+        fixedincome = FixedIncome(start_date='2024-01-01', end_date='2024-01-15')
 
         fixedincome.get_treasury_rates()
         ```
@@ -2111,19 +2382,32 @@ class FixedIncome:
         | 2024-01-04 |    0.0556 |    0.0548 |   0.0485 |   0.0438 |    0.0399 |    0.0413 |
         | 2024-01-05 |    0.0554 |    0.0547 |   0.0484 |   0.044  |    0.0405 |    0.0421 |
         """
-        self._require_api_key()
+        treasury_rates = pd.DataFrame()
 
-        treasury_rates = fmp_model.get_treasury_rates(
-            api_key=self._api_key,
-            start_date=self._start_date,
-            end_date=self._end_date,
-        )
+        if self._api_key:
+            try:
+                treasury_rates = fmp_model.get_treasury_rates(
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
+            except (ValueError, requests.exceptions.RequestException) as error:
+                logger.warning(
+                    "Could not retrieve the Treasury rates from FinancialModelingPrep (%s), "
+                    "retrieving them from the U.S. Department of the Treasury instead.",
+                    error,
+                )
+                treasury_rates = pd.DataFrame()
 
-        # The Treasury publishes these in percentage points while every other rate method in this module returns decimals, so convert here rather than in the model -- that keeps the cached payload a faithful mirror of the endpoint. The error path returns a frame with no numeric columns, hence the guard.
+        # The Treasury publishes these in percentage points while every other rate method in this module returns decimals, so convert here rather than in the model -- that keeps the cached payload a faithful mirror of the endpoint. The error path, such as a plan that does not include the endpoint, returns a frame with no numeric columns, hence the guard.  # noqa: E501
         numeric_columns = treasury_rates.select_dtypes(include="number").columns
 
         if not numeric_columns.empty:
             treasury_rates[numeric_columns] = treasury_rates[numeric_columns] / 100
+        else:
+            # Without a key, or when FinancialModelingPrep does not serve them, the same
+            # rates come from the U.S. Department of the Treasury, already as decimals.
+            treasury_rates = self._get_keyless_treasury_rates()
 
         return finalize_dataset(
             dataset=treasury_rates,

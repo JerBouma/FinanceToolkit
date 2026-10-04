@@ -24,6 +24,7 @@ from financetoolkit.economics import (
     fred_model,
     freddie_mac_model,
     gmdb_model,
+    ibge_model,
     mof_model,
     nber_model,
     oecd_model,
@@ -194,13 +195,14 @@ class Economics:
         """
         Combines the monthly consumer prices of every country from its most current source.
 
-        The statistical offices publish their figures weeks before the OECD republishes
-        them, and the OECD has stopped updating several euro area members since the
-        HICP moved to a new classification in 2026. Each country therefore comes from
-        the first source in this order that covers it: Eurostat (the euro area and the
-        European Economic Area, including the flash estimate), the Office for National
-        Statistics (United Kingdom), the Statistics Bureau of Japan (Japan) and the OECD
-        (every other country, including the United States). None of them need an API key.
+        The national statistical offices publish first, so they are preferred: Eurostat
+        (the euro area and the European Economic Area, including the flash estimate), the
+        Office for National Statistics (United Kingdom) and the Statistics Bureau of Japan
+        (Japan). Every other country comes from the Bank for International Settlements,
+        which compiles the national consumer price indices of around sixty countries,
+        including the United States, China, India and Brazil. Each country comes from the
+        source with the most recent month. None of them need an API key, and none have the
+        tight request limit of the OECD API.
 
         Args:
             measure (str): "inflation_rate" for the annual rate of change or
@@ -209,11 +211,9 @@ class Economics:
         Returns:
             pd.DataFrame: One column per country, indexed by month.
         """
-        oecd_index = oecd_model.get_consumer_price_index(
-            period="monthly", start_date=self._start_date, end_date=self._end_date
-        )
-        # Only the requested months are asked of Eurostat, with room for growth and rolling.
+        # Only the requested months are asked for, with room for growth and rolling.
         start_date = buffered_start_date(self._start_date, "monthly")
+        bis_prices = bis_model.get_consumer_prices(measure, start_date, self._end_date)
 
         if measure == "inflation_rate":
             return combine_sources(
@@ -221,8 +221,7 @@ class Economics:
                     eurostat_model.get_inflation_rate(start_date, self._end_date),
                     ons_model.get_inflation_rate(),
                     sbj_model.get_inflation_rate(),
-                    # The OECD publishes the index, so the rate is its change over a year.
-                    oecd_index.pct_change(12, fill_method=None).dropna(how="all"),
+                    bis_prices,
                 ]
             )
 
@@ -231,7 +230,7 @@ class Economics:
                 eurostat_model.get_consumer_price_index(start_date, self._end_date),
                 ons_model.get_consumer_price_index(),
                 sbj_model.get_consumer_price_index(),
-                oecd_index,
+                bis_prices,
             ]
         )
 
@@ -3068,8 +3067,9 @@ class Economics:
         current source without an API key: Eurostat for the euro area and the European
         Economic Area (the HICP, 2015 = 100), the Office for National Statistics for the
         United Kingdom (CPI, 2015 = 100), the Statistics Bureau of Japan for Japan (CPI
-        from 2015, on its latest base) and the OECD for every other country. The base year
-        differs between countries, so compare the changes rather than the levels.
+        from 2015, on its latest base) and the Bank for International Settlements for
+        every other country (2010 = 100). The base year differs between countries, so
+        compare the changes rather than the levels.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -3192,10 +3192,9 @@ class Economics:
         without an API key: Eurostat for the euro area and the European Economic Area (the
         HICP, including the flash estimate at the end of the month itself), the Office for
         National Statistics for the United Kingdom (CPI), the Statistics Bureau of Japan
-        for Japan (CPI, from 2016) and the OECD for every other country. For the countries
-        from the OECD the rate is the change of its consumer price index over twelve months,
-        which equals the OECD's published rate but can differ slightly from a national
-        headline figure based on a different index.
+        for Japan (CPI, from 2016) and the Bank for International Settlements for every
+        other country (around sixty, including the United States, China, India and Brazil),
+        which republishes the national consumer price indices.
 
         Changed in v2.2.0: this used to be returned in percentage points (4.1166 for
         4.1166%). It is now a decimal fraction, matching every other rate in the Finance
@@ -5431,7 +5430,8 @@ class Economics:
         With period="monthly" (unless gmdb_source=True is passed explicitly) the euro area
         and the countries Eurostat covers come from Eurostat and the United Kingdom from
         the Office for National Statistics, which publish weeks before the OECD republishes
-        their figures; every other country comes from the OECD. The United States is
+        their figures, and Brazil from the IBGE (as the UK, the average of the three months
+        ending in each month); every other country comes from the OECD. The United States is
         extended with the months the Bureau of Labor Statistics has published since, when
         both agree on the months they share. None of these need an API key. The UK figure is the average of the three months ending in each month, as the
         Labour Force Survey reports it.
@@ -5504,6 +5504,7 @@ class Economics:
                         buffered_start_date(self._start_date, "monthly"), self._end_date
                     ),
                     ons_model.get_unemployment_rate(),
+                    ibge_model.get_unemployment_rate(),
                     # The OECD republishes the BLS figure a month later, so the US is
                     # extended with the months the BLS already has.
                     extend_with_recent(
@@ -7373,6 +7374,7 @@ class Economics:
         countries: str | list[str] | None = None,
         currencies: str | list[str] | None = None,
         impact: str | list[str] | None = None,
+        events: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the scheduled releases of economic data for every country, such as
@@ -7382,12 +7384,16 @@ class Economics:
         release far from the consensus tends to cause the largest reaction.
 
         The calendar covers well over a hundred countries, so it is best narrowed down:
-        select a date range and filter by country, currency and/or impact. The "Impact"
+        select a date range and filter by country, currency, impact and/or event. Filtering
+        on events="PMI" gives the latest purchasing managers' indices with their consensus,
+        figures that are otherwise only available as licensed data. The "Impact"
         column rates how much a release usually moves the market (Low, Medium or High).
         The "Unit" column gives the unit of each release. Releases quoted in percent (for
         example an inflation or unemployment rate) are converted to decimals, as is the
         "Change %" column, so an unemployment rate of 4.1% is returned as 0.041. Releases
-        in other units, such as thousands of jobs or index points, keep their values.
+        in other units, such as thousands of jobs or index points, keep their values, as do
+        survey levels such as PMIs and confidence indices, which the calendar sometimes
+        labels "%" as well.
 
         Without a start_date and end_date the dates this Economics instance was created
         with are used, and without those the last 90 days. The endpoint returns at most 90
@@ -7408,6 +7414,9 @@ class Economics:
                 ["USD", "EUR"]. Defaults to None, which keeps every currency.
             impact (str | list[str], optional): The market impact to keep: "Low", "Medium"
                 and/or "High", or "All" for every release. Defaults to None, which keeps every release.
+            events (str | list[str], optional): Parts of event names to keep, matched without
+                regard to case, e.g. "PMI" for every purchasing managers' index or ["CPI",
+                "Unemployment"]. Defaults to None, which keeps every event.
 
         Returns:
             pd.DataFrame: The economic data releases, indexed by date.
@@ -7448,6 +7457,7 @@ class Economics:
             countries=countries,
             currencies=currencies,
             impact=impact,
+            events=events,
         )
 
     @handle_errors

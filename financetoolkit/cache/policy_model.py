@@ -17,6 +17,11 @@ FEDERAL_RESERVE = "FederalReserve"
 KEN_FRENCH = "KenFrench"
 MCP = "MCP"
 
+# The market risk premium is published per country, so it is one cache entry. Its name
+# changed when the premiums became decimals (v2.3.0), so an entry cached in percent by an
+# earlier version is never read back as decimals.
+MARKET_RISK_PREMIUM_ENTITY = "global_decimals"
+
 
 @dataclass(frozen=True)
 class CachePolicy:

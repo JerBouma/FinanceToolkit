@@ -6928,8 +6928,10 @@ class Economics:
         The calendar covers well over a hundred countries, so it is best narrowed down:
         select a date range and filter by country, currency and/or impact. The "Impact"
         column rates how much a release usually moves the market (Low, Medium or High).
-        Values are reported in the unit of the release, given in the "Unit" column (for
-        example "%" for an inflation rate), so they are not converted to decimals.
+        The "Unit" column gives the unit of each release. Releases quoted in percent (for
+        example an inflation or unemployment rate) are converted to decimals, as is the
+        "Change %" column, so an unemployment rate of 4.1% is returned as 0.041. Releases
+        in other units, such as thousands of jobs or index points, keep their values.
 
         Without a start_date and end_date the dates this Economics instance was created
         with are used, and without those the last 90 days. The endpoint returns at most 90
@@ -6975,11 +6977,11 @@ class Economics:
 
         | Date                | Country       | Event                       |   Previous |   Estimate |   Actual |
         |:--------------------|:--------------|:----------------------------|-----------:|-----------:|---------:|
-        | 2026-09-01 14:00:00 | United States | ISM Manufacturing PMI (Aug) |     55.6   |       55.2 |   54.6   |
-        | 2026-09-01 14:00:00 | United States | JOLTs Job Openings (Jul)    |      7.182 |        7.3 |    7.271 |
-        | 2026-09-03 14:00:00 | United States | ISM Services PMI (Aug)      |     54.1   |       54.3 |   55.4   |
-        | 2026-09-04 12:30:00 | United States | Unemployment Rate (Aug)     |      4.1   |        4.1 |    4.1   |
-        | 2026-09-04 12:30:00 | United States | Non Farm Payrolls (Aug)     |     21     |       56   |  162     |
+        | 2026-09-01 14:00:00 | United States | ISM Manufacturing PMI (Aug) |     55.6   |     55.2   |   54.6   |
+        | 2026-09-01 14:00:00 | United States | JOLTs Job Openings (Jul)    |      7.182 |      7.3   |    7.271 |
+        | 2026-09-03 14:00:00 | United States | ISM Services PMI (Aug)      |     54.1   |     54.3   |   55.4   |
+        | 2026-09-04 12:30:00 | United States | Unemployment Rate (Aug)     |      0.041 |      0.041 |    0.041 |
+        | 2026-09-04 12:30:00 | United States | Non Farm Payrolls (Aug)     |     21     |     56     |  162     |
         """
         self._require_api_key()
 
@@ -7009,7 +7011,8 @@ class Economics:
         Also known as: equity risk premium, country risk premium, MRP.
 
         Returns:
-            pd.DataFrame: The country and total equity risk premium per country.
+            pd.DataFrame: The country and total equity risk premium per country, as decimals
+            (0.0446 for 4.46%).
 
         As an example:
 
@@ -7027,11 +7030,11 @@ class Economics:
 
         | Country       | Continent     |   Country Risk Premium |   Total Equity Risk Premium |
         |:--------------|:--------------|-----------------------:|----------------------------:|
-        | United States | North America |                   0.23 |                        4.46 |
-        | Germany       | Europe        |                   0    |                        4.23 |
-        | Japan         | Asia          |                   0.91 |                        5.14 |
-        | Brazil        | South America |                   3.24 |                        7.47 |
-        | India         | Asia          |                   2.85 |                        7.08 |
+        | United States | North America |                 0.0023 |                      0.0446 |
+        | Germany       | Europe        |                 0      |                      0.0423 |
+        | Japan         | Asia          |                 0.0091 |                      0.0514 |
+        | Brazil        | South America |                 0.0324 |                      0.0747 |
+        | India         | Asia          |                 0.0285 |                      0.0708 |
         """
         self._require_api_key()
 
@@ -7041,7 +7044,7 @@ class Economics:
             cached_premium = self._cache.get(
                 source=policy_model.FINANCIAL_MODELING_PREP,
                 dataset="market_risk_premium",
-                entity="global",
+                entity=policy_model.MARKET_RISK_PREMIUM_ENTITY,
             )
             if cached_premium is not None:
                 return cached_premium
@@ -7052,7 +7055,7 @@ class Economics:
             self._cache.set(
                 source=policy_model.FINANCIAL_MODELING_PREP,
                 dataset="market_risk_premium",
-                entity="global",
+                entity=policy_model.MARKET_RISK_PREMIUM_ENTITY,
                 data=market_risk_premium,
             )
 

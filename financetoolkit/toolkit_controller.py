@@ -2809,7 +2809,9 @@ class Toolkit:
 
         Returns:
             pd.DataFrame: The market risk premium by country, including the continent, Country
-            Risk Premium and Total Equity Risk Premium (both in percentage points).
+            Risk Premium and Total Equity Risk Premium (both as decimals, 0.0446 for 4.46%).
+
+        Changed in v2.3.0: this used to be returned in percentage points (4.46 for 4.46%).
 
         As an example:
 
@@ -2826,10 +2828,10 @@ class Toolkit:
         Which returns:
 
         | Country       | Continent     |   Country Risk Premium |   Total Equity Risk Premium |
-        |:--------------|:--------------|------------------------:|-----------------------------:|
-        | United States | North America |                    0.23 |                          4.46 |
-        | Germany       | Europe        |                    0    |                          4.23 |
-        | Brazil        | South America |                    3.24 |                          7.47 |
+        |:--------------|:--------------|-----------------------:|----------------------------:|
+        | United States | North America |                 0.0023 |                      0.0446 |
+        | Germany       | Europe        |                 0      |                      0.0423 |
+        | Brazil        | South America |                 0.0324 |                      0.0747 |
         """
         if not self._api_key:
             logger.error(
@@ -2846,7 +2848,7 @@ class Toolkit:
                 else self._cache.get(
                     source=policy_model.FINANCIAL_MODELING_PREP,
                     dataset="market_risk_premium",
-                    entity="global",
+                    entity=policy_model.MARKET_RISK_PREMIUM_ENTITY,
                 )
             )
 
@@ -2862,7 +2864,7 @@ class Toolkit:
                     self._cache.set(
                         source=policy_model.FINANCIAL_MODELING_PREP,
                         dataset="market_risk_premium",
-                        entity="global",
+                        entity=policy_model.MARKET_RISK_PREMIUM_ENTITY,
                         data=self._market_risk_premium,
                     )
 

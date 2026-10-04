@@ -123,7 +123,8 @@ def get_economic_calendar(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: DataFrame of the economic data releases, indexed by date.
+        pd.DataFrame: DataFrame of the economic data releases, indexed by date. Values of
+        releases quoted in percent and the "Change %" column are decimals.
     """
     base_url = (
         f"https://financialmodelingprep.com/stable/economic-calendar?apikey={api_key}"
@@ -196,6 +197,23 @@ def get_economic_calendar(
             "unit": "Unit",
         }
     )
+
+    # Percentages are decimals throughout the toolkit, so a release quoted in percent (an
+    # inflation or unemployment rate, a policy rate) is divided by 100, as is the relative
+    # change. Releases in other units (thousands of jobs, index points) keep their values.
+    in_percent = (
+        economic_calendar.get("Unit", pd.Series("", index=economic_calendar.index))
+        .fillna("")
+        .str.strip()
+        == "%"
+    )
+    for column in ["Previous", "Estimate", "Actual", "Change"]:
+        if column in economic_calendar.columns:
+            economic_calendar.loc[in_percent, column] = (
+                economic_calendar.loc[in_percent, column] / 100
+            )
+    if "Change %" in economic_calendar.columns:
+        economic_calendar["Change %"] = economic_calendar["Change %"] / 100
 
     # Named as elsewhere in the Economics module, with the code kept next to it.
     economic_calendar.insert(

@@ -365,14 +365,22 @@ def fixture_calendar_requests(monkeypatch):
             "country": "US",
             "event": "Non Farm Payrolls",
             "currency": "USD",
+            "previous": 21,
+            "actual": 162,
+            "changePercentage": 671.43,
             "impact": "High",
+            "unit": "K",
         },
         {
             "date": "2026-09-04 08:00:00",
             "country": "EU",
             "event": "ECB Decision",
             "currency": "EUR",
+            "previous": 2.4,
+            "actual": 2.15,
+            "changePercentage": -10.42,
             "impact": "High",
+            "unit": "%",
         },
         {
             "date": "2026-09-05 09:00:00",
@@ -431,6 +439,26 @@ def test_economic_calendar_filters_by_country_name_or_code(calendar_requests):
     assert combined["Event"].tolist() == ["ECB Decision"]
 
 
+def test_economic_calendar_converts_percentages_to_decimals(calendar_requests):
+    economics_fmp_model, _ = calendar_requests
+
+    calendar = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-09-30"
+    ).set_index("Event")
+
+    # The ECB rate is quoted in percent, the payrolls in thousands of jobs.
+    assert calendar.loc[
+        "ECB Decision", ["Previous", "Actual"]
+    ].tolist() == pytest.approx([0.024, 0.0215])
+    assert calendar.loc["Non Farm Payrolls", ["Previous", "Actual"]].tolist() == [
+        21,
+        162,
+    ]
+    assert calendar.loc[
+        ["ECB Decision", "Non Farm Payrolls"], "Change %"
+    ].tolist() == pytest.approx([-0.1042, 6.7143])
+
+
 def test_economic_calendar_impact_all_keeps_every_release(calendar_requests):
     economics_fmp_model, _ = calendar_requests
 
@@ -486,3 +514,28 @@ def test_economic_calendar_only_falls_back_to_requested_dates(
     assert requested[0].endswith("&from=2026-09-20&to=2026-10-03")
     assert requested[1].endswith("economic-calendar?apikey=key")
     assert len(requested) == 2
+
+
+def test_market_risk_premium_is_returned_as_decimals(monkeypatch):
+    from financetoolkit import fmp_model
+
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda url: pd.DataFrame(  # noqa: ARG005
+            [
+                {
+                    "country": "United States",
+                    "continent": "North America",
+                    "countryRiskPremium": 0.23,
+                    "totalEquityRiskPremium": 4.46,
+                }
+            ]
+        ),
+    )
+
+    premium = fmp_model.get_market_risk_premium(api_key="key")
+
+    assert premium.loc[
+        "United States", ["Country Risk Premium", "Total Equity Risk Premium"]
+    ].tolist() == (pytest.approx([0.0023, 0.0446]))

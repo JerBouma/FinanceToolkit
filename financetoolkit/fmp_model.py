@@ -1700,8 +1700,8 @@ def get_market_risk_premium(
 
     Returns:
         pd.DataFrame: the market risk premium by country, indexed by country and including
-        the continent, Country Risk Premium and Total Equity Risk Premium (both in
-        percentage points).
+        the continent, Country Risk Premium and Total Equity Risk Premium (both as decimals,
+        0.0446 for 4.46%).
     """
     if not api_key:
         raise ValueError(
@@ -1728,6 +1728,10 @@ def get_market_risk_premium(
     )
 
     market_risk_premium = market_risk_premium.set_index("Country").sort_index()
+
+    # FMP quotes the premiums in percent (4.46 for 4.46%) while the toolkit returns decimals.
+    premium_columns = ["Country Risk Premium", "Total Equity Risk Premium"]
+    market_risk_premium[premium_columns] = market_risk_premium[premium_columns] / 100
 
     return market_risk_premium
 

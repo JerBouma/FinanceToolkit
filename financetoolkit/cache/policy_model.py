@@ -80,6 +80,31 @@ POLICIES: dict[str, CachePolicy] = {
     ),
     f"{FINANCIAL_MODELING_PREP}.market_risk_premium": CachePolicy(ttl_seconds=7 * DAY),
     f"{FINANCIAL_MODELING_PREP}.commitment_of_traders": CachePolicy(ttl_seconds=DAY),
+    # Leadership, listed notes and filings-based figures change a few times a year at most.
+    f"{FINANCIAL_MODELING_PREP}.executives": CachePolicy(ttl_seconds=7 * DAY),
+    f"{FINANCIAL_MODELING_PREP}.executive_compensation": CachePolicy(
+        ttl_seconds=7 * DAY
+    ),
+    f"{FINANCIAL_MODELING_PREP}.company_notes": CachePolicy(ttl_seconds=7 * DAY),
+    f"{FINANCIAL_MODELING_PREP}.employee_count": CachePolicy(ttl_seconds=7 * DAY),
+    f"{FINANCIAL_MODELING_PREP}.mergers_acquisitions": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.stock_splits": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.shares_float": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.insider_trade_statistics": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.stock_grades": CachePolicy(ttl_seconds=DAY),
+    # Fund holdings and allocations are republished daily by most issuers.
+    f"{FINANCIAL_MODELING_PREP}.etf_holdings": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.etf_information": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.etf_country_weightings": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.etf_sector_weightings": CachePolicy(ttl_seconds=DAY),
+    # A published transcript never changes, so each one is kept for a year; which
+    # transcripts make up the latest selection does change with every new call.
+    f"{FINANCIAL_MODELING_PREP}.earnings_call_transcripts": CachePolicy(
+        ttl_seconds=365 * DAY
+    ),
+    f"{FINANCIAL_MODELING_PREP}.earnings_call_transcripts_selection": CachePolicy(
+        ttl_seconds=DAY
+    ),
     f"{FINANCIAL_MODELING_PREP}.treasury_rates": CachePolicy(
         ttl_seconds=DAY, revision_days=7
     ),

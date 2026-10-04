@@ -1720,3 +1720,146 @@ class Discovery:
         )
 
         return mergers_acquisitions
+
+    def get_earnings_calendar(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the earnings releases of all companies in a date range: the reported and
+        estimated earnings per share (EPS) and revenue. Upcoming releases only have the
+        estimates, so this also shows which companies report in the coming days. This is
+        the market-wide counterpart of Toolkit.get_earnings_calendar, which covers the
+        tickers of a Toolkit instance over their full history.
+
+        Note that the date range is limited to a maximum of 90 days.
+
+        Also known as: earnings season, earnings release dates, upcoming earnings.
+
+        Args:
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+
+        Returns:
+            pd.DataFrame: A dataframe with the earnings releases, sorted by date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        earnings_calendar = discovery.get_earnings_calendar(start_date="2026-10-01", end_date="2026-10-03")
+
+        earnings_calendar.head()
+        ```
+
+        Which returns:
+
+        <<TABLE:discovery_earnings_calendar>>
+        """
+        earnings_calendar = discovery_model.get_earnings_calendar(
+            api_key=self._api_key,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
+        )
+
+        return earnings_calendar
+
+    def get_sec_filings_8k(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 100,
+        page: int = 0,
+    ) -> pd.DataFrame:
+        """
+        Returns the most recent 8-K filings with the SEC. Companies file an 8-K to
+        announce a material event between their periodic reports, such as results, an
+        acquisition, a change of management or a new financing, which makes the stream
+        of 8-K filings an early signal of company news.
+
+        Also known as: current reports, material event filings, SEC filings.
+
+        Args:
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
+            limit (int, optional): The number of results to return. Defaults to 100.
+            page (int, optional): The page number to retrieve. Defaults to 0.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest 8-K filings.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        filings = discovery.get_sec_filings_8k(start_date="2026-10-01", end_date="2026-10-02", limit=5)
+
+        filings[["Accepted Date", "Has Financials", "Final Link"]]
+        ```
+
+        Which returns:
+
+        <<TABLE:discovery_sec_filings_8k>>
+        """
+        filings = discovery_model.get_sec_filings_8k(
+            api_key=self._api_key,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            page=page,
+            user_subscription=self._fmp_plan,
+        )
+
+        return filings
+
+    def get_insider_trading_latest(
+        self, date: str | None = None, limit: int = 100, page: int = 0
+    ) -> pd.DataFrame:
+        """
+        Returns the most recent trades by company insiders (officers, directors and
+        shareholders owning more than 10%), as reported in their Form 4 filings: who
+        traded, the type of transaction, the number of shares and the price. Insiders know
+        their company best, so clusters of buying in particular can be worth a closer look.
+
+        Also known as: insider trades, Form 4 filings, insider transactions.
+
+        Args:
+            date (str, optional): Only return the trades filed on this date. Defaults to None,
+                which returns the most recent trades.
+            limit (int, optional): The number of results to return. Defaults to 100.
+            page (int, optional): The page number to retrieve. Defaults to 0.
+
+        Returns:
+            pd.DataFrame: A dataframe with the latest insider trades.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        insider_trading = discovery.get_insider_trading_latest(limit=5)
+
+        insider_trading[["Reporting Name", "Transaction Type", "Securities Transacted", "Price"]]
+        ```
+
+        Which returns:
+
+        <<TABLE:discovery_insider_trading_latest>>
+        """
+        insider_trading = discovery_model.get_insider_trading_latest(
+            api_key=self._api_key,
+            date=date,
+            limit=limit,
+            page=page,
+            user_subscription=self._fmp_plan,
+        )
+
+        return insider_trading

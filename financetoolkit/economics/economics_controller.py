@@ -9,8 +9,17 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+from financetoolkit import fmp_model
+from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache, set_active_cache
-from financetoolkit.economics import fred_model, gmdb_model, oecd_model, yfinance_model
+from financetoolkit.economics import (
+    fmp_model as economics_fmp_model,
+    fred_model,
+    gmdb_model,
+    oecd_model,
+    yfinance_model,
+)
+from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -41,6 +50,7 @@ class Economics:
         fred_api_key: str = FRED_API_KEY,
         allow_stale_oecd_cache: bool = True,
         cache: Cache | None = None,
+        api_key: str = "",
     ):
         """
         Initializes the Economics Controller Class.
@@ -64,6 +74,9 @@ class Economics:
                 is cached regardless of this setting. Defaults to True.
             cache (Cache | None, optional): The incremental cache used for the OECD, FRED and Global
                 Macro Database requests this module makes. Defaults to None, which disables caching.
+            api_key (str, optional): A FinancialModelingPrep API key, only needed for the economic
+                calendar and the market risk premium. Obtain one at https://www.jeroenbouma.com/fmp.
+                Defaults to an empty string.
 
         As an example:
 
@@ -119,6 +132,8 @@ class Economics:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
 
         self._cache = cache
+        # A copied documentation example passes the placeholder key, treated as no key at all.
+        self._api_key = validation_model.resolve_api_key(api_key)
 
         # Published once here so the OECD and FRED free functions read it back.
         set_active_cache(cache)
@@ -6876,3 +6891,126 @@ class Economics:
             axis="rows",
             row_slice=True,
         )
+
+    def _require_api_key(self) -> None:
+        """Warns and raises when a FinancialModelingPrep method is used without a key."""
+        if not self._api_key:
+            logger.warning(
+                "No FinancialModelingPrep API key found. The economic calendar and the market "
+                "risk premium require a key to access, obtain one (with 15% off) at "
+                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
+            )
+            raise ValueError(
+                "A FinancialModelingPrep API key is required for this data. Obtain one at "
+                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
+            )
+
+    @handle_errors
+    def get_economic_calendar(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the scheduled releases of economic data for every country, such as
+        inflation, employment, GDP and central bank decisions. Each release comes with
+        its previous value, the consensus estimate and, once published, the actual value
+        and the change. The estimate versus the actual value is what moves markets: a
+        release far from the consensus tends to cause the largest reaction.
+
+        Values are reported in the unit of the release, given in the "Unit" column (for
+        example "%" for an inflation rate), so they are not converted to decimals. The
+        "Impact" column rates how much a release usually moves the market (Low, Medium or
+        High). Countries are given as ISO codes, e.g. "US" or "DE".
+
+        Note that the date range is limited to a maximum of 90 days. This requires a
+        FinancialModelingPrep API key, passed via api_key when initializing.
+
+        Also known as: economic calendar, macro calendar, economic releases.
+
+        Args:
+            start_date (str, optional): The start date to filter data with. Defaults to None.
+            end_date (str, optional): The end date to filter data with. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The economic data releases, indexed by date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        economic_calendar = economics.get_economic_calendar(start_date="2026-10-01", end_date="2026-10-03")
+
+        economic_calendar.loc[economic_calendar["Country"] == "US", ["Event", "Previous", "Estimate", "Actual", "Impact"]].head()
+        ```
+
+        Which returns:
+
+        <<TABLE:economic_calendar>>
+        """
+        self._require_api_key()
+
+        return economics_fmp_model.get_economic_calendar(
+            api_key=self._api_key, start_date=start_date, end_date=end_date
+        )
+
+    @handle_errors
+    def get_market_risk_premium(self) -> pd.DataFrame:
+        """
+        Returns the market risk premium per country: the extra return investors demand
+        for holding equities over a risk-free investment. It consists of the country risk
+        premium, which compensates for the additional risk of the country itself, and the
+        total equity risk premium, which adds the premium of a mature market. The market
+        risk premium is a key input of the Capital Asset Pricing Model (CAPM) and with
+        that of the cost of equity and the WACC.
+
+        The same data is available as Toolkit.get_market_risk_premium; both share one
+        cached copy. This requires a FinancialModelingPrep API key, passed via api_key
+        when initializing.
+
+        Also known as: equity risk premium, country risk premium, MRP.
+
+        Returns:
+            pd.DataFrame: The country and total equity risk premium per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        market_risk_premium = economics.get_market_risk_premium()
+
+        market_risk_premium.loc[["United States", "Germany", "Japan", "Brazil", "India"]]
+        ```
+
+        Which returns:
+
+        <<TABLE:economics_market_risk_premium>>
+        """
+        self._require_api_key()
+
+        # Published per country rather than per ticker, so it is one cache entry, the
+        # same one Toolkit.get_market_risk_premium uses.
+        if self._cache is not None:
+            cached_premium = self._cache.get(
+                source=policy_model.FINANCIAL_MODELING_PREP,
+                dataset="market_risk_premium",
+                entity="global",
+            )
+            if cached_premium is not None:
+                return cached_premium
+
+        market_risk_premium = fmp_model.get_market_risk_premium(api_key=self._api_key)
+
+        if self._cache is not None and not market_risk_premium.empty:
+            self._cache.set(
+                source=policy_model.FINANCIAL_MODELING_PREP,
+                dataset="market_risk_premium",
+                entity="global",
+                data=market_risk_premium,
+            )
+
+        return market_risk_premium

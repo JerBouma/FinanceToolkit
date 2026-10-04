@@ -14,6 +14,8 @@ import pandas as pd
 from financetoolkit import currencies_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
 from financetoolkit.discovery.discovery_model import (
+    search_crypto_news as _search_crypto_news,
+    search_forex_news as _search_forex_news,
     search_press_releases as _search_press_releases,
     search_stock_news as _search_stock_news,
 )
@@ -23,14 +25,28 @@ from financetoolkit.fmp_model import (
     determine_subscription_plan as _determine_subscription_plan,
     get_analyst_estimates as _get_analyst_estimates,
     get_commitment_of_traders as _get_commitment_of_traders,
+    get_company_notes as _get_company_notes,
     get_dividend_calendar as _get_dividend_calendar,
     get_earnings_calendar as _get_earnings_calendar,
+    get_earnings_call_transcripts as _get_earnings_call_transcripts,
+    get_employee_count as _get_employee_count,
     get_esg_scores as _get_esg_scores,
+    get_etf_country_weightings as _get_etf_country_weightings,
+    get_etf_holdings as _get_etf_holdings,
+    get_etf_information as _get_etf_information,
+    get_etf_sector_weightings as _get_etf_sector_weightings,
+    get_executive_compensation as _get_executive_compensation,
+    get_executives as _get_executives,
+    get_insider_trade_statistics as _get_insider_trade_statistics,
     get_market_risk_premium as _get_market_risk_premium,
+    get_mergers_acquisitions as _get_mergers_acquisitions,
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
     get_revenue_segmentation as _get_revenue_segmentation,
+    get_shares_float as _get_shares_float,
+    get_stock_grades as _get_stock_grades,
+    get_stock_splits as _get_stock_splits,
 )
 from financetoolkit.fundamentals_model import collect_financial_statements
 from financetoolkit.historical_model import (
@@ -350,6 +366,23 @@ class Toolkit:
             self._revenue_product_segmentation_growth: pd.DataFrame = pd.DataFrame()
             self._market_risk_premium: pd.DataFrame = pd.DataFrame()
             self._commitment_of_traders: pd.DataFrame = pd.DataFrame()
+            self._executives: pd.DataFrame = pd.DataFrame()
+            self._executive_compensation: pd.DataFrame = pd.DataFrame()
+            self._company_notes: pd.DataFrame = pd.DataFrame()
+            self._employee_count: pd.DataFrame = pd.DataFrame()
+            self._shares_float: pd.DataFrame = pd.DataFrame()
+            self._mergers_acquisitions: pd.DataFrame = pd.DataFrame()
+            self._stock_splits: pd.DataFrame = pd.DataFrame()
+            self._insider_trade_statistics: pd.DataFrame = pd.DataFrame()
+            self._stock_grades: pd.DataFrame = pd.DataFrame()
+            self._etf_holdings: pd.DataFrame = pd.DataFrame()
+            self._etf_information: pd.DataFrame = pd.DataFrame()
+            self._etf_country_weightings: pd.DataFrame = pd.DataFrame()
+            self._etf_sector_weightings: pd.DataFrame = pd.DataFrame()
+            self._earnings_call_transcripts: pd.DataFrame = pd.DataFrame()
+            # Which selection the stored transcripts hold, so switching between the latest
+            # transcript and the full range does not serve the other one.
+            self._earnings_call_transcripts_latest: bool | None = None
 
             # Resolved per ticker on request, so a different list reuses what it shares.
 
@@ -1251,6 +1284,7 @@ class Toolkit:
             fred_api_key=self._fred_api_key,
             allow_stale_oecd_cache=self._allow_stale_oecd_cache,
             cache=self._cache,
+            api_key=self._api_key,
         )
 
     def get_profile(self):
@@ -1731,21 +1765,27 @@ class Toolkit:
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Obtain the latest stock market news articles for the tickers of this Toolkit
-        instance. Qualitative companion to the toolkit's quantitative data. Automatically
-        filtered to this Toolkit instance's start_date and end_date.
+        Obtain the latest news articles for the tickers of this Toolkit instance, whether
+        they are stocks, cryptocurrencies or currency pairs. Qualitative companion to the
+        toolkit's quantitative data. Automatically filtered to this Toolkit instance's
+        start_date and end_date.
 
-        Also known as: ticker news, company news feed.
+        Each ticker is matched with the right news feed. A currency pair such as EURUSD or
+        EURUSD=X is searched in the forex news. Any other ticker is searched in both the
+        stock and the crypto news, since a ticker such as BTCUSD cannot be told apart from
+        a stock by its format; the feed it does not belong to simply returns nothing.
+
+        Also known as: ticker news, company news feed, crypto news, forex news.
 
         Args:
-            pages (int, optional): The number of pages to collect, each page is a
+            pages (int, optional): The number of pages to collect per news feed, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The latest news articles for the specified tickers.
+            pd.DataFrame: The latest news articles for the specified tickers, newest first.
 
         As an example:
 
@@ -1769,15 +1809,62 @@ class Toolkit:
         | 2026-07-07 09:59:19  | MSFT     | Benzinga      | Michael Burry's $700 Microsoft Bet: Should You Copy His LEAP Trade?                            |
         | 2026-07-07 09:26:50  | AAPL     | Benzinga      | Forget the iPhone. Apple's AI Story May Belong to Macs                                         |
         """
-        stock_news = _search_stock_news(
-            api_key=self._api_key,
-            symbols=self._tickers,
-            limit=limit,
-            pages=pages,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            user_subscription=self._fmp_plan,
-        )
+        currency_pairs = [
+            ticker
+            for ticker in self._tickers
+            if currencies_model.is_currency_pair(ticker)
+        ]
+        other_tickers = [
+            ticker for ticker in self._tickers if ticker not in currency_pairs
+        ]
+        search = {
+            "api_key": self._api_key,
+            "limit": limit,
+            "pages": pages,
+            "start_date": self._start_date,
+            "end_date": self._end_date,
+            "user_subscription": self._fmp_plan,
+        }
+
+        news_frames = []
+
+        if other_tickers:
+            # The crypto feed is asked first because it only returns crypto tickers, which
+            # are then left out of the stock feed request. The stock feed carries crypto
+            # articles as well, so asking it for both would let them use up its limit.
+            crypto_news = _search_crypto_news(symbols=other_tickers, **search)
+            crypto_tickers = (
+                set(crypto_news["Symbol"]) if not crypto_news.empty else set()
+            )
+            stock_tickers = [
+                ticker for ticker in other_tickers if ticker not in crypto_tickers
+            ]
+
+            news_frames.append(crypto_news)
+
+            if stock_tickers:
+                news_frames.append(_search_stock_news(symbols=stock_tickers, **search))
+
+        if currency_pairs:
+            # The forex feed knows the pairs without the "=X" suffix Yahoo Finance uses.
+            news_frames.append(
+                _search_forex_news(
+                    symbols=[
+                        pair.upper().removesuffix("=X") for pair in currency_pairs
+                    ],
+                    **search,
+                )
+            )
+
+        news_frames = [frame for frame in news_frames if not frame.empty]
+
+        if not news_frames:
+            return pd.DataFrame()
+
+        # A crypto ticker without recent crypto news is still asked of the stock feed, so
+        # an article can come back from both feeds; it is kept once.
+        stock_news = pd.concat(news_frames).sort_index(ascending=False)
+        stock_news = stock_news[~stock_news.duplicated(subset=["Symbol", "URL"])]
 
         return filter_columns(stock_news, show_columns)
 
@@ -2867,6 +2954,892 @@ class Toolkit:
             return self._commitment_of_traders.xs(self._tickers[0], axis=1, level=1)
 
         return self._commitment_of_traders
+
+    def _missing_api_key_message(self) -> None:
+        """Logs the standard message for the datasets that require a FinancialModelingPrep key."""
+        logger.error(
+            "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+            "following link: https://www.jeroenbouma.com/fmp"
+            "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
+            "the above affiliate link which also supports the project."
+        )
+
+    def _remove_invalid(self) -> None:
+        """Drops the tickers without data when remove_invalid_tickers is set, as the other getters do."""
+        if self._remove_invalid_tickers:
+            self._tickers = [
+                ticker
+                for ticker in self._tickers
+                if ticker not in self._invalid_tickers
+            ]
+
+    def get_executives(
+        self, overwrite: bool = False, show_columns: list[str] | None = None
+    ):
+        """
+        Obtain the key executives of each company: their title, pay, gender, year of birth
+        and whether they are still active. This shows who leads the company and how the
+        leadership team is composed, which is useful when assessing management quality or
+        when following a change at the top.
+
+        Also known as: management team, company officers, leadership.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The executives per ticker, indexed by their name.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_executives().loc["AAPL"].head()
+        ```
+
+        Which returns:
+
+        <<TABLE:executives>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._executives.empty or overwrite:
+            self._executives, self._invalid_tickers = self._collect_per_ticker(
+                dataset="executives",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                collector=lambda tickers: _get_executives(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._executives.empty:
+            return filter_columns(self._executives.loc[self._tickers[0]], show_columns)
+
+        return filter_columns(self._executives, show_columns)
+
+    def get_executive_compensation(
+        self,
+        overwrite: bool = False,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain the compensation of each company's executives per year as reported in the
+        proxy statement (DEF 14A): salary, bonus, stock and option awards, incentive plan
+        compensation, other compensation and the total. Comparing pay with the company's
+        performance shows how well management incentives are aligned with shareholders.
+
+        Automatically filtered to the years of this Toolkit instance's start_date and end_date.
+
+        Also known as: executive pay, management compensation, proxy statement compensation.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The compensation per ticker, indexed by year and executive.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2025-01-01")
+
+        toolkit.get_executive_compensation().loc["AAPL"].head()
+        ```
+
+        Which returns:
+
+        <<TABLE:executive_compensation>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._executive_compensation.empty or overwrite:
+            self._executive_compensation, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="executive_compensation",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_executive_compensation(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._executive_compensation.empty:
+            return filter_columns(
+                self._executive_compensation.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(self._executive_compensation, show_columns)
+
+    def get_company_notes(
+        self, overwrite: bool = False, show_columns: list[str] | None = None
+    ):
+        """
+        Obtain the notes each company has listed: the debt securities it issued, with
+        their coupon and maturity in the title (e.g. "1.625% Notes due 2026") and the
+        exchange they are listed on. This gives a quick view of a company's listed debt
+        and when it matures.
+
+        Also known as: listed debt, bonds issued, debt securities.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The notes per ticker, indexed by their title.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_company_notes().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        <<TABLE:company_notes>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._company_notes.empty or overwrite:
+            self._company_notes, self._invalid_tickers = self._collect_per_ticker(
+                dataset="company_notes",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                collector=lambda tickers: _get_company_notes(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._company_notes.empty:
+            return filter_columns(
+                self._company_notes.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(self._company_notes, show_columns)
+
+    def get_employee_count(self, overwrite: bool = False):
+        """
+        Obtain the number of employees each company reported in its annual filings over
+        time. The most recent row is the current employee count and the rows before it
+        show how the workforce developed, which can be set against revenue or profit to
+        see how productive the workforce is.
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: headcount, number of employees, workforce size.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The employee count per reporting year (rows) and ticker (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2018-01-01")
+
+        toolkit.get_employee_count()
+        ```
+
+        Which returns:
+
+        <<TABLE:employee_count>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._employee_count.empty or overwrite:
+            self._employee_count, self._invalid_tickers = self._collect_per_ticker(
+                dataset="employee_count",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                    "user_subscription": self._fmp_plan,
+                },
+                collector=lambda tickers: _get_employee_count(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    sleep_timer=self._sleep_timer,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        self._remove_invalid()
+
+        return self._employee_count
+
+    def get_shares_float(self, overwrite: bool = False):
+        """
+        Obtain the free float of each company: the number of shares available for public
+        trading, the number of shares outstanding and the free float as the share of the
+        outstanding shares that can be traded (as a decimal). A low free float means few
+        shares change hands, which tends to make a stock less liquid and more volatile.
+
+        Also known as: free float, float shares, public float, share liquidity.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The share float figures (rows) per ticker (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_shares_float()
+        ```
+
+        Which returns:
+
+        <<TABLE:shares_float>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._shares_float.empty or overwrite:
+            self._shares_float, self._invalid_tickers = self._collect_per_ticker(
+                dataset="shares_float",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_shares_float(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        self._remove_invalid()
+
+        return self._shares_float
+
+    def get_mergers_acquisitions(
+        self, overwrite: bool = False, show_columns: list[str] | None = None
+    ):
+        """
+        Obtain the mergers and acquisitions each company took part in, as the acquirer or
+        as the target, based on the merger filings (S-4) with the SEC. Every deal comes
+        with the other party, the filing date and a link to the filing.
+
+        The search uses the company name from the profile, so the profile is retrieved
+        first when it is not available yet. Deals of companies with a similar name are
+        left out: only the deals in which the ticker itself is involved are kept.
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: M&A, acquisitions, mergers, takeovers.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The deals per ticker, indexed by their transaction date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["MSFT", "GOOGL"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2000-01-01")
+
+        toolkit.get_mergers_acquisitions().loc["MSFT"].head()
+        ```
+
+        Which returns:
+
+        <<TABLE:mergers_acquisitions>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._mergers_acquisitions.empty or overwrite:
+            profile = self.get_profile()
+            company_names = (
+                profile.loc["Company Name"].to_dict()
+                if profile is not None and "Company Name" in profile.index
+                else {}
+            )
+
+            self._mergers_acquisitions, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="mergers_acquisitions",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_mergers_acquisitions(
+                        tickers=tickers,
+                        company_names=company_names,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        # A company without deals is not an invalid ticker, so nothing is removed here.
+
+        if len(self._tickers) == 1 and not self._mergers_acquisitions.empty:
+            return filter_columns(
+                self._mergers_acquisitions.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(self._mergers_acquisitions, show_columns)
+
+    def get_stock_splits(self, overwrite: bool = False):
+        """
+        Obtain the stock splits of each company, with the split ratio as a numerator and
+        denominator: a 4-for-1 split has numerator 4 and denominator 1, while a reverse
+        split has a numerator smaller than its denominator. Splits change the number of
+        shares but not the value of the company, which is why historical prices are
+        adjusted for them.
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: share splits, reverse splits, split history.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The splits per ticker, indexed by their date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "NVDA"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2000-01-01")
+
+        toolkit.get_stock_splits()
+        ```
+
+        Which returns:
+
+        <<TABLE:stock_splits>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._stock_splits.empty or overwrite:
+            self._stock_splits, self._invalid_tickers = self._collect_per_ticker(
+                dataset="stock_splits",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={
+                    "start_date": self._start_date,
+                    "end_date": self._end_date,
+                    "user_subscription": self._fmp_plan,
+                },
+                collector=lambda tickers: _get_stock_splits(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        # A company that never split is not an invalid ticker, so nothing is removed here.
+
+        if len(self._tickers) == 1 and not self._stock_splits.empty:
+            return self._stock_splits.loc[self._tickers[0]]
+
+        return self._stock_splits
+
+    def get_insider_trade_statistics(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain quarterly statistics on the trades of each company's insiders (officers,
+        directors and large shareholders), based on their Form 4 filings: the number of
+        acquisitions and disposals, their ratio, the number of shares acquired and
+        disposed of, and the number of open market purchases and sales.
+
+        Insiders know their company best, so heavy buying can signal confidence while
+        persistent selling can be worth a closer look. Note that many disposals are
+        routine, such as sales to cover taxes on vested stock awards.
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: insider trading, insider transactions, Form 4 statistics.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            rounding (int): Defines the number of decimal places to round the data to.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The statistics per ticker, indexed by quarter.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2025-01-01")
+
+        toolkit.get_insider_trade_statistics().loc["AAPL"]
+        ```
+
+        Which returns:
+
+        <<TABLE:insider_trade_statistics>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._insider_trade_statistics.empty or overwrite:
+            self._insider_trade_statistics, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="insider_trade_statistics",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_insider_trade_statistics(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        insider_trade_statistics = apply_rounding(
+            self._insider_trade_statistics,
+            rounding if rounding is not None else self._rounding,
+        )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._insider_trade_statistics.empty:
+            return filter_columns(
+                insider_trade_statistics.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(insider_trade_statistics, show_columns)
+
+    def get_stock_grades(
+        self, overwrite: bool = False, show_columns: list[str] | None = None
+    ):
+        """
+        Obtain the grades analysts gave each company: per date and grading company the
+        previous and the new grade, and whether the grade was upgraded, downgraded or
+        maintained. Following how the grades change over time shows how sentiment among
+        analysts develops, with upgrades and downgrades by well-followed firms often
+        moving the share price.
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: analyst ratings, upgrades and downgrades, analyst grades.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The grades per ticker, indexed by date and grading company.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2026-09-01")
+
+        toolkit.get_stock_grades().loc["AAPL"].tail()
+        ```
+
+        Which returns:
+
+        <<TABLE:stock_grades>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._stock_grades.empty or overwrite:
+            self._stock_grades, self._invalid_tickers = self._collect_per_ticker(
+                dataset="stock_grades",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                parameters={"start_date": self._start_date, "end_date": self._end_date},
+                collector=lambda tickers: _get_stock_grades(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._stock_grades.empty:
+            return filter_columns(
+                self._stock_grades.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(self._stock_grades, show_columns)
+
+    def get_etf_holdings(
+        self, overwrite: bool = False, show_columns: list[str] | None = None
+    ):
+        """
+        Obtain the holdings of each ETF or fund: every asset it holds with the number of
+        shares, the market value and the weight in the fund (as a decimal). This shows
+        what the fund is actually exposed to and how concentrated it is.
+
+        Tickers that are not an ETF or fund have no holdings and return no data. They are
+        not removed from the Toolkit instance.
+
+        Also known as: fund holdings, ETF constituents, fund portfolio.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The holdings per ticker, indexed by asset.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_etf_holdings().loc["SPY"].head()
+        ```
+
+        Which returns:
+
+        <<TABLE:etf_holdings>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._etf_holdings.empty or overwrite:
+            # Not every ticker is a fund, so a ticker without holdings is not invalid.
+            self._etf_holdings, _ = self._collect_per_ticker(
+                dataset="etf_holdings",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_INDEX,
+                collector=lambda tickers: _get_etf_holdings(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        if len(self._tickers) == 1 and not self._etf_holdings.empty:
+            return filter_columns(
+                self._etf_holdings.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(self._etf_holdings, show_columns)
+
+    def get_etf_information(self, overwrite: bool = False):
+        """
+        Obtain the profile of each ETF or fund: its issuer, asset class, domicile,
+        inception date, expense ratio (as a decimal), assets under management, net asset
+        value and number of holdings. The expense ratio in particular determines how much
+        of the return is lost to costs every year.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: fund profile, ETF profile, fund information.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The information (rows) per ticker (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_etf_information().drop(["Description", "Website"])
+        ```
+
+        Which returns:
+
+        <<TABLE:etf_information>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._etf_information.empty or overwrite:
+            # Not every ticker is a fund, so a ticker without information is not invalid.
+            self._etf_information, _ = self._collect_per_ticker(
+                dataset="etf_information",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_etf_information(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        return self._etf_information
+
+    def get_etf_country_weightings(self, overwrite: bool = False):
+        """
+        Obtain how each ETF or fund is allocated across countries, as decimals. Two funds
+        tracking similar markets can differ considerably here, which matters for the
+        currency and political risk the fund carries.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: country allocation, geographic exposure, country exposure.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The weight per country (rows) and ticker (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_etf_country_weightings().head()
+        ```
+
+        Which returns:
+
+        <<TABLE:etf_country_weightings>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._etf_country_weightings.empty or overwrite:
+            # Not every ticker is a fund, so a ticker without weightings is not invalid.
+            self._etf_country_weightings, _ = self._collect_per_ticker(
+                dataset="etf_country_weightings",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_etf_country_weightings(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        return self._etf_country_weightings
+
+    def get_etf_sector_weightings(self, overwrite: bool = False):
+        """
+        Obtain how each ETF or fund is allocated across sectors, as decimals. This shows
+        whether a fund that looks broad is in fact concentrated in a few sectors, such as
+        technology in many large-cap indices.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: sector allocation, sector exposure, sector breakdown.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The weight per sector (rows) and ticker (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.get_etf_sector_weightings()
+        ```
+
+        Which returns:
+
+        <<TABLE:etf_sector_weightings>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._etf_sector_weightings.empty or overwrite:
+            # Not every ticker is a fund, so a ticker without weightings is not invalid.
+            self._etf_sector_weightings, _ = self._collect_per_ticker(
+                dataset="etf_sector_weightings",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_etf_sector_weightings(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        return self._etf_sector_weightings
+
+    def get_earnings_call_transcripts(
+        self, latest: bool = True, overwrite: bool = False
+    ):
+        """
+        Obtain the earnings call transcripts of each company: the full text of the call,
+        with management's prepared remarks followed by the questions of analysts and the
+        answers. Transcripts explain the numbers in the financial statements in
+        management's own words, and with that are a strong input for text analysis and AI
+        models, e.g. to track sentiment, guidance or recurring themes over time.
+
+        A transcript is long (often 40,000 to 60,000 characters) and every quarter is a
+        separate request. By default only the most recent transcript is retrieved. With
+        latest=False every transcript between this Toolkit instance's start_date and
+        end_date is retrieved instead. Each transcript is cached on its own, since a
+        published transcript does not change, so a quarter is only retrieved once.
+
+        Also known as: earnings call, conference call transcript, earnings transcript.
+
+        Args:
+            latest (bool): Whether to only retrieve the most recent transcript. When False,
+                every transcript between the start_date and end_date is retrieved. Defaults to True.
+            overwrite (bool): Defines whether to overwrite the existing data.
+
+        Returns:
+            pd.DataFrame: The date and transcript per ticker, indexed by fiscal period.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        transcripts = toolkit.get_earnings_call_transcripts()
+
+        transcripts.loc["AAPL", "Transcript"].iloc[0][:500]
+        ```
+
+        Which returns:
+
+        <<TABLE:earnings_call_transcripts>>
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if (
+            self._earnings_call_transcripts.empty
+            or overwrite
+            or self._earnings_call_transcripts_latest != latest
+        ):
+            self._earnings_call_transcripts, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="earnings_call_transcripts_selection",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "latest": latest,
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_earnings_call_transcripts(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        latest=latest,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+            self._earnings_call_transcripts_latest = latest
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._earnings_call_transcripts.empty:
+            return self._earnings_call_transcripts.loc[self._tickers[0]]
+
+        return self._earnings_call_transcripts
 
     def get_historical_statistics(self):
         """

@@ -25,6 +25,194 @@ NATIVE_MINOR_UNIT_TICKERS: dict[tuple[str, str], str] = {
 }
 
 
+CURRENCY_CODE_LENGTH = 3
+
+# The active ISO 4217 currency codes, used to recognise a forex pair such as EURUSD or
+# EURUSD=X. Crypto tickers such as BTCUSD are not matched because BTC is not one of them.
+CURRENCY_CODES: frozenset[str] = frozenset(
+    [
+        "AED",
+        "AFN",
+        "ALL",
+        "AMD",
+        "ANG",
+        "AOA",
+        "ARS",
+        "AUD",
+        "AWG",
+        "AZN",
+        "BAM",
+        "BBD",
+        "BDT",
+        "BGN",
+        "BHD",
+        "BIF",
+        "BMD",
+        "BND",
+        "BOB",
+        "BRL",
+        "BSD",
+        "BTN",
+        "BWP",
+        "BYN",
+        "BZD",
+        "CAD",
+        "CDF",
+        "CHF",
+        "CLP",
+        "CNH",
+        "CNY",
+        "COP",
+        "CRC",
+        "CUP",
+        "CVE",
+        "CZK",
+        "DJF",
+        "DKK",
+        "DOP",
+        "DZD",
+        "EGP",
+        "ERN",
+        "ETB",
+        "EUR",
+        "FJD",
+        "FKP",
+        "GBP",
+        "GEL",
+        "GHS",
+        "GIP",
+        "GMD",
+        "GNF",
+        "GTQ",
+        "GYD",
+        "HKD",
+        "HNL",
+        "HTG",
+        "HUF",
+        "IDR",
+        "ILS",
+        "INR",
+        "IQD",
+        "IRR",
+        "ISK",
+        "JMD",
+        "JOD",
+        "JPY",
+        "KES",
+        "KGS",
+        "KHR",
+        "KMF",
+        "KPW",
+        "KRW",
+        "KWD",
+        "KYD",
+        "KZT",
+        "LAK",
+        "LBP",
+        "LKR",
+        "LRD",
+        "LSL",
+        "LYD",
+        "MAD",
+        "MDL",
+        "MGA",
+        "MKD",
+        "MMK",
+        "MNT",
+        "MOP",
+        "MRU",
+        "MUR",
+        "MVR",
+        "MWK",
+        "MXN",
+        "MYR",
+        "MZN",
+        "NAD",
+        "NGN",
+        "NIO",
+        "NOK",
+        "NPR",
+        "NZD",
+        "OMR",
+        "PAB",
+        "PEN",
+        "PGK",
+        "PHP",
+        "PKR",
+        "PLN",
+        "PYG",
+        "QAR",
+        "RON",
+        "RSD",
+        "RUB",
+        "RWF",
+        "SAR",
+        "SBD",
+        "SCR",
+        "SDG",
+        "SEK",
+        "SGD",
+        "SHP",
+        "SLE",
+        "SOS",
+        "SRD",
+        "SSP",
+        "STN",
+        "SYP",
+        "SZL",
+        "THB",
+        "TJS",
+        "TMT",
+        "TND",
+        "TOP",
+        "TRY",
+        "TTD",
+        "TWD",
+        "TZS",
+        "UAH",
+        "UGX",
+        "USD",
+        "UYU",
+        "UZS",
+        "VES",
+        "VND",
+        "VUV",
+        "WST",
+        "XAF",
+        "XCD",
+        "XOF",
+        "XPF",
+        "YER",
+        "ZAR",
+        "ZMW",
+        "ZWL",
+    ]
+)  # codespell:ignore zar
+
+
+def is_currency_pair(ticker: str) -> bool:
+    """
+    Returns whether a ticker is a forex pair: six letters, optionally followed by "=X" as
+    Yahoo Finance writes them, of which both halves are currency codes. A stock (TSLA,
+    MSFT.AS) or crypto ticker (BTCUSD) is not a currency pair.
+
+    Args:
+        ticker (str): The ticker to check, e.g. "EURUSD" or "EURUSD=X".
+
+    Returns:
+        bool: Whether the ticker is a currency pair.
+    """
+    pair = ticker.upper().removesuffix("=X")
+
+    base, quote = pair[:CURRENCY_CODE_LENGTH], pair[CURRENCY_CODE_LENGTH:]
+
+    return (
+        len(pair) == 2 * CURRENCY_CODE_LENGTH
+        and base in CURRENCY_CODES
+        and quote in CURRENCY_CODES
+    )
+
+
 def get_fx_ticker(base_currency: str, quote_currency: str) -> str:
     """
     Returns the ticker to request historical exchange rate data for from a data

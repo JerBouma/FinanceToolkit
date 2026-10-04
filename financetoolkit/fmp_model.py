@@ -1854,3 +1854,999 @@ def get_commitment_of_traders(
         )
 
     return pd.DataFrame(), no_data
+
+
+def _to_ticker_list(tickers: list[str] | str) -> list[str]:
+    """
+    Normalises the tickers argument of the per-ticker functions below into a list.
+
+    Args:
+        tickers (list[str] | str): A single ticker or a list of tickers.
+
+    Returns:
+        list[str]: The tickers as a list.
+
+    Raises:
+        ValueError: If tickers is neither a string nor a list.
+    """
+    if isinstance(tickers, str):
+        return [tickers]
+    if isinstance(tickers, list):
+        return tickers
+
+    raise ValueError(f"Type for the tickers ({type(tickers)}) variable is invalid.")
+
+
+def _require_fmp_api_key(api_key: str) -> None:
+    """
+    Raises the standard error when no FinancialModelingPrep API key is available.
+
+    Args:
+        api_key (str): The FinancialModelingPrep API key.
+
+    Raises:
+        ValueError: If the API key is empty.
+    """
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+
+def _record_limit(user_subscription: str) -> str:
+    """
+    The record limit to request, following the same rule as the other endpoints: the
+    Free plan is capped at five records, any paid plan gets the full history.
+
+    Args:
+        user_subscription (str): The subscription type of the user.
+
+    Returns:
+        str: The limit to pass to the endpoint.
+    """
+    return "99999" if user_subscription != "Free" else "5"
+
+
+def _collect_per_ticker_frames(
+    worker,
+    ticker_list: list[str],
+    description: str,
+    user_subscription: str,
+    unstack: bool = False,
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Runs a per-ticker worker in parallel and combines the results, exactly as the
+    other per-ticker functions in this module do: tickers without data are reported
+    separately and FinancialModelingPrep error messages are surfaced.
+
+    Args:
+        worker (Callable): A function taking a ticker and returning (ticker, data, has_data).
+        ticker_list (list[str]): The tickers to collect.
+        description (str): What is collected, used in the log message.
+        user_subscription (str): The subscription type of the user.
+        unstack (bool): When True, each ticker's data is a Series or single column that
+            becomes one column per ticker. When False, the tickers become the first
+            index level. Defaults to False.
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The combined data and the tickers without data.
+    """
+    logger.info("Obtaining %s for %d ticker(s)", description, len(ticker_list))
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
+
+    data_dict: dict = {ticker: data for ticker, data, _ in results}
+    no_data: list[str] = [ticker for ticker, _, has_data in results if not has_data]
+
+    # Checks if any errors are in the dataset and if this is the case, reports them. A
+    # failed response stays in so its error is reported, and the check reads columns,
+    # so a single-ticker Series is looked at as a one-column frame.
+    checked = error_model.check_for_error_messages(
+        dataset_dictionary={
+            ticker: data if isinstance(data, pd.DataFrame) else data.to_frame()
+            for ticker, data in data_dict.items()
+        },
+        user_subscription=user_subscription,
+    )
+    data_dict = {
+        ticker: data
+        for ticker, data in data_dict.items()
+        if ticker in checked and ticker not in no_data
+    }
+
+    if not data_dict:
+        return pd.DataFrame(), no_data
+
+    if unstack:
+        return pd.concat(data_dict, axis=1), no_data
+
+    return pd.concat(data_dict, axis=0), no_data
+
+
+def get_executives(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the key executives of each ticker: their title, pay, gender and year of birth.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the executives for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The executives indexed by ticker and name, and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "title": "Title",
+        "pay": "Pay",
+        "currencyPay": "Currency",
+        "gender": "Gender",
+        "yearBorn": "Year Born",
+        "titleSince": "Title Since",
+        "active": "Active",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/key-executives?symbol={ticker}&apikey={api_key}"
+        executives = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "name" not in executives.columns:
+            return ticker, executives, False
+
+        executives = executives.set_index("name").rename(columns=naming)
+        executives.index.name = "Name"
+
+        return (
+            ticker,
+            executives[[column for column in naming.values() if column in executives]],
+            True,
+        )
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "executives", user_subscription
+    )
+
+
+def get_executive_compensation(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the compensation of each ticker's executives per year as reported in the
+    proxy statements: salary, bonus, stock and option awards and the total.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the compensation for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): Only keep years from the year of this date onwards.
+        end_date (str | None): Only keep years up to the year of this date.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The compensation indexed by ticker, year and
+            executive, and the tickers for which no data could be found.
+    """
+    naming: dict = {
+        "filingDate": "Filing Date",
+        "acceptedDate": "Accepted Date",
+        "salary": "Salary",
+        "bonus": "Bonus",
+        "stockAward": "Stock Award",
+        "optionAward": "Option Award",
+        "incentivePlanCompensation": "Incentive Plan Compensation",
+        "allOtherCompensation": "All Other Compensation",
+        "total": "Total",
+        "link": "Link",
+    }
+
+    def worker(ticker):
+        url = (
+            "https://financialmodelingprep.com/stable/governance-executive-compensation"
+            f"?symbol={ticker}&apikey={api_key}"
+        )
+        compensation = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "nameAndPosition" not in compensation.columns:
+            return ticker, compensation, False
+
+        # Reported per fiscal year rather than per date, so the years are compared directly.
+        if start_date:
+            compensation = compensation[compensation["year"] >= int(start_date[:4])]
+        if end_date:
+            compensation = compensation[compensation["year"] <= int(end_date[:4])]
+
+        compensation = compensation.rename(
+            columns={"year": "Year", "nameAndPosition": "Name and Position"}
+        )
+        compensation = compensation.set_index(
+            ["Year", "Name and Position"]
+        ).sort_index()
+        compensation = compensation.rename(columns=naming)
+
+        return ticker, compensation[list(naming.values())], not compensation.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "executive compensation", user_subscription
+    )
+
+
+def get_company_notes(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the notes (debt securities) each ticker has listed, e.g. "1.625% Notes due 2026".
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the notes for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The notes indexed by ticker and title, and the
+            tickers for which no data could be found.
+    """
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/company-notes?symbol={ticker}&apikey={api_key}"
+        notes = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "title" not in notes.columns:
+            return ticker, notes, False
+
+        notes = notes.rename(
+            columns={"title": "Title", "exchange": "Exchange", "cik": "CIK"}
+        )
+
+        return ticker, notes.set_index("Title")[["Exchange", "CIK"]], True
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "company notes", user_subscription
+    )
+
+
+def get_employee_count(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    sleep_timer: bool = False,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the number of employees each ticker reported in its annual filings over
+    time. The latest count is simply the most recent row, so this covers both the
+    employee count and the historical employee count endpoints.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the employee count for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to filter the reporting periods with.
+        end_date (str | None): The end date to filter the reporting periods with.
+        sleep_timer (bool): Whether to wait and retry when the rate limit is reached.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The employee count per reporting year (rows) and
+            ticker (columns), and the tickers for which no data could be found.
+    """
+
+    def worker(ticker):
+        url = (
+            "https://financialmodelingprep.com/stable/historical-employee-count"
+            f"?symbol={ticker}&limit={_record_limit(user_subscription)}&apikey={api_key}"
+        )
+        employees = get_financial_data(
+            url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
+        )
+
+        if "employeeCount" not in employees.columns:
+            return ticker, employees, False
+
+        # An amended filing reports the same period again; the latest filing is kept.
+        employees = employees.sort_values("filingDate").drop_duplicates(
+            "periodOfReport", keep="last"
+        )
+        employees["periodOfReport"] = pd.to_datetime(employees["periodOfReport"])
+        employee_count = employees.set_index("periodOfReport")[
+            "employeeCount"
+        ].sort_index()
+        employee_count = employee_count.truncate(before=start_date, after=end_date)
+        employee_count.index = pd.DatetimeIndex(employee_count.index).to_period(
+            freq="Y"
+        )
+        employee_count = employee_count[~employee_count.index.duplicated(keep="last")]
+        employee_count.index.name = "Period"
+
+        return ticker, employee_count, not employee_count.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "employee counts", user_subscription, unstack=True
+    )
+
+
+def get_shares_float(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves each ticker's free float: the share of outstanding shares that is available
+    for public trading, as a decimal.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the share float for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The share float figures (rows) per ticker (columns),
+            and the tickers for which no data could be found.
+    """
+    naming: dict = {
+        "date": "Date",
+        "freeFloat": "Free Float",
+        "floatShares": "Float Shares",
+        "outstandingShares": "Outstanding Shares",
+        "source": "Source",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/shares-float?symbol={ticker}&apikey={api_key}"
+        shares_float = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "freeFloat" not in shares_float.columns:
+            return ticker, shares_float, False
+
+        # Published as a percentage; every other ratio in the Finance Toolkit is a decimal.
+        shares_float["freeFloat"] = shares_float["freeFloat"] / 100
+
+        return (
+            ticker,
+            shares_float.iloc[0].rename(index=naming)[list(naming.values())],
+            True,
+        )
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "share floats", user_subscription, unstack=True
+    )
+
+
+# Legal suffixes the mergers and acquisitions search does not match on: it finds
+# "Microsoft" but nothing for "Microsoft Corporation".
+COMPANY_NAME_SUFFIXES = {
+    "inc",
+    "incorporated",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "ltd",
+    "limited",
+    "plc",
+    "llc",
+    "lp",
+    "nv",
+    "sa",
+    "ag",
+    "se",
+    "asa",
+    "ab",
+    "oyj",
+    "spa",
+    "bv",
+    "holding",
+    "holdings",
+    "group",
+}
+
+
+def _search_name(company_name: str) -> str:
+    """
+    Shortens a company name to the part the mergers and acquisitions search matches on,
+    by dropping trailing legal suffixes, e.g. "Microsoft Corporation" becomes "Microsoft".
+
+    Args:
+        company_name (str): The company name as listed in the profile.
+
+    Returns:
+        str: The name without its trailing legal suffixes.
+    """
+    words = company_name.replace(",", " ").split()
+
+    while (
+        len(words) > 1 and words[-1].lower().replace(".", "") in COMPANY_NAME_SUFFIXES
+    ):
+        words.pop()
+
+    return " ".join(words)
+
+
+def get_mergers_acquisitions(
+    tickers: list[str] | str,
+    company_names: dict[str, str],
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the mergers and acquisitions each ticker took part in, as acquirer or target.
+
+    The endpoint searches by company name rather than ticker, and a name search also
+    returns companies with a similar name ("Apple" matches "Apple Hospitality REIT"), so
+    only the deals in which the ticker itself is the acquirer or the target are kept.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the deals for.
+        company_names (dict[str, str]): The company name per ticker, as listed in the profile; its
+            legal suffix is dropped before searching.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to filter the transactions with.
+        end_date (str | None): The end date to filter the transactions with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The deals indexed by ticker and transaction date,
+            and the tickers for which no data could be found.
+    """
+    naming: dict = {
+        "symbol": "Acquirer Symbol",
+        "companyName": "Acquirer Name",
+        "targetedSymbol": "Target Symbol",
+        "targetedCompanyName": "Target Name",
+        "acceptedDate": "Accepted Date",
+        "link": "Link",
+    }
+
+    def worker(ticker):
+        name = company_names.get(ticker)
+
+        if not name:
+            return ticker, pd.DataFrame(), False
+
+        url = (
+            "https://financialmodelingprep.com/stable/mergers-acquisitions-search"
+            f"?name={requests.utils.quote(_search_name(name))}&apikey={api_key}"
+        )
+        deals = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "transactionDate" not in deals.columns:
+            return ticker, deals, False
+
+        deals = deals[
+            (deals["symbol"] == ticker) | (deals["targetedSymbol"] == ticker)
+        ].copy()
+        deals["Role"] = (
+            deals["symbol"].eq(ticker).map({True: "Acquirer", False: "Target"})
+        )
+        deals["transactionDate"] = pd.to_datetime(deals["transactionDate"])
+        deals = (
+            deals.set_index("transactionDate")
+            .sort_index()
+            .truncate(before=start_date, after=end_date)
+        )
+        deals.index.name = "Transaction Date"
+        deals = deals.rename(columns=naming)
+
+        return ticker, deals[["Role", *naming.values()]], not deals.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "mergers and acquisitions", user_subscription
+    )
+
+
+def get_stock_splits(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the stock splits of each ticker, e.g. a 4-for-1 split as numerator 4 and
+    denominator 1.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the splits for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to filter the splits with.
+        end_date (str | None): The end date to filter the splits with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The splits indexed by ticker and date, and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "numerator": "Numerator",
+        "denominator": "Denominator",
+        "splitType": "Split Type",
+    }
+
+    def worker(ticker):
+        url = (
+            "https://financialmodelingprep.com/stable/splits"
+            f"?symbol={ticker}&limit={_record_limit(user_subscription)}&apikey={api_key}"
+        )
+        splits = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "date" not in splits.columns:
+            return ticker, splits, False
+
+        splits["date"] = pd.to_datetime(splits["date"])
+        splits = (
+            splits.set_index("date")
+            .sort_index()
+            .truncate(before=start_date, after=end_date)
+        )
+        splits.index.name = "Date"
+        splits = splits.rename(columns=naming)
+
+        return (
+            ticker,
+            splits[[column for column in naming.values() if column in splits]],
+            not splits.empty,
+        )
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "stock splits", user_subscription
+    )
+
+
+def get_insider_trade_statistics(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves quarterly statistics on the insider transactions of each ticker: the number
+    and size of acquisitions and disposals, and the number of purchases and sales.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the statistics for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to filter the quarters with.
+        end_date (str | None): The end date to filter the quarters with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The statistics indexed by ticker and quarter, and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "acquiredTransactions": "Acquired Transactions",
+        "disposedTransactions": "Disposed Transactions",
+        "acquiredDisposedRatio": "Acquired/Disposed Ratio",
+        "totalAcquired": "Total Acquired",
+        "totalDisposed": "Total Disposed",
+        "averageAcquired": "Average Acquired",
+        "averageDisposed": "Average Disposed",
+        "totalPurchases": "Total Purchases",
+        "totalSales": "Total Sales",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/insider-trading/statistics?symbol={ticker}&apikey={api_key}"
+        statistics = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "quarter" not in statistics.columns:
+            return ticker, statistics, False
+
+        statistics.index = pd.PeriodIndex(
+            [
+                pd.Period(year=year, quarter=quarter, freq="Q")
+                for year, quarter in zip(statistics["year"], statistics["quarter"])
+            ],
+            name="Period",
+        )
+        statistics = statistics.sort_index().rename(columns=naming)
+        statistics = statistics.loc[
+            (
+                pd.Period(start_date, freq="Q")
+                if start_date
+                else statistics.index.min()
+            ) : (pd.Period(end_date, freq="Q") if end_date else statistics.index.max())
+        ]
+
+        return ticker, statistics[list(naming.values())], not statistics.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "insider trade statistics", user_subscription
+    )
+
+
+def get_stock_grades(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the analyst grades each ticker received: per date and grading company the
+    previous and the new grade, and whether it was upgraded, downgraded or maintained.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the grades for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to filter the grades with.
+        end_date (str | None): The end date to filter the grades with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The grades indexed by ticker, date and grading
+            company, and the tickers for which no data could be found.
+    """
+    naming: dict = {
+        "previousGrade": "Previous Grade",
+        "newGrade": "New Grade",
+        "action": "Action",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/grades?symbol={ticker}&apikey={api_key}"
+        grades = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "gradingCompany" not in grades.columns:
+            return ticker, grades, False
+
+        grades["date"] = pd.to_datetime(grades["date"])
+        grades = grades.rename(
+            columns={"date": "Date", "gradingCompany": "Grading Company", **naming}
+        )
+        grades = grades.set_index(["Date", "Grading Company"]).sort_index()
+        grades = grades.loc[
+            pd.Timestamp(
+                start_date or grades.index.get_level_values(0).min()
+            ) : pd.Timestamp(end_date or grades.index.get_level_values(0).max())
+        ]
+        grades["Action"] = grades["Action"].str.capitalize()
+
+        return ticker, grades[list(naming.values())], not grades.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "stock grades", user_subscription
+    )
+
+
+def get_etf_holdings(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the holdings of each ticker that is an ETF or fund, with their weight as a
+    decimal. Tickers that are not an ETF or fund return no data.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the holdings for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The holdings indexed by ticker and asset, and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "name": "Name",
+        "isin": "ISIN",
+        "securityCusip": "CUSIP",
+        "sharesNumber": "Shares",
+        "weightPercentage": "Weight",
+        "marketValue": "Market Value",
+        "updatedAt": "Updated At",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/etf/holdings?symbol={ticker}&apikey={api_key}"
+        holdings = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "asset" not in holdings.columns:
+            return ticker, holdings, False
+
+        # Published as a percentage; every other ratio in the Finance Toolkit is a decimal.
+        holdings["weightPercentage"] = holdings["weightPercentage"] / 100
+        holdings = holdings.set_index("asset").rename(columns=naming)
+        holdings.index.name = "Asset"
+
+        return ticker, holdings[list(naming.values())], True
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "ETF holdings", user_subscription
+    )
+
+
+def get_etf_information(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the profile of each ticker that is an ETF or fund: issuer, asset class,
+    expense ratio, assets under management and more. Tickers that are not an ETF or fund
+    return no data.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the information for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The information (rows) per ticker (columns), and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "name": "Name",
+        "description": "Description",
+        "isin": "ISIN",
+        "securityCusip": "CUSIP",
+        "assetClass": "Asset Class",
+        "domicile": "Domicile",
+        "etfCompany": "ETF Company",
+        "website": "Website",
+        "inceptionDate": "Inception Date",
+        "expenseRatio": "Expense Ratio",
+        "assetsUnderManagement": "Assets Under Management",
+        "avgVolume": "Average Volume",
+        "nav": "NAV",
+        "navCurrency": "NAV Currency",
+        "holdingsCount": "Holdings Count",
+        "isActivelyTrading": "Actively Trading",
+        "updatedAt": "Updated At",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/etf/info?symbol={ticker}&apikey={api_key}"
+        information = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "assetClass" not in information.columns:
+            return ticker, information, False
+
+        # Published as a percentage; every other ratio in the Finance Toolkit is a decimal.
+        information["expenseRatio"] = information["expenseRatio"] / 100
+        information = information.iloc[0].rename(index=naming)
+
+        return (
+            ticker,
+            information[
+                [field for field in naming.values() if field in information.index]
+            ],
+            True,
+        )
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "ETF information", user_subscription, unstack=True
+    )
+
+
+def get_etf_country_weightings(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves how each ETF or fund is allocated across countries, as decimals. Tickers that
+    are not an ETF or fund return no data.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the country weightings for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The weight per country (rows) and ticker (columns),
+            and the tickers for which no data could be found.
+    """
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/etf/country-weightings?symbol={ticker}&apikey={api_key}"
+        weightings = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "country" not in weightings.columns:
+            return ticker, weightings, False
+
+        # Published as text such as "97.31%" rather than as a number.
+        weights = (
+            pd.to_numeric(
+                weightings["weightPercentage"].astype(str).str.rstrip("%"),
+                errors="coerce",
+            )
+            / 100
+        )
+        weights.index = pd.Index(weightings["country"], name="Country")
+
+        return ticker, weights, True
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "ETF country weightings", user_subscription, unstack=True
+    )
+
+
+def get_etf_sector_weightings(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves how each ETF or fund is allocated across sectors, as decimals. Tickers that
+    are not an ETF or fund return no data.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the sector weightings for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The weight per sector (rows) and ticker (columns), and
+            the tickers for which no data could be found.
+    """
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/etf/sector-weightings?symbol={ticker}&apikey={api_key}"
+        weightings = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "sector" not in weightings.columns:
+            return ticker, weightings, False
+
+        # Published as a percentage; every other ratio in the Finance Toolkit is a decimal.
+        weights = pd.to_numeric(weightings["weightPercentage"], errors="coerce") / 100
+        weights.index = pd.Index(weightings["sector"], name="Sector")
+
+        return ticker, weights, True
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "ETF sector weightings", user_subscription, unstack=True
+    )
+
+
+def get_earnings_call_transcripts(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    latest: bool = True,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the earnings call transcripts of each ticker.
+
+    The endpoint returns one transcript per call, so collecting a history means one call
+    per quarter. To keep that affordable, the quarters that have a transcript are listed
+    first (one call per ticker) and only the transcripts that are needed are retrieved:
+    the most recent one by default, or every one between the start and end date. Each
+    transcript is cached on its own, because a published transcript does not change, so
+    a quarter is only ever retrieved once no matter how often a history is requested.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the transcripts for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date of the calls to retrieve when latest is False.
+        end_date (str | None): The end date of the calls to retrieve when latest is False.
+        latest (bool): Whether to only retrieve the most recent transcript. Defaults to True.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The transcripts indexed by ticker and fiscal
+            period, and the tickers for which no data could be found.
+    """
+    cache = get_active_cache()
+
+    def transcript(ticker: str, fiscal_year: int, quarter: int) -> pd.DataFrame:
+        entity = f"{ticker}|{fiscal_year}Q{quarter}"
+
+        if cache is not None:
+            stored = cache.get(
+                source=policy_model.FINANCIAL_MODELING_PREP,
+                dataset="earnings_call_transcripts",
+                entity=entity,
+            )
+            if stored is not None:
+                return stored
+
+        url = (
+            "https://financialmodelingprep.com/stable/earning-call-transcript"
+            f"?symbol={ticker}&year={fiscal_year}&quarter={quarter}&apikey={api_key}"
+        )
+        result = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "content" in result.columns and cache is not None:
+            cache.set(
+                source=policy_model.FINANCIAL_MODELING_PREP,
+                dataset="earnings_call_transcripts",
+                entity=entity,
+                data=result,
+            )
+
+        return result
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol={ticker}&apikey={api_key}"
+        calls = get_financial_data(url=url, user_subscription=user_subscription)
+
+        if "fiscalYear" not in calls.columns:
+            return ticker, calls, False
+
+        calls["date"] = pd.to_datetime(calls["date"])
+        calls = calls.sort_values("date")
+
+        if latest:
+            calls = calls.tail(1)
+        else:
+            calls = (
+                calls.set_index("date")
+                .truncate(before=start_date, after=end_date)
+                .reset_index()
+            )
+
+        rows = {}
+        for fiscal_year, quarter, call_date in zip(
+            calls["fiscalYear"], calls["quarter"], calls["date"]
+        ):
+            result = transcript(ticker, int(fiscal_year), int(quarter))
+            if "content" in result.columns and not result.empty:
+                rows[f"{int(fiscal_year)}Q{int(quarter)}"] = {
+                    "Date": call_date,
+                    "Transcript": result["content"].iloc[0],
+                }
+
+        transcripts = pd.DataFrame.from_dict(rows, orient="index")
+        transcripts.index.name = "Fiscal Period"
+
+        return ticker, transcripts, not transcripts.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "earnings call transcripts", user_subscription
+    )

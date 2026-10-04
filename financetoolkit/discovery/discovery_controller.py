@@ -9,7 +9,7 @@ import pandas as pd
 from financetoolkit import fmp_model
 from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
@@ -21,7 +21,7 @@ logger_model.setup_logger()
 logger = logger_model.get_logger()
 
 # Used as the Toolkit's default API key when set as an environment variable.
-API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", None)
+API_KEY: str | None = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY")
 
 
 class Discovery:
@@ -76,6 +76,9 @@ class Discovery:
         | RBMNF      | Rugby Resources Ltd.                |   0.065 | Other OTC                        | PNK             |
         | RBMS.JK    | PT Ristia Bintang Mahkotasejati Tbk |  50     | Jakarta Stock Exchange           | JKT             |
         """
+        # A copied documentation example passes the placeholder key, treated as no key at all.
+        api_key = validation_model.resolve_api_key(api_key)
+
         if not api_key:
             raise ValueError(
                 "Please enter an API key from FinancialModelingPrep. "

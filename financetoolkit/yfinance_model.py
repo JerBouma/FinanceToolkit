@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import yfinance.exceptions
 
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
@@ -95,6 +96,11 @@ def get_financial_statement(
             else "YFINANCE RATE LIMIT REACHED"
         )
         return pd.DataFrame(columns=[error_code])
+
+    if not isinstance(financial_statement, pd.DataFrame):
+        # yfinance only hands back a dict when asked with as_dict=True, which never
+        # happens here; treating anything else as "no data" keeps the fallback path.
+        return pd.DataFrame()
 
     if financial_statement.empty:
         error_code = (
@@ -430,7 +436,7 @@ def get_historical_statistics(ticker: str) -> pd.Series:
                     statistics[timestamp_data] = timestamp
 
         except (KeyError, ValueError):
-            return pd.DataFrame()
+            return pd.Series()
 
         columns = {
             "currency": "Currency",
@@ -460,4 +466,4 @@ def get_historical_statistics(ticker: str) -> pd.Series:
 
         return stats_df
 
-    return pd.DataFrame()
+    return pd.Series()

@@ -5,6 +5,7 @@ __docformat__ = "google"
 import re
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from financetoolkit.utilities import logger_model
 
@@ -21,6 +22,39 @@ HEADERS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
 }
+
+# Sized comfortably above the default number of worker threads (see helpers.DEFAULT_MAX_WORKERS) so that every concurrent API call can keep its connection alive; a larger worker count still works, urllib3 simply discards the surplus connections after use.  # noqa: E501
+CONNECTION_POOL_SIZE = 32
+
+
+def build_session() -> requests.Session:
+    """
+    Builds the shared Session that every request in the Finance Toolkit goes through.
+
+    A single Session reuses TCP connections and TLS handshakes across calls to the same
+    host, which matters a great deal here: collecting data for a large ticker universe
+    means hundreds of requests to the same handful of API hosts, and without pooling
+    every single one would pay for its own handshake. The Session is created once at
+    import time and is safe to share across the worker threads used for concurrent
+    API calls, since it is never mutated afterwards.
+
+    Returns:
+        requests.Session: The configured Session with enlarged connection pools.
+    """
+    session = requests.Session()
+
+    adapter = HTTPAdapter(
+        pool_connections=CONNECTION_POOL_SIZE,
+        pool_maxsize=CONNECTION_POOL_SIZE,
+    )
+
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    return session
+
+
+SESSION = build_session()
 
 
 def get_request(
@@ -46,7 +80,7 @@ def get_request(
     """
     headers = {**HEADERS, **(extra_headers or {})}
     try:
-        response = requests.get(url, headers=headers, timeout=timeout, verify=True)
+        response = SESSION.get(url, headers=headers, timeout=timeout, verify=True)
         response.raise_for_status()
         return response
     except requests.exceptions.SSLError:
@@ -55,7 +89,7 @@ def get_request(
             "This is common in corporate networks with self-signed certificates.",
             url,
         )
-        response = requests.get(
+        response = SESSION.get(
             url, headers=headers, timeout=timeout, verify=False  # noqa
         )
         response.raise_for_status()

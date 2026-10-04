@@ -109,7 +109,7 @@ def create_greek_dataframe(
 
 def create_binomial_tree_dataframe(
     binomial_tree_dictionary: dict[str, dict[float, pd.DataFrame]],
-    start_date: pd.PeriodIndex,
+    start_date: str | pd.Period,
     time_to_expiration: int,
 ):
     """
@@ -117,9 +117,10 @@ def create_binomial_tree_dataframe(
     over time (the time of expiration).
 
     Args:
-        binomial_tree_dictionary (dict[str, dict[float, dict[float, float]]]): a dictionary
+        binomial_tree_dictionary (dict[str, dict[float, pd.DataFrame]]): a dictionary
         containing the binomial tree for each ticker, strike price and expiration date.
-        start_date (str): the start date that should be excluded out of the DataFrame.
+        start_date (str | pd.Period): the date the tree starts from, which labels the
+        first column.
 
     Returns:
         pd.DataFrame: the DataFrame that correctly displays the binomial tree for each ticker
@@ -156,8 +157,8 @@ def create_binomial_tree_dataframe(
 
 
 def create_stock_simulation_dataframe(
-    stock_simulation_dictonary: dict[str, dict[float, dict[float, float]]],
-    start_date: pd.PeriodIndex,
+    stock_simulation_dictonary: dict[str, pd.DataFrame],
+    start_date: str | pd.Period,
     time_to_expiration: int,
 ):
     """
@@ -165,13 +166,15 @@ def create_stock_simulation_dataframe(
     over time (the time of expiration).
 
     Args:
-        binomial_tree_dictionary (dict[str, dict[float, dict[float, float]]]): a dictionary
-        containing the binomial tree for each ticker, strike price and expiration date.
-        start_date (str): the start date that should be excluded out of the DataFrame.
+        stock_simulation_dictonary (dict[str, pd.DataFrame]): the simulated stock prices
+        per ticker, one DataFrame of price paths per ticker.
+        start_date (str | pd.Period): the date the simulation starts from, which labels
+        the first column.
+        time_to_expiration (int): the time to expiration in years.
 
     Returns:
-        pd.DataFrame: the DataFrame that correctly displays the binomial tree for each ticker
-        and strike price.
+        pd.DataFrame: the DataFrame that correctly displays the simulated stock prices for
+        each ticker over time.
     """
     stock_simulation_dataframe = pd.concat(stock_simulation_dictonary)
 

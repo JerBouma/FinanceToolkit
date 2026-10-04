@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+
 import numpy as np
 import pandas as pd
 
@@ -706,7 +707,7 @@ def get_stochastic_oscillator(
 
 def get_moving_average_convergence_divergence(
     prices: pd.Series, short_window: int, long_window: int, signal_window: int
-) -> pd.Series:
+) -> pd.DataFrame:
     """
     Calculate the Moving Average Convergence Divergence (MACD) of a given price series.
 
@@ -731,7 +732,7 @@ def get_moving_average_convergence_divergence(
         signal_window (int): Number of periods for the signal line moving average.
 
     Returns:
-        pd.Series: MACD values.
+        pd.DataFrame: The MACD Line and Signal Line as columns.
     """
     short_ema = prices.ewm(span=short_window, min_periods=1, adjust=False).mean()
     long_ema = prices.ewm(span=long_window, min_periods=1, adjust=False).mean()

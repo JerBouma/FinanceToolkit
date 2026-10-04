@@ -1,14 +1,12 @@
 """Fundamentals Model"""
 
 import importlib.util
-import threading
-import time
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
-from financetoolkit import fmp_model, normalization_model, yfinance_model
+from financetoolkit import fmp_model, helpers, normalization_model, yfinance_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities import error_model, logger_model
@@ -41,7 +39,7 @@ def collect_financial_statements(
     user_subscription: str = "Free",
     enforce_source: str | None = None,
     cache: Cache | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str], dict]:
     """
     Retrieves financial statements (balance, income, or cash flow statements) for one or multiple companies,
     and returns DataFrames containing the data.
@@ -79,12 +77,13 @@ def collect_financial_statements(
                        per ticker and per source, so adding a ticker only requests that one ticker.
 
     Returns:
-        tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+        tuple[pd.DataFrame, pd.DataFrame, list[str], dict]:
             - financial_statement_total (pd.DataFrame): A DataFrame containing the formatted and rounded financial
               statement data, indexed by ticker, with columns representing periods (annual or quarterly).
             - financial_statement_statistics (pd.DataFrame): A DataFrame containing the raw data used for statistics
               and normalization, indexed by ticker, with columns representing periods.
             - no_data (list[str]): A list of tickers for which no data could be retrieved from any source.
+            - fiscal_year_adjustments (dict): The registry of relabelled reporting periods per ticker.
     """
 
     # Periods sit on the column axis, and the plan changes how many are returned.
@@ -99,20 +98,31 @@ def collect_financial_statements(
         policy_model.YAHOO_FINANCE,
     )
 
-    def restore_from_cache(ticker) -> bool:
-        """Serve a ticker from the cache, reporting whether it was fully served."""
+    # Normalised before the nested workers below capture it, so that they see a dict
+    # rather than an Optional they would each have to re-check.
+    if fiscal_year_adjustments is None:
+        fiscal_year_adjustments = {}
+
+    def restore_from_cache(ticker) -> tuple[str, pd.DataFrame, list | None] | None:
+        """
+        Serve a ticker from the cache: the source it came from, the statement and the
+        fiscal year adjustments stored alongside it, or None when it is not fully served.
+        """
+        # Plans only exist when a cache does, so this narrows the type rather than
+        # adding a reachable branch.
+        if cache is None:
+            return None
+
         for source in cache_sources:
             plan = cache_plans.get(source)
 
             if plan is None or plan.get_fetch_span(ticker) is not None:
                 continue
 
-            cached_statement = plan.cached.get(ticker)
+            cached_statement = plan.cached_frame(ticker)
 
             if cached_statement is None or cached_statement.empty:
                 continue
-
-            financial_statement_dict[source][ticker] = cached_statement
 
             # Fiscal year relabelling is a side effect of the fetch, so restore it too.
             adjustments = cache.get(
@@ -122,17 +132,35 @@ def collect_financial_statements(
                 parameters=cache_parameters,
             )
 
-            if adjustments:
-                fiscal_year_adjustments[ticker] = adjustments
+            return source, cached_statement, adjustments
 
-            return True
+        return None
 
-        return False
+    def worker(ticker):
+        """
+        Collect one ticker's statement and hand everything back as a record: the
+        statement per source that was tried (an empty frame included, since the error
+        reporting inspects those), the provider that served it, the fiscal year
+        adjustments and whether any data came back. Nothing shared is mutated here, so
+        the ordered result list of the pool is the only channel between threads.
+        """
+        if cache_plans:
+            restored = restore_from_cache(ticker)
 
-    def worker(ticker, financial_statement_dict, enforce_source):
-        if cache_plans and restore_from_cache(ticker):
-            return
+            if restored is not None:
+                source, cached_statement, adjustments = restored
 
+                return ticker, {source: cached_statement}, None, adjustments, True
+
+        # Seeded with what earlier statement types already relabelled for this ticker,
+        # so the helper merges into the complete entry and the cache stores it whole,
+        # exactly as it did when the registry itself was passed down.
+        ticker_adjustments = (
+            {ticker: list(fiscal_year_adjustments[ticker])}
+            if ticker in fiscal_year_adjustments
+            else {}
+        )
+        statements: dict[str, pd.DataFrame] = {}
         financial_statement_data = pd.DataFrame()
         resolved_source = ""
         attempted_fmp = False
@@ -146,15 +174,12 @@ def collect_financial_statements(
                 start_date=start_date,
                 sleep_timer=sleep_timer,
                 user_subscription=user_subscription,
-                fiscal_year_adjustments=fiscal_year_adjustments,
+                fiscal_year_adjustments=ticker_adjustments,
             )
 
-            financial_statement_dict["FinancialModelingPrep"][
-                ticker
-            ] = financial_statement_data
+            statements["FinancialModelingPrep"] = financial_statement_data
 
             if not financial_statement_data.empty:
-                fmp_tickers.append(ticker)
                 resolved_source = policy_model.FINANCIAL_MODELING_PREP
 
             attempted_fmp = True
@@ -166,15 +191,12 @@ def collect_financial_statements(
                     statement=statement,
                     quarter=quarter,
                     fallback=attempted_fmp,
-                    fiscal_year_adjustments=fiscal_year_adjustments,
+                    fiscal_year_adjustments=ticker_adjustments,
                 )
 
-                financial_statement_dict["YahooFinance"][
-                    ticker
-                ] = financial_statement_data
+                statements["YahooFinance"] = financial_statement_data
 
             if not financial_statement_data.empty:
-                yf_tickers.append(ticker)
                 resolved_source = policy_model.YAHOO_FINANCE
 
         if cache is not None and resolved_source and not financial_statement_data.empty:
@@ -189,17 +211,22 @@ def collect_financial_statements(
                 date_axis=1,
             )
 
-            if ticker in fiscal_year_adjustments:
+            if ticker in ticker_adjustments:
                 cache.set(
                     source=resolved_source,
                     dataset="fiscal_year_adjustments",
                     entity=ticker,
-                    data=fiscal_year_adjustments[ticker],
+                    data=ticker_adjustments[ticker],
                     parameters=cache_parameters,
                 )
 
-        if financial_statement_data.empty:
-            no_data.append(ticker)
+        return (
+            ticker,
+            statements,
+            resolved_source or None,
+            ticker_adjustments.get(ticker),
+            not financial_statement_data.empty,
+        )
 
     if isinstance(tickers, str):
         ticker_list = [tickers]
@@ -221,18 +248,13 @@ def collect_financial_statements(
         )
 
     logger.info("Obtaining %s data for %d ticker(s)", statement, len(ticker_list))
-    financial_statement_dict: dict[str, pd.DataFrame] = {
+    financial_statement_dict: dict[str, dict[str, pd.DataFrame]] = {
         "FinancialModelingPrep": {},
         "YahooFinance": {},
     }
     fmp_tickers: list[str] = []
     yf_tickers: list[str] = []
     no_data: list[str] = []
-    threads = []
-
-    # Shared registry; per-key dict writes are effectively atomic under the GIL.
-    if fiscal_year_adjustments is None:
-        fiscal_year_adjustments = {}
 
     # Coverage needs a concrete range on both ends or the gap never closes.
     coverage_start = start_date or "1900-01-01"
@@ -255,19 +277,22 @@ def collect_financial_statements(
                 date_axis=1,
             )
 
-    for ticker in ticker_list:
-        # Introduce a sleep timer to prevent rate limit errors
-        time.sleep(0.1)
+    results = helpers.run_in_parallel(worker, [(ticker,) for ticker in ticker_list])
 
-        thread = threading.Thread(
-            target=worker,
-            args=(ticker, financial_statement_dict, enforce_source),
-        )
-        thread.start()
-        threads.append(thread)
+    for ticker, statements, provider, adjustments, has_data in results:
+        for source, statement_data in statements.items():
+            financial_statement_dict[source][ticker] = statement_data
 
-    for thread in threads:
-        thread.join()
+        if provider == policy_model.FINANCIAL_MODELING_PREP:
+            fmp_tickers.append(ticker)
+        elif provider == policy_model.YAHOO_FINANCE:
+            yf_tickers.append(ticker)
+
+        if adjustments:
+            fiscal_year_adjustments[ticker] = adjustments
+
+        if not has_data:
+            no_data.append(ticker)
 
     if fiscal_year_adjustments:
         logger.info(

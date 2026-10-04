@@ -3,9 +3,11 @@
 import io
 
 import pandas as pd
+from pandas.io.stata import StataReader
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
+from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
 
 GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/data/final/data_final.dta?raw=True"
@@ -52,11 +54,15 @@ def collect_global_macro_database_dataset(
     response = get_request(gmd_location, timeout=30)
     response.raise_for_status()
 
-    gmd_dataset = pd.read_stata(filepath_or_buffer=io.BytesIO(response.content))
+    # Read through an explicit StataReader: the whole file is consumed in one go,
+    # while `.read()` is typed as returning a DataFrame (pd.read_stata itself is
+    # typed as a DataFrame | StataReader union that trips up the type checker).
+    with StataReader(io.BytesIO(response.content)) as reader:
+        gmd_dataset = reader.read()
     gmd_dataset["year"] = pd.PeriodIndex(gmd_dataset["year"].astype(int), freq="Y")
     gmd_dataset = gmd_dataset.set_index(["year", "countryname"])
     gmd_dataset.index.names = [None] * gmd_dataset.index.nlevels
-    gmd_dataset = gmd_dataset.unstack(level=1)
+    gmd_dataset = to_dataframe(gmd_dataset.unstack(level=1))
 
     gmd_dataset = gmd_dataset.sort_index(axis=1)
 

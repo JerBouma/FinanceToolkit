@@ -166,9 +166,15 @@ def test_toolkit_risk(recorder):
     toolkit._daily_treasury_data = treasury_data
 
     recorder.capture(toolkit.risk.get_conditional_value_at_risk())
-    recorder.capture(toolkit.risk.get_conditional_value_at_risk(growth=True))
     recorder.capture(
-        toolkit.risk.get_conditional_value_at_risk(growth=True, lag=[1, 2, 3])
+        toolkit.risk.get_conditional_value_at_risk(
+            period="yearly", within_period=True, growth=True
+        )
+    )
+    recorder.capture(
+        toolkit.risk.get_conditional_value_at_risk(
+            period="yearly", within_period=True, growth=True, lag=[1, 2, 3]
+        )
     )
 
 

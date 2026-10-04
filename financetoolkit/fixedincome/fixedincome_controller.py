@@ -22,9 +22,9 @@ from financetoolkit.fixedincome import (
     fred_model,
     yieldcurve_model,
 )
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
-from financetoolkit.utilities.statistics_model import finalize_dataset
+from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = logger_model.get_logger()
 
@@ -88,7 +88,7 @@ class FixedIncome:
                 https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set via the FRED_API_KEY
                 environment variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
             api_key (str, optional): A FinancialModelingPrep API key used to retrieve the Treasury par yield
-                curve rates. Obtain one at https://www.jeroenbouma.com/fmp. Defaults to an empty string.
+                curve rates. Obtain one at https://www.jeroenbouma.com/fmp and pass it here. Defaults to an empty string.
             cache (Cache | None, optional): The incremental cache used for the FRED, ECB and Federal
                 Reserve requests this module makes. Defaults to None, which disables caching.
 
@@ -144,7 +144,8 @@ class FixedIncome:
         self._quarterly = quarterly
         self._rounding: int | None = rounding
         self._fred_api_key = fred_api_key
-        self._api_key = api_key
+        # A copied documentation example passes the placeholder key, treated as no key at all.
+        self._api_key = validation_model.resolve_api_key(api_key)
         self._cache = cache
 
         # Published once here so the FRED, ECB and Fed free functions read it back.
@@ -171,8 +172,7 @@ class FixedIncome:
             logger.warning(
                 "No FinancialModelingPrep API key found. Treasury par yield curve rates "
                 "require a key to access, obtain one (with 15% off) at "
-                "https://www.jeroenbouma.com/fmp. Once you have one, pass it via the "
-                "api_key argument."
+                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
             )
             raise ValueError(
                 "A FinancialModelingPrep API key is required to retrieve Treasury rates. "
@@ -352,7 +352,7 @@ class FixedIncome:
                 frequency,
             )
 
-        return pd.Series(bond_statistics).round(self._rounding)
+        return apply_rounding(pd.Series(bond_statistics), self._rounding)
 
     def get_present_value(
         self,
@@ -768,13 +768,13 @@ class FixedIncome:
                 frequency,
             )
 
-        return yield_to_maturities_df.round(self._rounding)
+        return apply_rounding(yield_to_maturities_df, self._rounding)
 
     def get_forward_rate(
         self,
         spot_rates: pd.Series | dict | None = None,
-        near_maturity: float | list | None = None,
-        far_maturity: float | list | None = None,
+        near_maturity: float | range | list | None = None,
+        far_maturity: float | range | list | None = None,
         show_input_info: bool = True,
     ):
         """
@@ -885,12 +885,12 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return forward_rates_df.round(self._rounding)
+        return apply_rounding(forward_rates_df, self._rounding)
 
     def get_par_yield(
         self,
         spot_rates: pd.Series | dict | None = None,
-        years_to_maturity: float | list | None = None,
+        years_to_maturity: float | range | list | None = None,
         frequency: int = 1,
         par_value: float = 100,
         show_input_info: bool = True,
@@ -988,13 +988,13 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return par_yields_series.round(self._rounding)
+        return apply_rounding(par_yields_series, self._rounding)
 
     def get_yield_curve_spread(
         self,
         spot_rates: pd.Series | dict | None = None,
-        long_maturity: float | list | None = None,
-        short_maturity: float | list | None = None,
+        long_maturity: float | range | list | None = None,
+        short_maturity: float | range | list | None = None,
         show_input_info: bool = True,
     ):
         """
@@ -1094,7 +1094,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return yield_curve_spreads_df.round(self._rounding)
+        return apply_rounding(yield_curve_spreads_df, self._rounding)
 
     def get_breakeven_inflation_rate(
         self,
@@ -1208,7 +1208,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in real_rates_series.items()},
             )
 
-        return breakeven_inflation_rates_series.round(self._rounding)
+        return apply_rounding(breakeven_inflation_rates_series, self._rounding)
 
     def get_z_spread(
         self,
@@ -1338,7 +1338,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return z_spreads_df.round(self._rounding)
+        return apply_rounding(z_spreads_df, self._rounding)
 
     def get_bond_equivalent_yield(
         self,
@@ -1446,15 +1446,15 @@ class FixedIncome:
                 list(days_to_maturity),
             )
 
-        return bond_equivalent_yields_df.round(self._rounding)
+        return apply_rounding(bond_equivalent_yields_df, self._rounding)
 
     def get_key_rate_duration(
         self,
         par_value: float = 100,
         coupon_rate: float = 0.05,
-        years_to_maturity: float | list | None = None,
+        years_to_maturity: float | range | list | None = None,
         spot_rates: pd.Series | dict | None = None,
-        key_rate_maturity: float | list | None = None,
+        key_rate_maturity: float | range | list | None = None,
         frequency: int = 1,
         yield_change: float = 0.0001,
         show_input_info: bool = True,
@@ -1571,7 +1571,7 @@ class FixedIncome:
                 {k: round(v, 4) for k, v in spot_rates_series.items()},
             )
 
-        return key_rate_durations_df.round(self._rounding)
+        return apply_rounding(key_rate_durations_df, self._rounding)
 
     def get_taylor_price_change(
         self,
@@ -1690,7 +1690,7 @@ class FixedIncome:
                 f"{yield_change * 100}",
             )
 
-        return price_changes_df.round(self._rounding)
+        return apply_rounding(price_changes_df, self._rounding)
 
     def get_derivative_price(
         self,
@@ -1926,8 +1926,8 @@ class FixedIncome:
 
             derivative_payoffs_df.index.name = "Strike Rate"
 
-            return derivative_prices_df.round(2), derivative_payoffs_df.round(
-                self._rounding
+            return derivative_prices_df.round(2), apply_rounding(
+                derivative_payoffs_df, self._rounding
             )
 
         return derivative_prices_df.round(2)
@@ -1942,8 +1942,12 @@ class FixedIncome:
         standardize: bool = False,
     ):
         """
-        Long-term interest rates refer to government bonds maturing in ten years.
-        Rates are mainly determined by the price charged by the lender, the risk
+        Get the government bond yield for a variety of countries over time from the OECD. By
+        default this is the long-term (10-year) government bond yield; set short_term=True to
+        get the short-term (3-month) rate instead. The two maturities are described below.
+
+        Long-term (short_term=False): long-term interest rates refer to government bonds maturing
+        in ten years. Rates are mainly determined by the price charged by the lender, the risk
         from the borrower and the fall in the capital value. Long-term interest rates
         are generally averages of daily rates, measured as a percentage. These interest
         rates are implied by the prices at which the government bonds are traded on
@@ -1956,13 +1960,13 @@ class FixedIncome:
 
         See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
-        Short-term interest rates are the rates at which short-term borrowings are
-        effected between financial institutions or the rate at which short-term government
-        paper is issued or traded in the market. Short-term interest rates are generally
-        averages of daily rates, measured as a percentage.
-
-        Short-term interest rates are based on three-month money market rates where available.
-        Typical standardised names are "money market rate" and "treasury bill rate".
+        Short-term (short_term=True): short-term interest rates are the rates at which short-term
+        borrowings are effected between financial institutions or the rate at which short-term
+        government paper is issued or traded in the market. Short-term interest rates are
+        generally averages of daily rates, measured as a percentage. They are based on
+        three-month money market rates where available; the OECD source specifically returns
+        the 3-month interbank offered rate rather than a government bill yield, so for most
+        countries it tracks the central bank's policy rate closely.
 
         See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
 
@@ -1980,7 +1984,8 @@ class FixedIncome:
                 values. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
+            pd.DataFrame: A DataFrame containing the long-term (10-year) government bond yield, or the
+                short-term (3-month) interest rate when short_term=True.
 
         As an example:
 
@@ -2091,7 +2096,7 @@ class FixedIncome:
         fixedincome = FixedIncome(
             start_date='2024-01-01',
             end_date='2024-01-15',
-            api_key='FINANCIAL_MODELING_PREP_KEY',
+            api_key="FINANCIAL_MODELING_PREP_KEY",
         )
 
         fixedincome.get_treasury_rates()

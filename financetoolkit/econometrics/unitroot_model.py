@@ -102,9 +102,14 @@ def get_augmented_dickey_fuller(
     values = series.dropna().to_numpy()
 
     try:
-        adf_statistic, p_value, used_lag, n_observations, critical_values, _ = adfuller(
-            values, maxlag=max_lag, regression=regression, autolag="AIC"
-        )
+        # statsmodels 0.15 announces a switch to a result object in 0.16; the tuple layout used here is still returned until then and passing result_object would fail on 0.14.  # noqa: E501
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="adfuller currently returns", category=FutureWarning
+            )
+            adf_statistic, p_value, used_lag, n_observations, critical_values, _ = (
+                adfuller(values, maxlag=max_lag, regression=regression, autolag="AIC")
+            )
     except (ValueError, np.linalg.LinAlgError):
         return pd.Series(
             {

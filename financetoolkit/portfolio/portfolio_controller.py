@@ -9,7 +9,8 @@ import pandas as pd
 from financetoolkit.portfolio import helpers, overview_model, portfolio_model
 from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import logger_model, validation_model
+from financetoolkit.utilities.statistics_model import to_period_index
 
 logger = logger_model.get_logger()
 
@@ -188,7 +189,8 @@ class Portfolio:
         self._transactions_overview: pd.DataFrame = pd.DataFrame()
 
         # Finance Toolkit Initialization
-        self._api_key: str = api_key
+        # A copied documentation example passes the placeholder key, treated as no key at all.
+        self._api_key: str = validation_model.resolve_api_key(api_key)
         self._tickers: list = []
         self._toolkit: Toolkit | None = None
         self._toolkit_instance: Toolkit | None = None
@@ -219,12 +221,14 @@ class Portfolio:
         self.read_portfolio_dataset()
 
     @property
-    def toolkit(self) -> Toolkit:
+    def toolkit(self) -> Toolkit | pd.DataFrame:
         """
         Converts the Portfolio to a Finance Toolkit object.
 
         This method converts the Portfolio object to a Finance Toolkit object, enabling the
-        use of the Toolkit's 500+ financial methods for the portfolio's assets.
+        use of the Toolkit's 500+ financial methods for the portfolio's assets. If the
+        historical data of the assets or the benchmark cannot be collected, an empty
+        DataFrame is returned instead.
 
         Next to the historical data, the portfolio weights are also
         loaded in the Toolkit class. This, together with the "Portfolio" ticker, enables
@@ -293,7 +297,7 @@ class Portfolio:
             if self._daily_historical_data.empty:
                 return pd.DataFrame()
 
-        symbols = list(self._tickers) + ["Portfolio"]  # type: ignore
+        symbols = list(self._tickers) + ["Portfolio"]
 
         historical_columns = self._daily_historical_data.columns.get_level_values(
             0
@@ -315,7 +319,7 @@ class Portfolio:
         historical = (
             self._daily_historical_data.sort_index(axis=1)
             .reindex(historical_columns, axis=1, level=0)
-            .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)  # type: ignore
+            .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)
         )
 
         if not self._toolkit_instance:
@@ -501,7 +505,7 @@ class Portfolio:
                 self._volume_column,
                 self._currency_column,
                 self._costs_column,
-            ) = portfolio_model.read_portfolio_dataset(  # type: ignore
+            ) = portfolio_model.read_portfolio_dataset(
                 excel_location=self._portfolio_dataset_path,
                 adjust_duplicates=adjust_duplicates,
                 date_column=date_column,
@@ -527,7 +531,7 @@ class Portfolio:
             self._portfolio_dataset[self._date_column].min().strftime("%Y-%m-%d")
         )
         self._transactions_currencies = list(
-            self._portfolio_dataset[self._currency_column].unique()  # type: ignore
+            self._portfolio_dataset[self._currency_column].unique()
         )
 
         self._portfolio_dataset = self._portfolio_dataset.set_index(
@@ -791,9 +795,9 @@ class Portfolio:
             )
 
         # Used when ISIN codes are provided and must be matched to tickers.
-        self._ticker_combinations = dict(zip(self._toolkit._tickers, self._tickers))  # type: ignore
+        self._ticker_combinations = dict(zip(self._toolkit._tickers, self._tickers))
         self._original_ticker_combinations = dict(
-            zip(self._tickers, self._original_tickers)  # type: ignore
+            zip(self._tickers, self._original_tickers)
         )
 
         self._daily_historical_data = self._toolkit.get_historical_data(period="daily")
@@ -803,7 +807,7 @@ class Portfolio:
                 "Failed to collect historical data. Please ensure you have provided valid tickers. "
                 "Yahoo Finance is unstable and has rate limits which you could have reached.\n"
                 "Therefore, consider obtaining an API key with the following link: "
-                "https://www.jeroenbouma.com/fmp. You can get 15% off by using the "
+                "https://www.jeroenbouma.com/fmp\nYou can get 15% off by using the "
                 "affiliate link which also supports the project."
             )
             return pd.DataFrame()
@@ -813,7 +817,7 @@ class Portfolio:
         )
 
         currency_conversions = {}
-        if self._currency_column:  # type: ignore
+        if self._currency_column:
             self._historical_statistics = self._toolkit.get_historical_statistics()
             self._historical_statistics = self._historical_statistics.rename(
                 columns=self._ticker_combinations, level=0
@@ -821,7 +825,7 @@ class Portfolio:
 
             if not self._historical_statistics.empty:
                 for (_, ticker), currency in self._portfolio_dataset[
-                    self._currency_column  # type: ignore
+                    self._currency_column
                 ].items():
                     data_currency = self._historical_statistics.loc["Currency", ticker]
 
@@ -1006,7 +1010,9 @@ class Portfolio:
             try:
                 self._positions_overview = overview_model.create_positions_overview(
                     portfolio_tickers=self._tickers,
-                    period_dates=self._daily_historical_data.index.get_level_values(0),
+                    period_dates=to_period_index(
+                        self._daily_historical_data.index.get_level_values(0)
+                    ),
                     portfolio_dataset=self._transactions_overview,
                     historical_prices=self._daily_historical_data,
                     volume_column=self._volume_column,

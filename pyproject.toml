@@ -1,6 +1,6 @@
 [project]
 name = "financetoolkit"
-version = "2.2.0"
+version = "2.2.1"
 description = "Transparent and Efficient Financial Analysis"
 license = {text = "MIT"}
 authors = [
@@ -47,9 +47,6 @@ dependencies = [
     "requests>=2.32",
     "yfinance",
     "openpyxl>=3.1",
-    # Portfolio is exported from the package root and reads its configuration with
-    # yaml at import time, so this is needed by a plain install, not just by the
-    # MCP server.
     "pyyaml>=6.0",
 ]
 
@@ -59,11 +56,9 @@ econometrics = [
     "linearmodels>=6.0",
 ]
 mcp = [
-    # The MCP server exposes every module, econometrics included, so it pulls
-    # in the optional extra rather than leaving those tools failing at runtime.
     "financetoolkit[econometrics]",
     "fastmcp>=3.4.2",
-    "mcp[cli]>=1.27.0",
+    "mcp[cli]>=1.27.0,<2",
     "tabulate>=0.9.0",
     "python-dotenv>=1.0",
     "rich>=13.0",
@@ -98,6 +93,7 @@ dev = [
     "nbconvert>=7.17.1",
     "matplotlib>=3.11.1",
     "seaborn>=0.13.2",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.uv]
@@ -160,10 +156,7 @@ lint.ignore = [
 exclude = ["conftest.py"]
 
 [tool.ruff.lint.per-file-ignores]
-# HTML template strings contain lines that cannot be wrapped
 "financetoolkit/mcp_server/auth_model.py" = ["E501"]
-# Test assertions commonly compare against literal thresholds/expected values, and
-# tests often import a specific function locally to keep a single test's scope clear
 "tests/**" = ["PLR2004", "PLC0415"]
 
 [tool.ruff.lint.isort]
@@ -175,6 +168,21 @@ profile = "black"
 line_length = 122
 skip_gitignore = true
 combine_as_imports = true
+
+[tool.ty.src]
+# Mirror the other linters: the package is what is checked, not the tests, the
+# examples or the environment.
+include = ["financetoolkit"]
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.rules]
+invalid-argument-type = "ignore"
+invalid-return-type = "ignore"
+invalid-assignment = "ignore"
+unresolved-attribute = "ignore"
+no-matching-overload = "ignore"
 
 [tool.codespell]
 ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar'

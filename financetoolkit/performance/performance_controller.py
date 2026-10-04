@@ -25,8 +25,10 @@ from financetoolkit.risk.risk_model import (
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
     convert_annualized_rate_to_period,
     finalize_dataset,
+    to_multi_index,
 )
 
 # Division by zero is normal in these calculations, not a bug.
@@ -48,7 +50,7 @@ class Performance:
         self,
         tickers: str | list[str],
         historical_data: dict[str, pd.DataFrame],
-        risk_free_rate_data: pd.DataFrame,
+        risk_free_rate_data: dict[str, pd.Series],
         quarterly: bool | None = None,
         rounding: int | None = 4,
         start_date: str | None = None,
@@ -62,7 +64,7 @@ class Performance:
         Args:
             tickers (str | list[str]): The tickers to use for the calculations.
             historical_data (dict[str, pd.DataFrame]): The historical data to use for the calculations.
-            risk_free_rate_data (pd.DataFrame): The risk free rate data to use for the calculations.
+            risk_free_rate_data (dict[str, pd.Series]): The annualized risk free rate per period frequency.
             quarterly (bool | None, optional): Whether to use quarterly data. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             start_date (str | None, optional): The start date to use for the calculations. Defaults to None.
@@ -106,10 +108,13 @@ class Performance:
         # Historical Data
         self._historical_data = historical_data
         # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
-        self._risk_free_rate_data = {
-            frequency: convert_annualized_rate_to_period(rate, frequency)
-            for frequency, rate in risk_free_rate_data.items()
-        }
+        self._risk_free_rate_data: dict[str, pd.Series] = {}
+        for frequency, rate in risk_free_rate_data.items():
+            period_rate = convert_annualized_rate_to_period(rate, frequency)
+            # The conversion is also typed for scalars; a Series in gives a Series out.
+            if not isinstance(period_rate, pd.Series):
+                raise TypeError(f"Expected a risk free rate series for {frequency}.")
+            self._risk_free_rate_data[frequency] = period_rate
 
         # Fama and French
         self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
@@ -148,6 +153,55 @@ class Performance:
             intraday_historical_data=intraday_historical_data,
             intraday_period=intraday_period,
         )
+
+        # Memo for the column slices handed to the calculations, keyed by (period,
+        # column, within_period, benchmark): nearly every metric starts from the same
+        # few slices and the MCP server collects many metrics per session. Neither
+        # frame is mutated after this point and callers treat the slices as read-only.
+        self._data_cache: dict[
+            tuple[str, str, bool, bool], pd.DataFrame | pd.Series
+        ] = {}
+
+    def _get_within_historical_data(self, period: str) -> pd.DataFrame:
+        """
+        The within-period historical data for `period`, with the one impossible
+        combination turned into a clear error: a single day only nests observations
+        when intraday data was fetched, so without it the daily entry does not exist
+        and a plain lookup would surface as an unhelpful KeyError. Guarding at the
+        access point (rather than per method) keeps the rolling code paths, which
+        read the regular historical data, free to use period="daily".
+        """
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. "
+                "Initialise the Toolkit with an intraday_period to use period='daily' here."
+            )
+
+        return self._within_historical_data[period]
+
+    def _get_column(
+        self, period: str, column: str, within_period: bool, benchmark: bool = False
+    ) -> pd.DataFrame | pd.Series:
+        """
+        The `column` slice for the tickers (a DataFrame) or the benchmark (a Series),
+        memoized per (period, column, within_period, benchmark) pair -- see
+        `_data_cache` in `__init__`. Within-period lookups go through
+        `_get_within_historical_data` so the daily-without-intraday error still
+        surfaces from the call site that asked for it.
+        """
+        key = (period, column, within_period, benchmark)
+
+        if key not in self._data_cache:
+            frame = (
+                self._get_within_historical_data(period)
+                if within_period
+                else self._historical_data[period]
+            )
+            self._data_cache[key] = frame.loc[:, column][
+                self._benchmark_name if benchmark else self._tickers_without_portfolio
+            ]
+
+        return self._data_cache[key]
 
     @handle_errors
     def collect_all_metrics(
@@ -473,14 +527,10 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        historical_data = (
-            self._within_historical_data[period]
-            if not rolling
-            else self._historical_data[period]
+        returns = self._get_column(period, "Return", within_period=not rolling)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=not rolling, benchmark=True
         )
-
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
 
         if rolling:
             beta = performance_model.get_rolling_beta(
@@ -592,24 +642,26 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            historical_data = self._historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=False)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=False, benchmark=True
+            )
 
             beta = performance_model.get_rolling_beta(
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=True)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=True, benchmark=True
+            )
 
             beta = performance_model.get_beta(returns, benchmark_returns)
 
         risk_free_rate = self._risk_free_rate_data[period]
-        benchmark_returns = self._historical_data[period].loc[:, "Return"][
-            self._benchmark_name
-        ]
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=False, benchmark=True
+        )
 
         capm = performance_model.get_capital_asset_pricing_model(
             risk_free_rate, beta, benchmark_returns
@@ -702,11 +754,7 @@ class Performance:
                 )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data_within = self._within_historical_data[period]
-        returns = historical_data_within.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        returns = self._get_column(period, "Return", within_period=True)
 
         if self._fama_and_french_dataset.empty:
             self._fama_and_french_dataset = (
@@ -760,8 +808,8 @@ class Performance:
             .reindex(self._tickers_without_portfolio, level=0, axis=1)
         )
 
-        self._factor_asset_correlations = factor_asset_correlations.round(
-            rounding if rounding else self._rounding
+        self._factor_asset_correlations = apply_rounding(
+            factor_asset_correlations, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         return filter_columns(self._factor_asset_correlations, show_columns)
@@ -856,8 +904,8 @@ class Performance:
         )
 
         # The Ken French dataset starts in 1963, so without this slice the result covers six decades regardless of the date range the Toolkit was initialised with.  # noqa: E501
-        self._factor_correlations = fama_and_french_period.round(
-            rounding if rounding else self._rounding
+        self._factor_correlations = apply_rounding(
+            fama_and_french_period, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         return self._factor_correlations
@@ -996,11 +1044,7 @@ class Performance:
                 )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data_within = self._within_historical_data[period]
-        returns = historical_data_within.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        returns = self._get_column(period, "Return", within_period=True)
 
         self._fama_and_french_dataset = (
             performance_model.obtain_fama_and_french_dataset()
@@ -1088,9 +1132,10 @@ class Performance:
                 orient="index",
             )
 
-            fama_and_french_model = fama_and_french_model.unstack(
-                level=0, sort=False
-            ).swaplevel(0, 1, axis=1)
+            fama_and_french_model = fama_and_french_model.unstack(level=0, sort=False)
+            fama_and_french_model.columns = to_multi_index(
+                fama_and_french_model.columns
+            ).swaplevel(0, 1)
 
             # Sort the DataFrame with respect to the original column order
             tickers_column_order = fama_and_french_model.columns.get_level_values(
@@ -1136,8 +1181,8 @@ class Performance:
                 .reindex(ticker_column_order, level=0, axis=1)
             )
 
-        self._fama_and_french_model = fama_and_french_model.round(
-            rounding if rounding else self._rounding
+        self._fama_and_french_model = apply_rounding(
+            fama_and_french_model, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if include_daily_residuals:
@@ -1180,8 +1225,8 @@ class Performance:
                 .reset_index(level=0, drop=True)
             )
 
-            self._fama_and_french_residuals = daily_residuals_df.round(
-                rounding if rounding else self._rounding
+            self._fama_and_french_residuals = apply_rounding(
+                daily_residuals_df, rounding if rounding else self._rounding
             ).loc[self._start_date : self._end_date]
 
             return (
@@ -1287,11 +1332,7 @@ class Performance:
         | 2026Q2 |      0.0009 |         0.8212 |      0.1163 |     -0.151  |     -0.1926 |      0.1799 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data_within = self._within_historical_data[period]
-        returns = historical_data_within.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        returns = self._get_column(period, "Return", within_period=True)
 
         # Carhart (1997) extends the *three* factor model. The three and five factor files share Mkt-RF, HML and RF but their SMB series differ, so the three factor file is the correct source here.  # noqa: E501
         three_factor_dataset = (
@@ -1349,9 +1390,8 @@ class Performance:
             orient="index",
         )
 
-        carhart_model = carhart_model.unstack(level=0, sort=False).swaplevel(
-            0, 1, axis=1
-        )
+        carhart_model = carhart_model.unstack(level=0, sort=False)
+        carhart_model.columns = to_multi_index(carhart_model.columns).swaplevel(0, 1)
 
         tickers_column_order = carhart_model.columns.get_level_values(0).unique()
         parameters_column_order = carhart_model.columns.get_level_values(1).unique()
@@ -1362,8 +1402,8 @@ class Performance:
             .reindex(parameters_column_order, level=1, axis=1)
         )
 
-        self._carhart_four_factor_model = carhart_model.round(
-            rounding if rounding else self._rounding
+        self._carhart_four_factor_model = apply_rounding(
+            carhart_model, rounding if rounding else self._rounding
         ).loc[self._start_date : self._end_date]
 
         return filter_columns(
@@ -1449,10 +1489,10 @@ class Performance:
         | 2026   |  0.0431 | -0.2173 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data = self._historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        returns = self._get_column(period, "Return", within_period=False)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=False, benchmark=True
+        )
 
         if rolling:
             alpha = performance_model.get_rolling_alpha(
@@ -1461,7 +1501,7 @@ class Performance:
         else:
             alpha = performance_model.get_alpha(returns, benchmark_returns)
 
-        alpha = alpha.round(rounding if rounding else self._rounding).loc[
+        alpha = apply_rounding(alpha, rounding if rounding else self._rounding).loc[
             self._start_date : self._end_date
         ]
 
@@ -1568,32 +1608,28 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            historical_data = self._historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=False)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=False, benchmark=True
+            )
 
             beta = performance_model.get_rolling_beta(
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_within_data = self._within_historical_data[period]
-            returns = historical_within_data.loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
-            benchmark_returns = historical_within_data.loc[:, "Return"][
-                self._benchmark_name
-            ]
+            returns = self._get_column(period, "Return", within_period=True)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=True, benchmark=True
+            )
 
             beta = performance_model.get_beta(returns, benchmark_returns)
 
-        historical_data = self._historical_data[period]
-
-        period_returns = historical_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
 
         risk_free_rate = self._risk_free_rate_data[period]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=False, benchmark=True
+        )
 
         jensens_alpha = performance_model.get_jensens_alpha(
             period_returns, risk_free_rate, beta, benchmark_returns
@@ -1686,29 +1722,23 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            historical_data = self._historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=False)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=False, benchmark=True
+            )
 
             beta = performance_model.get_rolling_beta(
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_within_data = self._within_historical_data[period]
-            returns = historical_within_data.loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
-            benchmark_returns = historical_within_data.loc[:, "Return"][
-                self._benchmark_name
-            ]
+            returns = self._get_column(period, "Return", within_period=True)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=True, benchmark=True
+            )
 
             beta = performance_model.get_beta(returns, benchmark_returns)
 
-        historical_data = self._historical_data[period]
-
-        period_returns = historical_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
         risk_free_rate = self._risk_free_rate_data[period]
 
         treynor_ratio = performance_model.get_treynor_ratio(
@@ -1919,9 +1949,7 @@ class Performance:
 
         # The deflated variant needs the full (non within period) return history to approximate how dispersed the Sharpe ratio is across trials, regardless of whether the ratio being tested is itself a rolling one.  # noqa: E501
         if rolling or method == "deflated":
-            period_returns = self._historical_data[period].loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
+            period_returns = self._get_column(period, "Return", within_period=False)
             full_excess_return = performance_model.get_excess_return(
                 period_returns, self._risk_free_rate_data[period]
             )
@@ -1932,9 +1960,9 @@ class Performance:
                 excess_return, rolling
             )
         else:
-            excess_return = self._within_historical_data[period].loc[
-                :, "Excess Return"
-            ][self._tickers_without_portfolio]
+            excess_return = self._get_column(
+                period, "Excess Return", within_period=True
+            )
             sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
 
         if method == "standard":
@@ -2092,9 +2120,7 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            period_returns = self._historical_data[period].loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
+            period_returns = self._get_column(period, "Return", within_period=False)
             excess_return = performance_model.get_excess_return(
                 period_returns, self._risk_free_rate_data[period]
             )
@@ -2102,10 +2128,9 @@ class Performance:
                 excess_return, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
-            excess_return = historical_data.loc[:, "Excess Return"][
-                self._tickers_without_portfolio
-            ]
+            excess_return = self._get_column(
+                period, "Excess Return", within_period=True
+            )
 
             sortino_ratio = performance_model.get_sortino_ratio(excess_return)
 
@@ -2186,13 +2211,9 @@ class Performance:
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=True)
 
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-
-        period_returns = self._historical_data[period].loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
         excess_return = (
             period_returns
             if period == "intraday"
@@ -2293,17 +2314,11 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = (
-            self._within_historical_data[period]
-            if within_period
-            else self._historical_data[period]
-        ).loc[:, "Return"][self._tickers_without_portfolio]
+        returns = self._get_column(period, "Return", within_period=within_period)
 
         maximum_drawdown = get_max_drawdown(returns)
 
-        period_returns = self._historical_data[period].loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
 
         calmar_ratio = performance_model.get_calmar_ratio(
             period_returns, maximum_drawdown
@@ -2397,17 +2412,11 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = (
-            self._within_historical_data[period]
-            if within_period
-            else self._historical_data[period]
-        ).loc[:, "Return"][self._tickers_without_portfolio]
+        returns = self._get_column(period, "Return", within_period=within_period)
 
         average_drawdown = performance_model.get_average_drawdown(returns)
 
-        period_returns = self._historical_data[period].loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
 
         sterling_ratio = performance_model.get_sterling_ratio(
             period_returns, average_drawdown, adjustment
@@ -2497,17 +2506,11 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = (
-            self._within_historical_data[period]
-            if within_period
-            else self._historical_data[period]
-        ).loc[:, "Return"][self._tickers_without_portfolio]
+        returns = self._get_column(period, "Return", within_period=within_period)
 
         burke_drawdown_measure = performance_model.get_burke_drawdown_measure(returns)
 
-        period_returns = self._historical_data[period].loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
         excess_return = performance_model.get_excess_return(
             period_returns, self._risk_free_rate_data[period]
         )
@@ -2610,14 +2613,10 @@ class Performance:
         | 2026   |  0.0919 | -0.0461 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_period_data = self._historical_data[period]
-        period_returns = historical_period_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        benchmark_period_returns = historical_period_data.loc[:, "Return"][
-            self._benchmark_name
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
+        benchmark_period_returns = self._get_column(
+            period, "Return", within_period=False, benchmark=True
+        )
         risk_free_rate = self._risk_free_rate_data[period]
 
         if rolling:
@@ -2625,12 +2624,10 @@ class Performance:
                 period_returns, risk_free_rate, benchmark_period_returns, rolling
             )
         else:
-            daily_returns = self._historical_data["daily"].loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
-            benchmark_daily_returns = self._historical_data["daily"].loc[:, "Return"][
-                self._benchmark_name
-            ]
+            daily_returns = self._get_column("daily", "Return", within_period=False)
+            benchmark_daily_returns = self._get_column(
+                "daily", "Return", within_period=False, benchmark=True
+            )
             period_standard_deviation = get_volatility(daily_returns, period)
             benchmark_standard_deviation = get_volatility(
                 benchmark_daily_returns, period
@@ -2731,17 +2728,19 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            historical_data = self._historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=False)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=False, benchmark=True
+            )
 
             tracking_error = performance_model.get_rolling_tracking_error(
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=True)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=True, benchmark=True
+            )
 
             tracking_error = performance_model.get_tracking_error(
                 returns, benchmark_returns
@@ -2844,17 +2843,19 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            historical_data = self._historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=False)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=False, benchmark=True
+            )
 
             information_ratio = performance_model.get_rolling_information_ratio(
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_data = self._within_historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=True)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=True, benchmark=True
+            )
 
             information_ratio = performance_model.get_information_ratio(
                 returns, benchmark_returns
@@ -2936,10 +2937,10 @@ class Performance:
         | 2026   | 0.766  | 1.593  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        returns = self._get_column(period, "Return", within_period=True)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=True, benchmark=True
+        )
 
         upside_capture_ratio = performance_model.get_upside_capture_ratio(
             returns, benchmark_returns
@@ -3021,10 +3022,10 @@ class Performance:
         | 2026   | 0.5691 | 2.2236 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        returns = self._get_column(period, "Return", within_period=True)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=True, benchmark=True
+        )
 
         downside_capture_ratio = performance_model.get_downside_capture_ratio(
             returns, benchmark_returns
@@ -3102,10 +3103,10 @@ class Performance:
         | 2026   | 0.504  | 0.472  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data = self._within_historical_data[period]
-        returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-        benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+        returns = self._get_column(period, "Return", within_period=True)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=True, benchmark=True
+        )
 
         win_rate = performance_model.get_win_rate(returns, benchmark_returns)
 
@@ -3189,11 +3190,7 @@ class Performance:
         | 2026   |  0.0441 | -0.0538 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_data = self._within_historical_data[period]
-        excess_return = historical_data.loc[:, "Excess Return"][
-            self._tickers_without_portfolio
-        ]
+        excess_return = self._get_column(period, "Excess Return", within_period=True)
 
         kappa_ratio = performance_model.get_kappa_ratio(excess_return, order)
 
@@ -3288,18 +3285,12 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            returns = self._historical_data[period].loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
+            returns = self._get_column(period, "Return", within_period=False)
             omega_ratio = performance_model.get_rolling_omega_ratio(
                 returns, rolling, minimum_acceptable_return
             )
         else:
-            returns = (
-                self._within_historical_data[period]
-                if within_period
-                else self._historical_data[period]
-            ).loc[:, "Return"][self._tickers_without_portfolio]
+            returns = self._get_column(period, "Return", within_period=within_period)
 
             omega_ratio = performance_model.get_omega_ratio(
                 returns, minimum_acceptable_return
@@ -3386,11 +3377,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = (
-            self._within_historical_data[period]
-            if within_period
-            else self._historical_data[period]
-        ).loc[:, "Return"][self._tickers_without_portfolio]
+        returns = self._get_column(period, "Return", within_period=within_period)
 
         gain_to_pain_ratio = performance_model.get_gain_to_pain_ratio(returns)
 
@@ -3485,8 +3472,8 @@ class Performance:
 
         compound_growth_rate = pd.DataFrame(compound_growth_rates).T
 
-        compound_growth_rate = compound_growth_rate.round(
-            rounding if rounding else self._rounding
+        compound_growth_rate = apply_rounding(
+            compound_growth_rate, rounding if rounding else self._rounding
         )
 
         return compound_growth_rate
@@ -3733,7 +3720,9 @@ class Performance:
 
         correlation_matrix = performance_model.get_correlation_matrix(returns)
 
-        return correlation_matrix.round(rounding if rounding else self._rounding)
+        return apply_rounding(
+            correlation_matrix, rounding if rounding else self._rounding
+        )
 
     @handle_errors
     def get_covariance_matrix(
@@ -3786,7 +3775,9 @@ class Performance:
 
         covariance_matrix = performance_model.get_covariance_matrix(returns)
 
-        return covariance_matrix.round(rounding if rounding else self._rounding)
+        return apply_rounding(
+            covariance_matrix, rounding if rounding else self._rounding
+        )
 
     @handle_portfolio
     @handle_errors
@@ -3871,9 +3862,10 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            historical_data = self._historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=False)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=False, benchmark=True
+            )
 
             beta = performance_model.get_rolling_beta(
                 returns, benchmark_returns, rolling
@@ -3891,37 +3883,30 @@ class Performance:
                 within_excess_return, 0.0, beta, within_benchmark_excess_return
             )
         else:
-            historical_within_data = self._within_historical_data[period]
-            returns = historical_within_data.loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
-            benchmark_returns = historical_within_data.loc[:, "Return"][
-                self._benchmark_name
-            ]
+            returns = self._get_column(period, "Return", within_period=True)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=True, benchmark=True
+            )
 
             beta = performance_model.get_beta(returns, benchmark_returns)
 
-            within_excess_return = historical_within_data.loc[:, "Excess Return"][
-                self._tickers_without_portfolio
-            ]
-            within_benchmark_excess_return = historical_within_data.loc[
-                :, "Excess Return"
-            ][self._benchmark_name]
+            within_excess_return = self._get_column(
+                period, "Excess Return", within_period=True
+            )
+            within_benchmark_excess_return = self._get_column(
+                period, "Excess Return", within_period=True, benchmark=True
+            )
 
             capm_residuals = performance_model.get_capm_residuals(
                 within_excess_return, beta, within_benchmark_excess_return
             )
 
-        historical_data = self._historical_data[period]
-
-        period_returns = historical_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
 
         risk_free_rate = self._risk_free_rate_data[period]
-        benchmark_period_returns = historical_data.loc[:, "Return"][
-            self._benchmark_name
-        ]
+        benchmark_period_returns = self._get_column(
+            period, "Return", within_period=False, benchmark=True
+        )
 
         jensens_alpha = performance_model.get_jensens_alpha(
             period_returns, risk_free_rate, beta, benchmark_period_returns
@@ -4034,40 +4019,32 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
-            historical_data = self._historical_data[period]
-            returns = historical_data.loc[:, "Return"][self._tickers_without_portfolio]
-            benchmark_returns = historical_data.loc[:, "Return"][self._benchmark_name]
+            returns = self._get_column(period, "Return", within_period=False)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=False, benchmark=True
+            )
 
             beta = performance_model.get_rolling_beta(
                 returns, benchmark_returns, rolling
             )
         else:
-            historical_within_data = self._within_historical_data[period]
-            returns = historical_within_data.loc[:, "Return"][
-                self._tickers_without_portfolio
-            ]
-            benchmark_returns = historical_within_data.loc[:, "Return"][
-                self._benchmark_name
-            ]
+            returns = self._get_column(period, "Return", within_period=True)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=True, benchmark=True
+            )
 
             beta = performance_model.get_beta(returns, benchmark_returns)
 
-        historical_data = self._historical_data[period]
-
-        period_returns = historical_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        period_returns = self._get_column(period, "Return", within_period=False)
         risk_free_rate = self._risk_free_rate_data[period]
-        benchmark_period_returns = historical_data.loc[:, "Return"][
-            self._benchmark_name
-        ]
+        benchmark_period_returns = self._get_column(
+            period, "Return", within_period=False, benchmark=True
+        )
 
-        daily_returns = self._historical_data["daily"].loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
-        daily_benchmark_returns = self._historical_data["daily"].loc[:, "Return"][
-            self._benchmark_name
-        ]
+        daily_returns = self._get_column("daily", "Return", within_period=False)
+        daily_benchmark_returns = self._get_column(
+            "daily", "Return", within_period=False, benchmark=True
+        )
 
         asset_standard_deviation = get_volatility(daily_returns, period)
         benchmark_standard_deviation = get_volatility(daily_benchmark_returns, period)
@@ -4185,16 +4162,8 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = (
-            self._within_historical_data[period]
-            if within_period
-            else self._historical_data[period]
-        ).loc[:, "Return"][self._tickers_without_portfolio]
-
-        historical_data = self._historical_data[period]
-        period_returns = historical_data.loc[:, "Return"][
-            self._tickers_without_portfolio
-        ]
+        returns = self._get_column(period, "Return", within_period=within_period)
+        period_returns = self._get_column(period, "Return", within_period=False)
         risk_free_rate = self._risk_free_rate_data[period]
 
         excess_return = performance_model.get_excess_return(
@@ -4293,11 +4262,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        returns = (
-            self._within_historical_data[period]
-            if within_period
-            else self._historical_data[period]
-        ).loc[:, "Return"][self._tickers_without_portfolio]
+        returns = self._get_column(period, "Return", within_period=within_period)
 
         rachev_ratio = performance_model.get_rachev_ratio(returns, alpha)
 
@@ -4386,14 +4351,10 @@ class Performance:
         | 2026   |  0.0006 | 0.6632 | -2.6122 |      0.1087 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_within_data = self._within_historical_data[period]
-        excess_return = historical_within_data.loc[:, "Excess Return"][
-            self._tickers_without_portfolio
-        ]
-        benchmark_excess_return = historical_within_data.loc[:, "Excess Return"][
-            self._benchmark_name
-        ]
+        excess_return = self._get_column(period, "Excess Return", within_period=True)
+        benchmark_excess_return = self._get_column(
+            period, "Excess Return", within_period=True, benchmark=True
+        )
 
         logger.info("Calculating Treynor-Mazuy Market Timing Model")
 
@@ -4501,14 +4462,10 @@ class Performance:
         | 2026   |  0.0008 | 0.7243 |          -0.1232 |      0.1088 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        historical_within_data = self._within_historical_data[period]
-        excess_return = historical_within_data.loc[:, "Excess Return"][
-            self._tickers_without_portfolio
-        ]
-        benchmark_excess_return = historical_within_data.loc[:, "Excess Return"][
-            self._benchmark_name
-        ]
+        excess_return = self._get_column(period, "Excess Return", within_period=True)
+        benchmark_excess_return = self._get_column(
+            period, "Excess Return", within_period=True, benchmark=True
+        )
 
         logger.info("Calculating Henriksson-Merton Market Timing Model")
 

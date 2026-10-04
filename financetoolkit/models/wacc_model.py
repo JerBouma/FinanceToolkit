@@ -2,11 +2,13 @@
 
 __docformat__ = "google"
 
+
 import numpy as np
 import pandas as pd
 
 from financetoolkit.performance import performance_model
 from financetoolkit.ratios import profitability_model, valuation_model
+from financetoolkit.utilities.dataframe_model import concat_frames
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -16,9 +18,9 @@ logger = get_logger()
 
 def get_cost_of_equity(
     risk_free_rate: pd.Series,
-    beta: pd.Series,
+    beta: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
-) -> pd.DataFrame:
+) -> pd.Series | pd.DataFrame:
     """
     The cost of equity represents the return required by investors (shareholders) for
     holding shares of a company's common stock. It is a key component of the Weighted
@@ -33,13 +35,13 @@ def get_cost_of_equity(
     Args:
         risk_free_rate (float or pd.Series): The risk-free rate is the rate of return of a
         hypothetical investment with no risk of financial loss.
-        beta (float or pd.Series): Beta is a measure of the volatility, or systematic risk,
+        beta (pd.Series | pd.DataFrame): Beta is a measure of the volatility, or systematic risk,
         of a security or portfolio compared to the market as a whole.
         benchmark_returns (float or pd.Series): The benchmark return is the return of a
         chosen benchmark, such as the S&P 500 or the Russell 2000.
 
     Returns:
-        pd.DataFrame: A DataFrame containing Cost of Equity
+        pd.Series | pd.DataFrame: The Cost of Equity, shaped like `beta`.
     """
     cost_of_equity = performance_model.get_capital_asset_pricing_model(
         risk_free_rate=risk_free_rate, beta=beta, benchmark_returns=benchmark_returns
@@ -78,7 +80,7 @@ def get_weighted_average_cost_of_capital(
     interest_expense: pd.Series,
     total_debt: pd.Series,
     risk_free_rate: pd.Series,
-    beta: pd.Series,
+    beta: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
     income_tax_expense: pd.Series,
     income_before_tax: pd.Series,
@@ -102,7 +104,7 @@ def get_weighted_average_cost_of_capital(
         total_debt (float or pd.Series): Total debt of the company.
         risk_free_rate (float or pd.Series): The risk-free rate is the rate of return of a
         hypothetical investment with no risk of financial loss.
-        beta (float or pd.Series): Beta is a measure of the volatility, or systematic risk,
+        beta (pd.Series | pd.DataFrame): Beta is a measure of the volatility, or systematic risk,
         of a security or portfolio compared to the market as a whole.
         benchmark_returns (float or pd.Series): The benchmark return is the return of a
         chosen benchmark, such as the S&P 500 or the Russell 2000.
@@ -174,7 +176,7 @@ def get_weighted_average_cost_of_capital(
 
     if isinstance(market_value_equity, pd.DataFrame):
         return (
-            pd.concat(components)
+            concat_frames(components)
             .swaplevel(1, 0)
             .sort_index(level=0, sort_remaining=False)
         )

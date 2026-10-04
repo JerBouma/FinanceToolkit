@@ -6,6 +6,7 @@ import pandas as pd
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
+    to_period_index,
 )
 
 ALPHA_CONSTRAINT = 0.5
@@ -66,7 +67,7 @@ def get_max_drawdown(
     if method == "level":
         return (returns - returns.cummax()).min()
 
-    cum_returns = (1 + returns.fillna(0)).cumprod()  # type: ignore
+    cum_returns = (1 + returns.fillna(0)).cumprod()
 
     return (cum_returns / cum_returns.cummax() - 1).min()
 
@@ -274,7 +275,7 @@ def get_variance(
     dates = (
         groups
         if groups is not None
-        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
     return returns.groupby(dates).var() * volatility_window
@@ -375,7 +376,7 @@ def get_volatility(
     dates = (
         groups
         if groups is not None
-        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
     return returns.groupby(dates).std() * np.sqrt(volatility_window)
@@ -435,7 +436,7 @@ def get_conditional_drawdown_at_risk(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        cum_returns = (1 + returns.fillna(0)).cumprod()  # type: ignore
+        cum_returns = (1 + returns.fillna(0)).cumprod()
         drawdowns = cum_returns / cum_returns.cummax() - 1
 
     drawdown_at_risk = drawdowns.quantile(alpha)
@@ -595,7 +596,7 @@ def _drawdown_trough(
 def get_max_drawdown_duration(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculates the duration of the Maximum Drawdown, i.e. the number of periods between the
     peak and the lowest point of the largest drawdown.
@@ -679,7 +680,7 @@ def get_max_drawdown_duration(
 def get_max_drawdown_recovery_time(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculates the Recovery Time of the Maximum Drawdown, i.e. the number of periods it takes
     for the cumulative return to reach a new high after the lowest point of the largest drawdown. If
@@ -987,7 +988,7 @@ def get_mean_absolute_deviation(
     dates = (
         groups
         if groups is not None
-        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
     return returns.groupby(dates).apply(lambda x: (x - x.mean()).abs().mean())
@@ -1035,7 +1036,7 @@ def get_coefficient_of_variation(
     dates = (
         groups
         if groups is not None
-        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
     grouped = returns.groupby(dates)

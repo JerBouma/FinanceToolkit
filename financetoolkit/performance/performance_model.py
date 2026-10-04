@@ -15,7 +15,10 @@ from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.risk import cvar_model
 from financetoolkit.utilities.requests_model import get_request
-from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
+from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
+    to_period_index,
+)
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
@@ -28,7 +31,7 @@ EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
 def get_covariance(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the covariance of returns.
 
@@ -59,15 +62,20 @@ def get_covariance(
 
             return covariance
 
-        if isinstance(returns, pd.Series | pd.core.window.rolling.Rolling):
+        if isinstance(returns, pd.Series):
+            if not isinstance(benchmark_returns, pd.Series):
+                raise TypeError(
+                    "A Series of returns needs a Series of benchmark returns."
+                )
             return returns.cov(benchmark_returns)
 
+    # A rolling window object, which pairs with either a Series or a DataFrame.
     return returns.cov(benchmark_returns)
 
 
 def get_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate beta. Beta represents the slope in the linear regression between
     the asset returns and the benchmark returns.
@@ -139,7 +147,7 @@ def get_capital_asset_pricing_model(
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment,
     such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade-off of
@@ -383,7 +391,7 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
 def get_factor_asset_correlations(
     factors: pd.DataFrame,
     excess_return: pd.Series,
-) -> pd.DataFrame:
+) -> pd.Series:
     """
     Calculates factor exposures for each asset.
 
@@ -404,7 +412,7 @@ def get_factor_asset_correlations(
         excess_returns (pd.Series): the excess returns.
 
     Returns:
-        pd.DataFrame: the factor asset correlations.
+        pd.Series: the correlation of each factor with the excess return.
     """
     correlations = factors.corrwith(excess_return)
 
@@ -414,7 +422,7 @@ def get_factor_asset_correlations(
 def get_fama_and_french_model_multi(
     excess_returns: pd.Series,
     factor_dataset: pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+) -> tuple[dict, pd.Series, str | None]:
     """
     The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
     regression analysis to better describe asset returns:
@@ -507,7 +515,7 @@ def get_fama_and_french_model_multi(
 def get_fama_and_french_model_single(
     excess_returns: pd.Series,
     factor: pd.Series,
-) -> pd.Series | pd.DataFrame:
+) -> tuple[dict, pd.Series]:
     """
     The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
     regression analysis to better describe asset returns:
@@ -580,9 +588,9 @@ def get_fama_and_french_model_single(
 
 
 def get_alpha(
-    asset_returns: pd.Series | float,
+    asset_returns: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the (arithmetic) Alpha, i.e. the asset's return in excess of the
     benchmark's return.
@@ -638,11 +646,11 @@ def get_rolling_alpha(
 
 
 def get_jensens_alpha(
-    asset_returns: pd.Series | float,
+    asset_returns: pd.Series | pd.DataFrame | float,
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate Jensen's Alpha, i.e. the return earned above what CAPM would predict
     given the asset's Beta (systematic risk exposure).
@@ -697,10 +705,10 @@ def get_jensens_alpha(
 
 
 def get_treynor_ratio(
-    asset_returns: pd.Series | float,
+    asset_returns: pd.Series | pd.DataFrame | float,
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Treynor ratio of returns, i.e. the excess return earned per unit of
     systematic (market) risk, as measured by Beta.
@@ -749,7 +757,9 @@ def get_treynor_ratio(
     return treynor_ratio
 
 
-def get_sharpe_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
+def get_sharpe_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Sharpe ratio of returns, i.e. the mean excess return per unit of total
     (upside and downside) volatility.
@@ -992,7 +1002,9 @@ def get_deflated_sharpe_ratio(
     )
 
 
-def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
+def get_sortino_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Sortino ratio of returns, i.e. the mean excess return per unit of
     downside deviation.
@@ -1116,7 +1128,7 @@ def get_m2_ratio(
     risk_free_rate: pd.Series,
     asset_standard_deviation: pd.Series | pd.DataFrame,
     benchmark_standard_deviation: pd.Series | float,
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the M2 Ratio (Modigliani-Modigliani Measure) of returns.
 
@@ -1218,7 +1230,7 @@ def get_rolling_m2_ratio(
 
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Tracking Error of returns, i.e. the standard deviation of the
     difference between the asset's and the benchmark's return (the "active return").
@@ -1279,7 +1291,7 @@ def get_rolling_tracking_error(
 
 def get_information_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Information Ratio of returns, i.e. the mean active return (asset
     return minus benchmark return) per unit of Tracking Error.
@@ -1931,7 +1943,7 @@ def get_returns(
     dates = (
         groups
         if groups is not None
-        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
     period_returns = (1 + returns).groupby(dates).prod() - 1
@@ -2019,8 +2031,8 @@ def get_covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_capm_residuals(
-    excess_returns: pd.DataFrame,
-    beta: pd.DataFrame,
+    excess_returns: pd.Series | pd.DataFrame,
+    beta: pd.Series | pd.DataFrame,
     benchmark_excess_returns: pd.Series,
 ) -> pd.DataFrame:
     """
@@ -2054,6 +2066,14 @@ def get_capm_residuals(
         pd.DataFrame: The pointwise CAPM regression residuals, indexed the same way as
         `excess_returns`.
     """
+    if not isinstance(excess_returns, pd.DataFrame) or not isinstance(
+        beta, pd.DataFrame
+    ):
+        raise TypeError(
+            "The residuals are computed per ticker, which needs a DataFrame of excess "
+            "returns and a DataFrame of betas."
+        )
+
     periods = excess_returns.index.get_level_values(0).unique()
     period_residuals_list = []
 
@@ -2423,7 +2443,7 @@ def get_starr_ratio(
 def get_rachev_ratio(
     returns: pd.Series | pd.DataFrame,
     alpha: float = 0.05,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Rachev Ratio (R-Ratio) of returns.
 
@@ -2461,7 +2481,7 @@ def get_rachev_ratio(
         the best/worst 5% of outcomes). Defaults to 0.05.
 
     Returns:
-        pd.Series | pd.DataFrame: Rachev Ratio values.
+        pd.Series | pd.DataFrame | float: Rachev Ratio values, a single float for a Series.
     """
     right_tail_expected_shortfall = -cvar_model.get_cvar_historic(-returns, alpha)
     left_tail_expected_shortfall = -cvar_model.get_cvar_historic(returns, alpha)

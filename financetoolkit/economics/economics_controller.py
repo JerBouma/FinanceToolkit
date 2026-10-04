@@ -13,12 +13,28 @@ from financetoolkit import fmp_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache, set_active_cache
 from financetoolkit.economics import (
+    bis_model,
+    boe_model,
+    boj_model,
+    ecb_model,
+    eurostat_model,
     fmp_model as economics_fmp_model,
     fred_model,
     gmdb_model,
+    mof_model,
     oecd_model,
+    ons_model,
+    sbj_model,
+    treasury_model,
     yfinance_model,
 )
+from financetoolkit.economics.helpers import (
+    buffered_start_date,
+    combine_sources,
+    resample_to_period,
+    validate_period,
+)
+from financetoolkit.fixedincome import fed_model
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -168,6 +184,72 @@ class Economics:
                 "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
                 "fred_api_key argument or set the FRED_API_KEY environment variable."
             )
+
+    def _get_monthly_price_data(self, measure: str) -> pd.DataFrame:
+        """
+        Combines the monthly consumer prices of every country from its most current source.
+
+        The statistical offices publish their figures weeks before the OECD republishes
+        them, and the OECD has stopped updating several euro area members since the
+        HICP moved to a new classification in 2026. Each country therefore comes from
+        the first source in this order that covers it: Eurostat (the euro area and the
+        European Economic Area, including the flash estimate), the Office for National
+        Statistics (United Kingdom), the Statistics Bureau of Japan (Japan) and the OECD
+        (every other country, including the United States). None of them need an API key.
+
+        Args:
+            measure (str): "inflation_rate" for the annual rate of change or
+                "consumer_price_index" for the index itself.
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by month.
+        """
+        oecd_index = oecd_model.get_consumer_price_index(
+            period="monthly", start_date=self._start_date, end_date=self._end_date
+        )
+        # Only the requested months are asked of Eurostat, with room for growth and rolling.
+        start_date = buffered_start_date(self._start_date, "monthly")
+
+        if measure == "inflation_rate":
+            return combine_sources(
+                [
+                    eurostat_model.get_inflation_rate(start_date, self._end_date),
+                    ons_model.get_inflation_rate(),
+                    sbj_model.get_inflation_rate(),
+                    # The OECD publishes the index, so the rate is its change over a year.
+                    oecd_index.pct_change(12, fill_method=None).dropna(how="all"),
+                ]
+            )
+
+        return combine_sources(
+            [
+                eurostat_model.get_consumer_price_index(start_date, self._end_date),
+                ons_model.get_consumer_price_index(),
+                sbj_model.get_consumer_price_index(),
+                oecd_index,
+            ]
+        )
+
+    def _get_daily_long_term_interest_rate(self) -> pd.DataFrame:
+        """
+        Combines the daily 10-year government bond yields published without an API key:
+        the U.S. Department of the Treasury, the Bank of England, the Japanese Ministry of
+        Finance and the European Central Bank (the euro area yield curve).
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by day.
+        """
+        start_date = buffered_start_date(self._start_date, "daily")
+
+        return combine_sources(
+            [
+                treasury_model.get_long_term_interest_rate(start_date, self._end_date),
+                boe_model.get_long_term_interest_rate(start_date, self._end_date),
+                # The Ministry of Finance publishes one file with the full history.
+                mof_model.get_long_term_interest_rate(),
+                ecb_model.get_long_term_interest_rate(start_date, self._end_date),
+            ]
+        )
 
     @handle_errors
     def get_gross_domestic_product(
@@ -2866,6 +2948,13 @@ class Economics:
         data from the OECD (base year varies per country), useful for tracking inflation
         more closely in real time.
 
+        With period="monthly" and without oecd_source, every country comes from its most
+        current source without an API key: Eurostat for the euro area and the European
+        Economic Area (the HICP, 2015 = 100), the Office for National Statistics for the
+        United Kingdom (CPI, 2015 = 100), the Statistics Bureau of Japan for Japan (CPI
+        from 2015, on its latest base) and the OECD for every other country. The base year
+        differs between countries, so compare the changes rather than the levels.
+
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
@@ -2874,7 +2963,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Only used when `oecd_source=True`; the GMDB source is always annual. Defaults to None.
+                The GMDB source is always annual, so without `oecd_source=True` only "monthly" changes
+                the result, to the monthly sources described above. Defaults to None.
             oecd_source (bool, optional): Whether to get the data from the OECD instead of the
                 Global Macro Database (GMDB). Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -2917,7 +3007,9 @@ class Economics:
         | 2019 |  113.815  | 111.591  |    111.243 |
         | 2020 |  114.239  | 112.18   |    111.108 |
         """
-        if oecd_source:
+        if not oecd_source and period is not None and period.lower() == "monthly":
+            consumer_price_index = self._get_monthly_price_data("consumer_price_index")
+        elif oecd_source:
             period = (
                 period
                 if period is not None
@@ -2955,6 +3047,7 @@ class Economics:
     def get_inflation_rate(
         self,
         countries: list[str] | str | None = None,
+        period: str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2974,6 +3067,16 @@ class Economics:
         current year and any later years the end_date reaches are forecasts rather than
         outturns.
 
+        With period="monthly" the annual rate of change is returned for every month, the
+        figure statistical offices publish, taken per country from the most current source
+        without an API key: Eurostat for the euro area and the European Economic Area (the
+        HICP, including the flash estimate at the end of the month itself), the Office for
+        National Statistics for the United Kingdom (CPI), the Statistics Bureau of Japan
+        for Japan (CPI, from 2016) and the OECD for every other country. For the countries
+        from the OECD the rate is the change of its consumer price index over twelve months,
+        which equals the OECD's published rate but can differ slightly from a national
+        headline figure based on a different index.
+
         Changed in v2.2.0: this used to be returned in percentage points (4.1166 for
         4.1166%). It is now a decimal fraction, matching every other rate in the Finance
         Toolkit.
@@ -2982,6 +3085,8 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly or the annual data.
+                Defaults to None, which is the annual data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -3016,10 +3121,19 @@ class Economics:
         | 2008 |    0.0263 |   0.0281 |     0.0259 |
         | 2009 |    0.0031 |   0.0009 |    -0.0084 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+        period = validate_period(
+            period or "yearly", ["monthly", "yearly"], "inflation rate"
+        )
 
-        inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
+        if period == "monthly":
+            inflation_rate = self._get_monthly_price_data("inflation_rate")
+        else:
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            inflation_rate = gmdb_model.get_inflation_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
 
         return finalize_dataset(
             dataset=inflation_rate,
@@ -4215,6 +4329,7 @@ class Economics:
     def get_central_bank_policy_rate(
         self,
         countries: list[str] | str | None = None,
+        period: str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -4233,6 +4348,13 @@ class Economics:
         The rate is annual and expressed as a decimal fraction per annum (0.0538 for 5.375%),
         taken at the end of the year rather than averaged over it.
 
+        With period="daily", "weekly" or "monthly" the rates come from the Bank for
+        International Settlements (BIS) instead, without an API key. It publishes the
+        policy rates of around fifty central banks daily, including the Federal Reserve,
+        the European Central Bank (as "Euro Area"), the Bank of England and the Bank of
+        Japan, some back to the 1940s. Weekly and monthly take the rate on the last day of
+        each period, so the current week or month shows the rate so far.
+
         Changed in v2.2.0: this used to be returned in percentage points (5.375 for 5.375%).
         It is now a decimal fraction, matching every other rate in the Finance Toolkit.
 
@@ -4240,6 +4362,8 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the daily, weekly, monthly or the annual
+                data. Defaults to None, which is the annual data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -4272,12 +4396,28 @@ class Economics:
         | 2024 |        0.0381 |    0.0381 |          0.0438 |
         | 2025 |        0.0288 |    0.0288 |          0.0426 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
-
-        central_bank_policy_rate = gmdb_model.get_central_bank_policy_rate(
-            gmd_dataset=self._gmbd_dataset
+        period = validate_period(
+            period or "yearly",
+            ["daily", "weekly", "monthly", "yearly"],
+            "central bank policy rate",
         )
+
+        if period == "yearly":
+            if self._gmbd_dataset.empty:
+                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+
+            central_bank_policy_rate = gmdb_model.get_central_bank_policy_rate(
+                gmd_dataset=self._gmbd_dataset
+            )
+        else:
+            # Weeks and months are taken from the daily rates, which the BIS updates
+            # sooner than its own end-of-month series.
+            central_bank_policy_rate = resample_to_period(
+                bis_model.get_central_bank_policy_rate(
+                    buffered_start_date(self._start_date, period), self._end_date
+                ),
+                period,
+            )
 
         return finalize_dataset(
             dataset=central_bank_policy_rate,
@@ -4458,6 +4598,14 @@ class Economics:
         quarterly frequency; the GMDB is annual only, so the period argument has no effect
         when gmdb_source is True.
 
+        With period="daily" or "weekly" the 10-year yields come from the issuers
+        themselves, without an API key: the U.S. Department of the Treasury (par yield,
+        from 1990), the Bank of England (nominal par yield of gilts, from 1993), the
+        Japanese Ministry of Finance (JGBs, from 1974) and the European Central Bank (the
+        euro area yield curve of all central government bonds, from 2004). Weekly takes the
+        yield on the last trading day of each week. Other countries have no daily source
+        and are not included.
+
         Changed in v2.2.0: the GMDB source previously returned percentage points (3.57 for
         3.57%) while the OECD source returned a decimal fraction. The GMDB series is now
         divided by 100 so both sources agree; divide any hard-coded comparison by 100.
@@ -4466,8 +4614,11 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
+                or the annual data. Defaults to None, which is quarterly when the Economics class
+                was initialized with quarterly=True and annual otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+                Not used for daily and weekly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4515,7 +4666,11 @@ class Economics:
 
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        if gmdb_source:
+        if period.lower() in ("daily", "weekly"):
+            long_term_interest_rate = resample_to_period(
+                self._get_daily_long_term_interest_rate(), period.lower()
+            )
+        elif gmdb_source:
             if self._gmbd_dataset.empty:
                 self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
@@ -4535,6 +4690,121 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Long Term Interest Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_overnight_rate(
+        self,
+        countries: list[str] | str | None = None,
+        period: str = "daily",
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        The overnight rate is the interest rate at which banks borrow from each other for
+        a single day. It is the rate central banks steer with their policy rate, and the
+        benchmark that replaced LIBOR for loans, derivatives and floating rate notes in
+        each of these currencies, which makes it the most direct daily read of monetary
+        conditions.
+
+        Each currency has its own benchmark, published by its central bank:
+
+        - Euro Area: the euro short-term rate (€STR) from the European Central Bank, since
+          October 2019.
+        - United Kingdom: the Sterling Overnight Index Average (SONIA) from the Bank of
+          England, since 1997.
+        - Japan: the uncollateralized overnight call rate, the Tokyo Overnight Average
+          Rate (TONA), from the Bank of Japan, since 1985.
+        - United States: the Secured Overnight Financing Rate (SOFR) from the Federal
+          Reserve Bank of New York, since April 2018.
+
+        None of these sources require an API key. The rates are returned as decimal
+        fractions per annum (0.0244 for 2.44%). Weekly and monthly periods take the rate
+        on the last day of each period (weeks end on Friday).
+
+        Also known as: €STR, ESTR, SONIA, TONA, SOFR, overnight interbank rate, risk-free
+        rate.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str, optional): Whether to return the daily, weekly or monthly data. Defaults to "daily".
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the overnight rate per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-04-01', end_date='2026-09-30')
+
+        economics.get_overnight_rate(period='monthly')
+        ```
+
+        Which returns:
+
+        |         |   Euro Area |   Japan |   United Kingdom |   United States |
+        |:--------|------------:|--------:|-----------------:|----------------:|
+        | 2026-04 |      0.0193 |  0.0073 |           0.0373 |          0.0366 |
+        | 2026-05 |      0.0193 |  0.0073 |           0.0373 |          0.0363 |
+        | 2026-06 |      0.0218 |  0.0098 |           0.0373 |          0.0368 |
+        | 2026-07 |      0.0218 |  0.0098 |           0.0373 |          0.0366 |
+        | 2026-08 |      0.0218 |  0.0098 |           0.0373 |          0.0368 |
+        | 2026-09 |      0.0244 |  0.0123 |           0.0373 |          0.039  |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "overnight rate"
+        )
+
+        start_date = buffered_start_date(self._start_date, period)
+        # The New York Fed publishes the full history of SOFR in one file.
+        secured_overnight_financing_rate = (
+            fed_model.get_secured_overnight_financing_rate()
+        )
+
+        overnight_rate = combine_sources(
+            [
+                ecb_model.get_overnight_rate(start_date, self._end_date),
+                boe_model.get_overnight_rate(start_date, self._end_date),
+                boj_model.get_overnight_rate(start_date, self._end_date),
+                (
+                    secured_overnight_financing_rate[["Rate"]].rename(
+                        columns={"Rate": "United States"}
+                    )
+                    if not secured_overnight_financing_rate.empty
+                    else secured_overnight_financing_rate
+                ),
+            ]
+        )
+
+        return finalize_dataset(
+            dataset=resample_to_period(overnight_rate, period),
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Overnight Rate",
             countries=countries,
             rolling=rolling,
             trailing=trailing,
@@ -5031,6 +5301,13 @@ class Economics:
         monthly and quarterly frequency; the GMDB is annual only, so the period argument
         has no effect when gmdb_source is True.
 
+        With period="monthly" (unless gmdb_source=True is passed explicitly) the euro area
+        and the countries Eurostat covers come from Eurostat and the United Kingdom from
+        the Office for National Statistics, which publish weeks before the OECD republishes
+        their figures; every other country comes from the OECD. None of these need an API
+        key. The UK figure is the average of the three months ending in each month, as the
+        Labour Force Survey reports it.
+
         Changed in v2.2.0: the GMDB source previously returned percentage points (3.6 for
         3.6%) while the OECD source returned a decimal fraction. The GMDB series is now
         divided by 100 so both sources agree; divide any hard-coded comparison by 100.
@@ -5086,9 +5363,27 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
+        # The GMDB is annual, so a monthly request goes to the monthly sources unless the
+        # GMDB is asked for explicitly.
+        monthly = period.lower() == "monthly" and gmdb_source is not True
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        if gmdb_source:
+        if monthly:
+            # Eurostat and the ONS publish weeks before the OECD republishes their figures.
+            unemployment_rate = combine_sources(
+                [
+                    eurostat_model.get_unemployment_rate(
+                        buffered_start_date(self._start_date, "monthly"), self._end_date
+                    ),
+                    ons_model.get_unemployment_rate(),
+                    oecd_model.get_unemployment_rate(
+                        period="monthly",
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                    ),
+                ]
+            )
+        elif gmdb_source:
             if self._gmbd_dataset.empty:
                 self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 

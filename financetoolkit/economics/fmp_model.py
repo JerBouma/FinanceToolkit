@@ -8,45 +8,13 @@ import pandas as pd
 
 from financetoolkit import helpers
 from financetoolkit.discovery.discovery_model import get_cached_financial_data
+from financetoolkit.economics.helpers import COUNTRY_CODES
 
 # The endpoint returns at most this many days per request, so longer ranges are split.
 ECONOMIC_CALENDAR_WINDOW_DAYS = 90
 
-# The country codes the economic calendar uses, named as elsewhere in the Economics
-# module. They are ISO 3166 codes apart from UK (United Kingdom), EU (the euro area,
-# e.g. ECB decisions) and WL (world).
-ECONOMIC_CALENDAR_COUNTRIES: dict[str, str] = {
-    "AE": "United Arab Emirates", "AL": "Albania", "AM": "Armenia", "AO": "Angola",
-    "AR": "Argentina", "AT": "Austria", "AU": "Australia", "AZ": "Azerbaijan",
-    "BA": "Bosnia and Herzegovina", "BD": "Bangladesh", "BE": "Belgium", "BG": "Bulgaria",
-    "BH": "Bahrain", "BR": "Brazil", "BW": "Botswana", "BY": "Belarus", "CA": "Canada",
-    "CH": "Switzerland", "CL": "Chile", "CN": "China", "CO": "Colombia", "CR": "Costa Rica",
-    "CV": "Cape Verde", "CY": "Cyprus", "CZ": "Czech Republic", "DE": "Germany",
-    "DK": "Denmark", "DO": "Dominican Republic", "EC": "Ecuador", "EE": "Estonia",
-    "EG": "Egypt", "ER": "Eritrea", "ES": "Spain", "ET": "Ethiopia", "EU": "Euro Area",
-    "FI": "Finland", "FJ": "Fiji", "FR": "France", "GB": "United Kingdom", "GE": "Georgia",
-    "GH": "Ghana", "GN": "Guinea", "GR": "Greece", "GT": "Guatemala", "HK": "Hong Kong",
-    "HR": "Croatia", "HU": "Hungary", "ID": "Indonesia", "IE": "Ireland", "IL": "Israel",
-    "IN": "India", "IQ": "Iraq", "IS": "Iceland", "IT": "Italy", "JM": "Jamaica",
-    "JO": "Jordan", "JP": "Japan", "KE": "Kenya", "KG": "Kyrgyzstan", "KH": "Cambodia",
-    "KR": "South Korea", "KW": "Kuwait", "KZ": "Kazakhstan", "LB": "Lebanon",
-    "LK": "Sri Lanka", "LT": "Lithuania", "LU": "Luxembourg", "LV": "Latvia", "LY": "Libya",
-    "MA": "Morocco", "MD": "Moldova", "ME": "Montenegro", "MK": "North Macedonia",
-    "ML": "Mali", "MN": "Mongolia", "MO": "Macau", "MT": "Malta", "MU": "Mauritius",
-    "MV": "Maldives", "MW": "Malawi", "MX": "Mexico", "MY": "Malaysia", "MZ": "Mozambique",
-    "NA": "Namibia", "NG": "Nigeria", "NL": "Netherlands", "NO": "Norway", "NP": "Nepal",
-    "NZ": "New Zealand", "OM": "Oman", "PA": "Panama", "PE": "Peru",
-    "PG": "Papua New Guinea", "PH": "Philippines", "PK": "Pakistan", "PL": "Poland",
-    "PS": "Palestine", "PT": "Portugal", "PY": "Paraguay", "QA": "Qatar", "RO": "Romania",
-    "RS": "Serbia", "RU": "Russia", "RW": "Rwanda", "SA": "Saudi Arabia",
-    "SC": "Seychelles", "SE": "Sweden", "SG": "Singapore", "SI": "Slovenia",
-    "SK": "Slovakia", "SL": "Sierra Leone", "SN": "Senegal", "ST": "Sao Tome and Principe",
-    "SV": "El Salvador", "TH": "Thailand", "TJ": "Tajikistan", "TM": "Turkmenistan",
-    "TN": "Tunisia", "TR": "Turkey", "TW": "Taiwan", "TZ": "Tanzania", "UA": "Ukraine",
-    "UG": "Uganda", "UK": "United Kingdom", "US": "United States", "UY": "Uruguay",
-    "UZ": "Uzbekistan", "VN": "Vietnam", "WL": "World", "XK": "Kosovo",
-    "ZA": "South Africa", "ZM": "Zambia", "ZW": "Zimbabwe",
-}  # fmt: skip
+# The economic calendar uses two-letter country codes, named like the rest of the module.
+ECONOMIC_CALENDAR_COUNTRIES = COUNTRY_CODES
 
 
 def _as_list(value: str | list[str] | None) -> list[str]:

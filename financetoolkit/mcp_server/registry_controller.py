@@ -91,7 +91,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "downside, e.g. 0.0 for downside relative to a zero return."
     ),
     "days": "Number of calendar days used in day-count-based calculations.",
-    "period": "Observation frequency, e.g. 'monthly', 'quarterly', or 'annual'.",
+    "period": (
+        "Observation frequency, e.g. 'daily', 'weekly', 'monthly', 'quarterly', or 'annual' "
+        "(supported values differ per method)."
+    ),
     "measure": "Sub-measure selector, e.g. 'M1', 'M2', or 'M3' for money supply.",
     "gmdb_source": (
         "Use the Global Macro Database as the data source when True, rather than the "

@@ -16,6 +16,14 @@ EUROPEAN_CENTRAL_BANK = "EuropeanCentralBank"
 FEDERAL_RESERVE = "FederalReserve"
 KEN_FRENCH = "KenFrench"
 MCP = "MCP"
+EUROSTAT = "Eurostat"
+BANK_FOR_INTERNATIONAL_SETTLEMENTS = "BIS"
+BANK_OF_ENGLAND = "BankOfEngland"
+BANK_OF_JAPAN = "BankOfJapan"
+JAPAN_MINISTRY_OF_FINANCE = "JapanMinistryOfFinance"
+OFFICE_FOR_NATIONAL_STATISTICS = "ONS"
+STATISTICS_BUREAU_OF_JAPAN = "StatisticsBureauOfJapan"
+US_TREASURY = "USTreasury"
 
 # The market risk premium is published per country, so it is one cache entry. Its name
 # changed when the premiums became decimals (v2.3.0), so an entry cached in percent by an
@@ -131,6 +139,25 @@ POLICIES: dict[str, CachePolicy] = {
     # Full history per series and no date range accepted, so only a TTL applies.
     f"{EUROPEAN_CENTRAL_BANK}.series": CachePolicy(ttl_seconds=DAY),
     f"{FEDERAL_RESERVE}.rate": CachePolicy(ttl_seconds=DAY),
+    # Statistical offices and central banks that publish a series whole and revise its
+    # recent past; most release daily or monthly, so a day keeps the data current.
+    # A rerun only asks for the revision window: a year of monthly releases for Eurostat,
+    # a month of daily rates for the central banks.
+    f"{EUROSTAT}.dataset": CachePolicy(ttl_seconds=DAY, revision_days=365),
+    f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.dataset": CachePolicy(
+        ttl_seconds=DAY, revision_days=31
+    ),
+    f"{BANK_OF_ENGLAND}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{BANK_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{EUROPEAN_CENTRAL_BANK}.economics_series": CachePolicy(
+        ttl_seconds=DAY, revision_days=31
+    ),
+    f"{JAPAN_MINISTRY_OF_FINANCE}.yields": CachePolicy(ttl_seconds=DAY),
+    f"{OFFICE_FOR_NATIONAL_STATISTICS}.series": CachePolicy(ttl_seconds=DAY),
+    f"{STATISTICS_BUREAU_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY),
+    # A past year of the Treasury yield curve is final; only the current year changes.
+    f"{US_TREASURY}.par_yield_curve": CachePolicy(ttl_seconds=DAY),
+    f"{US_TREASURY}.par_yield_curve_year": CachePolicy(ttl_seconds=30 * DAY),
     # The Ken French factor files are published monthly as a single zip archive; named "factors_decimal" because the loaders were corrected to divide the published percentages by 100, and the rename is what stops a cache warmed by an older release from serving percent-scaled factors against decimal returns, so the policy has to follow that rename or the archive falls back to the one day default and is re-downloaded every day.  # noqa: E501
     f"{KEN_FRENCH}.factors_decimal": CachePolicy(ttl_seconds=7 * DAY),
     # Computed MCP tool responses layered on top of the source caches.

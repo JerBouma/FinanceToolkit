@@ -395,3 +395,227 @@ def test_treasury_requests_only_the_years_in_the_range(monkeypatch):
 
     assert sorted(years) == ["2024", "2025"]
     assert yields["United States"].tolist() == [0.04, 0.04]
+
+
+def test_a_faster_publisher_extends_matching_history():
+    months = pd.period_range("2026-05", "2026-08", freq="M")
+    oecd = pd.DataFrame(
+        {"United States": [0.042, 0.041, 0.041, 0.041], "Japan": 0.025}, index=months
+    )
+    bls = pd.DataFrame(
+        {"United States": [0.041, 0.041, 0.042]},
+        index=pd.period_range("2026-07", "2026-09", freq="M"),
+    )
+
+    extended = helpers.extend_with_recent(oecd, bls, "United States")
+
+    assert extended.loc[pd.Period("2026-09", "M"), "United States"] == 0.042
+    assert pd.isna(extended.loc[pd.Period("2026-09", "M"), "Japan"])
+
+
+def test_a_different_series_does_not_extend_the_history():
+    months = pd.period_range("2026-07", "2026-08", freq="M")
+    oecd = pd.DataFrame({"United States": [0.041, 0.041]}, index=months)
+    other = pd.DataFrame(
+        {"United States": [0.05, 0.05, 0.05]},
+        index=pd.period_range("2026-07", "2026-09", freq="M"),
+    )
+
+    assert helpers.extend_with_recent(oecd, other, "United States").equals(oecd)
+
+
+def test_bls_unemployment_is_parsed_into_decimals(monkeypatch):
+    from financetoolkit.economics import bls_model
+
+    payload = {
+        "status": "REQUEST_SUCCEEDED",
+        "Results": {
+            "series": [
+                {
+                    "data": [
+                        {"year": "2026", "period": "M09", "value": "4.2"},
+                        {"year": "2026", "period": "M13", "value": "4.1"},
+                        {"year": "2026", "period": "M08", "value": "4.1"},
+                    ]
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(
+        bls_model, "get_request", lambda url, timeout: FakeResponse(payload)
+    )
+
+    rate = bls_model.get_unemployment_rate()
+
+    # M13 is an annual average, not a month.
+    assert rate["United States"].tolist() == [
+        pytest.approx(0.041),
+        pytest.approx(0.042),
+    ]
+
+
+def test_a_refused_bls_request_is_not_a_format_change(monkeypatch):
+    from financetoolkit.economics import bls_model
+
+    payload = {
+        "status": "REQUEST_NOT_PROCESSED",
+        "message": ["Daily threshold reached."],
+    }
+    monkeypatch.setattr(
+        bls_model, "get_request", lambda url, timeout: FakeResponse(payload)
+    )
+
+    # Treated like an unreachable source: no data (or the cached copy), not an error.
+    assert bls_model.get_unemployment_rate().empty
+
+
+def test_ons_quarters_are_parsed(monkeypatch):
+    payload = {
+        "quarters": [
+            {"date": "2026 Q1", "value": "0.6"},
+            {"date": "2026 Q2", "value": "0.5"},
+        ]
+    }
+    monkeypatch.setattr(
+        ons_model, "get_request", lambda url, timeout: FakeResponse(payload)
+    )
+
+    growth = ons_model.get_gross_domestic_product_growth()
+
+    assert growth.index.freqstr.startswith("Q")
+    assert growth.index.name is None
+    assert growth.loc[pd.Period("2026Q2", "Q"), "United Kingdom"] == pytest.approx(
+        0.005
+    )
+
+
+def test_eurostat_quarters_are_requested_and_parsed(monkeypatch):
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(json_stat(["EA"], ["2026-Q1", "2026-Q2"], [0.0, 0.6]))
+
+    monkeypatch.setattr(eurostat_model, "get_request", fake)
+
+    growth = eurostat_model.get_gross_domestic_product_growth(
+        "2025-11-15", "2026-09-30"
+    )
+
+    assert "sinceTimePeriod=2025-Q4&untilTimePeriod=2026-Q3" in urls[0]
+    assert growth.loc[pd.Period("2026Q2", "Q"), "Euro Area"] == pytest.approx(0.006)
+
+
+def test_freddie_mac_mortgage_rates_match_freds_layout(monkeypatch):
+    from financetoolkit.economics import freddie_mac_model
+
+    text = "date,pmms30,pmms30p,pmms15\n9/24/2026,7.03, ,6.1\n10/1/2026,7.28, ,6.3\n"
+    monkeypatch.setattr(
+        freddie_mac_model, "get_request", lambda url, timeout: FakeResponse(text=text)
+    )
+
+    rate = freddie_mac_model.get_mortgage_rate_30_year()
+
+    assert rate.index.name == "Date"
+    assert rate.loc[pd.Period("2026-10-01", "D"), "United States"] == pytest.approx(
+        0.0728
+    )
+
+
+def test_industrial_production_reads_the_total_index_only(monkeypatch):
+    from financetoolkit.economics import frb_model
+
+    text = (
+        '"B50001: Total index" "B50001"  2026  101.926  101.617  0  0  0  0  0  0  0  0  0  0\n'
+        '"B50002" 2026 99 99 99\n'
+    )
+    monkeypatch.setattr(
+        frb_model, "get_request", lambda url, timeout: FakeResponse(text=text)
+    )
+
+    index = frb_model.get_industrial_production_index()["United States"]
+
+    # Months not published yet are zero and left out; dated on the first day like FRED.
+    assert index.to_dict() == {
+        pd.Period("2026-01-01", "D"): 101.926,
+        pd.Period("2026-02-01", "D"): 101.617,
+    }
+
+
+def test_recession_indicator_follows_freds_usrec_rules(monkeypatch):
+    from financetoolkit.economics import nber_model
+
+    cycles = [
+        {"peak": "", "trough": "1854-12-01"},
+        {"peak": "2020-02-01", "trough": "2020-04-01"},
+    ]
+    monkeypatch.setattr(
+        nber_model, "get_request", lambda url, timeout: FakeResponse(cycles)
+    )
+
+    indicator = nber_model.get_recession_indicator()["United States"]
+    months = {str(period)[:7]: value for period, value in indicator.items()}
+
+    assert months["1854-12"] == 1
+    assert (
+        months["2020-02"],
+        months["2020-03"],
+        months["2020-04"],
+        months["2020-05"],
+    ) == (0, 1, 1, 0)
+
+
+def test_breakeven_inflation_and_the_five_year_forward(monkeypatch):
+    def fake(url, timeout):
+        if "real_yield_curve" in url:
+            return FakeResponse(
+                text='Date,"5 YR","7 YR","10 YR","20 YR","30 YR"\n10/02/2026,2.69,2.80,2.92,3.19,3.34\n'
+            )
+        return FakeResponse(
+            text='Date,"5 Yr","7 Yr","10 Yr","20 Yr","30 Yr"\n10/02/2026,5.06,5.17,5.28,5.67,5.63\n'
+        )
+
+    monkeypatch.setattr(treasury_model, "get_request", fake)
+
+    breakeven = treasury_model.get_breakeven_inflation_expectations(
+        "2026-10-01", "2026-10-02"
+    ).iloc[0]
+
+    assert breakeven["10 Year"] == pytest.approx(0.0236)
+    assert breakeven["5 Year"] == pytest.approx(0.0237)
+    # ((1 + 10y)^10 / (1 + 5y)^5)^(1/5) - 1, as FRED computes T5YIFR.
+    assert breakeven["5 Year, 5 Year Forward"] == pytest.approx(
+        ((1.0236**10) / (1.0237**5)) ** 0.2 - 1
+    )
+
+
+def test_a_fred_key_selects_fred_and_none_selects_the_keyless_source(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import (
+        economics_controller,
+        fred_model,
+        freddie_mac_model,
+    )
+
+    days = pd.period_range("2026-09-24", periods=1, freq="D", name="Date")
+    monkeypatch.setattr(
+        fred_model,
+        "get_mortgage_rate_30_year",
+        lambda *args: pd.DataFrame({"United States": [0.01]}, index=days),
+    )
+    monkeypatch.setattr(
+        freddie_mac_model,
+        "get_mortgage_rate_30_year",
+        lambda: pd.DataFrame({"United States": [0.02]}, index=days),
+    )
+    monkeypatch.setattr(
+        economics_controller.gmdb_model,
+        "collect_global_macro_database_dataset",
+        lambda **_: pd.DataFrame(),
+    )
+
+    with_key = Economics(start_date="2026-01-01", gmdb_source=False, fred_api_key="key")
+    without_key = Economics(start_date="2026-01-01", gmdb_source=False, fred_api_key="")
+
+    assert with_key.get_mortgage_rate_30_year().iloc[0, 0] == 0.01
+    assert without_key.get_mortgage_rate_30_year().iloc[0, 0] == 0.02

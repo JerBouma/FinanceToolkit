@@ -14,14 +14,18 @@ from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache, set_active_cache
 from financetoolkit.economics import (
     bis_model,
+    bls_model,
     boe_model,
     boj_model,
     ecb_model,
     eurostat_model,
     fmp_model as economics_fmp_model,
+    frb_model,
     fred_model,
+    freddie_mac_model,
     gmdb_model,
     mof_model,
+    nber_model,
     oecd_model,
     ons_model,
     sbj_model,
@@ -31,6 +35,7 @@ from financetoolkit.economics import (
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     combine_sources,
+    extend_with_recent,
     resample_to_period,
     validate_period,
 )
@@ -361,6 +366,116 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Gross Domestic Product",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_gross_domestic_product_growth(
+        self,
+        countries: list[str] | str | None = None,
+        year_over_year: bool = False,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        The quarterly growth of real Gross Domestic Product (GDP) is the headline measure
+        of how fast an economy grows: the change in the volume of everything produced,
+        adjusted for inflation, seasonal patterns and the number of working days. Two
+        consecutive quarters of negative growth is the common rule of thumb for a
+        technical recession.
+
+        By default the growth is measured on the previous quarter (quarter on quarter), as
+        Eurostat and the Office for National Statistics report it. Set year_over_year=True
+        for the change on the same quarter a year earlier. The growth is not annualized,
+        so a US figure is about a quarter of the annualized rate the Bureau of Economic
+        Analysis headlines.
+
+        Every country comes from the most current source without an API key: Eurostat for
+        the euro area and the countries it covers (including the preliminary flash estimate
+        for the euro area, about thirty days after the quarter ends), the Office for
+        National Statistics for the United Kingdom and the OECD Quarterly National Accounts
+        for every other country, including the United States and Japan.
+
+        The growth is expressed as a decimal fraction (0.006 for 0.6%).
+
+        Also known as: GDP growth, real GDP growth, economic growth, quarter-on-quarter
+        growth.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            year_over_year (bool, optional): Whether to return the change on the same quarter a
+                year earlier instead of on the previous quarter. Defaults to False.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the quarterly growth of real GDP per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-01-01', end_date='2026-09-30')
+
+        economics.get_gross_domestic_product_growth(
+            countries=['Euro Area', 'Germany', 'France', 'United Kingdom']
+        )
+        ```
+
+        Which returns:
+
+        |        |   Euro Area |   Germany |   France |   United Kingdom |
+        |:-------|------------:|----------:|---------:|-----------------:|
+        | 2025Q1 |       0.005 |     0.001 |    0.002 |            0.006 |
+        | 2025Q2 |       0     |     0     |    0.002 |            0     |
+        | 2025Q3 |       0.003 |     0     |    0.004 |            0.002 |
+        | 2025Q4 |       0.002 |     0.003 |    0.003 |            0     |
+        | 2026Q1 |       0     |     0.004 |   -0.002 |            0.006 |
+        | 2026Q2 |       0.006 |     0.003 |    0     |            0.005 |
+        """
+        start_date = buffered_start_date(self._start_date, "monthly")
+
+        gross_domestic_product_growth = combine_sources(
+            [
+                eurostat_model.get_gross_domestic_product_growth(
+                    start_date, self._end_date, year_over_year=year_over_year
+                ),
+                ons_model.get_gross_domestic_product_growth(
+                    year_over_year=year_over_year
+                ),
+                oecd_model.get_gross_domestic_product_growth(
+                    year_over_year=year_over_year,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                ),
+            ]
+        )
+
+        return finalize_dataset(
+            dataset=gross_domestic_product_growth,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Gross Domestic Product Growth",
             countries=countries,
             rolling=rolling,
             trailing=trailing,
@@ -5304,8 +5419,9 @@ class Economics:
         With period="monthly" (unless gmdb_source=True is passed explicitly) the euro area
         and the countries Eurostat covers come from Eurostat and the United Kingdom from
         the Office for National Statistics, which publish weeks before the OECD republishes
-        their figures; every other country comes from the OECD. None of these need an API
-        key. The UK figure is the average of the three months ending in each month, as the
+        their figures; every other country comes from the OECD. The United States is
+        extended with the months the Bureau of Labor Statistics has published since, when
+        both agree on the months they share. None of these need an API key. The UK figure is the average of the three months ending in each month, as the
         Labour Force Survey reports it.
 
         Changed in v2.2.0: the GMDB source previously returned percentage points (3.6 for
@@ -5376,10 +5492,16 @@ class Economics:
                         buffered_start_date(self._start_date, "monthly"), self._end_date
                     ),
                     ons_model.get_unemployment_rate(),
-                    oecd_model.get_unemployment_rate(
-                        period="monthly",
-                        start_date=self._start_date,
-                        end_date=self._end_date,
+                    # The OECD republishes the BLS figure a month later, so the US is
+                    # extended with the months the BLS already has.
+                    extend_with_recent(
+                        oecd_model.get_unemployment_rate(
+                            period="monthly",
+                            start_date=self._start_date,
+                            end_date=self._end_date,
+                        ),
+                        bls_model.get_unemployment_rate(),
+                        "United States",
                     ),
                 ]
             )
@@ -6419,8 +6541,9 @@ class Economics:
         manufacturing/trade sales and, see `get_nonfarm_payrolls`, nonfarm payroll
         employment).
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from
+        the Federal Reserve's G.17 release directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/INDPRO
 
@@ -6447,7 +6570,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+        economics = Economics(start_date='2020-01-01')
 
         economics.get_industrial_production_index()
         ```
@@ -6462,10 +6585,14 @@ class Economics:
         | 2026-05-01 |         102.561 |
         | 2026-06-01 |         102.639 |
         """
-        self._require_fred_api_key()
-
-        industrial_production_index = fred_model.get_industrial_production_index(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and
+        # the Federal Reserve Board otherwise.
+        industrial_production_index = (
+            fred_model.get_industrial_production_index(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else frb_model.get_industrial_production_index()
         )
 
         return finalize_dataset(
@@ -6687,8 +6814,9 @@ class Economics:
         points; it is rescaled here so that every rate the Finance Toolkit returns is a
         decimal fraction.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from
+        Freddie Mac's Primary Mortgage Market Survey directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/MORTGAGE30US
 
@@ -6715,7 +6843,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+        economics = Economics(start_date='2020-01-01')
 
         economics.get_mortgage_rate_30_year()
         ```
@@ -6730,10 +6858,14 @@ class Economics:
         | 2026-07-23 |          0.0658 |
         | 2026-07-30 |          0.0666 |
         """
-        self._require_fred_api_key()
-
-        mortgage_rate_30_year = fred_model.get_mortgage_rate_30_year(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and
+        # Freddie Mac otherwise.
+        mortgage_rate_30_year = (
+            fred_model.get_mortgage_rate_30_year(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else freddie_mac_model.get_mortgage_rate_30_year()
         )
 
         return finalize_dataset(
@@ -6776,8 +6908,9 @@ class Economics:
         academic and applied business-cycle research to backtest whether other
         indicators lead, lag or coincide with recessions.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from
+        the NBER's business cycle dates directly, built the way FRED builds USREC, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/USREC
 
@@ -6804,7 +6937,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2020-01-01', fred_api_key='FRED_API_KEY')
+        economics = Economics(start_date='2020-01-01')
 
         economics.get_recession_indicator()
         ```
@@ -6819,10 +6952,14 @@ class Economics:
         | 2026-05-01 |               0 |
         | 2026-06-01 |               0 |
         """
-        self._require_fred_api_key()
-
-        recession_indicator = fred_model.get_recession_indicator(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and
+        # the NBER otherwise.
+        recession_indicator = (
+            fred_model.get_recession_indicator(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else nber_model.get_recession_indicator()
         )
 
         return finalize_dataset(
@@ -6955,8 +7092,9 @@ class Economics:
         20-Year series starts in July 2004 and the 30-Year in February 2010, so earlier
         dates are NaN for those two maturities.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from
+        the U.S. Department of the Treasury's daily real par yield curve directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/DFII10
 
@@ -6983,7 +7121,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2024-01-01', end_date='2024-01-15', fred_api_key='FRED_API_KEY')
+        economics = Economics(start_date='2024-01-01', end_date='2024-01-15')
 
         economics.get_real_yield_curve()
         ```
@@ -6998,10 +7136,14 @@ class Economics:
         | 2024-01-05 |   0.0183 |   0.0183 |    0.0183 |    0.0194 |    0.0202 |
         | 2024-01-08 |   0.0178 |   0.0179 |    0.0179 |    0.019  |    0.0198 |
         """
-        self._require_fred_api_key()
-
-        real_yield_curve = fred_model.get_real_yield_curve(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and
+        # the U.S. Treasury otherwise.
+        real_yield_curve = (
+            fred_model.get_real_yield_curve(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else treasury_model.get_real_yield_curve(self._start_date, self._end_date)
         )
 
         return finalize_dataset(
@@ -7049,8 +7191,9 @@ class Economics:
         the toolkit. The 20-Year column starts in July 2004 and the 30-Year in February
         2010, limited by the TIPS leg of the calculation.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from
+        the U.S. Department of the Treasury's daily nominal and real par yield curves directly, with the formulas FRED uses, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/T10YIE
 
@@ -7077,7 +7220,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2024-01-01', end_date='2024-01-15', fred_api_key='FRED_API_KEY')
+        economics = Economics(start_date='2024-01-01', end_date='2024-01-15')
 
         economics.get_breakeven_inflation_expectations()
         ```
@@ -7092,11 +7235,15 @@ class Economics:
         | 2024-01-05 |   0.0219 |   0.0221 |    0.0222 |    0.0243 |    0.0219 |                   0.0225 |
         | 2024-01-08 |   0.0219 |   0.022  |    0.0222 |    0.0243 |    0.0219 |                   0.0225 |
         """
-        self._require_fred_api_key()
-
+        # FRED republishes these figures, so it is used when a key is set and
+        # the U.S. Treasury otherwise.
         breakeven_inflation_expectations = (
             fred_model.get_breakeven_inflation_expectations(
                 self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else treasury_model.get_breakeven_inflation_expectations(
+                self._start_date, self._end_date
             )
         )
 

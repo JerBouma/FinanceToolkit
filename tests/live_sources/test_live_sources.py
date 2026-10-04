@@ -14,11 +14,15 @@ import pytest
 
 from financetoolkit.economics import (
     bis_model,
+    bls_model,
     boe_model,
     boj_model,
     ecb_model,
     eurostat_model,
+    frb_model,
+    freddie_mac_model,
     mof_model,
+    nber_model,
     ons_model,
     sbj_model,
     treasury_model,
@@ -34,8 +38,10 @@ TODAY = datetime.now()
 START = (TODAY - timedelta(days=200)).strftime("%Y-%m-%d")
 END = TODAY.strftime("%Y-%m-%d")
 
-# How old the latest observation may be: monthly figures are published one to three
-# months after the month (the UK labour market survey the latest), daily rates within days.
+# How old the latest observation may be: quarterly GDP is published one to three months
+# after the quarter, monthly figures one to three months after the month (the UK labour
+# market survey the latest) and daily rates within days.
+QUARTERLY_MAX_AGE_DAYS = 200
 MONTHLY_MAX_AGE_DAYS = 130
 DAILY_MAX_AGE_DAYS = 10
 
@@ -55,6 +61,11 @@ SOURCES = {
         "Euro Area",
         "monthly",
     ),
+    "Eurostat GDP growth": (
+        lambda: eurostat_model.get_gross_domestic_product_growth(START, END),
+        "Euro Area",
+        "quarterly",
+    ),
     "ONS inflation rate": (ons_model.get_inflation_rate, "United Kingdom", "monthly"),
     "ONS consumer price index": (
         ons_model.get_consumer_price_index,
@@ -64,6 +75,16 @@ SOURCES = {
     "ONS unemployment rate": (
         ons_model.get_unemployment_rate,
         "United Kingdom",
+        "monthly",
+    ),
+    "ONS GDP growth": (
+        ons_model.get_gross_domestic_product_growth,
+        "United Kingdom",
+        "quarterly",
+    ),
+    "BLS unemployment rate": (
+        bls_model.get_unemployment_rate,
+        "United States",
         "monthly",
     ),
     "Statistics Bureau of Japan inflation rate": (
@@ -111,6 +132,23 @@ SOURCES = {
         "United States",
         "daily",
     ),
+    "Treasury real yield curve": (
+        lambda: treasury_model.get_real_yield_curve(START, END).rename(
+            columns={"10 Year": "United States"}
+        ),
+        "United States",
+        "daily",
+    ),
+    "Freddie Mac mortgage rate": (
+        freddie_mac_model.get_mortgage_rate_30_year,
+        "United States",
+        "daily",
+    ),
+    "Federal Reserve industrial production index": (
+        frb_model.get_industrial_production_index,
+        "United States",
+        "monthly",
+    ),
     "New York Fed SOFR": (
         lambda: fed_model.get_secured_overnight_financing_rate()[["Rate"]].rename(
             columns={"Rate": "United States"}
@@ -132,7 +170,11 @@ def test_source_is_current_and_plausible(name):
 
     series = data[country].dropna()
     latest = series.index[-1].to_timestamp(how="end")
-    max_age = MONTHLY_MAX_AGE_DAYS if frequency == "monthly" else DAILY_MAX_AGE_DAYS
+    max_age = {
+        "quarterly": QUARTERLY_MAX_AGE_DAYS,
+        "monthly": MONTHLY_MAX_AGE_DAYS,
+        "daily": DAILY_MAX_AGE_DAYS,
+    }[frequency]
 
     assert latest >= pd.Timestamp(
         TODAY - timedelta(days=max_age)
@@ -147,3 +189,12 @@ def test_source_is_current_and_plausible(name):
         assert (
             -0.05 < series.iloc[-1] < 0.5
         ), f"{name} has an implausible rate {series.iloc[-1]}"
+
+
+def test_recession_indicator_covers_the_current_month():
+    indicator = nber_model.get_recession_indicator()["United States"]
+
+    assert indicator.index[-1].strftime("%Y-%m") == TODAY.strftime("%Y-%m")
+    assert set(indicator.unique()) <= {0, 1}
+    # The 2020 recession, as the NBER dated it.
+    assert indicator.loc["2020-03-01":"2020-04-01"].tolist() == [1, 1]

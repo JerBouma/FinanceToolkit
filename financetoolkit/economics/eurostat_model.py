@@ -16,6 +16,7 @@ BASE_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/
 # earlier datasets (prc_hicp_manr, prc_hicp_midx) stop at December 2025.
 HICP_DATASET = "prc_hicp_minr"
 UNEMPLOYMENT_DATASET = "une_rt_m"
+GDP_DATASET = "namq_10_gdp"
 
 # The euro area is published as "EA" (changing composition) in some datasets and only
 # under its current membership, e.g. "EA21" since Bulgaria joined in 2026, in others.
@@ -58,7 +59,7 @@ def parse_json_stat(response: dict, description: str) -> pd.DataFrame:
         description (str): What was retrieved, used in the error messages.
 
     Returns:
-        pd.DataFrame: The values indexed by period, with a column per country.
+        pd.DataFrame: The values indexed by month or quarter, with a column per country.
 
     Raises:
         ValueError: When the response is not JSON-stat, misses the geo or time dimension,
@@ -143,7 +144,9 @@ def parse_json_stat(response: dict, description: str) -> pd.DataFrame:
         countries[euro_area] = "Euro Area"
 
     data = data[list(countries)].rename(columns=countries)
-    data.index = pd.PeriodIndex(data.index, freq="M")
+    # Monthly periods are written as "2026-09" and quarters as "2026-Q2".
+    frequency = "Q" if str(data.index[0])[-2] == "Q" else "M"
+    data.index = pd.PeriodIndex(data.index, freq=frequency)
     data.index.name = None
     data.columns.name = None
 
@@ -158,8 +161,8 @@ def collect_eurostat_data(
     end_date: str,
 ) -> pd.DataFrame:
     """
-    Retrieves the months between two dates of a Eurostat dataset for every country it
-    covers. Only the months that are not cached yet are requested.
+    Retrieves the months or quarters between two dates of a Eurostat dataset for every
+    country it covers. Only the periods that are not cached yet are requested.
 
     Args:
         dataset (str): The Eurostat dataset code, e.g. "prc_hicp_minr".
@@ -169,16 +172,24 @@ def collect_eurostat_data(
         end_date (str): The end date (YYYY-MM-DD).
 
     Returns:
-        pd.DataFrame: The values indexed by month, with a column per country.
+        pd.DataFrame: The values indexed by month or quarter, with a column per country.
     """
+    # Eurostat takes "2026-09" for a monthly and "2026-Q3" for a quarterly dataset.
+    quarterly = filters.get("freq") == "Q"
+
+    def to_period(date: str) -> str:
+        return (
+            str(pd.Period(date, freq="Q")).replace("Q", "-Q") if quarterly else date[:7]
+        )
+
     query = "&".join(
         f"{dimension}={value}" for dimension, value in sorted(filters.items())
     )
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         response = get_request(
-            f"{BASE_URL}{dataset}?{query}&sinceTimePeriod={fetch_start[:7]}"
-            f"&untilTimePeriod={fetch_end[:7]}",
+            f"{BASE_URL}{dataset}?{query}&sinceTimePeriod={to_period(fetch_start)}"
+            f"&untilTimePeriod={to_period(fetch_end)}",
             timeout=120,
         )
 
@@ -268,3 +279,39 @@ def get_unemployment_rate(start_date: str, end_date: str) -> pd.DataFrame:
 
     # Eurostat publishes the rate in percent of the labour force.
     return unemployment_rate / 100
+
+
+def get_gross_domestic_product_growth(
+    start_date: str, end_date: str, year_over_year: bool = False
+) -> pd.DataFrame:
+    """
+    Retrieves the growth of gross domestic product in chain-linked volumes, seasonally
+    and calendar adjusted, for the euro area and the countries Eurostat covers. The
+    latest quarter of the euro area is the preliminary flash estimate, published about
+    thirty days after the quarter ends.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        year_over_year (bool): Whether to return the change on the same quarter a year
+            earlier instead of on the previous quarter. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The growth as a decimal (0.006 for 0.6%), indexed by quarter with a
+        column per country.
+    """
+    growth = collect_eurostat_data(
+        GDP_DATASET,
+        {
+            "freq": "Q",
+            "unit": "CLV_PCH_SM" if year_over_year else "CLV_PCH_PRE",
+            "s_adj": "SCA",
+            "na_item": "B1GQ",
+        },
+        "GDP growth",
+        start_date,
+        end_date,
+    )
+
+    # Eurostat publishes the growth in percent.
+    return growth / 100

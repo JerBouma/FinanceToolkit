@@ -16,44 +16,58 @@ SERIES = {
     "inflation_rate": "economy/inflationandpriceindices/timeseries/d7g7/mm23",
     "consumer_price_index": "economy/inflationandpriceindices/timeseries/d7bt/mm23",
     "unemployment_rate": "employmentandlabourmarket/peoplenotinwork/unemployment/timeseries/mgsx/lms",
+    "gdp_growth": "economy/grossdomesticproductgdp/timeseries/ihyq/qna",
+    "gdp_growth_year_over_year": "economy/grossdomesticproductgdp/timeseries/ihyr/qna",
 }
 
 COUNTRY = "United Kingdom"
 
 
-def collect_ons_series(series: str, description: str) -> pd.DataFrame:
+def collect_ons_series(
+    series: str, description: str, frequency: str = "monthly"
+) -> pd.DataFrame:
     """
-    Retrieves the monthly observations of an ONS time series.
+    Retrieves the monthly or quarterly observations of an ONS time series.
 
     Args:
         series (str): The path of the series page, e.g.
             "economy/inflationandpriceindices/timeseries/d7g7/mm23".
         description (str): What is retrieved, used in the log and error messages.
+        frequency (str): "monthly" or "quarterly". Defaults to "monthly".
 
     Returns:
-        pd.DataFrame: A single "United Kingdom" column indexed by month.
+        pd.DataFrame: A single "United Kingdom" column indexed by month or quarter.
 
     Raises:
-        ValueError: When the response has no monthly observations in the expected format.
+        ValueError: When the response has no observations in the expected format.
     """
+    key = "months" if frequency == "monthly" else "quarters"
 
     def fetch() -> pd.DataFrame:
         response = get_request(f"{BASE_URL}{series}/data", timeout=60).json()
 
-        months = response.get("months") if isinstance(response, dict) else None
+        periods = response.get(key) if isinstance(response, dict) else None
 
-        if not months or not {"date", "value"}.issubset(months[0]):
+        if not periods or not {"date", "value"}.issubset(periods[0]):
             raise ValueError(
-                f"The ONS response for the {description} has no monthly observations in the "
-                "expected format, which means the ONS changed its website and the data "
+                f"The ONS response for the {description} has no {frequency} observations in "
+                "the expected format, which means the ONS changed its website and the data "
                 "cannot be interpreted."
             )
 
-        observations = pd.DataFrame(months)
-        # Months are written as "2026 AUG".
-        index = pd.PeriodIndex(
-            pd.to_datetime(observations["date"], format="%Y %b"), freq="M"
-        )
+        observations = pd.DataFrame(periods)
+
+        if frequency == "monthly":
+            # Months are written as "2026 AUG".
+            index = pd.PeriodIndex(
+                pd.to_datetime(observations["date"], format="%Y %b"), freq="M"
+            )
+        else:
+            # Quarters are written as "2026 Q2".
+            index = pd.PeriodIndex(
+                observations["date"].str.replace(" ", "-").to_numpy(), freq="Q"
+            )
+
         values = pd.to_numeric(observations["value"], errors="coerce").to_numpy()
 
         return pd.DataFrame({COUNTRY: values}, index=index).sort_index()
@@ -103,3 +117,23 @@ def get_unemployment_rate() -> pd.DataFrame:
     """
     # The ONS publishes the rate in percent of the labour force.
     return collect_ons_series(SERIES["unemployment_rate"], "UK unemployment rate") / 100
+
+
+def get_gross_domestic_product_growth(year_over_year: bool = False) -> pd.DataFrame:
+    """
+    Retrieves the growth of UK gross domestic product in chained volume measures,
+    seasonally adjusted (series IHYQ, or IHYR for the change on a year earlier).
+
+    Args:
+        year_over_year (bool): Whether to return the change on the same quarter a year
+            earlier instead of on the previous quarter. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The growth as a decimal (0.005 for 0.5%), indexed by quarter.
+    """
+    series = "gdp_growth_year_over_year" if year_over_year else "gdp_growth"
+
+    # The ONS publishes the growth in percent.
+    return (
+        collect_ons_series(SERIES[series], "UK GDP growth", frequency="quarterly") / 100
+    )

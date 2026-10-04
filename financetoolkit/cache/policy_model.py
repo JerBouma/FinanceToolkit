@@ -24,6 +24,10 @@ JAPAN_MINISTRY_OF_FINANCE = "JapanMinistryOfFinance"
 OFFICE_FOR_NATIONAL_STATISTICS = "ONS"
 STATISTICS_BUREAU_OF_JAPAN = "StatisticsBureauOfJapan"
 US_TREASURY = "USTreasury"
+BUREAU_OF_LABOR_STATISTICS = "BLS"
+FREDDIE_MAC = "FreddieMac"
+FEDERAL_RESERVE_BOARD = "FederalReserveBoard"
+NATIONAL_BUREAU_OF_ECONOMIC_RESEARCH = "NBER"
 
 # The market risk premium is published per country, so it is one cache entry. Its name
 # changed when the premiums became decimals (v2.3.0), so an entry cached in percent by an
@@ -155,9 +159,19 @@ POLICIES: dict[str, CachePolicy] = {
     f"{JAPAN_MINISTRY_OF_FINANCE}.yields": CachePolicy(ttl_seconds=DAY),
     f"{OFFICE_FOR_NATIONAL_STATISTICS}.series": CachePolicy(ttl_seconds=DAY),
     f"{STATISTICS_BUREAU_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY),
+    # The keyless BLS API allows 25 requests a day, so the latest releases are fetched once.
+    f"{BUREAU_OF_LABOR_STATISTICS}.series": CachePolicy(ttl_seconds=DAY),
     # A past year of the Treasury yield curve is final; only the current year changes.
     f"{US_TREASURY}.par_yield_curve": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.par_yield_curve_year": CachePolicy(ttl_seconds=30 * DAY),
+    f"{US_TREASURY}.par_yield_curve_real": CachePolicy(ttl_seconds=DAY),
+    f"{US_TREASURY}.par_yield_curve_real_year": CachePolicy(ttl_seconds=30 * DAY),
+    f"{FREDDIE_MAC}.series": CachePolicy(ttl_seconds=DAY),
+    f"{FEDERAL_RESERVE_BOARD}.series": CachePolicy(ttl_seconds=DAY),
+    # The NBER dates a turning point months after the fact, a few times a decade.
+    f"{NATIONAL_BUREAU_OF_ECONOMIC_RESEARCH}.business_cycle_dates": CachePolicy(
+        ttl_seconds=7 * DAY
+    ),
     # The Ken French factor files are published monthly as a single zip archive; named "factors_decimal" because the loaders were corrected to divide the published percentages by 100, and the rename is what stops a cache warmed by an older release from serving percent-scaled factors against decimal returns, so the policy has to follow that rename or the archive falls back to the one day default and is re-downloaded every day.  # noqa: E501
     f"{KEN_FRENCH}.factors_decimal": CachePolicy(ttl_seconds=7 * DAY),
     # Computed MCP tool responses layered on top of the source caches.

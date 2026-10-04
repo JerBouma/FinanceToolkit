@@ -61,8 +61,8 @@ PERIOD_FREQUENCIES = {"daily": "D", "weekly": "W-FRI", "monthly": "M"}
 # computed for the first periods shown (finalize_dataset slices the result afterwards).
 START_BUFFER_DAYS = {"daily": 400, "weekly": 400, "monthly": 731}
 
-# Gateway errors and timeouts the public statistics services answer with when briefly
-# overloaded. The ECB Data Portal answers around a third of its requests with a 504 at
+# Gateway errors, timeouts and dropped connections the public statistics services answer
+# with when briefly overloaded. The ECB Data Portal answers around a third of its requests with a 504 at
 # random, so these are retried twice, after a growing pause. A rate limit (429) is not
 # retried, so a busy source is not asked again.
 RETRY_STATUS_CODES = {502, 503, 504}
@@ -86,16 +86,21 @@ def _fetch_with_retry(fetch: Callable[..., pd.DataFrame], *args: str) -> pd.Data
 
     Raises:
         requests.exceptions.RequestException: When the last attempt fails as well, or an
-            attempt fails for any other reason than a gateway error or timeout.
+            attempt fails for any other reason than a gateway error, timeout or dropped
+            connection.
     """
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
             return fetch(*args)
-        except (requests.exceptions.HTTPError, requests.exceptions.Timeout) as error:
+        except (
+            requests.exceptions.HTTPError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as error:
             response = getattr(error, "response", None)
             status_code = response.status_code if response is not None else None
             retryable = (
-                isinstance(error, requests.exceptions.Timeout)
+                not isinstance(error, requests.exceptions.HTTPError)
                 or status_code in RETRY_STATUS_CODES
             )
 
@@ -409,3 +414,67 @@ def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     ).sort_index()
 
     return combined.dropna(how="all")
+
+
+# The largest difference, as a decimal, two publications of the same series may show for a
+# month they share. The figures are rounded to one decimal in percent, so 0.0005 allows
+# rounding while catching a different definition.
+EXTENSION_TOLERANCE = 0.0005
+
+
+def extend_with_recent(
+    history: pd.DataFrame, recent: pd.DataFrame, country: str
+) -> pd.DataFrame:
+    """
+    Extends a country's series with the months a faster publisher of the same figures
+    already has, such as the BLS for the US unemployment rate the OECD republishes.
+
+    Only observations after the last one in the history are added, and only when both
+    publishers agree on every month they share. When they do not, the recent source is
+    not the same series after all and the history is returned unchanged, so a change in
+    definition can never introduce a break.
+
+    Args:
+        history (pd.DataFrame): The full series, one column per country.
+        recent (pd.DataFrame): The faster publisher's recent observations for the country.
+        country (str): The column to extend.
+
+    Returns:
+        pd.DataFrame: The history with the newer observations added to that column.
+    """
+    if (
+        history.empty
+        or recent.empty
+        or country not in history.columns
+        or country not in recent.columns
+    ):
+        return history
+
+    existing = history[country].dropna()
+    newer = recent[country].dropna()
+
+    if existing.empty:
+        return history
+
+    shared = existing.index.intersection(newer.index)
+
+    if (
+        shared.empty
+        or (existing[shared] - newer[shared]).abs().max() > EXTENSION_TOLERANCE
+    ):
+        logger.debug(
+            "The recent %s figures do not match the history on the months both cover, so "
+            "the history is not extended.",
+            country,
+        )
+        return history
+
+    additions = newer[newer.index > existing.index[-1]]
+
+    if additions.empty:
+        return history
+
+    extended = history.reindex(history.index.union(additions.index))
+    extended.loc[additions.index, country] = additions
+
+    return extended

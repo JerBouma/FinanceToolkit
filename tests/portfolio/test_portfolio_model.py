@@ -138,6 +138,50 @@ def test_format_portfolio_dataset_with_missing_columns():
         )
 
 
+def test_format_portfolio_dataset_with_mixed_length_currency_codes():
+    """Test that an invalid-length currency code is rejected even when it shares a
+    column with valid 3-letter codes.
+
+    Regression test for a bug where only the *maximum* string length in the currency
+    column was checked against CURRENCY_CODE_LENGTH, so a single valid 3-letter code
+    (e.g. "USD") masked an invalid code elsewhere in the same column (e.g. "EU"),
+    letting it silently pass validation.
+    """
+    data = pd.DataFrame(
+        {
+            "Date": ["2023-01-01", "2023-01-02"],
+            "Name": ["Apple Inc", "Microsoft Corp"],
+            "Ticker": ["AAPL", "MSFT"],
+            "Price": [150.0, 250.0],
+            "Volume": [100, 50],
+            "Currency": ["USD", "EU"],
+            "Costs": [1.0, 2.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="3-letter currency codes"):
+        format_portfolio_dataset(
+            dataset=data,
+            date_columns=["Date"],
+            date_format_options=["%Y-%m-%d"],
+            name_columns=["Name"],
+            tickers_columns=["Ticker"],
+            price_columns=["Price"],
+            volume_columns=["Volume"],
+            currency_columns=["Currency"],
+            costs_columns=["Costs"],
+            column_mapping={
+                "date": "Date",
+                "name": "Name",
+                "identifier": "Ticker",
+                "price": "Price",
+                "volume": "Volume",
+                "currency": "Currency",
+                "costs": "Costs",
+            },
+        )
+
+
 def test_read_portfolio_dataset_edge_cases():
     """Test edge cases for read_portfolio_dataset"""
     # Empty file

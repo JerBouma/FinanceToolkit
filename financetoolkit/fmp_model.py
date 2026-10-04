@@ -2547,6 +2547,27 @@ def get_stock_grades(
     )
 
 
+def _get_records(url: str, user_subscription: str = "Free") -> pd.DataFrame:
+    """
+    Retrieves an endpoint like get_financial_data, but builds the frame from the raw
+    records so that identifiers stay text. Parsing the response with pandas reads a
+    CUSIP such as "46090E103" as the number 4.609e+107, losing it.
+
+    Args:
+        url (str): The url to retrieve the data from.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: The records, or the error frame get_financial_data returns.
+    """
+    records = get_financial_data(url=url, raw=True, user_subscription=user_subscription)
+
+    if isinstance(records, list):
+        return pd.DataFrame(records)
+
+    return records if isinstance(records, pd.DataFrame) else pd.DataFrame()
+
+
 def get_etf_holdings(
     tickers: list[str] | str,
     api_key: str,
@@ -2577,7 +2598,7 @@ def get_etf_holdings(
 
     def worker(ticker):
         url = f"https://financialmodelingprep.com/stable/etf/holdings?symbol={ticker}&apikey={api_key}"
-        holdings = get_financial_data(url=url, user_subscription=user_subscription)
+        holdings = _get_records(url=url, user_subscription=user_subscription)
 
         if "asset" not in holdings.columns:
             return ticker, holdings, False
@@ -2638,7 +2659,7 @@ def get_etf_information(
 
     def worker(ticker):
         url = f"https://financialmodelingprep.com/stable/etf/info?symbol={ticker}&apikey={api_key}"
-        information = get_financial_data(url=url, user_subscription=user_subscription)
+        information = _get_records(url=url, user_subscription=user_subscription)
 
         if "assetClass" not in information.columns:
             return ticker, information, False

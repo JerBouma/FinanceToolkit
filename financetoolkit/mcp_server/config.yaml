@@ -156,6 +156,20 @@ direct_methods:
   - "get_treasury_data"
   - "get_market_risk_premium"
   - "get_commitment_of_traders"
+  - "get_executives"
+  - "get_executive_compensation"
+  - "get_company_notes"
+  - "get_employee_count"
+  - "get_shares_float"
+  - "get_mergers_acquisitions"
+  - "get_stock_splits"
+  - "get_insider_trade_statistics"
+  - "get_stock_grades"
+  - "get_etf_holdings"
+  - "get_etf_information"
+  - "get_etf_country_weightings"
+  - "get_etf_sector_weightings"
+  - "get_earnings_call_transcripts"
   # - "get_exchange_rates"
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -647,7 +661,7 @@ tool_groups:
   # ── Discovery ────────────────────────────────────────────────────────────
   - tool_name:    "discovery"
     display_name: "Market Discovery"
-    description:  "Market discovery tools (lists of stocks/ETFs/cryptocurrencies, stock screener, gainers, losers, sector performance, earnings/dividend calendars). No tickers or countries needed."
+    description:  "Market discovery tools (lists of stocks/ETFs/cryptocurrencies, stock screener, gainers, losers, sector performance, earnings/dividend calendars, latest 8-K SEC filings, latest insider trades). No tickers or countries needed."
     module_name:  "discovery"
     category:     "discovery"
 
@@ -655,7 +669,7 @@ tool_groups:
   # Method list is populated at startup from toolkit_direct_methods above.
   - tool_name:                    "market_data"
     display_name:                 "Raw Financial Data"
-    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters."
+    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, ETF/fund holdings, information and country/sector weightings, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters. The ETF/fund methods return no data for tickers that are not an ETF or fund. get_earnings_call_transcripts returns the full text of the most recent call per ticker (often 40,000+ characters); pass latest=false for every call in the date range."
     module_name:                  "toolkit"
     category:                     "toolkit"
     use_direct_methods:   true

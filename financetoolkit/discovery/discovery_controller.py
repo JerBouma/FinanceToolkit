@@ -1756,7 +1756,13 @@ class Discovery:
 
         Which returns:
 
-        <<TABLE:discovery_earnings_calendar>>
+        | Symbol    | Date                |      EPS |   Estimated EPS |     Revenue |   Estimated Revenue | Last Updated   |
+        |:----------|:--------------------|---------:|----------------:|------------:|--------------------:|:---------------|
+        | 000270.KS | 2026-10-01 00:00:00 |  5550.38 |         5665.58 | 3.10392e+13 |         3.14307e+13 | 2026-10-04     |
+        | 005380.KS | 2026-10-01 00:00:00 | 10399.5  |        11263.8  | 4.80026e+13 |         4.83417e+13 | 2026-10-04     |
+        | 005385.KS | 2026-10-01 00:00:00 | 10399.5  |        11263.8  | 4.84555e+13 |         4.83417e+13 | 2026-10-04     |
+        | 005387.KS | 2026-10-01 00:00:00 | 10399.5  |        11263.8  | 4.84555e+13 |         4.83417e+13 | 2026-10-04     |
+        | 005389.KS | 2026-10-01 00:00:00 | 10399.5  |        11263.8  | 4.84555e+13 |         4.83417e+13 | 2026-10-04     |
         """
         earnings_calendar = discovery_model.get_earnings_calendar(
             api_key=self._api_key,
@@ -1805,7 +1811,13 @@ class Discovery:
 
         Which returns:
 
-        <<TABLE:discovery_sec_filings_8k>>
+        | Symbol   | Accepted Date       | Has Financials   | Final Link                                                                                   |
+        |:---------|:--------------------|:-----------------|:---------------------------------------------------------------------------------------------|
+        | POWW     | 2026-10-02 17:29:10 | False            | https://www.sec.gov/Archives/edgar/data/1015383/000149315226045615/form8-k.htm               |
+        | POWWP    | 2026-10-02 17:29:10 | False            | https://www.sec.gov/Archives/edgar/data/1015383/000149315226045615/form8-k.htm               |
+        | EKSO     | 2026-10-02 17:27:47 | False            | https://www.sec.gov/Archives/edgar/data/1549084/000149315226045612/form8-k.htm               |
+        | RR       | 2026-10-02 17:25:13 | False            | https://www.sec.gov/Archives/edgar/data/1963685/000121390026106552/ea0307478-8k_richtech.htm |
+        | None     | 2026-10-02 17:23:50 | False            | https://www.sec.gov/Archives/edgar/data/2012839/000162828026064662/ebdc-20260930.htm         |
         """
         filings = discovery_model.get_sec_filings_8k(
             api_key=self._api_key,
@@ -1852,7 +1864,13 @@ class Discovery:
 
         Which returns:
 
-        <<TABLE:discovery_insider_trading_latest>>
+        | Symbol   | Reporting Name    | Transaction Type   |   Securities Transacted |   Price |
+        |:---------|:------------------|:-------------------|------------------------:|--------:|
+        | SBGI     | SMITH FREDERICK G | J-Other            |                   48000 |   12.76 |
+        | SBGI     | SMITH FREDERICK G | J-Other            |                   48000 |   12.76 |
+        | SBGI     | SMITH FREDERICK G | J-Other            |                   48000 |   12.76 |
+        | SBGI     | SMITH FREDERICK G | J-Other            |                   48000 |   12.76 |
+        | SBGI     | SMITH FREDERICK G | J-Other            |                   48000 |   12.76 |
         """
         insider_trading = discovery_model.get_insider_trading_latest(
             api_key=self._api_key,

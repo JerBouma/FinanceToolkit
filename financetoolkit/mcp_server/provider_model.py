@@ -676,6 +676,7 @@ class ToolkitProvider:
                         quarterly=quarterly,
                         fred_api_key=effective_fred_key,
                         cache=self._cache,
+                        api_key=effective_key,
                     )
                 elif module_name == "fixedincome":
                     # get_treasury_rates is served by FMP, so without the key it silently returns no data.

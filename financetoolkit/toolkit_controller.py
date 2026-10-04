@@ -3004,7 +3004,13 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:executives>>
+        | Name                 | Title                                             |           Pay | Currency   | Gender   |   Year Born |   Title Since | Active   |
+        |:---------------------|:--------------------------------------------------|--------------:|:-----------|:---------|------------:|--------------:|:---------|
+        | Jennifer G. Newstead | Senior VP of Government Affairs & General Counsel | nan           | USD        | female   |        1970 |           nan | True     |
+        | Adrian Perica        | Vice President of Corporate Development           | nan           | USD        | male     |        1974 |           nan | True     |
+        | Craig Federighi      | Senior Vice President of Software Engineering     | nan           | USD        | male     |        1969 |           nan | True     |
+        | Eduardo H. Cue       | Senior Vice President of Services and Health      |   2.80746e+06 | USD        | male     |        1964 |           nan | True     |
+        | Greg Joswiak         | Senior Vice President of Worldwide Marketing      | nan           | USD        | male     |         nan |           nan | True     |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3064,7 +3070,13 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:executive_compensation>>
+        |                                                                         | Filing Date   | Accepted Date       |   Salary |   Bonus |   Stock Award |   Option Award |   Incentive Plan Compensation |   All Other Compensation |    Total | Link                                                                                             |
+        |:------------------------------------------------------------------------|:--------------|:--------------------|---------:|--------:|--------------:|---------------:|------------------------------:|-------------------------:|---------:|:-------------------------------------------------------------------------------------------------|
+        | 2025 Deirdre O’Brien Senior Vice President, Retail + People             | 2026-01-08    | 2026-01-08 16:31:36 |  1000000 |       0 |      22009766 |              0 |                       4000000 |                    37867 | 27047633 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
+        | 2025 Kate Adams Senior Vice President, General Counsel and Secretary    | 2026-01-08    | 2026-01-08 16:31:36 |  1000000 |       0 |      22009766 |              0 |                       4000000 |                    22482 | 27032248 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
+        | 2025 Kevan Parekh Senior Vice President, Chief Financial Officer        | 2026-01-08    | 2026-01-08 16:31:36 |   891519 |       0 |      18433135 |              0 |                       3120317 |                    22338 | 22467309 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
+        | 2025 Luca Maestri Former Senior Vice President, Chief Financial Officer | 2026-01-08    | 2026-01-08 16:31:36 |   819231 |       0 |      13003031 |              0 |                       1638462 |                    22204 | 15482928 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
+        | 2025 Sabih Khan Senior Vice President, Chief Operating Officer          | 2026-01-08    | 2026-01-08 16:31:36 |  1000000 |       0 |      22009766 |              0 |                       4000000 |                    21905 | 27031671 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3130,7 +3142,15 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:company_notes>>
+        | Title                 | Exchange   |    CIK |
+        |:----------------------|:-----------|-------:|
+        | 0.000% Notes due 2025 | NASDAQ     | 320193 |
+        | 1.625% Notes due 2026 | NASDAQ     | 320193 |
+        | 2.000% Notes due 2027 | NASDAQ     | 320193 |
+        | 1.375% Notes due 2029 | NASDAQ     | 320193 |
+        | 3.050% Notes due 2029 | NASDAQ     | 320193 |
+        | 0.500% Notes due 2031 | NASDAQ     | 320193 |
+        | 3.600% Notes due 2042 | NASDAQ     | 320193 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3186,7 +3206,17 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:employee_count>>
+        | Period   |   AAPL |   MSFT |
+        |:---------|-------:|-------:|
+        | 2018     | 132000 | 131000 |
+        | 2019     | 137000 | 144000 |
+        | 2020     | 147000 | 163000 |
+        | 2021     | 154000 | 181000 |
+        | 2022     | 164000 | 221000 |
+        | 2023     | 161000 | 221000 |
+        | 2024     | 164000 | 228000 |
+        | 2025     | 166000 | 228000 |
+        | 2026     |    nan | 223000 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3243,7 +3273,13 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:shares_float>>
+        |                    | AAPL                                                                                | MSFT                                                                                |
+        |:-------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------|
+        | Date               | 2026-10-04 00:21:55                                                                 | 2026-10-04 02:36:15                                                                 |
+        | Free Float         | 0.9987879921341868                                                                  | 0.9985093936476086                                                                  |
+        | Float Shares       | 14576491739                                                                         | 7414481428                                                                          |
+        | Outstanding Shares | 14594180000                                                                         | 7425550000                                                                          |
+        | Source             | https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/aapl-20260627.htm | https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3294,14 +3330,18 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["MSFT", "GOOGL"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2000-01-01")
+        toolkit = Toolkit(["MSFT", "GOOGL"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="1990-01-01")
 
         toolkit.get_mergers_acquisitions().loc["MSFT"].head()
         ```
 
         Which returns:
 
-        <<TABLE:mergers_acquisitions>>
+        | Transaction Date    | Role     | Acquirer Symbol   | Acquirer Name   |   Target Symbol | Target Name   | Accepted Date       | Link                                                                                            |
+        |:--------------------|:---------|:------------------|:----------------|----------------:|:--------------|:--------------------|:------------------------------------------------------------------------------------------------|
+        | 1995-02-09 00:00:00 | Acquirer | MSFT              | MICROSOFT CORP  |             nan | ChipSoft      | 1995-02-09 00:00:00 | https://www.sec.gov/Archives/edgar/data/789019/0000891020-95-000018.txt                         |
+        | 1999-11-02 00:00:00 | Acquirer | MSFT              | MICROSOFT CORP  |             nan | Visio's       | 1999-11-02 00:00:00 | https://www.sec.gov/Archives/edgar/data/789019/000103221099001490/0001032210-99-001490.txt      |
+        | 2001-02-01 00:00:00 | Acquirer | MSFT              | MICROSOFT CORP  |             nan | GENTLEMEN     | 2001-02-01 00:00:00 | https://www.sec.gov/Archives/edgar/data/789019/000103221001000126/0001032210-01-000126-0001.txt |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3374,7 +3414,18 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:stock_splits>>
+        |                          |   Numerator |   Denominator | Split Type   |
+        |:-------------------------|------------:|--------------:|:-------------|
+        | AAPL 2000-06-21 00:00:00 |           2 |             1 | stock-split  |
+        | AAPL 2005-02-28 00:00:00 |           2 |             1 | stock-split  |
+        | AAPL 2014-06-09 00:00:00 |           7 |             1 | stock-split  |
+        | AAPL 2020-08-31 00:00:00 |           4 |             1 | stock-split  |
+        | NVDA 2000-06-27 00:00:00 |           2 |             1 | stock-split  |
+        | NVDA 2001-09-12 00:00:00 |           2 |             1 | stock-split  |
+        | NVDA 2006-04-07 00:00:00 |           2 |             1 | stock-split  |
+        | NVDA 2007-09-11 00:00:00 |           3 |             2 | stock-split  |
+        | NVDA 2021-07-20 00:00:00 |           4 |             1 | stock-split  |
+        | NVDA 2024-06-10 00:00:00 |          10 |             1 | stock-split  |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3447,7 +3498,15 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:insider_trade_statistics>>
+        | Period   |   Acquired Transactions |   Disposed Transactions |   Acquired/Disposed Ratio |   Total Acquired |   Total Disposed |   Average Acquired |   Average Disposed |   Total Purchases |   Total Sales |
+        |:---------|------------------------:|------------------------:|--------------------------:|-----------------:|-----------------:|-------------------:|-------------------:|------------------:|--------------:|
+        | 2025Q1   |                      14 |                       8 |                    1.75   |            19255 |  12128           |            1375.36 |             1516   |                 0 |             1 |
+        | 2025Q2   |                       6 |                      38 |                    0.1579 |           466004 | 892618           |           77667.3  |            23489.9 |                 0 |            13 |
+        | 2025Q3   |                       6 |                       3 |                    2      |           391455 | 125256           |           65242.5  |            41752   |                 0 |             2 |
+        | 2025Q4   |                       6 |                      33 |                    0.1818 |           578243 |      1.11303e+06 |           96373.8  |            33728.1 |                 0 |            15 |
+        | 2026Q1   |                      15 |                      10 |                    1.5    |            76696 | 102492           |            5113.07 |            10249.2 |                 0 |             0 |
+        | 2026Q2   |                       7 |                      40 |                    0.175  |           303199 | 927380           |           43314.1  |            23184.5 |                 0 |            14 |
+        | 2026Q3   |                       9 |                      10 |                    0.9    |           455601 |  59762           |           50622.3  |             5976.2 |                 0 |             8 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3521,7 +3580,13 @@ class Toolkit:
 
         Which returns:
 
-        <<TABLE:stock_grades>>
+        |                                        | Previous Grade   | New Grade   | Action   |
+        |:---------------------------------------|:-----------------|:------------|:---------|
+        | 2026-09-18 00:00:00 Evercore ISI Group | Outperform       | Outperform  | Maintain |
+        | 2026-09-23 00:00:00 B of A Securities  | Buy              | Buy         | Maintain |
+        | 2026-09-29 00:00:00 Morgan Stanley     | Overweight       | Overweight  | Maintain |
+        | 2026-10-01 00:00:00 Morgan Stanley     | Overweight       | Overweight  | Maintain |
+        | 2026-10-01 00:00:00 Needham            | Hold             | Hold        | Maintain |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3577,14 +3642,20 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["QQQ", "VTI"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.get_etf_holdings().loc["SPY"].head()
+        toolkit.get_etf_holdings().loc["QQQ"].head()
         ```
 
         Which returns:
 
-        <<TABLE:etf_holdings>>
+        | Asset   | Name                       | ISIN         | CUSIP     |      Shares |   Weight |   Market Value | Updated At          |
+        |:--------|:---------------------------|:-------------|:----------|------------:|---------:|---------------:|:--------------------|
+        | NVDA    | NVIDIA Corp                | US67066G1040 | 67066G104 | 1.8222e+08  |   0.0843 |    4.26305e+10 | 2026-10-04 13:36:33 |
+        | AAPL    | Apple Inc                  | US0378331005 | 037833100 | 1.10347e+08 |   0.0728 |    3.68216e+10 | 2026-10-04 13:36:33 |
+        | MSFT    | Microsoft Corp             | US5949181045 | 594918104 | 5.61446e+07 |   0.0575 |    2.90565e+10 | 2026-10-04 13:36:33 |
+        | MU      | Micron Technology Inc      | US5951121038 | 595112103 | 2.35744e+07 |   0.0501 |    2.53399e+10 | 2026-10-04 13:36:33 |
+        | AMD     | Advanced Micro Devices Inc | US0079031078 | 007903107 | 3.40756e+07 |   0.0427 |    2.16009e+10 | 2026-10-04 13:36:33 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3633,14 +3704,30 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["QQQ", "VTI"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.get_etf_information().drop(["Description", "Website"])
         ```
 
         Which returns:
 
-        <<TABLE:etf_information>>
+        |                         | QQQ                         | VTI                                         |
+        |:------------------------|:----------------------------|:--------------------------------------------|
+        | Name                    | Invesco QQQ Trust, Series 1 | Vanguard Morningstar Total Stock Market ETF |
+        | ISIN                    | US46090E1038                | US9229087690                                |
+        | CUSIP                   | 46090E103                   | 922908769                                   |
+        | Asset Class             | Equity                      | Large Cap Equity                            |
+        | Domicile                | US                          | US                                          |
+        | ETF Company             | Invesco                     | Vanguard                                    |
+        | Inception Date          | 1999-03-10                  | 2001-05-24                                  |
+        | Expense Ratio           | 0.0018                      | 0.0003                                      |
+        | Assets Under Management | 505192688501                | 2300000000000                               |
+        | Average Volume          | 39606348                    | 3259176                                     |
+        | NAV                     | 749.38                      | 377.96                                      |
+        | NAV Currency            | USD                         | USD                                         |
+        | Holdings Count          | 102                         | 3598                                        |
+        | Actively Trading        | True                        | True                                        |
+        | Updated At              | 2026-10-03T23:07:10.006Z    | 2026-10-03T23:33:00.019Z                    |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3683,14 +3770,20 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["QQQ", "VTI"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.get_etf_country_weightings().head()
         ```
 
         Which returns:
 
-        <<TABLE:etf_country_weightings>>
+        | Country        |    QQQ |    VTI |
+        |:---------------|-------:|-------:|
+        | United States  | 0.9445 | 0.9733 |
+        | United Kingdom | 0.0165 | 0.0048 |
+        | Singapore      | 0.0079 | 0.0025 |
+        | Canada         | 0.0091 | 0.0007 |
+        | Netherlands    | 0.0138 | 0.0003 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3733,14 +3826,27 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["SPY", "QQQ"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["QQQ", "VTI"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         toolkit.get_etf_sector_weightings()
         ```
 
         Which returns:
 
-        <<TABLE:etf_sector_weightings>>
+        | Sector                 |      QQQ |    VTI |
+        |:-----------------------|---------:|-------:|
+        | Basic Materials        |   0.0091 | 0.0222 |
+        | Cash & Others          |   0.0025 | 0.0019 |
+        | Communication Services |   0.1189 | 0.0867 |
+        | Consumer Cyclical      |   0.0972 | 0.0898 |
+        | Consumer Defensive     |   0.055  | 0.0425 |
+        | Energy                 |   0.0044 | 0.0374 |
+        | Financial Services     |   0.0019 | 0.1239 |
+        | Healthcare             |   0.0359 | 0.0998 |
+        | Industrials            |   0.0549 | 0.0882 |
+        | Technology             |   0.6101 | 0.365  |
+        | Utilities              |   0.01   | 0.0197 |
+        | Real Estate            | nan      | 0.0228 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3796,12 +3902,15 @@ class Toolkit:
 
         transcripts = toolkit.get_earnings_call_transcripts()
 
-        transcripts.loc["AAPL", "Transcript"].iloc[0][:500]
+        transcripts["Transcript"].str[:100]
         ```
 
         Which returns:
 
-        <<TABLE:earnings_call_transcripts>>
+        |             | Transcript                                                                                           |
+        |:------------|:-----------------------------------------------------------------------------------------------------|
+        | AAPL 2026Q3 | Suhasini Chandramouli: Good afternoon, welcome to the Apple Q3 fiscal year 2026 earnings conference  |
+        | MSFT 2026Q4 | Operator: Greetings, and welcome to the Microsoft Fiscal Year 2026 Fourth Quarter Earnings Conferenc |
         """
         if not self._api_key:
             self._missing_api_key_message()

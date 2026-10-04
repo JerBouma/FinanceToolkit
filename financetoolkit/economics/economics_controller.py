@@ -6947,7 +6947,13 @@ class Economics:
 
         Which returns:
 
-        <<TABLE:economic_calendar>>
+        | Date                | Event                                  |   Previous |   Estimate |   Actual | Impact   |
+        |:--------------------|:---------------------------------------|-----------:|-----------:|---------:|:---------|
+        | 2026-10-01 09:30:00 | Challenger Job Cuts (Sep)              |     52.881 |         78 |   43.281 | Low      |
+        | 2026-10-01 12:30:00 | Initial Jobless Claims (Sep/26)        |    198     |        200 |  197     | High     |
+        | 2026-10-01 12:30:00 | Continuing Jobless Claims (Sep/19)     |   1712     |       1730 | 1701     | High     |
+        | 2026-10-01 12:30:00 | Jobless Claims 4-Week Average (Sep/26) |    202.5   |        199 |  200     | High     |
+        | 2026-10-01 13:05:00 | Fed Schmid Speech                      |    nan     |        nan |  nan     | Medium   |
         """
         self._require_api_key()
 
@@ -6988,7 +6994,13 @@ class Economics:
 
         Which returns:
 
-        <<TABLE:economics_market_risk_premium>>
+        | Country       | Continent     |   Country Risk Premium |   Total Equity Risk Premium |
+        |:--------------|:--------------|-----------------------:|----------------------------:|
+        | United States | North America |                   0.23 |                        4.46 |
+        | Germany       | Europe        |                   0    |                        4.23 |
+        | Japan         | Asia          |                   0.91 |                        5.14 |
+        | Brazil        | South America |                   3.24 |                        7.47 |
+        | India         | Asia          |                   2.85 |                        7.08 |
         """
         self._require_api_key()
 

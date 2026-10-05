@@ -108,3 +108,34 @@ def test_fetch_dataset_never_sends_limit_above_100(fake_api):
     client = fxmacrodata.FXMacroDataClient()
     client.fetch_dataset("commodity", indicator="gold", limit=500)
     assert parse_qs(urlparse(fake_api[0].full_url).query)["limit"] == ["100"]
+
+
+def test_api_key_is_not_forwarded_on_redirect(fake_api):
+    from urllib.request import HTTPRedirectHandler
+
+    client = fxmacrodata.FXMacroDataClient(api_key="test-key")
+    client.fetch_dataset("forex", base="eur", quote="usd", limit=5)
+    redirected = HTTPRedirectHandler().redirect_request(
+        fake_api[0], None, 302, "Found", {}, "https://elsewhere.example/v1/forex"
+    )
+    assert redirected.get_header("X-api-key") is None
+    assert "test-key" not in str(redirected.header_items())
+
+
+def test_api_key_with_control_characters_is_rejected_without_echo(monkeypatch):
+    for name in fxmacrodata.FXMACRODATA_API_KEY_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ValueError) as excinfo:
+        fxmacrodata.FXMacroDataClient(api_key="test-key\nInjected: 1")
+    assert "test-key" not in str(excinfo.value)
+    assert fxmacrodata.FXMacroDataClient(api_key=" test-key ").api_key == "test-key"
+
+
+@pytest.mark.parametrize("payload", [{"detail": "Invalid API key"}, "oops"])
+def test_error_body_raises_clean_error(monkeypatch, payload):
+    monkeypatch.setattr(
+        fxmacrodata, "urlopen", lambda request, timeout=None: _Response(payload)
+    )
+    client = fxmacrodata.FXMacroDataClient(api_key="test-key")
+    with pytest.raises(ValueError, match="FXMacroData returned"):
+        client.fetch_dataset("cot", currency="eur")

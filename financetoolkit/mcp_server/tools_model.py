@@ -25,6 +25,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from financetoolkit.mcp_server.diagnostics_model import redact
 from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -300,4 +301,4 @@ class UtilityToolRegistry:
             formatted = format_result(result)
             return formatted
         except Exception as exc:
-            return f"Search failed: {exc}"
+            return f"Search failed: {redact(exc)}"

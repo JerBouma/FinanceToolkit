@@ -21,6 +21,7 @@ from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
+from financetoolkit.mcp_server.diagnostics_model import FMP_KEY_HINT
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -320,7 +321,15 @@ class ToolkitProvider:
 
         if isinstance(result, pd.Series):
             result = result.to_frame()
-        if self._cache_ttl and isinstance(result, pd.DataFrame):
+        # An empty result is not cached: it usually means a missing API key or an
+        # unreachable source, and a cached copy would keep answering "No data available"
+        # after the key is added or the source is back.
+        if (
+            self._cache_ttl
+            and isinstance(result, pd.DataFrame)
+            and not result.empty
+            and bool(result.notna().to_numpy().any())
+        ):
             self._cache.set(
                 source=MCP_CACHE_SOURCE,
                 dataset=MCP_CACHE_DATASET,
@@ -492,13 +501,7 @@ class ToolkitProvider:
                 return self._toolkit_cache[cache_key]
 
             if not effective_key:
-                raise ValueError(
-                    "A FinancialModelingPrep API key is required for this tool. "
-                    "Local setup: set FINANCIAL_MODELING_PREP_API_KEY in your "
-                    "environment or .env file. Hosted setup: pass your key via the "
-                    "`X-FMP-API-Key` header or a `?fmp_api_key=...` URL parameter. "
-                    "Get a key with 15% off via https://www.jeroenbouma.com/fmp"
-                )
+                raise ValueError(FMP_KEY_HINT)
 
             toolkit_instance: Toolkit = Toolkit(
                 tickers=tickers,

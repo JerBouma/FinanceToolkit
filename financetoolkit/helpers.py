@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import contextlib
+import contextvars
 import inspect
 import os
 from collections.abc import Callable, Iterable
@@ -91,7 +92,12 @@ def run_in_parallel(
         max_workers = determine_max_workers()
 
     with ThreadPoolExecutor(max_workers=min(max_workers, len(worker_args))) as executor:
-        futures = [executor.submit(worker, *args) for args in worker_args]
+        # Every worker runs in a copy of the caller's context, so context-bound state,
+        # such as the messages an MCP tool call collects, also covers the workers.
+        futures = [
+            executor.submit(contextvars.copy_context().run, worker, *args)
+            for args in worker_args
+        ]
 
         # Collecting in submission order keeps the result aligned with worker_args;
         # the calls themselves still run concurrently.

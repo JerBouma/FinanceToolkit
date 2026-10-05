@@ -26,6 +26,11 @@ from financetoolkit.mcp_server.coercion_model import (
     to_boolean,
     validate_date,
 )
+from financetoolkit.mcp_server.diagnostics_model import (
+    capture_call_messages,
+    redact,
+    summarize_reasons,
+)
 from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
@@ -665,18 +670,21 @@ class ToolRegistry:
 
             try:
                 call_started = time.perf_counter()
-                result = provider.call_method(
-                    module_name=dispatch_module,
-                    method_name=method_name,
-                    category=dispatch_category,
-                    tickers=tickers,
-                    countries=countries,
-                    start_date=start_date,
-                    end_date=end_date,
-                    quarterly=quarterly,
-                    benchmark_ticker=benchmark_ticker,
-                    **method_kwargs,
-                )
+                # The warnings and errors logged during the call explain an empty result,
+                # e.g. a missing API key, so they are passed on rather than lost.
+                with capture_call_messages() as call_messages:
+                    result = provider.call_method(
+                        module_name=dispatch_module,
+                        method_name=method_name,
+                        category=dispatch_category,
+                        tickers=tickers,
+                        countries=countries,
+                        start_date=start_date,
+                        end_date=end_date,
+                        quarterly=quarterly,
+                        benchmark_ticker=benchmark_ticker,
+                        **method_kwargs,
+                    )
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
                 # a repeat call should be near-instant off the provider cache).
@@ -700,14 +708,20 @@ class ToolRegistry:
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
                     )
-                formatted = format_result(result, notes=notes or None)
+                formatted = format_result(
+                    result,
+                    notes=notes or None,
+                    reason=summarize_reasons(call_messages),
+                )
                 return formatted
             except (ValueError, KeyError) as exc:
-                return f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
+                return (
+                    f"Invalid input for `{tool_name}` (`{method_name}`): {redact(exc)}"
+                )
             except TypeError as exc:
-                return f"Parameter error for `{tool_name}` (`{method_name}`): {exc}"
+                return f"Parameter error for `{tool_name}` (`{method_name}`): {redact(exc)}"
             except ConnectionError as exc:
-                return f"API connection failed: {exc}"
+                return f"API connection failed: {redact(exc)}"
             except Exception as exc:
                 logger.warning(
                     "Tool %s (%s) failed: %s",
@@ -718,7 +732,7 @@ class ToolRegistry:
                 )
                 return (
                     f"`{tool_name}` (`{method_name}`) failed with error: "
-                    f"{type(exc).__name__}: {exc}"
+                    f"{type(exc).__name__}: {redact(exc)}"
                 )
 
         P = inspect.Parameter

@@ -2811,7 +2811,7 @@ class Toolkit:
             pd.DataFrame: The market risk premium by country, including the continent, Country
             Risk Premium and Total Equity Risk Premium (both as decimals, 0.0446 for 4.46%).
 
-        Changed in v2.3.0: this used to be returned in percentage points (4.46 for 4.46%).
+        Changed in v2.2.2: this used to be returned in percentage points (4.46 for 4.46%).
 
         As an example:
 

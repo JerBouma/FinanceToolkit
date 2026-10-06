@@ -1031,7 +1031,7 @@ server = [
 
 [[package]]
 name = "financetoolkit"
-version = "2.3.0"
+version = "2.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "openpyxl" },

@@ -1,6 +1,6 @@
 """FinancialModelingPrep Endpoint Tests"""
 
-# The company, fund, transcript and news endpoints added in 2.3.0. Every response is
+# The company, fund, transcript and news endpoints added in 2.2.2. Every response is
 # faked by replacing get_financial_data, so these run offline and check what the
 # Finance Toolkit does with a response: the shaping, the date filtering, the conversion
 # of percentages to decimals and the routing between endpoints.

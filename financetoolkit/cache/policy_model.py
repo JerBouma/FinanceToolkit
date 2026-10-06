@@ -33,6 +33,9 @@ BUNDESBANK = "Bundesbank"
 BANK_OF_CANADA = "BankOfCanada"
 RIKSBANK = "Riksbank"
 NORGES_BANK = "NorgesBank"
+EIOPA = "EIOPA"
+INTERNATIONAL_MONETARY_FUND = "IMF"
+SHILLER = "Shiller"
 
 # The market risk premium is published per country, so it is one cache entry. Its name
 # changed when the premiums became decimals (v2.2.2), so an entry cached in percent by an
@@ -159,7 +162,19 @@ POLICIES: dict[str, CachePolicy] = {
     f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),
+    f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.exchange_rates": CachePolicy(
+        ttl_seconds=DAY, revision_days=31
+    ),
+    f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.commercial_property": CachePolicy(
+        ttl_seconds=7 * DAY, revision_days=731
+    ),
     f"{BANK_OF_ENGLAND}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    # A workbook of a closed span of years no longer changes; the one running to the
+    # present is republished monthly and the current month daily.
+    f"{BANK_OF_ENGLAND}.curve_workbook": CachePolicy(ttl_seconds=365 * DAY),
+    f"{BANK_OF_ENGLAND}.curve_workbook_current": CachePolicy(ttl_seconds=7 * DAY),
+    f"{BANK_OF_ENGLAND}.curve_listing": CachePolicy(ttl_seconds=30 * DAY),
+    f"{BANK_OF_ENGLAND}.curve_current_month": CachePolicy(ttl_seconds=DAY),
     f"{BANK_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{EUROPEAN_CENTRAL_BANK}.economics_series": CachePolicy(
         ttl_seconds=DAY, revision_days=31
@@ -182,6 +197,15 @@ POLICIES: dict[str, CachePolicy] = {
     f"{BANK_OF_CANADA}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{RIKSBANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{NORGES_BANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    # A published EIOPA release never changes; which releases exist does, monthly.
+    f"{EIOPA}.release": CachePolicy(ttl_seconds=365 * DAY),
+    f"{EIOPA}.releases": CachePolicy(ttl_seconds=DAY),
+    f"{INTERNATIONAL_MONETARY_FUND}.codelist": CachePolicy(ttl_seconds=30 * DAY),
+    # Updated about once a month.
+    f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),
+    f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
+        ttl_seconds=DAY, revision_days=365
+    ),
     f"{EUROPEAN_CENTRAL_BANK}.convergence_yields": CachePolicy(
         ttl_seconds=DAY, revision_days=93
     ),

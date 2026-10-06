@@ -112,9 +112,8 @@ def get_excess_bond_premium() -> pd.DataFrame:
         data = pd.read_csv(io.StringIO(response.text))
         require_columns(data, {"date", *EXCESS_BOND_PREMIUM_COLUMNS}, description)
 
-        index = pd.PeriodIndex(
-            pd.to_datetime(data["date"], format="%m/%d/%Y"), freq="M"
-        )
+        # Dates have been written both as 1/1/1973 and as 1973-01-01.
+        index = pd.PeriodIndex(pd.to_datetime(data["date"], format="mixed"), freq="M")
         premium = data[list(EXCESS_BOND_PREMIUM_COLUMNS)].rename(
             columns=EXCESS_BOND_PREMIUM_COLUMNS
         )

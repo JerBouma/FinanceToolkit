@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import importlib.util
 import re
 
 import requests
@@ -11,6 +12,10 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
+BROTLI_AVAILABLE = bool(
+    importlib.util.find_spec("brotli") or importlib.util.find_spec("brotlicffi")
+)
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -19,7 +24,9 @@ HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate, br",
+    # Brotli is only offered when a decoder is installed: requests cannot decode it on
+    # its own, and a server that prefers it would otherwise answer with unreadable bytes.
+    "Accept-Encoding": "gzip, deflate, br" if BROTLI_AVAILABLE else "gzip, deflate",
     "Connection": "keep-alive",
 }
 

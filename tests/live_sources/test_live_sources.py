@@ -22,15 +22,18 @@ from financetoolkit.economics import (
     frb_model,
     freddie_mac_model,
     ibge_model,
+    imf_model,
     mof_model,
     nber_model,
     ons_model,
     sbj_model,
+    shiller_model,
     treasury_model,
 )
 from financetoolkit.fixedincome import (
     boc_model,
     bundesbank_model,
+    eiopa_model,
     fed_model,
     norgesbank_model,
     riksbank_model,
@@ -214,6 +217,52 @@ SOURCES = {
         "United States",
         "monthly",
     ),
+    "EIOPA risk-free rates": (
+        lambda: eiopa_model.get_risk_free_rate_term_structures(
+            "spot_no_va", START, END
+        ).xs("10Y", axis=1, level=1),
+        "Euro Area",
+        "monthly",
+    ),
+    "Bank of England implied inflation curve": (
+        lambda: boe_model.get_spot_curve("inflation", START, END).rename(
+            columns={"10Y": "United Kingdom"}
+        ),
+        "United Kingdom",
+        "daily",
+    ),
+    "BIS daily exchange rates": (
+        lambda: bis_model.get_exchange_rates("daily", START, END),
+        "Japan",
+        "daily",
+    ),
+    "BIS commercial property price index": (
+        lambda: bis_model.get_commercial_property_prices(START, END),
+        "United States",
+        "quarterly",
+    ),
+    "IMF consumer prices": (
+        lambda: imf_model.get_inflation_rate(START, END),
+        "Pakistan",
+        "monthly",
+    ),
+    "Shiller stock market data": (
+        lambda: shiller_model.get_stock_market_data().rename(
+            columns={"Long Interest Rate": "United States"}
+        ),
+        "United States",
+        "monthly",
+    ),
+    "ECB corporate borrowing cost": (
+        lambda: ecb_model.get_corporate_borrowing_cost(START, END),
+        "Euro Area",
+        "monthly",
+    ),
+    "ECB financial stress level": (
+        lambda: ecb_model.get_financial_stress_index(START, END).clip(upper=0.49),
+        "Euro Area",
+        "daily",
+    ),
     "New York Fed SOFR": (
         lambda: fed_model.get_secured_overnight_financing_rate()[["Rate"]].rename(
             columns={"Rate": "United States"}
@@ -246,7 +295,11 @@ def test_source_is_current_and_plausible(name):
     ), f"{name} is not current: the latest observation is {series.index[-1]}"
 
     # Rates are decimals and indices are levels; both must stay in a plausible range.
-    if "index" in name:
+    if "exchange" in name:
+        assert (
+            0 < series.iloc[-1] < 1_000_000
+        ), f"{name} has an implausible rate {series.iloc[-1]}"
+    elif "index" in name:
         assert (
             20 < series.iloc[-1] < 1000
         ), f"{name} has an implausible level {series.iloc[-1]}"

@@ -24,11 +24,13 @@ from financetoolkit.economics import (
     freddie_mac_model,
     gmdb_model,
     ibge_model,
+    imf_model,
     mof_model,
     nber_model,
     oecd_model,
     ons_model,
     sbj_model,
+    shiller_model,
     treasury_model,
     yfinance_model,
 )
@@ -222,6 +224,8 @@ class Economics:
                     ons_model.get_inflation_rate(),
                     sbj_model.get_inflation_rate(),
                     bis_prices,
+                    # Around a hundred further countries the BIS does not cover.
+                    imf_model.get_inflation_rate(start_date, self._end_date),
                 ]
             )
 
@@ -3194,9 +3198,9 @@ class Economics:
         without an API key: Eurostat for the euro area and the European Economic Area (the
         HICP, including the flash estimate at the end of the month itself), the Office for
         National Statistics for the United Kingdom (CPI), the Statistics Bureau of Japan
-        for Japan (CPI, from 2016) and the Bank for International Settlements for every
-        other country (around sixty, including the United States, China, India and Brazil),
-        which republishes the national consumer price indices.
+        for Japan (CPI, from 2016), the Bank for International Settlements for around sixty
+        other countries, including the United States, China, India and Brazil, and the IMF
+        for around a hundred more, all republishing the national consumer price indices.
 
         Changed in v2.2.0: this used to be returned in percentage points (4.1166 for
         4.1166%). It is now a decimal fraction, matching every other rate in the Finance
@@ -4121,6 +4125,7 @@ class Economics:
         countries: list[str] | str | None = None,
         period: str | None = None,
         gmdb_source: bool | None = None,
+        end_of_period: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -4144,12 +4149,23 @@ class Economics:
         frequency; the GMDB is annual only, so the period argument has no effect when
         gmdb_source is True.
 
+        Both are averages over each period. For daily and weekly rates (period="daily" or
+        "weekly"), or the rate at the end of each month, quarter or year (end_of_period=True),
+        the rates come from the Bank for International Settlements instead, without an API
+        key: daily for around 80 currencies with history back to 1945 for some, and at the
+        end of each month for around 130, back to the 1950s for most. Weekly and quarterly or
+        yearly end-of-period rates take the last observation of each period.
+
         Also known as: currency exchange, FX rates, foreign exchange rates.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+            period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
+                or the annual data. Defaults to None, which is quarterly when the Economics class
+                was initialized with quarterly=True and annual otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            end_of_period (bool, optional): Whether to return the rate at the end of each month,
+                quarter or year instead of its average. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4196,8 +4212,31 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        period = "yearly" if period.lower() == "annual" else period.lower()
 
-        if gmdb_source:
+        if period in ("daily", "weekly"):
+            exchange_rates = resample_to_period(
+                bis_model.get_exchange_rates(
+                    "daily",
+                    buffered_start_date(self._start_date, period),
+                    self._end_date,
+                ),
+                period,
+            )
+        elif end_of_period:
+            monthly_rates = bis_model.get_exchange_rates(
+                "monthly",
+                buffered_start_date(self._start_date, "monthly"),
+                self._end_date,
+            )
+            exchange_rates = (
+                monthly_rates
+                if period == "monthly"
+                else monthly_rates.groupby(
+                    monthly_rates.index.asfreq("Q" if period == "quarterly" else "Y")
+                ).last()
+            )
+        elif gmdb_source:
             if self._gmbd_dataset.empty:
                 self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
@@ -4224,6 +4263,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # The BIS lists weekends and holidays without a rate.
+            dropna=period in ("daily", "weekly") or end_of_period,
         )
 
     @handle_errors
@@ -7017,6 +7058,7 @@ class Economics:
     @handle_errors
     def get_commercial_real_estate_prices(
         self,
+        countries: list[str] | str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -7025,8 +7067,9 @@ class Economics:
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
-        Get the quarterly Commercial Real Estate Price Index for the United States
-        from FRED (sourced from the IMF's Financial Soundness Indicators).
+        Get the quarterly growth of commercial real estate prices: the change in the price
+        of commercial property (offices, retail, industrial and apartment buildings) on the
+        same quarter a year earlier, for around twenty economies.
 
         This tracks commercial (office, retail, industrial, apartment) property
         prices, as distinct from residential house prices (see `get_house_prices`,
@@ -7036,14 +7079,20 @@ class Economics:
         freely available anywhere -- so expect more volatility and less
         autocorrelation than an appraisal-based series would show.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: the prices come from the commercial property price indices
+        the Bank for International Settlements collects from national sources, for the euro
+        area, the United States (from 1945), Japan, Denmark, Switzerland, Germany, France,
+        Spain and around a dozen more. When a FRED API key is set (see the `fred_api_key`
+        parameter of the `Economics` class), the United States instead comes from FRED's
+        series sourced from the IMF's Financial Soundness Indicators, as in earlier versions.
 
-        See definition: https://fred.stlouisfed.org/series/COMREPUSQ159N
+        See definitions: https://data.bis.org/topics/CPP and
+        https://fred.stlouisfed.org/series/COMREPUSQ159N
 
         Also known as: commercial property price index, CRE price index.
 
         Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -7056,35 +7105,46 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A single-column ("United States") DataFrame of the
-            quarterly Commercial Real Estate Price Index, as a year-over-year
-            percent change expressed as a decimal fraction.
+            pd.DataFrame: The quarterly change in commercial real estate prices on a year
+            earlier, as a decimal fraction, with a column per country.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2015-01-01', fred_api_key='FRED_API_KEY')
+        economics = Economics(start_date='2025-01-01')
 
-        economics.get_commercial_real_estate_prices()
+        economics.get_commercial_real_estate_prices(countries=['United States', 'Euro Area', 'Japan', 'Germany'])
         ```
 
         Which returns:
 
-        | Date       |   United States |
-        |:-----------|----------------:|
-        | 2024-04-01 |         -0.1067 |
-        | 2024-07-01 |         -0.1058 |
-        | 2024-10-01 |         -0.0273 |
-        | 2025-01-01 |         -0.0301 |
-        | 2025-04-01 |         -0.0701 |
+        |        |   United States |   Euro Area |    Japan |   Germany |
+        |:-------|----------------:|------------:|---------:|----------:|
+        | 2025Q1 |         -0.0305 |      0.0232 |   0.0289 |    0.0221 |
+        | 2025Q2 |         -0.0513 |      0.0331 |   0.0197 |    0.0266 |
+        | 2025Q3 |          0.0513 |      0.0173 |   0.0222 |    0.0264 |
+        | 2025Q4 |          0.0159 |      0.0189 |   0.0104 |    0.0207 |
+        | 2026Q1 |          0.0755 |    nan      | nan      |    0.013  |
+        | 2026Q2 |          0.0881 |    nan      | nan      |    0.0043 |
         """
-        self._require_fred_api_key()
-
-        commercial_real_estate_prices = fred_model.get_commercial_real_estate_prices(
-            self._start_date, self._end_date, self._fred_api_key
+        # The index is turned into its change on the same quarter a year earlier, the
+        # measure FRED publishes, so both sources mean the same thing.
+        index = bis_model.get_commercial_property_prices(
+            buffered_start_date(self._start_date, "monthly"), self._end_date
         )
+        commercial_real_estate_prices = index.pct_change(4, fill_method=None)
+
+        if self._fred_api_key:
+            united_states = fred_model.get_commercial_real_estate_prices(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if not united_states.empty:
+                united_states.index = united_states.index.asfreq("Q")
+                commercial_real_estate_prices = commercial_real_estate_prices.drop(
+                    columns="United States", errors="ignore"
+                ).join(united_states, how="outer")
 
         return finalize_dataset(
             dataset=commercial_real_estate_prices,
@@ -7099,6 +7159,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            countries=countries,
+            dropna=True,
         )
 
     @handle_errors
@@ -7371,6 +7433,198 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             rounding=rounding,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_life_table(
+        self,
+        countries: list[str] | str | None = None,
+        measure: str = "death_probability",
+        sex: str = "total",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the life tables Eurostat compiles yearly for the countries of the European
+        Economic Area, by single year of age from 0 to 95 (the last age group being 95 and
+        over), from 1960 for most countries. A life table describes the mortality of a
+        population: the basis of every pension, life insurance and annuity calculation, and
+        of mortality and longevity assumptions in scenario models.
+
+        The measures are the probability of dying within the year (death_probability, qx),
+        the probability of surviving it (survival_probability, px), the age-specific death
+        rate (death_rate, mx), the number of survivors out of 100,000 births (survivors, lx),
+        the number dying (deaths, dx), the person-years lived within the year (person_years,
+        Lx) and above the age (total_person_years, Tx), and the life expectancy at the age
+        (life_expectancy, ex). Probabilities and rates are fractions; the others are counts
+        or years.
+
+        No API key is needed. For countries outside Europe the UN World Population Prospects
+        publish life tables for every country (bulk files at population.un.org/wpp), and the
+        Human Mortality Database long national histories (with free registration).
+
+        Also known as: mortality table, qx table, survival table, actuarial table.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include, e.g.
+                'Germany' or ['Germany', 'France']. Defaults to None, which retrieves every country.
+            measure (str, optional): The life table measure, see above. Defaults to
+                "death_probability".
+            sex (str, optional): "total", "male" or "female". Defaults to "total".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The measure, indexed by year with a column per country and age.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01')
+
+        life_table = economics.get_life_table(countries='Germany', sex='male')
+
+        life_table['Germany'][[0, 30, 65, 80, 95]]
+        ```
+
+        Which returns:
+
+        |      |      0 |     30 |     65 |     80 |   95 |
+        |:-----|-------:|-------:|-------:|-------:|-----:|
+        | 2020 | 0.0032 | 0.0005 | 0.0156 | 0.0575 |    1 |
+        | 2021 | 0.0033 | 0.0006 | 0.0163 | 0.0559 |    1 |
+        | 2022 | 0.0032 | 0.0005 | 0.016  | 0.0596 |    1 |
+        | 2023 | 0.0033 | 0.0006 | 0.0153 | 0.0571 |    1 |
+        | 2024 | 0.0035 | 0.0005 | 0.0151 | 0.0566 |    1 |
+        """
+        if measure not in eurostat_model.LIFE_TABLE_MEASURES:
+            raise ValueError(
+                f"The measure must be one of {', '.join(eurostat_model.LIFE_TABLE_MEASURES)}, "
+                f"not {measure!r}."
+            )
+        if sex not in eurostat_model.LIFE_TABLE_SEXES:
+            raise ValueError(
+                f"The sex must be 'total', 'male' or 'female', not {sex!r}."
+            )
+
+        requested = [countries] if isinstance(countries, str) else countries
+        codes = None
+        if requested:
+            names_to_codes = {
+                name: code for code, name in eurostat_model.COUNTRY_CODES.items()
+            }
+            codes = [
+                names_to_codes[name] for name in requested if name in names_to_codes
+            ]
+
+            if unknown := [name for name in requested if name not in names_to_codes]:
+                logger.warning("No life table is available for %s.", ", ".join(unknown))
+            if not codes:
+                return pd.DataFrame()
+
+        life_table = eurostat_model.get_life_table(
+            measure, sex, self._start_date, self._end_date, codes
+        )
+
+        return finalize_dataset(
+            dataset=life_table,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_shiller_stock_market_data(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves Robert Shiller's monthly US stock market data from 1871, the data behind
+        "Irrational Exuberance" and the CAPE ratio: the S&P Composite price, dividends and
+        earnings, the consumer price index, the long-term interest rate, the same in real
+        (inflation-adjusted) terms, and the cyclically adjusted price-earnings ratio (CAPE),
+        the price over the average of ten years of real earnings. With more than 150 years of
+        history it is the standard source for long-run equity returns, valuations and their
+        relation to subsequent returns.
+
+        Prices are monthly averages of daily closes; dividends and earnings are trailing
+        twelve-month totals, with the latest months not yet published. The long interest
+        rate is a decimal fraction (0.0475 for 4.75%).
+
+        Shiller, R. J. (2015). Irrational Exuberance (3rd ed.). Princeton University Press.
+
+        No API key is needed.
+
+        See definition: https://shillerdata.com/
+
+        Also known as: Shiller data, CAPE, Shiller PE, long-run stock returns.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: One column per measure, indexed by month.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-01-01')
+
+        economics.get_shiller_stock_market_data()[['Price', 'Dividend', 'Earnings', 'CAPE']]
+        ```
+
+        Which returns:
+
+        |         |   Price |   Dividend |   Earnings |    CAPE |
+        |:--------|--------:|-----------:|-----------:|--------:|
+        | 2026-01 | 6929.12 |    79.8018 |    247.664 | 39.6408 |
+        | 2026-02 | 6893.81 |    80.0835 |    254.693 | 39.014  |
+        | 2026-03 | 6654.42 |    80.3653 |    261.723 | 37.0316 |
+        | 2026-04 | 6957.01 |    80.8113 |    272.945 | 38.1383 |
+        | 2026-05 | 7412.55 |    81.2572 |    284.166 | 40.1014 |
+        | 2026-06 | 7450.03 |    81.7032 |    295.388 | 40.1502 |
+        | 2026-07 | 7481.34 |   nan      |    nan     | 40.0086 |
+        | 2026-08 | 7711.32 |   nan      |    nan     | 41.1198 |
+        | 2026-09 | 7631.47 |   nan      |    nan     | 40.5758 |
+        """
+        stock_market_data = shiller_model.get_stock_market_data()
+
+        return finalize_dataset(
+            dataset=stock_market_data,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
             axis="rows",
             row_slice=True,
         )

@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import re
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -20,6 +21,9 @@ GDP_DATASET = "namq_10_gdp"
 
 # The euro area is published as "EA" (changing composition) in some datasets and only
 # under its current membership, e.g. "EA21" since Bulgaria joined in 2026, in others.
+# A yearly period is written as its four-digit year.
+YEAR_LENGTH = 4
+
 EURO_AREA_PATTERN = re.compile(r"^EA(\d+)$")
 
 
@@ -46,20 +50,33 @@ def _resolve_euro_area(codes: list[str]) -> str | None:
     )
 
 
-def parse_json_stat(response: dict, description: str) -> pd.DataFrame:
+def parse_json_stat(
+    response: dict,
+    description: str,
+    extra_dimension: str | None = None,
+    extra_labels: Callable[[str], object] | None = None,
+) -> pd.DataFrame:
     """
     Converts a Eurostat JSON-stat response into a DataFrame with one column per country.
 
-    Every dimension other than geo and time must be pinned to a single value by the
-    query. Otherwise several series would land in one country column and whichever came
-    last would win, so that is treated as an error rather than resolved silently.
+    Every dimension other than geo, time and the extra dimension must be pinned to a
+    single value by the query. Otherwise several series would land in one column and
+    whichever came last would win, so that is treated as an error rather than resolved
+    silently.
 
     Args:
         response (dict): The decoded JSON-stat response.
         description (str): What was retrieved, used in the error messages.
+        extra_dimension (str | None): A dimension that may hold several values, such as
+            "age" for a life table, which becomes the second level of the columns.
+            Defaults to None.
+        extra_labels (Callable[[str], object] | None): Converts a code of the extra
+            dimension into its label, e.g. "Y_LT1" into 0. Defaults to None, which keeps
+            the codes.
 
     Returns:
-        pd.DataFrame: The values indexed by month or quarter, with a column per country.
+        pd.DataFrame: The values indexed by year, quarter or month, with a column per
+        country, or per country and value of the extra dimension.
 
     Raises:
         ValueError: When the response is not JSON-stat, misses the geo or time dimension,
@@ -88,7 +105,7 @@ def parse_json_stat(response: dict, description: str) -> pd.DataFrame:
     if unpinned := [
         dimension
         for dimension, size in zip(dimensions, sizes, strict=True)
-        if dimension not in ("geo", "time") and size > 1
+        if dimension not in ("geo", "time", extra_dimension) and size > 1
     ]:
         raise ValueError(
             f"The Eurostat query for the {description} matches more than one series per "
@@ -105,6 +122,9 @@ def parse_json_stat(response: dict, description: str) -> pd.DataFrame:
     ]
     geo_position = dimensions.index("geo")
     time_position = dimensions.index("time")
+    extra_position = (
+        dimensions.index(extra_dimension) if extra_dimension in dimensions else None
+    )
 
     # Each dimension has size 1 apart from geo and time, so the flat index of a value
     # decodes into a geo and a time position.
@@ -121,6 +141,11 @@ def parse_json_stat(response: dict, description: str) -> pd.DataFrame:
             (
                 categories[geo_position][positions[geo_position]][0],
                 categories[time_position][positions[time_position]][0],
+                (
+                    categories[extra_position][positions[extra_position]][0]
+                    if extra_position is not None
+                    else None
+                ),
                 value,
             )
         )
@@ -128,27 +153,50 @@ def parse_json_stat(response: dict, description: str) -> pd.DataFrame:
     if not records:
         return pd.DataFrame()
 
-    data = pd.DataFrame(records, columns=["geo", "time", "value"]).pivot(
-        index="time", columns="geo", values="value"
+    long_format = pd.DataFrame(records, columns=["geo", "time", "extra", "value"])
+    data = long_format.pivot(
+        index="time",
+        columns=["geo", "extra"] if extra_position is not None else "geo",
+        values="value",
     )
 
     # "EU" is the European Union in Eurostat data but the euro area in the economic
     # calendar the country names are shared with, so the union comes from EU27_2020.
-    euro_area = _resolve_euro_area(list(data.columns))
+    geo_codes = list(
+        dict.fromkeys(
+            data.columns.get_level_values(0)
+            if extra_position is not None
+            else data.columns
+        )
+    )
+    euro_area = _resolve_euro_area(geo_codes)
     countries = {
         code: COUNTRY_CODES[code]
-        for code in data.columns
+        for code in geo_codes
         if code in COUNTRY_CODES and code != "EU" and not code.startswith("EA")
     }
     if euro_area is not None:
         countries[euro_area] = "Euro Area"
 
-    data = data[list(countries)].rename(columns=countries)
-    # Monthly periods are written as "2026-09" and quarters as "2026-Q2".
-    frequency = "Q" if str(data.index[0])[-2] == "Q" else "M"
+    if extra_position is None:
+        data = data[list(countries)].rename(columns=countries)
+        data.columns.name = None
+    else:
+        data = data.loc[:, data.columns.get_level_values(0).isin(list(countries))]
+        data.columns = pd.MultiIndex.from_tuples(
+            [
+                (countries[code], extra_labels(extra) if extra_labels else extra)
+                for code, extra in data.columns
+            ],
+            names=["Country", extra_dimension.title()],
+        )
+        data = data.sort_index(axis=1)
+
+    # Years are written as "2024", quarters as "2026-Q2" and months as "2026-09".
+    first = str(data.index[0])
+    frequency = "Y" if len(first) == YEAR_LENGTH else "Q" if first[-2] == "Q" else "M"
     data.index = pd.PeriodIndex(data.index, freq=frequency)
     data.index.name = None
-    data.columns.name = None
 
     return data.sort_index().astype(float)
 
@@ -159,6 +207,8 @@ def collect_eurostat_data(
     description: str,
     start_date: str,
     end_date: str,
+    extra_dimension: str | None = None,
+    extra_labels: Callable[[str], object] | None = None,
 ) -> pd.DataFrame:
     """
     Retrieves the months or quarters between two dates of a Eurostat dataset for every
@@ -170,17 +220,25 @@ def collect_eurostat_data(
         description (str): What is retrieved, used in the log and error messages.
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
+        extra_dimension (str | None): A dimension that may hold several values, see
+            parse_json_stat. Defaults to None.
+        extra_labels (Callable[[str], object] | None): Converts its codes into labels.
+            Defaults to None.
 
     Returns:
-        pd.DataFrame: The values indexed by month or quarter, with a column per country.
+        pd.DataFrame: The values indexed by year, quarter or month, with a column per
+        country, or per country and value of the extra dimension.
     """
-    # Eurostat takes "2026-09" for a monthly and "2026-Q3" for a quarterly dataset.
-    quarterly = filters.get("freq") == "Q"
+    # Eurostat takes "2024" for a yearly, "2026-Q3" for a quarterly and "2026-09" for a
+    # monthly dataset.
+    frequency = filters.get("freq")
 
     def to_period(date: str) -> str:
-        return (
-            str(pd.Period(date, freq="Q")).replace("Q", "-Q") if quarterly else date[:7]
-        )
+        if frequency == "A":
+            return date[:4]
+        if frequency == "Q":
+            return str(pd.Period(date, freq="Q")).replace("Q", "-Q")
+        return date[:7]
 
     query = "&".join(
         f"{dimension}={value}" for dimension, value in sorted(filters.items())
@@ -193,7 +251,9 @@ def collect_eurostat_data(
             timeout=120,
         )
 
-        return parse_json_stat(response.json(), description)
+        return parse_json_stat(
+            response.json(), description, extra_dimension, extra_labels
+        )
 
     return collect_ranged_data(
         source=policy_model.EUROSTAT,
@@ -315,3 +375,76 @@ def get_gross_domestic_product_growth(
 
     # Eurostat publishes the growth in percent.
     return growth / 100
+
+
+# The life table measures, by the name the Finance Toolkit uses for them.
+LIFE_TABLE_MEASURES = {
+    "death_rate": "DEATHRATE",
+    "death_probability": "PROBDEATH",
+    "survival_probability": "PROBSURV",
+    "survivors": "SURVIVORS",
+    "deaths": "NUMBERDYING",
+    "person_years": "PYLIVED",
+    "total_person_years": "TOTPYLIVED",
+    "life_expectancy": "LIFEXP",
+}
+LIFE_TABLE_SEXES = {"total": "T", "male": "M", "female": "F"}
+
+
+def _age_label(code: str) -> int:
+    """
+    Converts an age code of the Eurostat life tables into the age in years: "Y_LT1" is 0,
+    "Y45" is 45 and "Y_GE95", the open-ended last age group, is 95.
+
+    Args:
+        code (str): The age code.
+
+    Returns:
+        int: The age in years.
+    """
+    if code == "Y_LT1":
+        return 0
+
+    return int(re.sub(r"\D", "", code))
+
+
+def get_life_table(
+    measure: str,
+    sex: str,
+    start_date: str,
+    end_date: str,
+    country_codes: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Retrieves the life tables Eurostat compiles yearly for the countries of the European
+    Economic Area, by single year of age from 0 to 95 and over, from 1960.
+
+    Args:
+        measure (str): A key of LIFE_TABLE_MEASURES, e.g. "death_probability".
+        sex (str): "total", "male" or "female".
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        country_codes (list[str] | None): The Eurostat codes of the countries to retrieve.
+            Defaults to None, which retrieves every country.
+
+    Returns:
+        pd.DataFrame: The measure, indexed by year with a column per country and age.
+    """
+    filters = {
+        "freq": "A",
+        "indic_de": LIFE_TABLE_MEASURES[measure],
+        "sex": LIFE_TABLE_SEXES[sex],
+    }
+
+    if country_codes:
+        filters["geo"] = "&geo=".join(country_codes)
+
+    return collect_eurostat_data(
+        "demo_mlifetable",
+        filters,
+        f"{measure.replace('_', ' ')} life table",
+        start_date,
+        end_date,
+        extra_dimension="age",
+        extra_labels=_age_label,
+    )

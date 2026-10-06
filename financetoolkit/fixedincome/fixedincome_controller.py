@@ -30,6 +30,7 @@ from financetoolkit.fixedincome import (
     bundesbank_model,
     derivative_model,
     ecb_model,
+    eiopa_model,
     euribor_model,
     fed_model,
     fmp_model,
@@ -3154,6 +3155,393 @@ class FixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+        )
+
+    @handle_errors
+    def get_eiopa_risk_free_rate(
+        self,
+        countries: list[str] | str | None = None,
+        curve: str = "spot_no_va",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the risk-free interest rate term structures the European Insurance and
+        Occupational Pensions Authority (EIOPA) publishes monthly: the curves European
+        insurers must discount their liabilities with under Solvency II. They cover the euro
+        and the currencies of every country of the European Economic Area, plus Switzerland,
+        the United Kingdom, Australia, Canada, China, Colombia, Hong Kong, Japan, Taiwan and
+        the United States, for maturities of 1 to 150 years. Beyond the last liquid maturity
+        each curve converges to the ultimate forward rate (UFR), as Solvency II prescribes.
+
+        Four curves are published: the basic spot curve (curve="spot_no_va"), the spot curve
+        with the volatility adjustment (curve="spot_with_va"), and the basic curve after the
+        interest rate shocks of the Solvency II standard formula (curve="shock_up" and
+        curve="shock_down"). Every value is a decimal fraction (0.0358 for 3.58%), at the end
+        of the month the release is for.
+
+        No API key is needed. EIOPA's page links the releases from January 2023; each is a
+        separate file, so only the months between the start and end date are downloaded, and
+        a release is cached for a year since it does not change.
+
+        See definition: https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en
+
+        Also known as: Solvency II discount curve, EIOPA RFR, risk-free rate term structure,
+        UFR curve.
+
+        Args:
+            countries (list[str] | str | None, optional): The currencies or countries to include,
+                as EIOPA names them, e.g. 'Euro Area', 'United Kingdom' or 'United States'.
+                Defaults to None, which returns all of them.
+            curve (str, optional): "spot_no_va", "spot_with_va", "shock_up" or "shock_down".
+                Defaults to "spot_no_va".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The rates, indexed by month with a column per currency or country and
+            maturity ("1Y" to "150Y").
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-07-01', end_date='2026-09-30')
+
+        curves = fixedincome.get_eiopa_risk_free_rate(countries=['Euro Area', 'United Kingdom'])
+
+        curves.loc[:, (slice(None), ['1Y', '10Y', '30Y', '60Y', '150Y'])]
+        ```
+
+        Which returns:
+
+        |         |   Euro Area 1Y |   United Kingdom 1Y |   Euro Area 10Y |   United Kingdom 10Y |   Euro Area 30Y |   United Kingdom 30Y |   Euro Area 60Y |   United Kingdom 60Y |   Euro Area 150Y |   United Kingdom 150Y |
+        |:--------|---------------:|--------------------:|----------------:|---------------------:|----------------:|---------------------:|----------------:|---------------------:|-----------------:|----------------------:|
+        | 2026-07 |         0.0283 |              0.0415 |          0.0316 |               0.0468 |          0.0337 |               0.0518 |          0.0335 |               0.0443 |           0.0332 |                0.0375 |
+        | 2026-08 |         0.0292 |              0.0418 |          0.0327 |               0.0473 |          0.0345 |               0.0524 |          0.0339 |               0.0452 |           0.0334 |                0.0379 |
+        | 2026-09 |         0.0327 |              0.0445 |          0.0358 |               0.0501 |          0.0351 |               0.0533 |          0.0342 |               0.0447 |           0.0335 |                0.0376 |
+        """
+        if curve not in eiopa_model.CURVES:
+            raise ValueError(
+                f"The curve must be one of {', '.join(eiopa_model.CURVES)}, not {curve!r}."
+            )
+        if countries is not None and not isinstance(countries, str | list | tuple):
+            raise TypeError(
+                "The countries must be a name or a list of names, such as 'Euro Area' or "
+                f"['Euro Area', 'Japan'], not a {type(countries).__name__} ({countries!r})."
+            )
+
+        term_structures = eiopa_model.get_risk_free_rate_term_structures(
+            curve, self._start_date, self._end_date
+        )
+
+        if countries is not None and not term_structures.empty:
+            requested = [countries] if isinstance(countries, str) else list(countries)
+            available = list(dict.fromkeys(term_structures.columns.get_level_values(0)))
+
+            if unknown := [name for name in requested if name not in available]:
+                logger.warning(
+                    "EIOPA publishes no risk-free rates for %s. It covers %s.",
+                    ", ".join(unknown),
+                    ", ".join(available),
+                )
+
+            term_structures = term_structures.loc[
+                :, term_structures.columns.get_level_values(0).isin(requested)
+            ]
+
+        return finalize_dataset(
+            dataset=term_structures,
+            indicator_name="EIOPA Risk-Free Rate",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_bank_of_england_yield_curve(
+        self,
+        curve: str = "nominal",
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the UK yield curves the Bank of England estimates daily from 1985, for
+        maturities from 0.5 years (nominal and OIS) or 2.5 years (real and implied
+        inflation) to 40 years (25 years for OIS): the nominal spot curve of UK government bonds (gilts),
+        the real spot curve of index-linked gilts, the implied inflation curve, which is the
+        difference between the two and so the UK breakeven inflation by maturity, and the
+        spot curve of overnight index swaps on SONIA (OIS, from 2009).
+
+        The implied inflation curve is measured against the Retail Prices Index (RPI), the
+        index the index-linked gilts pay, which has run above CPI inflation.
+
+        No API key is needed. The archive is a set of large files, of which only those
+        covering the requested years are read, and they are cached since past years do not
+        change. Weekly and monthly periods take the curve on the last day of each period.
+
+        See definition: https://www.bankofengland.co.uk/statistics/yield-curves
+
+        Also known as: gilt curve, UK spot curve, UK breakeven inflation, RPI implied
+        inflation, SONIA OIS curve.
+
+        Args:
+            curve (str, optional): "nominal", "real", "inflation" or "ois". Defaults to "nominal".
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The spot rates as decimals, indexed by date with a column per
+            maturity in years, in steps of half a year.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_bank_of_england_yield_curve(curve='inflation', period='monthly')[
+            ['3Y', '5Y', '10Y', '20Y', '30Y']
+        ]
+        ```
+
+        Which returns:
+
+        |         |     3Y |     5Y |    10Y |    20Y |    30Y |
+        |:--------|-------:|-------:|-------:|-------:|-------:|
+        | 2026-04 | 0.0439 | 0.0386 | 0.0352 | 0.0346 | 0.0347 |
+        | 2026-05 | 0.0394 | 0.0355 | 0.0331 | 0.0334 | 0.0337 |
+        | 2026-06 | 0.0352 | 0.0327 | 0.0311 | 0.0321 | 0.0329 |
+        | 2026-07 | 0.0374 | 0.0344 | 0.0322 | 0.033  | 0.0337 |
+        | 2026-08 | 0.0384 | 0.0355 | 0.033  | 0.0335 | 0.0341 |
+        | 2026-09 | 0.0405 | 0.037  | 0.0341 | 0.0342 | 0.0347 |
+        """
+        if curve not in boe_model.CURVE_ARCHIVES:
+            raise ValueError(
+                f"The curve must be one of {', '.join(boe_model.CURVE_ARCHIVES)}, not {curve!r}."
+            )
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "Bank of England yield curve"
+        )
+
+        spot_curve = resample_to_period(
+            boe_model.get_spot_curve(
+                curve, buffered_start_date(self._start_date, period), self._end_date
+            ),
+            period,
+        )
+
+        return finalize_dataset(
+            dataset=spot_curve,
+            indicator_name="Bank of England Yield Curve",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_corporate_borrowing_cost(
+        self,
+        countries: list[str] | str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the composite cost of borrowing for non-financial corporations the European
+        Central Bank publishes monthly from 2003, for the euro area and every member: the
+        average interest rate on new bank loans to companies across maturities and loan sizes.
+        Euro area companies borrow mostly from banks rather than in the bond market, which
+        makes this the broadest measure of their cost of credit, and the closest freely
+        available proxy for euro area corporate credit conditions, since euro area corporate
+        bond indices are licensed data.
+
+        No API key is needed. The rate is a decimal fraction (0.0377 for 3.77%).
+
+        See definition: https://data.ecb.europa.eu/data/datasets/MIR
+
+        Also known as: cost of borrowing for corporations, euro area lending rate, corporate
+        credit cost.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include, e.g.
+                'Euro Area' or ['Germany', 'Italy']. Defaults to None, which returns all of them.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The rate, indexed by month with a column per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_corporate_borrowing_cost(
+            countries=['Euro Area', 'Germany', 'France', 'Italy', 'Spain']
+        )
+        ```
+
+        Which returns:
+
+        |         |   Euro Area |   Germany |   France |   Italy |   Spain |
+        |:--------|------------:|----------:|---------:|--------:|--------:|
+        | 2026-03 |      0.0358 |    0.0381 |   0.035  |  0.0349 |  0.0328 |
+        | 2026-04 |      0.0362 |    0.0378 |   0.0353 |  0.0365 |  0.0345 |
+        | 2026-05 |      0.0363 |    0.0372 |   0.0352 |  0.0377 |  0.0351 |
+        | 2026-06 |      0.0379 |    0.04   |   0.0367 |  0.0377 |  0.0355 |
+        | 2026-07 |      0.038  |    0.0398 |   0.0363 |  0.0386 |  0.037  |
+        | 2026-08 |      0.0377 |    0.0388 |   0.037  |  0.0385 |  0.0363 |
+        """
+        borrowing_cost = economics_ecb_model.get_corporate_borrowing_cost(
+            buffered_start_date(self._start_date, "monthly"), self._end_date
+        )
+
+        return finalize_dataset(
+            dataset=borrowing_cost,
+            indicator_name="Corporate Borrowing Cost",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            countries=countries,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_financial_stress_index(
+        self,
+        countries: list[str] | str | None = None,
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the Composite Indicator of Systemic Stress (CISS) the European Central Bank
+        publishes daily for the euro area, its largest members, the United Kingdom, the United
+        States and China, back to 1980 for some. The index combines stress in money, bond,
+        equity and foreign exchange markets and among financial intermediaries into a number
+        between 0 (calm) and 1 (crisis), weighting the segments more heavily when they are
+        stressed at the same time; it peaked in 2008 and in the euro area debt crisis.
+
+        Hollo, D., Kremer, M., & Lo Duca, M. (2012). CISS - A Composite Indicator of
+        Systemic Stress in the Financial System. ECB Working Paper No. 1426.
+
+        No API key is needed. Weekly and monthly periods take the index on the last day of
+        each period.
+
+        See definition: https://data.ecb.europa.eu/data/datasets/CISS
+
+        Also known as: CISS, systemic stress, financial stress, financial conditions.
+
+        Args:
+            countries (list[str] | str | None, optional): The areas to include, e.g. 'Euro Area'
+                or ['United States', 'United Kingdom']. Defaults to None, which returns all of them.
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The index, indexed by date with a column per area.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_financial_stress_index(
+            countries=['Euro Area', 'United States', 'United Kingdom', 'China'], period='monthly'
+        )
+        ```
+
+        Which returns:
+
+        |         |   Euro Area |   United States |   United Kingdom |   China |
+        |:--------|------------:|----------------:|-----------------:|--------:|
+        | 2026-04 |      0.004  |          0.0134 |           0.0222 |  0.0199 |
+        | 2026-05 |      0.0058 |          0.0069 |           0.0309 |  0.0059 |
+        | 2026-06 |      0.0098 |          0.0095 |           0.0072 |  0.0308 |
+        | 2026-07 |      0.0129 |          0.0493 |           0.0075 |  0.0209 |
+        | 2026-08 |      0.0205 |          0.0194 |           0.0011 |  0.0072 |
+        | 2026-09 |      0.0132 |          0.0092 |           0.0122 |  0.0015 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "financial stress index"
+        )
+
+        stress_index = resample_to_period(
+            economics_ecb_model.get_financial_stress_index(
+                buffered_start_date(self._start_date, period), self._end_date
+            ),
+            period,
+        )
+
+        return finalize_dataset(
+            dataset=stress_index,
+            indicator_name="Financial Stress Index",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            countries=countries,
+            dropna=True,
         )
 
     @handle_errors

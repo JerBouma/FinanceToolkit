@@ -248,3 +248,130 @@ def get_long_term_convergence_yields(start_date: str, end_date: str) -> pd.DataF
         end_date=end_date,
         description=description,
     )
+
+
+# The composite cost of bank borrowing for non-financial corporations, monthly per euro
+# area country, and the Composite Indicator of Systemic Stress (CISS), daily per area.
+CORPORATE_BORROWING_COST_KEY = "MIR/M..B.A2I.AM.R.A.2240.EUR.N"
+FINANCIAL_STRESS_KEY = "CISS/D..Z0Z.4F.EC.SS_CIN.IDX"
+
+# The position of the area in the series keys above, after the dataset.
+AREA_POSITION = 1
+
+# The ECB's code for the euro area, named as elsewhere in the Finance Toolkit.
+ECB_AREA_NAMES = {**COUNTRY_CODES, "U2": "Euro Area"}
+
+
+def collect_ecb_series_by_area(
+    series_key: str,
+    description: str,
+    start_date: str,
+    end_date: str,
+    frequency: str,
+    in_percent: bool = True,
+) -> pd.DataFrame:
+    """
+    Retrieves an ECB Data Portal series for every area it covers, with a column per area.
+    Requests start on the first day of a month so that the same query is repeated and
+    served from the portal's cache, see collect_ecb_series.
+
+    Args:
+        series_key (str): The dataset and series key with the area left open, e.g.
+            "CISS/D..Z0Z.4F.EC.SS_CIN.IDX".
+        description (str): What is retrieved, used in the log and error messages.
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        frequency (str): The period of the observations, "D" or "M".
+        in_percent (bool): Whether the values are published in percent and so divided by
+            100. Defaults to True.
+
+    Returns:
+        pd.DataFrame: The values, indexed by day or month with a column per area.
+    """
+
+    def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
+        month_start = pd.Timestamp(fetch_start).strftime("%Y-%m")
+        response = get_request(
+            f"{BASE_URL}{series_key}?format=csvdata&detail=dataonly&startPeriod={month_start}",
+            timeout=120,
+        )
+
+        if not response.text.strip():
+            return pd.DataFrame()
+
+        data = pd.read_csv(io.StringIO(response.text))
+        require_columns(data, {"KEY", "TIME_PERIOD", "OBS_VALUE"}, description)
+
+        data["AREA"] = (
+            data["KEY"].str.split(".").str[AREA_POSITION + 1].map(ECB_AREA_NAMES)
+        )
+        data = data.dropna(subset=["AREA"])
+        data["OBS_VALUE"] = pd.to_numeric(data["OBS_VALUE"], errors="coerce")
+        values = data.pivot_table(
+            index="TIME_PERIOD", columns="AREA", values="OBS_VALUE", aggfunc="last"
+        )
+        values.index = pd.PeriodIndex(values.index, freq=frequency)
+        values.index.name = None
+        values.columns.name = None
+        values = values.sort_index()
+        values = values.loc[
+            pd.Period(fetch_start, frequency) : pd.Period(fetch_end, frequency)
+        ]
+
+        return values / 100 if in_percent else values
+
+    return collect_ranged_data(
+        source=policy_model.EUROPEAN_CENTRAL_BANK,
+        dataset="economics_series",
+        entity=series_key,
+        fetch=fetch,
+        start_date=start_date,
+        end_date=end_date,
+        description=description,
+    )
+
+
+def get_corporate_borrowing_cost(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the composite cost of borrowing for non-financial corporations, the average
+    interest rate on new bank loans to companies across maturities, for the euro area and
+    every member, monthly from 2003.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The rate as a decimal, indexed by month with a column per area.
+    """
+    return collect_ecb_series_by_area(
+        CORPORATE_BORROWING_COST_KEY,
+        "cost of borrowing for corporations",
+        start_date,
+        end_date,
+        "M",
+    )
+
+
+def get_financial_stress_index(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the Composite Indicator of Systemic Stress (CISS) the ECB publishes daily for
+    the euro area, its largest members, the United Kingdom, the United States and China. It
+    combines stress in money, bond, equity and foreign exchange markets and among financial
+    intermediaries into one number between 0 and 1.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The index, indexed by day with a column per area.
+    """
+    return collect_ecb_series_by_area(
+        FINANCIAL_STRESS_KEY,
+        "financial stress index",
+        start_date,
+        end_date,
+        "D",
+        in_percent=False,
+    )

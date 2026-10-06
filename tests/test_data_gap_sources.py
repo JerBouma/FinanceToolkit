@@ -313,3 +313,81 @@ def test_inflation_expectations_hold_each_survey_round_until_the_next(monkeypatc
     assert monthly[("Germany", "10Y")].tolist() == [0.0213, 0.0212, 0.0214]
     assert quarterly.loc[pd.Period("2026Q3", "Q"), ("Euro Area", "5Y")] == 0.0204
     assert economics.get_inflation_expectations(period="daily").empty
+
+
+def test_eiopa_shocked_curves_are_computed_from_the_base_curve_and_the_shocks(
+    monkeypatch,
+):
+    from financetoolkit.fixedincome import eiopa_model
+
+    base = [[None] * 4 for _ in range(10)]
+    base[1] = [None, "Main menu", "Euro", "Czechia"]
+    base += [[None, 1, 0.0327, -0.001], [None, 2, 0.0344, 0.036], [None, 3, 0.03, 0.03]]
+    shocks = [[None] * 5 for _ in range(10)]
+    # Maturity 2 is a formula in EIOPA's worksheet, interpolated between 1 and 3.
+    shocks += [
+        [None, 1, None, 0.75, 0.70],
+        [None, 2, None, "=D11", "=E11"],
+        [None, 3, None, 0.55, 0.10],
+    ]
+    workbook = _workbook({"RFR_spot_no_VA": base, "Shocks": shocks})
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr("EIOPA_RFR_20260930_Term_Structures.xlsx", workbook)
+    page = '<a href="/document/download/abc_en?filename=EIOPA_RFR_20260930.zip">September</a>'
+
+    monkeypatch.setattr(
+        eiopa_model,
+        "get_request",
+        lambda url, timeout: (
+            FakeResponse(text=page)
+            if url.endswith("_en")
+            else FakeResponse(content=archive.getvalue())
+        ),
+    )
+
+    up = eiopa_model.get_risk_free_rate_term_structures(
+        "shock_up", "2026-09-01", "2026-09-30"
+    ).iloc[0]
+    down = eiopa_model.get_risk_free_rate_term_structures(
+        "shock_down", "2026-09-01", "2026-09-30"
+    ).iloc[0]
+
+    # Upwards by the relative shock, at least one percentage point; maturity 2 takes the
+    # interpolated shock of 0.40 upwards and 0.65 downwards.
+    assert up[("Euro Area", "1Y")] == pytest.approx(0.05559)
+    assert up[("Euro Area", "2Y")] == pytest.approx(0.04816)
+    assert up[("Euro Area", "3Y")] == pytest.approx(0.04)
+    assert up[("Czech Republic", "1Y")] == pytest.approx(0.009)
+    # Downwards by the relative shock, leaving negative rates unchanged.
+    assert down[("Euro Area", "1Y")] == pytest.approx(0.00818)
+    assert down[("Euro Area", "2Y")] == pytest.approx(0.01204)
+    assert down[("Czech Republic", "1Y")] == pytest.approx(-0.001)
+
+
+def test_life_table_keeps_one_column_for_age_85(monkeypatch):
+    from financetoolkit.economics import eurostat_model
+
+    columns = pd.MultiIndex.from_tuples(
+        [("Germany", 84), ("Germany", 85), ("Germany", "Y_GE85"), ("Germany", 95)]
+    )
+    table = pd.DataFrame(
+        [[0.06, None, 1.0, None], [0.05, 0.08, None, 1.0]],
+        index=pd.PeriodIndex(["1990", "2024"], freq="Y"),
+        columns=columns,
+    )
+    monkeypatch.setattr(
+        eurostat_model, "collect_eurostat_data", lambda *args, **kwargs: table
+    )
+
+    life_table = eurostat_model.get_life_table(
+        "death_probability", "total", "1990-01-01", "2024-12-31"
+    )
+
+    # The 85 and over group only fills age 85 where the table ends there (1990).
+    assert list(life_table.columns) == [
+        ("Germany", 84),
+        ("Germany", 85),
+        ("Germany", 95),
+    ]
+    assert life_table[("Germany", 85)].tolist() == [1.0, 0.08]

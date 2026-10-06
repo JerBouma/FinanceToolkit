@@ -6,6 +6,8 @@ import io
 import re
 import zipfile
 
+import numpy as np
+import openpyxl
 import pandas as pd
 
 from financetoolkit import helpers
@@ -27,9 +29,25 @@ RELEASE_PATTERN = re.compile(r'href="([^"]*?filename=EIOPA_RFR_(\d{8})\.zip)"')
 CURVES = {
     "spot_no_va": "RFR_spot_no_VA",
     "spot_with_va": "RFR_spot_with_VA",
-    "shock_up": "Spot_NO_VA_shock_UP",
-    "shock_down": "Spot_NO_VA_shock_DOWN",
 }
+
+# The shocked curves of the standard formula's interest rate risk submodule. EIOPA ships
+# their worksheets as formulas without computed values (every cell reads 0.01 until Excel
+# recalculates), so they are computed here from the curve without volatility adjustment
+# and the shocks, with the formulas of those worksheets.
+SHOCKED_CURVES = {"shock_up": "up", "shock_down": "down"}
+SHOCKS_SHEET = "Shocks"
+
+# The columns of the Shocks worksheet with the maturity and the downward and upward shock,
+# and the first row with a maturity. Only some maturities hold a value; the others are
+# formulas that interpolate linearly between them and stay flat after the last.
+SHOCK_COLUMNS = {"maturity": 1, "down": 3, "up": 4}
+FIRST_SHOCK_ROW = 10
+
+# The shocked rate is rounded like EIOPA's worksheets, and an upward shock is at least
+# one percentage point.
+SHOCK_DECIMALS = 5
+MINIMUM_UPWARD_SHOCK = 0.01
 
 # The names EIOPA gives the currencies and countries that differ from the ones used
 # elsewhere in the Finance Toolkit.
@@ -120,6 +138,87 @@ def _parse_term_structures(
     return curve.loc[:, [column for column in curve.columns if column != "nan"]]
 
 
+def _parse_shocks(workbook: bytes, description: str) -> pd.DataFrame:
+    """
+    Reads the relative downward and upward shocks per maturity from the Shocks worksheet.
+    The worksheet holds values for some maturities and formulas for the others, which
+    interpolate linearly between them and stay flat after the last, so only the values are
+    read and the formulas are evaluated here.
+
+    Args:
+        workbook (bytes): The workbook.
+        description (str): What is read, used in the error message.
+
+    Returns:
+        pd.DataFrame: The "down" and "up" shocks, indexed by maturity in years.
+
+    Raises:
+        ValueError: When the worksheet is missing or holds no shocks.
+    """
+    book = openpyxl.load_workbook(io.BytesIO(workbook), read_only=True, data_only=False)
+
+    if SHOCKS_SHEET not in book.sheetnames:
+        raise ValueError(
+            f"The {description} has no worksheet '{SHOCKS_SHEET}', which means EIOPA changed "
+            "its layout."
+        )
+
+    maturities, values = [], {"down": [], "up": []}
+
+    for row in book[SHOCKS_SHEET].iter_rows(
+        min_row=FIRST_SHOCK_ROW + 1, values_only=True
+    ):
+        maturity = row[SHOCK_COLUMNS["maturity"]]
+
+        if not isinstance(maturity, int | float):
+            continue
+
+        maturities.append(int(maturity))
+        for direction, shocks in values.items():
+            value = row[SHOCK_COLUMNS[direction]]
+            # A formula is read as its text, so only numbers are values.
+            shocks.append(float(value) if isinstance(value, int | float) else np.nan)
+
+    book.close()
+    shocks = pd.DataFrame(values, index=maturities)
+
+    if shocks.dropna(how="all").empty:
+        raise ValueError(
+            f"The {description} has no interest rate shocks, which means EIOPA changed its layout."
+        )
+
+    return shocks.interpolate(method="index", limit_area="inside").ffill()
+
+
+def _apply_shock(
+    curve: pd.DataFrame, shocks: pd.DataFrame, direction: str
+) -> pd.DataFrame:
+    """
+    Applies the standard formula's interest rate shock to a curve, as EIOPA's worksheets
+    do: upwards by the relative shock and at least one percentage point, downwards by the
+    relative shock, leaving negative rates unchanged.
+
+    Args:
+        curve (pd.DataFrame): The rates, indexed by maturity in years.
+        shocks (pd.DataFrame): The "down" and "up" shocks, indexed by maturity in years.
+        direction (str): "up" or "down".
+
+    Returns:
+        pd.DataFrame: The shocked rates.
+    """
+    shock = shocks[direction].reindex(curve.index).to_numpy()[:, None]
+    rates = curve.to_numpy(dtype=float)
+
+    if direction == "up":
+        shocked = rates + np.maximum(MINIMUM_UPWARD_SHOCK, shock * np.abs(rates))
+    else:
+        shocked = np.where(rates < 0, rates, rates - shock * np.abs(rates))
+
+    return pd.DataFrame(
+        np.round(shocked, SHOCK_DECIMALS), index=curve.index, columns=curve.columns
+    )
+
+
 def _get_release(month: pd.Period, link: str, curve: str) -> pd.DataFrame:
     """
     Retrieves one curve of one monthly release. A published release does not change, so
@@ -128,7 +227,7 @@ def _get_release(month: pd.Period, link: str, curve: str) -> pd.DataFrame:
     Args:
         month (pd.Period): The month of the release.
         link (str): The link to the release's zip file.
-        curve (str): The curve, a key of CURVES.
+        curve (str): The curve, a key of CURVES or SHOCKED_CURVES.
 
     Returns:
         pd.DataFrame: The rates, indexed by maturity in years with a column per currency or
@@ -155,14 +254,22 @@ def _get_release(month: pd.Period, link: str, curve: str) -> pd.DataFrame:
                 "changed the release."
             )
 
-        return _parse_term_structures(
-            archive.read(workbook), CURVES[curve], description
+        content = archive.read(workbook)
+
+        if curve not in SHOCKED_CURVES:
+            return _parse_term_structures(content, CURVES[curve], description)
+
+        return _apply_shock(
+            _parse_term_structures(content, CURVES["spot_no_va"], description),
+            _parse_shocks(content, description),
+            SHOCKED_CURVES[curve],
         )
 
     return collect_cached_data(
         source=policy_model.EIOPA,
         dataset="release",
-        entity=f"{month}/{curve}",
+        # The shocked curves were read from their worksheets before, which gave nothing.
+        entity=f"{month}/{curve}" + ("/computed" if curve in SHOCKED_CURVES else ""),
         fetch=fetch,
         description=description,
     )

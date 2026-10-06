@@ -391,19 +391,28 @@ LIFE_TABLE_MEASURES = {
 LIFE_TABLE_SEXES = {"total": "T", "male": "M", "female": "F"}
 
 
-def _age_label(code: str) -> int:
+# Older life tables end at an open-ended group of 85 and over, published next to the
+# single age of 85 of the later tables.
+OPEN_ENDED_85 = "Y_GE85"
+
+
+def _age_label(code: str) -> int | str:
     """
     Converts an age code of the Eurostat life tables into the age in years: "Y_LT1" is 0,
-    "Y45" is 45 and "Y_GE95", the open-ended last age group, is 95.
+    "Y45" is 45 and "Y_GE95", the open-ended last age group, is 95. "Y_GE85", the last age
+    group of older tables, keeps its code so get_life_table can tell it from age 85.
 
     Args:
         code (str): The age code.
 
     Returns:
-        int: The age in years.
+        int | str: The age in years, or the code of the 85 and over group.
     """
     if code == "Y_LT1":
         return 0
+
+    if code == OPEN_ENDED_85:
+        return code
 
     return int(re.sub(r"\D", "", code))
 
@@ -428,7 +437,8 @@ def get_life_table(
             Defaults to None, which retrieves every country.
 
     Returns:
-        pd.DataFrame: The measure, indexed by year with a column per country and age.
+        pd.DataFrame: The measure, indexed by year with a column per country and age. Age
+        85 is the 85 and over group where a table ends there, as 95 is 95 and over.
     """
     filters = {
         "freq": "A",
@@ -439,7 +449,7 @@ def get_life_table(
     if country_codes:
         filters["geo"] = "&geo=".join(country_codes)
 
-    return collect_eurostat_data(
+    life_table = collect_eurostat_data(
         "demo_mlifetable",
         filters,
         f"{measure.replace('_', ' ')} life table",
@@ -448,3 +458,27 @@ def get_life_table(
         extra_dimension="age",
         extra_labels=_age_label,
     )
+
+    if life_table.empty:
+        return life_table
+
+    # The single age of 85 is kept, and the 85 and over group fills it only where a table
+    # ends at 85 and so has no single age. A table cached before the group kept its code
+    # labels both 85, the single age first.
+    ages = life_table.columns.get_level_values(1)
+    single = life_table.loc[:, ages != OPEN_ENDED_85]
+    single = single.T.groupby(level=[0, 1], sort=False).first().T
+    open_ended = life_table.loc[:, ages == OPEN_ENDED_85]
+
+    for country, _ in open_ended.columns:
+        column = (country, 85)
+        group = open_ended[(country, OPEN_ENDED_85)]
+        single[column] = (
+            single[column].fillna(group) if column in single.columns else group
+        )
+
+    single.columns = pd.MultiIndex.from_tuples(
+        single.columns, names=life_table.columns.names
+    )
+
+    return single.sort_index(axis=1, level=[0, 1], sort_remaining=False)

@@ -75,6 +75,7 @@ class Economics:
         allow_stale_oecd_cache: bool = True,
         cache: Cache | None = None,
         api_key: str = "",
+        gmdb_forecasts: bool = False,
     ):
         """
         Initializes the Economics Controller Class.
@@ -101,6 +102,10 @@ class Economics:
             api_key (str, optional): A FinancialModelingPrep API key, only needed for the economic
                 calendar and the market risk premium. Obtain one at https://www.jeroenbouma.com/fmp.
                 Defaults to an empty string.
+            gmdb_forecasts (bool, optional): The Global Macro Database extends most yearly
+                series with the IMF's World Economic Outlook projections up to five years
+                ahead. When True, those projected years are included; by default a series
+                ends with its last observation. Defaults to False.
 
         As an example:
 
@@ -168,14 +173,92 @@ class Economics:
         oecd_model.configure_oecd_cache(allow_stale_oecd_cache)
 
         self._gmdb_source: bool = gmdb_source
-        self._gmbd_dataset: pd.DataFrame = (
-            gmdb_model.collect_global_macro_database_dataset(cache=cache)
-            if self._gmdb_source
-            else pd.DataFrame()
-        )
+        self._gmdb_forecasts: bool = gmdb_forecasts
+
+        # The Global Macro Database is one file of around 60 MB, so it is only retrieved
+        # when a method first needs it, see _get_gmdb_dataset.
+        self._gmbd_dataset: pd.DataFrame = pd.DataFrame()
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
         self._fred_api_key: str = fred_api_key
+
+    def _get_gmdb_dataset(self) -> pd.DataFrame:
+        """
+        Retrieves the Global Macro Database the first time a method needs it, through the
+        cache when one is set, and keeps it for the methods called after.
+
+        Returns:
+            pd.DataFrame: The dataset, with a (variable, country) column per series.
+        """
+        if self._gmbd_dataset.empty:
+            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset(
+                cache=self._cache, include_forecasts=self._gmdb_forecasts
+            )
+
+        return self._gmbd_dataset
+
+    def _get_gmdb_series(self, variable: str, in_percent: bool = False) -> pd.DataFrame:
+        """
+        Retrieves one variable of the Global Macro Database with a column per country.
+
+        Args:
+            variable (str): The variable, e.g. "hcons_GDP".
+            in_percent (bool, optional): Whether the variable is quoted in percentage points,
+                which is divided by 100. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The variable, indexed by year with a column per country.
+        """
+        return gmdb_model.get_series(self._get_gmdb_dataset(), variable, in_percent)
+
+    @staticmethod
+    def _consumption_variable(component: str) -> str:
+        """
+        Returns the Global Macro Database variable of a part of final consumption.
+
+        Args:
+            component (str): "total", "household" or "government".
+
+        Returns:
+            str: The variable, e.g. "hcons".
+
+        Raises:
+            ValueError: When the component is not one of the three.
+        """
+        variables = {"total": "cons", "household": "hcons", "government": "gcons"}
+
+        if component not in variables:
+            raise ValueError(
+                f"The component must be one of {', '.join(map(repr, variables))}, not {component!r}."
+            )
+
+        return variables[component]
+
+    @staticmethod
+    def _government_variable(variable: str, level: str) -> str:
+        """
+        Returns the Global Macro Database variable of a government series at a level of
+        government: "govdebt" is the consolidated debt, "gen_govdebt" the general government
+        debt and "cgovdebt" the central government debt.
+
+        Args:
+            variable (str): The consolidated variable, e.g. "govdebt_GDP".
+            level (str): "consolidated", "general" or "central".
+
+        Returns:
+            str: The variable at that level.
+
+        Raises:
+            ValueError: When the level is not one of the three.
+        """
+        prefixes = {"consolidated": "", "general": "gen_", "central": "c"}
+
+        if level not in prefixes:
+            raise ValueError(
+                f"The level must be one of {', '.join(map(repr, prefixes))}, not {level!r}."
+            )
+
+        return f"{prefixes[level]}{variable}"
 
     def _require_fred_api_key(self) -> None:
         if not self._fred_api_key:
@@ -265,6 +348,7 @@ class Economics:
         countries: list[str] | str | None = None,
         inflation_adjusted: bool = False,
         gmdb_source: bool | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -301,6 +385,7 @@ class Economics:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
             gmdb_source (bool | None, optional): If True, retrieves data from the GMDB source. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in US dollars. Always from the GMDB. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -341,23 +426,18 @@ class Economics:
         """
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        if gmdb_source or inflation_adjusted:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
-
-            if inflation_adjusted:
-                if not gmdb_source:
-                    logger.info(
-                        "OECD does not provide inflation adjusted GDP data, using GMDB source instead."
-                    )
-
-                gross_domestic_product = gmdb_model.get_real_gross_domestic_product(
-                    gmd_dataset=self._gmbd_dataset
+        if gmdb_source or inflation_adjusted or usd:
+            if not gmdb_source:
+                logger.info(
+                    "OECD does not provide inflation adjusted or US dollar GDP data, using "
+                    "GMDB source instead."
                 )
-            else:
-                gross_domestic_product = gmdb_model.get_nominal_gross_domestic_product(
-                    gmd_dataset=self._gmbd_dataset
-                )
+
+            # The real and nominal GDP, in national currency or US dollars.
+            variable = ("rGDP" if inflation_adjusted else "nGDP") + (
+                "_USD" if usd else ""
+            )
+            gross_domestic_product = self._get_gmdb_series(variable)
         else:
             gross_domestic_product = oecd_model.get_annual_gross_domestic_product(
                 start_date=self._start_date, end_date=self._end_date
@@ -557,12 +637,10 @@ class Economics:
         | 2025 |        127.469  | 129.463  |             142.557  |
 
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         gross_domestic_product_deflator = (
             gmdb_model.get_gross_domestic_product_deflator(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         )
 
@@ -640,12 +718,10 @@ class Economics:
         | 2023 | 3.68964e+06 | 4.61947e+06 |     2.20626e+07 |
         | 2024 | 3.6899e+06  | 4.63432e+06 |     2.26726e+07 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         real_gross_domestic_product_usd = (
             gmdb_model.get_real_gross_domestic_product_usd(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         )
 
@@ -670,6 +746,7 @@ class Economics:
     def get_real_gross_domestic_product_per_capita(
         self,
         countries: list[str] | str | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -698,6 +775,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -730,13 +808,9 @@ class Economics:
         | 2025 |   42882.3 | 83590.8 |       53142.2 |
         | 2026 |   43422.6 | 87097.8 |       53735.2 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        real_gross_domestic_product_per_capita = (
-            gmdb_model.get_real_gross_domestic_product_per_capita(
-                gmd_dataset=self._gmbd_dataset
-            )
+        real_gross_domestic_product_per_capita = self._get_gmdb_series(
+            "rGDP_pc_USD" if usd else "rGDP_pc"
         )
 
         return finalize_dataset(
@@ -860,6 +934,8 @@ class Economics:
         self,
         countries: list[str] | str | None = None,
         inflation_adjusted: bool = False,
+        component: str = "total",
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -869,20 +945,27 @@ class Economics:
     ):
         """
         Get the Total Consumption for a variety of countries over time from the
-        Global Macro Database (GMDB). Total Consumption is the total amount of money
-        spent by households on consumer goods and services.
+        Global Macro Database (GMDB). Total Consumption is final consumption expenditure:
+        the goods and services bought by households and the non-profit institutions serving
+        them (household consumption) and by the government (government consumption).
+        Select either part with the component parameter.
 
         The level is annual and expressed in millions of national currency, so levels are not
-        comparable across countries with different currencies, but growth rates are.
+        comparable across countries with different currencies, but growth rates are; with
+        usd=True the levels are in millions of US dollars. With inflation_adjusted=True the
+        level is in 2015 prices: the nominal level divided by the GDP deflator.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
-        Also known as: household consumption, private consumption.
+        Also known as: final consumption expenditure, household consumption, private
+        consumption, government consumption.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
+            component (str, optional): The part of final consumption expenditure: "total", "household" (households and the non-profit institutions serving them) or "government". Defaults to "total".
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency. Cannot be combined with inflation_adjusted. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -920,16 +1003,29 @@ class Economics:
         | 2024 |        776464 | 2.29617e+06 | 2.80908e+06 |
         | 2025 |        804450 | 2.3712e+06  | 3.03317e+06 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
+        variable = self._consumption_variable(component)
+
+        if inflation_adjusted and usd:
+            raise ValueError(
+                "The Global Macro Database has no consumption in constant US dollars, so "
+                "inflation_adjusted and usd cannot be combined."
+            )
 
         if inflation_adjusted:
-            total_consumption = gmdb_model.get_real_total_consumption(
-                gmd_dataset=self._gmbd_dataset
+            total_consumption = (
+                gmdb_model.get_real_total_consumption(
+                    gmd_dataset=self._get_gmdb_dataset()
+                )
+                if variable == "cons"
+                else (
+                    self._get_gmdb_series(variable)
+                    / self._get_gmdb_series("deflator")
+                    * 100
+                ).dropna(how="all", axis="columns")
             )
         else:
-            total_consumption = gmdb_model.get_total_consumption(
-                gmd_dataset=self._gmbd_dataset
+            total_consumption = self._get_gmdb_series(
+                f"{variable}_USD" if usd else variable
             )
 
         return finalize_dataset(
@@ -953,6 +1049,7 @@ class Economics:
     def get_total_consumption_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        component: str = "total",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -978,6 +1075,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            component (str, optional): The part of final consumption expenditure: "total", "household" (households and the non-profit institutions serving them) or "government". Defaults to "total".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1015,11 +1113,9 @@ class Economics:
         | 2024 |        0.6981 |   0.7891 |   0.7675 |
         | 2025 |        0.7002 |   0.7899 |   0.772  |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        total_consumption_to_gdp_ratio = gmdb_model.get_total_consumption_to_gdp_ratio(
-            gmd_dataset=self._gmbd_dataset
+        total_consumption_to_gdp_ratio = self._get_gmdb_series(
+            f"{self._consumption_variable(component)}_GDP", in_percent=True
         )
 
         return finalize_dataset(
@@ -1043,6 +1139,7 @@ class Economics:
     def get_investment(
         self,
         countries: list[str] | str | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -1065,6 +1162,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1106,10 +1204,8 @@ class Economics:
         | 2024 |     6.36237e+06 |    54339.8 | 5.5217e+07  |
         | 2025 |     6.66113e+06 |    57349.5 | 5.84789e+07 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        investment = gmdb_model.get_investment(gmd_dataset=self._gmbd_dataset)
+        investment = self._get_gmdb_series("inv_USD" if usd else "inv")
 
         return finalize_dataset(
             dataset=investment,
@@ -1193,11 +1289,9 @@ class Economics:
         | 2025 |      0.2393 |  0.2664 |   0.2465 |
         | 2026 |      0.2403 |  0.2652 |   0.254  |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         investment_to_gdp_ratio = gmdb_model.get_investment_to_gdp_ratio(
-            gmd_dataset=self._gmbd_dataset
+            gmd_dataset=self._get_gmdb_dataset()
         )
 
         return finalize_dataset(
@@ -1221,6 +1315,7 @@ class Economics:
     def get_fixed_investment(
         self,
         countries: list[str] | str | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -1243,6 +1338,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1278,12 +1374,8 @@ class Economics:
         | 2024 |           473070 |    897275 |   657075 |
         | 2025 |           482008 |    925002 |   674350 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        fixed_investment = gmdb_model.get_fixed_investment(
-            gmd_dataset=self._gmbd_dataset
-        )
+        fixed_investment = self._get_gmdb_series("finv_USD" if usd else "finv")
 
         return finalize_dataset(
             dataset=fixed_investment,
@@ -1386,11 +1478,9 @@ class Economics:
         | 2024 |    0.2515 |    0.2067 |        0.2491 |
         | 2025 |    0.2525 |    0.2072 |        0.248  |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         fixed_investment_to_gdp_ratio = gmdb_model.get_fixed_investment_to_gdp_ratio(
-            gmd_dataset=self._gmbd_dataset
+            gmd_dataset=self._get_gmdb_dataset()
         )
 
         return finalize_dataset(
@@ -1414,6 +1504,7 @@ class Economics:
     def get_exports(
         self,
         countries: list[str] | str | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -1436,6 +1527,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1474,10 +1566,8 @@ class Economics:
         | 1989 |      138137   |    299732 | 203483   |
         | 1990 |      144521   |    334043 | 256949   |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        exports = gmdb_model.get_exports(gmd_dataset=self._gmbd_dataset)
+        exports = self._get_gmdb_series("exports_USD" if usd else "exports")
 
         return finalize_dataset(
             dataset=exports,
@@ -1563,11 +1653,9 @@ class Economics:
         | 2025 |          0.1059 |   0.3165 |               0.2122 |
         | 2026 |          0.1049 |   0.3124 |               0.2123 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         exports_to_gdp_ratio = gmdb_model.get_exports_to_gdp_ratio(
-            gmd_dataset=self._gmbd_dataset
+            gmd_dataset=self._get_gmdb_dataset()
         )
 
         return finalize_dataset(
@@ -1591,6 +1679,7 @@ class Economics:
     def get_imports(
         self,
         countries: list[str] | str | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -1613,6 +1702,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1657,10 +1747,8 @@ class Economics:
         | 2025 |     4.1031e+06  |      1.02675e+06 | 1.22266e+07 |
 
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        imports = gmdb_model.get_imports(gmd_dataset=self._gmbd_dataset)
+        imports = self._get_gmdb_series("imports_USD" if usd else "imports")
 
         return finalize_dataset(
             dataset=imports,
@@ -1751,11 +1839,9 @@ class Economics:
         | 2025 |          0.1352 |   0.3244 |   0.3336 |
         | 2026 |          0.1313 |   0.3239 |   0.3253 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         imports_to_gdp_ratio = gmdb_model.get_imports_to_gdp_ratio(
-            gmd_dataset=self._gmbd_dataset
+            gmd_dataset=self._get_gmdb_dataset()
         )
 
         return finalize_dataset(
@@ -1779,6 +1865,7 @@ class Economics:
     def get_trade_balance(
         self,
         countries: list[str] | str | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -1808,6 +1895,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1839,11 +1927,9 @@ class Economics:
         | 2022 |     98724 | 3.89305e+06 |         -958935 |
         | 2023 |    167656 | 2.73467e+06 |         -797342 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        exports = gmdb_model.get_exports(gmd_dataset=self._gmbd_dataset)
-        imports = gmdb_model.get_imports(gmd_dataset=self._gmbd_dataset)
+        exports = self._get_gmdb_series("exports_USD" if usd else "exports")
+        imports = self._get_gmdb_series("imports_USD" if usd else "imports")
 
         trade_balance = exports - imports
 
@@ -1868,6 +1954,7 @@ class Economics:
     def get_current_account_balance(
         self,
         countries: list[str] | str | None = None,
+        usd: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -1890,6 +1977,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1928,12 +2016,8 @@ class Economics:
         | 2024 |   2650.74 |    286059 |  23619.7  |
         | 2025 |  -3590.1  |    285609 |  31890.9  |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        current_account_balance = gmdb_model.get_current_account_balance(
-            gmd_dataset=self._gmbd_dataset
-        )
+        current_account_balance = self._get_gmdb_series("CA_USD" if usd else "CA")
 
         return finalize_dataset(
             dataset=current_account_balance,
@@ -2021,12 +2105,10 @@ class Economics:
         | 2025 |  -0.0002 |  -0.0207 |          -0.0283 |
         | 2026 |  -0.0043 |  -0.0201 |          -0.028  |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         current_account_balance_to_gdp_ratio = (
             gmdb_model.get_current_account_balance_to_gdp(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         )
 
@@ -2051,6 +2133,7 @@ class Economics:
     def get_government_debt(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2072,6 +2155,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2110,10 +2194,10 @@ class Economics:
         | 2024 |     3.52945e+07 | 3.20199e+06 | 1.97489e+07 |
         | 2025 |     3.76545e+07 | 3.26736e+06 | 2.12283e+07 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_debt = gmdb_model.get_government_debt(gmd_dataset=self._gmbd_dataset)
+        government_debt = self._get_gmdb_series(
+            self._government_variable("govdebt", level)
+        )
 
         return finalize_dataset(
             dataset=government_debt,
@@ -2136,6 +2220,7 @@ class Economics:
     def get_government_debt_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2160,6 +2245,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2199,11 +2285,9 @@ class Economics:
         | 2025 |        0.4511 |    0.621  |  0.9384 |
         | 2026 |        0.4619 |    0.6095 |  0.9775 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_debt_to_gdp_ratio = gmdb_model.get_government_debt_to_gdp_ratio(
-            gmd_dataset=self._gmbd_dataset
+        government_debt_to_gdp_ratio = self._get_gmdb_series(
+            self._government_variable("govdebt_GDP", level), in_percent=True
         )
 
         return finalize_dataset(
@@ -2227,6 +2311,7 @@ class Economics:
     def get_government_revenue(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2248,6 +2333,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2282,11 +2368,9 @@ class Economics:
         | 2024 |      1.0989e+06  |      1.24586e+06 | 2.20353e+08 |
         | 2025 |      1.14061e+06 |      1.30501e+06 | 2.31967e+08 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_revenue = gmdb_model.get_government_revenue(
-            gmd_dataset=self._gmbd_dataset
+        government_revenue = self._get_gmdb_series(
+            self._government_variable("govrev", level)
         )
 
         return finalize_dataset(
@@ -2310,6 +2394,7 @@ class Economics:
     def get_government_revenue_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2334,6 +2419,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2373,13 +2459,9 @@ class Economics:
         | 2025 |          0.3006 |   0.4124 |               0.3647 |
         | 2026 |          0.3065 |   0.4115 |               0.365  |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_revenue_to_gdp_ratio = (
-            gmdb_model.get_government_revenue_to_gdp_ratio(
-                gmd_dataset=self._gmbd_dataset
-            )
+        government_revenue_to_gdp_ratio = self._get_gmdb_series(
+            self._government_variable("govrev_GDP", level), in_percent=True
         )
 
         return finalize_dataset(
@@ -2403,6 +2485,7 @@ class Economics:
     def get_government_tax_revenue(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2424,6 +2507,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2461,11 +2545,9 @@ class Economics:
         | 2023 |   2.11419e+06 |       nan |  nan           |
         | 2024 | nan           |       nan |  nan           |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_tax_revenue = gmdb_model.get_government_tax_revenue(
-            gmd_dataset=self._gmbd_dataset
+        government_tax_revenue = self._get_gmdb_series(
+            self._government_variable("govtax", level)
         )
 
         return finalize_dataset(
@@ -2489,6 +2571,7 @@ class Economics:
     def get_government_tax_revenue_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2513,6 +2596,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2550,13 +2634,9 @@ class Economics:
         | 2022 |          0.2156 |   0.1283 |   0.1368 |
         | 2023 |          0.1022 |   0.1401 |   0.1427 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_tax_revenue_to_gdp_ratio = (
-            gmdb_model.get_government_tax_revenue_to_gdp_ratio(
-                gmd_dataset=self._gmbd_dataset
-            )
+        government_tax_revenue_to_gdp_ratio = self._get_gmdb_series(
+            self._government_variable("govtax_GDP", level), in_percent=True
         )
 
         return finalize_dataset(
@@ -2580,6 +2660,7 @@ class Economics:
     def get_government_expenditure(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2601,6 +2682,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2639,11 +2721,9 @@ class Economics:
         | 2024 | 2.57546e+08 | 4.45191e+07 | 9.43978e+07 |
         | 2025 | 2.50987e+08 | 4.77611e+07 | 1.02862e+08 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_expenditure = gmdb_model.get_government_expenditure(
-            gmd_dataset=self._gmbd_dataset
+        government_expenditure = self._get_gmdb_series(
+            self._government_variable("govexp", level)
         )
 
         return finalize_dataset(
@@ -2667,6 +2747,7 @@ class Economics:
     def get_government_expenditure_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2691,6 +2772,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2731,13 +2813,9 @@ class Economics:
         | 2025 |          0.3738 |  0.3983 |        0.448  |
         | 2026 |          0.374  |  0.3963 |        0.4513 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_expenditure_to_gdp_ratio = (
-            gmdb_model.get_government_expenditure_to_gdp_ratio(
-                gmd_dataset=self._gmbd_dataset
-            )
+        government_expenditure_to_gdp_ratio = self._get_gmdb_series(
+            self._government_variable("govexp_GDP", level), in_percent=True
         )
 
         return finalize_dataset(
@@ -2761,6 +2839,7 @@ class Economics:
     def get_government_deficit(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2784,6 +2863,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2822,11 +2902,9 @@ class Economics:
         | 2024 |      -2.22521e+06 |  -59827.1   |      -2.01778e+06 |
         | 2025 |      -2.22159e+06 |  -32373.6   |      -1.28252e+06 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_deficit = gmdb_model.get_government_deficit(
-            gmd_dataset=self._gmbd_dataset
+        government_deficit = self._get_gmdb_series(
+            self._government_variable("govdef", level)
         )
 
         return finalize_dataset(
@@ -2850,6 +2928,7 @@ class Economics:
     def get_government_deficit_to_gdp_ratio(
         self,
         countries: list[str] | str | None = None,
+        level: str = "consolidated",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2877,6 +2956,7 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            level (str, optional): The government the figures cover: "consolidated" (the Global Macro Database's combination of general and central government figures, with the longest history), "general" (general government: central, state and local government and social security) or "central" (central government only). Defaults to "consolidated".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -2918,13 +2998,9 @@ class Economics:
         | 2025 |       -0.0349 |     -0.0204 |          -0.0374 |
         | 2026 |       -0.0234 |     -0.013  |          -0.0354 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        government_deficit_to_gdp_ratio = (
-            gmdb_model.get_government_deficit_to_gdp_ratio(
-                gmd_dataset=self._gmbd_dataset
-            )
+        government_deficit_to_gdp_ratio = self._get_gmdb_series(
+            self._government_variable("govdef_GDP", level), in_percent=True
         )
 
         return finalize_dataset(
@@ -3141,11 +3217,9 @@ class Economics:
                 period=period, start_date=self._start_date, end_date=self._end_date
             )
         else:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             consumer_price_index = gmdb_model.get_consumer_price_index(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
 
         return finalize_dataset(
@@ -3255,11 +3329,9 @@ class Economics:
         if period == "monthly":
             inflation_rate = self._get_monthly_price_data("inflation_rate")
         else:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             inflation_rate = gmdb_model.get_inflation_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
 
         return finalize_dataset(
@@ -3708,11 +3780,13 @@ class Economics:
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
         if gmdb_source:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
-
-            house_prices = gmdb_model.get_house_price_index(
-                gmd_dataset=self._gmbd_dataset
+            # The real index is the nominal one deflated by consumer prices.
+            house_prices = (
+                self._get_gmdb_series("rHPI")
+                if inflation_adjusted
+                else gmdb_model.get_house_price_index(
+                    gmd_dataset=self._get_gmdb_dataset()
+                )
             )
         else:
             house_prices = oecd_model.get_house_prices(
@@ -4237,11 +4311,9 @@ class Economics:
                 ).last()
             )
         elif gmdb_source:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             exchange_rates = gmdb_model.get_usd_exchange_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             exchange_rates = oecd_model.get_exchange_rates(
@@ -4329,11 +4401,9 @@ class Economics:
         | 2024 | 55.9376 |       104.859 |         134.572 |
         | 2025 | 55.5007 |       104.174 |         134.22  |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         real_effective_exchange_rate = gmdb_model.get_real_effective_exchange_rate(
-            gmd_dataset=self._gmbd_dataset
+            gmd_dataset=self._get_gmdb_dataset()
         )
 
         return finalize_dataset(
@@ -4433,10 +4503,8 @@ class Economics:
         | 2019 |        889033 | 3.1968e+06 |     1.44327e+07 |
         | 2020 |        974276 | 3.4582e+06 |     1.54013e+07 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        money_supply = gmdb_model.get_money_supply(gmd_dataset=self._gmbd_dataset)
+        money_supply = gmdb_model.get_money_supply(gmd_dataset=self._get_gmdb_dataset())
 
         money_supply = finalize_dataset(
             dataset=money_supply,
@@ -4577,11 +4645,9 @@ class Economics:
         )
 
         if period == "yearly":
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             central_bank_policy_rate = gmdb_model.get_central_bank_policy_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             # Weeks and months are taken from the daily rates, which the BIS updates
@@ -4710,11 +4776,9 @@ class Economics:
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
         if gmdb_source:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             short_term_interest_rate = gmdb_model.get_short_term_interest_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             short_term_interest_rate = oecd_model.get_short_term_interest_rate(
@@ -4851,11 +4915,9 @@ class Economics:
                 self._get_daily_long_term_interest_rate(), period.lower()
             )
         elif gmdb_source:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             long_term_interest_rate = oecd_model.get_long_term_interest_rate(
@@ -5093,15 +5155,14 @@ class Economics:
 
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
-
         if gmdb_source:
             nominal_interest_rate = (
-                gmdb_model.get_long_term_interest_rate(gmd_dataset=self._gmbd_dataset)
+                gmdb_model.get_long_term_interest_rate(
+                    gmd_dataset=self._get_gmdb_dataset()
+                )
                 if rate_type == "long_term"
                 else gmdb_model.get_short_term_interest_rate(
-                    gmd_dataset=self._gmbd_dataset
+                    gmd_dataset=self._get_gmdb_dataset()
                 )
             )
         else:
@@ -5119,7 +5180,9 @@ class Economics:
                 )
             )
 
-        inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
+        inflation_rate = gmdb_model.get_inflation_rate(
+            gmd_dataset=self._get_gmdb_dataset()
+        )
 
         real_interest_rate = nominal_interest_rate - inflation_rate
 
@@ -5227,14 +5290,12 @@ class Economics:
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
         if gmdb_source:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
             short_term_interest_rate = gmdb_model.get_short_term_interest_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             long_term_interest_rate = oecd_model.get_long_term_interest_rate(
@@ -5582,11 +5643,9 @@ class Economics:
                 ]
             )
         elif gmdb_source:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             unemployment_rate = gmdb_model.get_unemployment_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             unemployment_rate = oecd_model.get_unemployment_rate(
@@ -5689,19 +5748,18 @@ class Economics:
         """
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
-
         if gmdb_source:
             unemployment_rate = gmdb_model.get_unemployment_rate(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             unemployment_rate = oecd_model.get_unemployment_rate(
                 period="yearly", start_date=self._start_date, end_date=self._end_date
             )
 
-        inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=self._gmbd_dataset)
+        inflation_rate = gmdb_model.get_inflation_rate(
+            gmd_dataset=self._get_gmdb_dataset()
+        )
 
         misery_index = unemployment_rate + inflation_rate
 
@@ -5995,11 +6053,9 @@ class Economics:
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
         if gmdb_source:
-            if self._gmbd_dataset.empty:
-                self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
             population_statistics_df = gmdb_model.get_population(
-                gmd_dataset=self._gmbd_dataset
+                gmd_dataset=self._get_gmdb_dataset()
             )
         else:
             population_statistics = {}
@@ -6168,11 +6224,9 @@ class Economics:
         | 2019 |         nan |
         | 2020 |         nan |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
         sovereign_debt_crisis = gmdb_model.get_sovereign_debt_crisis(
-            gmd_dataset=self._gmbd_dataset
+            gmd_dataset=self._get_gmdb_dataset()
         )
 
         return finalize_dataset(
@@ -6242,10 +6296,10 @@ class Economics:
         | 2018 |      nan |
         | 2019 |      nan |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        currency_crisis = gmdb_model.get_currency_crisis(gmd_dataset=self._gmbd_dataset)
+        currency_crisis = gmdb_model.get_currency_crisis(
+            gmd_dataset=self._get_gmdb_dataset()
+        )
 
         return finalize_dataset(
             dataset=currency_crisis,
@@ -6314,10 +6368,10 @@ class Economics:
         | 2019 |                0 |               0 |
         | 2020 |                0 |               0 |
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset()
 
-        banking_crisis = gmdb_model.get_banking_crisis(gmd_dataset=self._gmbd_dataset)
+        banking_crisis = gmdb_model.get_banking_crisis(
+            gmd_dataset=self._get_gmdb_dataset()
+        )
 
         return finalize_dataset(
             dataset=banking_crisis,

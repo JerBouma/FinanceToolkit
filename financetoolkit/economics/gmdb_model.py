@@ -1,31 +1,118 @@
-"""GMBD Model"""
+"""Global Macro Database (GMDB) Model"""
 
 import io
 
+import numpy as np
 import pandas as pd
+import requests
 from pandas.io.stata import StataReader
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities.dataframe_model import to_dataframe
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
 
+logger = get_logger()
+
+# The Global Macro Database publishes a release every quarter, named after its year and
+# month (e.g. 2026_09), on the storage its own Python, R and Stata packages read from. The
+# list of releases tells which is the latest.
+RELEASES_URL = "https://gmd-releases.s3.ap-southeast-2.amazonaws.com/data/"
+VERSIONS_URL = f"{RELEASES_URL}helpers/versions.csv"
+RELEASE_URL = f"{RELEASES_URL}distribute/GMD_{{version}}.dta"
+
+# The file in the GitHub repository, which stopped being updated with the January 2025
+# release. It is only used when the release storage cannot be reached.
 GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/data/final/data_final.dta?raw=True"
+
+# The identifying columns of the file, and the prefix of the column that flags, per
+# variable, the years that are forecasts (IMF World Economic Outlook projections) rather
+# than observations.
+IDENTIFIERS = ["countryname", "ISO3", "id", "year", "income_group"]
+FORECAST_PREFIX = "forecast_"
+
+
+def get_latest_version() -> str:
+    """
+    Looks up the latest release of the Global Macro Database.
+
+    Returns:
+        str: The release, e.g. "2026_09".
+
+    Raises:
+        ValueError: When the list of releases is empty or unreadable.
+    """
+    versions = pd.read_csv(io.StringIO(get_request(VERSIONS_URL, timeout=30).text))
+
+    if "versions" not in versions.columns or versions.empty:
+        raise ValueError(
+            "The list of Global Macro Database releases is empty or unreadable."
+        )
+
+    # Releases are named YYYY_MM, so the latest sorts last.
+    return str(sorted(versions["versions"].astype(str))[-1])
+
+
+def _parse_dataset(content: bytes, include_forecasts: bool) -> pd.DataFrame:
+    """
+    Reads the Stata file into one column per variable and country, indexed by year.
+
+    Args:
+        content (bytes): The Stata file.
+        include_forecasts (bool): Whether to keep the years the file flags as forecasts.
+
+    Returns:
+        pd.DataFrame: The variables, indexed by year with a (variable, country) column.
+    """
+    # Read through an explicit StataReader: the whole file is consumed in one go,
+    # while `.read()` is typed as returning a DataFrame (pd.read_stata itself is
+    # typed as a DataFrame | StataReader union that trips up the type checker).
+    with StataReader(io.BytesIO(content)) as reader:
+        gmd_dataset = reader.read()
+
+    flags = [
+        column for column in gmd_dataset.columns if column.startswith(FORECAST_PREFIX)
+    ]
+
+    if not include_forecasts:
+        for flag in flags:
+            variable = flag.removeprefix(FORECAST_PREFIX)
+
+            if variable in gmd_dataset.columns:
+                gmd_dataset.loc[gmd_dataset[flag] == 1, variable] = np.nan
+
+    gmd_dataset = gmd_dataset.drop(
+        columns=flags
+        + [column for column in IDENTIFIERS if column not in ("year", "countryname")],
+        errors="ignore",
+    )
+    gmd_dataset["year"] = pd.PeriodIndex(gmd_dataset["year"].astype(int), freq="Y")
+    gmd_dataset = gmd_dataset.set_index(["year", "countryname"])
+    gmd_dataset.index.names = [None] * gmd_dataset.index.nlevels
+    gmd_dataset = to_dataframe(gmd_dataset.unstack(level=1))
+
+    return gmd_dataset.dropna(axis="columns", how="all").sort_index(axis=1)
 
 
 def collect_global_macro_database_dataset(
-    gmd_location: str = GMD_LOCATION,
+    gmd_location: str | None = None,
     cache: Cache | None = None,
+    include_forecasts: bool = False,
 ) -> pd.DataFrame:
     """
-    Collect and transform the Global Macro Database dataset.
-    Reads a Stata file, processes it by converting 'year' to integers, removing 'ISO3' if present,
-    and setting a multi-index of 'year' and 'countryname'. The dataset is then unstacked by 'countryname'.
+    Collect and transform the Global Macro Database dataset: the latest quarterly release,
+    or the January 2025 file on GitHub when the release storage cannot be reached. The
+    file is reshaped into one column per variable and country, indexed by year.
 
     The Global Macro Database is published as one annual Stata file covering every
     country at once, so there is no per-country request to make and nothing to append
-    to incrementally. It is therefore cached whole, which still removes a multi-megabyte
-    download from every run that happens within the cache's freshness window.
+    to incrementally. It is therefore cached whole, which removes a download of around
+    60 MB from every run that happens within the cache's freshness window.
+
+    The file extends most variables with the IMF's World Economic Outlook projections up
+    to five years ahead and flags those years per variable. They are left out unless
+    include_forecasts is True, so a series ends with its last observation.
 
     Note on units: the Global Macro Database quotes every rate, share and ratio variable in
     percentage points (3.625 for a 3.625% policy rate, 81.0 for consumption worth 81% of
@@ -35,46 +122,92 @@ def collect_global_macro_database_dataset(
     the GDP deflator), exchange rates and the binary crisis dummies are returned unchanged.
 
     Args:
-        gmd_location (str): The file path to the Stata dataset. Defaults to GMD_LOCATION.
+        gmd_location (str | None): A Stata file to read instead of the latest release.
+            Defaults to None.
         cache (Cache | None): An optional cache to serve the dataset from and store it in.
+        include_forecasts (bool): Whether to keep the years that are projections. Defaults
+            to False.
 
     Returns:
         pd.DataFrame: A transformed DataFrame indexed by 'year' with country-wise columns.
     """
+    # The quarterly releases are cached apart from the January 2025 file read before,
+    # since they have variables that file lacks.
+    entity = "release_with_forecasts" if include_forecasts else "release"
+
     if cache is not None and cache.enabled:
         cached_dataset = cache.get(
             source=policy_model.GLOBAL_MACRO_DATABASE,
             dataset="dataset",
-            entity="global",
+            entity=entity,
         )
 
         if cached_dataset is not None:
             return cached_dataset
 
-    response = get_request(gmd_location, timeout=30)
-    response.raise_for_status()
+    # The January 2025 file is not cached when it stands in for an unreachable release,
+    # so the next run tries the release again.
+    cacheable = True
 
-    # Read through an explicit StataReader: the whole file is consumed in one go,
-    # while `.read()` is typed as returning a DataFrame (pd.read_stata itself is
-    # typed as a DataFrame | StataReader union that trips up the type checker).
-    with StataReader(io.BytesIO(response.content)) as reader:
-        gmd_dataset = reader.read()
-    gmd_dataset["year"] = pd.PeriodIndex(gmd_dataset["year"].astype(int), freq="Y")
-    gmd_dataset = gmd_dataset.set_index(["year", "countryname"])
-    gmd_dataset.index.names = [None] * gmd_dataset.index.nlevels
-    gmd_dataset = to_dataframe(gmd_dataset.unstack(level=1))
+    if gmd_location is None:
+        try:
+            version = get_latest_version()
+            response = get_request(RELEASE_URL.format(version=version), timeout=300)
+            response.raise_for_status()
+        except (requests.exceptions.RequestException, ValueError) as error:
+            logger.warning(
+                "Could not retrieve the latest Global Macro Database release (%s), so the "
+                "January 2025 release is used instead.",
+                error,
+            )
+            response = get_request(GMD_LOCATION, timeout=300)
+            response.raise_for_status()
+            cacheable = False
+    else:
+        response = get_request(gmd_location, timeout=300)
+        response.raise_for_status()
 
-    gmd_dataset = gmd_dataset.sort_index(axis=1)
+    gmd_dataset = _parse_dataset(response.content, include_forecasts)
 
-    if cache is not None and cache.enabled:
+    if cache is not None and cache.enabled and cacheable:
         cache.set(
             source=policy_model.GLOBAL_MACRO_DATABASE,
             dataset="dataset",
-            entity="global",
+            entity=entity,
             data=gmd_dataset,
         )
 
     return gmd_dataset
+
+
+def get_series(
+    gmd_dataset: pd.DataFrame, variable: str, in_percent: bool = False
+) -> pd.DataFrame:
+    """
+    Retrieves one variable with a column per country, removing rows with all NaNs.
+
+    Args:
+        gmd_dataset (pd.DataFrame): The dataset of collect_global_macro_database_dataset.
+        variable (str): The variable, e.g. "hcons_GDP".
+        in_percent (bool): Whether the variable is quoted in percentage points, which is
+            divided by 100 to return a decimal fraction. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The variable, indexed by year with a column per country.
+
+    Raises:
+        ValueError: When the dataset has no such variable, which is the case for the
+            variables added after the January 2025 release when that is used instead.
+    """
+    if variable not in gmd_dataset.columns.get_level_values(0):
+        raise ValueError(
+            f"The Global Macro Database release in use has no variable '{variable}'."
+        )
+
+    series = gmd_dataset[variable].dropna(axis="rows", how="all")
+
+    # The GMDB quotes rates, shares and ratios in percentage points.
+    return series / 100 if in_percent else series
 
 
 def get_nominal_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
@@ -138,8 +271,20 @@ def get_total_consumption_to_gdp_ratio(gmd_dataset: pd.DataFrame) -> pd.DataFram
 
 
 def get_real_total_consumption(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves real total consumption ('rcons'), removing rows with all NaNs."""
-    return gmd_dataset["rcons"].dropna(axis="rows", how="all")
+    """
+    Retrieves real total consumption in 2015 prices, removing rows with all NaNs. The
+    January 2025 release published it ('rcons'); later releases do not, so it is total
+    consumption divided by the GDP deflator (2015 = 100), the way the Global Macro
+    Database itself derives real GDP from nominal GDP.
+    """
+    if "rcons" in gmd_dataset.columns.get_level_values(0):
+        return gmd_dataset["rcons"].dropna(axis="rows", how="all")
+
+    real_total_consumption = gmd_dataset["cons"] / gmd_dataset["deflator"] * 100
+
+    return real_total_consumption.dropna(axis="rows", how="all").dropna(
+        axis="columns", how="all"
+    )
 
 
 def get_investment(gmd_dataset: pd.DataFrame) -> pd.DataFrame:

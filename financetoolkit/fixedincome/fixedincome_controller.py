@@ -3179,8 +3179,11 @@ class FixedIncome:
         Four curves are published: the basic spot curve (curve="spot_no_va"), the spot curve
         with the volatility adjustment (curve="spot_with_va"), and the basic curve after the
         interest rate shocks of the Solvency II standard formula (curve="shock_up" and
-        curve="shock_down"). Every value is a decimal fraction (0.0358 for 3.58%), at the end
-        of the month the release is for.
+        curve="shock_down"). EIOPA ships the shocked worksheets as formulas without computed
+        values, so they are computed here with those formulas: upwards by the relative shock
+        per maturity and at least one percentage point, downwards by the relative shock with
+        negative rates left unchanged. Every value is a decimal fraction (0.0358 for 3.58%),
+        at the end of the month the release is for.
 
         No API key is needed. EIOPA's page links the releases from January 2023; each is a
         separate file, so only the months between the start and end date are downloaded, and
@@ -3228,9 +3231,9 @@ class FixedIncome:
         | 2026-08 |         0.0292 |              0.0418 |          0.0327 |               0.0473 |          0.0345 |               0.0524 |          0.0339 |               0.0452 |           0.0334 |                0.0379 |
         | 2026-09 |         0.0327 |              0.0445 |          0.0358 |               0.0501 |          0.0351 |               0.0533 |          0.0342 |               0.0447 |           0.0335 |                0.0376 |
         """
-        if curve not in eiopa_model.CURVES:
+        if curve not in {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}:
             raise ValueError(
-                f"The curve must be one of {', '.join(eiopa_model.CURVES)}, not {curve!r}."
+                f"The curve must be one of {', '.join({**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES})}, not {curve!r}."
             )
         if countries is not None and not isinstance(countries, str | list | tuple):
             raise TypeError(

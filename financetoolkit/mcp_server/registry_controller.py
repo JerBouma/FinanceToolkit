@@ -110,6 +110,15 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "coverage; both return rates and ratios as decimal fractions."
     ),
     "inflation_adjusted": "Adjust nominal values for inflation when True.",
+    "usd": (
+        "Return levels in millions of US dollars instead of national currency when True, "
+        "which makes them comparable across countries (Global Macro Database)."
+    ),
+    "component": ("Part of final consumption: 'total', 'household' or 'government'."),
+    "level": (
+        "Level of government: 'consolidated' (longest history), 'general' (central, "
+        "state and local government and social security) or 'central'."
+    ),
     "bond_price": "Clean price of the bond per 100 face value.",
     "coupon_rate": "Annual coupon rate as a decimal, e.g. 0.05 for 5 %.",
     "years_to_maturity": "Years remaining until the bond matures.",

@@ -3545,6 +3545,115 @@ class FixedIncome:
         )
 
     @handle_errors
+    def get_german_breakeven_inflation(
+        self,
+        real_yields: bool = False,
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Computes the breakeven inflation of the inflation-linked German federal securities,
+        daily from 2012: the inflation rate at which an inflation-linked bond and a nominal
+        bond of the same maturity would earn the same. The bonds are indexed to euro area
+        inflation (the HICP excluding tobacco), which makes this the market's expectation of
+        euro area inflation, priced off the euro area's benchmark issuer, and a free proxy for
+        euro area inflation swaps and breakevens, which are licensed data.
+
+        For every bond the breakeven is the nominal yield of the Bundesbank's term structure of
+        federal securities at the bond's remaining maturity, interpolated between whole years,
+        minus the bond's real yield. One column per bond, named by the year it matures in
+        (15 April); bonds that have matured keep their history. With real_yields=True the
+        real yields themselves are returned instead.
+
+        No API key is needed. The rates are decimal fractions (0.0227 for 2.27%). Weekly and
+        monthly periods take the value on the last trading day of each period.
+
+        See definition: https://www.bundesbank.de/en/statistics/money-and-capital-markets
+
+        Also known as: euro area breakeven inflation, German breakeven, Bund linker
+        breakeven, market-implied inflation expectations.
+
+        Args:
+            real_yields (bool, optional): Whether to return the real yields of the bonds instead
+                of their breakeven inflation. Defaults to False.
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The breakeven inflation (or real yields) as decimals, indexed by date
+            with a column per bond.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_german_breakeven_inflation(period='monthly')
+        ```
+
+        Which returns:
+
+        |         |     2026 |   2030 |   2033 |   2046 |
+        |:--------|---------:|-------:|-------:|-------:|
+        | 2026-04 |   0.0236 | 0.0253 | 0.0238 | 0.0224 |
+        | 2026-05 | nan      | 0.0209 | 0.0209 | 0.0218 |
+        | 2026-06 | nan      | 0.0169 | 0.0185 | 0.0207 |
+        | 2026-07 | nan      | 0.0201 | 0.0204 | 0.0218 |
+        | 2026-08 | nan      | 0.0222 | 0.0218 | 0.023  |
+        | 2026-09 | nan      | 0.0229 | 0.0223 | 0.0228 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "German breakeven inflation"
+        )
+        start_date = buffered_start_date(self._start_date, period)
+
+        if real_yields:
+            bonds = bundesbank_model.get_inflation_linked_bonds()
+            values = bundesbank_model.get_inflation_linked_yields(
+                start_date, self._end_date
+            )
+            values = values.rename(
+                columns={
+                    isin: str(bonds.loc[isin, "Maturity"].year)
+                    for isin in values.columns
+                    if isin in bonds.index
+                }
+            )
+            values = values[sorted(values.columns)]
+        else:
+            values = bundesbank_model.get_breakeven_inflation(
+                start_date, self._end_date
+            )
+
+        breakeven_inflation = resample_to_period(values, period)
+
+        return finalize_dataset(
+            dataset=breakeven_inflation,
+            indicator_name="German Breakeven Inflation",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
     def get_euribor_rates(
         self,
         maturities: str | list | None = None,

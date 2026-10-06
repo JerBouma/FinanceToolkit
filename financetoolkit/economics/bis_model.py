@@ -14,7 +14,9 @@ from financetoolkit.economics.helpers import (
 )
 from financetoolkit.utilities.requests_model import get_request
 
-BASE_URL = "https://stats.bis.org/api/v1/data/"
+# Version 2 of the BIS SDMX API, asking for the latest version of every dataflow (~), so
+# that a new version of a dataset does not break the request.
+BASE_URL = "https://stats.bis.org/api/v2/data/dataflow/BIS/"
 
 
 def get_central_bank_policy_rate(start_date: str, end_date: str) -> pd.DataFrame:
@@ -39,7 +41,7 @@ def get_central_bank_policy_rate(start_date: str, end_date: str) -> pd.DataFrame
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         response = get_request(
-            f"{BASE_URL}WS_CBPOL/D/all?format=csv&detail=dataonly"
+            f"{BASE_URL}WS_CBPOL/~/D.?format=csv&detail=dataonly"
             f"&startPeriod={fetch_start}&endPeriod={fetch_end}",
             timeout=300,
         )
@@ -97,7 +99,7 @@ def get_consumer_prices(measure: str, start_date: str, end_date: str) -> pd.Data
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         response = get_request(
-            f"{BASE_URL}WS_LONG_CPI/M..{unit}/all?format=csv&detail=dataonly"
+            f"{BASE_URL}WS_LONG_CPI/~/M..{unit}?format=csv&detail=dataonly"
             f"&startPeriod={fetch_start[:7]}&endPeriod={fetch_end[:7]}",
             timeout=120,
         )
@@ -162,7 +164,7 @@ def get_exchange_rates(
         period_start = fetch_start if code == "D" else fetch_start[:7]
         period_end = fetch_end if code == "D" else fetch_end[:7]
         response = get_request(
-            f"{BASE_URL}WS_XRU/{code}...{collection if code == 'M' else ''}/all?format=csv"
+            f"{BASE_URL}WS_XRU/~/{code}...{collection if code == 'M' else ''}?format=csv"
             f"&detail=dataonly&startPeriod={period_start}&endPeriod={period_end}",
             timeout=300,
         )
@@ -214,7 +216,7 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         response = get_request(
-            f"{BASE_URL}WS_CPP/Q...../all?format=csv&detail=dataonly"
+            f"{BASE_URL}WS_CPP/~/Q.......?format=csv&detail=dataonly"
             # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
             f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",

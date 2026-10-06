@@ -12,7 +12,7 @@ from financetoolkit.utilities.requests_model import get_request
 
 # The business cycle peaks and troughs the NBER's Business Cycle Dating Committee
 # determined, the chronology FRED's USREC series is built from.
-URL = "https://data.nber.org/data/cycles/business_cycle_dates.json"
+URL = "https://data.nber.org/cycles/business_cycle_dates.json"
 
 # The monthly series starts with the first full cycle the chronology covers.
 FIRST_MONTH = "1854-12"

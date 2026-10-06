@@ -13,7 +13,7 @@ from financetoolkit.utilities.requests_model import get_request
 
 # The seasonally adjusted industrial production indices of the G.17 release, the source
 # of FRED's INDPRO series. Every index is one row per year with the twelve months.
-URL = "https://www.federalreserve.gov/releases/g17/ipdisk/ip_sa.txt"
+URL = "https://www.federalreserve.gov/releases/g17/Current/ipdisk/ip_sa.txt"
 
 # The total index.
 TOTAL_INDEX = "B50001"

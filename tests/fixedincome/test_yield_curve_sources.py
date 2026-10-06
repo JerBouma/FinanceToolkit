@@ -300,3 +300,46 @@ def test_credit_methods_need_a_fred_key_and_valid_arguments():
     with_key = FixedIncome(fred_api_key="key")
     assert with_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
     assert with_key.get_moodys_corporate_bond_yields(period="yearly").empty
+
+
+def test_bundesbank_breakeven_inflation_subtracts_real_from_interpolated_nominal(
+    monkeypatch,
+):
+    listing = (
+        "BBK_SEIS_ISIN;BBK_TITLE_ENG;TIME_PERIOD;OBS_VALUE\n"
+        "DE0001030567;Inflationsindex. Bund (26);2026-10-01;0.5\n"
+        "DE0001030583;Inflationsindex. Bund (33);2026-10-01;1.2\n"
+        "DE0001102580;Bund (32);2026-10-01;2.9\n"
+    )
+    real = (
+        "BBK_SEIS_ISIN;TIME_PERIOD;OBS_VALUE\n"
+        "DE0001030583;2026-10-01;1.2\n"
+        "DE0001030583;2026-10-03;.\n"
+    )
+    nominal = (
+        "BBK_SEIS_MATURITY;TIME_PERIOD;OBS_VALUE\n"
+        "R06XX;2026-10-01;3.0\n"
+        "R07XX;2026-10-01;4.0\n"
+    )
+
+    def fake(url, timeout, extra_headers):
+        if "BBSIS" in url:
+            return FakeResponse(text=nominal)
+        return FakeResponse(text=listing if "lastNObservations" in url else real)
+
+    monkeypatch.setattr(bundesbank_model, "get_request", fake)
+
+    bonds = bundesbank_model.get_inflation_linked_bonds()
+    breakeven = bundesbank_model.get_breakeven_inflation("2026-09-28", "2026-10-03")
+
+    # Only the inflation-indexed bonds are listed, maturing on 15 April.
+    assert bonds["Maturity"].to_dict() == {
+        "DE0001030567": pd.Timestamp("2026-04-15"),
+        "DE0001030583": pd.Timestamp("2033-04-15"),
+    }
+    # 6.54 years remain, so the nominal yield is interpolated between 6Y and 7Y.
+    remaining = (pd.Timestamp("2033-04-15") - pd.Timestamp("2026-10-01")).days / 365.25
+    expected = (0.03 + (remaining - 6) * 0.01) - 0.012
+    assert list(breakeven.columns) == ["2033"]
+    assert list(breakeven.index) == [pd.Period("2026-10-01", "D")]
+    assert breakeven.iloc[0, 0] == pytest.approx(expected)

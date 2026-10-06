@@ -670,7 +670,7 @@ def test_bis_consumer_prices_are_named_and_in_decimals(monkeypatch):
     rates = bis_model.get_consumer_prices("inflation_rate", "2025-06-15", "2026-09-30")
 
     assert (
-        "WS_LONG_CPI/M..771/" in urls[0]
+        "/api/v2/data/dataflow/BIS/WS_LONG_CPI/~/M..771?" in urls[0]
         and "startPeriod=2025-06&endPeriod=2026-09" in urls[0]
     )
     assert rates.iloc[0].to_dict() == {

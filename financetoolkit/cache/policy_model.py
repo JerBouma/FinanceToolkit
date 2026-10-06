@@ -194,6 +194,7 @@ POLICIES: dict[str, CachePolicy] = {
     # Daily bond yields; a rerun only asks for the last month, since yields are not revised
     # but a holiday or late publication can leave the latest days open.
     f"{BUNDESBANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{BUNDESBANK}.linker_listing": CachePolicy(ttl_seconds=7 * DAY),
     f"{BANK_OF_CANADA}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{RIKSBANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{NORGES_BANK}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),

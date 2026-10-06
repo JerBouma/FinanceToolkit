@@ -223,13 +223,114 @@ def get_inflation_linked_yields(start_date: str, end_date: str) -> pd.DataFrame:
     )
 
 
+# The constant maturities the bonds are interpolated to. Germany has had four to six
+# inflation-linked bonds outstanding at a time, so only the maturities between the
+# shortest and longest remaining maturity of a day are filled. In its last two years a
+# bond's real yield is dominated by the indexation lag and seasonality of the inflation it
+# has still to accrue, which distorts the short end, so such bonds are left out.
+CONSTANT_MATURITIES = [3, 5, 7, 10, 15, 20, 30]
+MINIMUM_REMAINING_YEARS = 2
+
+# Two bonds are needed to interpolate between.
+MINIMUM_BONDS = 2
+
+
+def _to_constant_maturities(
+    values: pd.DataFrame, remaining: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Interpolates per-bond values linearly to constant maturities, day by day, without
+    extrapolating beyond the bonds' remaining maturities.
+
+    Args:
+        values (pd.DataFrame): The values per day (rows) and bond (columns).
+        remaining (pd.DataFrame): The remaining maturity in years, in the same shape.
+
+    Returns:
+        pd.DataFrame: The values per day and constant maturity ("3Y" to "30Y").
+    """
+    rows = []
+
+    for date in values.index:
+        years = remaining.loc[date].to_numpy(dtype=float)
+        observed = values.loc[date].to_numpy(dtype=float)
+        mask = ~np.isnan(observed) & (years >= MINIMUM_REMAINING_YEARS)
+        order = np.argsort(years[mask])
+        years, observed = years[mask][order], observed[mask][order]
+
+        rows.append(
+            [
+                (
+                    np.interp(maturity, years, observed)
+                    if len(years) >= MINIMUM_BONDS and years[0] <= maturity <= years[-1]
+                    else np.nan
+                )
+                for maturity in CONSTANT_MATURITIES
+            ]
+        )
+
+    curve = pd.DataFrame(
+        rows,
+        index=values.index,
+        columns=[f"{maturity}Y" for maturity in CONSTANT_MATURITIES],
+    )
+
+    return curve.dropna(how="all", axis=0).dropna(how="all", axis=1)
+
+
+def _remaining_maturities(index: pd.Index, bonds: pd.DataFrame, isins) -> pd.DataFrame:
+    """
+    Computes the remaining maturity in years of every bond on every day.
+
+    Args:
+        index (pd.Index): The days, as a daily PeriodIndex.
+        bonds (pd.DataFrame): The maturity date per ISIN.
+        isins: The ISINs, in the order of the columns.
+
+    Returns:
+        pd.DataFrame: The remaining maturity in years per day and ISIN.
+    """
+    days = index.to_timestamp()
+
+    return pd.DataFrame(
+        {isin: (bonds.loc[isin, "Maturity"] - days).days / 365.25 for isin in isins},
+        index=index,
+    )
+
+
+def get_real_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Interpolates the real yields of the inflation-linked German federal securities to
+    constant maturities, daily from 2012.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The real yields as decimals, indexed by business day with a column per
+        maturity ("3Y" to "30Y") between the shortest and longest bond outstanding.
+    """
+    bonds = get_inflation_linked_bonds()
+    real_yields = get_inflation_linked_yields(start_date, end_date)
+
+    if bonds.empty or real_yields.empty:
+        return pd.DataFrame()
+
+    real_yields = real_yields[[isin for isin in real_yields if isin in bonds.index]]
+    remaining = _remaining_maturities(real_yields.index, bonds, real_yields.columns)
+
+    return _to_constant_maturities(real_yields, remaining)
+
+
 def get_breakeven_inflation(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Computes the breakeven inflation of every inflation-linked German federal security:
-    the nominal yield of the Bundesbank's term structure at the bond's remaining maturity,
-    interpolated linearly between whole years, minus the bond's real yield. Since the bonds
-    are indexed to euro area inflation, this is a market-based measure of the inflation the
-    euro area bond market expects.
+    Computes the breakeven inflation of the inflation-linked German federal securities at
+    constant maturities. For every bond the breakeven is the nominal yield of the
+    Bundesbank's term structure at the bond's remaining maturity, interpolated linearly
+    between whole years, minus the bond's real yield; those are then interpolated to
+    constant maturities. Since the bonds are indexed to euro area inflation, this is a
+    market-based measure of the inflation the euro area bond market expects.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -237,7 +338,7 @@ def get_breakeven_inflation(start_date: str, end_date: str) -> pd.DataFrame:
 
     Returns:
         pd.DataFrame: The breakeven inflation as decimals, indexed by business day with a
-        column per bond, named by its maturity year.
+        column per maturity ("3Y" to "30Y") between the shortest and longest bond outstanding.
     """
     bonds = get_inflation_linked_bonds()
     real_yields = get_inflation_linked_yields(start_date, end_date)
@@ -247,33 +348,24 @@ def get_breakeven_inflation(start_date: str, end_date: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     dates = real_yields.index.intersection(nominal_curve.index)
+    isins = [isin for isin in real_yields.columns if isin in bonds.index]
+    remaining = _remaining_maturities(dates, bonds, isins)
     tenors = np.array([float(label[:-1]) for label in nominal_curve.columns])
-    breakeven = pd.DataFrame(index=dates)
+    nominal_rows = nominal_curve.loc[dates].to_numpy()
 
-    for isin in real_yields.columns:
-        if isin not in bonds.index:
-            continue
-
-        maturity = bonds.loc[isin, "Maturity"]
-        remaining = np.array(
-            [(maturity - date.to_timestamp()).days / 365.25 for date in dates]
-        )
-        nominal = np.array(
-            [
+    breakeven = pd.DataFrame(
+        {
+            isin: [
                 np.interp(years, tenors, row) if years > 0 else np.nan
-                for years, row in zip(
-                    remaining, nominal_curve.loc[dates].to_numpy(), strict=True
-                )
+                for years, row in zip(remaining[isin], nominal_rows, strict=True)
             ]
-        )
-        breakeven[str(maturity.year)] = (
-            nominal - real_yields.loc[dates, isin].to_numpy()
-        )
+            - real_yields.loc[dates, isin].to_numpy()
+            for isin in isins
+        },
+        index=dates,
+    )
 
-    breakeven = breakeven[sorted(breakeven.columns)]
-    breakeven.index.name = None
-
-    return breakeven.dropna(how="all")
+    return _to_constant_maturities(breakeven, remaining)
 
 
 # The expected real interest rates the Bundesbank derives from the yields on debt

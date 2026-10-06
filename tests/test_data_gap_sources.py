@@ -208,6 +208,7 @@ def test_new_methods_refuse_unknown_options():
 
     assert FixedIncome().get_eiopa_risk_free_rate(curve="forward").empty
     assert FixedIncome().get_bank_of_england_yield_curve(curve="corporate").empty
+    assert FixedIncome().get_bank_of_england_yield_curve(curve="inflation").empty
     assert (
         Economics(gmdb_source=False)
         .get_life_table(countries="Germany", measure="height")
@@ -218,3 +219,97 @@ def test_new_methods_refuse_unknown_options():
         .get_life_table(countries="Germany", sex="other")
         .empty
     )
+
+
+def _daily(columns: dict[str, float], days=("2026-09-29", "2026-09-30")):
+    return pd.DataFrame(
+        {column: [value] * len(days) for column, value in columns.items()},
+        index=pd.PeriodIndex(list(days), freq="D"),
+    )
+
+
+def test_inflation_curves_pick_countries_with_a_column_per_country_and_maturity(
+    monkeypatch, caplog
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics import boe_model, treasury_model
+    from financetoolkit.fixedincome import bundesbank_model
+
+    monkeypatch.setattr(
+        treasury_model,
+        "get_breakeven_inflation_expectations",
+        lambda start, end: _daily(
+            {"5 Year": 0.0234, "10 Year": 0.0236, "5 Year, 5 Year Forward": 0.0236}
+        ),
+    )
+    monkeypatch.setattr(
+        boe_model,
+        "get_spot_curve",
+        lambda curve, start, end: _daily({"2.5Y": 0.04, "3Y": 0.0405, "10Y": 0.0341}),
+    )
+    monkeypatch.setattr(
+        bundesbank_model,
+        "get_breakeven_inflation",
+        lambda start, end: _daily({"5Y": 0.0223, "10Y": 0.0222}),
+    )
+
+    economics = Economics(start_date="2026-09-01", end_date="2026-09-30")
+    breakeven = economics.get_breakeven_inflation_expectations()
+
+    # The US maturities are labelled as elsewhere and the UK keeps whole years only.
+    assert list(breakeven.columns) == [
+        ("United States", "5Y"),
+        ("United States", "10Y"),
+        ("United States", "5Y5Y"),
+        ("United Kingdom", "3Y"),
+        ("United Kingdom", "10Y"),
+        ("Germany", "5Y"),
+        ("Germany", "10Y"),
+    ]
+    assert breakeven.columns.names == ["Country", "Maturity"]
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        picked = economics.get_breakeven_inflation_expectations(
+            countries=["Germany", "France"], period="monthly"
+        )
+
+    assert list(picked.columns.get_level_values("Country").unique()) == ["Germany"]
+    assert picked.loc[pd.Period("2026-09", "M"), ("Germany", "10Y")] == pytest.approx(
+        0.0222
+    )
+    assert "not available for France" in caplog.text
+    assert economics.get_breakeven_inflation_expectations(period="quarterly").empty
+
+
+def test_inflation_expectations_hold_each_survey_round_until_the_next(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import ecb_model
+    from financetoolkit.fixedincome import bundesbank_model
+
+    monkeypatch.setattr(
+        ecb_model,
+        "get_survey_inflation_expectations",
+        lambda start, end: pd.DataFrame(
+            {"Euro Area": [0.0203, 0.0204]},
+            index=pd.PeriodIndex(["2026Q2", "2026Q3"], freq="Q"),
+        ),
+    )
+    monkeypatch.setattr(
+        bundesbank_model,
+        "get_survey_inflation_expectations",
+        lambda start, end: pd.DataFrame(
+            {"5Y": [0.0218, 0.0219, 0.0223], "10Y": [0.0213, 0.0212, 0.0214]},
+            index=pd.PeriodIndex(["2026-07", "2026-08", "2026-09"], freq="M"),
+        ),
+    )
+
+    economics = Economics(start_date="2026-07-01", end_date="2026-09-30")
+    monthly = economics.get_inflation_expectations()
+    quarterly = economics.get_inflation_expectations(
+        countries="Euro Area", period="quarterly"
+    )
+
+    assert monthly[("Euro Area", "5Y")].tolist() == [0.0204, 0.0204, 0.0204]
+    assert monthly[("Germany", "10Y")].tolist() == [0.0213, 0.0212, 0.0214]
+    assert quarterly.loc[pd.Period("2026Q3", "Q"), ("Euro Area", "5Y")] == 0.0204
+    assert economics.get_inflation_expectations(period="daily").empty

@@ -42,7 +42,7 @@ from financetoolkit.economics.helpers import (
     resample_to_period,
     validate_period,
 )
-from financetoolkit.fixedincome import fed_model
+from financetoolkit.fixedincome import bundesbank_model, fed_model
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -7163,9 +7163,136 @@ class Economics:
             dropna=True,
         )
 
+    def _collect_country_curves(
+        self,
+        sources: dict,
+        countries: list[str] | str | None,
+        period: str,
+        indicator: str,
+    ) -> pd.DataFrame:
+        """
+        Retrieves a curve per requested country and combines them with a column per country
+        and maturity, the layout of FixedIncome.get_government_bond_yield_curve.
+
+        Args:
+            sources (dict): Per country, a function of the start date that returns its daily
+                curve with a column per maturity, already in order.
+            countries (list[str] | str | None): The countries to retrieve, None for all.
+            period (str): "daily", "weekly" or "monthly".
+            indicator (str): The name of the indicator, used in the log.
+
+        Returns:
+            pd.DataFrame: The curves, indexed by date with a (Country, Maturity) column.
+        """
+        if countries is not None and not isinstance(countries, str | list | tuple):
+            raise TypeError(
+                "The countries must be a country name or a list of country names, such as "
+                f"'Germany' or ['Germany', 'United States'], not a {type(countries).__name__} ({countries!r})."
+            )
+
+        requested = (
+            list(sources)
+            if countries is None
+            else [countries] if isinstance(countries, str) else list(countries)
+        )
+
+        if unavailable := [country for country in requested if country not in sources]:
+            logger.warning(
+                "The %s is not available for %s. It covers %s.",
+                indicator,
+                ", ".join(unavailable),
+                ", ".join(sources),
+            )
+
+        start_date = buffered_start_date(self._start_date, period)
+        curves = {}
+
+        for country in requested:
+            if country not in sources:
+                continue
+
+            curve = sources[country](start_date)
+
+            if not curve.empty:
+                curves[country] = resample_to_period(curve.dropna(how="all"), period)
+
+        if not curves:
+            return pd.DataFrame()
+
+        combined = pd.concat(curves, axis=1).sort_index()
+        combined.index.name = None
+        combined.columns.names = ["Country", "Maturity"]
+
+        return combined
+
+    def _get_united_states_inflation_curve(
+        self, curve: str, start_date: str
+    ) -> pd.DataFrame:
+        """
+        Retrieves the US real yield curve or breakeven inflation curve, from FRED when a key
+        is set and from the U.S. Department of the Treasury otherwise, with the maturities
+        labelled as elsewhere ("5Y" and "5Y5Y" for the 5-year, 5-year forward rate).
+
+        Args:
+            curve (str): "real" or "breakeven".
+            start_date (str): The start date (YYYY-MM-DD).
+
+        Returns:
+            pd.DataFrame: The curve, indexed by day with a column per maturity.
+        """
+        # FRED republishes these figures, so it is used when a key is set and the U.S.
+        # Treasury otherwise.
+        if curve == "real":
+            values = (
+                fred_model.get_real_yield_curve(
+                    start_date, self._end_date, self._fred_api_key
+                )
+                if self._fred_api_key
+                else treasury_model.get_real_yield_curve(start_date, self._end_date)
+            )
+        else:
+            values = (
+                fred_model.get_breakeven_inflation_expectations(
+                    start_date, self._end_date, self._fred_api_key
+                )
+                if self._fred_api_key
+                else treasury_model.get_breakeven_inflation_expectations(
+                    start_date, self._end_date
+                )
+            )
+
+        return values.rename(
+            columns=lambda column: (
+                "5Y5Y"
+                if column == "5 Year, 5 Year Forward"
+                else column.replace(" Year", "Y")
+            )
+        )
+
+    def _get_bank_of_england_curve(self, curve: str, start_date: str) -> pd.DataFrame:
+        """
+        Retrieves a Bank of England spot curve at whole-year maturities.
+
+        Args:
+            curve (str): "real" or "inflation".
+            start_date (str): The start date (YYYY-MM-DD).
+
+        Returns:
+            pd.DataFrame: The curve, indexed by day with a column per whole-year maturity.
+        """
+        values = boe_model.get_spot_curve(curve, start_date, self._end_date)
+
+        # The Bank of England estimates the curve in steps of half a year; the whole years
+        # keep the columns comparable with the other countries.
+        return values[
+            [column for column in values.columns if float(column[:-1]).is_integer()]
+        ]
+
     @handle_errors
     def get_real_yield_curve(
         self,
+        countries: list[str] | str | None = None,
+        period: str = "daily",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -7174,32 +7301,39 @@ class Economics:
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
-        Get the daily real (TIPS-implied) U.S. Treasury yield curve from FRED -- the
-        Market Yield on Treasury Inflation-Protected Securities at Constant
-        Maturity, for the 5, 7, 10, 20 and 30-Year maturities.
+        Get the real yield curve of a variety of countries: the yields of inflation-linked
+        government bonds, which pay a return on top of inflation, by maturity. Together with
+        the nominal curve (see `fixedincome.get_government_bond_yield_curve`) it gives the
+        inflation the bond market expects, see `get_breakeven_inflation_expectations`.
 
-        This is genuine market-observed data, as distinct from
-        `fixedincome.get_breakeven_inflation_rate`, which is a pure formula applied
-        to a hand-specified sample curve rather than real TIPS market data. Use this
-        together with `get_breakeven_inflation_expectations` to get the
-        market-implied (Q-measure) inflation expectation at each maturity.
+        Every curve comes from the official source without an API key:
+        - United States: the U.S. Department of the Treasury's real par yield curve of
+          Treasury Inflation-Protected Securities (TIPS), 5, 7, 10, 20 and 30 years, from
+          2003. When a FRED API key is set (see the `fred_api_key` parameter of the
+          `Economics` class), the same figures come from FRED.
+        - United Kingdom: the Bank of England's real spot curve of index-linked gilts, 3 to
+          40 years, from 1985. Index-linked gilts pay the Retail Prices Index (RPI).
+        - Germany: the real yields of the inflation-linked German federal securities the
+          Bundesbank publishes, interpolated to constant maturities between 3 and 30 years
+          from 2014. Germany has four to six of these bonds outstanding at a time, so only
+          the maturities between its shortest (at least two years) and longest bond are
+          filled. The bonds are indexed to euro area inflation (HICP excluding tobacco).
 
-        Yields are daily, returned as a decimal fraction per annum (0.0174 for 1.74%) and
-        not seasonally adjusted. FRED publishes them in percentage points; they are
-        rescaled here so this curve is on the same decimal scale as
-        `fixedincome.get_treasury_rates` and can be differenced against it directly. The
-        20-Year series starts in July 2004 and the 30-Year in February 2010, so earlier
-        dates are NaN for those two maturities.
-
-        No API key is needed: without a FRED API key the data comes from
-        the U.S. Department of the Treasury's daily real par yield curve directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Yields are returned as a decimal fraction per annum (0.0174 for 1.74%), with one
+        column per country and maturity. Weekly and monthly periods take the curve on the
+        last trading day of each period.
 
         See definition: https://fred.stlouisfed.org/series/DFII10
 
-        Also known as: TIPS yield curve, real Treasury yield curve.
+        Also known as: TIPS yield curve, real Treasury yield curve, index-linked gilt curve,
+        Bund linker real yields, inflation-linked bond yields.
 
         Args:
+            countries (list[str] | str | None, optional): The countries to retrieve, from
+                "United States", "United Kingdom" and "Germany". Defaults to None, which
+                retrieves every country.
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -7212,37 +7346,51 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame with one column per maturity (5, 7, 10, 20, 30
-            Year), as a decimal fraction per annum.
+            pd.DataFrame: The real yields as decimals, indexed by date with a column per
+            country and maturity.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2024-01-01', end_date='2024-01-15')
+        economics = Economics(start_date='2026-04-01', end_date='2026-09-30')
 
-        economics.get_real_yield_curve()
+        real_yield_curve = economics.get_real_yield_curve(period='monthly')
+
+        real_yield_curve.xs('10Y', axis=1, level='Maturity')
         ```
 
         Which returns:
 
-        | Date       |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
-        |:-----------|---------:|---------:|----------:|----------:|----------:|
-        | 2024-01-02 |   0.0176 |   0.0175 |    0.0174 |    0.0184 |    0.0191 |
-        | 2024-01-03 |   0.0173 |   0.0171 |    0.0171 |    0.0181 |    0.0189 |
-        | 2024-01-04 |   0.0179 |   0.0178 |    0.0177 |    0.0188 |    0.0196 |
-        | 2024-01-05 |   0.0183 |   0.0183 |    0.0183 |    0.0194 |    0.0202 |
-        | 2024-01-08 |   0.0178 |   0.0179 |    0.0179 |    0.019  |    0.0198 |
+        |         |   United States |   United Kingdom |   Germany |
+        |:--------|----------------:|-----------------:|----------:|
+        | 2026-04 |          0.0194 |           0.0154 |    0.0075 |
+        | 2026-05 |          0.0207 |           0.0155 |    0.0084 |
+        | 2026-06 |          0.022  |           0.0172 |    0.0095 |
+        | 2026-07 |          0.0247 |           0.0188 |    0.0106 |
+        | 2026-08 |          0.0244 |           0.0184 |    0.0108 |
+        | 2026-09 |          0.0293 |           0.02   |    0.0132 |
         """
-        # FRED republishes these figures, so it is used when a key is set and
-        # the U.S. Treasury otherwise.
-        real_yield_curve = (
-            fred_model.get_real_yield_curve(
-                self._start_date, self._end_date, self._fred_api_key
-            )
-            if self._fred_api_key
-            else treasury_model.get_real_yield_curve(self._start_date, self._end_date)
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "real yield curve"
+        )
+
+        real_yield_curve = self._collect_country_curves(
+            {
+                "United States": lambda start: self._get_united_states_inflation_curve(
+                    "real", start
+                ),
+                "United Kingdom": lambda start: self._get_bank_of_england_curve(
+                    "real", start
+                ),
+                "Germany": lambda start: bundesbank_model.get_real_yield_curve(
+                    start, self._end_date
+                ),
+            },
+            countries,
+            period,
+            "real yield curve",
         )
 
         return finalize_dataset(
@@ -7258,11 +7406,14 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            dropna=True,
         )
 
     @handle_errors
     def get_breakeven_inflation_expectations(
         self,
+        countries: list[str] | str | None = None,
+        period: str = "daily",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -7271,34 +7422,46 @@ class Economics:
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
-        Get the daily market-implied (Q-measure) breakeven inflation expectations
-        from FRED -- nominal Treasury yield minus real TIPS yield -- at the 5, 7,
-        10, 20 and 30-Year maturities, plus the 5-Year, 5-Year Forward Inflation
-        Expectation Rate (the market's implied average inflation rate for the five
-        years starting five years from now).
+        Get the market-implied (Q-measure) breakeven inflation of a variety of countries by
+        maturity: the nominal government bond yield minus the real yield of an
+        inflation-linked bond of the same maturity, which is the inflation rate at which
+        both earn the same. It is the bond market's expectation of inflation, including an
+        inflation risk premium. See `get_inflation_expectations` for the expectations of
+        professional forecasters instead.
 
-        FRED only publishes ready-made daily breakeven series for the 5 and 10-Year
-        maturities; its 7, 20 and 30-Year breakeven series only exist at monthly
-        frequency, so those three points are instead computed as nominal minus real
-        from FRED's own daily Treasury and TIPS series, keeping every maturity on a
-        daily frequency. See `get_real_yield_curve` for the underlying real yields
-        on their own.
+        Every curve comes from the official source without an API key:
+        - United States: the U.S. Department of the Treasury's nominal minus real (TIPS) par
+          yields, 5, 7, 10, 20 and 30 years from 2003, plus the 5-year, 5-year forward rate
+          ("5Y5Y"), the average inflation expected over the five years starting five years
+          from now, with the formulas FRED uses. When a FRED API key is set (see the
+          `fred_api_key` parameter of the `Economics` class), the same figures come from
+          FRED.
+        - United Kingdom: the Bank of England's implied inflation spot curve, 3 to 40 years,
+          from 1985. It is measured against the Retail Prices Index (RPI), which index-linked
+          gilts pay and which has run above CPI inflation.
+        - Germany: the nominal term structure of German federal securities at the remaining
+          maturity of each inflation-linked federal security minus its real yield,
+          interpolated to constant maturities between 3 and 30 years from 2014. The bonds are
+          indexed to euro area inflation (HICP excluding tobacco), which makes this the
+          euro area's market-implied inflation expectation, priced off its benchmark issuer,
+          and a free proxy for euro area inflation swaps, which are licensed data. Only the
+          maturities between the shortest (at least two years) and longest bond are filled.
 
-        Rates are daily, returned as a decimal fraction per annum (0.0221 for 2.21%) and
-        not seasonally adjusted. FRED publishes them in percentage points; they are
-        rescaled here to match the decimal convention used by every other rate surface in
-        the toolkit. The 20-Year column starts in July 2004 and the 30-Year in February
-        2010, limited by the TIPS leg of the calculation.
-
-        No API key is needed: without a FRED API key the data comes from
-        the U.S. Department of the Treasury's daily nominal and real par yield curves directly, with the formulas FRED uses, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Rates are returned as a decimal fraction per annum (0.0221 for 2.21%), with one column
+        per country and maturity. Weekly and monthly periods take the curve on the last
+        trading day of each period.
 
         See definition: https://fred.stlouisfed.org/series/T10YIE
 
-        Also known as: breakeven inflation rate, market-implied inflation expectations.
+        Also known as: breakeven inflation rate, market-implied inflation expectations, UK
+        implied inflation, euro area breakeven inflation, Bund linker breakeven.
 
         Args:
+            countries (list[str] | str | None, optional): The countries to retrieve, from
+                "United States", "United Kingdom" and "Germany". Defaults to None, which
+                retrieves every country.
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -7311,43 +7474,55 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame with one column per maturity (5, 7, 10, 20, 30
-            Year) plus the 5-Year, 5-Year Forward Rate, as a decimal fraction per annum.
+            pd.DataFrame: The breakeven inflation as decimals, indexed by date with a column
+            per country and maturity.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2024-01-01', end_date='2024-01-15')
+        economics = Economics(start_date='2026-04-01', end_date='2026-09-30')
 
-        economics.get_breakeven_inflation_expectations()
+        breakeven_inflation = economics.get_breakeven_inflation_expectations(period='monthly')
+
+        breakeven_inflation.xs('10Y', axis=1, level='Maturity')
         ```
 
         Which returns:
 
-        | Date       |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |   5 Year, 5 Year Forward |
-        |:-----------|---------:|---------:|----------:|----------:|----------:|-------------------------:|
-        | 2024-01-02 |   0.0217 |   0.022  |    0.0221 |    0.0241 |    0.0217 |                   0.0225 |
-        | 2024-01-03 |   0.0217 |   0.0221 |    0.022  |    0.024  |    0.0216 |                   0.0223 |
-        | 2024-01-04 |   0.0218 |   0.0221 |    0.0222 |    0.0242 |    0.0217 |                   0.0226 |
-        | 2024-01-05 |   0.0219 |   0.0221 |    0.0222 |    0.0243 |    0.0219 |                   0.0225 |
-        | 2024-01-08 |   0.0219 |   0.022  |    0.0222 |    0.0243 |    0.0219 |                   0.0225 |
+        |         |   United States |   United Kingdom |   Germany |
+        |:--------|----------------:|-----------------:|----------:|
+        | 2026-04 |          0.0246 |           0.0352 |    0.0234 |
+        | 2026-05 |          0.0238 |           0.0331 |    0.0211 |
+        | 2026-06 |          0.0224 |           0.0311 |    0.019  |
+        | 2026-07 |          0.0228 |           0.0322 |    0.0208 |
+        | 2026-08 |          0.0231 |           0.033  |    0.0221 |
+        | 2026-09 |          0.0236 |           0.0341 |    0.0224 |
         """
-        # FRED republishes these figures, so it is used when a key is set and
-        # the U.S. Treasury otherwise.
-        breakeven_inflation_expectations = (
-            fred_model.get_breakeven_inflation_expectations(
-                self._start_date, self._end_date, self._fred_api_key
-            )
-            if self._fred_api_key
-            else treasury_model.get_breakeven_inflation_expectations(
-                self._start_date, self._end_date
-            )
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "breakeven inflation"
+        )
+
+        breakeven_inflation = self._collect_country_curves(
+            {
+                "United States": lambda start: self._get_united_states_inflation_curve(
+                    "breakeven", start
+                ),
+                "United Kingdom": lambda start: self._get_bank_of_england_curve(
+                    "inflation", start
+                ),
+                "Germany": lambda start: bundesbank_model.get_breakeven_inflation(
+                    start, self._end_date
+                ),
+            },
+            countries,
+            period,
+            "breakeven inflation",
         )
 
         return finalize_dataset(
-            dataset=breakeven_inflation_expectations,
+            dataset=breakeven_inflation,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -7359,6 +7534,164 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_inflation_expectations(
+        self,
+        countries: list[str] | str | None = None,
+        period: str = "monthly",
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the inflation professional forecasters expect over the longer term, from surveys.
+        Where `get_breakeven_inflation_expectations` is the bond market's expectation,
+        priced daily and including risk premia, this is the forecasters' own expectation,
+        with no inflation risk or liquidity premium in it and a longer history.
+
+        Every series comes from the official source without an API key:
+        - Germany: the inflation Consensus Economics' forecasters expect over 5 and 10 years,
+          monthly from 1989. The Bundesbank publishes the expected real interest rate, the
+          yield on debt securities outstanding issued by German residents with a residual
+          maturity of 5 to 6 (or 9 to 10) years minus the expected inflation, so adding that
+          yield back gives the expected inflation.
+        - Euro Area: the average longer-term (five years ahead) HICP inflation forecast of the
+          ECB's quarterly Survey of Professional Forecasters, from 1999. With
+          period="monthly" each survey round is shown from the first month of its quarter
+          until the next round.
+
+        Rates are returned as a decimal fraction (0.0223 for 2.23%), with one column per
+        country and horizon.
+
+        See definition: https://www.ecb.europa.eu/stats/ecb_surveys/survey_of_professional_forecasters/html/index.en.html
+
+        Also known as: survey-based inflation expectations, long-term inflation expectations,
+        Consensus Economics inflation forecasts, Survey of Professional Forecasters.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to retrieve, from
+                "Germany" and "Euro Area". Defaults to None, which retrieves every country.
+            period (str, optional): Whether to return the monthly or quarterly data. Quarterly
+                data takes the last month of each quarter. Defaults to "monthly".
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The expected inflation as decimals, indexed by month or quarter with
+            a column per country and horizon.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-04-01', end_date='2026-09-30')
+
+        economics.get_inflation_expectations().xs('5Y', axis=1, level='Maturity')
+        ```
+
+        Which returns:
+
+        |         |   Germany |   Euro Area |
+        |:--------|----------:|------------:|
+        | 2026-04 |    0.0218 |      0.0203 |
+        | 2026-05 |    0.0216 |      0.0203 |
+        | 2026-06 |    0.0212 |      0.0203 |
+        | 2026-07 |    0.0218 |      0.0204 |
+        | 2026-08 |    0.0219 |      0.0204 |
+        | 2026-09 |    0.0223 |      0.0204 |
+        """
+        period = validate_period(
+            period, ["monthly", "quarterly"], "inflation expectations"
+        )
+        start_date = buffered_start_date(self._start_date, "monthly")
+
+        def euro_area() -> pd.DataFrame:
+            survey = ecb_model.get_survey_inflation_expectations(
+                start_date, self._end_date
+            ).rename(columns={"Euro Area": "5Y"})
+
+            if survey.empty or period == "quarterly":
+                return survey
+
+            # A survey round holds until the next one, a quarter later.
+            survey.index = survey.index.asfreq("M", how="start")
+            months = pd.period_range(survey.index[0], survey.index[-1] + 2, freq="M")
+
+            return survey.reindex(months).ffill(limit=2)
+
+        def germany() -> pd.DataFrame:
+            expectations = bundesbank_model.get_survey_inflation_expectations(
+                start_date, self._end_date
+            )
+
+            if expectations.empty or period == "monthly":
+                return expectations
+
+            return expectations.groupby(expectations.index.asfreq("Q")).last()
+
+        sources = {"Germany": germany, "Euro Area": euro_area}
+
+        if countries is not None and not isinstance(countries, str | list | tuple):
+            raise TypeError(
+                "The countries must be a country name or a list of country names, such as "
+                f"'Germany' or ['Germany', 'Euro Area'], not a {type(countries).__name__} ({countries!r})."
+            )
+
+        requested = (
+            list(sources)
+            if countries is None
+            else [countries] if isinstance(countries, str) else list(countries)
+        )
+
+        if unavailable := [country for country in requested if country not in sources]:
+            logger.warning(
+                "Inflation expectations are not available for %s. They cover %s.",
+                ", ".join(unavailable),
+                ", ".join(sources),
+            )
+
+        expectations = {
+            country: values
+            for country in requested
+            if country in sources and not (values := sources[country]()).empty
+        }
+
+        if not expectations:
+            return pd.DataFrame()
+
+        inflation_expectations = pd.concat(expectations, axis=1).sort_index()
+        inflation_expectations.index.name = None
+        inflation_expectations.columns.names = ["Country", "Maturity"]
+
+        return finalize_dataset(
+            dataset=inflation_expectations,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
         )
 
     @handle_errors

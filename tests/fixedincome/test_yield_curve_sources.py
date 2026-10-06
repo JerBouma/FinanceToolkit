@@ -1,5 +1,6 @@
 """Offline tests for the keyless government bond yield curve sources."""
 
+import numpy as np
 import pandas as pd
 import pytest
 import requests
@@ -302,24 +303,26 @@ def test_credit_methods_need_a_fred_key_and_valid_arguments():
     assert with_key.get_moodys_corporate_bond_yields(period="yearly").empty
 
 
-def test_bundesbank_breakeven_inflation_subtracts_real_from_interpolated_nominal(
+def test_bundesbank_breakeven_inflation_is_interpolated_to_constant_maturities(
     monkeypatch,
 ):
     listing = (
         "BBK_SEIS_ISIN;BBK_TITLE_ENG;TIME_PERIOD;OBS_VALUE\n"
         "DE0001030567;Inflationsindex. Bund (26);2026-10-01;0.5\n"
+        "DE0001030559;Inflationsindex. Bund (30);2026-10-01;1.0\n"
         "DE0001030583;Inflationsindex. Bund (33);2026-10-01;1.2\n"
         "DE0001102580;Bund (32);2026-10-01;2.9\n"
     )
     real = (
         "BBK_SEIS_ISIN;TIME_PERIOD;OBS_VALUE\n"
+        "DE0001030567;2026-10-01;-5.0\n"
+        "DE0001030559;2026-10-01;1.0\n"
         "DE0001030583;2026-10-01;1.2\n"
         "DE0001030583;2026-10-03;.\n"
     )
-    nominal = (
-        "BBK_SEIS_MATURITY;TIME_PERIOD;OBS_VALUE\n"
-        "R06XX;2026-10-01;3.0\n"
-        "R07XX;2026-10-01;4.0\n"
+    # A nominal curve linear in the maturity: 2.5% plus 0.1% per year.
+    nominal = "BBK_SEIS_MATURITY;TIME_PERIOD;OBS_VALUE\n" + "".join(
+        f"R{years:02d}XX;2026-10-01;{2.5 + 0.1 * years}\n" for years in range(1, 11)
     )
 
     def fake(url, timeout, extra_headers):
@@ -331,18 +334,26 @@ def test_bundesbank_breakeven_inflation_subtracts_real_from_interpolated_nominal
 
     bonds = bundesbank_model.get_inflation_linked_bonds()
     breakeven = bundesbank_model.get_breakeven_inflation("2026-09-28", "2026-10-03")
+    real_curve = bundesbank_model.get_real_yield_curve("2026-09-28", "2026-10-03")
 
     # Only the inflation-indexed bonds are listed, maturing on 15 April.
     assert bonds["Maturity"].to_dict() == {
         "DE0001030567": pd.Timestamp("2026-04-15"),
+        "DE0001030559": pd.Timestamp("2030-04-15"),
         "DE0001030583": pd.Timestamp("2033-04-15"),
     }
-    # 6.54 years remain, so the nominal yield is interpolated between 6Y and 7Y.
-    remaining = (pd.Timestamp("2033-04-15") - pd.Timestamp("2026-10-01")).days / 365.25
-    expected = (0.03 + (remaining - 6) * 0.01) - 0.012
-    assert list(breakeven.columns) == ["2033"]
+
+    # The 2026 bond has less than two years left and is left out, so only 5Y lies between
+    # the remaining maturities of the other two (3.5 and 6.5 years).
+    day = pd.Timestamp("2026-10-01")
+    years = [
+        (pd.Timestamp(f"{year}-04-15") - day).days / 365.25 for year in (2030, 2033)
+    ]
+    per_bond = [0.025 + 0.001 * years[0] - 0.010, 0.025 + 0.001 * years[1] - 0.012]
+    assert list(breakeven.columns) == ["5Y"]
     assert list(breakeven.index) == [pd.Period("2026-10-01", "D")]
-    assert breakeven.iloc[0, 0] == pytest.approx(expected)
+    assert breakeven.iloc[0, 0] == pytest.approx(np.interp(5, years, per_bond))
+    assert real_curve.iloc[0, 0] == pytest.approx(np.interp(5, years, [0.010, 0.012]))
 
 
 def test_bundesbank_survey_inflation_expectations_add_the_yield_back(monkeypatch):

@@ -192,9 +192,9 @@ SOURCES = {
         "daily",
     ),
     "Bundesbank German breakeven inflation": (
-        lambda: bundesbank_model.get_breakeven_inflation(START, END)
-        .iloc[:, -1:]
-        .set_axis(["Germany"], axis=1),
+        lambda: bundesbank_model.get_breakeven_inflation(START, END).rename(
+            columns={"10Y": "Germany"}
+        ),
         "Germany",
         "daily",
     ),

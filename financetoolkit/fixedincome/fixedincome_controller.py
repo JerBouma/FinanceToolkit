@@ -3284,14 +3284,15 @@ class FixedIncome:
     ):
         """
         Retrieves the UK yield curves the Bank of England estimates daily from 1985, for
-        maturities from 0.5 years (nominal and OIS) or 2.5 years (real and implied
-        inflation) to 40 years (25 years for OIS): the nominal spot curve of UK government bonds (gilts),
-        the real spot curve of index-linked gilts, the implied inflation curve, which is the
-        difference between the two and so the UK breakeven inflation by maturity, and the
-        spot curve of overnight index swaps on SONIA (OIS, from 2009).
+        maturities from 0.5 years to 40 years (25 years for OIS): the nominal spot curve of
+        UK government bonds (gilts) and the spot curve of overnight index swaps on SONIA (OIS,
+        from 2009). Unlike the par yields of 5, 10 and 20 years in
+        `get_government_bond_yield_curve`, these are zero-coupon spot rates over the full
+        range of maturities with history back to 1985.
 
-        The implied inflation curve is measured against the Retail Prices Index (RPI), the
-        index the index-linked gilts pay, which has run above CPI inflation.
+        The Bank of England's real and implied inflation curves are part of
+        `economics.get_real_yield_curve` and `economics.get_breakeven_inflation_expectations`
+        (countries='United Kingdom').
 
         No API key is needed. The archive is a set of large files, of which only those
         covering the requested years are read, and they are cached since past years do not
@@ -3299,11 +3300,10 @@ class FixedIncome:
 
         See definition: https://www.bankofengland.co.uk/statistics/yield-curves
 
-        Also known as: gilt curve, UK spot curve, UK breakeven inflation, RPI implied
-        inflation, SONIA OIS curve.
+        Also known as: gilt curve, UK spot curve, SONIA OIS curve.
 
         Args:
-            curve (str, optional): "nominal", "real", "inflation" or "ois". Defaults to "nominal".
+            curve (str, optional): "nominal" or "ois". Defaults to "nominal".
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -3324,26 +3324,34 @@ class FixedIncome:
 
         fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
 
-        fixedincome.get_bank_of_england_yield_curve(curve='inflation', period='monthly')[
-            ['3Y', '5Y', '10Y', '20Y', '30Y']
+        fixedincome.get_bank_of_england_yield_curve(period='monthly')[
+            ['1Y', '3Y', '5Y', '10Y', '20Y', '30Y']
         ]
         ```
 
         Which returns:
 
-        |         |     3Y |     5Y |    10Y |    20Y |    30Y |
-        |:--------|-------:|-------:|-------:|-------:|-------:|
-        | 2026-04 | 0.0439 | 0.0386 | 0.0352 | 0.0346 | 0.0347 |
-        | 2026-05 | 0.0394 | 0.0355 | 0.0331 | 0.0334 | 0.0337 |
-        | 2026-06 | 0.0352 | 0.0327 | 0.0311 | 0.0321 | 0.0329 |
-        | 2026-07 | 0.0374 | 0.0344 | 0.0322 | 0.033  | 0.0337 |
-        | 2026-08 | 0.0384 | 0.0355 | 0.033  | 0.0335 | 0.0341 |
-        | 2026-09 | 0.0405 | 0.037  | 0.0341 | 0.0342 | 0.0347 |
+        |         |     1Y |     3Y |     5Y |    10Y |    20Y |    30Y |
+        |:--------|-------:|-------:|-------:|-------:|-------:|-------:|
+        | 2026-04 | 0.0426 | 0.0433 | 0.0447 | 0.0506 | 0.0573 | 0.0581 |
+        | 2026-05 | 0.0403 | 0.0414 | 0.043  | 0.0486 | 0.0555 | 0.0563 |
+        | 2026-06 | 0.0402 | 0.041  | 0.0427 | 0.0483 | 0.0552 | 0.0561 |
+        | 2026-07 | 0.0417 | 0.0438 | 0.0456 | 0.051  | 0.058  | 0.0589 |
+        | 2026-08 | 0.0418 | 0.0441 | 0.046  | 0.0514 | 0.0582 | 0.0591 |
+        | 2026-09 | 0.0442 | 0.0478 | 0.0494 | 0.054  | 0.0598 | 0.06   |
         """
-        if curve not in boe_model.CURVE_ARCHIVES:
+        if curve in ("real", "inflation"):
             raise ValueError(
-                f"The curve must be one of {', '.join(boe_model.CURVE_ARCHIVES)}, not {curve!r}."
+                f"The {curve} curve of the Bank of England is part of economics."
+                + (
+                    "get_real_yield_curve"
+                    if curve == "real"
+                    else "get_breakeven_inflation_expectations"
+                )
+                + "(countries='United Kingdom')."
             )
+        if curve not in ("nominal", "ois"):
+            raise ValueError(f"The curve must be 'nominal' or 'ois', not {curve!r}.")
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "Bank of England yield curve"
         )
@@ -3541,206 +3549,6 @@ class FixedIncome:
             axis="rows",
             row_slice=True,
             countries=countries,
-            dropna=True,
-        )
-
-    @handle_errors
-    def get_german_breakeven_inflation(
-        self,
-        real_yields: bool = False,
-        period: str = "daily",
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int = 1,
-        standardize: bool = False,
-    ):
-        """
-        Computes the breakeven inflation of the inflation-linked German federal securities,
-        daily from 2012: the inflation rate at which an inflation-linked bond and a nominal
-        bond of the same maturity would earn the same. The bonds are indexed to euro area
-        inflation (the HICP excluding tobacco), which makes this the market's expectation of
-        euro area inflation, priced off the euro area's benchmark issuer, and a free proxy for
-        euro area inflation swaps and breakevens, which are licensed data.
-
-        For every bond the breakeven is the nominal yield of the Bundesbank's term structure of
-        federal securities at the bond's remaining maturity, interpolated between whole years,
-        minus the bond's real yield. One column per bond, named by the year it matures in
-        (15 April); bonds that have matured keep their history. With real_yields=True the
-        real yields themselves are returned instead.
-
-        No API key is needed. The rates are decimal fractions (0.0227 for 2.27%). Weekly and
-        monthly periods take the value on the last trading day of each period.
-
-        See definition: https://www.bundesbank.de/en/statistics/money-and-capital-markets
-
-        Also known as: euro area breakeven inflation, German breakeven, Bund linker
-        breakeven, market-implied inflation expectations.
-
-        Args:
-            real_yields (bool, optional): Whether to return the real yields of the bonds instead
-                of their breakeven inflation. Defaults to False.
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
-            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame: The breakeven inflation (or real yields) as decimals, indexed by date
-            with a column per bond.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
-
-        fixedincome.get_german_breakeven_inflation(period='monthly')
-        ```
-
-        Which returns:
-
-        |         |     2026 |   2030 |   2033 |   2046 |
-        |:--------|---------:|-------:|-------:|-------:|
-        | 2026-04 |   0.0236 | 0.0253 | 0.0238 | 0.0224 |
-        | 2026-05 | nan      | 0.0209 | 0.0209 | 0.0218 |
-        | 2026-06 | nan      | 0.0169 | 0.0185 | 0.0207 |
-        | 2026-07 | nan      | 0.0201 | 0.0204 | 0.0218 |
-        | 2026-08 | nan      | 0.0222 | 0.0218 | 0.023  |
-        | 2026-09 | nan      | 0.0229 | 0.0223 | 0.0228 |
-        """
-        period = validate_period(
-            period, ["daily", "weekly", "monthly"], "German breakeven inflation"
-        )
-        start_date = buffered_start_date(self._start_date, period)
-
-        if real_yields:
-            bonds = bundesbank_model.get_inflation_linked_bonds()
-            values = bundesbank_model.get_inflation_linked_yields(
-                start_date, self._end_date
-            )
-            values = values.rename(
-                columns={
-                    isin: str(bonds.loc[isin, "Maturity"].year)
-                    for isin in values.columns
-                    if isin in bonds.index
-                }
-            )
-            values = values[sorted(values.columns)]
-        else:
-            values = bundesbank_model.get_breakeven_inflation(
-                start_date, self._end_date
-            )
-
-        breakeven_inflation = resample_to_period(values, period)
-
-        return finalize_dataset(
-            dataset=breakeven_inflation,
-            indicator_name="German Breakeven Inflation",
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            rounding=rounding,
-            growth=growth,
-            lag=lag,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-            dropna=True,
-        )
-
-    @handle_errors
-    def get_german_inflation_expectations(
-        self,
-        real_rates: bool = False,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int = 1,
-        standardize: bool = False,
-    ):
-        """
-        Retrieves the inflation professional forecasters expect for Germany over the next 5
-        and 10 years, monthly from 1989, from the Consensus Economics survey the Bundesbank
-        uses for its expected real interest rates. Where get_german_breakeven_inflation is
-        the market's expectation, priced daily since 2012 and including risk premia, this is
-        the forecasters' own expectation, with history back to German reunification and no
-        inflation risk or liquidity premium in it.
-
-        The Bundesbank publishes the expected real interest rate: the yield on debt securities
-        outstanding issued by German residents with a residual maturity of 5 to 6 (or 9 to 10)
-        years, minus the weighted inflation rates Consensus Economics expects over that
-        horizon. Adding that yield back gives the expected inflation. With real_rates=True the
-        expected real interest rates themselves are returned instead.
-
-        No API key is needed. The rates are decimal fractions (0.0223 for 2.23%).
-
-        See definition: https://www.bundesbank.de/en/statistics/money-and-capital-markets
-
-        Also known as: survey-based inflation expectations, Consensus Economics inflation
-        forecasts, long-term inflation expectations, expected real interest rates.
-
-        Args:
-            real_rates (bool, optional): Whether to return the expected real interest rates
-                instead of the expected inflation. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
-            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame: The expected inflation (or expected real interest rates), indexed by
-            month with the columns 5Y and 10Y.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
-
-        fixedincome.get_german_inflation_expectations()
-        ```
-
-        Which returns:
-
-        |         |     5Y |    10Y |
-        |:--------|-------:|-------:|
-        | 2026-04 | 0.0218 | 0.0211 |
-        | 2026-05 | 0.0216 | 0.0208 |
-        | 2026-06 | 0.0212 | 0.0205 |
-        | 2026-07 | 0.0218 | 0.0213 |
-        | 2026-08 | 0.0219 | 0.0212 |
-        | 2026-09 | 0.0223 | 0.0214 |
-        """
-        start_date = buffered_start_date(self._start_date, "monthly")
-
-        if real_rates:
-            expectations = bundesbank_model.get_expected_real_rates(
-                start_date, self._end_date
-            )
-        else:
-            expectations = bundesbank_model.get_survey_inflation_expectations(
-                start_date, self._end_date
-            )
-
-        return finalize_dataset(
-            dataset=expectations,
-            indicator_name="German Inflation Expectations",
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            rounding=rounding,
-            growth=growth,
-            lag=lag,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
             dropna=True,
         )
 

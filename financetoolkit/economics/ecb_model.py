@@ -375,3 +375,31 @@ def get_financial_stress_index(start_date: str, end_date: str) -> pd.DataFrame:
         "D",
         in_percent=False,
     )
+
+
+# The average point forecast of euro area HICP inflation for the longer term, five years
+# ahead, in the ECB's quarterly Survey of Professional Forecasters, from 1999.
+SURVEY_INFLATION_EXPECTATIONS_KEY = "SPF/Q.U2.HICP.POINT.LT.Q.AVG"
+
+
+def get_survey_inflation_expectations(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the longer-term (five years ahead) euro area inflation the professional
+    forecasters of the ECB's Survey of Professional Forecasters expect on average,
+    quarterly from 1999.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The expected inflation as a decimal, indexed by quarter with a
+        "Euro Area" column.
+    """
+    return collect_ecb_series_by_area(
+        SURVEY_INFLATION_EXPECTATIONS_KEY,
+        "survey inflation expectations",
+        start_date,
+        end_date,
+        "Q",
+    )

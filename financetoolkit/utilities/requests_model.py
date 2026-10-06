@@ -32,6 +32,13 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
+# Some official sources (the Reserve Bank of Australia, De Nederlandsche Bank) turn away
+# requests that present themselves as a browser without being one, so for those the
+# Finance Toolkit names itself.
+TOOLKIT_HEADERS = {
+    "User-Agent": "financetoolkit (+https://github.com/JerBouma/FinanceToolkit)"
+}
+
 # Sized comfortably above the default number of worker threads (see helpers.DEFAULT_MAX_WORKERS) so that every concurrent API call can keep its connection alive; a larger worker count still works, urllib3 simply discards the surplus connections after use.  # noqa: E501
 CONNECTION_POOL_SIZE = 32
 

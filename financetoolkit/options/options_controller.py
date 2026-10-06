@@ -152,8 +152,10 @@ class Options:
         Bid Pirce, Ask Price, Expiration, Last Trade Date, Implied Volatility and
         whether the option is In The Money.
 
-        The data comes from Yahoo Finance and is not always available. If the data is not
-        available, it is advised to use the theoretical calculations as provided by the
+        The data comes from Yahoo Finance. When Yahoo Finance has no options for a ticker,
+        Cboe's delayed quotes (15 minutes) are used, which cover every option listed on a US
+        equity or index, such as "^SPX" with expiries several years out. If neither has
+        data, it is advised to use the theoretical calculations as provided by the
         Black Scholes Model as well as the Greeks to get a better understanding of the
         option prices over time.
 

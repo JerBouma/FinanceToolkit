@@ -8,15 +8,11 @@ import pandas as pd
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
-from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 
 # The RBA publishes each statistical table as one CSV file with its full history, a block
 # of metadata rows ending with the series identifiers, and then a row per date.
 TABLE_URL = "https://www.rba.gov.au/statistics/tables/csv/{table}-data.csv"
-
-# The RBA's firewall turns away requests that present themselves as a browser without
-# being one, so the Finance Toolkit names itself.
-HEADERS = {"User-Agent": "financetoolkit (+https://github.com/JerBouma/FinanceToolkit)"}
 
 # Table F3: the yields of Australian non-financial corporate bonds rated A and BBB, by
 # target tenor, monthly from 2005.
@@ -53,7 +49,7 @@ def get_table(table: str) -> pd.DataFrame:
 
     def fetch() -> pd.DataFrame:
         text = get_request(
-            TABLE_URL.format(table=table), timeout=60, extra_headers=HEADERS
+            TABLE_URL.format(table=table), timeout=60, extra_headers=TOOLKIT_HEADERS
         ).content.decode("utf-8-sig", errors="replace")
         lines = text.splitlines()
         header = next(

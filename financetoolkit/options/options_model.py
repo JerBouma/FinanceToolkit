@@ -6,6 +6,10 @@ import yfinance as yf
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.economics import cboe_model
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -30,7 +34,16 @@ def get_option_expiry_dates(ticker: str) -> list[str]:
         if cached_dates is not None:
             return cached_dates
 
-    expiry_dates = list(yf.Ticker(ticker).options)
+    try:
+        expiry_dates = list(yf.Ticker(ticker).options)
+    except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
+        logger.info("Yahoo Finance has no options of %s (%s).", ticker, error)
+        expiry_dates = []
+
+    # Cboe's delayed quotes list every US-listed option when Yahoo Finance has none.
+    if not expiry_dates:
+        chain = cboe_model.get_option_chain(ticker)
+        expiry_dates = sorted(chain["Expiration"].unique()) if not chain.empty else []
 
     if cache is not None and expiry_dates:
         cache.set(
@@ -82,8 +95,19 @@ def get_option_chains(
                 result_dict[ticker] = cached_chain
                 continue
 
-        option_chain = yf.Ticker(ticker).option_chain(expiration_date)
-        options_df = option_chain.puts if put_option else option_chain.calls
+        try:
+            option_chain = yf.Ticker(ticker).option_chain(expiration_date)
+            options_df = option_chain.puts if put_option else option_chain.calls
+        except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
+            logger.info("Yahoo Finance has no option chain of %s (%s).", ticker, error)
+            options_df = pd.DataFrame()
+
+        if options_df.empty:
+            options_df = _get_cboe_option_chain(ticker, expiration_date, put_option)
+            if options_df.empty:
+                continue
+            result_dict[ticker] = options_df
+            continue
 
         options_df = options_df.rename(
             columns={
@@ -120,6 +144,9 @@ def get_option_chains(
                 parameters=cache_parameters,
             )
 
+    if not result_dict:
+        return pd.DataFrame()
+
     result_final = pd.concat(result_dict)
     if "Last Trade Date" in result_final.columns:
         result_final["Last Trade Date"] = pd.to_datetime(
@@ -129,6 +156,66 @@ def get_option_chains(
     result_final.index.names = ["Ticker", "Strike Price"]
 
     return result_final
+
+
+def _get_cboe_option_chain(
+    ticker: str, expiration_date: str, put_option: bool
+) -> pd.DataFrame:
+    """
+    Retrieves the calls or puts of one expiry from Cboe's delayed quotes, in the layout of
+    the Yahoo Finance option chain.
+
+    Args:
+        ticker (str): The ticker, e.g. "AAPL" or "^SPX".
+        expiration_date (str): The expiry (YYYY-MM-DD).
+        put_option (bool): Whether to return the puts instead of the calls.
+
+    Returns:
+        pd.DataFrame: The options, indexed by strike price.
+    """
+    chain = cboe_model.get_option_chain(ticker)
+
+    if chain.empty:
+        return chain
+
+    chain = chain[
+        (chain["Expiration"] == expiration_date) & (chain["Put"] == put_option)
+    ]
+
+    # Index options can list a monthly and a weekly contract (SPX and SPXW) on the same
+    # strike and expiry; the one more widely held is kept.
+    chain = chain.sort_values("Open Interest").drop_duplicates("Strike", keep="last")
+    in_the_money = (
+        chain["Strike"] > chain["Underlying Price"]
+        if put_option
+        else chain["Strike"] < chain["Underlying Price"]
+    )
+
+    return (
+        chain.assign(
+            Currency="USD",
+            **{"Last Trade Date": None, "In The Money": in_the_money},
+        )[
+            [
+                "Contract Symbol",
+                "Strike",
+                "Currency",
+                "Last Price",
+                "Change",
+                "Percent Change",
+                "Volume",
+                "Open Interest",
+                "Bid",
+                "Ask",
+                "Expiration",
+                "Last Trade Date",
+                "Implied Volatility",
+                "In The Money",
+            ]
+        ]
+        .set_index("Strike")
+        .sort_index()
+    )
 
 
 def get_monte_carlo_option_price(

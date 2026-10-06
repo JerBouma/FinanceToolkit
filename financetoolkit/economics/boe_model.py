@@ -410,3 +410,96 @@ def get_spot_curve(curve: str, start_date: str, end_date: str) -> pd.DataFrame:
     spot_curve = spot_curve[~spot_curve.index.duplicated(keep="last")]
 
     return spot_curve.loc[pd.Period(start_date, "D") : pd.Period(end_date, "D")]
+
+
+# "A millennium of macroeconomic data for the UK" (version 3.1, 2017): the Bank of
+# England's research dataset of UK history, of which the headline worksheet holds around
+# eighty annual series from 1086 to 2016. The dataset is not updated anymore.
+MILLENNIUM_URL = (
+    "https://www.bankofengland.co.uk/-/media/boe/files/statistics/research-datasets/"
+    "a-millennium-of-macroeconomic-data-for-the-uk.xlsx"
+)
+MILLENNIUM_SHEET = "A1. Headline series"
+MILLENNIUM_DESCRIPTION_ROW = 3
+MILLENNIUM_UNITS_ROW = 5
+MILLENNIUM_FIRST_YEAR_ROW = 7
+
+# Units in percent (rates, growth rates, shares of GDP and contributions), which are
+# divided by 100.
+PERCENT_UNITS = ("%", "growth rate", "pp contribution")
+
+
+def get_millennium_data() -> pd.DataFrame:
+    """
+    Retrieves the headline annual series of the Bank of England's "A millennium of
+    macroeconomic data for the UK": output, prices, wages, interest rates, asset prices,
+    exchange rates, money, credit and public finances, from as early as 1086 to 2016.
+
+    Returns:
+        pd.DataFrame: The series, rates and shares as decimals and levels and indices as
+        published, indexed by year with a column per series.
+
+    Raises:
+        ValueError: When the workbook has no headline worksheet, which means it changed.
+    """
+    description = "Bank of England millennium of macroeconomic data"
+
+    def fetch() -> pd.DataFrame:
+        response = get_request(MILLENNIUM_URL, timeout=300, extra_headers=HEADERS)
+
+        try:
+            sheet = pd.read_excel(
+                io.BytesIO(response.content), sheet_name=MILLENNIUM_SHEET, header=None
+            )
+        except ValueError as error:
+            raise ValueError(
+                f"The {description} has no worksheet '{MILLENNIUM_SHEET}', which means it changed."
+            ) from error
+
+        descriptions = sheet.iloc[MILLENNIUM_DESCRIPTION_ROW]
+        units = sheet.iloc[MILLENNIUM_UNITS_ROW].astype(str).str.strip()
+        years = pd.to_numeric(
+            sheet.iloc[MILLENNIUM_FIRST_YEAR_ROW:, 0], errors="coerce"
+        )
+        rows = sheet.iloc[MILLENNIUM_FIRST_YEAR_ROW:][years.notna().to_numpy()]
+        series = {}
+        previous = ""
+
+        for column in sheet.columns[1:]:
+            unit = units[column]
+            if unit == "nan":
+                continue
+
+            # A second column of a series (its growth rate, or a share of GDP) has no
+            # description of its own, and a few descriptions recur, so the unit tells
+            # them apart.
+            name = descriptions[column]
+            if pd.isna(name):
+                name = f"{previous} ({unit})"
+            else:
+                previous = name = " ".join(str(name).split())
+                if name in series:
+                    name = f"{name} ({unit})"
+
+            values = pd.to_numeric(rows[column], errors="coerce")
+            if unit.lower().startswith(PERCENT_UNITS) or "%" in unit:
+                values = values / 100
+
+            series[name] = values.to_numpy()
+
+        frame = pd.DataFrame(
+            series,
+            index=pd.PeriodIndex(years.dropna().astype(int).astype(str), freq="Y"),
+        )
+
+        frame.index.name = None
+
+        return frame.dropna(how="all")
+
+    return collect_cached_data(
+        source=policy_model.BANK_OF_ENGLAND,
+        dataset="millennium",
+        entity="v3.1",
+        fetch=fetch,
+        description=description,
+    )

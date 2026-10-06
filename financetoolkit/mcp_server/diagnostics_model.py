@@ -4,7 +4,7 @@ __docformat__ = "google"
 
 import logging
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -90,7 +90,7 @@ def redact(text: object) -> str:
 
 
 @contextmanager
-def capture_call_messages() -> Iterator[list[str]]:
+def capture_call_messages() -> Generator[list[str]]:
     """
     Collects the warnings and errors the Finance Toolkit logs while the block runs,
     including those of the worker threads it starts.

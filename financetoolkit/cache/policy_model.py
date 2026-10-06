@@ -183,6 +183,8 @@ POLICIES: dict[str, CachePolicy] = {
     f"{BANK_OF_ENGLAND}.curve_workbook": CachePolicy(ttl_seconds=365 * DAY),
     f"{BANK_OF_ENGLAND}.curve_workbook_current": CachePolicy(ttl_seconds=7 * DAY),
     f"{BANK_OF_ENGLAND}.curve_listing": CachePolicy(ttl_seconds=30 * DAY),
+    # The millennium dataset is not updated anymore.
+    f"{BANK_OF_ENGLAND}.millennium": CachePolicy(ttl_seconds=365 * DAY),
     f"{BANK_OF_ENGLAND}.curve_current_month": CachePolicy(ttl_seconds=DAY),
     f"{BANK_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     f"{EUROPEAN_CENTRAL_BANK}.economics_series": CachePolicy(
@@ -210,6 +212,8 @@ POLICIES: dict[str, CachePolicy] = {
     # A published EIOPA release never changes; which releases exist does, monthly.
     f"{EIOPA}.release": CachePolicy(ttl_seconds=365 * DAY),
     f"{EIOPA}.releases": CachePolicy(ttl_seconds=DAY),
+    # Republished monthly with the full daily history.
+    f"{EIOPA}.symmetric_adjustment": CachePolicy(ttl_seconds=7 * DAY),
     f"{INTERNATIONAL_MONETARY_FUND}.codelist": CachePolicy(ttl_seconds=30 * DAY),
     # Updated about once a month.
     f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),

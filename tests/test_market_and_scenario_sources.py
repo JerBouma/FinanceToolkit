@@ -2,6 +2,7 @@
 
 import io
 
+import numpy as np
 import pandas as pd
 import pytest
 import requests
@@ -349,3 +350,405 @@ def test_carbon_price_averages_the_days_general_allowance_auctions(monkeypatch):
     }
     # Only the years from the buffered start date to the end date are requested.
     assert all("2025" in url or "2026" in url for url in requested)
+
+
+def test_rating_transition_matrix_is_withdrawal_adjusted(monkeypatch):
+    from financetoolkit import FixedIncome
+    from financetoolkit.fixedincome import esma_model
+
+    matrix = (
+        "BOP\\EOP;AAA;AA;A;D;Withdrawals\n"
+        "AAA;6.0;0.0;0.0;0.0;0.0\n"
+        "AA;0.0;217.0;11.0;0.0;1.0\n"
+        "A;0.0;16.0;1144.0;0.0;32.0\n"
+        "D;0.0;0.0;0.0;0.0;0.0\n"
+    )
+    bodies = []
+
+    class Response(FakeResponse):
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, data, headers, timeout):
+        bodies.append((url, data))
+        return Response(text=matrix)
+
+    monkeypatch.setattr(esma_model.SESSION, "post", fake_post)
+
+    fixedincome = FixedIncome()
+    probabilities = fixedincome.get_rating_transition_matrix(agency="S&P", year=2025)
+    counts = fixedincome.get_rating_transition_matrix(
+        agency="S&P",
+        year=2025,
+        probabilities=False,
+        include_withdrawals=True,
+        rounding=0,
+    )
+
+    assert '"STPGB"' in bodies[0][1] and '"1735689600000"' in bodies[0][1]
+    assert probabilities.loc["AA", "A"] == pytest.approx(11 / 228, abs=1e-4)
+    assert probabilities.sum(axis=1).round(3).eq(1).all()
+    # A rating without any outstanding at the start has no row.
+    assert "D" not in probabilities.index
+    assert counts.loc["A", "Withdrawals"] == 32
+    assert fixedincome.get_rating_transition_matrix(agency="Unknown agency").empty
+
+
+def test_default_rates_start_at_the_first_year_with_a_default(monkeypatch):
+    from financetoolkit import FixedIncome
+    from financetoolkit.fixedincome import esma_model
+
+    def fake_default_rates(agency, rating_type, start, end, region=None):
+        if start.year < 2001:
+            return pd.DataFrame(
+                {"Defaults": [0, 0], "Default Rate": [0.0, 0.0]}, index=["BB", "CCC"]
+            )
+        return pd.DataFrame(
+            {
+                "Defaults": [1, 20],
+                "Default Rate": [0.002, 0.25 + start.year % 10 / 100],
+            },
+            index=["BB", "CCC"],
+        )
+
+    monkeypatch.setattr(esma_model, "get_default_rates", fake_default_rates)
+
+    default_rates = FixedIncome(
+        start_date="1998-01-01", end_date="2003-12-31"
+    ).get_default_rates()
+
+    assert list(default_rates.index) == [
+        pd.Period(str(year), "Y") for year in range(2001, 2004)
+    ]
+    assert default_rates.loc[pd.Period("2003", "Y"), "CCC"] == pytest.approx(0.28)
+
+
+def test_climate_scenario_applies_the_deviation_to_the_baseline(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import ngfs_model
+
+    runs = pd.DataFrame(
+        {
+            "run_id": [1, 2, 3],
+            "model": [
+                "NiGEM NGFS v1.24.2[REMIND-MAgPIE 3.3-4.8]",
+                "NiGEM NGFS v1.24.2[REMIND-MAgPIE 3.3-4.8]",
+                "REMIND-MAgPIE 3.3-4.8",
+            ],
+            "scenario": ["Baseline", "Net Zero 2050", "Net Zero 2050"],
+        }
+    )
+    years = pd.PeriodIndex(["2030", "2050"], freq="Y")
+    series = {
+        (1, "Long term interest rate ; %"): pd.DataFrame(
+            {"Germany": [3.0, 3.2]}, index=years
+        ),
+        (2, "Long term interest rate ; %(combined)"): pd.DataFrame(
+            {"Germany": [0.9, 0.6]}, index=years
+        ),
+        (1, "Gross Domestic Product (GDP)"): pd.DataFrame(
+            {"Germany": [4500.0, 5400.0]}, index=years
+        ),
+        (2, "Gross Domestic Product (GDP)(combined)"): pd.DataFrame(
+            {"Germany": [-2.0, -5.0]}, index=years
+        ),
+        (3, "Price|Carbon"): pd.DataFrame({"World": [183.3, 748.8]}, index=years),
+    }
+    monkeypatch.setattr(ngfs_model, "get_runs", lambda: runs)
+    monkeypatch.setattr(
+        ngfs_model, "_get_timeseries", lambda run, variable: series[(run, variable)]
+    )
+
+    economics = Economics()
+    rate = economics.get_climate_scenario(countries="Germany")
+    rate_deviation = economics.get_climate_scenario(countries="Germany", deviation=True)
+    gdp = economics.get_climate_scenario("gdp", countries="Germany")
+    carbon = economics.get_climate_scenario("carbon_price")
+
+    assert rate.loc[pd.Period("2030", "Y"), "Germany"] == pytest.approx(0.039)
+    assert rate_deviation.loc[pd.Period("2050", "Y"), "Germany"] == pytest.approx(0.006)
+    assert gdp.loc[pd.Period("2050", "Y"), "Germany"] == pytest.approx(5400 * 0.95)
+    assert carbon.loc[pd.Period("2050", "Y"), "World"] == pytest.approx(748.8)
+    assert economics.get_climate_scenario(scenario="Hothouse").empty
+
+
+def test_long_run_asset_returns_require_accepting_the_licence(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import macrohistory_model
+
+    data = pd.DataFrame(
+        {
+            "year": [2019.0, 2020.0, 2019.0, 2020.0],
+            "country": ["USA", "USA", "Germany", "Germany"],
+            "iso": ["USA", "USA", "DEU", "DEU"],
+            "eq_tr": [0.30, 0.20, 0.25, 0.04],
+            "cpi": [100.0, 110.0, 100.0, 104.0],
+        }
+    )
+    buffer = io.BytesIO()
+    data.to_stata(buffer, write_index=False)
+    monkeypatch.setattr(
+        macrohistory_model,
+        "get_request",
+        lambda url, timeout: FakeResponse(content=buffer.getvalue()),
+    )
+
+    economics = Economics(start_date="2019-01-01", end_date="2020-12-31")
+
+    assert economics.get_long_run_asset_returns().empty
+    nominal = economics.get_long_run_asset_returns(accept_licence=True)
+    real = economics.get_long_run_asset_returns(accept_licence=True, real=True)
+
+    assert nominal.loc[pd.Period("2020", "Y"), "United States"] == pytest.approx(0.2)
+    assert real.loc[pd.Period("2020", "Y"), "United States"] == pytest.approx(
+        1.2 / 1.1 - 1, abs=1e-4
+    )
+    assert real.loc[pd.Period("2020", "Y"), "Germany"] == pytest.approx(0.0, abs=1e-4)
+
+
+def test_millennium_data_names_second_columns_by_their_unit(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import boe_model
+
+    rows = [[None] * 5 for _ in range(7)]
+    rows[3] = ["Description", "Bank Rate", None, "Share prices", "Consumer price index"]
+    rows[5] = [
+        "Units",
+        "% end period",
+        "%, calendar year average",
+        "April 1962=100",
+        "2015=100",
+    ]
+    rows += [[1720, 5, 5, 2.4, 0.4], [1721, 5, 5, 2.1, 0.41]]
+    workbook = _workbook({"A1. Headline series": rows})
+    monkeypatch.setattr(
+        boe_model,
+        "get_request",
+        lambda url, timeout, extra_headers: FakeResponse(content=workbook),
+    )
+
+    millennium = Economics(
+        start_date="1700-01-01", end_date="1800-12-31"
+    ).get_millennium_of_macroeconomic_data()
+
+    assert list(millennium.columns) == [
+        "Bank Rate",
+        "Bank Rate (%, calendar year average)",
+        "Share prices",
+        "Consumer price index",
+    ]
+    assert millennium.loc[pd.Period("1720", "Y"), "Bank Rate"] == pytest.approx(0.05)
+    assert millennium.loc[pd.Period("1721", "Y"), "Share prices"] == pytest.approx(2.1)
+
+
+def test_dnb_scenario_set_derives_zero_rates_from_the_state_variables(monkeypatch):
+    import openpyxl
+
+    from financetoolkit import Economics
+    from financetoolkit.economics import dnb_model
+
+    book = openpyxl.Workbook()
+    book.remove(book.active)
+    states = [[0.03, 0.04, 0.05], [0.03, 0.02, 0.01]]
+    for number, sheet in enumerate(dnb_model.STATE_SHEETS):
+        worksheet = book.create_sheet(sheet)
+        for row in states:
+            worksheet.append([value * (number + 1) for value in row])
+    for sheet in dnb_model.RETURN_SHEETS.values():
+        worksheet = book.create_sheet(sheet)
+        worksheet.append([0.08, 0.06])
+        worksheet.append([-0.02, 0.10])
+    phi = book.create_sheet(dnb_model.NOMINAL_PHI)
+    psi = book.create_sheet(dnb_model.NOMINAL_PSI)
+    for maturity in range(1, 31):
+        phi.append([-0.02 * maturity] * 3)
+        psi.append([-0.1 * maturity, 0.0, 0.0])
+    buffer = io.BytesIO()
+    book.save(buffer)
+    page = '<a href="/media/abc/cp2022-p-scenarioset-20k-2026q3.xlsx">P</a>'
+
+    monkeypatch.setattr(
+        dnb_model,
+        "get_request",
+        lambda url, timeout, extra_headers: (
+            FakeResponse(content=buffer.getvalue())
+            if url.endswith(".xlsx")
+            else FakeResponse(text=page)
+        ),
+    )
+
+    economics = Economics()
+    scenarios = economics.get_scenario_set(
+        variables=["Nominal rate 10Y", "Equity return"], scenarios=True, rounding=8
+    )
+    distribution = economics.get_scenario_set(
+        variables="Equity return", quantiles=[0.5]
+    )
+
+    # exp(-(phi + psi x) / m) - 1 with phi = -0.2, psi = -1 and x = 0.04 in year 1.
+    assert scenarios.loc[1, ("Nominal rate 10Y", 1)] == pytest.approx(
+        np.exp(0.024) - 1, abs=1e-6
+    )
+    # Returns start in year 1.
+    assert np.isnan(scenarios.loc[0, ("Equity return", 1)])
+    assert scenarios.loc[2, ("Equity return", 2)] == pytest.approx(0.10)
+    assert distribution.loc[1, ("Equity return", "50%")] == pytest.approx(0.03)
+    assert economics.get_scenario_set(variables="Gold price").empty
+
+
+def test_asset_class_proxies_are_period_returns(monkeypatch):
+    from financetoolkit import Economics, historical_model
+
+    days = pd.PeriodIndex(["2026-07-31", "2026-08-31", "2026-09-30"], freq="D")
+    prices = pd.concat(
+        {
+            "Adj Close": pd.DataFrame(
+                {"PSP": [50.0, 55.0, 49.5], "IGF": [60.0, 60.6, 60.0]}, index=days
+            )
+        },
+        axis=1,
+    )
+    requested = []
+
+    def fake(tickers, **kwargs):
+        requested.append(tickers)
+        return prices, []
+
+    monkeypatch.setattr(historical_model, "get_historical_data", fake)
+
+    proxies = Economics(
+        start_date="2026-08-01", end_date="2026-09-30"
+    ).get_asset_class_proxies(asset_classes=["Private Equity", "Infrastructure"])
+
+    assert requested == [["PSP", "IGF"]]
+    assert proxies.loc[pd.Period("2026-08", "M"), "Private Equity"] == pytest.approx(
+        0.1
+    )
+    assert proxies.loc[pd.Period("2026-09", "M"), "Private Equity"] == pytest.approx(
+        -0.1
+    )
+    assert Economics().get_asset_class_proxies(asset_classes="Art").empty
+
+
+def test_eiopa_symmetric_adjustment_reads_the_daily_history(monkeypatch):
+    from financetoolkit import FixedIncome
+    from financetoolkit.fixedincome import eiopa_model
+
+    rows = [[None] * 7 for _ in range(8)]
+    rows += [
+        [
+            None,
+            "All calendar days",
+            None,
+            "LT average",
+            "(CI-AI) / AI",
+            "Raw dampener",
+            "Dampener final",
+        ],
+        [None, None, None, None, None, None, None],
+        [None, pd.Timestamp("2026-09-30"), None, 1.30, 0.23, 0.077, 0.077],
+        [None, pd.Timestamp("2026-09-29"), None, 1.30, 0.24, 0.079, 0.079],
+        [None, pd.Timestamp("2020-03-16"), None, 1.20, -0.30, -0.19, -0.10],
+    ]
+    workbook = _workbook({"Calculations": rows})
+    name = "EIOPA_symmetric_adjustment_equity_capital_charge"
+    page = (
+        f'<a href="/document/download/a_en?filename={name}_September_2026.xlsx">Sep</a>'
+        f'<a href="/document/download/b_en?filename={name}_August_2026.xlsx">Aug</a>'
+    )
+    requested = []
+
+    def fake(url, timeout):
+        requested.append(url)
+        return (
+            FakeResponse(text=page)
+            if url.endswith("_en")
+            else FakeResponse(content=workbook)
+        )
+
+    monkeypatch.setattr(eiopa_model, "get_request", fake)
+
+    adjustment = FixedIncome(
+        start_date="2020-01-01", end_date="2026-09-30"
+    ).get_eiopa_symmetric_adjustment()
+
+    assert "September_2026" in requested[-1]
+    assert adjustment.loc[
+        pd.Period("2026-09-30", "D"), "Type 1 Equity Charge"
+    ] == pytest.approx(0.467)
+    assert adjustment.loc[
+        pd.Period("2020-03-16", "D"), "Symmetric Adjustment"
+    ] == pytest.approx(-0.10)
+    assert adjustment.loc[
+        pd.Period("2020-03-16", "D"), "Type 2 Equity Charge"
+    ] == pytest.approx(0.39)
+
+
+def test_option_chains_fall_back_to_cboe_when_yahoo_has_none(monkeypatch):
+    import yfinance as yf
+
+    from financetoolkit.economics import cboe_model
+    from financetoolkit.options import options_model
+
+    payload = {
+        "data": {
+            "current_price": 7818.93,
+            "options": [
+                {
+                    "option": "SPX261016C07800000",
+                    "bid": 80.0,
+                    "ask": 82.0,
+                    "iv": 0.12,
+                    "open_interest": 900.0,
+                },
+                {
+                    "option": "SPXW261016C07800000",
+                    "bid": 80.5,
+                    "ask": 82.5,
+                    "iv": 0.121,
+                    "open_interest": 50.0,
+                },
+                {
+                    "option": "SPX261016C07900000",
+                    "bid": 35.0,
+                    "ask": 36.0,
+                    "iv": 0.11,
+                    "open_interest": 400.0,
+                },
+                {
+                    "option": "SPX261016P07800000",
+                    "bid": 60.0,
+                    "ask": 61.0,
+                    "iv": 0.13,
+                    "open_interest": 700.0,
+                },
+                {
+                    "option": "SPX261120C07800000",
+                    "bid": 150.0,
+                    "ask": 152.0,
+                    "iv": 0.125,
+                    "open_interest": 300.0,
+                },
+            ],
+        }
+    }
+
+    class JsonResponse(FakeResponse):
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(cboe_model, "get_request", lambda url, timeout: JsonResponse())
+    monkeypatch.setattr(
+        yf, "Ticker", lambda ticker: (_ for _ in ()).throw(RuntimeError("down"))
+    )
+
+    assert options_model.get_option_expiry_dates("^SPX") == ["2026-10-16", "2026-11-20"]
+
+    calls = options_model.get_option_chains(["^SPX"], "2026-10-16")
+
+    # The monthly and the weekly contract on the same strike are one row: the more held.
+    assert list(calls.loc["^SPX"].index) == [7800.0, 7900.0]
+    assert calls.loc[("^SPX", 7800.0), "Contract Symbol"] == "SPX261016C07800000"
+    assert calls.loc[("^SPX", 7800.0), "In The Money"]
+    assert not calls.loc[("^SPX", 7900.0), "In The Money"]
+    assert calls.loc[("^SPX", 7900.0), "Implied Volatility"] == pytest.approx(0.11)

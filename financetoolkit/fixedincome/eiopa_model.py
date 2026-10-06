@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import io
 import re
+import warnings
 import zipfile
 
 import numpy as np
@@ -338,3 +339,97 @@ def get_risk_free_rate_term_structures(
     term_structures.index = pd.PeriodIndex(term_structures.index, freq="M")
 
     return term_structures
+
+
+# The symmetric adjustment of the equity capital charge (the "equity dampener") EIOPA
+# publishes monthly: each workbook holds the full daily history from 1991 on its
+# Calculations worksheet, so only the latest is read.
+SYMMETRIC_ADJUSTMENT_PAGE = (
+    f"{BASE_URL}/tools-and-data/symmetric-adjustment-equity-capital-charge_en"
+)
+SYMMETRIC_ADJUSTMENT_PATTERN = re.compile(
+    r'href="([^"]*filename=EIOPA(?:_|%20)symmetric(?:_|%20)adjustment[^"]*\.xlsx)"',
+    flags=re.IGNORECASE,
+)
+SYMMETRIC_ADJUSTMENT_SHEET = "Calculations"
+SYMMETRIC_ADJUSTMENT_DATE = "All calendar days"
+SYMMETRIC_ADJUSTMENT_VALUE = "Dampener final"
+
+# The standard equity charges of the Solvency II standard formula before the symmetric
+# adjustment: type 1 (listed in the EEA or OECD) and type 2 (other) equities.
+EQUITY_CHARGES = {"Type 1 Equity Charge": 0.39, "Type 2 Equity Charge": 0.49}
+
+
+def get_symmetric_adjustment() -> pd.DataFrame:
+    """
+    Retrieves the daily symmetric adjustment of the equity capital charge of Solvency II,
+    from 1991, and the type 1 and type 2 equity charges it results in.
+
+    Returns:
+        pd.DataFrame: The "Symmetric Adjustment" and the equity charges as decimals, indexed
+        by day.
+
+    Raises:
+        ValueError: When the page links no workbook or the workbook misses the history.
+    """
+    description = "EIOPA symmetric adjustment of the equity capital charge"
+
+    def fetch() -> pd.DataFrame:
+        page = get_request(SYMMETRIC_ADJUSTMENT_PAGE, timeout=60).text
+        links = SYMMETRIC_ADJUSTMENT_PATTERN.findall(page)
+
+        if not links:
+            raise ValueError(
+                f"The {description} page links no workbook, which means EIOPA changed it."
+            )
+
+        # The page lists the latest month first.
+        link = links[0] if links[0].startswith("http") else f"{BASE_URL}{links[0]}"
+
+        with warnings.catch_warnings():
+            # The workbook uses a data validation extension openpyxl does not read.
+            warnings.simplefilter("ignore", UserWarning)
+            sheet = pd.read_excel(
+                io.BytesIO(get_request(link, timeout=120).content),
+                sheet_name=SYMMETRIC_ADJUSTMENT_SHEET,
+                header=None,
+            )
+
+        header = sheet.index[
+            sheet.astype(str).eq(SYMMETRIC_ADJUSTMENT_DATE).any(axis=1)
+        ]
+        if header.empty:
+            raise ValueError(
+                f"The {description} misses its daily history, which means EIOPA changed the "
+                "workbook."
+            )
+
+        names = sheet.loc[header[0]].astype(str)
+        date_column = names[names == SYMMETRIC_ADJUSTMENT_DATE].index[0]
+        value_column = names[names == SYMMETRIC_ADJUSTMENT_VALUE].index[0]
+        data = sheet.loc[header[0] + 1 :, [date_column, value_column]].dropna()
+        data.columns = ["Date", "Symmetric Adjustment"]
+        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+        data = data.dropna(subset=["Date"])
+
+        adjustment = pd.DataFrame(
+            {
+                "Symmetric Adjustment": pd.to_numeric(
+                    data["Symmetric Adjustment"], errors="coerce"
+                ).to_numpy()
+            },
+            index=pd.PeriodIndex(data["Date"], freq="D"),
+        ).sort_index()
+
+        for charge, base in EQUITY_CHARGES.items():
+            adjustment[charge] = base + adjustment["Symmetric Adjustment"]
+
+        return adjustment
+
+    return collect_cached_data(
+        source=policy_model.EIOPA,
+        dataset="symmetric_adjustment",
+        entity="latest",
+        fetch=fetch,
+        description=description,
+    )

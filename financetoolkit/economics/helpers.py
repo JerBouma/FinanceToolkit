@@ -119,6 +119,7 @@ def collect_cached_data(
     entity: str,
     fetch: Callable[[], pd.DataFrame],
     description: str,
+    expect_empty: bool = False,
 ) -> pd.DataFrame:
     """
     Retrieves a dataset through the cache, serving the last stored copy when the source
@@ -138,6 +139,8 @@ def collect_cached_data(
         entity (str): The series or query that identifies the data.
         fetch (Callable[[], pd.DataFrame]): Retrieves the data from the source.
         description (str): What is retrieved, used in the log messages.
+        expect_empty (bool): Whether an empty answer is expected, such as for a period
+            before a source starts, so it is not warned about. Defaults to False.
 
     Returns:
         pd.DataFrame: The data, or an empty DataFrame when the source cannot be reached
@@ -183,7 +186,7 @@ def collect_cached_data(
     if cache is not None and not data.empty:
         cache.set(source=source, dataset=dataset, entity=entity, data=data)
 
-    if data.empty:
+    if data.empty and not expect_empty:
         logger.warning("%s returned no %s.", source, description)
 
     return data

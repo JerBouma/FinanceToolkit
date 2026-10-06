@@ -17,7 +17,9 @@ from financetoolkit.economics import (
     bls_model,
     boe_model,
     boj_model,
+    cboe_model,
     ecb_model,
+    eex_model,
     eurostat_model,
     frb_model,
     freddie_mac_model,
@@ -28,6 +30,7 @@ from financetoolkit.economics import (
     ons_model,
     sbj_model,
     shiller_model,
+    stoxx_model,
     treasury_model,
 )
 from financetoolkit.fixedincome import (
@@ -36,6 +39,7 @@ from financetoolkit.fixedincome import (
     eiopa_model,
     fed_model,
     norgesbank_model,
+    rba_model,
     riksbank_model,
 )
 
@@ -276,6 +280,52 @@ SOURCES = {
         lambda: ecb_model.get_financial_stress_index(START, END).clip(upper=0.49),
         "Euro Area",
         "daily",
+    ),
+    "Cboe VIX implied volatility": (
+        lambda: (cboe_model.get_index("VIX") / 100).to_frame("United States"),
+        "United States",
+        "daily",
+    ),
+    "STOXX VSTOXX implied volatility": (
+        lambda: stoxx_model.get_vstoxx_term_structure()[["1M"]].rename(
+            columns={"1M": "Euro Area"}
+        )
+        / 100,
+        "Euro Area",
+        "daily",
+    ),
+    "EEX carbon price index level": (
+        lambda: eex_model.get_carbon_price(START, END),
+        "European Union",
+        "daily",
+    ),
+    "RBA corporate bond yields": (
+        lambda: rba_model.get_corporate_bond_yields()[["BBB 10Y"]].rename(
+            columns={"BBB 10Y": "Australia"}
+        ),
+        "Australia",
+        "monthly",
+    ),
+    "RBA government bond yields": (
+        lambda: rba_model.get_yield_curve()[["10Y"]].rename(
+            columns={"10Y": "Australia"}
+        ),
+        "Australia",
+        "daily",
+    ),
+    "Bundesbank corporate bond yield": (
+        lambda: bundesbank_model.get_corporate_bond_yield(START, END)[
+            ["Corporate"]
+        ].rename(columns={"Corporate": "Germany"}),
+        "Germany",
+        "monthly",
+    ),
+    "EIOPA symmetric adjustment": (
+        lambda: eiopa_model.get_symmetric_adjustment()[["Symmetric Adjustment"]].rename(
+            columns={"Symmetric Adjustment": "Euro Area"}
+        ),
+        "Euro Area",
+        "monthly",
     ),
     "New York Fed SOFR": (
         lambda: fed_model.get_secured_overnight_financing_rate()[["Rate"]].rename(

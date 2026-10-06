@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import requests
 
+from financetoolkit import helpers
 from financetoolkit.cache.cache_controller import Cache, set_active_cache
 from financetoolkit.economics import (
     boe_model,
@@ -31,6 +32,7 @@ from financetoolkit.fixedincome import (
     derivative_model,
     ecb_model,
     eiopa_model,
+    esma_model,
     euribor_model,
     fed_model,
     fmp_model,
@@ -3180,6 +3182,273 @@ class FixedIncome:
         )
 
     @handle_errors
+    def get_rating_transition_matrix(
+        self,
+        agency: str = "S&P",
+        rating_type: str = "corporate",
+        year: int | None = None,
+        horizon: int = 1,
+        probabilities: bool = True,
+        include_withdrawals: bool = False,
+        region: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieves the rating transition matrix of a credit rating agency: for every rating
+        at the start of a period, the share of ratings that ended the period in each rating
+        category, in default or withdrawn. It is the input of rating migration and default
+        models, such as the Jarrow-Lando-Turnbull model, and of credit portfolio models.
+
+        The data comes from CEREP, the central repository where every credit rating agency
+        registered in the European Union reports its ratings to ESMA, published twice a
+        year with periods from 1989. It covers the global ratings of agencies such as S&P,
+        Moody's, Fitch, DBRS and Scope, for corporates (non-financial, financial and
+        insurance), sovereigns, structured finance and covered bonds, in each agency's own
+        rating scale. No API key is needed.
+
+        By default the matrix is withdrawal-adjusted, the convention of the agencies' own
+        default studies: ratings withdrawn during the period are left out, so each row sums
+        to 1. The matrix compares the rating at the start of the period with the rating at
+        its end, so a default that was followed by a new rating within the period (as after
+        a distressed exchange) shows as that new rating; get_default_rates counts every
+        default within the period and is the measure to calibrate default rates on. With include_withdrawals=True they are a separate "Withdrawals" column, and
+        with probabilities=False the counts are returned instead.
+
+        See definition: https://registers.esma.europa.eu/cerep-publication/
+
+        Also known as: rating migration matrix, credit migration matrix, transition
+        probabilities.
+
+        Args:
+            agency (str, optional): The rating agency, e.g. "S&P", "Moody's", "Fitch",
+                "DBRS", "Scope" or "Kroll", or the CEREP code of any registered agency.
+                Defaults to "S&P".
+            rating_type (str, optional): "corporate", "sovereign", "structured_finance" or
+                "covered_bonds". Defaults to "corporate".
+            year (int | None, optional): The first year of the period. Defaults to None,
+                which takes the latest year published.
+            horizon (int, optional): The length of the period in years, from 1 January of
+                year. Defaults to 1.
+            probabilities (bool, optional): Whether to return the share of ratings per row
+                instead of the number. Defaults to True.
+            include_withdrawals (bool, optional): Whether to keep the ratings withdrawn
+                during the period as a "Withdrawals" column. Defaults to False.
+            region (str | None, optional): The area of the rated entities: "Africa",
+                "America", "Asia", "Europe", "EU members", "International" or "Oceania".
+                Defaults to None, which covers all of them.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The transition matrix, with a row per rating at the start of the
+            period and a column per rating at its end.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        transition_matrix = fixedincome.get_rating_transition_matrix(agency='S&P', year=2025)
+
+        transition_matrix.loc['AAA':'CCC', ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'D']]
+        ```
+
+        Which returns:
+
+        | From Rating   |   AAA |     AA |      A |    BBB |     BB |      B |    CCC |      D |
+        |:--------------|------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
+        | AAA           |     1 | 0      | 0      | 0      | 0      | 0      | 0      | 0      |
+        | AA            |     0 | 0.9518 | 0.0482 | 0      | 0      | 0      | 0      | 0      |
+        | A             |     0 | 0.0135 | 0.9646 | 0.0219 | 0      | 0      | 0      | 0      |
+        | BBB           |     0 | 0.0006 | 0.0355 | 0.9563 | 0.007  | 0.0006 | 0      | 0      |
+        | BB            |     0 | 0      | 0      | 0.0353 | 0.9283 | 0.0353 | 0.0011 | 0      |
+        | B             |     0 | 0      | 0      | 0      | 0.0387 | 0.9001 | 0.0558 | 0.0023 |
+        | CCC           |     0 | 0      | 0      | 0      | 0      | 0.18   | 0.76   | 0.03   |
+        """
+        agency_code = esma_model.resolve_agency(agency)
+
+        if rating_type not in esma_model.RATING_TYPES:
+            raise ValueError(
+                f"The rating_type must be one of {', '.join(map(repr, esma_model.RATING_TYPES))}, "
+                f"not {rating_type!r}."
+            )
+        if horizon < 1:
+            raise ValueError(f"The horizon must be at least 1 year, not {horizon}.")
+
+        # The statistics of a year are published in the first half of the next one.
+        years = [year] if year else [datetime.now().year - 1, datetime.now().year - 2]
+        matrix = pd.DataFrame()
+
+        for start_year in years:
+            matrix = esma_model.get_transition_matrix(
+                agency_code,
+                rating_type,
+                pd.Timestamp(f"{start_year}-01-01"),
+                pd.Timestamp(f"{start_year + horizon - 1}-12-31"),
+                region,
+            )
+            if not matrix.empty:
+                break
+
+        if matrix.empty:
+            return matrix
+
+        if not include_withdrawals:
+            matrix = matrix.drop(columns="Withdrawals", errors="ignore")
+
+        # Ratings no longer outstanding at the start have no row of their own to speak of.
+        matrix = matrix.loc[matrix.sum(axis=1) > 0]
+
+        if probabilities:
+            matrix = matrix.div(matrix.sum(axis=1), axis=0)
+
+        matrix = finalize_dataset(
+            dataset=matrix,
+            start_date=None,
+            end_date=None,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            apply_slice=False,
+        )
+        matrix.index.name = "From Rating"
+
+        return matrix
+
+    @handle_errors
+    def get_default_rates(
+        self,
+        agency: str = "S&P",
+        rating_type: str = "corporate",
+        region: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieves the one-year default rates per rating of a credit rating agency, year by
+        year from 1989: the share of the ratings outstanding at the start of each year that
+        defaulted within it. The history of default rates per rating calibrates the default
+        intensity of credit risk models and shows how defaults cluster in recessions.
+
+        The data comes from CEREP, the central repository where every credit rating agency
+        registered in the European Union reports its ratings to ESMA, in each agency's own
+        rating scale (AAA to C for S&P and Fitch, Aaa to C for Moody's). Only the years
+        between the start and end date are retrieved, one request per year. No API key is
+        needed. CEREP answers slowly (up to half a minute per year), so a long history takes
+        a few minutes the first time; each year is cached afterwards. The years before an
+        agency reported to CEREP read as zero defaults and are left out, so the history
+        starts at the first year with a default.
+
+        See definition: https://registers.esma.europa.eu/cerep-publication/
+
+        Also known as: default frequency, annual default rate by rating, historical default
+        rates.
+
+        Args:
+            agency (str, optional): The rating agency, e.g. "S&P", "Moody's", "Fitch",
+                "DBRS", "Scope" or "Kroll", or the CEREP code of any registered agency.
+                Defaults to "S&P".
+            rating_type (str, optional): "corporate", "sovereign", "structured_finance" or
+                "covered_bonds". Defaults to "corporate".
+            region (str | None, optional): The area of the rated entities: "Africa",
+                "America", "Asia", "Europe", "EU members", "International" or "Oceania".
+                Defaults to None, which covers all of them.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The default rates as decimals, indexed by year with a column per
+            rating.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2018-01-01', end_date='2025-12-31')
+
+        default_rates = fixedincome.get_default_rates(agency='S&P')
+
+        default_rates[['BBB', 'BB', 'B', 'CCC']]
+        ```
+
+        Which returns:
+
+        |      |    BBB |     BB |      B |    CCC |
+        |:-----|-------:|-------:|-------:|-------:|
+        | 2018 | 0      | 0      | 0.0094 | 0.2617 |
+        | 2019 | 0.0016 | 0      | 0.0182 | 0.3534 |
+        | 2020 | 0      | 0.0097 | 0.038  | 0.4661 |
+        | 2021 | 0      | 0      | 0.0039 | 0.0895 |
+        | 2022 | 0      | 0.0046 | 0.0115 | 0.1402 |
+        | 2023 | 0.0006 | 0.001  | 0.0138 | 0.3116 |
+        | 2024 | 0      | 0.0021 | 0.0188 | 0.2852 |
+        | 2025 | 0      | 0.0011 | 0.0146 | 0.252  |
+        """
+        agency_code = esma_model.resolve_agency(agency)
+
+        if rating_type not in esma_model.RATING_TYPES:
+            raise ValueError(
+                f"The rating_type must be one of {', '.join(map(repr, esma_model.RATING_TYPES))}, "
+                f"not {rating_type!r}."
+            )
+
+        # CEREP's periods start in 1989; a year is published in the first half of the next.
+        first_year = max(pd.Timestamp(self._start_date).year, 1989)
+        last_year = min(pd.Timestamp(self._end_date).year, datetime.now().year - 1)
+        years = list(range(first_year, last_year + 1))
+
+        if not years:
+            logger.warning(
+                "CEREP publishes default rates for the years from 1989 to %s.",
+                datetime.now().year - 1,
+            )
+            return pd.DataFrame()
+
+        results = helpers.run_in_parallel(
+            lambda year: esma_model.get_default_rates(
+                agency_code,
+                rating_type,
+                pd.Timestamp(f"{year}-01-01"),
+                pd.Timestamp(f"{year}-12-31"),
+                region,
+            ),
+            [(year,) for year in years],
+            max_workers=6,
+        )
+        default_rates = {
+            year: rates["Default Rate"]
+            for year, rates in zip(years, results, strict=True)
+            if not rates.empty
+        }
+
+        if not default_rates:
+            return pd.DataFrame()
+
+        default_rates = pd.DataFrame(default_rates).T
+        default_rates.index = pd.PeriodIndex(
+            [str(year) for year in default_rates.index], freq="Y"
+        )
+
+        # The years before an agency reported to CEREP read as zero for every rating, so
+        # the history starts at the first year with a default.
+        with_defaults = default_rates.fillna(0).gt(0).any(axis=1)
+        default_rates = (
+            default_rates.loc[with_defaults.idxmax() :]
+            if with_defaults.any()
+            else default_rates
+        )
+
+        return finalize_dataset(
+            dataset=default_rates.dropna(how="all", axis=1),
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
     def get_moodys_corporate_bond_yields(
         self,
         period: str = "daily",
@@ -3461,6 +3730,93 @@ class FixedIncome:
         return finalize_dataset(
             dataset=term_structures,
             indicator_name="EIOPA Risk-Free Rate",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_eiopa_symmetric_adjustment(
+        self,
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the symmetric adjustment of the equity capital charge of Solvency II, the
+        "equity dampener" EIOPA publishes, daily from 1991, and the equity charges of the
+        standard formula it results in. The adjustment raises the charge when equity prices
+        are above their three-year average and lowers it when they are below, between -10%
+        and +10%, so insurers are not forced to sell equities into a falling market. With
+        get_eiopa_risk_free_rate it completes the market inputs of the standard formula's
+        market risk module.
+
+        The "Type 1 Equity Charge" (equities listed in the EEA or OECD) is 39% plus the
+        adjustment and the "Type 2 Equity Charge" (other equities) 49% plus the adjustment.
+        Every value is a decimal fraction (0.0771 for 7.71%). No API key is needed. Weekly
+        and monthly periods take the value on the last day of each period, which is the
+        value insurers apply at that reporting date.
+
+        See definition: https://www.eiopa.europa.eu/tools-and-data/symmetric-adjustment-equity-capital-charge_en
+
+        Also known as: equity dampener, symmetric adjustment, Solvency II equity charge.
+
+        Args:
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The symmetric adjustment and the type 1 and type 2 equity charges,
+            indexed by date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_eiopa_symmetric_adjustment(period='monthly')
+        ```
+
+        Which returns:
+
+        |         |   Symmetric Adjustment |   Type 1 Equity Charge |   Type 2 Equity Charge |
+        |:--------|-----------------------:|-----------------------:|-----------------------:|
+        | 2026-04 |                 0.0767 |                 0.4667 |                 0.5667 |
+        | 2026-05 |                 0.0868 |                 0.4768 |                 0.5768 |
+        | 2026-06 |                 0.0894 |                 0.4794 |                 0.5794 |
+        | 2026-07 |                 0.0951 |                 0.4851 |                 0.5851 |
+        | 2026-08 |                 0.0938 |                 0.4838 |                 0.5838 |
+        | 2026-09 |                 0.0771 |                 0.4671 |                 0.5671 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "EIOPA symmetric adjustment"
+        )
+        symmetric_adjustment = resample_to_period(
+            eiopa_model.get_symmetric_adjustment(), period
+        )
+        if not symmetric_adjustment.empty:
+            symmetric_adjustment.index.name = None
+
+        return finalize_dataset(
+            dataset=symmetric_adjustment,
+            indicator_name="EIOPA Symmetric Adjustment",
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

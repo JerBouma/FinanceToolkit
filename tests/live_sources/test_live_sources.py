@@ -198,6 +198,13 @@ SOURCES = {
         "Germany",
         "daily",
     ),
+    "Bundesbank survey inflation expectations": (
+        lambda: bundesbank_model.get_survey_inflation_expectations(START, END).rename(
+            columns={"10Y": "Germany"}
+        ),
+        "Germany",
+        "monthly",
+    ),
     "Bank of Canada yield curve": (
         lambda: boc_model.get_yield_curve(START, END).rename(columns={"10Y": "Canada"}),
         "Canada",

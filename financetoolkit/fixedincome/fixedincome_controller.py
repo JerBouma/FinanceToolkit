@@ -3654,6 +3654,97 @@ class FixedIncome:
         )
 
     @handle_errors
+    def get_german_inflation_expectations(
+        self,
+        real_rates: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the inflation professional forecasters expect for Germany over the next 5
+        and 10 years, monthly from 1989, from the Consensus Economics survey the Bundesbank
+        uses for its expected real interest rates. Where get_german_breakeven_inflation is
+        the market's expectation, priced daily since 2012 and including risk premia, this is
+        the forecasters' own expectation, with history back to German reunification and no
+        inflation risk or liquidity premium in it.
+
+        The Bundesbank publishes the expected real interest rate: the yield on debt securities
+        outstanding issued by German residents with a residual maturity of 5 to 6 (or 9 to 10)
+        years, minus the weighted inflation rates Consensus Economics expects over that
+        horizon. Adding that yield back gives the expected inflation. With real_rates=True the
+        expected real interest rates themselves are returned instead.
+
+        No API key is needed. The rates are decimal fractions (0.0223 for 2.23%).
+
+        See definition: https://www.bundesbank.de/en/statistics/money-and-capital-markets
+
+        Also known as: survey-based inflation expectations, Consensus Economics inflation
+        forecasts, long-term inflation expectations, expected real interest rates.
+
+        Args:
+            real_rates (bool, optional): Whether to return the expected real interest rates
+                instead of the expected inflation. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The expected inflation (or expected real interest rates), indexed by
+            month with the columns 5Y and 10Y.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_german_inflation_expectations()
+        ```
+
+        Which returns:
+
+        |         |     5Y |    10Y |
+        |:--------|-------:|-------:|
+        | 2026-04 | 0.0218 | 0.0211 |
+        | 2026-05 | 0.0216 | 0.0208 |
+        | 2026-06 | 0.0212 | 0.0205 |
+        | 2026-07 | 0.0218 | 0.0213 |
+        | 2026-08 | 0.0219 | 0.0212 |
+        | 2026-09 | 0.0223 | 0.0214 |
+        """
+        start_date = buffered_start_date(self._start_date, "monthly")
+
+        if real_rates:
+            expectations = bundesbank_model.get_expected_real_rates(
+                start_date, self._end_date
+            )
+        else:
+            expectations = bundesbank_model.get_survey_inflation_expectations(
+                start_date, self._end_date
+            )
+
+        return finalize_dataset(
+            dataset=expectations,
+            indicator_name="German Inflation Expectations",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
     def get_euribor_rates(
         self,
         maturities: str | list | None = None,

@@ -274,3 +274,118 @@ def get_breakeven_inflation(start_date: str, end_date: str) -> pd.DataFrame:
     breakeven.index.name = None
 
     return breakeven.dropna(how="all")
+
+
+# The expected real interest rates the Bundesbank derives from the yields on debt
+# securities outstanding issued by residents with a residual maturity of 5 to 6 and 9 to 10
+# years (monthly averages), minus the weighted inflation rates Consensus Economics expects
+# over those horizons. Adding back the yields gives the survey's expected inflation.
+EXPECTATIONS_URL = "https://api.statistiken.bundesbank.de/rest/data/BBSEI/"
+EXPECTED_REAL_RATE_KEY = "M.ERZ.IHS.DE._Z.R05XX+R10XX"
+OUTSTANDING_YIELD_KEY = "M.I.UMR.RD.EUR.A.B.A.R0506+R0910.R.A.A._Z._Z.A"
+EXPECTATION_HORIZONS = {
+    "R05XX": "5Y",
+    "R10XX": "10Y",
+    "R0506": "5Y",
+    "R0910": "10Y",
+}
+
+
+def _get_monthly_series(
+    url: str, key: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    """
+    Retrieves monthly Bundesbank series with one column per horizon, requesting only the
+    months that are not cached yet.
+
+    Args:
+        url (str): The dataflow URL.
+        key (str): The series key.
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The values as decimals, indexed by month with a column per horizon.
+    """
+    description = "German survey-based inflation expectations"
+
+    def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
+        response = get_request(
+            f"{url}{key}?format=sdmx_csv&lang=en&startPeriod={fetch_start[:7]}&endPeriod={fetch_end[:7]}",
+            timeout=120,
+            extra_headers={"Accept": "text/csv"},
+        )
+        data = _read_bundesbank_csv(response.content)
+
+        if data.empty:
+            return data
+
+        require_columns(
+            data, {"BBK_SEIS_MATURITY", "TIME_PERIOD", "OBS_VALUE"}, description
+        )
+        data["OBS_VALUE"] = pd.to_numeric(data["OBS_VALUE"], errors="coerce")
+        values = data.pivot(
+            index="TIME_PERIOD", columns="BBK_SEIS_MATURITY", values="OBS_VALUE"
+        ).rename(columns=EXPECTATION_HORIZONS)
+        values.index = pd.PeriodIndex(values.index, freq="M")
+        values.index.name = None
+        values.columns.name = None
+
+        # The Bundesbank publishes the rates in percent.
+        return values[["5Y", "10Y"]].dropna(how="all").sort_index() / 100
+
+    return collect_ranged_data(
+        source=policy_model.BUNDESBANK,
+        dataset="series",
+        entity=f"{url.rstrip('/').rsplit('/', 1)[-1]}/{key}",
+        fetch=fetch,
+        start_date=start_date,
+        end_date=end_date,
+        description=description,
+    )
+
+
+def get_expected_real_rates(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the Bundesbank's expected real interest rates for Germany over 5 and 10 years,
+    monthly from 1989: the yields on debt securities outstanding issued by residents minus
+    the weighted inflation rates Consensus Economics expects over the same horizon.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The expected real rates as decimals, indexed by month with the columns
+        "5Y" and "10Y".
+    """
+    return _get_monthly_series(
+        EXPECTATIONS_URL,
+        EXPECTED_REAL_RATE_KEY,
+        start_date,
+        end_date,
+    )
+
+
+def get_survey_inflation_expectations(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Derives the inflation Consensus Economics' survey expects for Germany over 5 and 10
+    years, monthly from 1990, by adding the yields the Bundesbank's expected real rates are
+    computed from back: the yield on debt securities outstanding with a residual maturity of
+    5 to 6 (or 9 to 10) years minus the expected real rate is the expected inflation.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The expected inflation as decimals, indexed by month with the columns
+        "5Y" and "10Y".
+    """
+    real_rates = get_expected_real_rates(start_date, end_date)
+    yields = _get_monthly_series(BASE_URL, OUTSTANDING_YIELD_KEY, start_date, end_date)
+
+    if real_rates.empty or yields.empty:
+        return pd.DataFrame()
+
+    return (yields - real_rates).dropna(how="all")

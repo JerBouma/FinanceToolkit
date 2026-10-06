@@ -343,3 +343,36 @@ def test_bundesbank_breakeven_inflation_subtracts_real_from_interpolated_nominal
     assert list(breakeven.columns) == ["2033"]
     assert list(breakeven.index) == [pd.Period("2026-10-01", "D")]
     assert breakeven.iloc[0, 0] == pytest.approx(expected)
+
+
+def test_bundesbank_survey_inflation_expectations_add_the_yield_back(monkeypatch):
+    real = (
+        "BBK_SEIS_MATURITY;TIME_PERIOD;OBS_VALUE\n"
+        "R05XX;2026-09;1.414\n"
+        "R10XX;2026-09;1.486\n"
+    )
+    outstanding = (
+        "BBK_SEIS_MATURITY;TIME_PERIOD;OBS_VALUE\n"
+        "R0506;2026-09;3.64\n"
+        "R0910;2026-09;3.63\n"
+    )
+    urls = []
+
+    def fake(url, timeout, extra_headers):
+        urls.append(url)
+        return FakeResponse(text=real if "BBSEI" in url else outstanding)
+
+    monkeypatch.setattr(bundesbank_model, "get_request", fake)
+
+    expectations = bundesbank_model.get_survey_inflation_expectations(
+        "2026-09-01", "2026-09-30"
+    )
+
+    # Monthly series are requested by month only.
+    assert all("startPeriod=2026-09&endPeriod=2026-09" in url for url in urls)
+    assert list(expectations.columns) == ["5Y", "10Y"]
+    assert list(expectations.index) == [pd.Period("2026-09", "M")]
+    assert expectations.iloc[0].tolist() == [
+        pytest.approx(0.02226),
+        pytest.approx(0.02144),
+    ]

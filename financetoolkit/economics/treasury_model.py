@@ -10,7 +10,10 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
+
+logger = get_logger()
 
 BASE_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
@@ -114,6 +117,17 @@ def get_yield_curve(
     first_year = max(first_year, int(start_date[:4]) if start_date else first_year)
     last_year = min(current_year, int(end_date[:4]) if end_date else current_year)
     years = list(range(first_year, last_year + 1))
+
+    if not years:
+        logger.warning(
+            "The Treasury %s par yield curve is published from %s to today, so there is no "
+            "data between %s and %s.",
+            curve,
+            CURVES[curve]["first_year"],
+            start_date,
+            end_date,
+        )
+        return pd.DataFrame()
 
     frames = helpers.run_in_parallel(_get_year, [(year, curve) for year in years])
     frames = [frame for frame in frames if not frame.empty]

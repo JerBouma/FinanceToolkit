@@ -45,7 +45,7 @@ FRED_KEY_HINT = (
 
 # The generic message the error handler logs for any failed metric, only worth passing on
 # when nothing more specific was logged.
-GENERIC_FAILURE_PATTERN = re.compile(r" could not be calculated for ")
+GENERIC_FAILURE_PATTERN = re.compile(r" could not be calculated\b")
 
 
 class _CallMessageHandler(logging.Handler):

@@ -170,10 +170,26 @@ def finalize_dataset(
         dataset = apply_rounding(dataset, rounding)
 
     if apply_slice:
+        had_data = not dataset.empty
         dataset = (
             dataset.loc[start_date:end_date]
             if row_slice
             else dataset.loc[:, start_date:end_date]
+        )
+
+        # Data exists, just not in the window, e.g. a weekend or a range not published yet.
+        if had_data and dataset.empty:
+            logger.warning(
+                "There are no %sobservations between %s and %s.",
+                f"{indicator_name} " if indicator_name else "",
+                start_date,
+                end_date,
+            )
+
+    if countries is not None and not isinstance(countries, str | list | tuple):
+        raise TypeError(
+            "The countries must be a country name or a list of country names, such as "
+            f"'Japan' or ['Japan', 'Germany'], not a {type(countries).__name__} ({countries!r})."
         )
 
     if countries:

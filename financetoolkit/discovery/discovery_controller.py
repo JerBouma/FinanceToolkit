@@ -20,6 +20,56 @@ from financetoolkit.utilities.error_model import handle_errors
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
+
+def _validate_arguments(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    date: str | None = None,
+    **counts: int | None,
+) -> None:
+    """
+    Checks the dates and counts a Discovery method is called with before any request is
+    made. The endpoints ignore a date or count they cannot read and return their default
+    selection instead, which would look like a valid answer to the question asked.
+
+    Args:
+        start_date (str | None): The start date, written as YYYY-MM-DD.
+        end_date (str | None): The end date, written as YYYY-MM-DD.
+        date (str | None): A single date, written as YYYY-MM-DD.
+        **counts (int | None): Counts such as limit or pages, which must be whole numbers
+            of at least one (page, which starts at zero, at least zero).
+
+    Raises:
+        ValueError: When a date cannot be read, the start is after the end, or a count is
+            out of range.
+        TypeError: When a count is not a whole number.
+    """
+    for name, value in (
+        ("start_date", start_date),
+        ("end_date", end_date),
+        ("date", date),
+    ):
+        if value is not None and not validation_model.is_valid_date(value):
+            raise ValueError(
+                f"The {name} must be a date written as YYYY-MM-DD, such as '2026-09-01', not '{value}'."
+            )
+
+    if start_date and end_date and start_date > end_date:
+        raise ValueError(
+            f"The start_date {start_date} must be on or before the end_date {end_date}."
+        )
+
+    for name, value in counts.items():
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"The {name} must be a whole number, not {value!r}.")
+        if value < (0 if name == "page" else 1):
+            raise ValueError(
+                f"The {name} must be {'zero or more' if name == 'page' else 'one or more'}, not {value}."
+            )
+
+
 # Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str | None = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY")
 
@@ -256,6 +306,8 @@ class Discovery:
         | HES      | Hess Corporation  |  44694706090 | Energy            | Oil & Gas E&P          |  1.464 | 145.51  |       1.75 |   123147 | New York Stock Exchange | NYSE            | US        |
 
         """
+        _validate_arguments(limit=limit)
+
         stock_screener = discovery_model.get_stock_screener(
             api_key=self._api_key,
             market_cap_higher=market_cap_higher,
@@ -408,6 +460,8 @@ class Discovery:
         | 2024-02-29 |           -1.3336 |                   0.7907 |              1.2483 |               3.4536 |   0.6259 |              -0.5633 |      -1.4379 |       -4.1022 |        1.7541 |       1.2096 |      9.9286 |
         | 2024-03-01 |            0.8526 |                   0.0092 |              1.5435 |              -3.7427 |   1.399  |              -0.8531 |       2.544  |        0.1322 |        0.1964 |       1.6327 |     -2.0912 |
         """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
         sectors_performance = discovery_model.get_sectors_performance(
             api_key=self._api_key,
             start_date=start_date,
@@ -585,6 +639,8 @@ class Discovery:
         | ASPAU    | Abri SPAC I, Inc.                            | NASDAQ     | 2021-08-10 | 2023-11-02      |
         | AVID     | Avid Technology, Inc.                        | NASDAQ     | 1993-03-12 | 2023-11-07      |
         """
+        _validate_arguments(limit=limit, page=page)
+
         delisted_stocks = discovery_model.get_delisted_stocks(
             api_key=self._api_key,
             page=page,
@@ -845,6 +901,10 @@ class Discovery:
         | 2026-07-07 11:01:10  | AMAT     | Zacks Investment Research  | Best Momentum Stock to Buy for July 7th                                       |
         | 2026-07-07 11:01:09  | GS       | Zacks Investment Research  | Goldman Sachs (GS) Earnings Expected to Grow: What to Know Ahead of Next Week's Release |
         """
+        _validate_arguments(
+            start_date=start_date, end_date=end_date, limit=limit, pages=pages
+        )
+
         stock_news = discovery_model.get_stock_news(
             api_key=self._api_key,
             limit=limit,
@@ -893,6 +953,8 @@ class Discovery:
         | 2026-07-07 10:35:53  | Reuters                     | AI startup CEO pleaded guilty in US to trading on insider tips from lawyers |
         | 2026-07-07 10:30:10  | Fox Business                | TENSIONS RISING: Trump delivers unmistakable warning                       |
         """
+        _validate_arguments(limit=limit, pages=pages)
+
         general_news = discovery_model.get_general_news(
             api_key=self._api_key,
             limit=limit,
@@ -947,6 +1009,10 @@ class Discovery:
         | 2026-07-07 10:59:00  | SRAD     | GlobeNewsWire | Portnoy Law Firm Announces Class Action on Behalf of Sportradar Group AG Investors   |
         | 2026-07-07 10:58:00  | CVLT     | GlobeNewsWire | Portnoy Law Firm Announces Class Action on Behalf of Commvault Systems, Inc. Investors |
         """
+        _validate_arguments(
+            start_date=start_date, end_date=end_date, limit=limit, pages=pages
+        )
+
         press_releases = discovery_model.get_press_releases(
             api_key=self._api_key,
             limit=limit,
@@ -994,6 +1060,8 @@ class Discovery:
         | 2026-07-07 10:38:15  | BTCUSD   | Crypto Economy  | Binance Rolls Out New Bitcoin Yield Product to Help Holders Boost Returns Without Selling |
         | 2026-07-07 10:37:19  | BTCUSD   | Crypto Briefing | $470B of Bitcoin at risk from advancing quantum computing               |
         """
+        _validate_arguments(limit=limit, pages=pages)
+
         crypto_news = discovery_model.get_crypto_news(
             api_key=self._api_key,
             limit=limit,
@@ -1039,6 +1107,8 @@ class Discovery:
         | 2026-07-07 09:29:14  | XAUUSD   | FXEmpire     | Gold Price Analysis – Gold Clings to $4,000 Floor Facing Heavy MA Resistance    |
         | 2026-07-07 09:21:33  | XAGUSD   | FXEmpire     | Silver Price Analysis – Silver Holds Above $60 as Strong Dollar Restricts Gains |
         """
+        _validate_arguments(limit=limit, pages=pages)
+
         forex_news = discovery_model.get_forex_news(
             api_key=self._api_key,
             limit=limit,
@@ -1095,6 +1165,10 @@ class Discovery:
         | 2026-07-07 08:55:03  | AAPL     | 247 Wallst      | Stock Market Live July 7, 2026: S&P 500 (SPY) Drops on Tech Concerns          |
         | 2026-07-07 08:44:43  | AAPL     | The Motley Fool | How Apple Can Actually Benefit From the Memory Supply Shortage               |
         """
+        _validate_arguments(
+            start_date=start_date, end_date=end_date, limit=limit, pages=pages
+        )
+
         stock_news = discovery_model.search_stock_news(
             api_key=self._api_key,
             symbols=symbols,
@@ -1154,6 +1228,10 @@ class Discovery:
         | 2026-06-09 14:28:00  | AAPL     | GlobeNewsWire | Charlotte Volsch, Apple Valley, California Broker, Named Among Real Trends 2026...  |
         | 2026-06-09 09:58:00  | AAPL     | Business Wire | MIKROE develops Spatial Anchor R1 & S1 for Apple Vision Pro                         |
         """
+        _validate_arguments(
+            start_date=start_date, end_date=end_date, limit=limit, pages=pages
+        )
+
         press_releases = discovery_model.search_press_releases(
             api_key=self._api_key,
             symbols=symbols,
@@ -1167,7 +1245,12 @@ class Discovery:
         return press_releases
 
     def search_crypto_news(
-        self, symbols: str | list[str], pages: int = 1, limit: int = 100
+        self,
+        symbols: str | list[str],
+        pages: int = 1,
+        limit: int = 100,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Searches cryptocurrency news articles by one or more coin/token symbols.
@@ -1180,6 +1263,8 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
 
         Returns:
             pd.DataFrame: A dataframe with crypto news articles matching the given symbols.
@@ -1206,18 +1291,29 @@ class Discovery:
         | 2026-07-07 10:37:19  | BTCUSD   | Crypto Briefing | $470B of Bitcoin at risk from advancing quantum computing                    |
         | 2026-07-07 10:27:30  | BTCUSD   | CryptoSlate     | Bitcoin dominance hits one-month low as altcoin winners start breaking away  |
         """
+        _validate_arguments(
+            start_date=start_date, end_date=end_date, limit=limit, pages=pages
+        )
+
         crypto_news = discovery_model.search_crypto_news(
             api_key=self._api_key,
             symbols=symbols,
             limit=limit,
             pages=pages,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
         return crypto_news
 
     def search_forex_news(
-        self, symbols: str | list[str], pages: int = 1, limit: int = 100
+        self,
+        symbols: str | list[str],
+        pages: int = 1,
+        limit: int = 100,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Searches forex news articles by one or more currency pair symbols.
@@ -1230,6 +1326,8 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            start_date (str, optional): The start date to filter data with.
+            end_date (str, optional): The end date to filter data with.
 
         Returns:
             pd.DataFrame: A dataframe with forex news articles matching the given symbols.
@@ -1256,11 +1354,17 @@ class Discovery:
         | 2026-07-07 02:15:13  | EURUSD   | FX Street    | Euro Summer range holds against US Dollar – Commerzbank                  |
         | 2026-07-07 01:58:21  | EURUSD   | FX Street    | EUR/USD Price Forecast: Turns broadly sideways below 20-day EMA          |
         """
+        _validate_arguments(
+            start_date=start_date, end_date=end_date, limit=limit, pages=pages
+        )
+
         forex_news = discovery_model.search_forex_news(
             api_key=self._api_key,
             symbols=symbols,
             limit=limit,
             pages=pages,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
@@ -1307,6 +1411,8 @@ class Discovery:
         | KDLYW    | 2024-05-31 | Kindly MD, Inc. Warrants                       | NASDAQ     | Expected |        nan |               |          nan |
         | SECR     | 2024-05-31 | IndexIQ Active ETF Trust                       | NYSE       | Expected |        nan |               |          nan |
         """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
         ipo_calendar = discovery_model.get_ipo_calendar(
             api_key=self._api_key,
             start_date=start_date,
@@ -1355,6 +1461,8 @@ class Discovery:
         | NAKAW    | 2024-05-31    | 2024-05-31       | 2024-05-31             | 0001946573 | CERT   |
         | BIPI     | 2024-05-31    | 2024-05-31       | 2024-05-31             | 0001406234 | CERT   |
         """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
         ipo_disclosures = discovery_model.get_ipo_disclosures(
             api_key=self._api_key,
             start_date=start_date,
@@ -1403,6 +1511,8 @@ class Discovery:
         | LUCY     | 2022-08-13 |                     73    |                4024429 | S-1    |
         | ERES     | 2023-07-02 |                      0.02 |                    100 | S-1/A  |
         """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
         ipo_prospectuses = discovery_model.get_ipo_prospectuses(
             api_key=self._api_key,
             start_date=start_date,
@@ -1453,6 +1563,8 @@ class Discovery:
         | CRTX.L       | 2024-05-31 |           1 |            160 | stock-split  |
         | DAVANGERE.NS | 2024-05-31 |          10 |              1 | stock-split  |
         """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
         splits_calendar = discovery_model.get_stock_splits_calendar(
             api_key=self._api_key,
             start_date=start_date,
@@ -1506,6 +1618,8 @@ class Discovery:
         | Consumer Defensive      | 2024-02-01 | NASDAQ     |           1.74347 |
         | Energy                  | 2024-02-01 | NASDAQ     |           0.63975 |
         """
+        _validate_arguments(date=date)
+
         sector_performance = discovery_model.get_sector_performance(
             api_key=self._api_key,
             date=date,
@@ -1559,6 +1673,8 @@ class Discovery:
         | Agricultural Inputs          | 2024-02-01 | NASDAQ     |            0.5436 |
         | Agricultural - Machinery     | 2024-02-01 | NASDAQ     |            1.4934 |
         """
+        _validate_arguments(date=date)
+
         industry_performance = discovery_model.get_industry_performance(
             api_key=self._api_key,
             date=date,
@@ -1612,6 +1728,8 @@ class Discovery:
         | Consumer Defensive      | 2024-02-01 | NASDAQ     |     31.7298 |
         | Energy                  | 2024-02-01 | NASDAQ     |     14.4114 |
         """
+        _validate_arguments(date=date)
+
         sector_pe = discovery_model.get_sector_pe(
             api_key=self._api_key,
             date=date,
@@ -1665,6 +1783,8 @@ class Discovery:
         | Agricultural Inputs          | 2024-02-01 | NASDAQ     |     58.9849 |
         | Agricultural - Machinery     | 2024-02-01 | NASDAQ     |     10.3538 |
         """
+        _validate_arguments(date=date)
+
         industry_pe = discovery_model.get_industry_pe(
             api_key=self._api_key,
             date=date,
@@ -1712,6 +1832,8 @@ class Discovery:
         | CYCCP    | Cyclacel Pharmaceuticals, Inc. | Bio Green Med Solution, Inc.              | 2026-06-16            |
         | CYCC     | Cyclacel Pharmaceuticals, Inc. | Bio Green Med Solution, Inc.              | 2026-06-16            |
         """
+        _validate_arguments(limit=limit, page=page)
+
         mergers_acquisitions = discovery_model.get_mergers_acquisitions_latest(
             api_key=self._api_key,
             limit=limit,
@@ -1764,6 +1886,8 @@ class Discovery:
         | 005387.KS | 2026-10-01 00:00:00 | 10399.5  |        11263.8  | 4.84555e+13 |         4.83417e+13 | 2026-10-04     |
         | 005389.KS | 2026-10-01 00:00:00 | 10399.5  |        11263.8  | 4.84555e+13 |         4.83417e+13 | 2026-10-04     |
         """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
         earnings_calendar = discovery_model.get_earnings_calendar(
             api_key=self._api_key,
             start_date=start_date,
@@ -1819,6 +1943,10 @@ class Discovery:
         | RR       | 2026-10-02 17:25:13 | False            | https://www.sec.gov/Archives/edgar/data/1963685/000121390026106552/ea0307478-8k_richtech.htm |
         | None     | 2026-10-02 17:23:50 | False            | https://www.sec.gov/Archives/edgar/data/2012839/000162828026064662/ebdc-20260930.htm         |
         """
+        _validate_arguments(
+            start_date=start_date, end_date=end_date, limit=limit, page=page
+        )
+
         filings = discovery_model.get_sec_filings_8k(
             api_key=self._api_key,
             start_date=start_date,
@@ -1872,6 +2000,8 @@ class Discovery:
         | SBGI     | SMITH FREDERICK G | J-Other            |                   48000 |   12.76 |
         | SBGI     | SMITH FREDERICK G | J-Other            |                   48000 |   12.76 |
         """
+        _validate_arguments(date=date, limit=limit, page=page)
+
         insider_trading = discovery_model.get_insider_trading_latest(
             api_key=self._api_key,
             date=date,

@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import re
 from collections import Counter
+from datetime import datetime
 
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import convert_isin_to_ticker
@@ -151,3 +152,25 @@ def validate_toolkit_parameters(
         ticker_list.remove(benchmark_ticker)
 
     return ticker_list
+
+
+def is_valid_date(value: str) -> bool:
+    """
+    Checks that a date is written as YYYY-MM-DD and exists, so that 2026-02-30 is refused
+    up front rather than failing deep inside a retrieval.
+
+    Args:
+        value (str): The date to check.
+
+    Returns:
+        bool: Whether the date is valid.
+    """
+    if not isinstance(value, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None:
+        return False
+
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return False
+
+    return True

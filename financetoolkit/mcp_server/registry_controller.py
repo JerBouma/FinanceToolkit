@@ -34,6 +34,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
 from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -58,7 +59,9 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "Required — omitting it returns the list of available indicators."
     ),
     "tickers": "Comma-separated ticker symbols, e.g. 'AAPL,MSFT,GOOGL'.",
-    "countries": "Comma-separated country names, e.g. 'United States,Germany,Japan'.",
+    "countries": (
+        "Country names, comma-separated or as a list, e.g. 'United States,Germany,Japan'."
+    ),
     "start_date": "Start of the date range in YYYY-MM-DD format.",
     "end_date": "End of the date range in YYYY-MM-DD format.",
     "quarterly": "Return quarterly data instead of annual when True.",
@@ -307,6 +310,21 @@ class RouterGroupSpec(NamedTuple):
     description: str | None = None
 
 
+def _split_values(value: object) -> list[str]:
+    """
+    Splits tickers or countries given as a comma-separated string or as a list.
+
+    Args:
+        value (object): The value as the client sent it.
+
+    Returns:
+        list[str]: The individual values, stripped of surrounding spaces.
+    """
+    items = value if isinstance(value, list | tuple) else str(value).split(",")
+
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
 class ToolRegistry:
     """Dynamically builds and registers categorical master tools on a FastMCP instance.
 
@@ -328,6 +346,7 @@ class ToolRegistry:
         tool_groups: list[dict[str, Any]],
         blocked_periods: dict[str, list[str]] | None = None,
         method_defaults: dict[str, dict[str, Any]] | None = None,
+        countries_optional: list[str] | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -355,6 +374,8 @@ class ToolRegistry:
             method_defaults (dict[str, dict[str, Any]] | None): Per method, MCP-only defaults applied
                 when the caller leaves a parameter unset, plus an optional lookback_days and
                 lookahead_days window used when the caller leaves the dates at the tool default.
+            countries_optional (list[str] | None): Methods that accept countries but may be
+                called without them; every other method that accepts countries requires them.
         """
         self._mcp = mcp
         self._provider = provider
@@ -371,6 +392,7 @@ class ToolRegistry:
             for tool, periods in (blocked_periods or {}).items()
         }
         self._method_defaults: dict[str, dict[str, Any]] = method_defaults or {}
+        self._countries_optional: frozenset[str] = frozenset(countries_optional or [])
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -556,16 +578,12 @@ class ToolRegistry:
 
             raw_tickers = kwargs.pop("tickers", None)
             tickers = (
-                [t.strip().upper() for t in str(raw_tickers).split(",") if t.strip()]
+                [t.strip().upper() for t in _split_values(raw_tickers)]
                 if raw_tickers
                 else None
             )
             raw_countries = kwargs.pop("countries", None)
-            countries = (
-                [c.strip() for c in str(raw_countries).split(",") if c.strip()]
-                if raw_countries
-                else None
-            )
+            countries = _split_values(raw_countries) if raw_countries else None
 
             # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
@@ -584,6 +602,32 @@ class ToolRegistry:
                     "Please provide one or more ticker symbols, e.g. `tickers='AAPL'` "
                     "or `tickers='AAPL,MSFT'`."
                 )
+
+            # Tickers on a tool that works with countries would otherwise be dropped as an
+            # unknown parameter and every country returned.
+            if (
+                tickers
+                and not countries
+                and effective_category
+                == inspector.categories.get("standalone", "standalone")
+            ):
+                return (
+                    f"`{tool_name}` (`{method_name}`) works with countries, not tickers. "
+                    "Please provide `countries`, e.g. `countries='United States'` or "
+                    "`countries='Germany,Japan'`."
+                )
+
+            # A date that was given but cannot be read is an error, not a reason to quietly
+            # answer for the default range instead.
+            for date_parameter in ("start_date", "end_date"):
+                given = kwargs.get(date_parameter)
+                if given and not validation_model.is_valid_date(
+                    str(given).replace("/", "-")
+                ):
+                    return (
+                        f"Invalid `{date_parameter}` for `{tool_name}` (`{method_name}`): "
+                        f"'{given}'. Please use a date written as YYYY-MM-DD, e.g. '2026-01-31'."
+                    )
 
             quarterly = to_boolean(kwargs.pop("quarterly", False))
             start_date = validate_date(
@@ -609,6 +653,20 @@ class ToolRegistry:
             )
 
             accepted_params = method_param_names.get(method_name, set())
+
+            # Without countries a country indicator returns every country it has, often sixty
+            # or more columns, which is rarely what was asked and costs many tokens.
+            if (
+                not countries
+                and "countries" in accepted_params
+                and method_name not in self._countries_optional
+            ):
+                return (
+                    f"`{tool_name}` (`{method_name}`) requires a `countries` parameter. "
+                    "Please provide one or more countries, e.g. `countries='United States'` "
+                    "or `countries='Germany,Japan'`."
+                )
+
             method_kwargs = {}
             for pname, pann, _ in param_meta:
                 if pname in kwargs:

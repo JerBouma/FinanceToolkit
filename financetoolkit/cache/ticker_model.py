@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
+
 if TYPE_CHECKING:
     from financetoolkit.cache.cache_controller import Cache
 
@@ -211,4 +215,20 @@ def collect_per_ticker(
 
         cached_frames.append(fetched)
 
-    return combine_tickers(cached_frames, tickers, ticker_axis), invalid_tickers
+    combined = combine_tickers(cached_frames, tickers, ticker_axis)
+
+    # Said once per call, so an empty result explains itself, e.g. an ETF dataset asked of
+    # a company or a ticker the source does not know.
+    if without_data := [
+        ticker
+        for ticker in missing_tickers
+        if (selected := select_ticker(combined, ticker, ticker_axis)) is None
+        or selected.empty
+    ]:
+        logger.warning(
+            "No %s data is available for %s.",
+            dataset.replace("_", " "),
+            ", ".join(without_data),
+        )
+
+    return combined, invalid_tickers

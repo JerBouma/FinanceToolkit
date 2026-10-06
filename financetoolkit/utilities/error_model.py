@@ -48,17 +48,17 @@ def get_tickers_from_arguments(args: tuple) -> str:
             applied to.
 
     Returns:
-        str: a comma separated list of tickers, or "unknown" when they cannot be
-        recovered from the arguments.
+        str: " for " followed by a comma separated list of tickers, or an empty string
+        when the controller has no tickers, such as Economics and Fixed Income.
     """
     tickers = getattr(args[0], "_tickers", None) if args else None
 
     if isinstance(tickers, str):
-        return tickers
+        return f" for {tickers}"
     if isinstance(tickers, list) and tickers:
-        return ", ".join(str(ticker) for ticker in tickers)
+        return " for " + ", ".join(str(ticker) for ticker in tickers)
 
-    return "unknown"
+    return ""
 
 
 def handle_errors(func):
@@ -103,7 +103,7 @@ def handle_errors(func):
             return func(*args, **kwargs)
         except ALWAYS_RAISED_ERRORS as error:
             logger.error(
-                "%s failed for %s with a %s (%s), which indicates a defect rather than "
+                "%s failed%s with a %s (%s), which indicates a defect rather than "
                 "missing data.",
                 func.__name__,
                 get_tickers_from_arguments(args),
@@ -115,7 +115,7 @@ def handle_errors(func):
             if use_strict_errors():
                 raise
             logger.error(
-                "%s could not be calculated for %s because the item %s is missing from "
+                "%s could not be calculated%s because the item %s is missing from "
                 "the provided financial statements. Fill this row to obtain the metric.",
                 func.__name__,
                 get_tickers_from_arguments(args),
@@ -126,7 +126,7 @@ def handle_errors(func):
             if use_strict_errors():
                 raise
             logger.error(
-                "%s could not be calculated for %s due to missing data. %s: %s",
+                "%s could not be calculated%s due to missing data. %s: %s",
                 func.__name__,
                 get_tickers_from_arguments(args),
                 type(error).__name__,
@@ -137,7 +137,7 @@ def handle_errors(func):
             if use_strict_errors():
                 raise
             logger.error(
-                "%s could not be calculated for %s due to a division by zero. %s: %s",
+                "%s could not be calculated%s due to a division by zero. %s: %s",
                 func.__name__,
                 get_tickers_from_arguments(args),
                 type(error).__name__,
@@ -148,7 +148,7 @@ def handle_errors(func):
             if use_strict_errors():
                 raise
             logger.error(
-                "%s could not be calculated for %s. %s: %s",
+                "%s could not be calculated%s. %s: %s",
                 func.__name__,
                 get_tickers_from_arguments(args),
                 type(error).__name__,

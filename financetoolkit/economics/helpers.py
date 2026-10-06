@@ -183,6 +183,9 @@ def collect_cached_data(
     if cache is not None and not data.empty:
         cache.set(source=source, dataset=dataset, entity=entity, data=data)
 
+    if data.empty:
+        logger.warning("%s returned no %s.", source, description)
+
     return data
 
 
@@ -220,6 +223,15 @@ def collect_ranged_data(
         pd.DataFrame: The data within the range, or an empty DataFrame when the source
         cannot be reached and nothing is cached.
     """
+    # A range that starts after today has nothing to retrieve yet, so the source is not asked.
+    if pd.Timestamp(start_date) > pd.Timestamp.today().normalize():
+        logger.warning(
+            "The %s requested from %s lies in the future, so there is no data for it yet.",
+            description,
+            start_date,
+        )
+        return pd.DataFrame()
+
     cache = get_active_cache()
     cached_data = None
     fetch_start, fetch_end = start_date, end_date
@@ -272,6 +284,15 @@ def collect_ranged_data(
             end=fetch_end,
         )
 
+    if data.empty and (cached_data is None or cached_data.empty):
+        logger.warning(
+            "%s returned no %s between %s and %s.",
+            source,
+            description,
+            fetch_start,
+            fetch_end,
+        )
+
     if cached_data is not None and not cached_data.empty:
         data = frame_model.merge_frames(cached_data, data)
         data = frame_model.slice_frame(data, start_date, end_date)
@@ -315,6 +336,24 @@ def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> 
         )
 
 
+def check_period_type(period: object) -> None:
+    """
+    Checks that a period is given as text, so that a wrong type is reported as such
+    rather than as an AttributeError from deep inside the retrieval.
+
+    Args:
+        period (object): The period as passed by the caller.
+
+    Raises:
+        TypeError: When the period is not None and not a string.
+    """
+    if period is not None and not isinstance(period, str):
+        raise TypeError(
+            f"The period must be text such as 'monthly' or 'daily', not a {type(period).__name__} "
+            f"({period!r})."
+        )
+
+
 def validate_period(period: str, supported: list[str], indicator: str) -> str:
     """
     Normalises a period and checks that the indicator is published at that frequency.
@@ -330,6 +369,8 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
     Raises:
         ValueError: When the indicator is not published at that frequency.
     """
+    check_period_type(period)
+
     # "annual" is accepted as well, the word the MCP server's parameter description uses.
     period = "yearly" if period.lower() == "annual" else period.lower()
 

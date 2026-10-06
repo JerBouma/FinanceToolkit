@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 
 import os
-import re
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -171,13 +170,13 @@ class FixedIncome:
         | 2024-01-12 | 0.0451 | 0.0467 | 0.0502 | 0.0534 | 0.0613 | 0.0753 | 0.1338 |
         | 2024-01-15 | 0.0451 | 0.0467 | 0.0501 | 0.0533 | 0.0611 | 0.0751 | 0.1328 |
         """
-        if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
+        if start_date and not validation_model.is_valid_date(start_date):
             raise ValueError(
-                "Please input a valid start date (%Y-%m-%d) like '2010-01-01'"
+                f"Please input a valid start date (%Y-%m-%d) like '2010-01-01', not '{start_date}'"
             )
-        if end_date and re.match(r"^\d{4}-\d{2}-\d{2}$", end_date) is None:
+        if end_date and not validation_model.is_valid_date(end_date):
             raise ValueError(
-                "Please input a valid end date (%Y-%m-%d) like '2020-01-01'"
+                f"Please input a valid end date (%Y-%m-%d) like '2020-01-01', not '{end_date}'"
             )
         if start_date and end_date and start_date > end_date:
             raise ValueError(
@@ -2227,6 +2226,12 @@ class FixedIncome:
         sources = self._get_country_yield_curves(
             buffered_start_date(self._start_date, period)
         )
+
+        if countries is not None and not isinstance(countries, str | list | tuple):
+            raise TypeError(
+                "The countries must be a country name or a list of country names, such as "
+                f"'Germany' or ['Germany', 'Japan'], not a {type(countries).__name__} ({countries!r})."
+            )
 
         requested = (
             list(sources)

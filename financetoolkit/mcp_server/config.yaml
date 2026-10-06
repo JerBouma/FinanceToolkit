@@ -738,3 +738,15 @@ method_defaults:
     impact: "High"
     lookback_days: 23
     lookahead_days: 7
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Methods that accept countries but may be called without them
+# Every other method that accepts countries requires them over MCP, since without
+# them a country indicator returns every country it covers. These either return a
+# handful of columns or filter on their own arguments.
+# ──────────────────────────────────────────────────────────────────────────────
+countries_optional:
+  - "get_economic_calendar"
+  - "get_government_bond_yield_curve"
+  - "get_overnight_rate"
+  - "get_commodity_forward_curve"

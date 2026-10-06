@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 
 import os
-import re
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -35,6 +34,7 @@ from financetoolkit.economics import (
 )
 from financetoolkit.economics.helpers import (
     buffered_start_date,
+    check_period_type,
     combine_sources,
     extend_with_recent,
     resample_to_period,
@@ -133,13 +133,13 @@ class Economics:
         | 2024 |         143.896 |       143.228 | 113.839  |
         | 2025 |         146.562 |       146.58  | 116.102  |
         """
-        if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
+        if start_date and not validation_model.is_valid_date(start_date):
             raise ValueError(
-                "Please input a valid start date (%Y-%m-%d) like '2010-01-01'"
+                f"Please input a valid start date (%Y-%m-%d) like '2010-01-01', not '{start_date}'"
             )
-        if end_date and re.match(r"^\d{4}-\d{2}-\d{2}$", end_date) is None:
+        if end_date and not validation_model.is_valid_date(end_date):
             raise ValueError(
-                "Please input a valid end date (%Y-%m-%d) like '2020-01-01'"
+                f"Please input a valid end date (%Y-%m-%d) like '2020-01-01', not '{end_date}'"
             )
         if start_date and end_date and start_date > end_date:
             raise ValueError(
@@ -3123,6 +3123,8 @@ class Economics:
         | 2019 |  113.815  | 111.591  |    111.243 |
         | 2020 |  114.239  | 112.18   |    111.108 |
         """
+        check_period_type(period)
+
         if not oecd_source and period is not None and period.lower() == "monthly":
             consumer_price_index = self._get_monthly_price_data("consumer_price_index")
         elif oecd_source:
@@ -3240,6 +3242,8 @@ class Economics:
         | 2008 |    0.0263 |   0.0281 |     0.0259 |
         | 2009 |    0.0031 |   0.0009 |    -0.0084 |
         """
+        check_period_type(period)
+
         period = validate_period(
             period or "yearly", ["monthly", "yearly"], "inflation rate"
         )
@@ -3342,6 +3346,8 @@ class Economics:
         | 2021 |          116.511 |   108.241 |
         | 2022 |          134.46  |   122.75  |
         """
+        check_period_type(period)
+
         period = (
             period
             if period is not None
@@ -4080,6 +4086,8 @@ class Economics:
         | 2023 |  785.903  |   97.9468 |    131.286  |
         | 2024 | 1190.71   |  106.289  |    143.996  |
         """
+        check_period_type(period)
+
         period = (
             period
             if period is not None
@@ -4180,6 +4188,8 @@ class Economics:
         | 2009 |  93.5716 |    10376.8  |  6.8308 |
         | 2010 |  87.7606 |     9078.03 |  6.769  |
         """
+        check_period_type(period)
+
         period = (
             period
             if period is not None
@@ -4517,6 +4527,8 @@ class Economics:
         | 2024 |        0.0381 |    0.0381 |          0.0438 |
         | 2025 |        0.0288 |    0.0288 |          0.0426 |
         """
+        check_period_type(period)
+
         period = validate_period(
             period or "yearly",
             ["daily", "weekly", "monthly", "yearly"],
@@ -4646,6 +4658,8 @@ class Economics:
         | 2026Q1 |   0.012  |          0.0366 |   0.0172 |
         | 2026Q2 | nan      |          0.0375 | nan      |
         """
+        check_period_type(period)
+
         period = (
             period
             if period is not None
@@ -4781,6 +4795,8 @@ class Economics:
         | 2023-11 |  0.0066 |          0.045  |   0.0655 |
         | 2023-12 |  0.0062 |          0.0402 |   0.0655 |
         """
+        check_period_type(period)
+
         period = (
             period
             if period is not None
@@ -4899,6 +4915,8 @@ class Economics:
         | 2026-08 |      0.0218 |  0.0098 |           0.0373 |          0.0368 |
         | 2026-09 |      0.0244 |  0.0123 |           0.0373 |          0.039  |
         """
+        check_period_type(period)
+
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "overnight rate"
         )
@@ -5158,6 +5176,8 @@ class Economics:
         | 2022 |          0.0072 |    0.008  |  0.0026 |
         | 2023 |         -0.0122 |   -0.01   |  0.0056 |
         """
+        check_period_type(period)
+
         period = (
             period
             if period is not None
@@ -5486,6 +5506,8 @@ class Economics:
         | 2022Q4 |    0.031  |          0.0357 |  0.0253 |
         | 2023Q1 |    0.0303 |          0.0353 |  0.026  |
         """
+        check_period_type(period)
+
         period = (
             period
             if period is not None

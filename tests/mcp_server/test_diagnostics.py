@@ -14,7 +14,7 @@ def test_a_missing_key_is_answered_with_how_to_pass_one():
     fmp = diagnostics_model.summarize_reasons(
         [
             "No FinancialModelingPrep API key found. Pass it via the api_key argument.",
-            "get_economic_calendar could not be calculated for unknown. ValueError: ...",
+            "get_economic_calendar could not be calculated. ValueError: ...",
         ]
     )
     fred = diagnostics_model.summarize_reasons(
@@ -28,7 +28,7 @@ def test_a_missing_key_is_answered_with_how_to_pass_one():
 def test_specific_reasons_come_before_the_generic_message_and_credentials_are_redacted():
     reason = diagnostics_model.summarize_reasons(
         [
-            "get_x could not be calculated for unknown. ValueError: nothing",
+            "get_x could not be calculated. ValueError: nothing",
             "OECD API rate limit reached (429 Too Many Requests).",
             "Could not reach BIS (404 for url: https://x.org/data?apikey=SECRET&format=csv).",
             "OECD API rate limit reached (429 Too Many Requests).",
@@ -39,9 +39,9 @@ def test_specific_reasons_come_before_the_generic_message_and_credentials_are_re
         "OECD API rate limit reached (429 Too Many Requests). | "
         "Could not reach BIS (404 for url: https://x.org/data?apikey=***&format=csv)."
     )
-    assert diagnostics_model.summarize_reasons(
-        ["get_x could not be calculated for unknown."]
-    ) == ("get_x could not be calculated for unknown.")
+    assert diagnostics_model.summarize_reasons(["get_x could not be calculated."]) == (
+        "get_x could not be calculated."
+    )
     assert diagnostics_model.summarize_reasons([]) is None
 
 

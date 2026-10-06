@@ -10,6 +10,8 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.discovery.discovery_model import get_cached_financial_data
 from financetoolkit.economics.helpers import COUNTRY_CODES
+from financetoolkit.utilities import validation_model
+from financetoolkit.utilities.logger_model import get_logger
 
 # The endpoint returns at most this many days per request, so longer ranges are split.
 ECONOMIC_CALENDAR_WINDOW_DAYS = 90
@@ -21,6 +23,8 @@ SURVEY_LEVEL_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 RATE_OF_CHANGE_PATTERN = re.compile(r"\b(?:YoY|MoM|QoQ)\b", flags=re.IGNORECASE)
+
+logger = get_logger()
 
 # The economic calendar uses two-letter country codes, named like the rest of the module.
 ECONOMIC_CALENDAR_COUNTRIES = COUNTRY_CODES
@@ -111,6 +115,22 @@ def get_economic_calendar(
         f"https://financialmodelingprep.com/stable/economic-calendar?apikey={api_key}"
     )
 
+    for name, value in (("start_date", start_date), ("end_date", end_date)):
+        if value is not None and not validation_model.is_valid_date(value):
+            raise ValueError(
+                f"The {name} must be a date written as YYYY-MM-DD, such as '2026-09-01', not '{value}'."
+            )
+    if start_date and end_date and start_date > end_date:
+        raise ValueError(
+            f"The start_date {start_date} must be on or before the end_date {end_date}."
+        )
+
+    impact_levels = {level.lower() for level in _as_list(impact)}
+    if unknown_levels := impact_levels - {"low", "medium", "high", "all"}:
+        raise ValueError(
+            f"The impact must be 'Low', 'Medium', 'High' or 'All', not {', '.join(sorted(unknown_levels))}."
+        )
+
     if start_date is None and end_date is None:
         urls = [base_url]
     else:
@@ -171,6 +191,16 @@ def get_economic_calendar(
             matches |= names.str.contains(event.lower(), regex=False)
         economic_calendar = economic_calendar[matches]
         country_codes = country_codes[economic_calendar.index]
+
+    if economic_calendar.empty:
+        logger.warning(
+            "No economic releases match the filters (countries=%s, currencies=%s, impact=%s, "
+            "events=%s) in the requested period.",
+            countries,
+            currencies,
+            impact,
+            events,
+        )
 
     economic_calendar = economic_calendar.rename(
         columns={

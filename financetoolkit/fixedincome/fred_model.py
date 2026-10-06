@@ -453,3 +453,197 @@ def get_rating_yield_to_worst(
     yield_data = yield_data / 100
 
     return yield_data
+
+
+# The High Quality Market (HQM) corporate bond yield curve of the U.S. Treasury: monthly
+# average spot rates for these maturities and par yields for a few of them.
+HQM_SPOT_SERIES: dict[str, str] = {
+    "HQMCB6MT": "6M",
+    "HQMCB1YR": "1Y",
+    "HQMCB2YR": "2Y",
+    "HQMCB3YR": "3Y",
+    "HQMCB4YR": "4Y",
+    "HQMCB5YR": "5Y",
+    "HQMCB7YR": "7Y",
+    "HQMCB10YR": "10Y",
+    "HQMCB15YR": "15Y",
+    "HQMCB20YR": "20Y",
+    "HQMCB25YR": "25Y",
+    "HQMCB30YR": "30Y",
+    "HQMCB40YR": "40Y",
+    "HQMCB50YR": "50Y",
+    "HQMCB60YR": "60Y",
+    "HQMCB75YR": "75Y",
+    "HQMCB100YR": "100Y",
+}
+HQM_PAR_SERIES: dict[str, str] = {
+    "HQMCB2YRP": "2Y",
+    "HQMCB5YRP": "5Y",
+    "HQMCB10YRP": "10Y",
+    "HQMCB30YRP": "30Y",
+}
+
+# Monthly averages of the Treasury constant maturity (par) yields at the maturities the HQM
+# par yields are published for, on the same monthly-average basis.
+TREASURY_MONTHLY_SERIES: dict[str, str] = {
+    "GS2": "2Y",
+    "GS5": "5Y",
+    "GS10": "10Y",
+    "GS30": "30Y",
+}
+
+# Moody's seasoned corporate bond yields, daily since 1986 and monthly since 1919, and the
+# daily spreads over the 10-year Treasury FRED derives from them.
+MOODYS_DAILY_SERIES: dict[str, str] = {"DAAA": "Aaa", "DBAA": "Baa"}
+MOODYS_MONTHLY_SERIES: dict[str, str] = {"AAA": "Aaa", "BAA": "Baa"}
+MOODYS_DAILY_SPREAD_SERIES: dict[str, str] = {"AAA10Y": "Aaa", "BAA10Y": "Baa"}
+
+
+def _get_named_series(
+    series: dict[str, str],
+    start_date: str,
+    end_date: str,
+    api_key: str,
+    monthly: bool = False,
+) -> pd.DataFrame:
+    """
+    Retrieves FRED series, names their columns and converts them from percent to decimals.
+
+    Args:
+        series (dict[str, str]): The column name per FRED series identifier.
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+        monthly (bool): Whether the series are monthly, in which case the index (FRED dates
+            a month on its first day) becomes a monthly one. Defaults to False.
+
+    Returns:
+        pd.DataFrame: One column per series, as decimals, in the order given.
+    """
+    data = get_fred_data(list(series), start_date, end_date, api_key)
+
+    if data.empty:
+        return data
+
+    data = data.rename(columns=series)[
+        [name for name in series.values() if name in data.rename(columns=series)]
+    ]
+
+    if monthly:
+        data.index = data.index.asfreq("M")
+
+    data.index.name = None
+
+    # FRED quotes these in percent, so divide by 100 for the decimal.
+    return data.dropna(how="all") / 100
+
+
+def get_hqm_corporate_bond_yield_curve(
+    rate: str, start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Retrieves the High Quality Market (HQM) corporate bond yield curve the U.S. Treasury
+    publishes monthly from 1984, through FRED.
+
+    Args:
+        rate (str): "spot" for the spot (zero-coupon) rates of 17 maturities from 6 months
+            to 100 years, or "par" for the par yields of 2, 5, 10 and 30 years.
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: The monthly average rates as decimals, indexed by month with a column
+            per maturity.
+    """
+    series = HQM_SPOT_SERIES if rate == "spot" else HQM_PAR_SERIES
+
+    return _get_named_series(series, start_date, end_date, api_key, monthly=True)
+
+
+def get_hqm_corporate_bond_spread(
+    start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Computes the spread of the HQM corporate par yields over the Treasury constant maturity
+    yields at the same maturities (2, 5, 10 and 30 years), both monthly averages.
+
+    Returns:
+        pd.DataFrame: The spreads as decimals (0.012 for 1.2 percentage points), indexed by
+            month with a column per maturity.
+    """
+    corporate = _get_named_series(
+        HQM_PAR_SERIES, start_date, end_date, api_key, monthly=True
+    )
+    treasury = _get_named_series(
+        TREASURY_MONTHLY_SERIES, start_date, end_date, api_key, monthly=True
+    )
+
+    if corporate.empty or treasury.empty:
+        return pd.DataFrame()
+
+    return (corporate - treasury).dropna(how="all")
+
+
+def get_moodys_corporate_bond_yields(
+    frequency: str, start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Retrieves Moody's seasoned Aaa and Baa corporate bond yields from FRED.
+
+    Args:
+        frequency (str): "daily" (from 1986) or "monthly" (monthly averages, from 1919).
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: The "Aaa" and "Baa" yields as decimals.
+    """
+    if frequency == "monthly":
+        return _get_named_series(
+            MOODYS_MONTHLY_SERIES, start_date, end_date, api_key, monthly=True
+        )
+
+    return _get_named_series(MOODYS_DAILY_SERIES, start_date, end_date, api_key)
+
+
+def get_moodys_corporate_bond_spreads(
+    frequency: str, start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Retrieves the spreads of Moody's Aaa and Baa corporate bond yields over the 10-year
+    Treasury yield, plus the Baa minus Aaa spread, the classic default spread.
+
+    Args:
+        frequency (str): "daily" (from 1986) or "monthly" (monthly averages, from 1953).
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: The "Aaa", "Baa" and "Baa - Aaa" spreads as decimals.
+    """
+    if frequency == "monthly":
+        yields = _get_named_series(
+            MOODYS_MONTHLY_SERIES, start_date, end_date, api_key, monthly=True
+        )
+        treasury = _get_named_series(
+            {"GS10": "10Y"}, start_date, end_date, api_key, monthly=True
+        )
+
+        if yields.empty or treasury.empty:
+            return pd.DataFrame()
+
+        spreads = yields.sub(treasury["10Y"], axis=0)
+    else:
+        spreads = _get_named_series(
+            MOODYS_DAILY_SPREAD_SERIES, start_date, end_date, api_key
+        )
+
+        if spreads.empty:
+            return spreads
+
+    spreads["Baa - Aaa"] = spreads["Baa"] - spreads["Aaa"]
+
+    return spreads.dropna(how="all")

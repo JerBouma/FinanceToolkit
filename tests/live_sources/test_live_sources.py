@@ -207,6 +207,13 @@ SOURCES = {
         "Norway",
         "daily",
     ),
+    "Federal Reserve excess bond premium": (
+        lambda: frb_model.get_excess_bond_premium().rename(
+            columns={"GZ Credit Spread": "United States"}
+        ),
+        "United States",
+        "monthly",
+    ),
     "New York Fed SOFR": (
         lambda: fed_model.get_secured_overnight_financing_rate()[["Rate"]].rename(
             columns={"Rate": "United States"}

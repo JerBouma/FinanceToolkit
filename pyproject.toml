@@ -185,7 +185,7 @@ unresolved-attribute = "ignore"
 no-matching-overload = "ignore"
 
 [tool.codespell]
-ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund'
+ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer'
 skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
 
 [tool.pytest.ini_options]

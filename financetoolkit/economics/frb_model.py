@@ -2,12 +2,13 @@
 
 __docformat__ = "google"
 
+import io
 import re
 
 import pandas as pd
 
 from financetoolkit.cache import policy_model
-from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.economics.helpers import collect_cached_data, require_columns
 from financetoolkit.utilities.requests_model import get_request
 
 # The seasonally adjusted industrial production indices of the G.17 release, the source
@@ -72,6 +73,64 @@ def get_industrial_production_index() -> pd.DataFrame:
         source=policy_model.FEDERAL_RESERVE_BOARD,
         dataset="series",
         entity=TOTAL_INDEX,
+        fetch=fetch,
+        description=description,
+    )
+
+
+# The credit spread of Gilchrist and Zakrajšek (2012) and its excess bond premium, which
+# the Federal Reserve Board updates monthly from 1973.
+EXCESS_BOND_PREMIUM_URL = (
+    "https://www.federalreserve.gov/econres/notes/feds-notes/ebp_csv.csv"
+)
+
+EXCESS_BOND_PREMIUM_COLUMNS = {
+    "gz_spread": "GZ Credit Spread",
+    "ebp": "Excess Bond Premium",
+    "est_prob": "Recession Probability",
+}
+
+
+def get_excess_bond_premium() -> pd.DataFrame:
+    """
+    Retrieves the Gilchrist-Zakrajšek credit spread, the average spread of US corporate
+    bonds over Treasuries with the same cash flows, its excess bond premium, the part of
+    that spread not explained by expected defaults, and the probability of a recession over
+    the next twelve months the premium implies, monthly from 1973.
+
+    Returns:
+        pd.DataFrame: The spread and premium as decimals and the probability as a fraction,
+        indexed by month.
+
+    Raises:
+        ValueError: When the file misses one of the expected columns.
+    """
+    description = "excess bond premium"
+
+    def fetch() -> pd.DataFrame:
+        response = get_request(EXCESS_BOND_PREMIUM_URL, timeout=60)
+        data = pd.read_csv(io.StringIO(response.text))
+        require_columns(data, {"date", *EXCESS_BOND_PREMIUM_COLUMNS}, description)
+
+        index = pd.PeriodIndex(
+            pd.to_datetime(data["date"], format="%m/%d/%Y"), freq="M"
+        )
+        premium = data[list(EXCESS_BOND_PREMIUM_COLUMNS)].rename(
+            columns=EXCESS_BOND_PREMIUM_COLUMNS
+        )
+        premium.index = index
+        premium = premium.apply(pd.to_numeric, errors="coerce")
+
+        # The spread and premium are published in percentage points; the probability is
+        # already a fraction.
+        premium[["GZ Credit Spread", "Excess Bond Premium"]] /= 100
+
+        return premium.sort_index()
+
+    return collect_cached_data(
+        source=policy_model.FEDERAL_RESERVE_BOARD,
+        dataset="series",
+        entity="excess_bond_premium",
         fetch=fetch,
         description=description,
     )

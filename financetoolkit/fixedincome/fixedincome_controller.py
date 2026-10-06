@@ -14,6 +14,7 @@ from financetoolkit.cache.cache_controller import Cache, set_active_cache
 from financetoolkit.economics import (
     boe_model,
     ecb_model as economics_ecb_model,
+    frb_model,
     mof_model,
     oecd_model,
     treasury_model,
@@ -2810,6 +2811,346 @@ class FixedIncome:
             end_date=self._end_date,
             default_rounding=self._rounding,
             rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_hqm_corporate_bond_yield_curve(
+        self,
+        rate: str = "spot",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the High Quality Market (HQM) corporate bond yield curve of the U.S.
+        Department of the Treasury: the yields of high quality (AAA, AA and A rated) US
+        corporate bonds by maturity, from 6 months to 100 years, monthly from 1984. The
+        Treasury builds it for discounting long-dated liabilities, which is why it is the
+        prescribed discount curve for US corporate pension obligations, and its long history
+        makes it a natural basis for modelling how corporate yields and spreads move.
+
+        Two curves are available. Spot rates (rate="spot") are zero-coupon yields, the rate
+        to discount a single payment at that maturity, for 17 maturities. Par yields
+        (rate="par") are the coupons a bond priced at par would pay, for 2, 5, 10 and 30
+        years, comparable to the Treasury par yield curve (see `get_treasury_rates`). Every
+        value is the average over the month.
+
+        The data comes from FRED, which republishes the Treasury's curve, so a free FRED API
+        key is required. The rates are returned as decimal fractions (0.0558 for 5.58%).
+
+        See definition: https://home.treasury.gov/data/treasury-coupon-issues-and-corporate-bond-yield-curves
+
+        Also known as: HQM curve, corporate bond yield curve, pension discount curve, AA
+        corporate curve.
+
+        Args:
+            rate (str, optional): "spot" for the spot rates or "par" for the par yields.
+                Defaults to "spot".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The monthly average rates, indexed by month with a column per maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_hqm_corporate_bond_yield_curve()[['1Y', '5Y', '10Y', '30Y', '100Y']]
+        ```
+
+        Which returns:
+
+        |         |     1Y |     5Y |    10Y |    30Y |   100Y |
+        |:--------|-------:|-------:|-------:|-------:|-------:|
+        | 2026-03 | 0.0406 | 0.0447 | 0.0514 | 0.0614 | 0.0653 |
+        | 2026-04 | 0.0408 | 0.0449 | 0.0513 | 0.0612 | 0.065  |
+        | 2026-05 | 0.0414 | 0.0467 | 0.0528 | 0.0622 | 0.0656 |
+        | 2026-06 | 0.0422 | 0.0472 | 0.0527 | 0.0611 | 0.0641 |
+        | 2026-07 | 0.0433 | 0.0488 | 0.0545 | 0.0643 | 0.0677 |
+        | 2026-08 | 0.0431 | 0.0497 | 0.0558 | 0.0665 | 0.0702 |
+        """
+        self._require_fred_api_key()
+        if rate not in ("spot", "par"):
+            raise ValueError(f"The rate must be 'spot' or 'par', not {rate!r}.")
+
+        hqm_curve = fred_model.get_hqm_corporate_bond_yield_curve(
+            rate, self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=hqm_curve,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_hqm_corporate_bond_spread(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Computes the credit spread of high quality US corporate bonds per maturity: the
+        Treasury's High Quality Market (HQM) corporate par yield minus the Treasury constant
+        maturity yield, at 2, 5, 10 and 30 years, monthly from 1984. Both legs are par
+        yields averaged over the month, so they are directly comparable. The spread is what
+        investors demand for the default and liquidity risk of investment grade companies,
+        and its shape across maturities, usually wider for longer maturities, shows how that
+        compensation grows with time.
+
+        Unlike the ICE BofA option-adjusted spreads (see `get_ice_bofa_option_adjusted_spread`),
+        of which FRED only carries the last three years, this spread covers four decades, long
+        enough to calibrate how credit spreads behave through several business cycles.
+
+        The data comes from FRED, so a free FRED API key is required. The spreads are returned
+        as decimal fractions (0.0079 for 0.79 percentage points).
+
+        Also known as: corporate credit spread curve, credit spread term structure,
+        investment grade spread.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The monthly spreads, indexed by month with a column per maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_hqm_corporate_bond_spread()
+        ```
+
+        Which returns:
+
+        |         |     2Y |     5Y |    10Y |    30Y |
+        |:--------|-------:|-------:|-------:|-------:|
+        | 2026-03 | 0.0048 | 0.006  | 0.0078 | 0.0091 |
+        | 2026-04 | 0.0042 | 0.0053 | 0.0071 | 0.0084 |
+        | 2026-05 | 0.0037 | 0.005  | 0.007  | 0.0082 |
+        | 2026-06 | 0.0035 | 0.0049 | 0.0071 | 0.0083 |
+        | 2026-07 | 0.0035 | 0.0053 | 0.0075 | 0.0092 |
+        | 2026-08 | 0.0036 | 0.0056 | 0.0079 | 0.0095 |
+        """
+        self._require_fred_api_key()
+
+        hqm_spread = fred_model.get_hqm_corporate_bond_spread(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=hqm_spread,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_moodys_corporate_bond_yields(
+        self,
+        period: str = "daily",
+        spread: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves Moody's seasoned corporate bond yields for Aaa (the highest rating) and Baa
+        (the lowest investment grade rating) US corporate bonds, the longest running corporate
+        bond yield benchmark there is: daily from 1986 and monthly from 1919.
+
+        With spread=True the spreads over the 10-year Treasury yield are returned instead,
+        together with the Baa minus Aaa spread, the classic measure of default risk in the
+        academic literature (e.g. Fama and French, 1989), which widens sharply in recessions.
+        Monthly spreads start in 1953, when the monthly 10-year Treasury yield does.
+
+        Monthly values are the averages over the month, as Moody's publishes them; weekly
+        values are the yields on the last day of each week (weeks end on Friday).
+
+        The data comes from FRED, so a free FRED API key is required. The yields and spreads
+        are returned as decimal fractions (0.0675 for 6.75%).
+
+        Also known as: Moody's Aaa, Moody's Baa, corporate bond yields by rating, default
+        spread, credit spread.
+
+        Args:
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            spread (bool, optional): Whether to return the spreads over the 10-year Treasury
+                yield instead of the yields. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The "Aaa" and "Baa" yields, or with spread=True the "Aaa", "Baa" and
+            "Baa - Aaa" spreads.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_moodys_corporate_bond_yields(period='monthly', spread=True)
+        ```
+
+        Which returns:
+
+        |         |    Aaa |    Baa |   Baa - Aaa |
+        |:--------|-------:|-------:|------------:|
+        | 2026-03 | 0.0123 | 0.0179 |      0.0056 |
+        | 2026-04 | 0.011  | 0.0171 |      0.0061 |
+        | 2026-05 | 0.0108 | 0.0162 |      0.0054 |
+        | 2026-06 | 0.0105 | 0.0153 |      0.0048 |
+        | 2026-07 | 0.0116 | 0.0159 |      0.0043 |
+        | 2026-08 | 0.012  | 0.0164 |      0.0044 |
+        """
+        self._require_fred_api_key()
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "Moody's corporate bond yield"
+        )
+        frequency = "monthly" if period == "monthly" else "daily"
+
+        moodys = (
+            fred_model.get_moodys_corporate_bond_spreads(
+                frequency, self._start_date, self._end_date, self._fred_api_key
+            )
+            if spread
+            else fred_model.get_moodys_corporate_bond_yields(
+                frequency, self._start_date, self._end_date, self._fred_api_key
+            )
+        )
+
+        if period == "weekly":
+            moodys = resample_to_period(moodys, "weekly")
+
+        return finalize_dataset(
+            dataset=moodys,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_excess_bond_premium(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the credit spread of Gilchrist and Zakrajšek (2012) and its excess bond
+        premium, monthly from 1973, as the Federal Reserve Board updates them. The GZ credit
+        spread is the average spread of US corporate bonds over Treasuries with the same cash
+        flows, built bond by bond from the secondary market. The excess bond premium is the
+        part of that spread that expected defaults do not explain: a measure of investors'
+        appetite for credit risk, and one of the best predictors of economic activity in the
+        literature. The Recession Probability column is the probability of a recession over
+        the next twelve months the premium implies.
+
+        Gilchrist, S., & Zakrajšek, E. (2012). Credit Spreads and Business Cycle
+        Fluctuations. American Economic Review, 102(4), 1692-1720.
+        https://doi.org/10.1257/aer.102.4.1692
+
+        No API key is needed. The spread and premium are returned as decimal fractions
+        (0.0084 for 0.84 percentage points) and the probability as a fraction (0.108 for
+        10.8%).
+
+        See definition: https://www.federalreserve.gov/econres/notes/feds-notes/updating-the-recession-risk-and-the-excess-bond-premium-20161006.html
+
+        Also known as: GZ spread, Gilchrist-Zakrajšek spread, EBP, credit market sentiment.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The "GZ Credit Spread", "Excess Bond Premium" and "Recession
+            Probability", indexed by month.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-02-01', end_date='2026-07-31')
+
+        fixedincome.get_excess_bond_premium()
+        ```
+
+        Which returns:
+
+        |         |   GZ Credit Spread |   Excess Bond Premium |   Recession Probability |
+        |:--------|-------------------:|----------------------:|------------------------:|
+        | 2026-02 |             0.0097 |               -0.0026 |                  0.1224 |
+        | 2026-03 |             0.0103 |               -0.0027 |                  0.1205 |
+        | 2026-04 |             0.0092 |               -0.002  |                  0.1372 |
+        | 2026-05 |             0.0083 |               -0.0038 |                  0.0948 |
+        | 2026-06 |             0.0086 |               -0.0029 |                  0.1153 |
+        | 2026-07 |             0.0084 |               -0.0032 |                  0.108  |
+        """
+        excess_bond_premium = frb_model.get_excess_bond_premium()
+
+        return finalize_dataset(
+            dataset=excess_bond_premium,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
             standardize=standardize,
             axis="rows",
             row_slice=True,

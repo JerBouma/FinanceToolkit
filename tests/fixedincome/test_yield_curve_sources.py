@@ -224,3 +224,79 @@ def test_monthly_curve_includes_other_eu_members(monkeypatch):
 
     assert list(curve.columns) == [("France", "10Y")]
     assert curve.iloc[-1, 0] == pytest.approx(0.04)
+
+
+def test_hqm_curve_and_spread_are_monthly_decimals(monkeypatch):
+    from financetoolkit.fixedincome import fred_model
+
+    days = pd.PeriodIndex(["2026-07-01", "2026-08-01"], freq="D")
+
+    def fake(series_ids, start, end, api_key):
+        values = {"HQMCB10YRP": 5.47, "GS10": 4.68, "HQMCB10YR": 5.58, "HQMCB6MT": 4.13}
+        return pd.DataFrame(
+            {sid: [values.get(sid, 5.0)] * 2 for sid in series_ids}, index=days
+        )
+
+    monkeypatch.setattr(fred_model, "get_fred_data", fake)
+
+    curve = fred_model.get_hqm_corporate_bond_yield_curve(
+        "spot", "2026-01-01", "2026-09-30", "key"
+    )
+    spread = fred_model.get_hqm_corporate_bond_spread("2026-01-01", "2026-09-30", "key")
+
+    assert curve.index.freqstr.startswith("M")
+    assert list(curve.columns)[:2] == ["6M", "1Y"] and len(curve.columns) == 17
+    assert curve.loc[pd.Period("2026-08", "M"), "10Y"] == pytest.approx(0.0558)
+    assert spread.loc[pd.Period("2026-08", "M"), "10Y"] == pytest.approx(0.0079)
+
+
+def test_moodys_monthly_spreads_include_the_default_spread(monkeypatch):
+    from financetoolkit.fixedincome import fred_model
+
+    days = pd.PeriodIndex(["2026-08-01"], freq="D")
+    values = {"AAA": 6.03, "BAA": 6.47, "GS10": 4.83}
+    monkeypatch.setattr(
+        fred_model,
+        "get_fred_data",
+        lambda series_ids, start, end, api_key: pd.DataFrame(
+            {sid: [values[sid]] for sid in series_ids}, index=days
+        ),
+    )
+
+    spreads = fred_model.get_moodys_corporate_bond_spreads(
+        "monthly", "2026-01-01", "2026-09-30", "key"
+    )
+
+    assert spreads.iloc[0].to_dict() == {
+        "Aaa": pytest.approx(0.012),
+        "Baa": pytest.approx(0.0164),
+        "Baa - Aaa": pytest.approx(0.0044),
+    }
+
+
+def test_excess_bond_premium_is_parsed_into_decimals(monkeypatch):
+    from financetoolkit.economics import frb_model
+
+    text = "date,gz_spread,ebp,est_prob\n6/1/2026,0.8608,-0.2886,0.1153\n7/1/2026,0.8423,-0.3191,0.1080\n"
+    monkeypatch.setattr(
+        frb_model, "get_request", lambda url, timeout: FakeResponse(text=text)
+    )
+
+    premium = frb_model.get_excess_bond_premium()
+
+    assert premium.loc[pd.Period("2026-07", "M")].to_dict() == {
+        "GZ Credit Spread": pytest.approx(0.008423),
+        "Excess Bond Premium": pytest.approx(-0.003191),
+        "Recession Probability": pytest.approx(0.108),
+    }
+
+
+def test_credit_methods_need_a_fred_key_and_valid_arguments():
+    from financetoolkit import FixedIncome
+
+    without_key = FixedIncome(fred_api_key="")
+    assert without_key.get_hqm_corporate_bond_yield_curve().empty
+
+    with_key = FixedIncome(fred_api_key="key")
+    assert with_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
+    assert with_key.get_moodys_corporate_bond_yields(period="yearly").empty

@@ -36,6 +36,15 @@ NORGES_BANK = "NorgesBank"
 EIOPA = "EIOPA"
 INTERNATIONAL_MONETARY_FUND = "IMF"
 SHILLER = "Shiller"
+CBOE = "Cboe"
+STOXX = "STOXX"
+RESERVE_BANK_OF_AUSTRALIA = "ReserveBankOfAustralia"
+EEX = "EEX"
+ESMA = "ESMA"
+NGFS = "NGFS"
+MACROHISTORY = "Macrohistory"
+DE_NEDERLANDSCHE_BANK = "DeNederlandscheBank"
+EUROPEAN_SYSTEMIC_RISK_BOARD = "ESRB"
 
 # The market risk premium is published per country, so it is one cache entry. Its name
 # changed when the premiums became decimals (v2.2.2), so an entry cached in percent by an
@@ -204,6 +213,25 @@ POLICIES: dict[str, CachePolicy] = {
     f"{INTERNATIONAL_MONETARY_FUND}.codelist": CachePolicy(ttl_seconds=30 * DAY),
     # Updated about once a month.
     f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),
+    # Index histories published whole, one file per index, updated after every close.
+    f"{CBOE}.index": CachePolicy(ttl_seconds=DAY),
+    f"{CBOE}.option_chain": CachePolicy(ttl_seconds=900),
+    f"{STOXX}.index": CachePolicy(ttl_seconds=DAY),
+    f"{RESERVE_BANK_OF_AUSTRALIA}.table": CachePolicy(ttl_seconds=DAY),
+    # One workbook per year of EU carbon allowance auctions; past years do not change.
+    f"{EEX}.auction_year": CachePolicy(ttl_seconds=365 * DAY),
+    f"{EEX}.auction_current_year": CachePolicy(ttl_seconds=DAY),
+    # Rating statistics are published twice a year.
+    f"{ESMA}.statistics": CachePolicy(ttl_seconds=30 * DAY),
+    # Scenario vintages are fixed once published; a new phase is a new database.
+    f"{NGFS}.runs": CachePolicy(ttl_seconds=30 * DAY),
+    f"{NGFS}.timeseries": CachePolicy(ttl_seconds=30 * DAY),
+    f"{MACROHISTORY}.dataset": CachePolicy(ttl_seconds=90 * DAY),
+    f"{DE_NEDERLANDSCHE_BANK}.scenario_set": CachePolicy(ttl_seconds=30 * DAY),
+    f"{DE_NEDERLANDSCHE_BANK}.listing": CachePolicy(ttl_seconds=7 * DAY),
+    f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
+    f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.listing": CachePolicy(ttl_seconds=7 * DAY),
+    f"{FEDERAL_RESERVE_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),

@@ -36,6 +36,7 @@ from financetoolkit.fixedincome import (
     fmp_model,
     fred_model,
     norgesbank_model,
+    rba_model,
     riksbank_model,
     yieldcurve_model,
 )
@@ -2112,6 +2113,11 @@ class FixedIncome:
                 ]
             ]
 
+        def australia() -> pd.DataFrame:
+            # The Reserve Bank of Australia publishes one file with the history from 2013.
+            curve = rba_model.get_yield_curve()
+            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
+
         def japan() -> pd.DataFrame:
             # The Ministry of Finance publishes one file with the full history.
             curve = mof_model.get_government_bond_yields()
@@ -2128,6 +2134,7 @@ class FixedIncome:
             "Canada": lambda: boc_model.get_yield_curve(start_date, end_date),
             "Sweden": lambda: riksbank_model.get_yield_curve(start_date, end_date),
             "Norway": lambda: norgesbank_model.get_yield_curve(start_date, end_date),
+            "Australia": australia,
         }
 
     @handle_errors
@@ -2164,6 +2171,8 @@ class FixedIncome:
         - Sweden: the Riksbank's treasury bill and government bond yields, 1 month to 10
           years.
         - Norway: Norges Bank's generic government bond yields, 3 to 10 years.
+        - Australia: the Reserve Bank of Australia's government bond yields interpolated to
+          2, 3, 5 and 10 years, from 2013.
 
         With period="monthly", every other European Union member, such as France, Italy,
         Spain, the Netherlands and Poland, is included with its 10-year yield, the long-term
@@ -2184,7 +2193,8 @@ class FixedIncome:
         Args:
             countries (list[str] | str | None, optional): The countries to retrieve, from
                 "United States", "Euro Area", "Germany", "United Kingdom", "Japan", "Canada",
-                "Sweden" and "Norway", and with period="monthly" any European Union member.
+                "Sweden", "Norway" and "Australia", and with period="monthly" any European
+                Union member.
                 Defaults to None, which retrieves every country.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
@@ -2979,6 +2989,194 @@ class FixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+        )
+
+    @handle_errors
+    def get_corporate_bond_yields(
+        self,
+        countries: list[str] | str | None = None,
+        spread: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the yields of corporate bonds of a variety of countries, by rating where
+        the source splits them, monthly and with long histories: the input for a credit
+        spread factor outside the United States, where corporate bond indices by rating
+        (iBoxx, ICE BofA) are licensed data.
+
+        - Germany: the average yield on debt securities outstanding of non-MFI corporations
+          the Bundesbank publishes monthly from 1957 (monthly averages), all ratings
+          together ("All ratings"). No API key is needed.
+        - Australia: the yields of non-financial corporate bonds rated A and BBB with a
+          target tenor of 3, 5, 7 and 10 years the Reserve Bank of Australia publishes from
+          2005 (end of month), e.g. "BBB 10Y". No API key is needed.
+        - United States: Moody's seasoned Aaa and Baa corporate bond yields, from 1919. This
+          requires a FRED API key (the fred_api_key of the FixedIncome class); see
+          get_moodys_corporate_bond_yields for daily data.
+
+        With spread=True each yield is returned as a spread over government bonds: for
+        Germany over the yield on public debt securities outstanding (from 1956), for
+        Australia over the Australian government bond yield of the same tenor (end of
+        month, interpolated between 5 and 10 years for 7 years, from 2013), and for the
+        United States over the 10-year Treasury yield.
+
+        The yields are decimal fractions (0.0446 for 4.46%), with one column per country
+        and rating.
+
+        See definition: https://www.bundesbank.de/en/statistics/money-and-capital-markets
+
+        Also known as: corporate credit spread, corporate bond yield by rating, euro credit
+        spread, BBB spread.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to retrieve, from
+                "Germany", "Australia" and "United States". Defaults to None, which
+                retrieves every country available, the United States only with a FRED API
+                key.
+            spread (bool, optional): Whether to return the spread over government bonds
+                instead of the yield. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The yields (or spreads) as decimals, indexed by month with a column
+            per country and rating.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        corporate_bond_yields = fixedincome.get_corporate_bond_yields(
+            countries=['Germany', 'Australia'], spread=True
+        )
+
+        corporate_bond_yields.loc[
+            :, (slice(None), ['All ratings', 'A 5Y', 'BBB 5Y', 'BBB 10Y'])
+        ].droplevel(0, axis=1)
+        ```
+
+        Which returns:
+
+        |         |   All ratings |   A 5Y |   BBB 5Y |   BBB 10Y |
+        |:--------|--------------:|-------:|---------:|----------:|
+        | 2026-03 |        0.01   | 0.0097 |   0.0123 |    0.0114 |
+        | 2026-04 |        0.0091 | 0.0085 |   0.011  |    0.01   |
+        | 2026-05 |        0.0086 | 0.0089 |   0.011  |    0.0097 |
+        | 2026-06 |        0.0084 | 0.0086 |   0.0103 |    0.0088 |
+        | 2026-07 |        0.0085 | 0.0085 |   0.0102 |    0.0086 |
+        | 2026-08 |        0.0085 | 0.0083 |   0.0099 |    0.0084 |
+        """
+        start_date = buffered_start_date(self._start_date, "monthly")
+
+        def germany() -> pd.DataFrame:
+            yields = bundesbank_model.get_corporate_bond_yield(
+                start_date, self._end_date
+            )
+
+            if yields.empty:
+                return yields
+
+            corporate = (
+                yields["Corporate"] - yields["Public"]
+                if spread
+                else yields["Corporate"]
+            )
+
+            return corporate.to_frame("All ratings")
+
+        def australia() -> pd.DataFrame:
+            yields = rba_model.get_corporate_bond_yields()
+
+            if yields.empty or not spread:
+                return yields
+
+            government = rba_model.get_yield_curve()
+
+            if government.empty:
+                return pd.DataFrame()
+
+            # The government yields on the last trading day of each month, at the tenors
+            # of the corporate bonds.
+            government = resample_to_period(government, "monthly")
+            government["7Y"] = (government["5Y"] * 3 + government["10Y"] * 2) / 5
+
+            return pd.DataFrame(
+                {
+                    column: yields[column] - government[column.split(" ")[1]]
+                    for column in yields.columns
+                }
+            ).dropna(how="all")
+
+        def united_states() -> pd.DataFrame:
+            moodys = (
+                fred_model.get_moodys_corporate_bond_spreads(
+                    "monthly", start_date, self._end_date, self._fred_api_key
+                )
+                if spread
+                else fred_model.get_moodys_corporate_bond_yields(
+                    "monthly", start_date, self._end_date, self._fred_api_key
+                )
+            )
+
+            return moodys[[column for column in ("Aaa", "Baa") if column in moodys]]
+
+        sources = {"Germany": germany, "Australia": australia}
+
+        if self._fred_api_key:
+            sources["United States"] = united_states
+
+        requested = (
+            list(sources)
+            if countries is None
+            else [countries] if isinstance(countries, str) else list(countries)
+        )
+
+        if "United States" in requested and not self._fred_api_key:
+            self._require_fred_api_key()
+
+        if unavailable := [country for country in requested if country not in sources]:
+            logger.warning(
+                "Corporate bond yields are not available for %s. They cover %s.",
+                ", ".join(unavailable),
+                ", ".join(sources),
+            )
+
+        frames = {
+            country: values
+            for country in requested
+            if country in sources and not (values := sources[country]()).empty
+        }
+
+        if not frames:
+            return pd.DataFrame()
+
+        corporate_bond_yields = pd.concat(frames, axis=1).sort_index()
+        corporate_bond_yields.index.name = None
+        corporate_bond_yields.columns.names = ["Country", "Rating"]
+
+        return finalize_dataset(
+            dataset=corporate_bond_yields,
+            indicator_name="Corporate Bond Yields",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
         )
 
     @handle_errors

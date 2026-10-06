@@ -481,3 +481,76 @@ def get_survey_inflation_expectations(start_date: str, end_date: str) -> pd.Data
         return pd.DataFrame()
 
     return (yields - real_rates).dropna(how="all")
+
+
+# The monthly average yields on debt securities outstanding issued by German non-MFI
+# corporations, from 1957, and by the public sector, from 1955. Their difference is a
+# long history of the German corporate credit spread; the Bundesbank does not split the
+# corporate yield by rating.
+CORPORATE_YIELD_KEYS = {
+    "Corporate": "M.I.UMR.RD.EUR.X2000.B.A.A.R.A.A._Z._Z.A",
+    "Public": "M.I.UMR.RD.EUR.S13.B.A.A.R.A.A._Z._Z.A",
+}
+
+
+def get_corporate_bond_yield(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the monthly average yield on debt securities outstanding of German non-MFI
+    corporations, from 1957, next to that of the public sector, from 1955.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The yields as decimals, indexed by month with the columns
+        "Corporate" and "Public".
+    """
+    description = "German corporate and public bond yields"
+    key = "+".join(CORPORATE_YIELD_KEYS.values()).replace(
+        ".X2000.B.A.A.R.A.A._Z._Z.A+M.I.UMR.RD.EUR.S13.", ".X2000+S13."
+    )
+    names = {
+        series_key.split(".")[5]: name
+        for name, series_key in CORPORATE_YIELD_KEYS.items()
+    }
+
+    def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
+        response = get_request(
+            f"{BASE_URL}{key}?format=sdmx_csv&lang=en&startPeriod={fetch_start[:7]}&endPeriod={fetch_end[:7]}",
+            timeout=120,
+            extra_headers={"Accept": "text/csv"},
+        )
+        data = _read_bundesbank_csv(response.content)
+
+        if data.empty:
+            return data
+
+        require_columns(
+            data, {"BBK_SEIS_ISSUER_CLASS", "TIME_PERIOD", "OBS_VALUE"}, description
+        )
+        data["OBS_VALUE"] = pd.to_numeric(data["OBS_VALUE"], errors="coerce")
+
+        # Months before a series starts are listed as 0.00 with the status "N" (not
+        # available), while a yield of exactly zero is genuine in recent years.
+        if "OBS_STATUS" in data.columns:
+            data.loc[data["OBS_STATUS"] == "N", "OBS_VALUE"] = float("nan")
+        yields = data.pivot(
+            index="TIME_PERIOD", columns="BBK_SEIS_ISSUER_CLASS", values="OBS_VALUE"
+        ).rename(columns=names)
+        yields.index = pd.PeriodIndex(yields.index, freq="M")
+        yields.index.name = None
+        yields.columns.name = None
+
+        # The Bundesbank publishes the yields in percent.
+        return yields.dropna(how="all").sort_index() / 100
+
+    return collect_ranged_data(
+        source=policy_model.BUNDESBANK,
+        dataset="series",
+        entity=f"BBSIS/{key}",
+        fetch=fetch,
+        start_date=start_date,
+        end_date=end_date,
+        description=description,
+    )

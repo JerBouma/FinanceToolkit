@@ -3,7 +3,9 @@
 __docformat__ = "google"
 
 import importlib.util
+import os
 import re
+import ssl
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -91,6 +93,20 @@ def get_request(
         response.raise_for_status()
         return response
     except requests.exceptions.SSLError:
+        # certifi has dropped some older roots that servers still chain to, such as
+        # Comodo's "AAA Certificate Services" (STOXX), while the operating system still
+        # trusts them, so the system's certificates are tried before not verifying.
+        system_certificates = ssl.get_default_verify_paths().cafile
+        if system_certificates and os.path.exists(system_certificates):
+            try:
+                response = SESSION.get(
+                    url, headers=headers, timeout=timeout, verify=system_certificates
+                )
+                response.raise_for_status()
+                return response
+            except requests.exceptions.SSLError:
+                pass
+
         logger.warning(
             "SSL certificate verification failed for %s. Retrying without verification. "
             "This is common in corporate networks with self-signed certificates.",

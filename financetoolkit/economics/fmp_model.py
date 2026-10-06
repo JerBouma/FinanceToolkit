@@ -249,3 +249,68 @@ def get_economic_calendar(
     economic_calendar["Date"] = pd.to_datetime(economic_calendar["Date"])
 
     return economic_calendar.set_index("Date").sort_index()
+
+
+# The end-of-day endpoint returns at most 5,000 rows per request, so an index history is
+# requested in windows of fifteen years (around 3,800 trading days).
+INDEX_HISTORY_WINDOW_YEARS = 15
+
+
+def get_index_history(
+    symbol: str,
+    api_key: str,
+    start_date: str,
+    end_date: str,
+    user_subscription: str = "Free",
+) -> pd.Series:
+    """
+    Retrieves the daily closing values of an index, such as "^MOVE" (the ICE BofA MOVE
+    index), between two dates.
+
+    Args:
+        symbol (str): The index symbol, e.g. "^MOVE".
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.Series: The closing values as published, indexed by day.
+    """
+    start = pd.Timestamp(start_date)
+    end = pd.Timestamp(end_date)
+    windows = []
+
+    while start <= end:
+        window_end = min(
+            start + pd.DateOffset(years=INDEX_HISTORY_WINDOW_YEARS, days=-1), end
+        )
+        windows.append((start.strftime("%Y-%m-%d"), window_end.strftime("%Y-%m-%d")))
+        start = window_end + pd.DateOffset(days=1)
+
+    symbol_parameter = symbol.replace("^", "%5E")
+    urls = [
+        "https://financialmodelingprep.com/stable/historical-price-eod/light"
+        f"?symbol={symbol_parameter}&from={window_start}&to={window_end}&apikey={api_key}"
+        for window_start, window_end in windows
+    ]
+    frames = helpers.run_in_parallel(
+        lambda url: get_cached_financial_data(
+            url=url, user_subscription=user_subscription
+        ),
+        [(url,) for url in urls],
+    )
+    frames = [
+        frame
+        for frame in frames
+        if isinstance(frame, pd.DataFrame) and {"date", "price"} <= set(frame.columns)
+    ]
+
+    if not frames:
+        return pd.Series(dtype=float)
+
+    data = pd.concat(frames).drop_duplicates(subset="date")
+    values = pd.to_numeric(data["price"], errors="coerce")
+    values.index = pd.PeriodIndex(pd.to_datetime(data["date"]), freq="D")
+
+    return values.dropna().sort_index().rename(symbol)

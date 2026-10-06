@@ -6,6 +6,7 @@ import io
 import re
 
 import pandas as pd
+import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
@@ -133,3 +134,143 @@ def get_excess_bond_premium() -> pd.DataFrame:
         fetch=fetch,
         description=description,
     )
+
+
+# The scenarios of the Federal Reserve's annual supervisory stress test, published in
+# February of the year of the test, each as a CSV file for US ("Domestic") and foreign
+# ("International") variables, with the history of the same variables from 1976.
+SUPERVISORY_SCENARIO_URL = "https://www.federalreserve.gov/supervisionreg/files/{year}_Final_{scenario}_{region}.csv"
+# The status of a scenario file that is not published (yet).
+NOT_PUBLISHED = 404
+
+SUPERVISORY_SCENARIOS = {
+    "baseline": "Supervisory_Baseline",
+    "adverse": "Supervisory_Severely_Adverse",
+    "historic": "Historic",
+}
+SUPERVISORY_REGIONS = {
+    "Euro area": "Euro Area",
+    "Developing Asia": "Developing Asia",
+    "Japan": "Japan",
+    "U.K.": "United Kingdom",
+}
+
+
+def _parse_supervisory_scenario(
+    text: str, domestic: bool, description: str
+) -> pd.DataFrame:
+    """
+    Reads one scenario file into a column per region and variable, indexed by quarter.
+
+    Args:
+        text (str): The CSV file.
+        domestic (bool): Whether the file holds the US variables.
+        description (str): What is read, used in the error message.
+
+    Returns:
+        pd.DataFrame: The variables, with rates and growth as decimals and levels, index
+        values and exchange rates as published.
+    """
+    data = pd.read_csv(io.StringIO(text))
+    require_columns(data, {"Date"}, description)
+
+    data.index = pd.PeriodIndex(data["Date"].str.replace(" ", ""), freq="Q")
+    data = data.drop(
+        columns=[column for column in ("Scenario Name", "Date") if column in data]
+    )
+    data = data.apply(pd.to_numeric, errors="coerce")
+    columns = []
+
+    for column in data.columns:
+        if domestic:
+            region, variable = "United States", column
+        else:
+            prefix = next(
+                (name for name in SUPERVISORY_REGIONS if column.startswith(name)), None
+            )
+            if prefix is None:
+                region, variable = "Other", column
+            else:
+                region = SUPERVISORY_REGIONS[prefix]
+                variable = column[len(prefix) :].strip()
+                variable = variable[:1].upper() + variable[1:]
+
+        # The VIX is a volatility in percent, returned as a decimal like elsewhere.
+        if variable.startswith("Market Volatility Index"):
+            variable = "Market Volatility Index (VIX)"
+
+        # Growth, inflation, rates and the VIX are published in percent; levels and
+        # exchange rates are not.
+        if "(Level)" not in variable and "exchange rate" not in variable:
+            data[column] = data[column] / 100
+
+        columns.append((region, variable))
+
+    data.columns = pd.MultiIndex.from_tuples(columns, names=["Country", "Variable"])
+    data.index.name = None
+
+    return data.sort_index()
+
+
+def get_supervisory_scenario(scenario: str, year: int | None = None) -> pd.DataFrame:
+    """
+    Retrieves a scenario of the Federal Reserve's supervisory stress test: the baseline,
+    the severely adverse scenario, or the history of the same variables from 1976, for the
+    United States (GDP, income, unemployment, inflation, Treasury, BBB corporate and
+    mortgage rates, equity, house and commercial property prices and the VIX) and for the
+    euro area, developing Asia, Japan and the United Kingdom (GDP, inflation and exchange
+    rates).
+
+    Args:
+        scenario (str): "baseline", "adverse" (severely adverse) or "historic".
+        year (int | None): The year of the stress test. Defaults to None, which takes the
+            latest published.
+
+    Returns:
+        pd.DataFrame: The variables, indexed by quarter with a column per region and
+        variable.
+    """
+    years = [year] if year else [pd.Timestamp.now().year, pd.Timestamp.now().year - 1]
+    description = f"Federal Reserve supervisory {scenario} scenario"
+
+    for candidate in years:
+
+        def fetch(candidate: int = candidate) -> pd.DataFrame:
+            frames = []
+            for region in ("Domestic", "International"):
+                try:
+                    response = get_request(
+                        SUPERVISORY_SCENARIO_URL.format(
+                            year=candidate,
+                            scenario=SUPERVISORY_SCENARIOS[scenario],
+                            region=region,
+                        ),
+                        timeout=60,
+                    )
+                except requests.exceptions.HTTPError as error:
+                    # The scenarios of a year are published in February.
+                    if (
+                        error.response is not None
+                        and error.response.status_code == NOT_PUBLISHED
+                    ):
+                        return pd.DataFrame()
+                    raise
+                frames.append(
+                    _parse_supervisory_scenario(
+                        response.text, region == "Domestic", description
+                    )
+                )
+            return pd.concat(frames, axis=1)
+
+        scenario_data = collect_cached_data(
+            source=policy_model.FEDERAL_RESERVE_BOARD,
+            dataset="scenario",
+            entity=f"{candidate}/{scenario}",
+            fetch=fetch,
+            description=f"{description} of {candidate}",
+        )
+
+        if not scenario_data.empty:
+            return scenario_data
+
+    return pd.DataFrame()

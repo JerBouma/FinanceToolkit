@@ -42,20 +42,48 @@ def test_get_request_merges_extra_headers():
 
 
 def test_get_request_ssl_fallback():
-    """Test get_request retries without SSL verification on SSLError."""
+    """Test get_request tries the system certificates, then retries without verification."""
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
 
-    with patch.object(
-        requests_model.SESSION,
-        "get",
-        side_effect=[requests.exceptions.SSLError("bad cert"), mock_response],
-    ) as mock_get:
+    with (
+        patch.object(
+            requests_model.SESSION,
+            "get",
+            side_effect=[
+                requests.exceptions.SSLError("bad cert"),
+                requests.exceptions.SSLError("bad cert"),
+                mock_response,
+            ],
+        ) as mock_get,
+        patch.object(requests_model.os.path, "exists", return_value=True),
+    ):
+        result = requests_model.get_request("https://example.com")
+
+        assert result is mock_response
+        assert mock_get.call_count == 3
+        assert isinstance(mock_get.call_args_list[1].kwargs["verify"], str)
+        assert mock_get.call_args.kwargs["verify"] is False
+
+
+def test_get_request_uses_the_system_certificates_before_not_verifying():
+    """A root certifi dropped but the system trusts is accepted without disabling checks."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+
+    with (
+        patch.object(
+            requests_model.SESSION,
+            "get",
+            side_effect=[requests.exceptions.SSLError("unknown root"), mock_response],
+        ) as mock_get,
+        patch.object(requests_model.os.path, "exists", return_value=True),
+    ):
         result = requests_model.get_request("https://example.com")
 
         assert result is mock_response
         assert mock_get.call_count == 2
-        assert mock_get.call_args.kwargs["verify"] is False
+        assert mock_get.call_args.kwargs["verify"] is not False
 
 
 def test_get_request_raises_on_persistent_failure():

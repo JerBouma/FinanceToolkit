@@ -250,14 +250,14 @@ def get_fixed_effects(
     ) + rng.standard_normal(len(index)) * 0.1
 
     result = panel_data_model.get_fixed_effects(y, x)
-    print(regression_model.regression_summary_table(result["regression"]).round(4))
+    regression_model.regression_summary_table(result["regression"]).round(4)
     ```
 
     Which returns:
 
     |    |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-    |:---|---------------:|--------------:|---------------:|-----------:|
-    | X  |         1.9916 |        0.0072 |       278.1999 |     0.0000 |
+    |:---|--------------:|-------------:|--------------:|----------:|
+    | X  |        1.9916 |       0.0072 |         278.2 |         0 |
     """
     if not entity_effects and not time_effects:
         raise ValueError("At least one of entity_effects or time_effects must be True.")
@@ -391,15 +391,15 @@ def get_random_effects(
     ) + rng.standard_normal(len(index)) * 0.1
 
     result = panel_data_model.get_random_effects(y, x)
-    print(regression_model.regression_summary_table(result).round(4))
+    regression_model.regression_summary_table(result).round(4)
     ```
 
     Which returns:
 
     |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-    |:----------|---------------:|--------------:|---------------:|-----------:|
-    | Intercept |         1.4022 |        1.1402 |         1.2298 |     0.2200 |
-    | X         |         1.9916 |        0.0072 |       277.1783 |     0.0000 |
+    |:----------|--------------:|-------------:|--------------:|----------:|
+    | Intercept |        1.4022 |       1.1402 |        1.2298 |      0.22 |
+    | X         |        1.9916 |       0.0072 |      277.178  |      0    |
     """
     y_panel = _to_panel_series(y, "y")
     x_panel = _to_panel_frame(x, "x")
@@ -509,17 +509,17 @@ def get_hausman_test(
     ) + rng.standard_normal(len(index)) * 0.6
 
     result = panel_data_model.get_hausman_test(y, x)
-    print(result.round(4))
+    result.round(4)
     ```
 
     Which returns:
 
-    | Metric                     |     Value |
-    |:----------------------------|----------:|
-    | Hausman Statistic           |  134.3958 |
-    | Degrees of Freedom          |    1      |
-    | P-Value                     |    0      |
-    | Prefer Fixed Effects (5%)   |    1      |
+    |                           |       0 |
+    |:--------------------------|--------:|
+    | Hausman Statistic         | 134.396 |
+    | Degrees of Freedom        |   1     |
+    | P-Value                   |   0     |
+    | Prefer Fixed Effects (5%) |   1     |
 
     Whereas if `alpha` is instead independent of `X` (`alpha = eta` alone, no
     `entity_mean_x` term -- satisfying Random Effects' exogeneity assumption), the

@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 import yfinance.exceptions
 
@@ -416,10 +417,15 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         if cached_statistics is not None:
             return cached_statistics
 
-    response = get_request(
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
-        timeout=60,
-    )
+    try:
+        response = get_request(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
+            timeout=60,
+        )
+    except requests.exceptions.HTTPError:
+        # Yahoo Finance answers 404 for a symbol it does not know, such as the
+        # "Portfolio" a Portfolio's Toolkit includes, which has no statistics.
+        return pd.Series()
 
     if response.status_code == 200:  # noqa
         data = response.json()

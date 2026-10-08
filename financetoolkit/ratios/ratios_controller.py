@@ -35,6 +35,8 @@ logger = logger_model.get_logger()
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
+# The examples' output tables are wider than the line length.
+# ruff: noqa: E501
 
 
 class Ratios:
@@ -97,7 +99,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
 
@@ -106,24 +113,29 @@ class Ratios:
 
         Which returns:
 
-        |                                             |     2018 |     2019 |     2020 |     2021 |     2022 |
-        |:--------------------------------------------|---------:|---------:|---------:|---------:|---------:|
-        | Gross Margin                                | 0.383437 | 0.378178 | 0.382332 | 0.417794 | 0.433096 |
-        | Operating Margin                            | 0.26694  | 0.24572  | 0.241473 | 0.297824 | 0.302887 |
-        | Net Profit Margin                           | 0.224142 | 0.212381 | 0.209136 | 0.258818 | 0.253096 |
-        | Interest Burden Ratio                       | 1.02828  | 1.02827  | 1.01211  | 1.00237  | 0.997204 |
-        | Income Before Tax Profit Margin             | 0.274489 | 0.252666 | 0.244398 | 0.298529 | 0.30204  |
-        | Effective Tax Rate                          | 0.183422 | 0.159438 | 0.144282 | 0.133023 | 0.162045 |
-        | Return on Assets (ROA)                      | 0.162775 | 0.16323  | 0.177256 | 0.269742 | 0.282924 |
-        | Return on Equity (ROE)                      | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
-        | Return on Invested Capital (ROIC)           | 0.269858 | 0.293721 | 0.344126 | 0.503852 | 0.562645 |
-        | Return on Capital Employed (ROCE)           | 0.305968 | 0.297739 | 0.320207 | 0.495972 | 0.613937 |
-        | Return on Tangible Assets                   | 0.555601 | 0.610645 | 0.878664 | 1.50071  | 1.96959  |
-        | Income Quality Ratio                        | 1.30073  | 1.25581  | 1.4052   | 1.09884  | 1.22392  |
-        | Net Income per EBT                          | 0.816578 | 0.840562 | 0.855718 | 0.866977 | 0.837955 |
-        | Free Cash Flow to Operating Cash Flow Ratio | 0.828073 | 0.848756 | 0.909401 | 0.893452 | 0.912338 |
-        | EBT to EBIT Ratio                           | 0.957448 | 0.948408 | 0.958936 | 0.976353 | 0.975982 |
-        | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
+        |                                             |    2021 |    2022 |    2023 |     2024 |     2025 |
+        |:--------------------------------------------|--------:|--------:|--------:|---------:|---------:|
+        | Gross Margin                                |  0.4178 |  0.4331 |  0.4413 |   0.4621 |   0.4691 |
+        | Operating Margin                            |  0.2978 |  0.3029 |  0.2982 |   0.3151 |   0.3197 |
+        | Net Profit Margin                           |  0.2588 |  0.2531 |  0.2531 |   0.2397 |   0.2692 |
+        | EBITDA Margin                               |  0.3287 |  0.331  |  0.3283 |   0.3444 |   0.3478 |
+        | Free Cash Flow Margin                       |  0.2541 |  0.2826 |  0.2598 |   0.2783 |   0.2373 |
+        | Interest Coverage Ratio                     | 45.4567 | 44.538  | 31.9908 | inf      | inf      |
+        | Income Before Tax Profit Margin             |  0.2985 |  0.302  |  0.2967 |   0.3158 |   0.3189 |
+        | Effective Tax Rate                          |  0.133  |  0.162  |  0.1472 |   0.2409 |   0.1561 |
+        | Return on Assets                            |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
+        | Cash Return on Assets                       |  0.3083 |  0.3471 |  0.3134 |   0.3296 |   0.3079 |
+        | Return on Equity                            |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
+        | Return on Invested Capital                  |  0.4143 |  0.4439 |  0.444  |   0.4336 |   0.5335 |
+        | Return on Capital Employed                  |  0.496  |  0.6139 |  0.5677 |   0.6548 |   0.6855 |
+        | Return on Tangible Assets                   |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
+        | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
+        | Net Income per EBT                          |  0.867  |  0.838  |  0.8528 |   0.7591 |   0.8439 |
+        | Free Cash Flow to Operating Cash Flow Ratio |  0.8935 |  0.9123 |  0.9009 |   0.9201 |   0.8859 |
+        | EBT to EBIT Ratio                           |  0.9764 |  0.976  |  0.9666 |   1      |   1      |
+        | EBIT to Revenue                             |  0.3058 |  0.3095 |  0.307  |   0.3158 |   0.3189 |
+        | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
+        | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         """
         self._tickers = tickers
         self._tickers_without_portfolio = [
@@ -207,25 +219,30 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.collect_all_ratios().loc['AAPL']
         ```
 
         Which returns:
 
-        |                           |         2021 |         2022 |         2023 |         2024 |         2025 |
-        |:--------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | Price-to-Cash-Flow        | 28.7847      | 17.3655      | 27.5403      | 32.6289      | 36.5905      |
-        | Price-to-Free-Cash-Flow   | 32.2174      | 19.0341      | 30.5711      | 35.4618      | 41.301       |
-        | Market Cap                |  2.9947e+12  |  2.12121e+12 |  3.04439e+12 |  3.8585e+12  |  4.07918e+12 |
-        | Enterprise Value          |  3.09629e+12 |  2.23005e+12 |  3.13835e+12 |  3.94761e+12 |  4.15562e+12 |
-        | EV-to-Sales               |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
-        | EV-to-EBIT                | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
-        | EV-to-EBITDA              | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
-        | EV-to-Operating-Cash-Flow | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
-        | Tangible Asset Value      |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
-        | Net Current Asset Value   | -1.5308e+11  | -1.6668e+11  | -1.4687e+11  | -1.5504e+11  | -1.3755e+11  |
+        |                             |         2021 |         2022 |         2023 |         2024 |         2025 |
+        |:----------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | EV-to-Sales                 |  8.2741      |  5.5609      |  8.0923      | 10.0244      |  9.9589      |
+        | EV-to-EBIT                  | 27.0608      | 17.969       | 26.3593      | 31.7437      | 31.2254      |
+        | EV-to-EBITDA                | 25.1745      | 16.798       | 24.6516      | 29.1092      | 28.6326      |
+        | EV-to-Operating-Cash-Flow   | 29.0932      | 17.9518      | 28.0585      | 33.1479      | 37.1766      |
+        | Tangible Asset Value        |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
+        | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
+        | EV-to-Free-Cash-Flow        | 32.5627      | 19.6766      | 31.1463      | 36.026       | 41.9626      |
+        | Buyback Yield               |  0.029       |  0.0429      |  0.0258      |  0.0248      |  0.0223      |
+        | Shareholder Yield           |  0.034       |  0.05        |  0.0308      |  0.0288      |  0.0261      |
+        | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -355,7 +372,8 @@ class Ratios:
             tickers=["AAPL", "MSFT", "GOOGL", "AMZN"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2022-10-01",
-            quarterly=True
+            quarterly=True,
+            end_date="2025-12-31",
         )
 
         custom_ratios = companies.ratios.collect_custom_ratios(
@@ -367,14 +385,14 @@ class Ratios:
 
         Which returns:
 
-        |                        |         2022Q4 |         2023Q1 |         2023Q2 |         2023Q3 |
-        |:-----------------------|---------------:|---------------:|---------------:|---------------:|
-        | WC / Net Income as %   |  463.349       |  427.335       |  398.924       |  371.423       |
-        | Large Revenues         |    1           |    1           |    1           |    1           |
-        | Quick Assets           |    1.35341e+11 |    1.41847e+11 |    1.5995e+11  |    1.80898e+11 |
-        | Cash Op Expenses       |    2.1056e+10  |    1.9972e+10  |    2.2854e+10  |    1.9042e+10  |
-        | Daily Cash Op Expenses |    5.76877e+07 |    5.47178e+07 |    6.26137e+07 |    5.21699e+07 |
-        | Defensive Interval     | 2346.1         | 2592.34        | 2554.55        | 3467.48        |
+        |                        |          2022Q4 |         2023Q1 |         2023Q2 |        2023Q3 |
+        |:-----------------------|----------------:|---------------:|---------------:|--------------:|
+        | WC / Net Income as %   | -3094.24        | -357.787       | -114.904       | -22.4618      |
+        | Large Revenues         |     1           |    1           |    1           |   1           |
+        | Quick Assets           |     1.12386e+11 |    1.02051e+11 |    1.03895e+11 |   1.07589e+11 |
+        | Cash Op Expenses       |     8.8646e+10  |    6.9883e+10  |    7.1731e+10  |   7.6003e+10  |
+        | Daily Cash Op Expenses |     2.42866e+08 |    1.9146e+08  |    1.96523e+08 |   2.08227e+08 |
+        | Defensive Interval     |   462.75        |  533.014       |  528.665       | 516.69        |
         """
         if self._all_ratios.empty:
             self.collect_all_ratios()
@@ -586,25 +604,39 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.collect_efficiency_ratios().loc['AAPL']
         ```
 
         Which returns:
 
-        |                                 |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:--------------------------------|-------:|-------:|-------:|-------:|-------:|
-        | Accounts Payable Turnover Ratio | 4.3887 | 3.7609 | 3.3795 | 3.1975 | 3.1834 |
-        | SGA-to-Revenue Ratio            | 0.0601 | 0.0636 | 0.065  | 0.0667 | 0.0663 |
-        | Fixed Asset Turnover            | 1.846  | 1.8192 | 1.7979 | 1.8576 | 1.9664 |
-        | Asset Turnover Ratio            | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
-        | Operating Ratio                 | 0.7022 | 0.6971 | 0.7018 | 0.6849 | 0.6803 |
-        | R&D Intensity Ratio             | 0.0599 | 0.0666 | 0.078  | 0.0802 | 0.083  |
-        | S&M to Revenue Ratio            | 0      | 0      | 0      | 0.0477 | 0      |
-        | G&A to Revenue Ratio            | 0      | 0      | 0      | 0.0191 | 0.0663 |
-        | SBC to Revenue Ratio            | 0.0216 | 0.0229 | 0.0283 | 0.0299 | 0.0309 |
-        | Deferred Revenue Ratio          | 0.0208 | 0.0201 | 0.021  | 0.0211 | 0.0218 |
+        |                                      |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:-------------------------------------|---------:|---------:|---------:|---------:|---------:|
+        | Days of Inventory Outstanding        |   9.1181 |   9.4097 |   9.6109 |  11.814  |  10.7405 |
+        | Days of Sales Outstanding            |  21.1517 |  25.2057 |  27.4699 |  29.3645 |  32.0949 |
+        | Operating Cycle                      |  30.2698 |  34.6154 |  37.0808 |  41.1785 |  42.8354 |
+        | Days of Accounts Payable Outstanding |  83.1683 |  97.0504 | 108.003  | 114.15   | 114.657  |
+        | Cash Conversion Cycle                | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
+        | Cash Conversion Efficiency           |   0.2844 |   0.3098 |   0.2884 |   0.3024 |   0.2679 |
+        | Receivables Turnover                 |  17.2563 |  14.4808 |  13.2873 |  12.43   |  11.3725 |
+        | Inventory Turnover Ratio             |  40.0303 |  38.7899 |  37.9777 |  30.8955 |  33.9834 |
+        | Accounts Payable Turnover Ratio      |   4.3887 |   3.7609 |   3.3795 |   3.1975 |   3.1834 |
+        | SGA-to-Revenue Ratio                 |   0.0601 |   0.0636 |   0.065  |   0.0667 |   0.0663 |
+        | Fixed Asset Turnover                 |   1.846  |   1.8192 |   1.7979 |   1.8576 |   1.9664 |
+        | Asset Turnover Ratio                 |   1.0841 |   1.1206 |   1.0868 |   1.0899 |   1.1493 |
+        | Operating Ratio                      |   0.7022 |   0.6971 |   0.7018 |   0.6849 |   0.6803 |
+        | R&D Intensity Ratio                  |   0.0599 |   0.0666 |   0.078  |   0.0802 |   0.083  |
+        | S&M to Revenue Ratio                 |   0      |   0      |   0      |   0.0477 |   0.0469 |
+        | G&A to Revenue Ratio                 |   0      |   0      |   0      |   0.0191 |   0.0194 |
+        | SBC to Revenue Ratio                 |   0.0216 |   0.0229 |   0.0283 |   0.0299 |   0.0309 |
+        | Deferred Revenue Ratio               |   0.0208 |   0.0201 |   0.021  |   0.0211 |   0.0218 |
+        | Working Capital Turnover Ratio       |  15.346  | -85.519  | -37.7268 | -31.0999 | -20.2615 |
         """
         if not days:
             days = 365 / 4 if self._quarterly else 365
@@ -780,7 +812,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         asset_turnover_ratios = toolkit.ratios.get_asset_turnover_ratio()
         ```
@@ -870,7 +907,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         inventory_turnover_ratios = toolkit.ratios.get_inventory_turnover_ratio()
         ```
@@ -965,7 +1007,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.get_days_of_inventory_outstanding()
         ```
@@ -1070,7 +1117,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         dso_ratios = toolkit.ratios.get_days_of_sales_outstanding()
         ```
@@ -1166,7 +1218,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         operating_cycle_ratios = toolkit.ratios.get_operating_cycle()
         ```
@@ -1284,7 +1341,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ap_turnover_ratios = toolkit.ratios.get_accounts_payables_turnover_ratio()
         ```
@@ -1383,7 +1445,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         dpo_ratios = toolkit.ratios.get_days_of_accounts_payable_outstanding()
         ```
@@ -1486,7 +1553,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ccc_values = toolkit.ratios.get_cash_conversion_cycle()
         ```
@@ -1630,7 +1702,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.get_cash_conversion_efficiency()
         ```
@@ -1722,17 +1799,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         receivables_turnover = toolkit.ratios.get_receivables_turnover()
         ```
 
         Which returns:
 
-        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0579 | 0.0691 | 0.0753 | 0.0805 | 0.0879 |
-        | TSLA | 0.0353 | 0.0299 | 0.0334 | 0.0406 | 0.0474 |
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 17.2563 | 14.4808 | 13.2873 | 12.43   | 11.3725 |
+        | TSLA | 28.3354 | 33.489  | 29.9607 | 24.6505 | 21.0867 |
         """
         if trailing:
             receivables_turnover = efficiency_model.get_receivables_turnover(
@@ -1811,7 +1893,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         sga_to_revenue_ratios = toolkit.ratios.get_sga_to_revenue_ratio()
         ```
@@ -1901,7 +1988,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         fixed_asset_turnover_ratios = toolkit.ratios.get_fixed_asset_turnover()
         ```
@@ -2077,7 +2169,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         operating_ratios = toolkit.ratios.get_operating_ratio()
         ```
@@ -2168,7 +2265,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         rd_ratios = toolkit.ratios.get_research_and_development_ratio()
         ```
@@ -2256,7 +2358,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         sm_ratios = toolkit.ratios.get_selling_and_marketing_ratio()
         ```
@@ -2265,8 +2372,8 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL |      0 |      0 |      0 | 0.0477 |      0 |
-        | TSLA |      0 |      0 |      0 | 0      |      0 |
+        | AAPL |      0 |      0 |      0 | 0.0477 | 0.0469 |
+        | TSLA |      0 |      0 |      0 | 0      | 0      |
         """
         if trailing:
             sm_ratio = efficiency_model.get_selling_and_marketing_ratio(
@@ -2344,7 +2451,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ga_ratios = toolkit.ratios.get_general_and_administrative_ratio()
         ```
@@ -2353,7 +2465,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0      | 0      | 0      | 0.0191 | 0.0663 |
+        | AAPL | 0      | 0      | 0      | 0.0191 | 0.0194 |
         | TSLA | 0.0839 | 0.0484 | 0.0496 | 0.0527 | 0.0615 |
         """
         if trailing:
@@ -2430,7 +2542,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         sbc_ratios = toolkit.ratios.get_stock_based_compensation_ratio()
         ```
@@ -2518,7 +2635,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         deferred_revenue_ratios = toolkit.ratios.get_deferred_revenue_ratio()
         ```
@@ -2589,7 +2711,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         liquidity_ratios = toolkit.ratios.collect_liquidity_ratios()
 
@@ -2598,15 +2725,16 @@ class Ratios:
 
         Which returns:
 
-        |                                    |       2021 |        2022 |       2023 |        2024 |        2025 |
-        |:-----------------------------------|-----------:|------------:|-----------:|------------:|------------:|
-        | Current Ratio                      |  1.0746    |  0.8794     |  0.988     |  0.8673     |  0.8933     |
-        | Quick Ratio                        |  0.7086    |  0.4967     |  0.6267    |  0.5589     |  0.5704     |
-        | Cash Ratio                         |  0.4992    |  0.3137     |  0.4236    |  0.3695     |  0.3302     |
-        | Working Capital                    |  9.355e+09 | -1.8577e+10 | -1.742e+09 | -2.3405e+10 | -1.7674e+10 |
-        | Operating Cash Flow Ratio          |  0.8291    |  0.7933     |  0.7607    |  0.6704     |  0.6731     |
-        | Operating Cash Flow to Sales Ratio |  0.2844    |  0.3098     |  0.2884    |  0.3024     |  0.2679     |
-        | Short Term Coverage Ratio          | -4.7495    | -3.9423     | -4.1291    | -4.1839     | -4.5755     |
+        |                                    |        2021 |         2022 |        2023 |         2024 |         2025 |
+        |:-----------------------------------|------------:|-------------:|------------:|-------------:|-------------:|
+        | Current Ratio                      |   1.0746    |   0.8794     |   0.988     |   0.8673     |   0.8933     |
+        | Quick Ratio                        |   0.7086    |   0.4967     |   0.6267    |   0.5589     |   0.5704     |
+        | Cash Ratio                         |   0.4992    |   0.3137     |   0.4236    |   0.3695     |   0.3302     |
+        | Working Capital                    |   9.355e+09 |  -1.8577e+10 |  -1.742e+09 |  -2.3405e+10 |  -1.7674e+10 |
+        | Operating Cash Flow Ratio          |   0.8291    |   0.7933     |   0.7607    |   0.6704     |   0.6731     |
+        | Operating Cash Flow to Sales Ratio |   0.2844    |   0.3098     |   0.2884    |   0.3024     |   0.2679     |
+        | Short Term Coverage Ratio          |   6.6635    |   5.7864     |   6.9933    |   5.6638     |   5.4839     |
+        | Defensive Interval Ratio           | 995.452     | 693.773      | 767.125     | 781.845      | 683.468      |
         """
         liquidity_ratios_dict: dict = {}
 
@@ -2739,7 +2867,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         current_ratios = toolkit.ratios.get_current_ratio()
         ```
@@ -2829,7 +2962,12 @@ class Ratios:
 
         ```python
         from financetoolkit import Toolkit
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         quick_ratios = toolkit.ratios.get_quick_ratio()
         ```
@@ -2927,7 +3065,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         cash_ratios = toolkit.ratios.get_cash_ratio()
         ```
@@ -3020,7 +3163,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         working_capitals = toolkit.ratios.get_working_capital()
         ```
@@ -3108,7 +3256,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         operating_cash_flow_ratios = toolkit.ratios.get_operating_cash_flow_ratio()
         ```
@@ -3196,7 +3349,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         operating_cash_flow_sales_ratios = toolkit.ratios.get_operating_cash_flow_sales_ratio()
         ```
@@ -3278,17 +3436,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.get_short_term_coverage_ratio()
         ```
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL | -4.7495 | -3.9423 | -4.1291 | -4.1839 | -4.5755 |
-        | TSLA | -4.882  | 27.4701 |  4.9042 |  3.7675 |  4.0998 |
+        |      |    2021 |    2022 |   2023 |   2024 |   2025 |
+        |:-----|--------:|--------:|-------:|-------:|-------:|
+        | AAPL |  6.6635 |  5.7864 | 6.9933 | 5.6638 | 5.4839 |
+        | TSLA | 10.5671 | 14.4921 | 6.7119 | 6.3692 | 8.9921 |
         """
         if trailing:
             short_term_coverage_ratio = liquidity_model.get_short_term_coverage_ratio(
@@ -3479,7 +3642,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         profitability_ratios = toolkit.ratios.collect_profitability_ratios()
 
@@ -3488,18 +3656,29 @@ class Ratios:
 
         Which returns:
 
-        |                                             |   2021 |   2022 |   2023 |    2024 |   2025 |
-        |:--------------------------------------------|-------:|-------:|-------:|--------:|-------:|
-        | Return on Invested Capital                  | 0.5637 | 0.599  | 0.6068 |  0.6019 | 0.7038 |
-        | Return on Capital Employed                  | 0.496  | 0.6139 | 0.5677 |  0.6548 | 0.6855 |
-        | Return on Tangible Assets                   | 0.155  | 0.1543 | 0.1495 |  0.1425 | 0.17   |
-        | Income Quality Ratio                        | 1.0988 | 1.2239 | 1.1397 |  1.2616 | 0.9953 |
-        | Net Income per EBT                          | 0.867  | 0.838  | 0.8528 |  0.7591 | 0.8439 |
-        | Free Cash Flow to Operating Cash Flow Ratio | 0.8935 | 0.9123 | 0.9009 |  0.9201 | 0.8859 |
-        | EBT to EBIT Ratio                           | 0.9764 | 0.976  | 0.9666 |  1      | 1      |
-        | EBIT to Revenue                             | 0.3058 | 0.3095 | 0.307  |  0.3158 | 0.3189 |
-        | Cash Tax Rate                               | 0.2324 | 0.1643 | 0.1642 |  0.2114 | 0.3267 |
-        | Tax Rate Divergence                         | 0.0994 | 0.0023 | 0.017  | -0.0295 | 0.1706 |
+        |                                             |    2021 |    2022 |    2023 |     2024 |     2025 |
+        |:--------------------------------------------|--------:|--------:|--------:|---------:|---------:|
+        | Gross Margin                                |  0.4178 |  0.4331 |  0.4413 |   0.4621 |   0.4691 |
+        | Operating Margin                            |  0.2978 |  0.3029 |  0.2982 |   0.3151 |   0.3197 |
+        | Net Profit Margin                           |  0.2588 |  0.2531 |  0.2531 |   0.2397 |   0.2692 |
+        | EBITDA Margin                               |  0.3287 |  0.331  |  0.3283 |   0.3444 |   0.3478 |
+        | Free Cash Flow Margin                       |  0.2541 |  0.2826 |  0.2598 |   0.2783 |   0.2373 |
+        | Interest Coverage Ratio                     | 45.4567 | 44.538  | 31.9908 | inf      | inf      |
+        | Income Before Tax Profit Margin             |  0.2985 |  0.302  |  0.2967 |   0.3158 |   0.3189 |
+        | Effective Tax Rate                          |  0.133  |  0.162  |  0.1472 |   0.2409 |   0.1561 |
+        | Return on Assets                            |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
+        | Cash Return on Assets                       |  0.3083 |  0.3471 |  0.3134 |   0.3296 |   0.3079 |
+        | Return on Equity                            |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
+        | Return on Invested Capital                  |  0.4143 |  0.4439 |  0.444  |   0.4336 |   0.5335 |
+        | Return on Capital Employed                  |  0.496  |  0.6139 |  0.5677 |   0.6548 |   0.6855 |
+        | Return on Tangible Assets                   |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
+        | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
+        | Net Income per EBT                          |  0.867  |  0.838  |  0.8528 |   0.7591 |   0.8439 |
+        | Free Cash Flow to Operating Cash Flow Ratio |  0.8935 |  0.9123 |  0.9009 |   0.9201 |   0.8859 |
+        | EBT to EBIT Ratio                           |  0.9764 |  0.976  |  0.9666 |   1      |   1      |
+        | EBIT to Revenue                             |  0.3058 |  0.3095 |  0.307  |   0.3158 |   0.3189 |
+        | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
+        | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         """
         profitability_ratios_dict: dict = {}
 
@@ -3675,7 +3854,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         gross_margin_ratios = toolkit.ratios.get_gross_margin()
         ```
@@ -3760,7 +3944,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         operating_margin_ratios = toolkit.ratios.get_operating_margin()
         ```
@@ -3845,7 +4034,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         net_profit_margin_ratios = toolkit.ratios.get_net_profit_margin()
         ```
@@ -4026,7 +4220,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         interest_burden_ratios = toolkit.ratios.get_interest_burden_ratio()
         ```
@@ -4112,7 +4311,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         pretax_profit_margin = toolkit.ratios.get_income_before_tax_profit_margin()
         ```
@@ -4203,7 +4407,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         effective_tax_rate = toolkit.ratios.get_effective_tax_rate()
         ```
@@ -4291,7 +4500,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         roa_ratios = toolkit.ratios.get_return_on_assets()
         ```
@@ -4473,7 +4687,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         roe_ratios = toolkit.ratios.get_return_on_equity()
         ```
@@ -4566,7 +4785,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         roic_ratios = toolkit.ratios.get_return_on_invested_capital()
         ```
@@ -4680,7 +4904,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         income_quality_ratios = toolkit.ratios.get_income_quality_ratio()
         ```
@@ -4737,11 +4966,14 @@ class Ratios:
         The return on tangible assets (ROTA) provides insights into the efficiency with which a company
         utilizes its tangible assets to generate profits. Tangible assets include physical assets such as
         buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from
-        its core operational assets.
+        its core operational assets. The tangible base is net of liabilities as well as intangible
+        assets (tangible book value), so for a company with few intangibles and much debt, such as
+        Apple, it is small and the ratio well above 1.
 
         The formula is as follows:
 
-        - Return on Tangible Assets = Net Income / Average Tangible Assets
+        - Return on Tangible Assets = Net Income / (Average Total Assets — Average Intangible Assets —
+          Average Total Liabilities)
 
         Also known as: ROTA, tangible asset return.
 
@@ -4767,7 +4999,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         rota_ratios = toolkit.ratios.get_return_on_tangible_assets()
         ```
@@ -4776,8 +5013,8 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.155  | 0.1543 | 0.1495 | 0.1425 | 0.17   |
-        | TSLA | 0.0632 | 0.118  | 0.1114 | 0.0443 | 0.0208 |
+        | AAPL | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
+        | TSLA | 0.2071 | 0.3331 | 0.2759 | 0.1051 | 0.0489 |
         """
         if trailing:
             return_on_tangible_assets = (
@@ -4876,7 +5113,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         roce_ratios = toolkit.ratios.get_return_on_capital_employed()
         ```
@@ -4990,7 +5232,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         net_income_per_ebt_ratios = toolkit.ratios.get_net_income_per_ebt()
         ```
@@ -5077,7 +5324,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         fcf_to_ocf_ratios = toolkit.ratios.get_free_cash_flow_operating_cash_flow_ratio()
         ```
@@ -5249,7 +5501,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         tax_burden_ratios = toolkit.ratios.get_tax_burden_ratio()
         ```
@@ -5338,7 +5595,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ebt_to_ebit_ratios = toolkit.ratios.get_EBT_to_EBIT()
         ```
@@ -5444,7 +5706,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ebit_to_revenue_ratios = toolkit.ratios.get_EBIT_to_revenue()
         ```
@@ -5536,7 +5803,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         cash_tax_rates = toolkit.ratios.get_cash_tax_rate()
         ```
@@ -5626,7 +5898,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         tax_rate_divergences = toolkit.ratios.get_tax_rate_divergence()
         ```
@@ -5690,7 +5967,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         solvency_ratios = toolkit.ratios.collect_solvency_ratios()
 
@@ -5701,14 +5983,20 @@ class Ratios:
 
         |                                   |     2021 |     2022 |     2023 |     2024 |     2025 |
         |:----------------------------------|---------:|---------:|---------:|---------:|---------:|
+        | Debt-to-Assets Ratio              |   0.3889 |   0.3756 |   0.3515 |   0.3262 |   0.3128 |
+        | Asset Coverage Ratio              |   1.7663 |   1.6597 |   1.8001 |   1.7594 |   1.9038 |
+        | Debt-to-Equity Ratio              |   2.1639 |   2.6145 |   1.9942 |   2.0906 |   1.5241 |
         | Debt Service Coverage Ratio       |   0.8683 |   0.7757 |   0.7866 |   0.6985 |   0.8033 |
         | Equity Multiplier                 |   5.255  |   6.1862 |   6.252  |   6.0251 |   5.5418 |
-        | Free Cash Flow Yield              |   0.031  |   0.0525 |   0.0327 |   0.0282 |   0.0242 |
+        | Free Cash Flow Yield              |   0.0318 |   0.0535 |   0.0331 |   0.0284 |   0.0243 |
         | Net-Debt to EBITDA Ratio          |   0.8449 |   0.8337 |   0.7468 |   0.6618 |   0.5281 |
+        | Gross Debt to EBITDA Ratio        |   1.1355 |   1.0149 |   0.985  |   0.8841 |   0.7764 |
         | Cash Flow Coverage Ratio          |   0.7621 |   0.922  |   0.892  |   0.9932 |   0.992  |
-        | CAPEX Coverage Ratio              |  -9.3855 | -11.4075 | -10.087  | -12.5176 |  -8.7678 |
-        | Dividend CAPEX Coverage Ratio     |  -4.0716 |  -4.781  |  -4.2543 |  -4.7913 |  -3.9623 |
+        | CAPEX Coverage Ratio              |   9.3855 |  11.4075 |  10.087  |  12.5176 |   8.7678 |
+        | Dividend CAPEX Coverage Ratio     |   4.0716 |   4.781  |   4.2543 |   4.7913 |   3.9623 |
         | Debt-to-Capital Ratio             |   0.6839 |   0.7233 |   0.666  |   0.6764 |   0.6038 |
+        | Preferred Dividend Coverage Ratio | inf      | inf      | inf      | inf      | inf      |
+        | Interest Paid to Expense Ratio    |   1.0159 |   0.9775 |   0.9669 | nan      | nan      |
         """
         solvency_ratios_dict: dict = {}
 
@@ -5861,7 +6149,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         debt_to_assets_ratios = toolkit.ratios.get_debt_to_assets_ratio()
         ```
@@ -6048,7 +6341,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         debt_to_equity_ratios = toolkit.ratios.get_debt_to_equity_ratio()
         ```
@@ -6136,7 +6434,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         interest_coverage_ratios = toolkit.ratios.get_interest_coverage_ratio()
         ```
@@ -6145,7 +6448,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |     2024 |    2025 |
         |:-----|--------:|--------:|--------:|---------:|--------:|
-        | AAPL | 45.4567 | 44.538  | 31.9908 | -        | -       |
+        | AAPL | 45.4567 | 44.538  | 31.9908 | inf      | inf     |
         | TSLA | 25.4286 | 90.0471 | 86.9103 |  35.5543 |  31.074 |
         """
         if trailing:
@@ -6229,7 +6532,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         equity_multipliers = toolkit.ratios.get_equity_multiplier()
         ```
@@ -6322,7 +6630,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         debt_service_coverage_ratios = toolkit.ratios.get_debt_service_coverage_ratio()
         ```
@@ -6418,7 +6731,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         free_cash_flow_yield_ratios = toolkit.ratios.get_free_cash_flow_yield()
         ```
@@ -6427,7 +6745,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.031  | 0.0525 | 0.0327 | 0.0282 | 0.0242 |
+        | AAPL | 0.0318 | 0.0535 | 0.0331 | 0.0284 | 0.0243 |
         | TSLA | 0.0029 | 0.0176 | 0.005  | 0.0025 | 0.0039 |
         """
         average_shares = (
@@ -6544,7 +6862,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         net_debt_to_ebitda_ratios = toolkit.ratios.get_net_debt_to_ebitda_ratio()
         ```
@@ -6720,7 +7043,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         cash_flow_coverage_ratios = toolkit.ratios.get_cash_flow_coverage_ratio()
         ```
@@ -6808,17 +7136,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         capex_coverage_ratios = toolkit.ratios.get_capex_coverage_ratio()
         ```
 
         Which returns:
 
-        |      |   2021 |    2022 |   2023 |    2024 |   2025 |
-        |:-----|-------:|--------:|-------:|--------:|-------:|
-        | AAPL | 9.3855 | 11.4075 | 10.087 | 12.5176 | 8.7678 |
-        | TSLA | 1.4346 |  2.053  | 1.4896 |  1.3157 | 1.7294 |
+        |      |   2021 |    2022 |    2023 |    2024 |   2025 |
+        |:-----|-------:|--------:|--------:|--------:|-------:|
+        | AAPL | 9.3855 | 11.4075 | 10.087  | 12.5176 | 8.7678 |
+        | TSLA | 1.4346 |  2.053  |  1.4896 |  1.3157 | 1.7294 |
         """
         if trailing:
             capex_coverage_ratio = solvency_model.get_capex_coverage_ratio(
@@ -6898,17 +7231,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         capex_dividend_coverage_ratios = toolkit.ratios.get_capex_dividend_coverage_ratio()
         ```
 
         Which returns:
 
-        |      |   2021 |  2022 |   2023 |   2024 |   2025 |
-        |:-----|-------:|------:|-------:|-------:|-------:|
-        | AAPL | 4.0716 | 4.781 | 4.2543 | 4.7913 | 3.9623 |
-        | TSLA | 1.4346 | 2.053 | 1.4896 | 1.3157 | 1.7294 |
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 4.0716 |  4.781 | 4.2543 | 4.7913 | 3.9623 |
+        | TSLA | 1.4346 |  2.053 | 1.4896 | 1.3157 | 1.7294 |
         """
         if trailing:
             dividend_capex_coverage_ratio = (
@@ -6995,7 +7333,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         debt_to_capital_ratios = toolkit.ratios.get_debt_to_capital_ratio()
         ```
@@ -7080,16 +7423,21 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["WFC"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["WFC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         preferred_dividend_coverage_ratios = toolkit.ratios.get_preferred_dividend_coverage_ratio()
         ```
 
         Which returns:
 
-        |     |     2021 |     2022 |     2023 |     2024 |     2025 |
-        |:----|---------:|---------:|---------:|---------:|---------:|
-        | WFC |  17.2763 |  11.2664 |  15.7599 |  16.9299 |  19.5543 |
+        |     |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:----|--------:|--------:|--------:|--------:|--------:|
+        | WFC | 17.2763 | 11.2664 | 15.7599 | 16.9299 | 19.5543 |
         """
         if trailing:
             preferred_dividend_coverage_ratio = (
@@ -7172,7 +7520,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         interest_paid_to_expense_ratios = toolkit.ratios.get_interest_paid_to_expense_ratio()
         ```
@@ -7181,7 +7534,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |     2024 |   2025 |
         |:-----|-------:|-------:|-------:|---------:|-------:|
-        | AAPL | 1.0159 | 0.9775 | 0.9669 | -        | -      |
+        | AAPL | 1.0159 | 0.9775 | 0.9669 | nan      |    nan |
         | TSLA | 0.717  | 0.7958 | 0.8077 |   0.7914 |      0 |
         """
         if trailing:
@@ -7254,7 +7607,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         valuation_ratios = toolkit.ratios.collect_valuation_ratios()
 
@@ -7263,18 +7621,18 @@ class Ratios:
 
         Which returns:
 
-        |                             |        2021 |         2022 |        2023 |        2024 |        2025 |
-        |:----------------------------|------------:|-------------:|------------:|------------:|------------:|
-        | EV-to-EBIT                  | 27.682      | 18.274       | 26.671      | 31.9683     | 31.3091     |
-        | EV-to-EBITDA                | 25.7524     | 17.0831      | 24.9432     | 29.3152     | 28.7093     |
-        | EV-to-Operating-Cash-Flow   | 29.7611     | 18.2565      | 28.3904     | 33.3825     | 37.2762     |
-        | Tangible Asset Value        |  6.309e+10  |  5.0672e+10  |  6.2146e+10 |  5.695e+10  |  7.3733e+10 |
-        | Net Current Asset Value     | -1.5308e+11 | -1.6668e+11  | -1.4687e+11 | -1.5504e+11 | -1.3755e+11 |
-        | EV-to-Free-Cash-Flow        | 33.3102     | 20.0107      | 31.5146     | 36.2809     | 42.075      |
-        | Graham Number               | 21.7378     | 20.662       | 23.2902     | 22.4928     | 28.7292     |
-        | Buyback Yield               |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0222     |
-        | Shareholder Yield           |  0.0283     |  0.0421      |  0.0255     |  0.0246     |  0.0251     |
-        | SBC-Adjusted Free Cash Flow |  8.5047e+10 |  1.02405e+11 |  8.8751e+10 |  9.7119e+10 |  8.5904e+10 |
+        |                             |         2021 |         2022 |         2023 |         2024 |         2025 |
+        |:----------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | EV-to-Sales                 |  8.2741      |  5.5609      |  8.0923      | 10.0244      |  9.9589      |
+        | EV-to-EBIT                  | 27.0608      | 17.969       | 26.3593      | 31.7437      | 31.2254      |
+        | EV-to-EBITDA                | 25.1745      | 16.798       | 24.6516      | 29.1092      | 28.6326      |
+        | EV-to-Operating-Cash-Flow   | 29.0932      | 17.9518      | 28.0585      | 33.1479      | 37.1766      |
+        | Tangible Asset Value        |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
+        | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
+        | EV-to-Free-Cash-Flow        | 32.5627      | 19.6766      | 31.1463      | 36.026       | 41.9626      |
+        | Buyback Yield               |  0.029       |  0.0429      |  0.0258      |  0.0248      |  0.0223      |
+        | Shareholder Yield           |  0.034       |  0.05        |  0.0308      |  0.0288      |  0.0261      |
+        | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
         valuation_ratios_dict: dict = {}
 
@@ -7482,7 +7840,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         eps_ratios = toolkit.ratios.get_earnings_per_share()
         ```
@@ -7594,7 +7957,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         revenue_per_share = toolkit.ratios.get_revenue_per_share()
         ```
@@ -7685,17 +8053,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         pe_ratio = toolkit.ratios.get_price_to_earnings_ratio()
         ```
 
         Which returns:
 
-        |      |     2021 |    2022 |    2023 |     2024 |    2025 |
-        |:-----|---------:|--------:|--------:|---------:|--------:|
-        | AAPL |  31.6299 | 21.254  | 31.3868 |  41.1631 |  36.418 |
-        | TSLA | 215.568  | 34.0154 | 57.6961 | 198.126  | 418.189 |
+        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|--------:|--------:|---------:|---------:|
+        | AAPL |  30.896 | 20.881  | 31.0086 |  40.8672 |  36.3188 |
+        | TSLA | 215.568 | 34.0154 | 57.6961 | 198.126  | 418.189  |
         """
         eps = self.get_earnings_per_share(
             include_dividends,
@@ -7790,7 +8163,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         peg_ratio = toolkit.ratios.get_price_to_earnings_growth_ratio()
         ```
@@ -7799,8 +8177,8 @@ class Ratios:
 
         |      |   2021 |   2022 |    2023 |     2024 |    2025 |
         |:-----|-------:|-------:|--------:|---------:|--------:|
-        | AAPL |  0.443 | 2.3908 | 92.3141 | -50.1989 |  1.6036 |
-        | TSLA |  0.322 | 0.2797 |  3.0479 |  -3.7616 | -8.8524 |
+        | AAPL | 0.4327 | 2.3488 | 91.2018 | -49.838  |  1.5992 |
+        | TSLA | 0.322  | 0.2797 |  3.0479 |  -3.7616 | -8.8524 |
         """
         trailing_metric = 4 if self._quarterly else 1
 
@@ -7927,17 +8305,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.get_forward_price_earnings_ratio()
         ```
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL | 56.1094 | 51.5965 | 48.7491 | 46.9062 | 42.6259 |
-        | MSFT | 49.0076 | 41.0618 | 39.5875 | 31.2615 | 28.3729 |
+        |      |     2021 |    2022 |    2023 |    2024 |    2025 |    2026 |    2027 |    2028 |    2029 |    2030 |     2031 |
+        |:-----|---------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|---------:|
+        | AAPL |  48.3461 | 44.4576 | 44.757  | 42.1721 | 36.7282 | 30.685  | 28.2179 | 25.3703 | 22.1507 | 21.0089 | nan      |
+        | MSFT | nan      | 51.8302 | 49.9693 | 39.4599 | 35.8137 | 28.2617 | 24.3404 | 20.4472 | 16.6952 | 13.6994 |  10.7151 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8018,17 +8401,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.get_forward_price_earnings_growth_ratio()
         ```
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |    2024 |     2025 |
-        |:-----|--------:|--------:|--------:|--------:|---------:|
-        | AAPL | -2.26   | -2.8269 | -3.6172 | -4.6544 | -40.6636 |
-        | MSFT | -1.1385 | -1.2822 | -1.3423 | -2.918  | -17.48   |
+        |      |     2021 |    2022 |    2023 |    2024 |     2025 |   2026 |   2027 |   2028 |   2029 |   2030 |     2031 |
+        |:-----|---------:|--------:|--------:|--------:|---------:|-------:|-------:|-------:|-------:|-------:|---------:|
+        | AAPL |  -1.9473 | -2.4358 | -2.3808 | -3.0511 | -35.0374 | 1.6641 | 0.98   | 0.5866 | 0.3457 | 0.2878 | nan      |
+        | MSFT | nan      | -1.6185 | -1.6943 | -3.6832 | -22.0641 | 1.1458 | 0.5439 | 0.2828 | 0.1504 | 0.0872 |   0.0468 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8136,7 +8524,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         book_value_per_share = toolkit.ratios.get_book_value_per_share()
         ```
@@ -8235,7 +8628,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         price_to_book_ratio = toolkit.ratios.get_price_to_book_ratio()
         ```
@@ -8244,7 +8642,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL | 47.4672 | 41.8616 | 48.9873 | 67.7525 | 55.3236 |
+        | AAPL | 46.3658 | 41.127  | 48.397  | 67.2655 | 55.173  |
         | TSLA | 39.5096 |  9.5752 | 13.8166 | 19.3742 | 19.3166 |
         """
         book_value_per_share = self.get_book_value_per_share(
@@ -8333,17 +8731,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         interest_debt_per_share = toolkit.ratios.get_interest_debt_per_share()
         ```
 
         Which returns:
 
-        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
-        |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 3.26744e+08 | 3.61194e+08 | 5.01822e+08 | 0           | 0           |
-        | TSLA | 1.41576e+08 | 1.15471e+08 | 5.67543e+07 | 8.98701e+07 | 1.42367e+08 |
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 8.2519 | 8.2943 | 8.0862 | 7.727  | 7.4895 |
+        | TSLA | 2.7301 | 1.7091 | 2.7935 | 3.9946 | 2.47   |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -8431,7 +8834,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         capex_per_share = toolkit.ratios.get_capex_per_share()
         ```
@@ -8524,17 +8932,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         dividend_yield = toolkit.ratios.get_dividend_yield()
         ```
 
         Which returns:
 
-        |      |   2021 |   2022 |   2023 |   2024 |   2025 |   2026 |
-        |:-----|-------:|-------:|-------:|-------:|-------:|-------:|
-        | AAPL |      0 |      0 |      0 |      0 | 0.0029 | 0.0017 |
-        | TSLA |      0 |      0 |      0 |      0 | 0      | 0      |
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL |  0.005 | 0.0071 |  0.005 |  0.004 | 0.0038 |
+        | TSLA |  0     | 0      |  0     |  0     | 0      |
         """
         if show_daily:
             share_prices = self._daily_historical_data.loc[:, "Adj Close"][
@@ -8628,7 +9041,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         weighted_dividend_yield = toolkit.ratios.get_weighted_dividend_yield()
         ```
@@ -8637,8 +9055,8 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0048 |  0.007 | 0.0049 | 0.0039 | 0.0038 |
-        | TSLA | 0      |  0     | 0      | 0      | 0      |
+        | AAPL | 0.0049 | 0.0071 |  0.005 |  0.004 | 0.0038 |
+        | TSLA | 0      | 0      |  0     |  0     | 0      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -8753,7 +9171,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         price_to_cash_flow_ratio = toolkit.ratios.get_price_to_cash_flow_ratio()
         ```
@@ -8762,7 +9185,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |
         |:-----|---------:|--------:|--------:|--------:|---------:|
-        | AAPL |  28.7847 | 17.3655 | 27.5403 | 32.6289 |  36.5905 |
+        | AAPL |  28.1168 | 17.0608 | 27.2085 | 32.3943 |  36.4909 |
         | TSLA | 103.745  | 29.0716 | 65.2832 | 94.6614 | 107.589  |
         """
         market_cap = self.get_market_cap(
@@ -8858,17 +9281,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         price_to_free_cash_flow_ratio = toolkit.ratios.get_price_to_free_cash_flow_ratio()
         ```
 
         Which returns:
 
-        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
-        |:-----|---------:|--------:|---------:|---------:|--------:|
-        | AAPL |  32.2174 | 19.0341 |  30.5711 |  35.4618 |  41.301 |
-        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082 |
+        |      |     2021 |    2022 |     2023 |     2024 |     2025 |
+        |:-----|---------:|--------:|---------:|---------:|---------:|
+        | AAPL |  31.4699 | 18.7001 |  30.2027 |  35.2069 |  41.1886 |
+        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082  |
         """
         market_cap = self.get_market_cap(
             diluted=diluted,
@@ -9061,7 +9489,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         market_cap = toolkit.ratios.get_market_cap()
         ```
@@ -9070,7 +9503,7 @@ class Ratios:
 
         |      |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | AAPL | 2.92522e+12 | 2.08399e+12 | 3.0077e+12  | 3.83076e+12 | 4.06807e+12 |
         | TSLA | 1.19275e+12 | 4.2805e+11  | 8.65394e+11 | 1.41263e+12 | 1.58661e+12 |
         """
         average_shares = (
@@ -9167,7 +9600,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         enterprise_value = toolkit.ratios.get_enterprise_value()
         ```
@@ -9176,7 +9614,7 @@ class Ratios:
 
         |      |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 3.09629e+12 | 2.23005e+12 | 3.13835e+12 | 3.94761e+12 | 4.15562e+12 |
+        | AAPL | 3.0268e+12  | 2.19282e+12 | 3.10167e+12 | 3.91988e+12 | 4.14452e+12 |
         | TSLA | 1.18544e+12 | 4.1874e+11  | 8.59544e+11 | 1.41088e+12 | 1.5792e+12  |
         """
         total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
@@ -9308,7 +9746,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ev_to_sales_ratio = toolkit.ratios.get_ev_to_sales_ratio()
         ```
@@ -9317,7 +9760,7 @@ class Ratios:
 
         |      |    2021 |   2022 |   2023 |    2024 |    2025 |
         |:-----|--------:|-------:|-------:|--------:|--------:|
-        | AAPL |  8.464  | 5.6553 | 8.188  | 10.0953 |  9.9856 |
+        | AAPL |  8.2741 | 5.5609 | 8.0923 | 10.0244 |  9.9589 |
         | TSLA | 22.0248 | 5.1403 | 8.8821 | 14.4425 | 16.6535 |
         """
         enterprise_value = self.get_enterprise_value(
@@ -9405,7 +9848,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ev_to_ebitda_ratio = toolkit.ratios.get_ev_to_ebitda_ratio()
         ```
@@ -9414,7 +9862,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |     2024 |     2025 |
         |:-----|---------:|--------:|--------:|---------:|---------:|
-        | AAPL |  25.7524 | 17.0831 | 24.9432 |  29.3152 |  28.7093 |
+        | AAPL |  25.1745 | 16.798  | 24.6516 |  29.1092 |  28.6326 |
         | TSLA | 125.656  | 24.3467 | 63.3975 | 113.379  | 150.357  |
         """
         enterprise_value = self.get_enterprise_value(
@@ -9517,7 +9965,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ev_to_operating_cashflow_ratio = toolkit.ratios.get_ev_to_operating_cashflow_ratio()
         ```
@@ -9526,7 +9979,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |
         |:-----|---------:|--------:|--------:|--------:|---------:|
-        | AAPL |  29.7611 | 18.2565 | 28.3904 | 33.3825 |  37.2762 |
+        | AAPL |  29.0932 | 17.9518 | 28.0585 | 33.1479 |  37.1766 |
         | TSLA | 103.109  | 28.4392 | 64.8419 | 94.5442 | 107.086  |
         """
         enterprise_value = self.get_enterprise_value(
@@ -9625,7 +10078,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         earnings_yield_ratio = toolkit.ratios.get_earnings_yield()
         ```
@@ -9634,7 +10092,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0316 | 0.047  | 0.0319 | 0.0243 | 0.0275 |
+        | AAPL | 0.0324 | 0.0479 | 0.0322 | 0.0245 | 0.0275 |
         | TSLA | 0.0046 | 0.0294 | 0.0173 | 0.005  | 0.0024 |
         """
         eps = self.get_earnings_per_share(
@@ -9717,7 +10175,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.get_dividend_payout_ratio()
         ```
@@ -9801,7 +10264,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.ratios.get_reinvestment_rate()
         ```
@@ -9874,7 +10342,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         tangible_asset_value = toolkit.ratios.get_tangible_asset_value()
         ```
@@ -9963,17 +10436,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         net_current_asset_value = toolkit.ratios.get_net_current_asset_value()
         ```
 
         Which returns:
 
-        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
-        |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | -1.5308e+11 | -1.6668e+11 | -1.4687e+11 | -1.5504e+11 | -1.3755e+11 |
-        | TSLA | -3.448e+09  |  4.477e+09  |  6.607e+09  |  9.97e+09   |  1.3701e+10 |
+        |      |         2021 |         2022 |         2023 |         2024 |         2025 |
+        |:-----|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | AAPL | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
+        | TSLA | -3.448e+09   |  4.477e+09   |  6.607e+09   |  9.97e+09    |  1.3701e+10  |
         """
         if trailing:
             net_current_asset_value = valuation_model.get_net_current_asset_value(
@@ -10044,17 +10522,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ev_to_ebit_ratio = toolkit.ratios.get_ev_to_ebit()
         ```
 
         Which returns:
 
-        |      |    2021 |   2022 |    2023 |     2024 |     2025 |
-        |:-----|--------:|-------:|--------:|---------:|---------:|
-        | AAPL |  27.682 | 18.274 | 26.671  |  31.9683 |  31.3091 |
-        | TSLA | 179.531 | 30.11  | 84.6508 | 151.431  | 284.285  |
+        |      |     2021 |   2022 |    2023 |     2024 |     2025 |
+        |:-----|---------:|-------:|--------:|---------:|---------:|
+        | AAPL |  27.0608 | 17.969 | 26.3593 |  31.7437 |  31.2254 |
+        | TSLA | 179.531  | 30.11  | 84.6508 | 151.431  | 284.285  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -10145,17 +10628,22 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         ev_to_fcf_ratio = toolkit.ratios.get_ev_to_free_cash_flow_ratio()
         ```
 
         Which returns:
 
-        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
-        |:-----|---------:|--------:|---------:|---------:|--------:|
-        | AAPL |  33.3102 | 20.0107 |  31.5146 |  36.2809 |  42.075 |
-        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991  | 253.891 |
+        |      |     2021 |    2022 |     2023 |    2024 |     2025 |
+        |:-----|---------:|--------:|---------:|--------:|---------:|
+        | AAPL |  32.5627 | 19.6766 |  31.1463 |  36.026 |  41.9626 |
+        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991 | 253.891  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -10249,7 +10737,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         buyback_yields = toolkit.ratios.get_buyback_yield()
         ```
@@ -10258,7 +10751,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0222 |
+        | AAPL |  0.029  |  0.0429 |  0.0258 |  0.0248 |  0.0223 |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
         market_cap = self.get_market_cap(diluted=diluted, trailing=trailing)
@@ -10340,7 +10833,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         shareholder_yields = toolkit.ratios.get_shareholder_yield()
         ```
@@ -10349,7 +10847,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0251 |
+        | AAPL |  0.034  |  0.05   |  0.0308 |  0.0288 |  0.0261 |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
         dividend_yield = self.get_dividend_yield(trailing=trailing)
@@ -10428,7 +10926,12 @@ class Ratios:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         sbc_adjusted_fcf = toolkit.ratios.get_sbc_adjusted_free_cash_flow()
         ```

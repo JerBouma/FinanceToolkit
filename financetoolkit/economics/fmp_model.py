@@ -248,7 +248,15 @@ def get_economic_calendar(
     )
     economic_calendar["Date"] = pd.to_datetime(economic_calendar["Date"])
 
-    return economic_calendar.set_index("Date").sort_index()
+    # Releases at the same time are ordered by country and event, as the API returns them
+    # in no fixed order.
+    tie_breakers = [
+        column for column in ("Country", "Event") if column in economic_calendar.columns
+    ]
+
+    return economic_calendar.sort_values(
+        ["Date", *tie_breakers], kind="stable"
+    ).set_index("Date")
 
 
 # The end-of-day endpoint returns at most 5,000 rows per request, so an index history is

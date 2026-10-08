@@ -224,9 +224,13 @@ def enrich_historical_data(
         pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).
     """
 
-    historical_data["Return"] = bounded_ffill(
-        historical_data[return_column]
-    ).pct_change()
+    # A price of 0, such as a faulty bar or a futures contract settling at 0, has no
+    # return from or to it, and an infinite return would carry into every cumulative one.
+    historical_data["Return"] = (
+        bounded_ffill(historical_data[return_column])
+        .pct_change()
+        .replace([np.inf, -np.inf], np.nan)
+    )
 
     historical_data["Cumulative Return"] = 1
 

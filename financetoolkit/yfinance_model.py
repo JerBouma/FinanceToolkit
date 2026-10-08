@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import warnings
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from http.client import RemoteDisconnected
 from urllib.error import HTTPError, URLError
 
@@ -393,9 +393,6 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         - Timezone: The timezone the instrument is traded in.
         - Exchange Timezone Name: The name of the timezone the instrument is traded in.
 
-    Args:
-        ticker (str): the ticker to retrieve statistics for.
-
     These describe the instrument itself (its currency, exchange and listing date)
     rather than its price, so they change very rarely and are cached per ticker.
 
@@ -403,7 +400,7 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         ticker (str): the ticker to retrieve statistics for.
 
     Returns:
-        pd.Series: A Sries containing the statistics for the given ticker.
+        pd.Series: A Series containing the statistics for the given ticker.
     """
     cache = get_active_cache()
 
@@ -422,9 +419,10 @@ def get_historical_statistics(ticker: str) -> pd.Series:
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
             timeout=60,
         )
-    except requests.exceptions.HTTPError:
+    except requests.exceptions.RequestException:
         # Yahoo Finance answers 404 for a symbol it does not know, such as the
-        # "Portfolio" a Portfolio's Toolkit includes, which has no statistics.
+        # "Portfolio" a Portfolio's Toolkit includes, which has no statistics. A
+        # timeout is reported the same way, so one slow ticker does not fail the rest.
         return pd.Series()
 
     if response.status_code == 200:  # noqa
@@ -433,11 +431,15 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         try:
             statistics = data["chart"]["result"][0]["meta"]
 
+            # The dates are the exchange's calendar dates: a timestamp read in the
+            # machine's own timezone would move a day for users east or west of it.
+            exchange_offset = timedelta(seconds=statistics.get("gmtoffset") or 0)
+
             for timestamp_data in ["firstTradeDate", "regularMarketTime"]:
                 if timestamp_data in statistics and statistics[timestamp_data]:
                     timestamp = (
-                        datetime.fromtimestamp(0)
-                        + timedelta(seconds=statistics[timestamp_data])
+                        datetime.fromtimestamp(statistics[timestamp_data], tz=UTC)
+                        + exchange_offset
                     ).strftime("%Y-%m-%d")
                     statistics[timestamp_data] = timestamp
 

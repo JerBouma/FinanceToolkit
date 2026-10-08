@@ -86,25 +86,41 @@ def get_beta(
     Returns:
         pd.Series | pd.DataFrame: _description_
     """
-    if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            combination = pd.concat([returns, benchmark_returns], axis=1)
+    if not isinstance(returns, pd.DataFrame | pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-            # Calculate Sharpe ratio for each asset (ticker) in the DataFrame
-            covariance = combination.groupby(level=0).apply(
-                lambda x: get_covariance(x[returns.columns], x[benchmark_returns.name])
-            )
-            variance = benchmark_returns.groupby(level=0).apply(lambda x: x.var())
+    frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
 
-            return covariance.div(variance, axis=0)
+    # The covariance and the benchmark variance are taken over the same dates, those on
+    # which both have a return. A benchmark variance over every date would bias the beta
+    # of an asset with a shorter history (e.g. a later listing) towards the benchmark's
+    # volatility in a period the asset was not part of.
+    benchmark = pd.DataFrame(
+        np.repeat(benchmark_returns.to_numpy()[:, None], frame.shape[1], axis=1),
+        index=frame.index,
+        columns=frame.columns,
+    )
+    both = frame.notna() & benchmark.notna()
+    asset, benchmark = frame.where(both), benchmark.where(both)
 
-        return get_covariance(returns, benchmark_returns) / benchmark_returns.var()
+    within_period = frame.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    groups = frame.index.get_level_values(0) if within_period else np.zeros(len(frame))
 
-    if isinstance(returns, pd.Series):
-        # Calculate Sharpe ratio for a single asset (ticker)
-        return get_covariance(returns, benchmark_returns) / benchmark_returns.var()
+    asset_deviation = asset - asset.groupby(groups).transform("mean")
+    benchmark_deviation = benchmark - benchmark.groupby(groups).transform("mean")
 
-    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+    # The degrees of freedom of the covariance and the variance cancel out, and a beta
+    # needs at least two shared dates (min_count).
+    beta = (asset_deviation * benchmark_deviation).groupby(groups).sum(min_count=2) / (
+        benchmark_deviation**2
+    ).groupby(groups).sum(min_count=2)
+
+    if within_period:
+        return beta.replace([np.inf, -np.inf], np.nan)
+
+    beta = beta.iloc[0].replace([np.inf, -np.inf], np.nan)
+
+    return beta if isinstance(returns, pd.DataFrame) else float(beta.iloc[0])
 
 
 def get_rolling_beta(

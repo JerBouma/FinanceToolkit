@@ -199,3 +199,40 @@ def test_toolkit_technicals(recorder):
     recorder.capture(
         toolkit.technicals.collect_all_indicators(growth=True, lag=[1, 2, 3]).round(0)
     )
+
+
+def test_toolkit_converts_each_period_once(monkeypatch):
+    """Module access asks for every period, which is converted once per daily data."""
+    from financetoolkit import toolkit_controller
+
+    conversions = []
+    convert = toolkit_controller._convert_daily_to_other_period
+
+    def counted_convert(**kwargs):
+        conversions.append(kwargs["period"])
+        return convert(**kwargs)
+
+    monkeypatch.setattr(
+        toolkit_controller, "_convert_daily_to_other_period", counted_convert
+    )
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical_dataset,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
+
+    # The first request also converts the treasury data to the period.
+    first = toolkit.get_historical_data(period="monthly")
+    conversions_after_first = len(conversions)
+    toolkit.get_historical_data(period="monthly")
+    assert len(conversions) == conversions_after_first
+
+    # A different rounding is a different conversion.
+    rounded = toolkit.get_historical_data(period="monthly", rounding=0)
+    assert len(conversions) == conversions_after_first + 1
+    assert not rounded.equals(first)

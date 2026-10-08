@@ -400,6 +400,8 @@ class Toolkit:
         )
         # None means "not fetched by us yet", so pre-supplied `historical` is never auto-invalidated below.
         self._daily_historical_data_params: tuple | None = None
+        # Per period, the daily data and the settings its conversion was made with.
+        self._period_historical_data_sources: dict[str, tuple] = {}
 
         # Initialize other periods as empty DataFrames. They will be populated on demand.
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
@@ -2404,82 +2406,49 @@ class Toolkit:
             ]
             # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
-        elif period == "weekly":
-            if self._weekly_risk_free_rate.empty or overwrite:
+        elif period in ("weekly", "monthly", "quarterly", "yearly"):
+            if getattr(self, f"_{period}_risk_free_rate").empty or overwrite:
                 self.get_treasury_data(
-                    period="weekly", risk_free_rate=self._risk_free_rate
+                    period=period, risk_free_rate=self._risk_free_rate
                 )
 
-            self._weekly_historical_data = _convert_daily_to_other_period(
-                period="weekly",
-                daily_historical_data=self._daily_historical_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-                return_column=return_column,
+            # Every module (risk, performance, models, ...) asks for every period when it
+            # is created, so the conversion is kept until the daily data it was made from
+            # or one of its settings changes. The daily data is compared by identity, as
+            # it is replaced rather than changed when it is retrieved again.
+            settings = (
+                self._start_date,
+                self._end_date,
+                rounding if rounding is not None else self._rounding,
+                return_column,
             )
+            converted_from = self._period_historical_data_sources.get(period)
 
-            historical_data = self._weekly_historical_data.loc[
-                self._start_date : self._end_date, :
-            ]
-            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
-
-        elif period == "monthly":
-            if self._monthly_risk_free_rate.empty or overwrite:
-                self.get_treasury_data(
-                    period="monthly", risk_free_rate=self._risk_free_rate
+            if (
+                overwrite
+                or getattr(self, f"_{period}_historical_data").empty
+                or converted_from is None
+                or converted_from[0] is not self._daily_historical_data
+                or converted_from[1] != settings
+            ):
+                setattr(
+                    self,
+                    f"_{period}_historical_data",
+                    _convert_daily_to_other_period(
+                        period=period,
+                        daily_historical_data=self._daily_historical_data,
+                        start=self._start_date,
+                        end=self._end_date,
+                        rounding=settings[2],
+                        return_column=return_column,
+                    ),
+                )
+                self._period_historical_data_sources[period] = (
+                    self._daily_historical_data,
+                    settings,
                 )
 
-            self._monthly_historical_data = _convert_daily_to_other_period(
-                period="monthly",
-                daily_historical_data=self._daily_historical_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-                return_column=return_column,
-            )
-
-            historical_data = self._monthly_historical_data.loc[
-                self._start_date : self._end_date, :
-            ]
-            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
-
-        elif period == "quarterly":
-            if self._quarterly_risk_free_rate.empty or overwrite:
-                self.get_treasury_data(
-                    period="quarterly", risk_free_rate=self._risk_free_rate
-                )
-
-            self._quarterly_historical_data = _convert_daily_to_other_period(
-                period="quarterly",
-                daily_historical_data=self._daily_historical_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-                return_column=return_column,
-            )
-
-            historical_data = self._quarterly_historical_data.loc[
-                self._start_date : self._end_date, :
-            ]
-            # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
-
-        elif period == "yearly":
-            if self._yearly_risk_free_rate.empty or overwrite:
-                self.get_treasury_data(
-                    period="yearly", risk_free_rate=self._risk_free_rate
-                )
-
-            self._yearly_historical_data = _convert_daily_to_other_period(
-                period="yearly",
-                daily_historical_data=self._daily_historical_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-                return_column=return_column,
-            )
-
-            historical_data = self._yearly_historical_data.loc[
+            historical_data = getattr(self, f"_{period}_historical_data").loc[
                 self._start_date : self._end_date, :
             ]
             # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.

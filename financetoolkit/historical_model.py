@@ -305,11 +305,8 @@ def get_historical_data(
         cached_source, cached_data, fetch_span = (
             resolve_from_cache(ticker) if cache_plans else (None, None, None)
         )
-        cache_source = None
-        # The provider credited with the data in the retrieval log; the cache source
-        # differs from it for intraday data, which is never listed there.
-        provider = None
-
+        # The provider credited with the data in the retrieval log (fetch's provider)
+        # differs from the cache source for intraday data, which is never listed there.
         if cached_data is not None and fetch_span is None:
             # Fully served from the cache, so no provider fetched anything for it.
             return (
@@ -327,117 +324,174 @@ def get_historical_data(
         fetch_start = fetch_span[0].strftime("%Y-%m-%d") if fetch_span else start
         fetch_end = fetch_span[1].strftime("%Y-%m-%d") if fetch_span else end
 
-        historical_data = pd.DataFrame()
-        # A non-empty but truncated FinancialModelingPrep response, held aside while Yahoo Finance is tried, so it can be restored if Yahoo is no better.  # noqa: E501
-        truncated_data = pd.DataFrame()
-        attempted_fmp = False
+        def fetch(fetch_start, fetch_end):
+            """Retrieve the range from the first provider that has it."""
+            cache_source = None
+            provider = None
 
-        if api_key and interval in ["1min", "5min", "15min", "30min", "1hour", "4hour"]:
-            # Intraday comes only from FinancialModelingPrep, so there is no fallback.
-            historical_data = fmp_model.get_intraday_data(
-                ticker=ticker,
-                api_key=api_key,
-                start=fetch_start,
-                end=fetch_end,
-                interval=interval,
-                return_column=return_column,
-                sleep_timer=sleep_timer,
-                user_subscription=user_subscription,
-            )
+            historical_data = pd.DataFrame()
+            # A non-empty but truncated FinancialModelingPrep response, held aside while Yahoo Finance is tried, so it can be restored if Yahoo is no better.  # noqa: E501
+            truncated_data = pd.DataFrame()
+            attempted_fmp = False
 
-            if not historical_data.empty:
-                cache_source = policy_model.FINANCIAL_MODELING_PREP
-
-        elif not api_key and interval in [
-            "1min",
-            "5min",
-            "15min",
-            "30min",
-            "1hour",
-            "4hour",
-        ]:
-            raise ValueError(
-                "The requested data requires the api_key parameter to be set, consider "
-                "obtaining a key with the following link: "
-                "https://www.jeroenbouma.com/fmp"
-                "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
-                "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
-                "above affiliate link which also supports the project."
-            )
-        else:
-            if api_key and enforce_source in [None, "FinancialModelingPrep"]:
-                historical_data = fmp_model.get_historical_data(
+            if api_key and interval in [
+                "1min",
+                "5min",
+                "15min",
+                "30min",
+                "1hour",
+                "4hour",
+            ]:
+                # Intraday comes only from FinancialModelingPrep, so there is no fallback.
+                historical_data = fmp_model.get_intraday_data(
                     ticker=ticker,
                     api_key=api_key,
                     start=fetch_start,
                     end=fetch_end,
                     interval=interval,
                     return_column=return_column,
-                    include_dividends=include_dividends,
-                    divide_ohlc_by=divide_ohlc_by,
                     sleep_timer=sleep_timer,
                     user_subscription=user_subscription,
                 )
 
-                # Only worth setting aside when there is somewhere to fall back to. With the source forced to FinancialModelingPrep, a truncated response is the best answer available and discarding it would return nothing at all.  # noqa: E501
-                can_fall_back = (
-                    enforce_source != "FinancialModelingPrep" and ENABLE_YFINANCE
+                if not historical_data.empty:
+                    cache_source = policy_model.FINANCIAL_MODELING_PREP
+
+            elif not api_key and interval in [
+                "1min",
+                "5min",
+                "15min",
+                "30min",
+                "1hour",
+                "4hour",
+            ]:
+                raise ValueError(
+                    "The requested data requires the api_key parameter to be set, consider "
+                    "obtaining a key with the following link: "
+                    "https://www.jeroenbouma.com/fmp"
+                    "\nThe free plan allows for 250 requests per day, a limit of 5 years and has no "
+                    "quarterly data. Consider upgrading your plan. You can get 15% off by using the "
+                    "above affiliate link which also supports the project."
                 )
+            else:
+                if api_key and enforce_source in [None, "FinancialModelingPrep"]:
+                    historical_data = fmp_model.get_historical_data(
+                        ticker=ticker,
+                        api_key=api_key,
+                        start=fetch_start,
+                        end=fetch_end,
+                        interval=interval,
+                        return_column=return_column,
+                        include_dividends=include_dividends,
+                        divide_ohlc_by=divide_ohlc_by,
+                        sleep_timer=sleep_timer,
+                        user_subscription=user_subscription,
+                    )
+
+                    # Only worth setting aside when there is somewhere to fall back to. With the source forced to FinancialModelingPrep, a truncated response is the best answer available and discarding it would return nothing at all.  # noqa: E501
+                    can_fall_back = (
+                        enforce_source != "FinancialModelingPrep" and ENABLE_YFINANCE
+                    )
+
+                    if (
+                        not historical_data.empty
+                        and can_fall_back
+                        and not _covers_requested_range(
+                            historical_data, fetch_start, fetch_end
+                        )
+                    ):
+                        # Held rather than dropped: Yahoo is tried below and this is restored if it does not actually reach further back -- see _covers_requested_range for why a non-empty response can still be truncated.  # noqa: E501
+                        logger.debug(
+                            "FinancialModelingPrep returned only %s to %s for %s, short of the %s to %s "
+                            "requested -- likely a row cap or data-plan limitation for this ticker/endpoint, "
+                            "trying Yahoo Finance for a longer history.",
+                            historical_data.index.min(),
+                            historical_data.index.max(),
+                            ticker,
+                            fetch_start,
+                            fetch_end,
+                        )
+                        truncated_data = historical_data
+                        historical_data = pd.DataFrame()
+
+                    if not historical_data.empty:
+                        provider = policy_model.FINANCIAL_MODELING_PREP
+                        cache_source = policy_model.FINANCIAL_MODELING_PREP
+
+                    attempted_fmp = True
 
                 if (
-                    not historical_data.empty
-                    and can_fall_back
-                    and not _covers_requested_range(
-                        historical_data, fetch_start, fetch_end
-                    )
+                    enforce_source != "FinancialModelingPrep"
+                    and historical_data.empty
+                    and ENABLE_YFINANCE
                 ):
-                    # Held rather than dropped: Yahoo is tried below and this is restored if it does not actually reach further back -- see _covers_requested_range for why a non-empty response can still be truncated.  # noqa: E501
-                    logger.debug(
-                        "FinancialModelingPrep returned only %s to %s for %s, short of the %s to %s "
-                        "requested -- likely a row cap or data-plan limitation for this ticker/endpoint, "
-                        "trying Yahoo Finance for a longer history.",
-                        historical_data.index.min(),
-                        historical_data.index.max(),
-                        ticker,
-                        fetch_start,
-                        fetch_end,
+                    historical_data = yfinance_model.get_historical_data(
+                        ticker=ticker,
+                        start=fetch_start,
+                        end=fetch_end,
+                        interval=interval,
+                        return_column=return_column,
+                        divide_ohlc_by=divide_ohlc_by,
+                        fallback=attempted_fmp,
                     )
-                    truncated_data = historical_data
-                    historical_data = pd.DataFrame()
 
-                if not historical_data.empty:
-                    provider = policy_model.FINANCIAL_MODELING_PREP
-                    cache_source = policy_model.FINANCIAL_MODELING_PREP
+                    if not truncated_data.empty and not _reaches_further_back(
+                        historical_data, truncated_data
+                    ):
+                        # Yahoo is no better -- a young ticker rather than a capped response -- so keep what FinancialModelingPrep returned.  # noqa: E501
+                        historical_data = truncated_data
+                        provider = policy_model.FINANCIAL_MODELING_PREP
+                        cache_source = policy_model.FINANCIAL_MODELING_PREP
+                    elif not historical_data.empty:
+                        provider = policy_model.YAHOO_FINANCE
+                        cache_source = policy_model.YAHOO_FINANCE
 
-                attempted_fmp = True
+            return historical_data, provider, cache_source
 
-            if (
-                enforce_source != "FinancialModelingPrep"
-                and historical_data.empty
-                and ENABLE_YFINANCE
-            ):
-                historical_data = yfinance_model.get_historical_data(
-                    ticker=ticker,
-                    start=fetch_start,
-                    end=fetch_end,
-                    interval=interval,
-                    return_column=return_column,
-                    divide_ohlc_by=divide_ohlc_by,
-                    fallback=attempted_fmp,
+        historical_data, provider, cache_source = fetch(fetch_start, fetch_end)
+        # Nothing new is stored when the cached part is all there is, as storing it
+        # under the missing range would mark that range as retrieved.
+        retrieved = True
+
+        if cached_data is not None and not cached_data.empty:
+            if historical_data.empty:
+                # The missing part could not be retrieved, for instance because of a
+                # rate limit, which leaves the cached part rather than nothing at all.
+                logger.debug(
+                    "Could not extend the cached data of %s to %s - %s, so the cached "
+                    "data is used.",
+                    ticker,
+                    fetch_start,
+                    fetch_end,
                 )
+                historical_data, cache_source = cached_data, cached_source
+                cached_data = None
+                retrieved = False
+            elif cache_source != cached_source:
+                # Another provider served the missing part. The providers adjust prices
+                # differently, so the two parts cannot be joined and the whole range is
+                # retrieved again, from the provider that has it now.
+                full_data, full_provider, full_cache_source = fetch(start, end)
 
-                if not truncated_data.empty and not _reaches_further_back(
-                    historical_data, truncated_data
-                ):
-                    # Yahoo is no better -- a young ticker rather than a capped response -- so keep what FinancialModelingPrep returned.  # noqa: E501
-                    historical_data = truncated_data
-                    provider = policy_model.FINANCIAL_MODELING_PREP
-                    cache_source = policy_model.FINANCIAL_MODELING_PREP
-                elif not historical_data.empty:
-                    provider = policy_model.YAHOO_FINANCE
-                    cache_source = policy_model.YAHOO_FINANCE
+                if not full_data.empty:
+                    historical_data, provider, cache_source = (
+                        full_data,
+                        full_provider,
+                        full_cache_source,
+                    )
+                    fetch_start, fetch_end = start, end
+                    cached_data = None
+                else:
+                    historical_data, cache_source = cached_data, cached_source
+                    cached_data = None
+                    retrieved = False
 
-        if cache is not None and cache_source and not historical_data.empty:
+        if (
+            cache is not None
+            and retrieved
+            and cache_source
+            and not historical_data.empty
+        ):
             # Only for a non-empty response: an empty frame may just be a rate limit.
             cache.store(
                 source=cache_source,

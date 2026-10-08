@@ -298,3 +298,98 @@ def test_intraday_data_is_cached(cache, monkeypatch):
     run()
 
     assert len(calls) == 1
+
+
+def bars(start, end):
+    """Synthetic daily bars for the requested range."""
+    return pd.DataFrame(
+        {
+            "Open": 1.0,
+            "High": 1.0,
+            "Low": 1.0,
+            "Close": 1.0,
+            "Adj Close": 1.0,
+            "Volume": 100.0,
+        },
+        index=pd.period_range(start=start, end=end, freq="D"),
+    )
+
+
+def collect_from_any_provider(start, end, cache):
+    """Run the collection with both providers allowed."""
+    data, _ = historical_model.get_historical_data(
+        tickers=["AAPL"],
+        api_key="test-key",
+        enforce_source=None,
+        start=start,
+        end=end,
+        interval="1d",
+        show_errors=False,
+        cache=cache,
+    )
+
+    return data
+
+
+def test_a_gap_served_by_the_other_provider_returns_the_full_range(cache, monkeypatch):
+    """Cached FMP prices extended by Yahoo Finance are not cut down to the gap."""
+    fmp_available = {"value": True}
+    yahoo_requests: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        historical_model.fmp_model,
+        "get_historical_data",
+        lambda ticker, api_key, start, end, **kwargs: (  # noqa: ARG005
+            bars(start, end) if fmp_available["value"] else pd.DataFrame()
+        ),
+    )
+
+    def fake_yfinance(ticker, start, end, **kwargs):  # noqa: ARG001
+        yahoo_requests.append((start, end))
+        return bars(start, end)
+
+    monkeypatch.setattr(
+        historical_model.yfinance_model, "get_historical_data", fake_yfinance
+    )
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    fmp_available["value"] = False
+
+    data = collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert str(data.index.min()) == "2018-01-01"
+    assert str(data.index.max()) == "2021-12-31"
+    # The gap first, then the whole range from the provider that has it now.
+    assert yahoo_requests[-1] == ("2018-01-01", "2021-12-31")
+
+
+def test_a_gap_that_cannot_be_retrieved_returns_the_cached_part(cache, monkeypatch):
+    """A failed extension returns what is cached and is retried on the next run."""
+    fmp_requests: list[tuple[str, str]] = []
+    fmp_available = {"value": True}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        return bars(start, end) if fmp_available["value"] else pd.DataFrame()
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+    monkeypatch.setattr(
+        historical_model.yfinance_model,
+        "get_historical_data",
+        lambda **kwargs: pd.DataFrame(),  # noqa: ARG005
+    )
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    fmp_available["value"] = False
+
+    data = collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert str(data.index.min()) == "2018-01-01"
+    assert str(data.index.max()) == "2020-12-31"
+
+    fmp_available["value"] = True
+    requests_before = len(fmp_requests)
+    data = collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert len(fmp_requests) == requests_before + 1
+    assert str(data.index.max()) == "2021-12-31"

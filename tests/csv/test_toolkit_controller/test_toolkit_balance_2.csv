@@ -44,9 +44,9 @@ AAPL,Goodwill and Intangible Assets,Lag 3,,,,
 AAPL,Long Term Investments,Lag 1,,0.2675,-0.0553,-0.1677
 AAPL,Long Term Investments,Lag 2,,,0.1974,-0.2137
 AAPL,Long Term Investments,Lag 3,,,,-0.0034
-AAPL,Tax Assets,Lag 1,,,inf,0.1611
-AAPL,Tax Assets,Lag 2,,,inf,inf
-AAPL,Tax Assets,Lag 3,,,,inf
+AAPL,Tax Assets,Lag 1,,,,0.1611
+AAPL,Tax Assets,Lag 2,,,,
+AAPL,Tax Assets,Lag 3,,,,
 AAPL,Other Fixed Assets,Lag 1,,0.1417,-0.2612,0.2657
 AAPL,Other Fixed Assets,Lag 2,,,-0.1566,-0.0649
 AAPL,Other Fixed Assets,Lag 3,,,,0.0675
@@ -62,9 +62,9 @@ AAPL,Total Assets,Lag 3,,,,0.0886
 AAPL,Accounts Payable,Lag 1,,0.2948,0.1708,-0.0235
 AAPL,Accounts Payable,Lag 2,,,0.5159,0.1433
 AAPL,Accounts Payable,Lag 3,,,,0.4803
-AAPL,Other Payables,Lag 1,,,inf,0.346
-AAPL,Other Payables,Lag 2,,,inf,inf
-AAPL,Other Payables,Lag 3,,,,inf
+AAPL,Other Payables,Lag 1,,,,0.346
+AAPL,Other Payables,Lag 2,,,,
+AAPL,Other Payables,Lag 3,,,,
 AAPL,Total Payables,Lag 1,,0.2948,0.2904,0.0108
 AAPL,Total Payables,Lag 2,,,0.6708,0.3043
 AAPL,Total Payables,Lag 3,,,,0.6888
@@ -77,9 +77,9 @@ AAPL,Short Term Debt,Lag 3,,,,0.148
 AAPL,Current Capital Lease Obligations Current,Lag 1,,0.0466,0.0884,-0.0529
 AAPL,Current Capital Lease Obligations Current,Lag 2,,,0.139,0.0308
 AAPL,Current Capital Lease Obligations Current,Lag 3,,,,0.0788
-AAPL,Tax Payables,Lag 1,,,inf,0.346
-AAPL,Tax Payables,Lag 2,,,inf,inf
-AAPL,Tax Payables,Lag 3,,,,inf
+AAPL,Tax Payables,Lag 1,,,,0.346
+AAPL,Tax Payables,Lag 2,,,,
+AAPL,Tax Payables,Lag 3,,,,
 AAPL,Deferred Revenue,Lag 1,,0.1459,0.0394,0.0188
 AAPL,Deferred Revenue,Lag 2,,,0.191,0.059
 AAPL,Deferred Revenue,Lag 3,,,,0.2135

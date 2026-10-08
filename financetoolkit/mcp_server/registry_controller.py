@@ -948,7 +948,6 @@ class ToolRegistry:
             description = (
                 f"{spec.display_name}. Set `indicator` to one of: {method_list}."
             )
-        description = description[:1500]
 
         try:
             fn = self._build_router_wrapper(

@@ -315,6 +315,53 @@ def get_monte_carlo_option_price(
             f"time_steps must be a positive integer, received {time_steps!r}."
         )
 
+    prices, standard_errors = get_monte_carlo_option_prices(
+        stock_price=stock_price,
+        strike_prices=np.array([strike_price], dtype=float),
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
+        put_option=put_option,
+        simulations=simulations,
+        time_steps=time_steps,
+        seed=seed,
+    )
+
+    return float(prices[0]), float(standard_errors[0])
+
+
+def _simulate_terminal_stock_prices(
+    stock_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_yield: float,
+    simulations: int,
+    time_steps: int,
+    seed: int | None,
+) -> np.ndarray:
+    """
+    Simulates the stock price at expiration of Geometric Brownian Motion paths under the
+    risk-neutral measure.
+
+    Every path is built from time_steps shocks as before, so a seed gives the same terminal
+    prices; only the end of each path is exponentiated, since a European payoff needs
+    nothing else.
+
+    Args:
+        stock_price (float): The current stock price.
+        risk_free_rate (float): The risk-free rate.
+        volatility (float): The volatility.
+        time_to_expiration (float): The time to expiration in years.
+        dividend_yield (float): The dividend yield.
+        simulations (int): The number of paths.
+        time_steps (int): The number of steps per path.
+        seed (int | None): The seed of the random number generator.
+
+    Returns:
+        np.ndarray: The stock price at expiration of every path.
+    """
     random_number_generator = np.random.default_rng(seed)
 
     time_delta = time_to_expiration / time_steps
@@ -324,19 +371,71 @@ def get_monte_carlo_option_price(
     random_shocks = random_number_generator.standard_normal((simulations, time_steps))
     log_returns = drift + diffusion * random_shocks
     log_paths = np.cumsum(log_returns, axis=1)
-    stock_price_paths = stock_price * np.exp(log_paths)
 
-    terminal_stock_prices = stock_price_paths[:, -1]
+    return stock_price * np.exp(log_paths[:, -1])
 
-    if put_option:
-        payoffs = np.maximum(strike_price - terminal_stock_prices, 0)
-    else:
-        payoffs = np.maximum(terminal_stock_prices - strike_price, 0)
 
+def get_monte_carlo_option_prices(
+    stock_price: float,
+    strike_prices: np.ndarray,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_yield: float = 0.0,
+    put_option: bool = False,
+    simulations: int = 10_000,
+    time_steps: int = 100,
+    seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Calculates the Monte Carlo price of European options with several strike prices from
+    one set of simulated paths, see get_monte_carlo_option_price. Pricing every strike on
+    the same paths (common random numbers) gives the same prices as simulating per strike
+    with the same seed, keeps the prices consistent across strikes and simulates once
+    rather than once per strike.
+
+    Args:
+        stock_price (float): The current stock price.
+        strike_prices (np.ndarray): The strike prices.
+        risk_free_rate (float): The risk-free rate.
+        volatility (float): The volatility.
+        time_to_expiration (float): The time to expiration in years.
+        dividend_yield (float, optional): The dividend yield. Defaults to 0.0.
+        put_option (bool, optional): Whether to price puts instead of calls. Defaults to
+            False.
+        simulations (int, optional): The number of simulated paths. Defaults to 10,000.
+        time_steps (int, optional): The number of steps per path. Defaults to 100.
+        seed (int | None, optional): The seed of the random number generator. Defaults to
+            None.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price.
+    """
+    terminal_stock_prices = _simulate_terminal_stock_prices(
+        stock_price,
+        risk_free_rate,
+        volatility,
+        time_to_expiration,
+        dividend_yield,
+        simulations,
+        time_steps,
+        seed,
+    )
     discount_factor = np.exp(-risk_free_rate * time_to_expiration)
-    discounted_payoffs = discount_factor * payoffs
+    option_prices = np.empty(len(strike_prices))
+    standard_errors = np.empty(len(strike_prices))
 
-    option_price = float(discounted_payoffs.mean())
-    standard_error = float(discounted_payoffs.std(ddof=1) / np.sqrt(simulations))
+    # One strike at a time keeps the memory to one payoff per path.
+    for position, strike_price in enumerate(strike_prices):
+        if put_option:
+            payoffs = np.maximum(strike_price - terminal_stock_prices, 0)
+        else:
+            payoffs = np.maximum(terminal_stock_prices - strike_price, 0)
 
-    return option_price, standard_error
+        discounted_payoffs = discount_factor * payoffs
+        option_prices[position] = discounted_payoffs.mean()
+        standard_errors[position] = discounted_payoffs.std(ddof=1) / np.sqrt(
+            simulations
+        )
+
+    return option_prices, standard_errors

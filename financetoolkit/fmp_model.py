@@ -37,6 +37,11 @@ logger = logger_model.get_logger()
 
 RETRY_LIMIT = 12
 
+# A server error (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout) or a
+# timeout is usually over within seconds, so it is retried a few times only.
+TRANSIENT_RETRY_LIMIT = 3
+TRANSIENT_STATUS_CODES = (429, 500, 502, 503, 504)
+
 # Base delay for the exponential backoff on rate limits and refused connections. The
 # delay doubles per attempt and carries random jitter: with 10 worker threads hitting
 # the limit at the same time, a fixed sleep would wake them all together and re-collide
@@ -137,6 +142,21 @@ def get_financial_data(
             if "Invalid API KEY." in error_message:
                 return pd.DataFrame(columns=["INVALID API KEY"])
 
+            status_code = (
+                e.response.status_code
+                if isinstance(e, requests.exceptions.HTTPError)
+                and e.response is not None
+                else None
+            )
+
+            if (
+                status_code in TRANSIENT_STATUS_CODES
+                and error_retry_counter < TRANSIENT_RETRY_LIMIT
+            ):
+                time.sleep(determine_retry_delay(error_retry_counter))
+                error_retry_counter += 1
+                continue
+
             # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
             logger.error(
                 "The request to Financial Modeling Prep failed with an unrecognised error: %s",
@@ -146,12 +166,25 @@ def get_financial_data(
             return pd.DataFrame(columns=["REQUEST FAILED"])
 
         except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ):
+            # A read timeout or a response cut off halfway is retried a few times, and
+            # then reported for this request only, so it does not abort the other
+            # tickers fetched alongside it.
+            if error_retry_counter >= TRANSIENT_RETRY_LIMIT:
+                return pd.DataFrame(columns=["REQUEST FAILED"])
+
+            time.sleep(determine_retry_delay(error_retry_counter))
+            error_retry_counter += 1
+
+        except (
             MaxRetryError,
             requests.exceptions.SSLError,
             requests.exceptions.ConnectionError,
         ):
             # Retry a refused connection up to RETRY_LIMIT times, then return empty.
-            if error_retry_counter == RETRY_LIMIT:
+            if error_retry_counter >= RETRY_LIMIT:
                 return pd.DataFrame(columns=["NO ERRORS"])
 
             time.sleep(determine_retry_delay(error_retry_counter))
@@ -442,7 +475,14 @@ def get_historical_data(
 
         historical_data = pd.DataFrame(historical_data).set_index("date")
     except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
-        return pd.DataFrame(historical_data)
+        # An error frame is passed on as is. Anything else, such as an error message
+        # as JSON or records without dates, is no data: building a frame from it again
+        # would raise inside this handler.
+        return (
+            historical_data
+            if isinstance(historical_data, pd.DataFrame)
+            else pd.DataFrame()
+        )
 
     historical_data = historical_data.sort_index()
 
@@ -623,7 +663,14 @@ def get_intraday_data(
 
         historical_data = pd.DataFrame(historical_data).set_index("date")
     except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
-        return pd.DataFrame(historical_data)
+        # An error frame is passed on as is. Anything else, such as an error message
+        # as JSON or records without dates, is no data: building a frame from it again
+        # would raise inside this handler.
+        return (
+            historical_data
+            if isinstance(historical_data, pd.DataFrame)
+            else pd.DataFrame()
+        )
 
     historical_data = historical_data.sort_index()
 

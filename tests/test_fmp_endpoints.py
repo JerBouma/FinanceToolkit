@@ -7,6 +7,7 @@
 
 import pandas as pd
 import pytest
+import requests
 
 from financetoolkit import currencies_model, fmp_model, toolkit_controller
 from financetoolkit.cache import cache_controller
@@ -539,3 +540,58 @@ def test_market_risk_premium_is_returned_as_decimals(monkeypatch):
     assert premium.loc[
         "United States", ["Country Risk Premium", "Total Equity Risk Premium"]
     ].tolist() == (pytest.approx([0.0023, 0.0446]))
+
+
+class _Response:
+    """A response with a status code and a body, as requests returns it."""
+
+    def __init__(self, status_code: int, text: str = "[]"):
+        self.status_code = status_code
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:  # noqa: PLR2004
+            raise requests.exceptions.HTTPError(response=self)
+
+    def json(self):
+        return []
+
+
+def test_a_server_error_is_retried(monkeypatch):
+    responses = [_Response(503, "Service Unavailable"), _Response(200, '[{"a": 1}]')]
+    monkeypatch.setattr(fmp_model, "get_request", lambda *_, **__: responses.pop(0))
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    assert fmp_model.get_financial_data("https://example.com").to_dict("list") == {
+        "a": [1]
+    }
+
+
+def test_a_timeout_is_reported_instead_of_raised(monkeypatch):
+    attempts = []
+
+    def timeout(*_, **__):
+        attempts.append(1)
+        raise requests.exceptions.ReadTimeout("Read timed out.")
+
+    monkeypatch.setattr(fmp_model, "get_request", timeout)
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    result = fmp_model.get_financial_data("https://example.com")
+
+    assert list(result.columns) == ["REQUEST FAILED"]
+    assert len(attempts) == fmp_model.TRANSIENT_RETRY_LIMIT + 1
+
+
+def test_an_error_message_instead_of_prices_is_no_data(monkeypatch):
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda *_, **__: {"Error Message": "Something went wrong."},
+    )
+
+    result = fmp_model.get_historical_data(
+        ticker="AAPL", api_key="KEY", start="2024-01-01", end="2024-02-01"
+    )
+
+    assert result.empty

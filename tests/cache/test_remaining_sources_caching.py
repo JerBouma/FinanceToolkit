@@ -140,6 +140,23 @@ def test_rate_limited_plan_probe_is_not_cached(cache, monkeypatch):
     assert fmp_model.determine_subscription_plan("key")[0] == "Premium"
 
 
+@pytest.mark.parametrize("failure", ["REQUEST FAILED", "NO ERRORS"])
+def test_failed_plan_probe_is_free_and_not_cached(cache, monkeypatch, failure):
+    """Test that a failed probe neither unlocks paid limits nor is remembered."""
+    responses = [pd.DataFrame(columns=[failure]), pd.DataFrame({"revenue": [1]})]
+
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda url, sleep_timer=True, user_subscription="Free": responses.pop(  # noqa: ARG005
+            0
+        ),
+    )
+
+    assert fmp_model.determine_subscription_plan("key") == ("Free", False)
+    assert fmp_model.determine_subscription_plan("key") == ("Premium", False)
+
+
 def test_treasury_rates_only_paginate_over_the_missing_range(cache, monkeypatch):
     """Test that extending the treasury range does not repaginate the whole history."""
     windows: list[tuple[str, str]] = []

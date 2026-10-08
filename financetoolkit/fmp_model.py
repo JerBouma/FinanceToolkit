@@ -246,15 +246,29 @@ def determine_subscription_plan(api_key: str) -> tuple[str, bool]:
 
     plan = "Premium"
     invalid_key = False
+    determined = True
 
     for option in PLAN_RESTRICTION_MESSAGES:
         if option in determine_plan:
             invalid_key = option == "INVALID API KEY"
             plan = "Free"
             break
+    else:
+        if determine_plan.empty:
+            # A failed request (a timeout, a server error, no connection) says nothing
+            # about the plan. Only statements coming back show the key is a paid one, so
+            # until then the key is treated as a Free one: a Free key treated as a paid
+            # one would request more than it may and wait out rate limits for minutes.
+            plan = "Free"
+            determined = False
+            logger.warning(
+                "The Financial Modeling Prep plan could not be determined (%s), so the "
+                "limits of the Free plan apply to this session.",
+                ", ".join(map(str, determine_plan.columns)) or "no response",
+            )
 
-    # A rate limited probe says nothing about the plan, so that answer is not stored.
-    if cache is not None and "LIMIT REACH" not in determine_plan:
+    # A rate limited or failed probe says nothing about the plan, so it is not stored.
+    if cache is not None and determined and "LIMIT REACH" not in determine_plan:
         cache.set(
             source=policy_model.FINANCIAL_MODELING_PREP,
             dataset="subscription_plan",
@@ -1327,6 +1341,9 @@ def get_quote(
     quote_dict = error_model.check_for_error_messages(
         dataset_dictionary=quote_dict, user_subscription=user_subscription
     )
+
+    # Empty when every ticker returned an error, such as a rate limit.
+    quote_dataframe = pd.DataFrame()
 
     if quote_dict:
         quote_dataframe = to_dataframe(pd.concat(quote_dict)[0].unstack(level=0))

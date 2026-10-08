@@ -11,7 +11,6 @@ from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import (
     determine_within_dataset,
     determine_within_historical_data,
-    handle_errors,
 )
 from financetoolkit.risk.risk_model import (
     get_kurtosis,
@@ -23,6 +22,7 @@ from financetoolkit.risk.risk_model import (
     get_volatility,
 )
 from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,

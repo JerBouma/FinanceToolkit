@@ -13,7 +13,7 @@ from financetoolkit.technicals import (
     overlap_model,
     volatility_model,
 )
-from financetoolkit.technicals.helpers import handle_errors
+from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,

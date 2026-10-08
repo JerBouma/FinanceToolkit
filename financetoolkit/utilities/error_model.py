@@ -20,6 +20,9 @@ STRICT_ERRORS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_STRICT_ERRORS"
 # AttributeError and TypeError cannot be produced by financial data that is merely incomplete; they mean the code asked an object for something it does not have, and there is no value that can be returned for them that is not a lie, so they always raise.  # noqa: E501
 ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
 
+# Errors that say the data is missing or unusable, reported as an empty result.
+REPORTED_ERRORS = (KeyError, IndexError, ZeroDivisionError, ValueError)
+
 
 def use_strict_errors() -> bool:
     """
@@ -101,61 +104,21 @@ def handle_errors(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except ALWAYS_RAISED_ERRORS as error:
+        except (KeyError, ValueError, AttributeError) as error:
+            # Metrics relative to a benchmark fail on its absence, which is a setting
+            # rather than missing data or a defect, so the fix is reported instead.
+            if "Benchmark" not in str(error) or use_strict_errors():
+                return _report_failure(func, args, error)
+
             logger.error(
-                "%s failed%s with a %s (%s), which indicates a defect rather than "
-                "missing data.",
+                "Please set a benchmark_ticker in the Toolkit class to calculate %s. "
+                "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], "
+                "benchmark_ticker='SPY')",
                 func.__name__,
-                get_tickers_from_arguments(args),
-                type(error).__name__,
-                error,
-            )
-            raise
-        except KeyError as error:
-            if use_strict_errors():
-                raise
-            logger.error(
-                "%s could not be calculated%s because the item %s is missing from "
-                "the provided financial statements. Fill this row to obtain the metric.",
-                func.__name__,
-                get_tickers_from_arguments(args),
-                error,
             )
             return pd.Series(dtype="object")
-        except IndexError as error:
-            if use_strict_errors():
-                raise
-            logger.error(
-                "%s could not be calculated%s due to missing data. %s: %s",
-                func.__name__,
-                get_tickers_from_arguments(args),
-                type(error).__name__,
-                error,
-            )
-            return pd.Series(dtype="object")
-        except ZeroDivisionError as error:
-            if use_strict_errors():
-                raise
-            logger.error(
-                "%s could not be calculated%s due to a division by zero. %s: %s",
-                func.__name__,
-                get_tickers_from_arguments(args),
-                type(error).__name__,
-                error,
-            )
-            return pd.Series(dtype="object")
-        except ValueError as error:
-            if use_strict_errors():
-                raise
-            logger.error(
-                "%s could not be calculated%s. %s: %s",
-                func.__name__,
-                get_tickers_from_arguments(args),
-                type(error).__name__,
-                error,
-                exc_info=True,
-            )
-            return pd.Series(dtype="object")
+        except Exception as error:  # noqa: BLE001
+            return _report_failure(func, args, error)
 
     # These steps are there to ensure the docstring of the function remains intact
     wrapper.__doc__ = func.__doc__
@@ -164,6 +127,76 @@ def handle_errors(func):
     wrapper.__module__ = func.__module__
 
     return wrapper
+
+
+def _report_failure(func, args: tuple, error: Exception) -> pd.Series:
+    """
+    Reports the failure of a metric calculation as handle_errors describes: an empty
+    Series for missing or unusable data, and the error itself for a defect, for an error
+    that is not about the data or when strict error handling is enabled.
+
+    Args:
+        func (function): The decorated function.
+        args (tuple): The arguments it was called with, to name the tickers.
+        error (Exception): The error it raised.
+
+    Returns:
+        pd.Series: An empty Series in place of the result.
+
+    Raises:
+        Exception: The error itself, when it is not reported.
+    """
+    tickers = get_tickers_from_arguments(args)
+
+    if isinstance(error, ALWAYS_RAISED_ERRORS):
+        logger.error(
+            "%s failed%s with a %s (%s), which indicates a defect rather than "
+            "missing data.",
+            func.__name__,
+            tickers,
+            type(error).__name__,
+            error,
+        )
+        raise error
+
+    if use_strict_errors() or not isinstance(error, REPORTED_ERRORS):
+        raise error
+
+    if isinstance(error, KeyError):
+        logger.error(
+            "%s could not be calculated%s because the item %s is missing from "
+            "the provided financial statements. Fill this row to obtain the metric.",
+            func.__name__,
+            tickers,
+            error,
+        )
+    elif isinstance(error, IndexError):
+        logger.error(
+            "%s could not be calculated%s due to missing data. %s: %s",
+            func.__name__,
+            tickers,
+            type(error).__name__,
+            error,
+        )
+    elif isinstance(error, ZeroDivisionError):
+        logger.error(
+            "%s could not be calculated%s due to a division by zero. %s: %s",
+            func.__name__,
+            tickers,
+            type(error).__name__,
+            error,
+        )
+    else:
+        logger.error(
+            "%s could not be calculated%s. %s: %s",
+            func.__name__,
+            tickers,
+            type(error).__name__,
+            error,
+            exc_info=True,
+        )
+
+    return pd.Series(dtype="object")
 
 
 def check_for_error_messages(

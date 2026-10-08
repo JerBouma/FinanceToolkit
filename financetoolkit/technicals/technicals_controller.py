@@ -100,6 +100,7 @@ class Technicals:
         self._volatility_indicators: pd.DataFrame = pd.DataFrame()
         self._volatility_indicators_growth: pd.DataFrame = pd.DataFrame()
 
+    @handle_errors
     def collect_all_indicators(
         self,
         period: str = "daily",
@@ -224,6 +225,7 @@ class Technicals:
 
         return self._all_indicators_growth if growth else self._all_indicators
 
+    @handle_errors
     def collect_breadth_indicators(
         self,
         period: str = "daily",
@@ -1449,6 +1451,7 @@ class Technicals:
             apply_slice=False,
         )
 
+    @handle_errors
     def collect_momentum_indicators(
         self,
         period: str = "daily",
@@ -4476,6 +4479,7 @@ class Technicals:
             apply_slice=False,
         )
 
+    @handle_errors
     def collect_overlap_indicators(
         self,
         period: str = "daily",
@@ -6474,6 +6478,7 @@ class Technicals:
             apply_slice=False,
         )
 
+    @handle_errors
     def collect_volatility_indicators(
         self,
         period: str = "daily",

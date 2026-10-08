@@ -177,6 +177,7 @@ class Ratios:
         self._valuation_ratios: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios_growth: pd.DataFrame = pd.DataFrame()
 
+    @handle_errors
     def collect_all_ratios(
         self,
         include_dividends: bool = False,
@@ -317,6 +318,7 @@ class Ratios:
             :, self._start_date : self._end_date
         ]
 
+    @handle_errors
     def collect_custom_ratios(
         self,
         custom_ratios_dict: dict | None = None,
@@ -2677,6 +2679,7 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_errors
     def collect_liquidity_ratios(
         self,
         rounding: int | None = None,
@@ -3608,6 +3611,7 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_errors
     def collect_profitability_ratios(
         self,
         rounding: int | None = None,
@@ -5931,6 +5935,7 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_errors
     def collect_solvency_ratios(
         self,
         diluted: bool = True,
@@ -7569,6 +7574,7 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_errors
     def collect_valuation_ratios(
         self,
         include_dividends: bool = False,

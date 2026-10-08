@@ -1385,6 +1385,7 @@ class Models:
 
         return filter_columns(mva_results, show_columns)
 
+    @handle_errors
     def get_intrinsic_valuation(
         self,
         growth_rate: float | list | dict[str, float],
@@ -1904,6 +1905,7 @@ class Models:
 
         return filter_columns(fcfe_results, show_columns)
 
+    @handle_errors
     def get_gorden_growth_model(
         self,
         rate_of_return: float,
@@ -2032,6 +2034,7 @@ class Models:
 
         return gorden_growth_model_df.loc[self._start_date :]
 
+    @handle_errors
     def get_two_stage_dividend_discount_model(
         self,
         rate_of_return: float | list | dict[str, float],

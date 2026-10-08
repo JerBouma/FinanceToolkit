@@ -1985,6 +1985,7 @@ class FixedIncome:
 
         return derivative_prices_df.round(2)
 
+    @handle_errors
     def get_government_bond_yield(
         self,
         short_term: bool = False,
@@ -4245,6 +4246,7 @@ class FixedIncome:
             row_slice=True,
         )
 
+    @handle_errors
     def get_european_central_bank_rates(
         self,
         rate: str | None = None,
@@ -4339,6 +4341,7 @@ class FixedIncome:
             row_slice=True,
         )
 
+    @handle_errors
     def get_federal_reserve_rates(
         self,
         rate: str = "EFFR",

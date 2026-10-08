@@ -4,6 +4,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
 from financetoolkit.utilities import requests_model
@@ -188,3 +189,63 @@ def test_build_session_returns_fresh_session():
 
     assert isinstance(session, requests.Session)
     assert session is not requests_model.SESSION
+
+
+class FakeSession:
+    """A session whose verified requests fail on the certificate."""
+
+    def __init__(self):
+        self.unverified_urls: list[str] = []
+
+    def get(self, url, verify=True, **kwargs):  # noqa: ARG002
+        if verify is not False:
+            raise requests.exceptions.SSLError("certificate verify failed")
+
+        self.unverified_urls.append(url)
+        response = requests.Response()
+        response.status_code = 200
+        return response
+
+
+@pytest.fixture(name="session")
+def fixture_session(monkeypatch):
+    session = FakeSession()
+    monkeypatch.setattr(requests_model, "SESSION", session)
+    monkeypatch.setattr(
+        requests_model.ssl,
+        "get_default_verify_paths",
+        lambda: type("Paths", (), {"cafile": None}),
+    )
+    monkeypatch.delenv(
+        requests_model.UNVERIFIED_SSL_ENVIRONMENT_VARIABLE, raising=False
+    )
+    return session
+
+
+def test_a_request_without_credentials_falls_back_to_no_verification(session):
+    requests_model.get_request("https://example.com/data.csv")
+
+    assert session.unverified_urls == ["https://example.com/data.csv"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey=SECRET",
+        "https://api.stlouisfed.org/fred/series/observations?series_id=X&api_key=SECRET",
+    ],
+)
+def test_a_request_with_an_api_key_is_not_sent_unverified(session, url, caplog):
+    with pytest.raises(requests.exceptions.SSLError):
+        requests_model.get_request(url)
+
+    assert session.unverified_urls == []
+    assert "SECRET" not in caplog.text
+
+
+def test_unverified_requests_with_an_api_key_can_be_allowed(session, monkeypatch):
+    monkeypatch.setenv(requests_model.UNVERIFIED_SSL_ENVIRONMENT_VARIABLE, "1")
+
+    requests_model.get_request("https://example.com/quote?apikey=SECRET")
+
+    assert len(session.unverified_urls) == 1

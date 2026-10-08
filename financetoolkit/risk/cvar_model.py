@@ -31,22 +31,22 @@ def get_cvar_historic(
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            periods = returns.index.get_level_values(0).unique()
-            period_data_list = []
+            value_at_risk = returns.groupby(level=0, sort=False).quantile(alpha)
+            value_at_risk = value_at_risk.reindex(
+                returns.index.get_level_values(0)
+            ).set_axis(returns.index)
+            result = (
+                returns.where(returns <= value_at_risk)
+                .groupby(level=0, sort=False)
+                .mean()
+            )
+            result.index.name = None
 
-            for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_cvar_historic, alpha=alpha
-                )
-                period_data.name = sub_period
+            return result
 
-                if not period_data.empty:
-                    period_data_list.append(period_data)
+        value_at_risk = returns.quantile(alpha)
 
-            value_at_risk = pd.concat(period_data_list, axis=1)
-
-            return value_at_risk.T
-        return returns.aggregate(get_cvar_historic, alpha=alpha)
+        return returns.where(returns <= value_at_risk).mean()
     if isinstance(returns, pd.Series):
         return returns[
             returns <= var_model.get_var_historic(returns, alpha)

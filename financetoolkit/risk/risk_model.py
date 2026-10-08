@@ -15,6 +15,38 @@ ALPHA_CONSTRAINT = 0.5
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
+def get_quantile(
+    returns: pd.Series | pd.DataFrame, quantile: float
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate a quantile of returns per column and, for a within period index, per period.
+
+    The quantile is interpolated linearly, as np.percentile does, but skips missing
+    returns: a single missing return would otherwise make the quantile missing.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns, optionally
+            with a (period, date) index.
+        quantile (float): The quantile, between 0 and 1.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The quantile as a float for a Series, per column
+        for a DataFrame and per period and column for a within period index.
+    """
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            result = returns.groupby(level=0, sort=False).quantile(quantile)
+            result.index.name = None
+
+            return result
+
+        return returns.quantile(quantile).rename(None)
+    if isinstance(returns, pd.Series):
+        return float(returns.quantile(quantile))
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
 def get_wealth_and_peak(
     returns: pd.Series | pd.DataFrame,
 ) -> tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]:
@@ -488,32 +520,17 @@ def get_tail_ratio(
         pd.Series | pd.DataFrame: Tail Ratio values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            periods = returns.index.get_level_values(0).unique()
-            period_data_list = []
+    if not isinstance(returns, pd.DataFrame | pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-            for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_tail_ratio, alpha=alpha
-                )
-                period_data.name = sub_period
+    right_tail = get_quantile(returns, 1 - alpha)
+    left_tail = get_quantile(returns, alpha)
 
-                if not period_data.empty:
-                    period_data_list.append(period_data)
-
-            tail_ratio = pd.concat(period_data_list, axis=1)
-
-            return tail_ratio.T
-
-        return returns.aggregate(get_tail_ratio, alpha=alpha)
+    # A left tail of exactly zero has no meaningful ratio.
     if isinstance(returns, pd.Series):
-        right_tail = np.percentile(returns, (1 - alpha) * 100)
-        left_tail = np.percentile(returns, alpha * 100)
+        return abs(right_tail) / abs(left_tail) if left_tail != 0 else np.nan
 
-        return abs(right_tail) / abs(left_tail)
-
-    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+    return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
 
 
 def get_rolling_tail_ratio(
@@ -532,13 +549,11 @@ def get_rolling_tail_ratio(
         pd.Series | pd.DataFrame: Rolling Tail Ratio values with time as index.
     """
 
-    def _tail_ratio(window):
-        right_tail = np.percentile(window, (1 - alpha) * 100)
-        left_tail = np.percentile(window, alpha * 100)
+    rolling = returns.rolling(window=window_size)
+    right_tail = rolling.quantile(1 - alpha, interpolation="linear")
+    left_tail = rolling.quantile(alpha, interpolation="linear")
 
-        return abs(right_tail) / abs(left_tail)
-
-    return returns.rolling(window=window_size).apply(_tail_ratio, raw=True)
+    return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
 
 
 def get_rolling_conditional_drawdown_at_risk(

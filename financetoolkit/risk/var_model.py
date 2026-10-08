@@ -26,29 +26,7 @@ def get_var_historic(
         pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
-    if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            periods = returns.index.get_level_values(0).unique()
-            period_data_list = []
-
-            for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_var_historic, alpha=alpha
-                )
-                period_data.name = sub_period
-
-                if not period_data.empty:
-                    period_data_list.append(period_data)
-
-            value_at_risk = pd.concat(period_data_list, axis=1)
-
-            return value_at_risk.T
-
-        return returns.aggregate(get_var_historic, alpha=alpha)
-    if isinstance(returns, pd.Series):
-        return np.percentile(
-            returns, alpha * 100
-        )  # The actual calculation without data wrangling
+    return risk_model.get_quantile(returns, alpha)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -130,9 +108,8 @@ def get_rolling_var_historic(
     Returns:
         pd.Series | pd.DataFrame: Rolling VaR values with time as index.
     """
-    return returns.rolling(window=window_size).apply(
-        lambda window: np.percentile(window, alpha * 100)
-    )
+    # Linear interpolation, as np.percentile, in one pass instead of a call per window.
+    return returns.rolling(window=window_size).quantile(alpha, interpolation="linear")
 
 
 def fit_gpd_tail(

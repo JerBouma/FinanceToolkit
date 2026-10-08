@@ -2,13 +2,13 @@
 
 __docformat__ = "google"
 
-import io
 import re
 
 import pandas as pd
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.utilities.excel_model import read_excel
 from financetoolkit.utilities.requests_model import get_request
 
 # The site where Robert Shiller publishes the monthly data behind "Irrational Exuberance".
@@ -83,8 +83,8 @@ def get_stock_market_data() -> pd.DataFrame:
             if link.group(1).startswith("http")
             else f"https:{link.group(1)}"
         )
-        sheet = pd.read_excel(
-            io.BytesIO(get_request(url, timeout=120).content),
+        sheet = read_excel(
+            get_request(url, timeout=120).content,
             sheet_name="Data",
             header=None,
         )

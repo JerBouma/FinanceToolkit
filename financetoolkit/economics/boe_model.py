@@ -16,6 +16,7 @@ from financetoolkit.economics.helpers import (
     collect_ranged_data,
     require_columns,
 )
+from financetoolkit.utilities.excel_model import excel_file, read_excel
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
 
@@ -189,7 +190,10 @@ CURVE_ARCHIVES = {
     "ois": ("oisddata.zip", "OIS daily data current month.xlsx"),
 }
 CURRENT_MONTH_ARCHIVE = "latest-yield-curve-data.zip"
-SPOT_CURVE_SHEET_PATTERN = re.compile(r"^4\.\s+.*spot curve\s*$", re.IGNORECASE)
+# The spot curve worksheet: "4. spot curve" in most workbooks, "4.  real spot curve" in
+# older ones and "2. spot curve" in the OIS workbook of 2009 to 2015, which has no short
+# end worksheets before it. "3. spot, short end" is a different worksheet.
+SPOT_CURVE_SHEET_PATTERN = re.compile(r"^\d+\.\s+.*spot curve\s*$", re.IGNORECASE)
 
 # A workbook that runs to the present has no last year; this stands in for it.
 OPEN_ENDED_YEAR = 9999
@@ -213,9 +217,8 @@ def _parse_spot_curve(workbook: bytes, description: str) -> pd.DataFrame:
     Raises:
         ValueError: When the worksheet or its row of maturities is missing.
     """
-    # The worksheet is "4. spot curve" in recent workbooks and "4.  real spot curve" (with
-    # two spaces) in older ones, so it is found by its number and name.
-    excel = pd.ExcelFile(io.BytesIO(workbook))
+    # The worksheet is found by its number and name, see SPOT_CURVE_SHEET_PATTERN.
+    excel = excel_file(workbook)
     sheet_name = next(
         (name for name in excel.sheet_names if SPOT_CURVE_SHEET_PATTERN.match(name)),
         None,
@@ -448,8 +451,8 @@ def get_millennium_data() -> pd.DataFrame:
         response = get_request(MILLENNIUM_URL, timeout=300, extra_headers=HEADERS)
 
         try:
-            sheet = pd.read_excel(
-                io.BytesIO(response.content), sheet_name=MILLENNIUM_SHEET, header=None
+            sheet = read_excel(
+                response.content, sheet_name=MILLENNIUM_SHEET, header=None
             )
         except ValueError as error:
             raise ValueError(

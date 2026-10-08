@@ -5,6 +5,8 @@ import re
 import pandas as pd
 import yaml
 
+from financetoolkit.utilities.excel_model import read_excel as read_workbook
+
 # pylint: disable=too-few-public-methods
 
 
@@ -40,7 +42,7 @@ def read_excel(location: str):
         ValueError: If the specified file does not have a '.xlsx' or '.csv' extension.
     """
     if location.endswith(".xlsx") or location.endswith(".xls"):
-        return pd.read_excel(location)
+        return read_workbook(location)
     if location.endswith(".csv"):
         csv_dataset = pd.read_csv(location, delimiter=",")
 

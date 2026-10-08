@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import io
 import re
-import warnings
 import zipfile
 
 import numpy as np
@@ -14,6 +13,7 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.utilities.excel_model import read_excel
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
 
@@ -116,7 +116,7 @@ def _parse_term_structures(
         ValueError: When the worksheet is missing or has no maturities where expected.
     """
     try:
-        data = pd.read_excel(io.BytesIO(workbook), sheet_name=sheet, header=None)
+        data = read_excel(workbook, sheet_name=sheet, header=None)
     except ValueError as error:
         raise ValueError(
             f"The {description} has no worksheet '{sheet}', which means EIOPA changed its layout."
@@ -386,14 +386,11 @@ def get_symmetric_adjustment() -> pd.DataFrame:
         # The page lists the latest month first.
         link = links[0] if links[0].startswith("http") else f"{BASE_URL}{links[0]}"
 
-        with warnings.catch_warnings():
-            # The workbook uses a data validation extension openpyxl does not read.
-            warnings.simplefilter("ignore", UserWarning)
-            sheet = pd.read_excel(
-                io.BytesIO(get_request(link, timeout=120).content),
-                sheet_name=SYMMETRIC_ADJUSTMENT_SHEET,
-                header=None,
-            )
+        sheet = read_excel(
+            get_request(link, timeout=120).content,
+            sheet_name=SYMMETRIC_ADJUSTMENT_SHEET,
+            header=None,
+        )
 
         header = sheet.index[
             sheet.astype(str).eq(SYMMETRIC_ADJUSTMENT_DATE).any(axis=1)

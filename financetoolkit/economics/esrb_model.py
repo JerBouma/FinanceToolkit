@@ -2,13 +2,13 @@
 
 __docformat__ = "google"
 
-import io
 import re
 
 import pandas as pd
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.utilities.excel_model import excel_file, read_excel
 from financetoolkit.utilities.requests_model import get_request
 
 # The ESRB designs the adverse scenarios of the EU-wide stress tests of the EBA (banks),
@@ -155,7 +155,7 @@ def get_macro_financial_scenario(scenario: str) -> pd.DataFrame:
     description = f"ESRB macro-financial scenario of {date}"
 
     def fetch() -> pd.DataFrame:
-        workbook = pd.ExcelFile(io.BytesIO(get_request(link, timeout=120).content))
+        workbook = excel_file(get_request(link, timeout=120).content)
         series = {}
 
         for sheet, (variable, scale) in SHEETS.items():
@@ -163,7 +163,7 @@ def get_macro_financial_scenario(scenario: str) -> pd.DataFrame:
                 continue
 
             values = _parse_sheet(
-                pd.read_excel(workbook, sheet_name=sheet, header=None), scenario
+                read_excel(workbook, sheet_name=sheet, header=None), scenario
             )
             for (label, year), value in values.items():
                 # The notes below a table are text without values and so never reach here.

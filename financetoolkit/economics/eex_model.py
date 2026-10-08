@@ -2,14 +2,13 @@
 
 __docformat__ = "google"
 
-import io
-import warnings
 
 import pandas as pd
 import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
+from financetoolkit.utilities.excel_model import read_excel
 from financetoolkit.utilities.requests_model import get_request
 
 # The EEX holds the primary auctions of EU emission allowances (EUAs) for the European
@@ -57,10 +56,7 @@ def _get_year(year: int) -> pd.DataFrame:
                 return pd.DataFrame()
             raise
 
-        # The workbook has no default style, which openpyxl warns about.
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            data = pd.read_excel(io.BytesIO(response.content), header=HEADER_ROW)
+        data = read_excel(response.content, header=HEADER_ROW)
 
         require_columns(data, {"Date", "Contract", "Status", PRICE_COLUMN}, description)
         data = data[

@@ -1423,7 +1423,8 @@ def get_rating(
     )
 
     if ratings_dict:
-        ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna()
+        # A date is kept when a single score is missing, which still has its rating.
+        ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna(how="all")
 
         if len(ticker_list) == 1:
             ratings_dataframe = to_dataframe(ratings_dataframe.loc[ticker_list[0]])

@@ -608,3 +608,27 @@ def test_identifiers_keep_their_leading_zeros(monkeypatch):
     assert result["cik"] == "0000320193"
     assert result["cusip"] == "037833100"
     assert result["price"] == 1.5  # noqa: PLR2004
+
+
+def test_a_rating_with_a_missing_score_is_kept(responses):
+    canned, _ = responses
+    canned["ratings-historical"] = [
+        {
+            "symbol": "AAPL",
+            "date": "2024-01-02",
+            "rating": "A",
+            "overallScore": 4,
+            "priceToBookScore": None,
+        },
+        {
+            "symbol": "AAPL",
+            "date": "2024-01-03",
+            "rating": "A-",
+            "overallScore": 3,
+            "priceToBookScore": 2,
+        },
+    ]
+
+    ratings, _ = fmp_model.get_rating(tickers="AAPL", api_key="KEY")
+
+    assert ratings["Rating"].tolist() == ["A", "A-"]

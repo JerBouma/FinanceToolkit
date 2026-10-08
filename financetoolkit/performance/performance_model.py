@@ -6,10 +6,8 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy import linalg, stats
 from scipy.stats import linregress
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
@@ -419,6 +417,69 @@ def get_factor_asset_correlations(
     return correlations
 
 
+def _ordinary_least_squares(
+    regressors: pd.DataFrame, response: pd.Series
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """
+    Fits an ordinary least squares regression with an intercept, the way scikit-learn's
+    LinearRegression does: the data is centered, the slopes are solved with LAPACK's
+    gelsd and the intercept follows from the means.
+
+    Args:
+        regressors (pd.DataFrame): The independent variables.
+        response (pd.Series): The dependent variable.
+
+    Returns:
+        tuple[float, np.ndarray, np.ndarray]: The intercept, the slope per regressor and the
+        fitted values.
+
+    Raises:
+        ValueError: When the data contains NaN or infinite values.
+    """
+    regressor_values = np.asarray(regressors, dtype=float)
+    response_values = np.asarray(response, dtype=float)
+
+    if not (np.isfinite(regressor_values).all() and np.isfinite(response_values).all()):
+        raise ValueError(
+            "Input contains NaN or infinity, which a regression cannot fit."
+        )
+
+    regressor_mean = regressor_values.mean(axis=0)
+    response_mean = response_values.mean()
+    coefficients, *_ = linalg.lstsq(
+        regressor_values - regressor_mean,
+        response_values - response_mean,
+        lapack_driver="gelsd",
+    )
+    intercept = float(response_mean - regressor_mean @ coefficients)
+
+    return intercept, coefficients, regressor_values @ coefficients + intercept
+
+
+def _r_squared(response: pd.Series, fitted: np.ndarray) -> float:
+    """
+    Calculates the coefficient of determination, with scikit-learn's convention for a
+    response without variance: 1 for a perfect fit and 0 otherwise.
+
+    Args:
+        response (pd.Series): The dependent variable.
+        fitted (np.ndarray): The fitted values.
+
+    Returns:
+        float: The R squared.
+    """
+    response_values = np.asarray(response, dtype=float)
+    residual_sum_of_squares = float(((response_values - fitted) ** 2).sum())
+    total_sum_of_squares = float(
+        ((response_values - response_values.mean()) ** 2).sum()
+    )
+
+    if total_sum_of_squares == 0:
+        return 1.0 if residual_sum_of_squares == 0 else 0.0
+
+    return 1 - residual_sum_of_squares / total_sum_of_squares
+
+
 def get_fama_and_french_model_multi(
     excess_returns: pd.Series,
     factor_dataset: pd.DataFrame,
@@ -479,8 +540,9 @@ def get_fama_and_french_model_multi(
 
         return regression_results, excess_returns * np.nan, error_message
 
-    model = LinearRegression()
-    model.fit(factor_dataset, excess_returns)
+    intercept, coefficients, y_pred = _ordinary_least_squares(
+        factor_dataset, excess_returns
+    )
 
     # Check for sufficient samples before calculating R^2
     if factor_dataset.shape[0] < 2:  # noqa
@@ -490,19 +552,16 @@ def get_fama_and_french_model_multi(
         )
         r_squared = np.nan
     else:
-        # Calculate R^2 using the model's score method
-        r_squared = model.score(factor_dataset, excess_returns)
-
-    y_pred = model.predict(factor_dataset)
+        r_squared = _r_squared(excess_returns, y_pred)
 
     residuals = excess_returns - y_pred
 
-    mse = mean_squared_error(excess_returns, y_pred)
+    mse = float(np.mean((np.asarray(excess_returns, dtype=float) - y_pred) ** 2))
 
-    regression_results = {"Intercept": model.intercept_}
+    regression_results = {"Intercept": intercept}
 
     for factor in factor_dataset.columns:
-        regression_results[f"{factor} Slope"] = model.coef_[
+        regression_results[f"{factor} Slope"] = coefficients[
             factor_dataset.columns.get_loc(factor)
         ]
 
@@ -2520,7 +2579,7 @@ def _get_market_timing_regression(
     Notes:
     - Rows in which the asset's or the benchmark's excess return is NaN are dropped
     before fitting. Every return series starts with at least one NaN (the first
-    observation has no prior close to compare against), and `LinearRegression` raises
+    observation has no prior close to compare against), and the regression raises
     on NaN inputs, so without this the regression fails for the very first period of
     any dataset.
     """
@@ -2546,18 +2605,17 @@ def _get_market_timing_regression(
         # Robust handling of insufficient data points for regression method
         return regression_results_nan, excess_returns * np.nan
 
-    model = LinearRegression()
-    model.fit(factor_dataset, excess_returns_valid)
-
-    y_pred = model.predict(factor_dataset)
+    intercept, coefficients, y_pred = _ordinary_least_squares(
+        factor_dataset, excess_returns_valid
+    )
     residuals = excess_returns_valid - y_pred
 
-    r_squared = model.score(factor_dataset, excess_returns_valid)
+    r_squared = _r_squared(excess_returns_valid, y_pred)
 
     regression_results = {
-        "Alpha": model.intercept_,
-        "Beta": model.coef_[0],
-        second_regressor_name: model.coef_[1],
+        "Alpha": intercept,
+        "Beta": coefficients[0],
+        second_regressor_name: coefficients[1],
         "R Squared": r_squared,
     }
 

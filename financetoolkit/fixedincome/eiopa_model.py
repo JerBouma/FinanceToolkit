@@ -7,7 +7,6 @@ import re
 import zipfile
 
 import numpy as np
-import openpyxl
 import pandas as pd
 
 from financetoolkit import helpers
@@ -156,6 +155,9 @@ def _parse_shocks(workbook: bytes, description: str) -> pd.DataFrame:
     Raises:
         ValueError: When the worksheet is missing or holds no shocks.
     """
+    # openpyxl reads the formulas, which only the shocked curves need.
+    import openpyxl  # noqa: PLC0415
+
     book = openpyxl.load_workbook(io.BytesIO(workbook), read_only=True, data_only=False)
 
     if SHOCKS_SHEET not in book.sheetnames:

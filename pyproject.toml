@@ -43,13 +43,14 @@ keywords = [
 requires-python = ">=3.11, <3.16"
 dependencies = [
     "pandas>=3.0",
-    "scikit-learn>=1.6",
     "requests>=2.32",
     "yfinance",
     "openpyxl>=3.1",
     "xlrd>=2.0",
     "pyyaml>=6.0",
     "python-calamine>=0.3.0 ; python_full_version < '3.15'",
+    "numpy>=1.26",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]

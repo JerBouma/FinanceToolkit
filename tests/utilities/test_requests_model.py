@@ -56,6 +56,11 @@ def test_get_request_ssl_fallback():
                 mock_response,
             ],
         ) as mock_get,
+        patch.object(
+            requests_model.ssl,
+            "get_default_verify_paths",
+            return_value=MagicMock(cafile="/etc/ssl/cert.pem"),
+        ),
         patch.object(requests_model.os.path, "exists", return_value=True),
     ):
         result = requests_model.get_request("https://example.com")
@@ -77,6 +82,11 @@ def test_get_request_uses_the_system_certificates_before_not_verifying():
             "get",
             side_effect=[requests.exceptions.SSLError("unknown root"), mock_response],
         ) as mock_get,
+        patch.object(
+            requests_model.ssl,
+            "get_default_verify_paths",
+            return_value=MagicMock(cafile="/etc/ssl/cert.pem"),
+        ),
         patch.object(requests_model.os.path, "exists", return_value=True),
     ):
         result = requests_model.get_request("https://example.com")

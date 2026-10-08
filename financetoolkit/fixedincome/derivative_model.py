@@ -1,7 +1,38 @@
 """Derivative Models"""
 
 import numpy as np
-from scipy.stats import norm
+from scipy.special import ndtr
+
+# The standard normal distribution, computed as scipy.stats.norm computes it, without
+# importing scipy.stats, which takes around a second and is only needed elsewhere.
+NORMAL_DENSITY_SCALE = np.sqrt(2 * np.pi)
+
+
+def _normal_cdf(value):
+    """
+    The standard normal cumulative distribution function, as scipy.stats.norm.cdf.
+
+    Args:
+        value (float | np.ndarray): The value(s).
+
+    Returns:
+        float | np.ndarray: The probability of a value at most this large.
+    """
+    return ndtr(value)
+
+
+def _normal_pdf(value):
+    """
+    The standard normal probability density function, as scipy.stats.norm.pdf.
+
+    Args:
+        value (float | np.ndarray): The value(s).
+
+    Returns:
+        float | np.ndarray: The density.
+    """
+    return np.exp(-(value**2) / 2.0) / NORMAL_DENSITY_SCALE
+
 
 VOLATILITY_TYPES = ("lognormal", "normal")
 
@@ -210,9 +241,9 @@ def get_black_price(
     d2 = d1 - volatility * np.sqrt(years_to_maturity)
 
     if is_receiver:
-        payoff = -forward_rate * norm.cdf(-d1) + strike_rate * norm.cdf(-d2)
+        payoff = -forward_rate * _normal_cdf(-d1) + strike_rate * _normal_cdf(-d2)
     else:
-        payoff = forward_rate * norm.cdf(d1) - strike_rate * norm.cdf(d2)
+        payoff = forward_rate * _normal_cdf(d1) - strike_rate * _normal_cdf(d2)
 
     annuity = _get_annuity_factor(
         risk_free_rate=risk_free_rate,
@@ -302,13 +333,13 @@ def get_bachelier_price(
     d = (forward_rate - strike_rate) / (volatility * np.sqrt(years_to_maturity))
 
     if is_receiver:
-        payoff = (strike_rate - forward_rate) * norm.cdf(-d) + volatility * np.sqrt(
+        payoff = (strike_rate - forward_rate) * _normal_cdf(-d) + volatility * np.sqrt(
             years_to_maturity
-        ) * norm.pdf(-d)
+        ) * _normal_pdf(-d)
     else:
-        payoff = (forward_rate - strike_rate) * norm.cdf(d) + volatility * np.sqrt(
+        payoff = (forward_rate - strike_rate) * _normal_cdf(d) + volatility * np.sqrt(
             years_to_maturity
-        ) * norm.pdf(d)
+        ) * _normal_pdf(d)
 
     annuity = _get_annuity_factor(
         risk_free_rate=risk_free_rate,

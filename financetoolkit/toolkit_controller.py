@@ -19,8 +19,6 @@ from financetoolkit.discovery.discovery_model import (
     search_press_releases as _search_press_releases,
     search_stock_news as _search_stock_news,
 )
-from financetoolkit.economics.economics_controller import Economics
-from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fmp_model import (
     determine_subscription_plan as _determine_subscription_plan,
     get_analyst_estimates as _get_analyst_estimates,
@@ -54,23 +52,26 @@ from financetoolkit.historical_model import (
     get_historical_data as _get_historical_data,
     get_historical_statistics as _get_historical_statistics,
 )
-from financetoolkit.models.models_controller import Models
 from financetoolkit.normalization_model import (
     copy_normalization_files as _copy_normalization_files,
     initialize_statements_and_normalization as _initialize_statements_and_normalization,
 )
-from financetoolkit.options.options_controller import Options
-from financetoolkit.performance.performance_controller import Performance
-from financetoolkit.ratios.ratios_controller import Ratios
-from financetoolkit.risk.risk_controller import Risk
-from financetoolkit.technicals.technicals_controller import Technicals
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
 
 if TYPE_CHECKING:
-    # TYPE_CHECKING only: the econometrics extra is imported lazily at runtime.
+    # TYPE_CHECKING only: the module controllers are imported when first used, so that
+    # importing the Finance Toolkit does not load every module and its dependencies.
     from financetoolkit.econometrics.econometrics_controller import Econometrics
+    from financetoolkit.economics.economics_controller import Economics
+    from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
+    from financetoolkit.models.models_controller import Models
+    from financetoolkit.options.options_controller import Options
+    from financetoolkit.performance.performance_controller import Performance
+    from financetoolkit.ratios.ratios_controller import Ratios
+    from financetoolkit.risk.risk_controller import Risk
+    from financetoolkit.technicals.technicals_controller import Technicals
 
 # Displays messages, warnings and errors when the Finance Toolkit hits issues.
 logger_model.setup_logger()
@@ -476,7 +477,7 @@ class Toolkit:
         pd.set_option("display.float_format", str)
 
     @property
-    def ratios(self) -> Ratios:
+    def ratios(self) -> "Ratios":
         """
         The Ratios Module contains over 50+ ratios that can be used to analyse companies. These ratios
         are divided into 5 categories which are efficiency, liquidity, profitability, solvency and
@@ -526,6 +527,9 @@ class Toolkit:
         | EBIT to Revenue                             | 0.286688 | 0.26641  | 0.254864 | 0.305759 | 0.309473 |
 
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
         empty_data: list = []
 
         if (
@@ -621,7 +625,7 @@ class Toolkit:
         return ratios
 
     @property
-    def models(self) -> Models:
+    def models(self) -> "Models":
         """
         Gives access to the Models module. The Models module is meant to execute well-known models
         such as DUPONT and the Discounted Cash Flow (DCF) model. These models are also directly
@@ -652,6 +656,9 @@ class Toolkit:
         | Equity Multiplier       | nan         | 3.15403   |  3.14263    | 3.08433   | 2.91521   |
         | Return on Equity        | nan         | 0.0213618 |  0.00196098 | 0.0211066 | 0.0417791 |
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+
         empty_data: list = []
 
         if not self._api_key and (
@@ -738,7 +745,7 @@ class Toolkit:
         )
 
     @property
-    def options(self) -> Options:
+    def options(self) -> "Options":
         """
         This gives access to the Options module. The Options Module is meant to provide Options valuations
         based on real market data. This includes the Black-Scholes model and in the future the Binomial model
@@ -791,6 +798,9 @@ class Toolkit:
         |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.401  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
         |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      |   2.595  |  0      |       0      |  0      |  -0      |  0      |  0      |    0      | 0      |  0      |  0      |  0      |   0      |
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.options.options_controller import Options  # noqa: PLC0415
+
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
                 "%Y-%m-%d"
@@ -813,7 +823,7 @@ class Toolkit:
         )
 
     @property
-    def technicals(self) -> Technicals:
+    def technicals(self) -> "Technicals":
         """
         This gives access to the Technicals module. The Technicals Module contains
         nearly 50 Technical Indicators that can be used to analyse companies. These indicators are
@@ -849,6 +859,11 @@ class Toolkit:
         | 2023-08-25 | 63.4837 | 32.3323 |
 
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+            Technicals,
+        )
+
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
                 "%Y-%m-%d"
@@ -896,7 +911,7 @@ class Toolkit:
         return technicals
 
     @property
-    def performance(self) -> Performance:
+    def performance(self) -> "Performance":
         """
         This gives access to the Performance module. The Performance Module is meant to calculate metrics related
         to the risk-return relationship. These are things such as Beta, Sharpe Ratio, Sortino Ratio, CAPM,
@@ -928,6 +943,11 @@ class Toolkit:
         | 2023Q2 |  0.0922 |  0.1342 |
         | 2023Q3 |  0.0052 | -0.0482 |
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.performance.performance_controller import (  # noqa: PLC0415
+            Performance,
+        )
+
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
                 "%Y-%m-%d"
@@ -990,7 +1010,7 @@ class Toolkit:
         return performance
 
     @property
-    def risk(self) -> Risk:
+    def risk(self) -> "Risk":
         """
         This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
         as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models. It also
@@ -1033,6 +1053,9 @@ class Toolkit:
         | 2022   | -0.8026 | -1.0046 |
         | 2023   |  1.8549 |  1.8238 |
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
+
         if not self._start_date:
             self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
                 "%Y-%m-%d"
@@ -1182,7 +1205,7 @@ class Toolkit:
         return econometrics
 
     @property
-    def fixedincome(self) -> FixedIncome:
+    def fixedincome(self) -> "FixedIncome":
         """
         This gives access to the Fixed Income module. This module contains a wide variety of fixed income
         related calculations such as the Effective Yield, the Macaulay Duration, the Modified Duration,
@@ -1227,6 +1250,11 @@ class Toolkit:
         | 2024-01-12 | 0.0451 | 0.0467 | 0.0502 | 0.0534 | 0.0613 | 0.0753 | 0.1338 |
         | 2024-01-15 | 0.0451 | 0.0467 | 0.0501 | 0.0533 | 0.0611 | 0.0751 | 0.1328 |
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.fixedincome.fixedincome_controller import (  # noqa: PLC0415
+            FixedIncome,
+        )
+
         return FixedIncome(
             start_date=self._start_date,
             end_date=self._end_date,
@@ -1238,7 +1266,7 @@ class Toolkit:
         )
 
     @property
-    def economics(self) -> Economics:
+    def economics(self) -> "Economics":
         """
         This gives access to the Economics module. This module contains a wide variety of economic data
         obtained from OECD. These include things such as the Consumer Price Index (CPI), the Producer
@@ -1276,6 +1304,11 @@ class Toolkit:
         | 2021 |         114.325 |       110.387 | 101.561  |
         | 2022 |         123.474 |       121.427 | 104.098  |
         """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
+            Economics,
+        )
+
         return Economics(
             start_date=self._start_date,
             end_date=self._end_date,

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-from financetoolkit import fmp_model, historical_model
+from financetoolkit import fmp_model, helpers, historical_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache, set_active_cache
 from financetoolkit.economics import (
@@ -298,7 +298,49 @@ class Economics:
                 "fred_api_key argument or set the FRED_API_KEY environment variable."
             )
 
-    def _get_monthly_price_data(self, measure: str) -> pd.DataFrame:
+    @staticmethod
+    def _combine_sources_for(
+        sources: list[tuple[Callable[[], pd.DataFrame], str | None]],
+        countries: list[str] | str | None,
+    ) -> pd.DataFrame:
+        """
+        Retrieves several sources at the same time and combines them with combine_sources,
+        in the order given. A source that only publishes one country is left out when that
+        country is not requested, since it would contribute nothing else.
+
+        Args:
+            sources (list[tuple[Callable, str | None]]): Per source, the function that
+                retrieves it and the only country it publishes, or None for a source of
+                several countries.
+            countries (list[str] | str | None): The requested countries, None for all.
+
+        Returns:
+            pd.DataFrame: One column per country, from its most current source.
+        """
+        requested = (
+            None
+            if countries is None
+            else {countries} if isinstance(countries, str) else set(countries)
+        )
+        needed = [
+            fetch
+            for fetch, only_country in sources
+            if only_country is None or requested is None or only_country in requested
+        ]
+        frames = helpers.run_in_parallel(
+            lambda fetch: fetch(), [(fetch,) for fetch in needed]
+        )
+        combined = combine_sources(frames)
+
+        # A source's own index name (such as "Effective Date") is not kept, as it was not
+        # when every source was combined.
+        combined.index.name = None
+
+        return combined
+
+    def _get_monthly_price_data(
+        self, measure: str, countries: list[str] | str | None = None
+    ) -> pd.DataFrame:
         """
         Combines the monthly consumer prices of every country from its most current source.
 
@@ -314,36 +356,60 @@ class Economics:
         Args:
             measure (str): "inflation_rate" for the annual rate of change or
                 "consumer_price_index" for the index itself.
+            countries (list[str] | str | None, optional): The requested countries, so the
+                sources of other countries are not retrieved. Defaults to None.
 
         Returns:
             pd.DataFrame: One column per country, indexed by month.
         """
         # Only the requested months are asked for, with room for growth and rolling.
         start_date = buffered_start_date(self._start_date, "monthly")
-        bis_prices = bis_model.get_consumer_prices(measure, start_date, self._end_date)
+        end_date = self._end_date
 
         if measure == "inflation_rate":
-            return combine_sources(
+            return self._combine_sources_for(
                 [
-                    eurostat_model.get_inflation_rate(start_date, self._end_date),
-                    ons_model.get_inflation_rate(),
-                    sbj_model.get_inflation_rate(),
-                    bis_prices,
+                    (
+                        lambda: eurostat_model.get_inflation_rate(start_date, end_date),
+                        None,
+                    ),
+                    (ons_model.get_inflation_rate, "United Kingdom"),
+                    (sbj_model.get_inflation_rate, "Japan"),
+                    (
+                        lambda: bis_model.get_consumer_prices(
+                            measure, start_date, end_date
+                        ),
+                        None,
+                    ),
                     # Around a hundred further countries the BIS does not cover.
-                    imf_model.get_inflation_rate(start_date, self._end_date),
-                ]
+                    (lambda: imf_model.get_inflation_rate(start_date, end_date), None),
+                ],
+                countries,
             )
 
-        return combine_sources(
+        return self._combine_sources_for(
             [
-                eurostat_model.get_consumer_price_index(start_date, self._end_date),
-                ons_model.get_consumer_price_index(),
-                sbj_model.get_consumer_price_index(),
-                bis_prices,
-            ]
+                (
+                    lambda: eurostat_model.get_consumer_price_index(
+                        start_date, end_date
+                    ),
+                    None,
+                ),
+                (ons_model.get_consumer_price_index, "United Kingdom"),
+                (sbj_model.get_consumer_price_index, "Japan"),
+                (
+                    lambda: bis_model.get_consumer_prices(
+                        measure, start_date, end_date
+                    ),
+                    None,
+                ),
+            ],
+            countries,
         )
 
-    def _get_daily_long_term_interest_rate(self) -> pd.DataFrame:
+    def _get_daily_long_term_interest_rate(
+        self, countries: list[str] | str | None = None
+    ) -> pd.DataFrame:
         """
         Combines the daily 10-year government bond yields published without an API key:
         the U.S. Department of the Treasury, the Bank of England, the Japanese Ministry of
@@ -353,15 +419,28 @@ class Economics:
             pd.DataFrame: One column per country, indexed by day.
         """
         start_date = buffered_start_date(self._start_date, "daily")
+        end_date = self._end_date
 
-        return combine_sources(
+        return self._combine_sources_for(
             [
-                treasury_model.get_long_term_interest_rate(start_date, self._end_date),
-                boe_model.get_long_term_interest_rate(start_date, self._end_date),
+                (
+                    lambda: treasury_model.get_long_term_interest_rate(
+                        start_date, end_date
+                    ),
+                    "United States",
+                ),
+                (
+                    lambda: boe_model.get_long_term_interest_rate(start_date, end_date),
+                    "United Kingdom",
+                ),
                 # The Ministry of Finance publishes one file with the full history.
-                mof_model.get_long_term_interest_rate(),
-                ecb_model.get_long_term_interest_rate(start_date, self._end_date),
-            ]
+                (mof_model.get_long_term_interest_rate, "Japan"),
+                (
+                    lambda: ecb_model.get_long_term_interest_rate(start_date, end_date),
+                    "Euro Area",
+                ),
+            ],
+            countries,
         )
 
     @handle_errors
@@ -559,20 +638,30 @@ class Economics:
         """
         start_date = buffered_start_date(self._start_date, "monthly")
 
-        gross_domestic_product_growth = combine_sources(
+        gross_domestic_product_growth = self._combine_sources_for(
             [
-                eurostat_model.get_gross_domestic_product_growth(
-                    start_date, self._end_date, year_over_year=year_over_year
+                (
+                    lambda: eurostat_model.get_gross_domestic_product_growth(
+                        start_date, self._end_date, year_over_year=year_over_year
+                    ),
+                    None,
                 ),
-                ons_model.get_gross_domestic_product_growth(
-                    year_over_year=year_over_year
+                (
+                    lambda: ons_model.get_gross_domestic_product_growth(
+                        year_over_year=year_over_year
+                    ),
+                    "United Kingdom",
                 ),
-                oecd_model.get_gross_domestic_product_growth(
-                    year_over_year=year_over_year,
-                    start_date=self._start_date,
-                    end_date=self._end_date,
+                (
+                    lambda: oecd_model.get_gross_domestic_product_growth(
+                        year_over_year=year_over_year,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                    ),
+                    None,
                 ),
-            ]
+            ],
+            countries,
         )
 
         return finalize_dataset(
@@ -3228,7 +3317,9 @@ class Economics:
         check_period_type(period)
 
         if not oecd_source and period is not None and period.lower() == "monthly":
-            consumer_price_index = self._get_monthly_price_data("consumer_price_index")
+            consumer_price_index = self._get_monthly_price_data(
+                "consumer_price_index", countries
+            )
         elif oecd_source:
             period = (
                 period
@@ -3349,7 +3440,7 @@ class Economics:
         )
 
         if period == "monthly":
-            inflation_rate = self._get_monthly_price_data("inflation_rate")
+            inflation_rate = self._get_monthly_price_data("inflation_rate", countries)
         else:
 
             inflation_rate = gmdb_model.get_inflation_rate(
@@ -4934,7 +5025,7 @@ class Economics:
 
         if period.lower() in ("daily", "weekly"):
             long_term_interest_rate = resample_to_period(
-                self._get_daily_long_term_interest_rate(), period.lower()
+                self._get_daily_long_term_interest_rate(countries), period.lower()
             )
         elif gmdb_source:
 
@@ -5047,24 +5138,34 @@ class Economics:
         )
 
         start_date = buffered_start_date(self._start_date, period)
-        # The New York Fed publishes the full history of SOFR in one file.
-        secured_overnight_financing_rate = (
-            fed_model.get_secured_overnight_financing_rate()
-        )
+        end_date = self._end_date
 
-        overnight_rate = combine_sources(
+        def secured_overnight_financing_rate() -> pd.DataFrame:
+            # The New York Fed publishes the full history of SOFR in one file.
+            rate = fed_model.get_secured_overnight_financing_rate()
+            return (
+                rate[["Rate"]].rename(columns={"Rate": "United States"})
+                if not rate.empty
+                else rate
+            )
+
+        overnight_rate = self._combine_sources_for(
             [
-                ecb_model.get_overnight_rate(start_date, self._end_date),
-                boe_model.get_overnight_rate(start_date, self._end_date),
-                boj_model.get_overnight_rate(start_date, self._end_date),
                 (
-                    secured_overnight_financing_rate[["Rate"]].rename(
-                        columns={"Rate": "United States"}
-                    )
-                    if not secured_overnight_financing_rate.empty
-                    else secured_overnight_financing_rate
+                    lambda: ecb_model.get_overnight_rate(start_date, end_date),
+                    "Euro Area",
                 ),
-            ]
+                (
+                    lambda: boe_model.get_overnight_rate(start_date, end_date),
+                    "United Kingdom",
+                ),
+                (
+                    lambda: boj_model.get_overnight_rate(start_date, end_date),
+                    "Japan",
+                ),
+                (secured_overnight_financing_rate, "United States"),
+            ],
+            countries,
         )
 
         return finalize_dataset(
@@ -5644,25 +5745,33 @@ class Economics:
 
         if monthly:
             # Eurostat and the ONS publish weeks before the OECD republishes their figures.
-            unemployment_rate = combine_sources(
+            unemployment_rate = self._combine_sources_for(
                 [
-                    eurostat_model.get_unemployment_rate(
-                        buffered_start_date(self._start_date, "monthly"), self._end_date
+                    (
+                        lambda: eurostat_model.get_unemployment_rate(
+                            buffered_start_date(self._start_date, "monthly"),
+                            self._end_date,
+                        ),
+                        None,
                     ),
-                    ons_model.get_unemployment_rate(),
-                    ibge_model.get_unemployment_rate(),
+                    (ons_model.get_unemployment_rate, "United Kingdom"),
+                    (ibge_model.get_unemployment_rate, "Brazil"),
                     # The OECD republishes the BLS figure a month later, so the US is
                     # extended with the months the BLS already has.
-                    extend_with_recent(
-                        oecd_model.get_unemployment_rate(
-                            period="monthly",
-                            start_date=self._start_date,
-                            end_date=self._end_date,
+                    (
+                        lambda: extend_with_recent(
+                            oecd_model.get_unemployment_rate(
+                                period="monthly",
+                                start_date=self._start_date,
+                                end_date=self._end_date,
+                            ),
+                            bls_model.get_unemployment_rate(),
+                            "United States",
                         ),
-                        bls_model.get_unemployment_rate(),
-                        "United States",
+                        None,
                     ),
-                ]
+                ],
+                countries,
             )
         elif gmdb_source:
 

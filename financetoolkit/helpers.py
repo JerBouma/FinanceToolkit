@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import bounded_ffill
+from financetoolkit.utilities.statistics_model import apply_rounding, bounded_ffill
 
 logger = logger_model.get_logger()
 
@@ -248,6 +248,34 @@ def enrich_historical_data(
     return historical_data
 
 
+PERIODS_BY_FREQUENCY = {
+    "D": "daily",
+    "W": "weekly",
+    "M": "monthly",
+    "Q": "quarterly",
+    "Y": "yearly",
+    "A": "yearly",
+}
+
+
+def period_of_result(result: pd.DataFrame) -> str | None:
+    """
+    Determine the period of a result from the frequency of the dates on either axis.
+
+    Args:
+        result (pd.DataFrame): The result, with dates as index or as columns.
+
+    Returns:
+        str | None: "daily", "weekly", "monthly", "quarterly" or "yearly", or None when
+            neither axis holds periods.
+    """
+    for axis in (result.index, result.columns):
+        if isinstance(axis, pd.PeriodIndex):
+            return PERIODS_BY_FREQUENCY.get(axis.freqstr[0])
+
+    return None
+
+
 def handle_portfolio(func):
     """
     A decorator that processes the result of a function to handle portfolio data.
@@ -294,6 +322,12 @@ def handle_portfolio(func):
 
             if rounding is None:
                 rounding = self._rounding
+
+            # The weights belong to the periods of the result, which the frequency of its
+            # dates tells most reliably: a method's default period differs per module
+            # (e.g. daily for most risk metrics, yearly for the ratios).
+            period = period_of_result(result) or period
+
             if period is None:
                 period = "quarterly" if getattr(self, "_quarterly", False) else "yearly"
 
@@ -314,9 +348,11 @@ def handle_portfolio(func):
                 # reindex fills periods missing from weights with NaN rather than raising.
                 weights = weights.reindex(result_without_benchmark.columns).T
 
-                weighted_averages = round(
+                # Only the weights of the tickers with a value count, so a missing value
+                # does not pull the portfolio towards zero.
+                weighted_averages = apply_rounding(
                     (result_without_benchmark * weights).sum(axis=0)
-                    / weights.sum(axis=0),
+                    / weights.where(result_without_benchmark.notna()).sum(axis=0),
                     rounding,
                 )
 
@@ -327,9 +363,9 @@ def handle_portfolio(func):
             ):
                 weights = weights.reindex(result.index)
 
-                weighted_averages = round(
+                weighted_averages = apply_rounding(
                     (result_without_benchmark * weights).sum(axis=1)
-                    / weights.sum(axis=1),
+                    / weights.where(result_without_benchmark.notna()).sum(axis=1),
                     rounding,
                 )
 

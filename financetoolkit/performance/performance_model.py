@@ -1,6 +1,7 @@
 """Performance Model"""
 
 import io
+import time
 import warnings
 import zipfile
 
@@ -216,6 +217,34 @@ def get_capital_asset_pricing_model(
     return capital_asset_pricing_model
 
 
+# Ken French updates the factor files monthly, so a file downloaded in this session is
+# kept for an hour: every factor model call would otherwise download it again when the
+# Toolkit's cache is not enabled.
+FACTOR_FILE_LIFETIME_SECONDS = 3600
+_factor_files: dict[str, tuple[float, bytes]] = {}
+
+
+def download_factor_file(url: str) -> bytes:
+    """
+    Download one of Ken French's factor files, or reuse the copy downloaded within the hour.
+
+    Args:
+        url (str): The URL of the ZIP file.
+
+    Returns:
+        bytes: The ZIP file.
+    """
+    downloaded = _factor_files.get(url)
+
+    if downloaded and time.monotonic() - downloaded[0] < FACTOR_FILE_LIFETIME_SECONDS:
+        return downloaded[1]
+
+    content = get_request(url, timeout=10).content
+    _factor_files[url] = (time.monotonic(), content)
+
+    return content
+
+
 def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
     """
     This functionality returns the Fama and French 5 Factor Model dataset. It is a dataset that contains the
@@ -260,8 +289,7 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
         if cached_dataset is not None:
             return cached_dataset
 
-    response = get_request(fama_and_french_url, timeout=10)
-    zip_data = response.content
+    zip_data = download_factor_file(fama_and_french_url)
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
         # The dataset is packaged in a ZIP file, so it needs to be extracted first
@@ -365,8 +393,7 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
         if cached_dataset is not None:
             return cached_dataset
 
-    response = get_request(momentum_url, timeout=10)
-    zip_data = response.content
+    zip_data = download_factor_file(momentum_url)
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
         zip_file_contents = zip_file.namelist()

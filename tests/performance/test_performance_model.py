@@ -626,3 +626,19 @@ def test_get_beta_of_an_asset_with_a_shorter_history():
 
     assert np.isnan(within_period.loc[1, "Listed Later"])
     assert within_period.loc[2, "Listed Later"] == pytest.approx(1, abs=0.01)
+
+
+def test_a_factor_file_is_downloaded_once_per_session(monkeypatch):
+    """Every factor model call reads the file, which is downloaded only once."""
+    downloads = []
+
+    def fake_get_request(url, timeout):  # noqa: ARG001
+        downloads.append(url)
+        return type("Response", (), {"content": b"zip"})()
+
+    monkeypatch.setattr(performance_model, "get_request", fake_get_request)
+    monkeypatch.setattr(performance_model, "_factor_files", {})
+
+    assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
+    assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
+    assert downloads == ["https://example.com/f.zip"]

@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import warnings
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
@@ -25,6 +26,7 @@ from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
     apply_rounding,
     convert_annualized_rate_to_period,
     finalize_dataset,
@@ -949,8 +951,30 @@ class Performance:
                 performance_model.obtain_fama_and_french_dataset()
             )
 
+        # The correlations are calculated for the whole periods within the date range
+        # only, rather than for every period since 1963 and then sliced.
+        period_symbol = PERIOD_TRANSLATION[period]
+        first_period_start = (
+            pd.Period(self._start_date, freq=period_symbol).start_time
+            if self._start_date
+            else None
+        )
+        last_period_end = (
+            pd.Period(self._end_date, freq=period_symbol).end_time
+            if self._end_date
+            else None
+        )
+        factor_dataset = self._fama_and_french_dataset[factors_to_calculate]
+        factor_dates = factor_dataset.index.to_timestamp()
+        within_range = np.ones(len(factor_dataset), dtype=bool)
+
+        if first_period_start is not None:
+            within_range &= factor_dates >= first_period_start
+        if last_period_end is not None:
+            within_range &= factor_dates <= last_period_end
+
         fama_and_french_period = determine_within_dataset(
-            self._fama_and_french_dataset[factors_to_calculate],
+            factor_dataset.loc[within_range],
             period,
             correlation=True,
         )
@@ -1102,9 +1126,11 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
 
-        self._fama_and_french_dataset = (
-            performance_model.obtain_fama_and_french_dataset()
-        )
+        if self._fama_and_french_dataset.empty:
+            self._fama_and_french_dataset = (
+                performance_model.obtain_fama_and_french_dataset()
+            )
+
         fama_and_french_period = determine_within_dataset(
             self._fama_and_french_dataset, period, correlation=False
         )

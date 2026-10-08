@@ -193,6 +193,10 @@ class Options:
 
         Args:
             expiration_date (str | None, optional): The expiration date to use. Defaults to None which means it will
+            put_option (bool, optional): Whether to show the put options instead of the call options.
+                Defaults to False.
+            show_expiration_dates (bool, optional): Whether to return the available expiration dates instead of
+                the option chains. Defaults to False.
             use the first available expiration date.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
@@ -1229,6 +1233,8 @@ class Options:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
             which means it will use the most recent date.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            american_option (bool, optional): Whether to value an American option, which can be exercised at every
+                node, instead of a European option. Defaults to False.
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
@@ -3245,6 +3251,8 @@ class Options:
             expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+                means it will use the current dividend yield.
             means it will use the current risk free rate.
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
@@ -4681,6 +4689,8 @@ class Options:
             expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+                means it will use the current dividend yield.
             means it will use the current risk free rate.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.

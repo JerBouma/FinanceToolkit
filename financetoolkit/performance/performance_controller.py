@@ -243,7 +243,7 @@ class Performance:
                 Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -516,7 +516,7 @@ class Performance:
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -634,7 +634,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1554,12 +1554,14 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
+            show_full_results (bool, optional): Whether to show the actual and benchmark returns next to the
+                Alpha. Defaults to False.
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Alpha is calculated as the rolling mean excess return over this many periods across
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1676,7 +1678,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1793,7 +1795,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1996,7 +1998,7 @@ class Performance:
             is known.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2197,7 +2199,7 @@ class Performance:
             full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2295,7 +2297,7 @@ class Performance:
             rolling (int): The rolling period to use to calculate the Ulcer Index. Defaults to 14.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2400,7 +2402,7 @@ class Performance:
             Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2501,7 +2503,7 @@ class Performance:
             conventionally 0.1 (10%). Defaults to 0.1.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2596,7 +2598,7 @@ class Performance:
             year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2708,7 +2710,7 @@ class Performance:
             return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2824,7 +2826,7 @@ class Performance:
             full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2943,7 +2945,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3044,7 +3046,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3133,7 +3135,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3218,7 +3220,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3305,7 +3307,7 @@ class Performance:
             Defaults to 3.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3406,7 +3408,7 @@ class Performance:
             the threshold between gains and losses. Defaults to 0.0.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3503,7 +3505,7 @@ class Performance:
             Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4013,7 +4015,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4172,7 +4174,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4318,7 +4320,7 @@ class Performance:
             for the worst 5% of outcomes). Defaults to 0.05.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4427,7 +4429,7 @@ class Performance:
             best/worst 5% of outcomes). Defaults to 0.05.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4521,7 +4523,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4639,7 +4641,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.

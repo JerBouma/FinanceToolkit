@@ -1968,6 +1968,8 @@ class Technicals:
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
             window (int, optional): The number of periods for calculating the Aroon Indicator.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -3088,6 +3090,8 @@ class Technicals:
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
             conversion_window (int, optional): The number of periods to consider for the
                 Conversion Line (Tenkan-sen) calculation. Defaults to 9.
             base_window (int, optional): The number of periods to consider for the Base Line
@@ -6809,6 +6813,8 @@ class Technicals:
 
         Args:
             period (str): Period for which to calculate the ATR.
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
             window (int): Number of periods for ATR calculation.
                 The number of periods (time intervals) over which to calculate the Average True Range.
             rounding (int | None): Number of decimal places to round the resulting ATR values to.

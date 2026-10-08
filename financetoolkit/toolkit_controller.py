@@ -4730,7 +4730,7 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
-            lag (int | str): Defines the number of periods to lag the growth data by.
+            lag (int | list[int]): Defines the number of periods to lag the growth data by.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
@@ -4959,7 +4959,7 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
-            lag (int | str): Defines the number of periods to lag the growth data by.
+            lag (int | list[int]): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
@@ -5185,7 +5185,7 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data.
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
-            lag (int | str): Defines the number of periods to lag the growth data by.
+            lag (int | list[int]): Defines the number of periods to lag the growth data by.
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid

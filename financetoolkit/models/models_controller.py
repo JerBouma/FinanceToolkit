@@ -159,11 +159,13 @@ class Models:
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
+                which shows all columns.
 
         Returns:
             pd.DataFrame: DataFrame containing Dupont analysis results, including Profit Margin, Asset
@@ -309,11 +311,13 @@ class Models:
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
+                which shows all columns.
 
         Returns:
             pd.DataFrame: DataFrame containing Extended Dupont analysis results, including the Interest
@@ -497,10 +501,12 @@ class Models:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
+                which shows all columns.
 
         Returns:
             pd.DataFrame: DataFrame containing the Enterprise Value breakdown, including the calculated components.
@@ -840,11 +846,13 @@ class Models:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
+                which shows all columns.
 
         Returns:
             pd.DataFrame: DataFrame containing the WACC values.
@@ -2410,6 +2418,8 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
+                which shows all columns.
 
         Returns:
             pd.DataFrame: DataFrame containing the Altman Z-Score and its components.

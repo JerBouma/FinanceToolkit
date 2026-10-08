@@ -1807,7 +1807,7 @@ class FixedIncome:
 
         Args:
             model (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
-            forward_rate (float, optional): The forward rate as derived from the swap curve. Defaults to None.
+            forward_rate (float, optional): The forward rate as derived from the swap curve. Defaults to 0.05.
             strike_rate (float | list, optional): The strike rate for the derivative. Defaults to None which means it calculates the
                 derivative price a range of strike prices. Can also be a list of strike rates (e.g. [0.01, 0.02, 0.03, 0.04, 0.05]).
             volatility (float, optional): The volatility of the underlying swap rate, quoted on the

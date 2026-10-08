@@ -720,14 +720,30 @@ class ToolRegistry:
                 )
 
             # Validate that the requested period (if any) is not blocked for this tool
-            if blocked_periods_for_tool and "period" in method_kwargs:
+            # A rolling window reads the regular data of the period, which every period
+            # has, so the block only applies to results within each period.
+            if (
+                blocked_periods_for_tool
+                and "period" in method_kwargs
+                and not method_kwargs.get("rolling")
+            ):
                 requested_period = str(method_kwargs["period"]).lower()
                 if requested_period in blocked_periods_for_tool:
-                    allowed = ["weekly", "monthly", "quarterly", "yearly"]
+                    allowed = [
+                        period
+                        for period in (
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly",
+                        )
+                        if period not in blocked_periods_for_tool
+                    ]
                     return (
                         f"`{tool_name}` (`{method_name}`) does not support "
-                        f"`period='{requested_period}'`. "
-                        f"Please use one of: {', '.join(allowed)}."
+                        f"`period='{requested_period}'` without a `rolling` window. "
+                        f"Please use one of: {', '.join(allowed)}, or set `rolling`."
                     )
 
             if method_dispatch and method_name in method_dispatch:

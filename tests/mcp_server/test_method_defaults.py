@@ -52,3 +52,25 @@ def test_economic_calendar_explicit_values_win(captured):
         "2026-09-01",
         "2026-09-10",
     )
+
+
+def call_performance(**arguments):
+    result = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {"indicator": "get_sharpe_ratio", "tickers": "AAPL", **arguments},
+        )
+    )
+
+    return str(result)
+
+
+def test_daily_performance_needs_a_rolling_window(captured):
+    """Within-period results need a longer period; a rolling window reads daily data."""
+    assert "does not support" in call_performance(period="daily")
+    assert not captured
+
+    call_performance(period="daily", rolling=20)
+
+    assert captured[-1]["period"] == "daily"
+    assert captured[-1]["rolling"] == 20  # noqa: PLR2004

@@ -342,9 +342,9 @@ def get_historical_data(
 
     if divide_ohlc_by:
         # NaN divided by divide_ohlc_by is fine, so those warnings are ignored.
-        np.seterr(divide="ignore", invalid="ignore")
         # In case tickers are presented in percentages or similar
-        historical_data = historical_data.div(divide_ohlc_by)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            historical_data = historical_data.div(divide_ohlc_by)
 
     historical_data = historical_data.loc[
         ~historical_data.index.duplicated(keep="first")

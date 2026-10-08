@@ -15,6 +15,30 @@ ALPHA_CONSTRAINT = 0.5
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
+def get_wealth_and_peak(
+    returns: pd.Series | pd.DataFrame,
+) -> tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]:
+    """
+    Compound returns into a wealth path and the running peak a drawdown is measured from.
+
+    The path starts from a wealth of 1 before the first return, so the peak is never
+    below 1: a loss on the first day of the window is a drawdown from the starting
+    wealth, as in Magdon-Ismail & Atiya (2004) and the empyrical package, rather than
+    the peak it would otherwise set. This matters most within a period, where every
+    period's first return is a real one.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns, missing returns counting as 0.
+
+    Returns:
+        tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]: The wealth path and
+            its running peak.
+    """
+    wealth = (1 + returns.fillna(0)).cumprod()
+
+    return wealth, wealth.cummax().clip(lower=1)
+
+
 def get_max_drawdown(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -67,9 +91,9 @@ def get_max_drawdown(
     if method == "level":
         return (returns - returns.cummax()).min()
 
-    cum_returns = (1 + returns.fillna(0)).cumprod()
+    wealth, peak = get_wealth_and_peak(returns)
 
-    return (cum_returns / cum_returns.cummax() - 1).min()
+    return (wealth / peak - 1).min()
 
 
 def get_ui(
@@ -148,9 +172,9 @@ def get_ui(
             )
             drawdowns = returns - reference_max
         else:
-            cumulative_returns = (1 + returns.fillna(0)).cumprod()
+            cumulative_returns, peak = get_wealth_and_peak(returns)
             reference_max = (
-                cumulative_returns.expanding().max()
+                peak
                 if rolling is None
                 else cumulative_returns.rolling(window=rolling).max()
             )
@@ -436,8 +460,8 @@ def get_conditional_drawdown_at_risk(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        cum_returns = (1 + returns.fillna(0)).cumprod()
-        drawdowns = cum_returns / cum_returns.cummax() - 1
+        wealth, peak = get_wealth_and_peak(returns)
+        drawdowns = wealth / peak - 1
 
     drawdown_at_risk = drawdowns.quantile(alpha)
 
@@ -555,7 +579,10 @@ def get_rolling_conditional_drawdown_at_risk(
             drawdowns = window - np.maximum.accumulate(window)
         else:
             cum_returns = np.cumprod(1 + np.nan_to_num(window))
-            drawdowns = cum_returns / np.maximum.accumulate(cum_returns) - 1
+            # Each window starts from a wealth of 1, see get_wealth_and_peak.
+            drawdowns = (
+                cum_returns / np.maximum(np.maximum.accumulate(cum_returns), 1) - 1
+            )
 
         drawdown_at_risk = np.percentile(drawdowns, alpha * 100)
         tail_drawdowns = drawdowns[drawdowns <= drawdown_at_risk]
@@ -583,6 +610,10 @@ def _drawdown_trough(
     running_max = np.maximum.accumulate(
         np.where(np.isnan(computed), -np.inf, computed), axis=0
     )
+
+    if method != "level":
+        # The wealth starts at 1 before the first return, see get_wealth_and_peak.
+        running_max = np.maximum(running_max, 1.0)
     drawdowns = (
         computed - running_max if method == "level" else computed / running_max - 1
     )
@@ -656,8 +687,10 @@ def get_max_drawdown_duration(
         duration[all_nan] = np.nan
         return pd.Series(duration, index=returns.columns)
     if isinstance(returns, pd.Series):
-        series = returns if method == "level" else (1 + returns.fillna(0)).cumprod()
-        running_max = series.cummax()
+        if method == "level":
+            series, running_max = returns, returns.cummax()
+        else:
+            series, running_max = get_wealth_and_peak(returns)
         drawdowns = (
             series - running_max if method == "level" else series / running_max - 1
         )
@@ -667,10 +700,12 @@ def get_max_drawdown_duration(
 
         # nanargmin so a NaN in a 'level' series, never fillna(0)'d, does not crash.
         trough_position = np.nanargmin(drawdowns.to_numpy())
-        peak_position = np.flatnonzero(
+        peak_positions = np.flatnonzero(
             series.to_numpy()[: trough_position + 1]
             == running_max.to_numpy()[trough_position]
-        )[-1]
+        )
+        # No row holds the peak when it is the starting wealth before the first row.
+        peak_position = peak_positions[-1] if len(peak_positions) else -1
 
         return float(trough_position - peak_position)
 
@@ -743,8 +778,10 @@ def get_max_drawdown_recovery_time(
         recovery_time[all_nan] = np.nan
         return pd.Series(recovery_time, index=returns.columns)
     if isinstance(returns, pd.Series):
-        series = returns if method == "level" else (1 + returns.fillna(0)).cumprod()
-        running_max = series.cummax()
+        if method == "level":
+            series, running_max = returns, returns.cummax()
+        else:
+            series, running_max = get_wealth_and_peak(returns)
         drawdowns = (
             series - running_max if method == "level" else series / running_max - 1
         )

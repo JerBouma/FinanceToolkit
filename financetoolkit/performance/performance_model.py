@@ -12,6 +12,7 @@ from scipy.stats import linregress
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.risk import cvar_model
+from financetoolkit.risk.risk_model import get_wealth_and_peak
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
@@ -1502,8 +1503,8 @@ def get_average_drawdown(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        cum_returns = (1 + returns.fillna(0)).cumprod()
-        drawdowns = cum_returns / cum_returns.cummax() - 1
+        wealth, peak = get_wealth_and_peak(returns)
+        drawdowns = wealth / peak - 1
 
     return drawdowns[drawdowns < 0].mean()
 
@@ -1580,8 +1581,8 @@ def get_burke_drawdown_measure(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        cum_returns = (1 + returns.fillna(0)).cumprod()
-        drawdowns = cum_returns / cum_returns.cummax() - 1
+        wealth, peak = get_wealth_and_peak(returns)
+        drawdowns = wealth / peak - 1
 
     return np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
 

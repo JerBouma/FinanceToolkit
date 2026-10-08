@@ -582,8 +582,7 @@ def get_historical_data(
             historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
 
         if fill_nan:
-            # Interpolation smooths NaN gaps with limited impact on any metric.
-            historical_data = historical_data.interpolate(limit_area="inside")
+            historical_data = fill_non_trading_days(historical_data, return_column)
 
         historical_data = apply_rounding(historical_data, rounding)
 
@@ -598,6 +597,48 @@ def get_historical_data(
         return historical_data, no_data
 
     return pd.DataFrame(), no_data
+
+
+def fill_non_trading_days(
+    historical_data: pd.DataFrame, return_column: str = "Adj Close"
+) -> pd.DataFrame:
+    """
+    Fill the dates a ticker did not trade but another did, such as a holiday on one
+    exchange, by interpolating its prices between the surrounding trading days.
+
+    Returns and volume are not interpolated. The return of a filled date, and of the
+    trading day after it, follow from the filled prices, so the two together compound to
+    the actual move between the trading days rather than adding an invented return on top
+    of it. Nothing traded on a filled date, so its volume is 0.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data with (column, ticker) columns.
+        return_column (str): The column the returns are calculated from.
+
+    Returns:
+        pd.DataFrame: The historical data with the gaps inside each ticker's history filled.
+    """
+    if return_column not in historical_data.columns:
+        return historical_data.interpolate(limit_area="inside")
+
+    missing = historical_data[return_column].isna()
+    filled_data = historical_data.interpolate(limit_area="inside")
+    filled = missing & filled_data[return_column].notna()
+
+    if not filled.to_numpy().any():
+        return filled_data
+
+    if "Return" in filled_data.columns:
+        recalculated = filled_data[return_column].pct_change(fill_method=None)
+        affected = filled | filled.shift(1, fill_value=False)
+        filled_data["Return"] = (
+            historical_data["Return"].mask(affected, recalculated).to_numpy()
+        )
+
+    if "Volume" in filled_data.columns:
+        filled_data["Volume"] = filled_data["Volume"].mask(filled, 0).to_numpy()
+
+    return filled_data
 
 
 def convert_daily_to_other_period(

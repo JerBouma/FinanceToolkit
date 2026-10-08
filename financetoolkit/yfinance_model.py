@@ -4,8 +4,6 @@ __docformat__ = "google"
 
 import warnings
 from datetime import UTC, datetime, timedelta
-from http.client import RemoteDisconnected
-from urllib.error import HTTPError, URLError
 
 import numpy as np
 import pandas as pd
@@ -82,13 +80,9 @@ def get_financial_statement(
                 "Please choose either 'balance', 'income', or "
                 "cashflow' for the statement parameter."
             )
-    except (
-        HTTPError,
-        URLError,
-        RemoteDisconnected,
-        IndexError,
-        AttributeError,
-    ):
+    except (OSError, IndexError, AttributeError):
+        # OSError covers the network errors of both urllib and curl_cffi, which yfinance
+        # uses in recent versions, such as a timeout or a refused connection.
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
         error_code = (
@@ -126,7 +120,7 @@ def get_financial_statement(
 
     # Left as NaN, not filled with 0, matching the Toolkit-wide convention for unreported line items.
     if financial_statement.isna().to_numpy().any():
-        financial_statement = financial_statement.infer_objects(copy=False)
+        financial_statement = financial_statement.infer_objects()
 
     return financial_statement
 
@@ -208,15 +202,13 @@ def get_reported_currency(ticker: str) -> str:
     try:
         information = yf.Ticker(ticker).get_info() or {}
     except (
-        HTTPError,
-        URLError,
-        RemoteDisconnected,
+        OSError,
         IndexError,
         AttributeError,
         KeyError,
         TypeError,
         ValueError,
-        yf.exceptions.YFRateLimitError,
+        yf.exceptions.YFException,
     ):
         return ""
 
@@ -322,11 +314,14 @@ def get_historical_data(
                 :, "Close"
             ].to_numpy()
 
-    except (HTTPError, URLError, RemoteDisconnected, IndexError):
+    except (OSError, IndexError):
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
         error_code = "YFINANCE RATE LIMIT REACHED" + (" FALLBACK" if fallback else "")
         return pd.DataFrame(columns=[error_code])
+    except yf.exceptions.YFException:
+        # Such as a delisted ticker or one without prices in the range.
+        return pd.DataFrame()
 
     if not historical_data.empty and historical_data.loc[start:end].empty:
         logger.warning(

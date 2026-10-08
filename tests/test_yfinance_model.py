@@ -59,3 +59,19 @@ def test_statistics_of_a_ticker_that_times_out_are_empty(monkeypatch):
     monkeypatch.setattr(yfinance_model, "get_request", timeout)
 
     assert yfinance_model.get_historical_statistics("AAPL").empty
+
+
+def test_a_curl_timeout_from_yfinance_is_no_data(monkeypatch):
+    """yfinance's curl_cffi transport raises its own errors, which are OSErrors."""
+    from curl_cffi.requests.exceptions import Timeout
+
+    class SlowTicker:
+        def __init__(self, ticker):
+            self.ticker = ticker
+
+        def get_balance_sheet(self, freq):  # noqa: ARG002
+            raise Timeout("Operation timed out")
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", SlowTicker)
+
+    assert yfinance_model.get_financial_statement("AAPL", statement="balance").empty

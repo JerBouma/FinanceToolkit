@@ -196,3 +196,35 @@ def test_get_taylor_price_change_matches_actual_repricing(recorder):
     recorder.capture(
         bool(abs(taylor_pct - actual_pct) < TAYLOR_APPROXIMATION_TOLERANCE)
     )
+
+
+def test_periods_are_rounded_not_truncated():
+    """0.29 years of 100 periods is 28.999999999999996 in floating point, not 28."""
+    assert bond_model.get_number_of_periods(0.29, 100) == 29  # noqa: PLR2004
+    assert bond_model.get_bond_price(100, 0.05, 0.29, 0.05, 100) == pytest.approx(
+        bond_model.get_bond_price(100, 0.05, 29 / 100, 0.05, 100)
+    )
+
+
+def test_yield_to_maturity_from_a_guess_of_zero():
+    """A guess of 0 used to start the secant method from two identical points."""
+    price = bond_model.get_bond_price(1000, 0.05, 10, 0.06, 2)
+
+    assert bond_model.get_yield_to_maturity(
+        1000, 0.05, 10, price, 2, guess=0
+    ) == pytest.approx(0.06, abs=1e-6)
+
+
+def test_macaulay_duration_matches_the_price_periods():
+    """The principal is weighted at the same moment the price discounts it to."""
+    price = bond_model.get_bond_price(100, 0.05, 2.75, 0.05, 2)
+    shock = 1e-6
+    effective_duration = (
+        bond_model.get_bond_price(100, 0.05, 2.75, 0.05 - shock, 2)
+        - bond_model.get_bond_price(100, 0.05, 2.75, 0.05 + shock, 2)
+    ) / (2 * shock * price)
+    modified_duration = bond_model.get_macaulays_duration(100, 0.05, 2.75, 0.05, 2) / (
+        1 + 0.05 / 2
+    )
+
+    assert modified_duration == pytest.approx(effective_duration, rel=1e-6)

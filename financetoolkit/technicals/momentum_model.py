@@ -584,8 +584,10 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
     """
     price_diff = prices_close.diff(1)
 
-    up_sum = price_diff.where(price_diff > 0, 0).rolling(window=window).sum()
-    down_sum = abs(price_diff.where(price_diff < 0, 0)).rolling(window=window).sum()
+    # The first price has no change, which is missing rather than a zero change, so the
+    # first sums cover a full window of changes.
+    up_sum = price_diff.clip(lower=0).rolling(window=window).sum()
+    down_sum = (-price_diff).clip(lower=0).rolling(window=window).sum()
 
     cmo = ((up_sum - down_sum) / (up_sum + down_sum)) * 100
     return cmo
@@ -794,9 +796,11 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
     # Calculate price changes
     price_diff = prices.diff(1)
 
-    # Calculate upward and downward price changes
-    up_changes = price_diff.where(price_diff > 0, 0)
-    down_changes = -price_diff.where(price_diff < 0, 0)
+    # Calculate upward and downward price changes. The first price has no change, which
+    # stays missing rather than counting as a zero change, so the first average covers
+    # the first window of actual changes, as Wilder (1978) defines it.
+    up_changes = price_diff.clip(lower=0)
+    down_changes = (-price_diff).clip(lower=0)
 
     # Calculate average gains and losses over the specified window using Wilder's smoothing
     avg_gain = get_wilder_moving_average(up_changes, window)

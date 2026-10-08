@@ -275,3 +275,16 @@ def test_get_know_sure_thing_custom_parameters(recorder):
             signal_window=3,
         ).round(3)
     )
+
+
+def test_relative_strength_index_matches_wilder():
+    """The first average covers the first 14 actual changes, as Wilder and TA-Lib do."""
+    closes = pd.Series(
+        [44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89]
+        + [46.03, 45.61, 46.28, 46.28, 46.00, 46.03, 46.41, 46.22, 45.64, 46.21]
+    )
+
+    rsi = momentum_model.get_relative_strength_index(closes, 14)
+
+    assert rsi.iloc[:14].isna().all()
+    assert rsi.iloc[15:20].round(2).tolist() == [66.25, 66.48, 69.35, 66.29, 57.92]

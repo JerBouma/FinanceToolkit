@@ -2392,6 +2392,12 @@ class Toolkit:
         if self._daily_historical_data.empty:
             return pd.DataFrame()
 
+        # Named as the other periods are, whichever is requested first.
+        if self._daily_historical_data.index.name != "Date":
+            self._daily_historical_data = self._daily_historical_data.rename_axis(
+                "Date"
+            )
+
         if period == "daily":
             historical_data = self._daily_historical_data.loc[
                 self._start_date : self._end_date, :

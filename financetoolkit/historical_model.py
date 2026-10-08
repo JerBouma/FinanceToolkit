@@ -687,9 +687,8 @@ def convert_daily_to_other_period(
 
     period_str = PERIOD_TRANSLATION[period]
 
-    daily_historical_data.index.name = "Date"
     dates = to_period_index(daily_historical_data.index).asfreq(period_str)
-    daily_historical_data = daily_historical_data.reset_index()
+    dates.name = "Date"
 
     # Each column has to be aggregated on its own terms. Taking the last value of the period for every column would report the final day's Open, High, Low and Volume as if they described the whole period.  # noqa: E501
     aggregations = {
@@ -700,21 +699,14 @@ def convert_daily_to_other_period(
         "Dividends": "sum",
     }
 
-    period_historical_data = daily_historical_data.copy()
-
-    for column in daily_historical_data.columns:
-        column_name = column[0] if isinstance(column, tuple) else column
-
-        period_historical_data[column] = (
-            daily_historical_data[column]
-            .groupby(dates)
-            .transform(aggregations.get(column_name, "last"))
-        )
-
-    period_historical_data["Date"] = period_historical_data["Date"]
-    period_historical_data = period_historical_data.drop_duplicates().set_index("Date")
-    period_historical_data.index = pd.PeriodIndex(
-        period_historical_data.index, freq=period_str
+    # One aggregation over all columns gives one row per period directly.
+    period_historical_data = daily_historical_data.groupby(dates).agg(
+        {
+            column: aggregations.get(
+                column[0] if isinstance(column, tuple) else column, "last"
+            )
+            for column in daily_historical_data.columns
+        }
     )
 
     if "Return" in period_historical_data:

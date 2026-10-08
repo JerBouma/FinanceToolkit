@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 
 def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -206,11 +207,40 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Returns:
         pd.Series: WMA values.
     """
-    weights = np.arange(1, window + 1)
+    weights = np.arange(1, window + 1, dtype=float)
 
-    return prices.rolling(window=window).apply(
-        lambda x: np.dot(x, weights) / weights.sum(), raw=True
+    # One matrix product over every window at once instead of a Python call per window.
+    # A window holding a missing price is missing, as with rolling().apply().
+    return apply_to_rolling_windows(
+        prices, window, lambda windows: windows @ weights / weights.sum()
     )
+
+
+def apply_to_rolling_windows(
+    data: pd.Series | pd.DataFrame, window: int, calculation
+) -> pd.Series | pd.DataFrame:
+    """
+    Apply a calculation to every rolling window of a Series or of each DataFrame column.
+
+    Args:
+        data (pd.Series | pd.DataFrame): The values, with time as index.
+        window (int): The number of values in each window.
+        calculation (Callable): Takes an array of windows, with the values of each window
+            along the last axis, and returns one value per window.
+
+    Returns:
+        pd.Series | pd.DataFrame: The result, missing for the first window - 1 rows.
+    """
+    values = data.to_numpy(dtype=float)
+    result = np.full(values.shape, np.nan)
+
+    if window >= 1 and len(values) >= window:
+        result[window - 1 :] = calculation(sliding_window_view(values, window, axis=0))
+
+    if isinstance(data, pd.DataFrame):
+        return pd.DataFrame(result, index=data.index, columns=data.columns)
+
+    return pd.Series(result, index=data.index, name=data.name)
 
 
 def get_kaufman_adaptive_moving_average(

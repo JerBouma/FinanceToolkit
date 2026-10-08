@@ -941,12 +941,9 @@ def get_rolling_downside_deviation(
         pd.Series | pd.DataFrame: Rolling Downside Deviation values with time as index.
     """
 
-    def _downside_deviation(window):
-        shortfalls = np.minimum(window - minimum_acceptable_return, 0)
+    shortfalls = (returns - minimum_acceptable_return).clip(upper=0)
 
-        return np.sqrt(np.mean(shortfalls**2))
-
-    return returns.rolling(window=window_size).apply(_downside_deviation, raw=True)
+    return np.sqrt((shortfalls**2).rolling(window=window_size).mean())
 
 
 def get_excess_volatility(

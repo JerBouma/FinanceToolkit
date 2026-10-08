@@ -1156,14 +1156,9 @@ def get_rolling_sortino_ratio(
         pd.Series | pd.DataFrame: Rolling Sortino ratio values with time as index.
     """
 
-    def _downside_deviation(window):
-        downside = np.minimum(window, 0.0)
-
-        return np.sqrt(np.mean(downside**2))
-
     rolling_mean = excess_returns.rolling(window=window_size).mean()
-    rolling_downside_deviation = excess_returns.rolling(window=window_size).apply(
-        _downside_deviation, raw=True
+    rolling_downside_deviation = np.sqrt(
+        (excess_returns.clip(upper=0) ** 2).rolling(window=window_size).mean()
     )
 
     return rolling_mean / rolling_downside_deviation

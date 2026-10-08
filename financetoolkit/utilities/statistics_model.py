@@ -386,7 +386,7 @@ def calculate_growth(
             )
         else:
             dataset_lag = growth_per_lag.set_axis(stacked_axis, axis=1).reindex(
-                columns=new_index
+                new_index, axis=1
             )
 
         return apply_rounding(

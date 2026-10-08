@@ -271,7 +271,7 @@ class Ratios:
         )
 
         self._all_ratios = apply_rounding(
-            self._all_ratios, rounding if rounding else self._rounding
+            self._all_ratios, rounding if rounding is not None else self._rounding
         )
 
         # Sorted again so the index follows the financial statements' order.
@@ -286,7 +286,7 @@ class Ratios:
             self._all_ratios_growth = calculate_growth(
                 dataset=self._all_ratios,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -294,7 +294,7 @@ class Ratios:
         all_ratios_growth = self._all_ratios_growth
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 all_ratios_growth = calculate_standardization(
                     dataset=all_ratios_growth,
@@ -528,15 +528,15 @@ class Ratios:
                     axis=0, level=0, sort_remaining=False
                 )
 
-                self._custom_ratios = self._custom_ratios.round(
-                    rounding if rounding else self._rounding
+                self._custom_ratios = self._custom_ratios.pipe(
+                    apply_rounding, rounding if rounding is not None else self._rounding
                 )
 
         if growth:
             self._custom_ratios_growth = calculate_growth(
                 dataset=self._custom_ratios,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -544,7 +544,7 @@ class Ratios:
         custom_ratios_growth = self._custom_ratios_growth
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 custom_ratios_growth = calculate_standardization(
                     dataset=custom_ratios_growth,
@@ -711,8 +711,8 @@ class Ratios:
         # Ensure the ticker order remains the same as in self._tickers
         self._efficiency_ratios = self._efficiency_ratios.loc[self._tickers]
 
-        self._efficiency_ratios = self._efficiency_ratios.round(
-            rounding if rounding else self._rounding
+        self._efficiency_ratios = self._efficiency_ratios.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         # Sorted again so the index follows the financial statements' order.
@@ -729,7 +729,7 @@ class Ratios:
             self._efficiency_ratios_growth = calculate_growth(
                 dataset=self._efficiency_ratios,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -737,7 +737,7 @@ class Ratios:
         efficiency_ratios_growth = self._efficiency_ratios_growth
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 efficiency_ratios_growth = calculate_standardization(
                     dataset=efficiency_ratios_growth,
@@ -2768,8 +2768,8 @@ class Ratios:
 
         self._liquidity_ratios = self._liquidity_ratios.loc[self._tickers]
 
-        self._liquidity_ratios = self._liquidity_ratios.round(
-            rounding if rounding else self._rounding
+        self._liquidity_ratios = self._liquidity_ratios.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         # Sorted again so the index follows the financial statements' order.
@@ -2786,7 +2786,7 @@ class Ratios:
             self._liquidity_ratios_growth = calculate_growth(
                 dataset=self._liquidity_ratios,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -2794,7 +2794,7 @@ class Ratios:
         liquidity_ratios_growth = self._liquidity_ratios_growth
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 liquidity_ratios_growth = calculate_standardization(
                     dataset=liquidity_ratios_growth,
@@ -3755,8 +3755,8 @@ class Ratios:
 
         self._profitability_ratios = self._profitability_ratios.loc[self._tickers]
 
-        self._profitability_ratios = self._profitability_ratios.round(
-            rounding if rounding else self._rounding
+        self._profitability_ratios = self._profitability_ratios.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         # Sorted again so the index follows the financial statements' order.
@@ -3773,7 +3773,7 @@ class Ratios:
             self._profitability_ratios_growth = calculate_growth(
                 dataset=self._profitability_ratios,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -3781,7 +3781,7 @@ class Ratios:
         profitability_ratios_growth = self._profitability_ratios_growth
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 profitability_ratios_growth = calculate_standardization(
                     dataset=profitability_ratios_growth,
@@ -6052,8 +6052,8 @@ class Ratios:
 
         self._solvency_ratios = self._solvency_ratios.loc[self._tickers]
 
-        self._solvency_ratios = self._solvency_ratios.round(
-            rounding if rounding else self._rounding
+        self._solvency_ratios = self._solvency_ratios.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         # Sorted again so the index follows the financial statements' order.
@@ -6068,7 +6068,7 @@ class Ratios:
             self._solvency_ratios_growth = calculate_growth(
                 dataset=self._solvency_ratios,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -6076,7 +6076,7 @@ class Ratios:
         solvency_ratios_growth = self._solvency_ratios_growth
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 solvency_ratios_growth = calculate_standardization(
                     dataset=solvency_ratios_growth,
@@ -7737,8 +7737,8 @@ class Ratios:
 
         self._valuation_ratios = self._valuation_ratios.loc[self._tickers]
 
-        self._valuation_ratios = self._valuation_ratios.round(
-            rounding if rounding else self._rounding
+        self._valuation_ratios = self._valuation_ratios.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         # Sorted again so the index follows the financial statements' order.
@@ -7755,7 +7755,7 @@ class Ratios:
             self._valuation_ratios_growth = calculate_growth(
                 dataset=self._valuation_ratios,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -7763,7 +7763,7 @@ class Ratios:
         valuation_ratios_growth = self._valuation_ratios_growth
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 valuation_ratios_growth = calculate_standardization(
                     dataset=valuation_ratios_growth,

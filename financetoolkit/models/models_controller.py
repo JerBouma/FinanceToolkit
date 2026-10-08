@@ -237,16 +237,16 @@ class Models:
             self._dupont_analysis_growth = calculate_growth(
                 dataset=self._dupont_analysis,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
         self._dupont_analysis = apply_rounding(
-            self._dupont_analysis, rounding if rounding else self._rounding
+            self._dupont_analysis, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._dupont_analysis_growth = calculate_standardization(
                     dataset=self._dupont_analysis_growth,
@@ -418,16 +418,17 @@ class Models:
             self._extended_dupont_analysis_growth = calculate_growth(
                 dataset=self._extended_dupont_analysis,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
         self._extended_dupont_analysis = apply_rounding(
-            self._extended_dupont_analysis, rounding if rounding else self._rounding
+            self._extended_dupont_analysis,
+            rounding if rounding is not None else self._rounding,
         )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._extended_dupont_analysis_growth = calculate_standardization(
                     dataset=self._extended_dupont_analysis_growth,
@@ -582,15 +583,16 @@ class Models:
             self._enterprise_value_breakdown_growth = calculate_growth(
                 dataset=self._enterprise_value_breakdown,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
         self._enterprise_value_breakdown = apply_rounding(
-            self._enterprise_value_breakdown, rounding if rounding else self._rounding
+            self._enterprise_value_breakdown,
+            rounding if rounding is not None else self._rounding,
         )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._enterprise_value_breakdown_growth = calculate_standardization(
                     dataset=self._enterprise_value_breakdown_growth,
@@ -968,17 +970,17 @@ class Models:
             self._weighted_average_cost_of_capital_growth = calculate_growth(
                 dataset=self._weighted_average_cost_of_capital,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
         self._weighted_average_cost_of_capital = apply_rounding(
             self._weighted_average_cost_of_capital,
-            rounding if rounding else self._rounding,
+            rounding if rounding is not None else self._rounding,
         )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._weighted_average_cost_of_capital_growth = (
                     calculate_standardization(
@@ -1566,8 +1568,8 @@ class Models:
                 .iloc[-1],
                 periods=periods,
             )
-            intrinsic_values_dict[ticker] = intrinsic_values_dict[ticker].round(
-                rounding if rounding else self._rounding
+            intrinsic_values_dict[ticker] = intrinsic_values_dict[ticker].pipe(
+                apply_rounding, rounding if rounding is not None else self._rounding
             )
 
         self._intrinsic_values = pd.concat(intrinsic_values_dict)
@@ -2025,7 +2027,7 @@ class Models:
         gorden_growth_model_df = pd.DataFrame(gorden_growth_model)
 
         gorden_growth_model_df = apply_rounding(
-            gorden_growth_model_df, rounding if rounding else self._rounding
+            gorden_growth_model_df, rounding if rounding is not None else self._rounding
         )
 
         return gorden_growth_model_df.loc[self._start_date :]
@@ -2186,8 +2188,8 @@ class Models:
                     high_growth_periods=high_growth_periods,
                 )
             )
-            two_stage_ddm_dict[ticker] = two_stage_ddm_dict[ticker].round(
-                rounding if rounding else self._rounding
+            two_stage_ddm_dict[ticker] = two_stage_ddm_dict[ticker].pipe(
+                apply_rounding, rounding if rounding is not None else self._rounding
             )
 
         two_stage_ddm_results = pd.concat(two_stage_ddm_dict)
@@ -4500,23 +4502,25 @@ class Models:
             pvgo = calculate_growth(
                 dataset=pvgo,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="index",
             )
             if standardize:
                 pvgo = calculate_standardization(
                     dataset=pvgo,
-                    rounding=rounding if rounding else self._rounding,
+                    rounding=rounding if rounding is not None else self._rounding,
                     axis="rows",
                 )
             return pvgo.loc[self._start_date :]
 
-        pvgo = apply_rounding(pvgo, rounding if rounding else self._rounding)
+        pvgo = apply_rounding(
+            pvgo, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             pvgo = calculate_standardization(
                 dataset=pvgo,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="rows",
             )
 

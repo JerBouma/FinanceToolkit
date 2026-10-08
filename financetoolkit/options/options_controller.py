@@ -271,14 +271,14 @@ class Options:
             put_option=put_option,
         )
 
-        option_chains["Change"] = option_chains["Change"].round(
-            rounding if rounding else self._rounding
+        option_chains["Change"] = option_chains["Change"].pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
-        option_chains["Percent Change"] = option_chains["Percent Change"].round(
-            rounding if rounding else self._rounding
+        option_chains["Percent Change"] = option_chains["Percent Change"].pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
-        option_chains["Implied Volatility"] = option_chains["Implied Volatility"].round(
-            rounding if rounding else self._rounding
+        option_chains["Implied Volatility"] = option_chains["Implied Volatility"].pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         option_chains.name = expiration_date
@@ -459,14 +459,14 @@ class Options:
             start_date=start_date,
         )
 
-        black_scholes_df = black_scholes_df.round(
-            rounding if rounding else self._rounding
+        black_scholes_df = black_scholes_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             black_scholes_df = calculate_standardization(
                 dataset=black_scholes_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -672,13 +672,13 @@ class Options:
         )
 
         implied_volatility_df = apply_rounding(
-            implied_volatility_df, rounding if rounding else self._rounding
+            implied_volatility_df, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             implied_volatility_df = calculate_standardization(
                 dataset=implied_volatility_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
             )
 
         # The Expiration date is used as the name of the DataFrame
@@ -944,7 +944,7 @@ class Options:
         volatility_surface.index.names = ["Ticker", "Strike Price"]
 
         return apply_rounding(
-            volatility_surface, rounding if rounding else self._rounding
+            volatility_surface, rounding if rounding is not None else self._rounding
         )
 
     def get_risk_neutral_density(
@@ -1165,7 +1165,9 @@ class Options:
         density_df = pd.concat(density, axis=1)
         density_df.index.name = "Strike Price"
 
-        return apply_rounding(density_df, rounding if rounding else self._rounding)
+        return apply_rounding(
+            density_df, rounding if rounding is not None else self._rounding
+        )
 
     def get_binomial_model(
         self,
@@ -1363,14 +1365,14 @@ class Options:
             time_to_expiration=time_to_expiration,
         )
 
-        binomial_trees_df = binomial_trees_df.round(
-            rounding if rounding else self._rounding
+        binomial_trees_df = binomial_trees_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             binomial_trees_df = calculate_standardization(
                 dataset=binomial_trees_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -1540,14 +1542,14 @@ class Options:
             time_to_expiration=time_to_expiration,
         )
 
-        stock_price_simulation_df = stock_price_simulation_df.round(
-            rounding if rounding else self._rounding
+        stock_price_simulation_df = stock_price_simulation_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             stock_price_simulation_df = calculate_standardization(
                 dataset=stock_price_simulation_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -1712,12 +1714,14 @@ class Options:
             start_date=start_date,
         )
 
-        parity_gap_df = parity_gap_df.round(rounding if rounding else self._rounding)
+        parity_gap_df = parity_gap_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             parity_gap_df = calculate_standardization(
                 dataset=parity_gap_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -1856,14 +1860,14 @@ class Options:
             start_date=start_date,
         )
 
-        garman_kohlhagen_df = garman_kohlhagen_df.round(
-            rounding if rounding else self._rounding
+        garman_kohlhagen_df = garman_kohlhagen_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             garman_kohlhagen_df = calculate_standardization(
                 dataset=garman_kohlhagen_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -2018,14 +2022,14 @@ class Options:
             start_date=start_date,
         )
 
-        binary_option_df = binary_option_df.round(
-            rounding if rounding else self._rounding
+        binary_option_df = binary_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             binary_option_df = calculate_standardization(
                 dataset=binary_option_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -2172,14 +2176,14 @@ class Options:
             start_date=start_date,
         )
 
-        bjerksund_stensland_df = bjerksund_stensland_df.round(
-            rounding if rounding else self._rounding
+        bjerksund_stensland_df = bjerksund_stensland_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             bjerksund_stensland_df = calculate_standardization(
                 dataset=bjerksund_stensland_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -2356,14 +2360,14 @@ class Options:
             greek_dictionary=monte_carlo_price,
             start_date=start_date,
         )
-        monte_carlo_price_df = monte_carlo_price_df.round(
-            rounding if rounding else self._rounding
+        monte_carlo_price_df = monte_carlo_price_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             monte_carlo_price_df = calculate_standardization(
                 dataset=monte_carlo_price_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -2382,8 +2386,8 @@ class Options:
                 greek_dictionary=monte_carlo_error,
                 start_date=start_date,
             )
-            monte_carlo_error_df = monte_carlo_error_df.round(
-                rounding if rounding else self._rounding
+            monte_carlo_error_df = monte_carlo_error_df.pipe(
+                apply_rounding, rounding if rounding is not None else self._rounding
             )
 
             return monte_carlo_price_df, monte_carlo_error_df
@@ -2535,14 +2539,14 @@ class Options:
             start_date=start_date,
         )
 
-        barrier_option_df = barrier_option_df.round(
-            rounding if rounding else self._rounding
+        barrier_option_df = barrier_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             barrier_option_df = calculate_standardization(
                 dataset=barrier_option_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -2688,14 +2692,14 @@ class Options:
             start_date=start_date,
         )
 
-        asian_option_df = asian_option_df.round(
-            rounding if rounding else self._rounding
+        asian_option_df = asian_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             asian_option_df = calculate_standardization(
                 dataset=asian_option_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -2807,7 +2811,7 @@ class Options:
         strategy_payoff_df.index.name = "Stock Price"
 
         strategy_payoff_df = apply_rounding(
-            strategy_payoff_df, rounding if rounding else self._rounding
+            strategy_payoff_df, rounding if rounding is not None else self._rounding
         )
 
         return strategy_payoff_df
@@ -3339,12 +3343,14 @@ class Options:
             start_date=start_date,
         )
 
-        delta_df = delta_df.round(rounding if rounding else self._rounding)
+        delta_df = delta_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             delta_df = calculate_standardization(
                 dataset=delta_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -3511,12 +3517,14 @@ class Options:
             start_date=start_date,
         )
 
-        dual_delta_df = dual_delta_df.round(rounding if rounding else self._rounding)
+        dual_delta_df = dual_delta_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             dual_delta_df = calculate_standardization(
                 dataset=dual_delta_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -3684,12 +3692,14 @@ class Options:
             start_date=start_date,
         )
 
-        vega_df = vega_df.round(rounding if rounding else self._rounding)
+        vega_df = vega_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             vega_df = calculate_standardization(
                 dataset=vega_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -3863,12 +3873,14 @@ class Options:
             start_date=start_date,
         )
 
-        theta_df = theta_df.round(rounding if rounding else self._rounding)
+        theta_df = theta_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             theta_df = calculate_standardization(
                 dataset=theta_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -4041,12 +4053,14 @@ class Options:
             start_date=start_date,
         )
 
-        rho_df = rho_df.round(rounding if rounding else self._rounding)
+        rho_df = rho_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             rho_df = calculate_standardization(
                 dataset=rho_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -4215,12 +4229,14 @@ class Options:
             start_date=start_date,
         )
 
-        epsilon_df = epsilon_df.round(rounding if rounding else self._rounding)
+        epsilon_df = epsilon_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             epsilon_df = calculate_standardization(
                 dataset=epsilon_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -4390,12 +4406,14 @@ class Options:
             start_date=start_date,
         )
 
-        lambda_df = lambda_df.round(rounding if rounding else self._rounding)
+        lambda_df = lambda_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             lambda_df = calculate_standardization(
                 dataset=lambda_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -4758,12 +4776,14 @@ class Options:
             start_date=start_date,
         )
 
-        gamma_df = gamma_df.round(rounding if rounding else self._rounding)
+        gamma_df = gamma_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             gamma_df = calculate_standardization(
                 dataset=gamma_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -4924,12 +4944,14 @@ class Options:
             start_date=start_date,
         )
 
-        dual_gamma_df = dual_gamma_df.round(rounding if rounding else self._rounding)
+        dual_gamma_df = dual_gamma_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             dual_gamma_df = calculate_standardization(
                 dataset=dual_gamma_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -5094,12 +5116,14 @@ class Options:
             start_date=start_date,
         )
 
-        vanna_df = vanna_df.round(rounding if rounding else self._rounding)
+        vanna_df = vanna_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             vanna_df = calculate_standardization(
                 dataset=vanna_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -5271,12 +5295,14 @@ class Options:
             start_date=start_date,
         )
 
-        charm_df = charm_df.round(rounding if rounding else self._rounding)
+        charm_df = charm_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             charm_df = calculate_standardization(
                 dataset=charm_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -5440,12 +5466,14 @@ class Options:
             start_date=start_date,
         )
 
-        vomma_df = vomma_df.round(rounding if rounding else self._rounding)
+        vomma_df = vomma_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             vomma_df = calculate_standardization(
                 dataset=vomma_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -5612,12 +5640,14 @@ class Options:
             start_date=start_date,
         )
 
-        vera_df = vera_df.round(rounding if rounding else self._rounding)
+        vera_df = vera_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             vera_df = calculate_standardization(
                 dataset=vera_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -5788,12 +5818,14 @@ class Options:
             start_date=start_date,
         )
 
-        veta_df = veta_df.round(rounding if rounding else self._rounding)
+        veta_df = veta_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             veta_df = calculate_standardization(
                 dataset=veta_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -5953,14 +5985,14 @@ class Options:
             start_date=start_date,
         )
 
-        partial_derivative_df = partial_derivative_df.round(
-            rounding if rounding else self._rounding
+        partial_derivative_df = partial_derivative_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if standardize:
             partial_derivative_df = calculate_standardization(
                 dataset=partial_derivative_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -6280,12 +6312,14 @@ class Options:
             start_date=start_date,
         )
 
-        speed_df = speed_df.round(rounding if rounding else self._rounding)
+        speed_df = speed_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             speed_df = calculate_standardization(
                 dataset=speed_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -6450,12 +6484,14 @@ class Options:
             start_date=start_date,
         )
 
-        zomma_df = zomma_df.round(rounding if rounding else self._rounding)
+        zomma_df = zomma_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             zomma_df = calculate_standardization(
                 dataset=zomma_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -6624,12 +6660,14 @@ class Options:
             start_date=start_date,
         )
 
-        color_df = color_df.round(rounding if rounding else self._rounding)
+        color_df = color_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             color_df = calculate_standardization(
                 dataset=color_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 
@@ -6795,12 +6833,14 @@ class Options:
             start_date=start_date,
         )
 
-        ultima_df = ultima_df.round(rounding if rounding else self._rounding)
+        ultima_df = ultima_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
         if standardize:
             ultima_df = calculate_standardization(
                 dataset=ultima_df,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
 

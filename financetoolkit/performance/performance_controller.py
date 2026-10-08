@@ -283,7 +283,7 @@ class Performance:
         | 2021 |     0.4921 |                 1.3819 |                   1.422  |   nan      |           0.0118 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        rounding = rounding if rounding else self._rounding
+        rounding = rounding if rounding is not None else self._rounding
 
         performance_metrics = {
             "Alpha": self.get_alpha(
@@ -845,7 +845,8 @@ class Performance:
         )
 
         self._factor_asset_correlations = apply_rounding(
-            factor_asset_correlations, rounding if rounding else self._rounding
+            factor_asset_correlations,
+            rounding if rounding is not None else self._rounding,
         ).loc[self._start_date : self._end_date]
 
         return filter_columns(self._factor_asset_correlations, show_columns)
@@ -956,7 +957,7 @@ class Performance:
 
         # The Ken French dataset starts in 1963, so without this slice the result covers six decades regardless of the date range the Toolkit was initialised with.  # noqa: E501
         self._factor_correlations = apply_rounding(
-            fama_and_french_period, rounding if rounding else self._rounding
+            fama_and_french_period, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
         return self._factor_correlations
@@ -1237,7 +1238,7 @@ class Performance:
             )
 
         self._fama_and_french_model = apply_rounding(
-            fama_and_french_model, rounding if rounding else self._rounding
+            fama_and_french_model, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if include_daily_residuals:
@@ -1281,7 +1282,7 @@ class Performance:
             )
 
             self._fama_and_french_residuals = apply_rounding(
-                daily_residuals_df, rounding if rounding else self._rounding
+                daily_residuals_df, rounding if rounding is not None else self._rounding
             ).loc[self._start_date : self._end_date]
 
             return (
@@ -1480,7 +1481,7 @@ class Performance:
         )
 
         self._carhart_four_factor_model = apply_rounding(
-            carhart_model, rounding if rounding else self._rounding
+            carhart_model, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
         return filter_columns(
@@ -1581,9 +1582,9 @@ class Performance:
         else:
             alpha = performance_model.get_alpha(returns, benchmark_returns)
 
-        alpha = apply_rounding(alpha, rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
+        alpha = apply_rounding(
+            alpha, rounding if rounding is not None else self._rounding
+        ).loc[self._start_date : self._end_date]
 
         alpha = alpha.dropna(how="all", axis=0)
 
@@ -3618,7 +3619,7 @@ class Performance:
         compound_growth_rate = pd.DataFrame(compound_growth_rates).T
 
         compound_growth_rate = apply_rounding(
-            compound_growth_rate, rounding if rounding else self._rounding
+            compound_growth_rate, rounding if rounding is not None else self._rounding
         )
 
         return compound_growth_rate
@@ -3879,7 +3880,7 @@ class Performance:
         correlation_matrix = performance_model.get_correlation_matrix(returns)
 
         return apply_rounding(
-            correlation_matrix, rounding if rounding else self._rounding
+            correlation_matrix, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors
@@ -3939,7 +3940,7 @@ class Performance:
         covariance_matrix = performance_model.get_covariance_matrix(returns)
 
         return apply_rounding(
-            covariance_matrix, rounding if rounding else self._rounding
+            covariance_matrix, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio

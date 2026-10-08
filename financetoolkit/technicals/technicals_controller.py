@@ -196,19 +196,19 @@ class Technicals:
         )
 
         self._all_indicators = apply_rounding(
-            self._all_indicators, rounding if rounding else self._rounding
+            self._all_indicators, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if growth:
             self._all_indicators_growth = calculate_growth(
                 dataset=self._all_indicators,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="index",
             )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._all_indicators_growth = calculate_standardization(
                     dataset=self._all_indicators_growth,
@@ -354,19 +354,20 @@ class Technicals:
         self._breadth_indicators = pd.concat(breadth_indicators, axis=1)
 
         self._breadth_indicators = apply_rounding(
-            self._breadth_indicators, rounding if rounding else self._rounding
+            self._breadth_indicators,
+            rounding if rounding is not None else self._rounding,
         ).loc[self._start_date : self._end_date]
 
         if growth:
             self._breadth_indicators_growth = calculate_growth(
                 dataset=self._breadth_indicators,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="index",
             )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._breadth_indicators_growth = calculate_standardization(
                     dataset=self._breadth_indicators_growth,
@@ -1657,19 +1658,20 @@ class Technicals:
         self._momentum_indicators = pd.concat(momentum_indicators, axis=1)
 
         self._momentum_indicators = apply_rounding(
-            self._momentum_indicators, rounding if rounding else self._rounding
+            self._momentum_indicators,
+            rounding if rounding is not None else self._rounding,
         ).loc[self._start_date : self._end_date]
 
         if growth:
             self._momentum_indicators_growth = calculate_growth(
                 dataset=self._momentum_indicators,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="index",
             )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._momentum_indicators_growth = calculate_standardization(
                     dataset=self._momentum_indicators_growth,
@@ -4631,19 +4633,20 @@ class Technicals:
         self._overlap_indicators = pd.concat(overlap_indicators, axis=1)
 
         self._overlap_indicators = apply_rounding(
-            self._overlap_indicators, rounding if rounding else self._rounding
+            self._overlap_indicators,
+            rounding if rounding is not None else self._rounding,
         ).loc[self._start_date : self._end_date]
 
         if growth:
             self._overlap_indicators_growth = calculate_growth(
                 dataset=self._overlap_indicators,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="index",
             )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._overlap_indicators_growth = calculate_standardization(
                     dataset=self._overlap_indicators_growth,
@@ -6606,19 +6609,20 @@ class Technicals:
         self._volatility_indicators = pd.concat(volatility_indicators, axis=1)
 
         self._volatility_indicators = apply_rounding(
-            self._volatility_indicators, rounding if rounding else self._rounding
+            self._volatility_indicators,
+            rounding if rounding is not None else self._rounding,
         ).loc[self._start_date : self._end_date]
 
         if growth:
             self._volatility_indicators_growth = calculate_growth(
                 dataset=self._volatility_indicators,
                 lag=lag,
-                rounding=rounding if rounding else self._rounding,
+                rounding=rounding if rounding is not None else self._rounding,
                 axis="index",
             )
 
         if standardize:
-            standardize_rounding = rounding if rounding else self._rounding
+            standardize_rounding = rounding if rounding is not None else self._rounding
             if growth:
                 self._volatility_indicators_growth = calculate_standardization(
                     dataset=self._volatility_indicators_growth,
@@ -7411,7 +7415,7 @@ class Technicals:
         )
 
         return apply_rounding(
-            volatility_cone_df, rounding if rounding else self._rounding
+            volatility_cone_df, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio

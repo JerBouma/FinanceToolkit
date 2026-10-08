@@ -4826,8 +4826,8 @@ class Econometrics:
             returns[tickers], lags=lags, forecast_steps=forecast_steps
         )
 
-        return result["forecast"].round(
-            rounding if rounding is not None else self._rounding
+        return result["forecast"].pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors
@@ -5108,8 +5108,8 @@ class Econometrics:
             significance=significance,
         )
 
-        return result["forecast"].round(
-            rounding if rounding is not None else self._rounding
+        return result["forecast"].pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors

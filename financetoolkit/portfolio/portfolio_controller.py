@@ -10,7 +10,7 @@ from financetoolkit.portfolio import helpers, overview_model, portfolio_model
 from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, validation_model
-from financetoolkit.utilities.statistics_model import to_period_index
+from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
 
 logger = logger_model.get_logger()
 
@@ -864,8 +864,9 @@ class Portfolio:
                         else self._daily_currency_data[column]
                     )
 
-        self._daily_historical_data = round(
-            self._daily_historical_data, rounding if rounding else self._rounding
+        self._daily_historical_data = apply_rounding(
+            self._daily_historical_data,
+            rounding if rounding is not None else self._rounding,
         )
 
         self._weekly_historical_data = self._toolkit.get_historical_data(
@@ -1025,7 +1026,9 @@ class Portfolio:
                 ) from error
 
         # Only the returned view is rounded; rounding the cached frame in place would make every later call, including the portfolio performance, read back the precision of whichever call happened to run first.
-        return self._positions_overview.round(rounding if rounding else self._rounding)
+        return self._positions_overview.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
 
     def get_portfolio_overview(
         self,
@@ -1216,8 +1219,8 @@ class Portfolio:
                 self._portfolio_overview["Volume"] > 0
             ]
 
-        self._portfolio_overview = self._portfolio_overview.round(
-            rounding if rounding else self._rounding
+        self._portfolio_overview = self._portfolio_overview.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         return self._portfolio_overview
@@ -1347,8 +1350,8 @@ class Portfolio:
                 self._portfolio_performance["Volume"] > 0
             ]
 
-        self._portfolio_performance = self._portfolio_performance.round(
-            rounding if rounding else self._rounding
+        self._portfolio_performance = self._portfolio_performance.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         return self._portfolio_performance
@@ -1492,8 +1495,8 @@ class Portfolio:
             logger.error("Failed to create PnL overview: %s", error)
 
         # The rounding and the filter are applied to the returned view only; the stored overview feeds create_positions_overview, so rounding it in place would push the rounding of whichever call ran first into every position metric, and removing the sell transactions would leave that function cumulating buys alone, keeping sold shares in the position forever.
-        transactions_overview = self._transactions_overview.round(
-            rounding if rounding else self._rounding
+        transactions_overview = self._transactions_overview.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         if exclude_sold_positions:
@@ -1641,8 +1644,8 @@ class Portfolio:
                 self._transactions_performance["Volume"] > 0
             ]
 
-        self._transactions_performance = self._transactions_performance.round(
-            rounding if rounding else self._rounding
+        self._transactions_performance = self._transactions_performance.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
         )
 
         return self._transactions_performance

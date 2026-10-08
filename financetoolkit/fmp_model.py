@@ -37,6 +37,12 @@ logger = logger_model.get_logger()
 
 RETRY_LIMIT = 12
 
+# Identifiers that look like numbers but are not: inferring their type would drop the
+# leading zeros of e.g. CIK 0000320193, CUSIP 037833100 and ZIP code 02139.
+IDENTIFIER_DTYPES = {
+    column: str for column in ("cik", "cusip", "isin", "zip", "phone", "figi")
+}
+
 # A server error (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout) or a
 # timeout is usually over within seconds, so it is retried a few times only.
 TRANSIENT_RETRY_LIMIT = 3
@@ -103,7 +109,7 @@ def get_financial_data(
 
             json_io = StringIO(response.text)
 
-            financial_data = pd.read_json(json_io)
+            financial_data = pd.read_json(json_io, dtype=IDENTIFIER_DTYPES)
 
             return financial_data
 

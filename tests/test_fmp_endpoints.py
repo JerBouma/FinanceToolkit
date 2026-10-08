@@ -595,3 +595,16 @@ def test_an_error_message_instead_of_prices_is_no_data(monkeypatch):
     )
 
     assert result.empty
+
+
+def test_identifiers_keep_their_leading_zeros(monkeypatch):
+    body = (
+        '[{"symbol": "AAPL", "cik": "0000320193", "cusip": "037833100", "price": 1.5}]'
+    )
+    monkeypatch.setattr(fmp_model, "get_request", lambda *_, **__: _Response(200, body))
+
+    result = fmp_model.get_financial_data("https://example.com").iloc[0]
+
+    assert result["cik"] == "0000320193"
+    assert result["cusip"] == "037833100"
+    assert result["price"] == 1.5  # noqa: PLR2004

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from financetoolkit.utilities import error_model
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -196,8 +197,12 @@ def collect_per_ticker(
     if not missing_tickers:
         return combine_tickers(cached_frames, tickers, ticker_axis), []
 
+    failures_before = error_model.get_request_failures()
     result = collector(missing_tickers)
     fetched, invalid_tickers = result if isinstance(result, tuple) else (result, [])
+    # Without a failed request in the meantime, a ticker missing from the answer has no
+    # such data (e.g. ETF holdings of a company), which is cached so it is not asked again.
+    answered = error_model.get_request_failures() == failures_before
 
     if isinstance(fetched, pd.DataFrame) and not fetched.empty:
         if cache is not None:
@@ -225,6 +230,16 @@ def collect_per_ticker(
         if (selected := select_ticker(combined, ticker, ticker_axis)) is None
         or selected.empty
     ]:
+        if cache is not None and answered:
+            for ticker in without_data:
+                cache.set(
+                    source=source,
+                    dataset=dataset,
+                    entity=ticker,
+                    data=pd.DataFrame(),
+                    parameters=parameters,
+                )
+
         logger.warning(
             "No %s data is available for %s.",
             dataset.replace("_", " "),

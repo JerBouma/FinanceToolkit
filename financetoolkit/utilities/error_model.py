@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import inspect
 import os
+import threading
 
 import pandas as pd
 
@@ -22,6 +23,69 @@ ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
 
 # Errors that say the data is missing or unusable, reported as an empty result.
 REPORTED_ERRORS = (KeyError, IndexError, ZeroDivisionError, ValueError)
+
+
+# Counts the requests that failed (a rate limit, a plan restriction, a timeout) rather than
+# returned an answer. A caller compares it before and after retrieving something: when it
+# did not change, an empty answer is a genuine "no data" and can be cached like any other.
+_request_failures = 0
+_request_failures_lock = threading.Lock()
+
+
+# The single column of the empty frame a source returns instead of an answer.
+ERROR_RESPONSE_COLUMNS = frozenset(
+    {
+        "PREMIUM QUERY PARAMETER",
+        "EXCLUSIVE ENDPOINT",
+        "SPECIAL ENDPOINT",
+        "NOT AVAILABLE",
+        "BANDWIDTH LIMIT REACH",
+        "LIMIT REACH",
+        "YFINANCE RATE LIMIT OR NO DATA FOUND FALLBACK",
+        "YFINANCE RATE LIMIT OR NO DATA FOUND",
+        "YFINANCE RATE LIMIT REACHED FALLBACK",
+        "YFINANCE RATE LIMIT REACHED",
+        "US STOCKS ONLY",
+        "INVALID API KEY",
+        "REQUEST FAILED",
+        "NO ERRORS",
+    }
+)
+
+
+def is_error_response(response: object) -> bool:
+    """
+    Whether a response is an error frame rather than an answer.
+
+    Args:
+        response (object): The response, usually a DataFrame.
+
+    Returns:
+        bool: True for an empty frame whose columns name an error, such as LIMIT REACH.
+    """
+    return (
+        isinstance(response, pd.DataFrame)
+        and response.empty
+        and any(str(column) in ERROR_RESPONSE_COLUMNS for column in response.columns)
+    )
+
+
+def report_request_failure() -> None:
+    """Record that a request failed instead of returning an answer."""
+    global _request_failures  # noqa: PLW0603
+
+    with _request_failures_lock:
+        _request_failures += 1
+
+
+def get_request_failures() -> int:
+    """
+    Return the number of failed requests so far in this process.
+
+    Returns:
+        int: The number of failed requests.
+    """
+    return _request_failures
 
 
 def use_strict_errors() -> bool:

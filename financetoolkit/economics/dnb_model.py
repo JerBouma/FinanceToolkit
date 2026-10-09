@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.cache import policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics.helpers import collect_cached_data
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 
@@ -65,6 +66,18 @@ def get_scenario_set_link(measure: str) -> tuple[str, str]:
     Raises:
         ValueError: When the page links no scenario set, which means it changed.
     """
+    # DNB publishes a new set each quarter, so the link found is kept for a week rather
+    # than looked up on the page with every call.
+    cache = get_active_cache()
+
+    if cache is not None:
+        cached_link = cache.get(
+            source=policy_model.DE_NEDERLANDSCHE_BANK, dataset="listing", entity=measure
+        )
+
+        if cached_link is not None:
+            return cached_link
+
     page = get_request(LISTING_URL, timeout=60, extra_headers=TOOLKIT_HEADERS).text
     links = re.findall(SCENARIO_SET_PATTERN.format(measure=MEASURES[measure]), page)
 
@@ -72,8 +85,17 @@ def get_scenario_set_link(measure: str) -> tuple[str, str]:
         raise ValueError("DNB's page links no scenario set, which means it changed.")
 
     link, year, quarter = max(links, key=lambda found: (found[1], found[2]))
+    scenario_set_link = (f"{BASE_URL}{link}", f"{year}Q{quarter}")
 
-    return f"{BASE_URL}{link}", f"{year}Q{quarter}"
+    if cache is not None:
+        cache.set(
+            source=policy_model.DE_NEDERLANDSCHE_BANK,
+            dataset="listing",
+            entity=measure,
+            data=scenario_set_link,
+        )
+
+    return scenario_set_link
 
 
 def _sheet_paths(workbook: zipfile.ZipFile) -> dict[str, str]:

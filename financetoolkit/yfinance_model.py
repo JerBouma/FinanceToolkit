@@ -14,7 +14,7 @@ import yfinance.exceptions
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
@@ -83,8 +83,10 @@ def get_financial_statement(
     except (OSError, IndexError, AttributeError):
         # OSError covers the network errors of both urllib and curl_cffi, which yfinance
         # uses in recent versions, such as a timeout or a refused connection.
+        error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
+        error_model.report_request_failure()
         error_code = (
             "YFINANCE RATE LIMIT REACHED FALLBACK"
             if fallback
@@ -210,6 +212,7 @@ def get_reported_currency(ticker: str) -> str:
         ValueError,
         yf.exceptions.YFException,
     ):
+        error_model.report_request_failure()
         return ""
 
     # financialCurrency is the statement currency. currency is the trading currency and is only a fallback, since for most listings the two are in fact the same.  # noqa: E501
@@ -315,8 +318,10 @@ def get_historical_data(
             ].to_numpy()
 
     except (OSError, IndexError):
+        error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
+        error_model.report_request_failure()
         error_code = "YFINANCE RATE LIMIT REACHED" + (" FALLBACK" if fallback else "")
         return pd.DataFrame(columns=[error_code])
     except yf.exceptions.YFException:
@@ -418,6 +423,7 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         # Yahoo Finance answers 404 for a symbol it does not know, such as the
         # "Portfolio" a Portfolio's Toolkit includes, which has no statistics. A
         # timeout is reported the same way, so one slow ticker does not fail the rest.
+        error_model.report_request_failure()
         return pd.Series()
 
     if response.status_code == 200:  # noqa

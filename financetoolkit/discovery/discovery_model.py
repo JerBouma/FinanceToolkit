@@ -62,12 +62,24 @@ def get_cached_financial_data(
         if cached_response is not None:
             return cached_response
 
+    failures_before = error_model.get_request_failures()
     response = get_financial_data(
         url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
     )
 
-    # An empty frame may be a rate limit or plan error, not a genuine result.
-    if cache is not None and isinstance(response, pd.DataFrame) and not response.empty:
+    # An empty frame is a genuine result unless the request failed (a rate limit or a
+    # plan restriction), in which case it is asked again next time.
+    if (
+        cache is not None
+        and isinstance(response, pd.DataFrame)
+        and (
+            not response.empty
+            or (
+                error_model.get_request_failures() == failures_before
+                and not error_model.is_error_response(response)
+            )
+        )
+    ):
         cache.set(
             source=policy_model.FINANCIAL_MODELING_PREP,
             dataset="discovery",

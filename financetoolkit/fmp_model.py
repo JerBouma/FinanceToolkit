@@ -122,14 +122,19 @@ def get_financial_data(
             )
 
             if "Premium Query Parameter" in error_message:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["PREMIUM QUERY PARAMETER"])
             if "Exclusive Endpoint" in error_message:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["EXCLUSIVE ENDPOINT"])
             if "Special Endpoint" in error_message:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["SPECIAL ENDPOINT"])
             if "Premium Endpoint" in error_message:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["SPECIAL ENDPOINT"])
             if "Bandwidth Limit Reach" in error_message:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["BANDWIDTH LIMIT REACH"])
             if "Limit Reach" in error_message:
                 if (
@@ -141,11 +146,14 @@ def get_financial_data(
                     limit_retry_counter += 1
                     continue
 
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["LIMIT REACH"])
             if "US stocks only" in error_message:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["US STOCKS ONLY"])
 
             if "Invalid API KEY." in error_message:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["INVALID API KEY"])
 
             status_code = (
@@ -169,6 +177,7 @@ def get_financial_data(
                 error_message or e,
             )
 
+            error_model.report_request_failure()
             return pd.DataFrame(columns=["REQUEST FAILED"])
 
         except (
@@ -179,6 +188,7 @@ def get_financial_data(
             # then reported for this request only, so it does not abort the other
             # tickers fetched alongside it.
             if error_retry_counter >= TRANSIENT_RETRY_LIMIT:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["REQUEST FAILED"])
 
             time.sleep(determine_retry_delay(error_retry_counter))
@@ -191,6 +201,7 @@ def get_financial_data(
         ):
             # Retry a refused connection up to RETRY_LIMIT times, then return empty.
             if error_retry_counter >= RETRY_LIMIT:
+                error_model.report_request_failure()
                 return pd.DataFrame(columns=["NO ERRORS"])
 
             time.sleep(determine_retry_delay(error_retry_counter))

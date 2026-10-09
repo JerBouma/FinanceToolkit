@@ -103,7 +103,15 @@ def collect_financial_statements(
     if fiscal_year_adjustments is None:
         fiscal_year_adjustments = {}
 
-    def restore_from_cache(ticker) -> tuple[str, pd.DataFrame, list | None] | None:
+    # With a FinancialModelingPrep key its statements are wanted, so a copy that Yahoo
+    # Finance served earlier (e.g. before the key was set, or on a hosted MCP server, which
+    # never caches FinancialModelingPrep data) only stands in where FinancialModelingPrep
+    # has nothing, as Yahoo Finance itself does when retrieving.
+    prefers_fmp = bool(api_key) and enforce_source in [None, "FinancialModelingPrep"]
+
+    def restore_from_cache(
+        ticker, sources: tuple[str, ...] = cache_sources
+    ) -> tuple[str, pd.DataFrame, list | None] | None:
         """
         Serve a ticker from the cache: the source it came from, the statement and the
         fiscal year adjustments stored alongside it, or None when it is not fully served.
@@ -113,7 +121,7 @@ def collect_financial_statements(
         if cache is None:
             return None
 
-        for source in cache_sources:
+        for source in sources:
             plan = cache_plans.get(source)
 
             if plan is None or plan.get_fetch_span(ticker) is not None:
@@ -145,7 +153,14 @@ def collect_financial_statements(
         the ordered result list of the pool is the only channel between threads.
         """
         if cache_plans:
-            restored = restore_from_cache(ticker)
+            restored = restore_from_cache(
+                ticker,
+                (
+                    (policy_model.FINANCIAL_MODELING_PREP,)
+                    if prefers_fmp
+                    else cache_sources
+                ),
+            )
 
             if restored is not None:
                 source, cached_statement, adjustments = restored
@@ -185,6 +200,24 @@ def collect_financial_statements(
             attempted_fmp = True
 
         if enforce_source != "FinancialModelingPrep" and financial_statement_data.empty:
+            # The Yahoo Finance fallback is served from the cache when it holds it.
+            restored = (
+                restore_from_cache(ticker, (policy_model.YAHOO_FINANCE,))
+                if prefers_fmp and cache_plans
+                else None
+            )
+
+            if restored is not None:
+                source, cached_statement, adjustments = restored
+
+                return (
+                    ticker,
+                    {**statements, source: cached_statement},
+                    None,
+                    adjustments,
+                    True,
+                )
+
             if ENABLE_YFINANCE:
                 financial_statement_data = yfinance_model.get_financial_statement(
                     ticker=ticker,

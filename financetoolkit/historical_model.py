@@ -286,9 +286,17 @@ def get_historical_data(
         if enforce_source is None or enforce_source == source
     ]
 
+    # With a FinancialModelingPrep key its data is wanted, so a copy that Yahoo Finance
+    # served earlier (e.g. before the key was set, or on a hosted MCP server, which never
+    # caches FinancialModelingPrep data) only stands in where FinancialModelingPrep has
+    # nothing, as Yahoo Finance itself does when retrieving.
+    prefers_fmp = bool(api_key) and enforce_source in [None, "FinancialModelingPrep"]
+
     def resolve_from_cache(ticker):
         """Find the provider holding this ticker, with whatever gap is left to fetch."""
-        for source in cache_sources:
+        for source in (
+            [policy_model.FINANCIAL_MODELING_PREP] if prefers_fmp else cache_sources
+        ):
             plan = cache_plans.get(source)
 
             if plan is None:
@@ -300,6 +308,23 @@ def get_historical_data(
                 return source, cached_data, plan.get_fetch_span(ticker)
 
         return None, None, None
+
+    def cached_yahoo_finance_data(ticker, fetch_start, fetch_end):
+        """
+        The Yahoo Finance prices cached for the whole range, when Yahoo Finance is the
+        fallback for a ticker that FinancialModelingPrep has no data for, or None.
+        """
+        plan = cache_plans.get(policy_model.YAHOO_FINANCE) if prefers_fmp else None
+
+        if plan is None or plan.get_fetch_span(ticker) is not None:
+            return None
+
+        cached_data = plan.cached_frame(ticker)
+
+        if cached_data is None or cached_data.empty:
+            return None
+
+        return frame_model.slice_frame(cached_data, fetch_start, fetch_end)
 
     def worker(ticker):
         cached_source, cached_data, fetch_span = (
@@ -425,15 +450,20 @@ def get_historical_data(
                     and historical_data.empty
                     and ENABLE_YFINANCE
                 ):
-                    historical_data = yfinance_model.get_historical_data(
-                        ticker=ticker,
-                        start=fetch_start,
-                        end=fetch_end,
-                        interval=interval,
-                        return_column=return_column,
-                        divide_ohlc_by=divide_ohlc_by,
-                        fallback=attempted_fmp,
+                    historical_data = cached_yahoo_finance_data(
+                        ticker, fetch_start, fetch_end
                     )
+
+                    if historical_data is None:
+                        historical_data = yfinance_model.get_historical_data(
+                            ticker=ticker,
+                            start=fetch_start,
+                            end=fetch_end,
+                            interval=interval,
+                            return_column=return_column,
+                            divide_ohlc_by=divide_ohlc_by,
+                            fallback=attempted_fmp,
+                        )
 
                     if not truncated_data.empty and not _reaches_further_back(
                         historical_data, truncated_data

@@ -393,3 +393,50 @@ def test_a_gap_that_cannot_be_retrieved_returns_the_cached_part(cache, monkeypat
 
     assert len(fmp_requests) == requests_before + 1
     assert str(data.index.max()) == "2021-12-31"
+
+
+def test_a_key_prefers_financial_modeling_prep_over_cached_yahoo_finance_data(
+    cache, monkeypatch
+):
+    """Prices Yahoo Finance served before the key was set do not stand in for FMP's."""
+    requests_made = {"fmp": 0, "yahoo": 0}
+    fmp_has_data = {"value": True}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        requests_made["fmp"] += 1
+        return bars(start, end) if fmp_has_data["value"] else pd.DataFrame()
+
+    def fake_yfinance(ticker, start, end, **kwargs):  # noqa: ARG001
+        requests_made["yahoo"] += 1
+        return bars(start, end)
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+    monkeypatch.setattr(
+        historical_model.yfinance_model, "get_historical_data", fake_yfinance
+    )
+
+    def collect_with(api_key):
+        data, _ = historical_model.get_historical_data(
+            tickers=["AAPL"],
+            api_key=api_key,
+            start="2020-01-01",
+            end="2020-12-31",
+            interval="1d",
+            show_errors=False,
+            cache=cache,
+        )
+        return data
+
+    collect_with("")
+    assert requests_made == {"fmp": 0, "yahoo": 1}
+
+    # A ticker FinancialModelingPrep has no data for falls back to the cached copy.
+    fmp_has_data["value"] = False
+    assert not collect_with("key").empty
+    assert requests_made == {"fmp": 1, "yahoo": 1}
+
+    # Otherwise FinancialModelingPrep's own prices are retrieved and cached.
+    fmp_has_data["value"] = True
+    collect_with("key")
+    collect_with("key")
+    assert requests_made == {"fmp": 2, "yahoo": 1}

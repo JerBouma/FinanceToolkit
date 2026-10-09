@@ -85,7 +85,7 @@ class Discovery:
     def __init__(
         self,
         api_key: str | None = API_KEY,
-        use_cached_data: bool | str | None = None,
+        use_cached_data: bool | str | cache_controller.Cache | None = None,
     ):
         """
         Initializes the Discovery Controller Class.
@@ -137,15 +137,9 @@ class Discovery:
 
         self._api_key = api_key
 
-        cache_enabled, cache_location = cache_controller.parse_use_cached_data(
-            use_cached_data
-        )
+        self._cache = cache_controller.resolve_cache(use_cached_data)
 
-        if cache_enabled:
-            self._cache = cache_controller.get_cache(
-                location=cache_location, enabled=True
-            )
-
+        if self._cache.enabled:
             cache_controller.set_active_cache(self._cache)
 
         # Determines the plan, which drives the sleep timer and other components.

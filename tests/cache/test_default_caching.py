@@ -116,3 +116,50 @@ def test_a_ticker_whose_request_failed_is_asked_again(tmp_path):
     collect(cache, collector)
 
     assert len(calls) == 2  # noqa: PLR2004
+
+
+def test_an_excluded_source_is_never_cached(tmp_path):
+    """A hosted MCP server shares every source but FinancialModelingPrep."""
+    cache = cache_controller.Cache(
+        location=tmp_path / "cache.db", excluded_sources={"FinancialModelingPrep"}
+    )
+    frame = pd.DataFrame({"value": [1.0]})
+
+    for source in ("FinancialModelingPrep", "OECD"):
+        cache.set(source=source, dataset="profile", entity="AAPL", data=frame)
+        cache.store(
+            source=source,
+            dataset="historical",
+            entity="AAPL",
+            data=frame.set_axis(pd.period_range("2024-01-01", periods=1, freq="D")),
+            start="2024-01-01",
+            end="2024-01-01",
+        )
+
+    assert (
+        cache.get(source="FinancialModelingPrep", dataset="profile", entity="AAPL")
+        is None
+    )
+    assert cache.get(source="OECD", dataset="profile", entity="AAPL") is not None
+    assert cache.plan(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entities="AAPL",
+        start="2024-01-01",
+        end="2024-01-01",
+    ).entities_to_fetch == ["AAPL"]
+    assert not cache.plan(
+        source="OECD",
+        dataset="historical",
+        entities="AAPL",
+        start="2024-01-01",
+        end="2024-01-01",
+    ).entities_to_fetch
+
+
+def test_a_toolkit_uses_the_cache_it_is_given(shared_location, tmp_path):
+    cache = cache_controller.Cache(
+        location=tmp_path / "cache.db", excluded_sources={"FinancialModelingPrep"}
+    )
+
+    assert build_toolkit(use_cached_data=cache)._cache is cache

@@ -35,12 +35,18 @@ categories:
 #   FINANCE_TOOLKIT_CACHE_TTL      — TTL in seconds (integer)
 #   FINANCE_TOOLKIT_CACHE_ENABLED  — true/false, overrides the "auto" below
 #
-# "auto" means: on for a local server (stdio transport, one user, one machine),
-# off for a hosted one (MCP_TRANSPORT=sse or streamable-http). A hosted server
-# serves every user from one process against one database, so a shared entry
-# would mean one subscriber's paid data answering another user's request, and
-# nothing evicts downloaded source data off disk. Neither is worth the upside
-# there, so a hosted deployment fetches live unless it opts back in explicitly.
+# enabled is one of "full", "shared", "off" (or true/false for full/off) or "auto":
+#   full    everything: the source data and the tool responses (ttl_seconds).
+#   shared  the source data of every source except FinancialModelingPrep, and no
+#           tool responses.
+#   off     nothing; every request is fetched live.
+# "auto" means full for a local server (stdio transport, one user, one machine)
+# and shared for a hosted one (MCP_TRANSPORT=sse or streamable-http). A hosted
+# server serves every user from one process against one database. Its users share
+# the official statistics, Yahoo Finance and the other public sources, while
+# FinancialModelingPrep data belongs to each subscriber and is always retrieved
+# with the user's own key. A tool response is not shared, since it may be
+# calculated from FinancialModelingPrep data.
 # ──────────────────────────────────────────────────────────────────────────────
 cache:
   enabled: auto

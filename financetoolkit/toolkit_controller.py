@@ -109,7 +109,7 @@ class Toolkit:
         start_date: str | None = None,
         end_date: str | None = None,
         quarterly: bool = False,
-        use_cached_data: bool | str | None = None,
+        use_cached_data: bool | str | cache_controller.Cache | None = None,
         risk_free_rate: str = "10y",
         benchmark_ticker: str | None = "SPY",
         enforce_source: str | None = None,
@@ -277,13 +277,9 @@ class Toolkit:
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
 
-        (
-            self._use_cached_data,
-            self._cache_location,
-        ) = cache_controller.parse_use_cached_data(use_cached_data)
-        self._cache = cache_controller.get_cache(
-            location=self._cache_location, enabled=self._use_cached_data
-        )
+        self._cache = cache_controller.resolve_cache(use_cached_data)
+        self._use_cached_data = self._cache.enabled
+        self._cache_location = self._cache.location
 
         # Published so the OECD/FRED/ECB/Fed free functions pick up this cache too.
         cache_controller.set_active_cache(self._cache)

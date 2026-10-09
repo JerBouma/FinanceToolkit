@@ -20,6 +20,7 @@ from fastmcp.server.dependencies import (  # noqa: PLC0415
 from mcp.server.fastmcp import FastMCP
 from starlette.middleware.cors import CORSMiddleware
 
+from financetoolkit.cache import policy_model
 from financetoolkit.mcp_server import setup_model
 from financetoolkit.mcp_server.auth_model import (
     MCPAuthMiddleware,
@@ -76,36 +77,50 @@ def _load_dotenv_configuration() -> None:
 _load_dotenv_configuration()
 
 
-def _resolve_cache_enabled(configured: object) -> bool:
-    """
-    Decide whether this server caches anything at all.
+CACHE_MODES = ("full", "shared", "off")
 
-    ``FINANCE_TOOLKIT_CACHE_ENABLED`` wins when set. Otherwise the config.yaml
-    value is used, where the default ``auto`` means "on locally, off when
-    hosted": a stdio server is one user on their own machine, while an HTTP
-    server multiplexes every user through one process and one database. Sharing
-    cache entries there would serve one subscriber's paid data to another, and
-    downloaded source data has no eviction policy that would keep the disk
-    bounded, so a hosted server fetches live unless told otherwise.
+
+def _resolve_cache_mode(configured: object) -> str:
+    """
+    Decide what this server caches.
+
+    - "full": everything, the source data as well as the tool responses. The default
+      for a local server (stdio transport), which is one user on their own machine.
+    - "shared": the source data of every source except FinancialModelingPrep, and no
+      tool responses. The default for a hosted server (MCP_TRANSPORT=sse or
+      streamable-http), which serves every user from one process and one database:
+      FinancialModelingPrep data belongs to each subscriber, so it is always retrieved
+      with the user's own key, while official statistics, Yahoo Finance and the other
+      public sources are shared. A tool response is not cached because it may be
+      calculated from FinancialModelingPrep data.
+    - "off": nothing.
+
+    ``FINANCE_TOOLKIT_CACHE_ENABLED`` wins when set: true caches everything, false
+    nothing. Otherwise the config.yaml value is used: true, false, one of the modes or
+    ``auto``, which picks "full" locally and "shared" when hosted.
 
     Args:
-        configured (object): The ``cache.enabled`` value from config.yaml, either
-            a boolean or the string ``"auto"``.
+        configured (object): The ``cache.enabled`` value from config.yaml.
 
     Returns:
-        bool: True when the cache should be opened and used.
+        str: "full", "shared" or "off".
     """
     override = os.environ.get("FINANCE_TOOLKIT_CACHE_ENABLED", "").strip().lower()
 
     if override in ("1", "true", "yes", "on"):
-        return True
+        return "full"
     if override in ("0", "false", "no", "off"):
-        return False
+        return "off"
 
     if isinstance(configured, bool):
-        return configured
+        return "full" if configured else "off"
 
-    return os.environ.get("MCP_TRANSPORT", "stdio") not in ("sse", "streamable-http")
+    if configured in CACHE_MODES:
+        return str(configured)
+
+    hosted = os.environ.get("MCP_TRANSPORT", "stdio") in ("sse", "streamable-http")
+
+    return "shared" if hosted else "full"
 
 
 def _build_mcp_app() -> FastMCP:
@@ -132,23 +147,37 @@ def _build_mcp_app() -> FastMCP:
 
     _cache_db_env = os.environ.get("FINANCE_TOOLKIT_CACHE_DB", "")
     _cache_ttl_env = os.environ.get("FINANCE_TOOLKIT_CACHE_TTL", "")
-    _cache_enabled = _resolve_cache_enabled(configuration["cache"].get("enabled", True))
+    _cache_mode = _resolve_cache_mode(configuration["cache"].get("enabled", True))
 
     logger.info(
         "Caching is %s for this server.",
-        "enabled" if _cache_enabled else "disabled, every request is fetched live",
+        {
+            "full": "enabled",
+            "shared": "enabled for every source except FinancialModelingPrep",
+            "off": "disabled, every request is fetched live",
+        }[_cache_mode],
     )
 
     provider = ToolkitProvider(
         api_key=os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", ""),
         fred_api_key=os.environ.get("FRED_API_KEY", ""),
+        # Tool responses are only cached when everything is, see _resolve_cache_mode.
         cache_ttl=(
-            int(_cache_ttl_env)
-            if _cache_ttl_env.isdigit()
-            else configuration["cache"]["ttl_seconds"]
+            0
+            if _cache_mode != "full"
+            else (
+                int(_cache_ttl_env)
+                if _cache_ttl_env.isdigit()
+                else configuration["cache"]["ttl_seconds"]
+            )
         ),
         database_location=_cache_db_env or str(setup_model.get_global_cache_db_path()),
-        cache_enabled=_cache_enabled,
+        cache_enabled=_cache_mode != "off",
+        excluded_sources=(
+            frozenset({policy_model.FINANCIAL_MODELING_PREP})
+            if _cache_mode == "shared"
+            else frozenset()
+        ),
     )
 
     mcp = FastMCP(

@@ -105,6 +105,7 @@ class ToolkitProvider:
         api_key: str = API_KEY,
         fred_api_key: str = FRED_API_KEY,
         cache_enabled: bool = True,
+        excluded_sources: frozenset[str] = frozenset(),
     ) -> None:
         """
         Initializes the ToolkitProvider.
@@ -128,6 +129,9 @@ class ToolkitProvider:
                 Defaults to True, which suits a local single-user server; a hosted
                 one is expected to pass False (see ``_resolve_cache_enabled`` in
                 ``mcp_controller``). Defaults to True.
+            excluded_sources (frozenset[str], optional): Sources whose data is never
+                cached, such as FinancialModelingPrep on a hosted server, where it
+                belongs to each subscriber. Defaults to an empty set.
         """
         # A placeholder from the docs counts as no key, so tools answer with the "key required" message.
         self._api_key = validation_model.resolve_api_key(api_key)
@@ -140,13 +144,14 @@ class ToolkitProvider:
 
         # The same cache the library uses; a disabled one never opens the database.
         self._cache: Cache = cache_controller.get_cache(
-            location=database_location, enabled=cache_enabled
+            location=database_location,
+            enabled=cache_enabled,
+            excluded_sources=excluded_sources,
         )
 
-        # What Toolkit and Discovery get as `use_cached_data`: the path, or False.
-        self._use_cached_data: bool | str = (
-            database_location if cache_enabled else False
-        )
+        # What Toolkit and Discovery get as `use_cached_data`: this cache, so they leave
+        # out the same sources, or False.
+        self._use_cached_data: bool | Cache = self._cache if cache_enabled else False
 
         if cache_enabled:
             cache_controller.set_active_cache(self._cache)

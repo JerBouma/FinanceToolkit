@@ -244,7 +244,12 @@ class Cache:
     written here.
     """
 
-    def __init__(self, location: str | Path | None = None, enabled: bool = True):
+    def __init__(
+        self,
+        location: str | Path | None = None,
+        enabled: bool = True,
+        excluded_sources: frozenset[str] | set[str] | None = None,
+    ):
         """
         Initialize the cache against a database location.
 
@@ -253,7 +258,12 @@ class Cache:
                 selects the shared, platform-specific default location.
             enabled (bool): When False every read misses and every write is a
                 no-op, so callers do not need to branch on whether caching is on.
+            excluded_sources (frozenset[str] | set[str] | None): Sources that are
+                never read from or written to the cache, e.g. FinancialModelingPrep
+                on a hosted MCP server, where its data belongs to each subscriber
+                rather than to every user of the server. Defaults to None.
         """
+        self._excluded_sources: frozenset[str] = frozenset(excluded_sources or ())
         self._enabled = enabled
         self._location = resolve_cache_location(location)
         self._backend = None
@@ -318,6 +328,22 @@ class Cache:
         """
         return self._location
 
+    def serves(self, source: str) -> bool:
+        """
+        Whether data from a source is read from and written to this cache.
+
+        Args:
+            source (str): The external data source.
+
+        Returns:
+            bool: False when the cache is disabled or the source is excluded.
+        """
+        return (
+            self._enabled
+            and self._backend is not None
+            and source not in self._excluded_sources
+        )
+
     def create_key(
         self, source: str, dataset: str, parameters: dict[str, Any] | None = None
     ) -> str:
@@ -380,7 +406,7 @@ class Cache:
         )
         requested_end = coverage_model.normalize_date(end) if end else reference
 
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             plan.missing = {
                 entity: [(requested_start, requested_end)] for entity in entity_list
             }
@@ -481,7 +507,7 @@ class Cache:
             parameters (dict[str, Any] | None): Parameters that change the data.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return
 
         key = self.create_key(source, dataset, parameters)
@@ -574,7 +600,7 @@ class Cache:
         Returns:
             Any | None: The cached value, or None when absent or expired.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return None
 
         key = self.create_key(source, dataset, parameters)
@@ -622,7 +648,7 @@ class Cache:
             data (Any): The value to store. Any picklable object is accepted.
             parameters (dict[str, Any] | None): Parameters that change the data.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return
 
         key = self.create_key(source, dataset, parameters)
@@ -659,7 +685,7 @@ class Cache:
         Returns:
             int: The number of stored payloads removed.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return 0
 
         return self._backend.delete_entity(
@@ -769,7 +795,11 @@ class Cache:
         return statistics
 
 
-def get_cache(location: str | Path | None = None, enabled: bool = True) -> Cache:
+def get_cache(
+    location: str | Path | None = None,
+    enabled: bool = True,
+    excluded_sources: frozenset[str] | set[str] | None = None,
+) -> Cache:
     """
     Return the shared cache instance for a location.
 
@@ -782,6 +812,8 @@ def get_cache(location: str | Path | None = None, enabled: bool = True) -> Cache
             selects the shared default location.
         enabled (bool): When False a disabled cache is returned, which misses on
             every read and ignores every write.
+        excluded_sources (frozenset[str] | set[str] | None): Sources this cache never
+            reads or writes, see Cache. Defaults to None.
 
     Returns:
         Cache: The cache instance for this location.
@@ -789,13 +821,18 @@ def get_cache(location: str | Path | None = None, enabled: bool = True) -> Cache
     if not enabled:
         return Cache(location=location, enabled=False)
 
+    excluded = frozenset(excluded_sources or ())
     resolved = str(resolve_cache_location(location))
+    # One instance per location and per set of excluded sources.
+    registry_key = f"{resolved}|{','.join(sorted(excluded))}"
 
     with _REGISTRY_LOCK:
-        if resolved not in _CACHE_REGISTRY:
-            _CACHE_REGISTRY[resolved] = Cache(location=location, enabled=True)
+        if registry_key not in _CACHE_REGISTRY:
+            _CACHE_REGISTRY[registry_key] = Cache(
+                location=location, enabled=True, excluded_sources=excluded
+            )
 
-        return _CACHE_REGISTRY[resolved]
+        return _CACHE_REGISTRY[registry_key]
 
 
 def reset_cache_registry() -> None:
@@ -859,13 +896,14 @@ def parse_use_cached_data(
 
 
 def resolve_cache(
-    use_cached_data: bool | str | None = None, cache: "Cache | None" = None
+    use_cached_data: "bool | str | Cache | None" = None, cache: "Cache | None" = None
 ) -> "Cache":
     """
     The cache a module uses: the one passed to it, or the one use_cached_data selects.
 
     Args:
-        use_cached_data (bool | str | None): See parse_use_cached_data.
+        use_cached_data (bool | str | Cache | None): See parse_use_cached_data. A Cache
+            is used as is, such as the MCP server's, which may exclude sources.
         cache (Cache | None): A cache to use as is, which takes precedence.
 
     Returns:
@@ -873,6 +911,9 @@ def resolve_cache(
     """
     if cache is not None:
         return cache
+
+    if isinstance(use_cached_data, Cache):
+        return use_cached_data
 
     enabled, location = parse_use_cached_data(use_cached_data)
 

@@ -15,6 +15,9 @@ services:
       MCP_HOST: "0.0.0.0"
       MCP_PORT: "8000"
       FT_MCP_SECRET_KEY: "${FT_MCP_SECRET_KEY}"
+      # 1 counts the tool calls and publishes the totals at /stats; the counts are kept
+      # in mcp_stats.json on the volume below. Off by default.
+      FT_MCP_ANALYTICS: "${FT_MCP_ANALYTICS:-0}"
     volumes:
       - ft_cache:/root/.config/financetoolkit
     healthcheck:

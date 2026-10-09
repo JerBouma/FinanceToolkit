@@ -21,6 +21,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
+from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
     to_boolean,
@@ -356,6 +357,7 @@ class ToolRegistry:
         blocked_periods: dict[str, list[str]] | None = None,
         method_defaults: dict[str, dict[str, Any]] | None = None,
         countries_optional: list[str] | None = None,
+        analytics: UsageAnalytics | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -385,6 +387,8 @@ class ToolRegistry:
                 lookahead_days window used when the caller leaves the dates at the tool default.
             countries_optional (list[str] | None): Methods that accept countries but may be
                 called without them; every other method that accepts countries requires them.
+            analytics (UsageAnalytics | None): Counts the calls of every tool when the
+                server's usage analytics are on. Defaults to None.
         """
         self._mcp = mcp
         self._provider = provider
@@ -402,6 +406,7 @@ class ToolRegistry:
         }
         self._method_defaults: dict[str, dict[str, Any]] = method_defaults or {}
         self._countries_optional: frozenset[str] = frozenset(countries_optional or [])
+        self._analytics = analytics
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -976,6 +981,10 @@ class ToolRegistry:
             )
             fn.__name__ = spec.tool_name
             fn.__doc__ = description
+
+            if self._analytics is not None:
+                fn = self._analytics.counted(spec.tool_name, fn)
+
             self._mcp.add_tool(
                 fn,
                 name=spec.tool_name,

@@ -25,6 +25,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.diagnostics_model import redact
 from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.utilities.logger_model import get_logger
@@ -64,6 +65,7 @@ class UtilityToolRegistry:
         provider: ToolkitProvider,
         search_stop_words: list[str],
         category_descriptions: dict[str, str],
+        analytics: UsageAnalytics | None = None,
     ) -> None:
         """
         Initializes the UtilityToolRegistry.
@@ -79,8 +81,11 @@ class UtilityToolRegistry:
                 tokenization (e.g. "the", "and", "for").
             category_descriptions (dict[str, str]): Human-readable description for
                 each category, keyed by category name.
+            analytics (UsageAnalytics | None): Counts the calls of every tool when the
+                server's usage analytics are on. Defaults to None.
         """
         self._mcp = mcp
+        self._analytics = analytics
         self._registry = registry
         self._provider = provider
         self._search_stop_words: frozenset[str] = frozenset(search_stop_words)
@@ -113,7 +118,11 @@ class UtilityToolRegistry:
         ]
         for method, tool_name, title in tools:
             self._mcp.add_tool(
-                method,
+                (
+                    self._analytics.counted(tool_name, method)
+                    if self._analytics is not None
+                    else method
+                ),
                 name=tool_name,
                 description=method.__doc__ or "",
                 annotations=ToolAnnotations(

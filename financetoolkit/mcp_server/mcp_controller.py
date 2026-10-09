@@ -21,9 +21,10 @@ from mcp.server.fastmcp import FastMCP
 from starlette.middleware.cors import CORSMiddleware
 
 from financetoolkit.cache import policy_model
-from financetoolkit.mcp_server import setup_model
+from financetoolkit.mcp_server import analytics_model, setup_model
 from financetoolkit.mcp_server.auth_model import (
     MCPAuthMiddleware,
+    get_secret_key,
     register_auth_routes,
     resolve_api_key,
     resolve_fred_api_key,
@@ -186,6 +187,14 @@ def _build_mcp_app() -> FastMCP:
         host="0.0.0.0",  # noqa: S104
     )
 
+    # Off unless FT_MCP_ANALYTICS is set, so a local installation writes no statistics.
+    analytics = analytics_model.create_from_environment(
+        default_server_name="Finance Toolkit MCP Server",
+        default_location=setup_model.get_global_env_path().parent / "mcp_stats.json",
+        secret=get_secret_key(),
+        resolve_api_key=resolve_api_key,
+    )
+
     controller_inspector = ControllerInspector(
         categories=configuration["categories"],
         skip_params=configuration["skip_params"],
@@ -203,6 +212,7 @@ def _build_mcp_app() -> FastMCP:
         blocked_periods=configuration.get("blocked_periods", {}),
         method_defaults=configuration.get("method_defaults", {}),
         countries_optional=configuration.get("countries_optional", []),
+        analytics=analytics,
     )
 
     utility_registry = UtilityToolRegistry(
@@ -211,7 +221,11 @@ def _build_mcp_app() -> FastMCP:
         provider=provider,
         search_stop_words=configuration["search_stop_words"],
         category_descriptions=configuration["category_descriptions"],
+        analytics=analytics,
     )
+
+    if analytics is not None:
+        analytics.register_route(mcp)
 
     toolkit_count = toolkit_registry.register_all_tools()
     utility_count = utility_registry.register_all_tools()

@@ -110,6 +110,11 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "OECD. The two are independent providers with different country and period "
         "coverage; both return rates and ratios as decimal fractions."
     ),
+    "gmdb_forecasts": (
+        "Set to true to include the years the Global Macro Database projects (IMF World "
+        "Economic Outlook, up to five years ahead); by default a yearly series ends with "
+        "its last observation."
+    ),
     "inflation_adjusted": "Adjust nominal values for inflation when True.",
     "usd": (
         "Return levels in millions of US dollars instead of national currency when True, "

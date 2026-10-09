@@ -146,3 +146,24 @@ def test_economics_reads_the_database_lazily_with_the_new_options(monkeypatch):
     # The database is downloaded once for all four methods.
     assert requested.count(gmdb_model.RELEASE_URL.format(version="2026_09")) == 1
     assert economics.get_government_debt(level="state").empty
+
+
+def test_projected_years_are_a_choice_per_method(monkeypatch):
+    from financetoolkit import Economics
+
+    requested = _serve(monkeypatch, _release())
+    economics = Economics(start_date="2024-01-01", end_date="2026-12-31")
+    projected_year = pd.Period("2026", "Y")
+
+    observed = economics.get_government_debt_to_gdp_ratio(countries="Germany")
+    projected = economics.get_government_debt_to_gdp_ratio(
+        countries="Germany", gmdb_forecasts=True
+    )
+    observed_again = economics.get_government_debt_to_gdp_ratio(countries="Germany")
+
+    assert projected_year not in observed.dropna(how="all").index
+    assert projected.loc[projected_year, "Germany"] == pytest.approx(0.64)
+    assert observed_again.equals(observed)
+    # Each version of the database is read once per instance.
+    releases = [url for url in requested if url != gmdb_model.VERSIONS_URL]
+    assert len(releases) == 2  # noqa: PLR2004

@@ -97,7 +97,6 @@ class Economics:
         allow_stale_oecd_cache: bool = True,
         cache: Cache | None = None,
         api_key: str = "",
-        gmdb_forecasts: bool = False,
         use_cached_data: bool | str | None = None,
     ):
         """
@@ -125,10 +124,6 @@ class Economics:
             api_key (str, optional): A FinancialModelingPrep API key, only needed for the economic
                 calendar and the market risk premium. Obtain one at https://www.jeroenbouma.com/fmp.
                 Defaults to an empty string.
-            gmdb_forecasts (bool, optional): The Global Macro Database extends most yearly
-                series with the IMF's World Economic Outlook projections up to five years
-                ahead. When True, those projected years are included; by default a series
-                ends with its last observation. Defaults to False.
             use_cached_data (bool | str | None, optional): Whether to cache the data retrieved from external
                 sources. None or True uses the shared cache database in the user configuration directory, False
                 retrieves everything every time and a string is the path to a dedicated cache folder or database
@@ -202,31 +197,38 @@ class Economics:
         oecd_model.configure_oecd_cache(allow_stale_oecd_cache)
 
         self._gmdb_source: bool = gmdb_source
-        self._gmdb_forecasts: bool = gmdb_forecasts
 
         # The Global Macro Database is one file of around 60 MB, so it is only retrieved
         # when a method first needs it, see _get_gmdb_dataset.
-        self._gmbd_dataset: pd.DataFrame = pd.DataFrame()
+        self._gmdb_datasets: dict[bool, pd.DataFrame] = {}
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
         self._fred_api_key: str = fred_api_key
 
-    def _get_gmdb_dataset(self) -> pd.DataFrame:
+    def _get_gmdb_dataset(self, gmdb_forecasts: bool = False) -> pd.DataFrame:
         """
         Retrieves the Global Macro Database the first time a method needs it, through the
         cache when one is set, and keeps it for the methods called after.
 
+        Args:
+            gmdb_forecasts (bool, optional): Whether to include the projected years.
+                Defaults to False.
+
         Returns:
             pd.DataFrame: The dataset, with a (variable, country) column per series.
         """
-        if self._gmbd_dataset.empty:
-            self._gmbd_dataset = gmdb_model.collect_global_macro_database_dataset(
-                cache=self._cache, include_forecasts=self._gmdb_forecasts
+        if gmdb_forecasts not in self._gmdb_datasets:
+            self._gmdb_datasets[gmdb_forecasts] = (
+                gmdb_model.collect_global_macro_database_dataset(
+                    cache=self._cache, include_forecasts=gmdb_forecasts
+                )
             )
 
-        return self._gmbd_dataset
+        return self._gmdb_datasets[gmdb_forecasts]
 
-    def _get_gmdb_series(self, variable: str, in_percent: bool = False) -> pd.DataFrame:
+    def _get_gmdb_series(
+        self, variable: str, in_percent: bool = False, gmdb_forecasts: bool = False
+    ) -> pd.DataFrame:
         """
         Retrieves one variable of the Global Macro Database with a column per country.
 
@@ -234,11 +236,15 @@ class Economics:
             variable (str): The variable, e.g. "hcons_GDP".
             in_percent (bool, optional): Whether the variable is quoted in percentage points,
                 which is divided by 100. Defaults to False.
+            gmdb_forecasts (bool, optional): Whether to include the projected years.
+                Defaults to False.
 
         Returns:
             pd.DataFrame: The variable, indexed by year with a column per country.
         """
-        return gmdb_model.get_series(self._get_gmdb_dataset(), variable, in_percent)
+        return gmdb_model.get_series(
+            self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts), variable, in_percent
+        )
 
     @staticmethod
     def _consumption_variable(component: str) -> str:
@@ -463,6 +469,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Gross Domestic Product for a variety of countries over
@@ -502,6 +509,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product
@@ -545,7 +556,9 @@ class Economics:
             variable = ("rGDP" if inflation_adjusted else "nGDP") + (
                 "_USD" if usd else ""
             )
-            gross_domestic_product = self._get_gmdb_series(variable)
+            gross_domestic_product = self._get_gmdb_series(
+                variable, gmdb_forecasts=gmdb_forecasts
+            )
         else:
             gross_domestic_product = oecd_model.get_annual_gross_domestic_product(
                 start_date=self._start_date, end_date=self._end_date
@@ -699,6 +712,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Gross Domestic Product Deflator for a variety of countries over
@@ -724,6 +738,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product Deflator
@@ -758,7 +776,7 @@ class Economics:
 
         gross_domestic_product_deflator = (
             gmdb_model.get_gross_domestic_product_deflator(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         )
 
@@ -789,6 +807,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Real Gross Domestic Product expressed in cross-country comparable US Dollars
@@ -812,6 +831,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Gross Domestic Product in US Dollars
@@ -845,7 +868,7 @@ class Economics:
 
         real_gross_domestic_product_usd = (
             gmdb_model.get_real_gross_domestic_product_usd(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         )
 
@@ -877,6 +900,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Real Gross Domestic Product per Capita for a variety of countries over time from
@@ -908,6 +932,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Gross Domestic Product per Capita
@@ -940,7 +968,7 @@ class Economics:
         """
 
         real_gross_domestic_product_per_capita = self._get_gmdb_series(
-            "rGDP_pc_USD" if usd else "rGDP_pc"
+            "rGDP_pc_USD" if usd else "rGDP_pc", gmdb_forecasts=gmdb_forecasts
         )
 
         return finalize_dataset(
@@ -1072,6 +1100,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Total Consumption for a variety of countries over time from the
@@ -1104,6 +1133,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption
@@ -1144,18 +1177,18 @@ class Economics:
         if inflation_adjusted:
             total_consumption = (
                 gmdb_model.get_real_total_consumption(
-                    gmd_dataset=self._get_gmdb_dataset()
+                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
                 )
                 if variable == "cons"
                 else (
-                    self._get_gmdb_series(variable)
-                    / self._get_gmdb_series("deflator")
+                    self._get_gmdb_series(variable, gmdb_forecasts=gmdb_forecasts)
+                    / self._get_gmdb_series("deflator", gmdb_forecasts=gmdb_forecasts)
                     * 100
                 ).dropna(how="all", axis="columns")
             )
         else:
             total_consumption = self._get_gmdb_series(
-                f"{variable}_USD" if usd else variable
+                f"{variable}_USD" if usd else variable, gmdb_forecasts=gmdb_forecasts
             )
 
         return finalize_dataset(
@@ -1186,6 +1219,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Total Consumption to GDP Ratio for a variety of countries over time from the
@@ -1214,6 +1248,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption to GDP Ratio
@@ -1245,7 +1283,9 @@ class Economics:
         """
 
         total_consumption_to_gdp_ratio = self._get_gmdb_series(
-            f"{self._consumption_variable(component)}_GDP", in_percent=True
+            f"{self._consumption_variable(component)}_GDP",
+            in_percent=True,
+            gmdb_forecasts=gmdb_forecasts,
         )
 
         return finalize_dataset(
@@ -1276,6 +1316,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Investment for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1301,6 +1342,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment
@@ -1335,7 +1380,9 @@ class Economics:
         | 2025 |     6.56842e+06 |    64530.2 | 5.47964e+07 |
         """
 
-        investment = self._get_gmdb_series("inv_USD" if usd else "inv")
+        investment = self._get_gmdb_series(
+            "inv_USD" if usd else "inv", gmdb_forecasts=gmdb_forecasts
+        )
 
         return finalize_dataset(
             dataset=investment,
@@ -1364,6 +1411,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1390,6 +1438,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment to GDP Ratio
@@ -1420,7 +1472,7 @@ class Economics:
         """
 
         investment_to_gdp_ratio = gmdb_model.get_investment_to_gdp_ratio(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(
@@ -1451,6 +1503,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Fixed Investment for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1476,6 +1529,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment
@@ -1504,7 +1561,9 @@ class Economics:
         | 2025 |           573803 |    911184 |   658386 |
         """
 
-        fixed_investment = self._get_gmdb_series("finv_USD" if usd else "finv")
+        fixed_investment = self._get_gmdb_series(
+            "finv_USD" if usd else "finv", gmdb_forecasts=gmdb_forecasts
+        )
 
         return finalize_dataset(
             dataset=fixed_investment,
@@ -1533,6 +1592,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Fixed Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1560,6 +1620,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment to GDP Ratio
@@ -1593,7 +1657,7 @@ class Economics:
         """
 
         fixed_investment_to_gdp_ratio = gmdb_model.get_fixed_investment_to_gdp_ratio(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(
@@ -1624,6 +1688,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Exports for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1649,6 +1714,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports
@@ -1680,7 +1749,9 @@ class Economics:
         | 1990 |      144534   |    336413 | 264527   |
         """
 
-        exports = self._get_gmdb_series("exports_USD" if usd else "exports")
+        exports = self._get_gmdb_series(
+            "exports_USD" if usd else "exports", gmdb_forecasts=gmdb_forecasts
+        )
 
         return finalize_dataset(
             dataset=exports,
@@ -1709,6 +1780,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Exports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1735,6 +1807,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports to GDP Ratio
@@ -1767,7 +1843,7 @@ class Economics:
         """
 
         exports_to_gdp_ratio = gmdb_model.get_exports_to_gdp_ratio(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(
@@ -1798,6 +1874,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Imports for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1823,6 +1900,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports
@@ -1860,7 +1941,9 @@ class Economics:
 
         """
 
-        imports = self._get_gmdb_series("imports_USD" if usd else "imports")
+        imports = self._get_gmdb_series(
+            "imports_USD" if usd else "imports", gmdb_forecasts=gmdb_forecasts
+        )
 
         return finalize_dataset(
             dataset=imports,
@@ -1889,6 +1972,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Imports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1915,6 +1999,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports to GDP Ratio
@@ -1952,7 +2040,7 @@ class Economics:
         """
 
         imports_to_gdp_ratio = gmdb_model.get_imports_to_gdp_ratio(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(
@@ -1983,6 +2071,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Trade Balance for a variety of countries over time from the Global Macro
@@ -2015,6 +2104,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Trade Balance
@@ -2039,8 +2132,12 @@ class Economics:
         | 2023 |         -786495 |    167684 | 2.79265e+06 |
         """
 
-        exports = self._get_gmdb_series("exports_USD" if usd else "exports")
-        imports = self._get_gmdb_series("imports_USD" if usd else "imports")
+        exports = self._get_gmdb_series(
+            "exports_USD" if usd else "exports", gmdb_forecasts=gmdb_forecasts
+        )
+        imports = self._get_gmdb_series(
+            "imports_USD" if usd else "imports", gmdb_forecasts=gmdb_forecasts
+        )
 
         trade_balance = exports - imports
 
@@ -2072,6 +2169,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Current Account Balance for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2097,6 +2195,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance
@@ -2128,7 +2230,9 @@ class Economics:
         | 2025 |    -9345 |    201850 |  25049.5  |
         """
 
-        current_account_balance = self._get_gmdb_series("CA_USD" if usd else "CA")
+        current_account_balance = self._get_gmdb_series(
+            "CA_USD" if usd else "CA", gmdb_forecasts=gmdb_forecasts
+        )
 
         return finalize_dataset(
             dataset=current_account_balance,
@@ -2157,6 +2261,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Current Account Balance to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2184,6 +2289,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance to GDP Ratio
@@ -2218,7 +2327,7 @@ class Economics:
 
         current_account_balance_to_gdp_ratio = (
             gmdb_model.get_current_account_balance_to_gdp(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         )
 
@@ -2250,6 +2359,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Debt for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2274,6 +2384,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt
@@ -2306,7 +2420,7 @@ class Economics:
         """
 
         government_debt = self._get_gmdb_series(
-            self._government_variable("govdebt", level)
+            self._government_variable("govdebt", level), gmdb_forecasts=gmdb_forecasts
         )
 
         return finalize_dataset(
@@ -2337,6 +2451,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Debt to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2364,6 +2479,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt to GDP Ratio
@@ -2396,7 +2515,9 @@ class Economics:
         """
 
         government_debt_to_gdp_ratio = self._get_gmdb_series(
-            self._government_variable("govdebt_GDP", level), in_percent=True
+            self._government_variable("govdebt_GDP", level),
+            in_percent=True,
+            gmdb_forecasts=gmdb_forecasts,
         )
 
         return finalize_dataset(
@@ -2427,6 +2548,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Revenue for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2451,6 +2573,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue
@@ -2479,7 +2605,7 @@ class Economics:
         """
 
         government_revenue = self._get_gmdb_series(
-            self._government_variable("govrev", level)
+            self._government_variable("govrev", level), gmdb_forecasts=gmdb_forecasts
         )
 
         return finalize_dataset(
@@ -2510,6 +2636,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2537,6 +2664,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue to GDP Ratio
@@ -2569,7 +2700,9 @@ class Economics:
         """
 
         government_revenue_to_gdp_ratio = self._get_gmdb_series(
-            self._government_variable("govrev_GDP", level), in_percent=True
+            self._government_variable("govrev_GDP", level),
+            in_percent=True,
+            gmdb_forecasts=gmdb_forecasts,
         )
 
         return finalize_dataset(
@@ -2600,6 +2733,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Tax Revenue for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2624,6 +2758,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue
@@ -2656,7 +2794,7 @@ class Economics:
         """
 
         government_tax_revenue = self._get_gmdb_series(
-            self._government_variable("govtax", level)
+            self._government_variable("govtax", level), gmdb_forecasts=gmdb_forecasts
         )
 
         return finalize_dataset(
@@ -2687,6 +2825,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Tax Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2714,6 +2853,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue to GDP Ratio
@@ -2747,7 +2890,9 @@ class Economics:
         """
 
         government_tax_revenue_to_gdp_ratio = self._get_gmdb_series(
-            self._government_variable("govtax_GDP", level), in_percent=True
+            self._government_variable("govtax_GDP", level),
+            in_percent=True,
+            gmdb_forecasts=gmdb_forecasts,
         )
 
         return finalize_dataset(
@@ -2778,6 +2923,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Expenditure for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2802,6 +2948,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure
@@ -2834,7 +2984,7 @@ class Economics:
         """
 
         government_expenditure = self._get_gmdb_series(
-            self._government_variable("govexp", level)
+            self._government_variable("govexp", level), gmdb_forecasts=gmdb_forecasts
         )
 
         return finalize_dataset(
@@ -2865,6 +3015,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Expenditure to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2892,6 +3043,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure to GDP Ratio
@@ -2925,7 +3080,9 @@ class Economics:
         """
 
         government_expenditure_to_gdp_ratio = self._get_gmdb_series(
-            self._government_variable("govexp_GDP", level), in_percent=True
+            self._government_variable("govexp_GDP", level),
+            in_percent=True,
+            gmdb_forecasts=gmdb_forecasts,
         )
 
         return finalize_dataset(
@@ -2956,6 +3113,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Deficit for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2982,6 +3140,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit
@@ -3014,7 +3176,7 @@ class Economics:
         """
 
         government_deficit = self._get_gmdb_series(
-            self._government_variable("govdef", level)
+            self._government_variable("govdef", level), gmdb_forecasts=gmdb_forecasts
         )
 
         return finalize_dataset(
@@ -3045,6 +3207,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Government Deficit to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3075,6 +3238,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit to GDP Ratio
@@ -3109,7 +3276,9 @@ class Economics:
         """
 
         government_deficit_to_gdp_ratio = self._get_gmdb_series(
-            self._government_variable("govdef_GDP", level), in_percent=True
+            self._government_variable("govdef_GDP", level),
+            in_percent=True,
+            gmdb_forecasts=gmdb_forecasts,
         )
 
         return finalize_dataset(
@@ -3244,6 +3413,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Consumer Price Index (CPI) is a measure that examines the average change in prices
@@ -3282,6 +3452,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Consumer Price Index.
@@ -3332,7 +3506,7 @@ class Economics:
         else:
 
             consumer_price_index = gmdb_model.get_consumer_price_index(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
 
         return finalize_dataset(
@@ -3367,6 +3541,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Inflation Rate is the percentage change in the Consumer Price Index (CPI) from one
@@ -3407,6 +3582,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Inflation Rate.
@@ -3444,7 +3623,7 @@ class Economics:
         else:
 
             inflation_rate = gmdb_model.get_inflation_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
 
         return finalize_dataset(
@@ -3826,6 +4005,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         In most cases, the nominal house price index covers the sales of newly-built
@@ -3858,6 +4038,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the House Prices.
@@ -3896,10 +4080,10 @@ class Economics:
         if gmdb_source:
             # The real index is the nominal one deflated by consumer prices.
             house_prices = (
-                self._get_gmdb_series("rHPI")
+                self._get_gmdb_series("rHPI", gmdb_forecasts=gmdb_forecasts)
                 if inflation_adjusted
                 else gmdb_model.get_house_price_index(
-                    gmd_dataset=self._get_gmdb_dataset()
+                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
                 )
             )
         else:
@@ -4327,6 +4511,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Exchange rates are defined as the price of one country's currency in relation
@@ -4369,6 +4554,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exchange Rates.
@@ -4434,7 +4623,7 @@ class Economics:
         elif gmdb_source:
 
             exchange_rates = gmdb_model.get_usd_exchange_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             exchange_rates = oecd_model.get_exchange_rates(
@@ -4470,6 +4659,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Real Effective Exchange Rate (REER) for a variety of countries over time from the
@@ -4498,6 +4688,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Effective Exchange Rate
@@ -4527,7 +4721,7 @@ class Economics:
         """
 
         real_effective_exchange_rate = gmdb_model.get_real_effective_exchange_rate(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(
@@ -4558,6 +4752,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Money Supply is the total amount of money that is in circulation in a country.
@@ -4594,6 +4789,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Money Supply
@@ -4628,7 +4827,9 @@ class Economics:
         | 2020 |        974276 | 3.4582e+06 |     1.5425e+07  |
         """
 
-        money_supply = gmdb_model.get_money_supply(gmd_dataset=self._get_gmdb_dataset())
+        money_supply = gmdb_model.get_money_supply(
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+        )
 
         money_supply = finalize_dataset(
             dataset=money_supply,
@@ -4700,6 +4901,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         The Central Bank Policy Rate is the interest rate that a central bank sets on its
@@ -4736,6 +4938,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Central Bank Policy Rate
@@ -4771,7 +4977,7 @@ class Economics:
         if period == "yearly":
 
             central_bank_policy_rate = gmdb_model.get_central_bank_policy_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             # Weeks and months are taken from the daily rates, which the BIS updates
@@ -4814,6 +5020,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Short-term interest rates are the rates at which short-term borrowings are
@@ -4853,6 +5060,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Short Term Interest Rate.
@@ -4900,7 +5111,7 @@ class Economics:
         if gmdb_source:
 
             short_term_interest_rate = gmdb_model.get_short_term_interest_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             short_term_interest_rate = oecd_model.get_short_term_interest_rate(
@@ -4938,6 +5149,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Long-term interest rates refer to government bonds maturing in ten years.
@@ -4991,6 +5203,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
@@ -5039,7 +5255,7 @@ class Economics:
         elif gmdb_source:
 
             long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             long_term_interest_rate = oecd_model.get_long_term_interest_rate(
@@ -5207,6 +5423,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Real Interest Rate for a variety of countries over time. The Real Interest Rate
@@ -5253,6 +5470,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Interest Rate
@@ -5290,11 +5511,11 @@ class Economics:
         if gmdb_source:
             nominal_interest_rate = (
                 gmdb_model.get_long_term_interest_rate(
-                    gmd_dataset=self._get_gmdb_dataset()
+                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
                 )
                 if rate_type == "long_term"
                 else gmdb_model.get_short_term_interest_rate(
-                    gmd_dataset=self._get_gmdb_dataset()
+                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
                 )
             )
         else:
@@ -5313,7 +5534,7 @@ class Economics:
             )
 
         inflation_rate = gmdb_model.get_inflation_rate(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         real_interest_rate = nominal_interest_rate - inflation_rate
@@ -5347,6 +5568,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Yield Curve Slope for a variety of countries over time. The Yield Curve Slope is
@@ -5387,6 +5609,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Yield Curve Slope
@@ -5424,10 +5650,10 @@ class Economics:
         if gmdb_source:
 
             long_term_interest_rate = gmdb_model.get_long_term_interest_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
             short_term_interest_rate = gmdb_model.get_short_term_interest_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             long_term_interest_rate = oecd_model.get_long_term_interest_rate(
@@ -5657,6 +5883,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         The unemployed are people of working age who are without work,
@@ -5710,6 +5937,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Unemployment Rate.
@@ -5787,7 +6018,7 @@ class Economics:
         elif gmdb_source:
 
             unemployment_rate = gmdb_model.get_unemployment_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             unemployment_rate = oecd_model.get_unemployment_rate(
@@ -5824,6 +6055,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Misery Index for a variety of countries over time. The Misery Index is a simple
@@ -5863,6 +6095,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Misery Index
@@ -5892,7 +6128,7 @@ class Economics:
 
         if gmdb_source:
             unemployment_rate = gmdb_model.get_unemployment_rate(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             unemployment_rate = oecd_model.get_unemployment_rate(
@@ -5900,7 +6136,7 @@ class Economics:
             )
 
         inflation_rate = gmdb_model.get_inflation_rate(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         misery_index = unemployment_rate + inflation_rate
@@ -6116,6 +6352,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Population is defined as all nationals present in, or temporarily absent from a country,
@@ -6163,6 +6400,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Population Statistics.
@@ -6197,7 +6438,7 @@ class Economics:
         if gmdb_source:
 
             population_statistics_df = gmdb_model.get_population(
-                gmd_dataset=self._get_gmdb_dataset()
+                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
             population_statistics = {}
@@ -6320,6 +6561,7 @@ class Economics:
         rolling: int | None = None,
         trailing: int | None = None,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Sovereign Debt Crisis dummy for a variety of countries over time from the Global
@@ -6342,6 +6584,10 @@ class Economics:
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Sovereign Debt Crisis dummy
@@ -6368,7 +6614,7 @@ class Economics:
         """
 
         sovereign_debt_crisis = gmdb_model.get_sovereign_debt_crisis(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(
@@ -6392,6 +6638,7 @@ class Economics:
         rolling: int | None = None,
         trailing: int | None = None,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Currency Crisis dummy for a variety of countries over time from the Global Macro
@@ -6414,6 +6661,10 @@ class Economics:
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Currency Crisis dummy
@@ -6440,7 +6691,7 @@ class Economics:
         """
 
         currency_crisis = gmdb_model.get_currency_crisis(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(
@@ -6464,6 +6715,7 @@ class Economics:
         rolling: int | None = None,
         trailing: int | None = None,
         rounding: int | None = None,
+        gmdb_forecasts: bool = False,
     ):
         """
         Get the Banking Crisis dummy for a variety of countries over time from the Global Macro
@@ -6486,6 +6738,10 @@ class Economics:
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
+                Database projects, from the IMF's World Economic Outlook, up to five years
+                ahead. Only applies to data from the Global Macro Database. Defaults to
+                False, which ends a series with its last observation.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Banking Crisis dummy
@@ -6528,7 +6784,7 @@ class Economics:
         """
 
         banking_crisis = gmdb_model.get_banking_crisis(
-            gmd_dataset=self._get_gmdb_dataset()
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
         )
 
         return finalize_dataset(

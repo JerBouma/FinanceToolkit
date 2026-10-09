@@ -809,18 +809,41 @@ def reset_cache_registry() -> None:
         _CACHE_REGISTRY.clear()
 
 
+# Data retrieved from an external source is cached by default. Setting this variable to
+# 0 (or false, no, off) turns that default off for every Toolkit, Economics, Fixed Income,
+# Discovery and Portfolio instance that does not pass use_cached_data itself, which suits
+# environments where nothing should be written, such as a continuous integration job. The
+# MCP server reads the same variable to decide whether it caches.
+CACHE_ENVIRONMENT_VARIABLE = "FINANCE_TOOLKIT_CACHE_ENABLED"
+
+
+def is_cached_by_default() -> bool:
+    """
+    Whether external data is cached when use_cached_data is not given.
+
+    Returns:
+        bool: False when FINANCE_TOOLKIT_CACHE_ENABLED is 0, false, no or off, otherwise True.
+    """
+    return os.environ.get(CACHE_ENVIRONMENT_VARIABLE, "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def parse_use_cached_data(
-    use_cached_data: bool | str,
+    use_cached_data: bool | str | None = None,
 ) -> tuple[bool, str | None]:
     """
-    Interpret the Toolkit's ``use_cached_data`` argument.
+    Interpret the ``use_cached_data`` argument of the Toolkit and the other modules.
 
-    Preserves the existing convention where ``True`` means "cache in the default
-    location" and a string means "cache in this directory", while routing both to
-    the new database backed cache.
+    ``None``, the default, caches in the shared location unless FINANCE_TOOLKIT_CACHE_ENABLED
+    turns the default off, ``True`` and ``False`` switch caching on or off and a string
+    caches in that directory or database file.
 
     Args:
-        use_cached_data (bool | str): The value passed to the Toolkit.
+        use_cached_data (bool | str | None): The value passed to the Toolkit.
 
     Returns:
         tuple[bool, str | None]: Whether caching is enabled, and the location to
@@ -829,7 +852,31 @@ def parse_use_cached_data(
     if isinstance(use_cached_data, str):
         return True, use_cached_data
 
+    if use_cached_data is None:
+        return is_cached_by_default(), None
+
     return bool(use_cached_data), None
+
+
+def resolve_cache(
+    use_cached_data: bool | str | None = None, cache: "Cache | None" = None
+) -> "Cache":
+    """
+    The cache a module uses: the one passed to it, or the one use_cached_data selects.
+
+    Args:
+        use_cached_data (bool | str | None): See parse_use_cached_data.
+        cache (Cache | None): A cache to use as is, which takes precedence.
+
+    Returns:
+        Cache: The cache, disabled when caching is switched off.
+    """
+    if cache is not None:
+        return cache
+
+    enabled, location = parse_use_cached_data(use_cached_data)
+
+    return get_cache(location=location, enabled=enabled)
 
 
 def format_timestamp(timestamp: float) -> str:

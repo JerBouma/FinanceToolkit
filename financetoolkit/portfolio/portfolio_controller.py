@@ -45,6 +45,7 @@ class Portfolio:
         example: bool = False,
         configuration_file: str | None = None,
         rounding: int = 4,
+        use_cached_data: bool | str | None = None,
     ):
         """
         Initialize the Portfolio class with the provided configuration file and portfolio dataset.
@@ -70,6 +71,10 @@ class Portfolio:
             configuration_file (str | None): Path to a YAML configuration file defining portfolio settings.
                 If None, the default configuration file is used.
             rounding (int): The number of decimal places to round the outputs. Defaults to 4 decimal places.
+            use_cached_data (bool | str | None): Whether to cache the data retrieved from external sources, as
+                in the Toolkit. None or True uses the shared cache, False retrieves everything every time and a
+                string is the path to a dedicated cache folder or database file. Defaults to None, which caches
+                unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is set to 0.
 
         Raises:
             ValueError: If the provided configuration file is not in YAML format.
@@ -142,6 +147,7 @@ class Portfolio:
 
         self._rounding: int = rounding
         self._quarterly: bool = quarterly
+        self._use_cached_data: bool | str | None = use_cached_data
         self._benchmark_ticker = (
             benchmark_ticker
             if benchmark_ticker
@@ -328,6 +334,7 @@ class Portfolio:
                 api_key=self._api_key,
                 historical=historical,
                 start_date=self._start_date,
+                use_cached_data=self._use_cached_data,
                 quarterly=self._quarterly,
                 benchmark_ticker=self._benchmark_ticker,
                 rounding=self._rounding,
@@ -642,6 +649,7 @@ class Portfolio:
                 historical=self._daily_benchmark_data,
                 benchmark_ticker=None,
                 start_date=self._start_date,
+                use_cached_data=self._use_cached_data,
             )
 
         # Reindex the benchmark data to the dates of the historical dataset so that they are matched up.
@@ -791,6 +799,7 @@ class Portfolio:
                 tickers=self._tickers,
                 benchmark_ticker=None,
                 start_date=self._start_date,
+                use_cached_data=self._use_cached_data,
                 historical=self._daily_historical_data,
             )
 
@@ -848,6 +857,7 @@ class Portfolio:
                 tickers=list(set(currency_conversions.values())),
                 benchmark_ticker=None,
                 start_date=self._start_date,
+                use_cached_data=self._use_cached_data,
             )
 
             self._daily_currency_data = self._currency_toolkit.get_historical_data(

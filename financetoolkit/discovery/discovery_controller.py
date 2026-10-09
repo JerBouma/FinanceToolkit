@@ -85,18 +85,18 @@ class Discovery:
     def __init__(
         self,
         api_key: str | None = API_KEY,
-        use_cached_data: bool | str = False,
+        use_cached_data: bool | str | None = None,
     ):
         """
         Initializes the Discovery Controller Class.
 
         Args:
             api_key (str): An API key from FinancialModelingPrep. Obtain one here: https://www.jeroenbouma.com/fmp
-            use_cached_data (bool | str): Whether to serve the discovery endpoints from the cache when
-                a stored response is still fresh. If True, uses the shared cache database in the user
-                configuration directory. If a string is provided, uses that as the path to a dedicated
-                cache folder or database file. Defaults to False. Note that a Toolkit created with
-                caching enabled in the same process already makes its cache available here.
+            use_cached_data (bool | str | None): Whether to serve the discovery endpoints from the cache
+                when a stored response is still fresh. None or True uses the shared cache database in
+                the user configuration directory, False retrieves everything every time and a string is
+                the path to a dedicated cache folder or database file. Defaults to None, which caches
+                unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is set to 0.
 
         As an example:
 

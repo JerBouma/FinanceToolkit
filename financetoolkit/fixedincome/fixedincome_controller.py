@@ -11,7 +11,7 @@ import pandas as pd
 import requests
 
 from financetoolkit import helpers
-from financetoolkit.cache.cache_controller import Cache, set_active_cache
+from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
 from financetoolkit.economics import (
     boe_model,
     ecb_model as economics_ecb_model,
@@ -127,6 +127,7 @@ class FixedIncome:
         fred_api_key: str = FRED_API_KEY,
         api_key: str = "",
         cache: Cache | None = None,
+        use_cached_data: bool | str | None = None,
     ):
         """
         Initializes the Fixed Income Controller Class.
@@ -142,8 +143,12 @@ class FixedIncome:
                 environment variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
             api_key (str, optional): A FinancialModelingPrep API key used to retrieve the Treasury par yield
                 curve rates. Obtain one at https://www.jeroenbouma.com/fmp and pass it here. Defaults to an empty string.
-            cache (Cache | None, optional): The incremental cache used for the FRED, ECB and Federal
-                Reserve requests this module makes. Defaults to None, which disables caching.
+            cache (Cache | None, optional): A cache to use for the data this module retrieves, which takes
+                precedence over use_cached_data. Defaults to None.
+            use_cached_data (bool | str | None, optional): Whether to cache the data retrieved from external
+                sources. None or True uses the shared cache database in the user configuration directory, False
+                retrieves everything every time and a string is the path to a dedicated cache folder or database
+                file. Defaults to None, which caches unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is 0.
 
         As an example:
 
@@ -199,10 +204,12 @@ class FixedIncome:
         self._fred_api_key = fred_api_key
         # A copied documentation example passes the placeholder key, treated as no key at all.
         self._api_key = validation_model.resolve_api_key(api_key)
-        self._cache = cache
+        # The data retrieved from external sources is cached, see use_cached_data.
+        resolved_cache = resolve_cache(use_cached_data, cache)
+        self._cache = resolved_cache if resolved_cache.enabled else None
 
         # Published once here so the FRED, ECB and Fed free functions read it back.
-        set_active_cache(cache)
+        set_active_cache(self._cache)
 
     def _require_fred_api_key(self) -> None:
         if not self._fred_api_key:

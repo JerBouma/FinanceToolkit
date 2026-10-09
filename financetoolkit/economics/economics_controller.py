@@ -13,7 +13,7 @@ import pandas as pd
 
 from financetoolkit import fmp_model, helpers, historical_model
 from financetoolkit.cache import policy_model
-from financetoolkit.cache.cache_controller import Cache, set_active_cache
+from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
 from financetoolkit.economics import (
     bis_model,
     bls_model,
@@ -98,6 +98,7 @@ class Economics:
         cache: Cache | None = None,
         api_key: str = "",
         gmdb_forecasts: bool = False,
+        use_cached_data: bool | str | None = None,
     ):
         """
         Initializes the Economics Controller Class.
@@ -119,8 +120,8 @@ class Economics:
                 successful response for that exact query instead of returning empty data -- opt-in,
                 since the served data may not be the most up-to-date. Every successful OECD response
                 is cached regardless of this setting. Defaults to True.
-            cache (Cache | None, optional): The incremental cache used for the OECD, FRED and Global
-                Macro Database requests this module makes. Defaults to None, which disables caching.
+            cache (Cache | None, optional): A cache to use for the data this module retrieves, which takes
+                precedence over use_cached_data. Defaults to None.
             api_key (str, optional): A FinancialModelingPrep API key, only needed for the economic
                 calendar and the market risk premium. Obtain one at https://www.jeroenbouma.com/fmp.
                 Defaults to an empty string.
@@ -128,6 +129,10 @@ class Economics:
                 series with the IMF's World Economic Outlook projections up to five years
                 ahead. When True, those projected years are included; by default a series
                 ends with its last observation. Defaults to False.
+            use_cached_data (bool | str | None, optional): Whether to cache the data retrieved from external
+                sources. None or True uses the shared cache database in the user configuration directory, False
+                retrieves everything every time and a string is the path to a dedicated cache folder or database
+                file. Defaults to None, which caches unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is 0.
 
         As an example:
 
@@ -186,12 +191,14 @@ class Economics:
         # falls back to dates that were asked for, not to the 100 year default.
         self._requested_start_date = start_date
         self._requested_end_date = end_date
-        self._cache = cache
+        # The data retrieved from external sources is cached, see use_cached_data.
+        resolved_cache = resolve_cache(use_cached_data, cache)
+        self._cache = resolved_cache if resolved_cache.enabled else None
         # A copied documentation example passes the placeholder key, treated as no key at all.
         self._api_key = validation_model.resolve_api_key(api_key)
 
         # Published once here so the OECD and FRED free functions read it back.
-        set_active_cache(cache)
+        set_active_cache(self._cache)
         oecd_model.configure_oecd_cache(allow_stale_oecd_cache)
 
         self._gmdb_source: bool = gmdb_source

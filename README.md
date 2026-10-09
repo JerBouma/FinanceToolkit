@@ -580,9 +580,11 @@ When looking at a company such as Hyundai Motor Company (ticker: 005380.KS), you
 
 Most functions will have the option to define the `trailing` parameter. This lets you define the number of periods that you want to use to calculate the trailing metrics. For example, if you want to calculate the trailing 12-month (TTM) Price-to-Earnings Ratio, you can set `trailing=4` when you have set `quarterly=True` in the Toolkit initialization. The same goes for growth metrics which can be calculated by setting `growth=True`. This will calculate the growth for each period based on the previous period. This also includes a `lag` parameter in which you can define lagged growth. Furthermore, you can also combine the trailing and growth parameters to get trailing growth. For example, set `trailing=4` and `growth=True`  for the Price-to-Earnings Ratio which will then calculate the TTM growth.
 
-> **How can I save the data periodically so that I don't have to retrieve it every single time again?**
+> **Does the Finance Toolkit retrieve the same data every time I run it?**
 
-The Toolkit has the option to work with cached data through `use_cached_data=True` when initializing the Toolkit class. Any data that comes from an external source (financial statements, historical prices, economic indicators, and so on) is then stored in a local SQLite database and reused on the next run. Anything the Toolkit calculates itself is never cached, it is always derived from that data on demand.
+No. Any data that comes from an external source (financial statements, historical prices, economic indicators, yield curves, news and so on) is cached automatically in a local SQLite database and reused on the next run, in the Toolkit as well as in the Economics, Fixed Income, Discovery and Portfolio modules. Anything the Finance Toolkit calculates itself, such as ratios, models and risk metrics, is never cached: it is always derived from that data on demand, so it reflects the latest version of the Finance Toolkit.
+
+Cached data does not go stale. Each dataset is retrieved again once it may have changed: prices and financial statements after a day (prices only for the last week, since older bars no longer change), quotes after a minute, company profiles after a month and economic releases according to how often they are published. An answer that a source has no data, such as the ETF holdings of a company, is cached as well, while a failed request, such as a rate limit, is not.
 
 The cache keeps track of what it already holds per ticker and per date range, which means changing a parameter does not throw the rest away:
 
@@ -590,7 +592,20 @@ The cache keeps track of what it already holds per ticker and per date range, wh
 - Widening the period only retrieves the years that were missing.
 - Adding a ticker only retrieves that one ticker.
 
-By default the database lives in your user configuration directory, which is the same one the MCP server uses, so both share a single cache. You can also select a specific location by providing a string to the `use_cached_data` parameter, which will store the database in the provided folder.
+The database lives in your user configuration directory, which is the same one the MCP server uses, so both share a single cache. You can choose where it is stored, or switch caching off:
+
+```python
+from financetoolkit import Economics, Toolkit
+
+# Store the cache in a specific folder
+toolkit = Toolkit(["AAPL", "MSFT"], use_cached_data="datasets")
+
+# Retrieve everything every time
+toolkit = Toolkit(["AAPL", "MSFT"], use_cached_data=False)
+economics = Economics(use_cached_data=False)
+```
+
+Setting the `FINANCE_TOOLKIT_CACHE_ENABLED` environment variable to `0` switches caching off by default everywhere, which suits environments where nothing should be written to disk, such as a continuous integration job. `FINANCE_TOOLKIT_CACHE_DB` moves the shared database to another file.
 
 To see what is currently stored, use `toolkit.get_cache_contents()`. It reports the entries grouped by source and dataset:
 

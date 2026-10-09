@@ -15,6 +15,11 @@ from _pytest.config.argparsing import Parser
 from _pytest.fixtures import SubRequest
 from _pytest.mark.structures import Mark
 
+# External data is cached by default, which the tests switch off: they must neither write
+# to the developer's own cache nor be served one test's data in another. The tests of the
+# cache itself create their own, in a temporary location.
+os.environ["FINANCE_TOOLKIT_CACHE_ENABLED"] = "0"
+
 """"
 Credits go out to the original author of this code snippet:
 

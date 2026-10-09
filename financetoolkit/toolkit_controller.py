@@ -109,7 +109,7 @@ class Toolkit:
         start_date: str | None = None,
         end_date: str | None = None,
         quarterly: bool = False,
-        use_cached_data: bool | str = False,
+        use_cached_data: bool | str | None = None,
         risk_free_rate: str = "10y",
         benchmark_ticker: str | None = "SPY",
         enforce_source: str | None = None,
@@ -132,10 +132,10 @@ class Toolkit:
         Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
         will define how the data is collected. For example, if you enable the quarterly flag, you will
         be able to collect quarterly data. Next to that, you can define the start and end date to specify
-        a specific range. Another option is to work with cached data. This is useful when you have collected
-        data before and want to use this data again. This can be done by setting the use_cached_data variable
-        to True. If you want to use a specific location to store the cached data, you can define this as a string,
-        e.g. "datasets".
+        a specific range. Data retrieved from an external source (statements, prices, economic indicators and so on)
+        is cached by default, so it is only retrieved again once it may have changed; what the Finance Toolkit
+        calculates itself is never cached. Set use_cached_data to False to switch this off, or to a string, e.g.
+        "datasets", to store the cache in a specific location.
 
         The cache keeps track of what it already holds per ticker and per date range, so changing a parameter
         does not throw the rest away. Widening the period only retrieves the years that were missing, adding a
@@ -160,10 +160,11 @@ class Toolkit:
             Defaults to today.
             quarterly (bool): A boolean indicating whether to collect quarterly data. Defaults to False (yearly).
             Note that historical data can still be collected for any period and interval.
-            use_cached_data (bool | str): A boolean indicating whether to use cached data. If True, uses the shared
-            cache database in the user configuration directory, which is also the one the MCP server reads and writes.
-            If a string is provided, uses that string as the path to a dedicated cache folder or database file.
-            Defaults to False.
+            use_cached_data (bool | str | None): Whether to cache the data retrieved from external sources. None or
+            True uses the shared cache database in the user configuration directory, which is also the one the MCP
+            server reads and writes, False retrieves everything every time and a string is the path to a dedicated
+            cache folder or database file. Defaults to None, which caches unless the FINANCE_TOOLKIT_CACHE_ENABLED environment
+            variable is set to 0.
             risk_free_rate (str): The risk-free rate identifier ('13w', '5y', '10y', '30y'). Based on US Treasury Yields.
             Used for calculations like Excess Returns. Defaults to "10y".
             benchmark_ticker (str | None): The benchmark ticker (e.g., 'SPY' for S&P 500). Used for comparative analysis
@@ -251,12 +252,12 @@ class Toolkit:
             quarterly=True,
             api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        # Working with cached data
+        # Storing the cache in a specific folder, or use_cached_data=False to not cache
         toolkit = Toolkit(
             tickers=["WMT", "AAPL"],
             quarterly=True,
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            use_cached_data=True)
+            use_cached_data="datasets")
 
         # Changing the benchmark and risk free rate
         toolkit = Toolkit(
@@ -5609,8 +5610,8 @@ class Toolkit:
         rather than all of it. This method is the counterpart to clear_cache: it
         shows what is there so that removing something is an informed decision.
 
-        The cache is inspected regardless of whether this Toolkit was created with
-        use_cached_data enabled, so a cache filled by an earlier session can always
+        The cache is inspected even when this Toolkit was created with
+        use_cached_data=False, so a cache filled by an earlier session can always
         be reviewed.
 
         Returns:
@@ -5626,7 +5627,6 @@ class Toolkit:
         toolkit = Toolkit(
             ["AAPL", "MSFT"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            use_cached_data=True,
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
@@ -5716,7 +5716,7 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", use_cached_data=True)
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         # Remove only the price history of a single ticker
         toolkit.clear_cache(source="YahooFinance", ticker="AAPL")

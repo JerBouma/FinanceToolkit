@@ -292,11 +292,33 @@ def get_historical_data(
     # nothing, as Yahoo Finance itself does when retrieving.
     prefers_fmp = bool(api_key) and enforce_source in [None, "FinancialModelingPrep"]
 
+    def yahoo_finance_reaches_further(ticker) -> bool:
+        """
+        Whether Yahoo Finance recently had a longer history of the ticker than
+        FinancialModelingPrep returned, e.g. 20 years where a Free plan returns 5.
+        """
+        return (
+            cache is not None
+            and cache.get(
+                source=policy_model.YAHOO_FINANCE,
+                dataset="historical_preferred",
+                entity=ticker,
+                parameters=cache_parameters,
+            )
+            is not None
+        )
+
     def resolve_from_cache(ticker):
         """Find the provider holding this ticker, with whatever gap is left to fetch."""
-        for source in (
-            [policy_model.FINANCIAL_MODELING_PREP] if prefers_fmp else cache_sources
-        ):
+        if not prefers_fmp:
+            sources = list(cache_sources)
+        elif yahoo_finance_reaches_further(ticker):
+            # Asking FinancialModelingPrep again would return the shorter history again.
+            sources = [policy_model.YAHOO_FINANCE, policy_model.FINANCIAL_MODELING_PREP]
+        else:
+            sources = [policy_model.FINANCIAL_MODELING_PREP]
+
+        for source in sources:
             plan = cache_plans.get(source)
 
             if plan is None:
@@ -475,6 +497,17 @@ def get_historical_data(
                     elif not historical_data.empty:
                         provider = policy_model.YAHOO_FINANCE
                         cache_source = policy_model.YAHOO_FINANCE
+
+                        if not truncated_data.empty and cache is not None:
+                            # Remembered for a day (or until the plan changes), so the
+                            # next run uses Yahoo Finance's copy without asking first.
+                            cache.set(
+                                source=policy_model.YAHOO_FINANCE,
+                                dataset="historical_preferred",
+                                entity=ticker,
+                                data=True,
+                                parameters=cache_parameters,
+                            )
 
             return historical_data, provider, cache_source
 

@@ -440,3 +440,36 @@ def test_a_key_prefers_financial_modeling_prep_over_cached_yahoo_finance_data(
     collect_with("key")
     collect_with("key")
     assert requests_made == {"fmp": 2, "yahoo": 1}
+
+
+def test_a_longer_yahoo_finance_history_is_remembered(cache, monkeypatch):
+    """A Free plan's 5 years lose to Yahoo Finance's 20, without asking FMP each time."""
+    requests_made = {"fmp": 0, "yahoo": 0}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        requests_made["fmp"] += 1
+        return bars(max(start, "2020-01-01"), end)
+
+    def fake_yfinance(ticker, start, end, **kwargs):  # noqa: ARG001
+        requests_made["yahoo"] += 1
+        return bars(start, end)
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+    monkeypatch.setattr(
+        historical_model.yfinance_model, "get_historical_data", fake_yfinance
+    )
+
+    for _ in range(3):
+        data, _ = historical_model.get_historical_data(
+            tickers=["AAPL"],
+            api_key="key",
+            start="2005-01-01",
+            end="2024-12-31",
+            interval="1d",
+            show_errors=False,
+            cache=cache,
+        )
+
+        assert str(data.index.min()) == "2005-01-01"
+
+    assert requests_made == {"fmp": 1, "yahoo": 1}

@@ -22,3 +22,12 @@ def test_long_tool_descriptions_are_complete():
 
     for name in ("macroeconomics", "rates"):
         assert configured[name][-200:] in tools[name].description
+
+
+def test_the_server_reports_the_finance_toolkit_version():
+    """Clients show the server's version, which is the package's, not the MCP SDK's."""
+    from importlib import metadata
+
+    options = mcp_controller.mcp._mcp_server.create_initialization_options()
+
+    assert options.server_version == metadata.version("financetoolkit")

@@ -319,3 +319,30 @@ def test_determine_max_workers_invalid_environment_variable():
             clear=True,
         ):
             assert helpers.determine_max_workers() == helpers.DEFAULT_MAX_WORKERS
+
+
+def test_handle_portfolio_weighs_the_tickers_with_a_value_by_the_result_period():
+    """The portfolio row uses the weights of the result's period and skips missing values."""
+    import numpy as np
+
+    daily = pd.period_range("2024-01-01", periods=3, freq="D")
+    yearly = pd.period_range("2024", periods=1, freq="Y")
+
+    class Module:
+        _tickers = ["A", "B", "Portfolio"]
+        _rounding = 4
+        _portfolio_weights = {
+            "daily": pd.DataFrame({"A": 0.25, "B": 0.75}, index=daily),
+            "yearly": pd.DataFrame({"A": 0.5, "B": 0.5}, index=yearly),
+        }
+
+        @helpers.handle_portfolio
+        def get_metric(self, period: str | None = None):  # noqa: ARG002
+            # Most risk metrics default to daily results.
+            return pd.DataFrame(
+                {"A": [1.0, 1.0, 1.0], "B": [3.0, np.nan, 3.0]}, index=daily
+            )
+
+    result = Module().get_metric()
+
+    assert result["Portfolio"].tolist() == [2.5, 1.0, 2.5]

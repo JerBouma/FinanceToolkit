@@ -5,6 +5,7 @@ __docformat__ = "google"
 import contextlib
 from datetime import date
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.cache.coverage_model import Interval, normalize_date
@@ -36,6 +37,33 @@ def get_date_axis(data: pd.DataFrame | pd.Series, date_axis: int = 0) -> pd.Inde
     raise ValueError(f"The date_axis must be 0 or 1, received {date_axis}.")
 
 
+def axis_as_dates(axis: pd.Index) -> pd.DatetimeIndex | None:
+    """
+    Convert a date or period axis to midnight timestamps in one vectorised step.
+
+    Converting label by label with normalize_date costs a pandas Period conversion
+    per label, which dominated reading ten years of daily prices back from the cache.
+    Periods map to their start, as normalize_date does, and timezone-aware dates keep
+    their local calendar date.
+
+    Args:
+        axis (pd.Index): The axis holding the dates.
+
+    Returns:
+        pd.DatetimeIndex | None: The dates, NaT where a label is missing, or None when
+            the axis is not a date or period axis and has to be converted label by label.
+    """
+    if isinstance(axis, pd.PeriodIndex):
+        return axis.to_timestamp(how="start").normalize()
+    if isinstance(axis, pd.DatetimeIndex):
+        if axis.tz is not None:
+            axis = axis.tz_localize(None)
+
+        return axis.normalize()
+
+    return None
+
+
 def get_date_bounds(
     data: pd.DataFrame | pd.Series, date_axis: int = 0
 ) -> Interval | None:
@@ -57,6 +85,16 @@ def get_date_bounds(
 
     if len(axis) == 0:
         return None
+
+    vectorised = axis_as_dates(axis)
+
+    if vectorised is not None:
+        vectorised = vectorised.dropna()
+
+        if vectorised.empty:
+            return None
+
+        return (vectorised.min().date(), vectorised.max().date())
 
     dates = []
 
@@ -101,6 +139,23 @@ def slice_frame(
     axis = get_date_axis(data, date_axis)
     start_date = normalize_date(start) if start else None
     end_date = normalize_date(end) if end else None
+
+    vectorised = axis_as_dates(axis)
+
+    if vectorised is not None:
+        # Missing labels are kept, as the label-by-label path below keeps anything that
+        # is not a date.
+        keep = vectorised.isna()
+        within = np.ones(len(axis), dtype=bool)
+
+        if start_date is not None:
+            within &= vectorised >= pd.Timestamp(start_date)
+        if end_date is not None:
+            within &= vectorised <= pd.Timestamp(end_date)
+
+        mask = np.asarray(keep) | within
+
+        return data.loc[mask] if date_axis == 0 else data.loc[:, mask]
 
     mask = []
 

@@ -66,7 +66,9 @@ def test_an_enabled_provider_still_caches(tmp_path):
 
     assert provider._cache.enabled is True
     assert provider._cache_ttl == 600
-    assert provider._use_cached_data == str(tmp_path / "cache.db")
+    # The Toolkit and Discovery get the provider's own cache, with its exclusions.
+    assert provider._use_cached_data is provider._cache
+    assert provider._cache.location == tmp_path / "cache.db"
     assert cache_controller.get_active_cache() is provider._cache
 
     cache_controller.clear_active_cache()

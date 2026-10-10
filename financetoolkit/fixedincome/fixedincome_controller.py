@@ -4,22 +4,42 @@ __docformat__ = "google"
 
 
 import os
-import re
 from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
+import requests
 
-from financetoolkit.cache.cache_controller import Cache, set_active_cache
-from financetoolkit.economics import oecd_model
+from financetoolkit import helpers
+from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
+from financetoolkit.economics import (
+    boe_model,
+    ecb_model as economics_ecb_model,
+    frb_model,
+    mof_model,
+    oecd_model,
+    treasury_model,
+)
+from financetoolkit.economics.helpers import (
+    buffered_start_date,
+    resample_to_period,
+    validate_period,
+)
 from financetoolkit.fixedincome import (
+    boc_model,
     bond_model,
+    bundesbank_model,
     derivative_model,
     ecb_model,
+    eiopa_model,
+    esma_model,
     euribor_model,
     fed_model,
     fmp_model,
     fred_model,
+    norgesbank_model,
+    rba_model,
+    riksbank_model,
     yieldcurve_model,
 )
 from financetoolkit.utilities import logger_model, validation_model
@@ -27,6 +47,39 @@ from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = logger_model.get_logger()
+
+# The Treasury's names for the maturities of the US par yield curve, in the labels the
+# government bond yield curve uses for every country.
+TREASURY_MATURITIES = {
+    "1 Mo": "1M",
+    "1.5 Month": "1.5M",
+    "2 Mo": "2M",
+    "3 Mo": "3M",
+    "4 Mo": "4M",
+    "6 Mo": "6M",
+    "1 Yr": "1Y",
+    "2 Yr": "2Y",
+    "3 Yr": "3Y",
+    "5 Yr": "5Y",
+    "7 Yr": "7Y",
+    "10 Yr": "10Y",
+    "20 Yr": "20Y",
+    "30 Yr": "30Y",
+}
+
+
+def _maturity_in_months(label: str) -> float:
+    """
+    Converts a maturity label such as "3M" or "10Y" into months, for sorting a curve.
+
+    Args:
+        label (str): The maturity label.
+
+    Returns:
+        float: The maturity in months.
+    """
+    return float(label[:-1]) * (12 if label.endswith("Y") else 1)
+
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
@@ -74,6 +127,7 @@ class FixedIncome:
         fred_api_key: str = FRED_API_KEY,
         api_key: str = "",
         cache: Cache | None = None,
+        use_cached_data: bool | str | None = None,
     ):
         """
         Initializes the Fixed Income Controller Class.
@@ -89,8 +143,12 @@ class FixedIncome:
                 environment variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
             api_key (str, optional): A FinancialModelingPrep API key used to retrieve the Treasury par yield
                 curve rates. Obtain one at https://www.jeroenbouma.com/fmp and pass it here. Defaults to an empty string.
-            cache (Cache | None, optional): The incremental cache used for the FRED, ECB and Federal
-                Reserve requests this module makes. Defaults to None, which disables caching.
+            cache (Cache | None, optional): A cache to use for the data this module retrieves, which takes
+                precedence over use_cached_data. Defaults to None.
+            use_cached_data (bool | str | None, optional): Whether to cache the data retrieved from external
+                sources. None or True uses the shared cache database in the user configuration directory, False
+                retrieves everything every time and a string is the path to a dedicated cache folder or database
+                file. Defaults to None, which caches unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is 0.
 
         As an example:
 
@@ -108,27 +166,27 @@ class FixedIncome:
 
         Which returns:
 
-        | Date       |    AAA |     AA |      A |    BBB |     BB |      B |    CCC |
-        |:-----------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
-        | 2024-01-01 | 0.0456 | 0.047  | 0.0505 | 0.054  | 0.0613 | 0.0752 | 0.1319 |
-        | 2024-01-02 | 0.0459 | 0.0473 | 0.0509 | 0.0543 | 0.0622 | 0.0763 | 0.1333 |
-        | 2024-01-03 | 0.0459 | 0.0474 | 0.051  | 0.0544 | 0.0634 | 0.0779 | 0.1358 |
-        | 2024-01-04 | 0.0466 | 0.0481 | 0.0518 | 0.0551 | 0.0639 | 0.0784 | 0.1367 |
-        | 2024-01-05 | 0.047  | 0.0485 | 0.0521 | 0.0554 | 0.0641 | 0.0787 | 0.137  |
-        | 2024-01-08 | 0.0465 | 0.0481 | 0.0517 | 0.055  | 0.0633 | 0.0776 | 0.1365 |
-        | 2024-01-09 | 0.0464 | 0.048  | 0.0516 | 0.0548 | 0.0629 | 0.0771 | 0.1359 |
-        | 2024-01-10 | 0.0464 | 0.048  | 0.0515 | 0.0547 | 0.0622 | 0.0762 | 0.1351 |
-        | 2024-01-11 | 0.0456 | 0.0472 | 0.0507 | 0.054  | 0.0619 | 0.076  | 0.1344 |
-        | 2024-01-12 | 0.0451 | 0.0467 | 0.0502 | 0.0534 | 0.0613 | 0.0753 | 0.1338 |
-        | 2024-01-15 | 0.0451 | 0.0467 | 0.0501 | 0.0533 | 0.0611 | 0.0751 | 0.1328 |
+        | Date       |      AAA |       AA |        A |      BBB |       BB |        B |      CCC |
+        |:-----------|---------:|---------:|---------:|---------:|---------:|---------:|---------:|
+        | 2024-01-01 | nan      | nan      | nan      | nan      | nan      | nan      | nan      |
+        | 2024-01-02 |   0.0459 |   0.0473 |   0.0509 |   0.0543 |   0.0622 |   0.0763 |   0.1333 |
+        | 2024-01-03 |   0.0459 |   0.0474 |   0.051  |   0.0544 |   0.0634 |   0.0779 |   0.1358 |
+        | 2024-01-04 |   0.0466 |   0.0481 |   0.0518 |   0.0551 |   0.0639 |   0.0784 |   0.1367 |
+        | 2024-01-05 |   0.047  |   0.0485 |   0.0521 |   0.0554 |   0.0641 |   0.0787 |   0.137  |
+        | 2024-01-08 |   0.0465 |   0.0481 |   0.0517 |   0.055  |   0.0633 |   0.0776 |   0.1365 |
+        | 2024-01-09 |   0.0464 |   0.048  |   0.0516 |   0.0548 |   0.0629 |   0.0771 |   0.1359 |
+        | 2024-01-10 |   0.0464 |   0.048  |   0.0515 |   0.0547 |   0.0622 |   0.0762 |   0.1351 |
+        | 2024-01-11 |   0.0456 |   0.0472 |   0.0507 |   0.054  |   0.0619 |   0.076  |   0.1344 |
+        | 2024-01-12 |   0.0451 |   0.0467 |   0.0502 |   0.0534 |   0.0613 |   0.0753 |   0.1338 |
+        | 2024-01-15 |   0.0451 |   0.0467 |   0.0501 |   0.0533 |   0.0611 |   0.0751 |   0.1328 |
         """
-        if start_date and re.match(r"^\d{4}-\d{2}-\d{2}$", start_date) is None:
+        if start_date and not validation_model.is_valid_date(start_date):
             raise ValueError(
-                "Please input a valid start date (%Y-%m-%d) like '2010-01-01'"
+                f"Please input a valid start date (%Y-%m-%d) like '2010-01-01', not '{start_date}'"
             )
-        if end_date and re.match(r"^\d{4}-\d{2}-\d{2}$", end_date) is None:
+        if end_date and not validation_model.is_valid_date(end_date):
             raise ValueError(
-                "Please input a valid end date (%Y-%m-%d) like '2020-01-01'"
+                f"Please input a valid end date (%Y-%m-%d) like '2020-01-01', not '{end_date}'"
             )
         if start_date and end_date and start_date > end_date:
             raise ValueError(
@@ -146,10 +204,12 @@ class FixedIncome:
         self._fred_api_key = fred_api_key
         # A copied documentation example passes the placeholder key, treated as no key at all.
         self._api_key = validation_model.resolve_api_key(api_key)
-        self._cache = cache
+        # The data retrieved from external sources is cached, see use_cached_data.
+        resolved_cache = resolve_cache(use_cached_data, cache)
+        self._cache = resolved_cache if resolved_cache.enabled else None
 
         # Published once here so the FRED, ECB and Fed free functions read it back.
-        set_active_cache(cache)
+        set_active_cache(self._cache)
 
     def _require_fred_api_key(self) -> None:
         if not self._fred_api_key:
@@ -232,7 +292,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         # This is one example and below a collection of different bonds is shown with different characteristics
         fixedincome.collect_bond_statistics(
@@ -246,22 +306,22 @@ class FixedIncome:
 
         Which returns:
 
-        |                     |   Bond 1 |   Bond 2 |   Bond 3 |   Bond 4 |   Bond 5 |   Bond 6 |
-        |:--------------------|---------:|---------:|---------:|---------:|---------:|---------:|
-        | Par Value           | 100      | 250      |  50      | 1000     |  85      | 320      |
-        | Coupon Rate         |   0.05   |   0.02   |   0.075  |    0     |   0.15   |   0.015  |
-        | Years to Maturity   |   5      |  10      |   2      |   10     |   3      |   1      |
-        | Yield to Maturity   |   0.08   |   0.021  |   0.03   |    0     |   0.16   |   0.04   |
-        | Frequency           |   1      |   1      |   4      |    1     |   2      |  12      |
-        | Present Value       |  88.0219 | 247.766  |  54.3518 | 1000     |  83.0353 | 312.171  |
-        | Current Yield       |   0.0568 |   0.0202 |   0.069  |    0     |   0.1535 |   0.0154 |
-        | Effective Yield     |   0.05   |   0.02   |   0.0771 |    0     |   0.1556 |   0.0151 |
-        | Macaulay's Duration |   4.5116 |   9.1576 |   1.8819 |   10     |   2.5167 |   0.9931 |
-        | Modified Duration   |   4.1774 |   8.9693 |   1.8679 |   10     |   2.3302 |   0.9898 |
-        | Effective Duration  |   4.1798 |   8.9874 |   1.8681 |   10.022 |   2.3307 |   0.9898 |
-        | Dollar Duration     |   3.677  |  22.2228 |   1.0152 |  100     |   1.9349 |   3.0897 |
-        | DV01                |   0.0368 |   0.2222 |   0.0102 |    1     |   0.0193 |   0.0309 |
-        | Convexity           |  22.4017 |  93.7509 |   4.0849 |  110     |   7.0923 |   1.0662 |
+        |                     |        0 |
+        |:--------------------|---------:|
+        | Par Value           | 100      |
+        | Coupon Rate         |   0.05   |
+        | Years to Maturity   |   5      |
+        | Yield to Maturity   |   0.08   |
+        | Frequency           |   1      |
+        | Present Value       |  88.0219 |
+        | Current Yield       |   0.0568 |
+        | Effective Yield     |   0.05   |
+        | Macaulay's Duration |   4.5116 |
+        | Modified Duration   |   4.1774 |
+        | Effective Duration  |   4.1798 |
+        | Dollar Duration     |   3.677  |
+        | DV01                |   0.0368 |
+        | Convexity           |  22.4017 |
 
         Note how the effective duration sits just above the modified duration for every
         bond: the two measure the same sensitivity, and their small difference is exactly
@@ -398,7 +458,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_present_value(
             coupon_rate=[0.03, 0.05, 0.07],
@@ -521,7 +581,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_duration(
             duration_type='modified',
@@ -681,7 +741,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_yield_to_maturity(
             coupon_rate=0.05,
@@ -819,7 +879,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_forward_rate(
             near_maturity=[1, 2, 3],
@@ -831,10 +891,10 @@ class FixedIncome:
         Which returns:
 
         |   Near Maturity |     5 |     10 |
-        |-----------------:|------:|-------:|
-        |                1 |  0.04 | 0.0456 |
-        |                2 | 0.042 |  0.047 |
-        |                3 | 0.044 | 0.0483 |
+        |----------------:|------:|-------:|
+        |               1 | 0.04  | 0.0456 |
+        |               2 | 0.042 | 0.047  |
+        |               3 | 0.044 | 0.0483 |
         """
         spot_rates_series = (
             pd.Series(DEFAULT_SPOT_CURVE)
@@ -935,7 +995,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_par_yield(
             years_to_maturity=[1, 2, 3, 5, 10],
@@ -1032,7 +1092,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_yield_curve_spread(
             long_maturity=[10, 30],
@@ -1044,9 +1104,9 @@ class FixedIncome:
         Which returns:
 
         |   Long Maturity |     1 |     2 |
-        |-----------------:|------:|------:|
-        |               10 | 0.014 | 0.012 |
-        |               30 |  0.02 | 0.018 |
+        |----------------:|------:|------:|
+        |              10 | 0.014 | 0.012 |
+        |              30 | 0.02  | 0.018 |
         """
         spot_rates_series = (
             pd.Series(DEFAULT_SPOT_CURVE)
@@ -1140,7 +1200,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_breakeven_inflation_rate(
             maturity=[1, 5, 10, 30],
@@ -1151,11 +1211,11 @@ class FixedIncome:
         Which returns:
 
         |   Maturity |   Breakeven Inflation Rate |
-        |-----------:|----------------------------:|
-        |          1 |                       0.022 |
-        |          5 |                       0.026 |
-        |         10 |                       0.028 |
-        |         30 |                        0.03 |
+        |-----------:|---------------------------:|
+        |          1 |                      0.022 |
+        |          5 |                      0.026 |
+        |         10 |                      0.028 |
+        |         30 |                      0.03  |
         """
         nominal_rates_series = (
             pd.Series(DEFAULT_SPOT_CURVE)
@@ -1260,7 +1320,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_z_spread(
             coupon_rate=0.05,
@@ -1274,9 +1334,9 @@ class FixedIncome:
 
         |   Bond Price |      5 |     10 |     15 |
         |-------------:|-------:|-------:|-------:|
-        |            95 | 0.0243 | 0.0137 | 0.0103 |
-        |           100 | 0.0124 |  0.007 | 0.0053 |
-        |           105 | 0.0012 | 0.0007 | 0.0005 |
+        |           95 | 0.0243 | 0.0137 | 0.0103 |
+        |          100 | 0.0124 | 0.007  | 0.0053 |
+        |          105 | 0.0012 | 0.0007 | 0.0005 |
         """
         spot_rates_series = (
             pd.Series(DEFAULT_SPOT_CURVE)
@@ -1385,7 +1445,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_bond_equivalent_yield(
             discount_yield=[0.03, 0.05, 0.07],
@@ -1502,7 +1562,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_key_rate_duration(
             coupon_rate=0.05,
@@ -1514,10 +1574,10 @@ class FixedIncome:
 
         Which returns:
 
-        |   Years to Maturity |      2 |      5 |     10 |
-        |---------------------:|-------:|-------:|-------:|
-        |                    5 | 0.0862 | 4.0561 |     -0 |
-        |                   10 | 0.0862 |  0.377 | 6.4666 |
+        |   Years to Maturity |      2 |      5 |      10 |
+        |--------------------:|-------:|-------:|--------:|
+        |                   5 | 0.0862 | 4.0561 | -0      |
+        |                  10 | 0.0862 | 0.377  |  6.4666 |
         """
         spot_rates_series = (
             pd.Series(DEFAULT_SPOT_CURVE)
@@ -1626,7 +1686,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_taylor_price_change(
             coupon_rate=[0.03, 0.05, 0.07],
@@ -1641,8 +1701,8 @@ class FixedIncome:
 
         |   Coupon Rate |       5 |      10 |      15 |
         |--------------:|--------:|--------:|--------:|
-        |          0.03 | -0.0421 | -0.0744 |  -0.097 |
-        |          0.05 | -0.0407 | -0.0693 |  -0.088 |
+        |          0.03 | -0.0421 | -0.0744 | -0.097  |
+        |          0.05 | -0.0407 | -0.0693 | -0.088  |
         |          0.07 | -0.0394 | -0.0656 | -0.0824 |
         """
         coupon_rate = (
@@ -1754,7 +1814,7 @@ class FixedIncome:
 
         Args:
             model (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
-            forward_rate (float, optional): The forward rate as derived from the swap curve. Defaults to None.
+            forward_rate (float, optional): The forward rate as derived from the swap curve. Defaults to 0.05.
             strike_rate (float | list, optional): The strike rate for the derivative. Defaults to None which means it calculates the
                 derivative price a range of strike prices. Can also be a list of strike rates (e.g. [0.01, 0.02, 0.03, 0.04, 0.05]).
             volatility (float, optional): The volatility of the underlying swap rate, quoted on the
@@ -1785,7 +1845,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2025-12-31")
 
         fixedincome.get_derivative_price(
             model='black',
@@ -1798,12 +1858,12 @@ class FixedIncome:
 
         Which returns, with one column per expiry date and one row per strike:
 
-        |   Strike Rate |   2027-08-11 |   2028-08-10 |   2031-08-10 |   2036-08-08 |
+        |   Strike Rate |   2026-12-31 |   2027-12-31 |   2030-12-30 |   2035-12-29 |
         |--------------:|-------------:|-------------:|-------------:|-------------:|
-        |        0.0275 |         0    |         0    |         0    |         0    |
-        |        0.0325 |      1224.91 |      3300.15 |     11280.4  |     25086.1  |
-        |        0.0375 |     47237.2  |     89991.1  |    194547    |    305934    |
-        |        0.0425 |     94474.3  |    179982    |    389094    |    611868    |
+        |        0.0275 |         0    |         0    |          0   |          0   |
+        |        0.0325 |      1224.91 |      3300.15 |      11280.4 |      25086.1 |
+        |        0.0375 |     47237.2  |     89991.1  |     194547   |     305934   |
+        |        0.0425 |     94474.3  |    179982    |     389094   |     611868   |
 
         The strikes below the 3.25% forward are worthless because a receiver swaption only
         pays when the fixed rate it locks in exceeds the prevailing forward, and at a 1%
@@ -1932,6 +1992,7 @@ class FixedIncome:
 
         return derivative_prices_df.round(2)
 
+    @handle_errors
     def get_government_bond_yield(
         self,
         short_term: bool = False,
@@ -2010,6 +2071,7 @@ class FixedIncome:
         | 2023-09 |  0.0076 |          0.0438 |   0.07   |
         | 2023-10 |  0.0095 |          0.048  |   0.0655 |
         | 2023-11 |  0.0066 |          0.045  |   0.0655 |
+        | 2023-12 |  0.0062 |          0.0402 |   0.0655 |
         """
         period = (
             period
@@ -2039,6 +2101,274 @@ class FixedIncome:
             row_slice=True,
         )
 
+    def _get_country_yield_curves(self, start_date: str) -> dict:
+        """
+        Returns, per country, the function that retrieves its daily government bond yield
+        curve from the official source, so that only the requested countries are fetched.
+
+        Args:
+            start_date (str): The start date to retrieve from (YYYY-MM-DD).
+
+        Returns:
+            dict: The retrieval function per country.
+        """
+        end_date = self._end_date
+
+        def united_states() -> pd.DataFrame:
+            curve = treasury_model.get_yield_curve("nominal", start_date, end_date)
+            return curve.rename(columns=TREASURY_MATURITIES)[
+                [
+                    label
+                    for column, label in TREASURY_MATURITIES.items()
+                    if column in curve
+                ]
+            ]
+
+        def australia() -> pd.DataFrame:
+            # The Reserve Bank of Australia publishes one file with the history from 2013.
+            curve = rba_model.get_yield_curve()
+            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
+
+        def japan() -> pd.DataFrame:
+            # The Ministry of Finance publishes one file with the full history.
+            curve = mof_model.get_government_bond_yields()
+            return curve.loc[pd.Period(start_date, "D") :] if not curve.empty else curve
+
+        return {
+            "United States": united_states,
+            "Euro Area": lambda: economics_ecb_model.get_yield_curve(
+                start_date, end_date
+            ),
+            "Germany": lambda: bundesbank_model.get_yield_curve(start_date, end_date),
+            "United Kingdom": lambda: boe_model.get_yield_curve(start_date, end_date),
+            "Japan": japan,
+            "Canada": lambda: boc_model.get_yield_curve(start_date, end_date),
+            "Sweden": lambda: riksbank_model.get_yield_curve(start_date, end_date),
+            "Norway": lambda: norgesbank_model.get_yield_curve(start_date, end_date),
+            "Australia": australia,
+        }
+
+    @handle_errors
+    def get_government_bond_yield_curve(
+        self,
+        countries: list[str] | str | None = None,
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the government bond yield curve of a variety of countries, every maturity
+        a country's government borrows at, from treasury bills to bonds of 30 years and
+        more. The yield curve is the basis for discounting cash flows and pricing bonds,
+        and its shape is one of the most watched signals in markets: an inverted curve,
+        with short rates above long rates, has preceded most recessions.
+
+        Every curve comes from the official source without an API key:
+
+        - United States: the U.S. Department of the Treasury's par yield curve, 1 month to
+          30 years, from 1990.
+        - Euro Area: the yield curve the European Central Bank estimates from the bonds of
+          all euro area central governments, 3 months to 30 years, from 2004.
+        - Germany: the term structure the Deutsche Bundesbank estimates from listed federal
+          securities, 1 to 30 years.
+        - United Kingdom: the Bank of England's nominal par yields of gilts, 5, 10 and 20
+          years.
+        - Japan: the Ministry of Finance's Japanese government bond yields, 1 to 40 years,
+          from 1974.
+        - Canada: the Bank of Canada's treasury bill yields (1 month to 1 year, weekly) and
+          benchmark bond yields (2 to 30 years).
+        - Sweden: the Riksbank's treasury bill and government bond yields, 1 month to 10
+          years.
+        - Norway: Norges Bank's generic government bond yields, 3 to 10 years.
+        - Australia: the Reserve Bank of Australia's government bond yields interpolated to
+          2, 3, 5 and 10 years, from 2013.
+
+        With period="monthly", every other European Union member, such as France, Italy,
+        Spain, the Netherlands and Poland, is included with its 10-year yield, the long-term
+        interest rate for convergence purposes the ECB publishes monthly. For other
+        countries no official source publishes a curve without a key; see
+        `get_government_bond_yield` for the monthly 3-month and 10-year rates of around
+        forty countries from the OECD. Only the requested countries are retrieved, and
+        only the days that are not cached yet.
+
+        The yields are returned as decimal fractions per annum (0.0419 for 4.19%), with one
+        column per country and maturity, sorted from the shortest to the longest maturity.
+        Weekly and monthly periods take the yields on the last trading day of each period
+        (weeks end on Friday).
+
+        Also known as: yield curve, term structure of interest rates, sovereign curve,
+        treasury curve, bund curve, gilt curve, JGB curve.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to retrieve, from
+                "United States", "Euro Area", "Germany", "United Kingdom", "Japan", "Canada",
+                "Sweden", "Norway" and "Australia", and with period="monthly" any European
+                Union member.
+                Defaults to None, which retrieves every country.
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data.
+            lag (int, optional): The number of periods to lag the data by.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: A DataFrame with the yields as decimals, indexed by date with a
+            column per country and maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-09-28', end_date='2026-10-01')
+
+        yield_curve = fixedincome.get_government_bond_yield_curve(
+            countries=['United States', 'Germany']
+        )
+
+        yield_curve['Germany'][['1Y', '2Y', '5Y', '10Y', '20Y', '30Y']]
+        ```
+
+        Which returns:
+
+        |            |     1Y |     2Y |     5Y |    10Y |    20Y |    30Y |
+        |:-----------|-------:|-------:|-------:|-------:|-------:|-------:|
+        | 2026-09-28 | 0.031  | 0.0332 | 0.0344 | 0.0369 | 0.0393 | 0.0401 |
+        | 2026-09-29 | 0.0307 | 0.0329 | 0.0341 | 0.0368 | 0.0394 | 0.0403 |
+        | 2026-09-30 | 0.0304 | 0.0324 | 0.0336 | 0.0364 | 0.039  | 0.0399 |
+        | 2026-10-01 | 0.0302 | 0.0321 | 0.0335 | 0.0366 | 0.0394 | 0.0403 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "government bond yield curve"
+        )
+        sources = self._get_country_yield_curves(
+            buffered_start_date(self._start_date, period)
+        )
+
+        if countries is not None and not isinstance(countries, str | list | tuple):
+            raise TypeError(
+                "The countries must be a country name or a list of country names, such as "
+                f"'Germany' or ['Germany', 'Japan'], not a {type(countries).__name__} ({countries!r})."
+            )
+
+        requested = (
+            list(sources)
+            if countries is None
+            else [countries] if isinstance(countries, str) else list(countries)
+        )
+
+        # The 10-year yield of every other European Union member is published monthly, so a
+        # monthly request includes those as a curve of one maturity.
+        convergence_yields = (
+            economics_ecb_model.get_long_term_convergence_yields(
+                buffered_start_date(self._start_date, "monthly"), self._end_date
+            )
+            if period == "monthly"
+            else pd.DataFrame()
+        )
+        if countries is None and not convergence_yields.empty:
+            requested += [
+                country
+                for country in convergence_yields.columns
+                if country not in sources
+            ]
+
+        if unavailable := [
+            country
+            for country in requested
+            if country not in sources and country not in convergence_yields.columns
+        ]:
+            logger.warning(
+                "No official daily yield curve is available for %s. The government bond yield "
+                "curve covers %s daily, and the 10-year yield of every other European Union "
+                "member with period='monthly'; get_government_bond_yield returns the monthly "
+                "3-month and 10-year rates of around forty countries from the OECD.",
+                ", ".join(unavailable),
+                ", ".join(sources),
+            )
+
+        curves = {}
+        for country in requested:
+            if country not in sources:
+                if country in convergence_yields.columns:
+                    curves[country] = (
+                        convergence_yields[[country]]
+                        .rename(columns={country: "10Y"})
+                        .dropna()
+                    )
+                continue
+
+            curve = sources[country]()
+
+            if curve.empty:
+                continue
+
+            curve = curve[sorted(curve.columns, key=_maturity_in_months)]
+            curves[country] = resample_to_period(curve.dropna(how="all"), period)
+
+        if not curves:
+            return pd.DataFrame()
+
+        yield_curve = pd.concat(curves, axis=1).sort_index()
+        yield_curve.index.name = None
+        yield_curve.columns.names = ["Country", "Maturity"]
+
+        return finalize_dataset(
+            dataset=yield_curve,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    def _get_keyless_treasury_rates(self) -> pd.DataFrame:
+        """
+        Retrieves the Treasury par yield curve from the U.S. Department of the Treasury, in
+        the maturities and column names FinancialModelingPrep uses.
+
+        Returns:
+            pd.DataFrame: The rates as decimals, indexed by date ("Date").
+        """
+        curve = treasury_model.get_yield_curve(
+            "nominal", self._start_date, self._end_date
+        )
+
+        if curve.empty:
+            return curve
+
+        # The Treasury's names for the maturities FinancialModelingPrep publishes.
+        maturities = {
+            "1 Mo": "1 Month",
+            "2 Mo": "2 Month",
+            "3 Mo": "3 Month",
+            "6 Mo": "6 Month",
+            "1 Yr": "1 Year",
+            "2 Yr": "2 Year",
+            "3 Yr": "3 Year",
+            "5 Yr": "5 Year",
+            "7 Yr": "7 Year",
+            "10 Yr": "10 Year",
+            "20 Yr": "20 Year",
+            "30 Yr": "30 Year",
+        }
+        treasury_rates = curve.rename(columns=maturities)[
+            [name for column, name in maturities.items() if column in curve.columns]
+        ]
+        treasury_rates.index.name = "Date"
+
+        return treasury_rates
+
     @handle_errors
     def get_treasury_rates(
         self,
@@ -2052,6 +2382,10 @@ class FixedIncome:
         U.S. Department of the Treasury, covering every maturity from 1 Month through 30 Year in
         a single dataset. This is the official, risk-free curve widely used as the discount curve
         for bond valuation and as the benchmark for credit spreads.
+
+        No API key is needed: with a FinancialModelingPrep API key the rates come from
+        FinancialModelingPrep, and without one, or when the key's plan does not include them,
+        from the U.S. Department of the Treasury directly, which gives the same figures.
 
         Also known as: the Treasury yield curve, the risk-free curve.
 
@@ -2093,37 +2427,51 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(
-            start_date='2024-01-01',
-            end_date='2024-01-15',
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-        )
+        fixedincome = FixedIncome(start_date='2024-01-01', end_date='2024-01-15')
 
         fixedincome.get_treasury_rates()
         ```
 
         Which returns:
 
-        | Date       |   1 Month |   3 Month |   1 Year |   2 Year |   10 Year |   30 Year |
-        |:-----------|----------:|----------:|---------:|---------:|----------:|----------:|
-        | 2024-01-02 |    0.0555 |    0.0546 |   0.048  |   0.0433 |    0.0395 |    0.0408 |
-        | 2024-01-03 |    0.0554 |    0.0548 |   0.0481 |   0.0433 |    0.0391 |    0.0405 |
-        | 2024-01-04 |    0.0556 |    0.0548 |   0.0485 |   0.0438 |    0.0399 |    0.0413 |
-        | 2024-01-05 |    0.0554 |    0.0547 |   0.0484 |   0.044  |    0.0405 |    0.0421 |
+        | Date       |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
+        |:-----------|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
+        | 2024-01-02 |    0.0555 |    0.0554 |    0.0546 |    0.0524 |   0.048  |   0.0433 |   0.0409 |   0.0393 |   0.0395 |    0.0395 |    0.0425 |    0.0408 |
+        | 2024-01-03 |    0.0554 |    0.0554 |    0.0548 |    0.0525 |   0.0481 |   0.0433 |   0.0407 |   0.039  |   0.0392 |    0.0391 |    0.0421 |    0.0405 |
+        | 2024-01-04 |    0.0556 |    0.0548 |    0.0548 |    0.0525 |   0.0485 |   0.0438 |   0.0414 |   0.0397 |   0.0399 |    0.0399 |    0.043  |    0.0413 |
+        | 2024-01-05 |    0.0554 |    0.0548 |    0.0547 |    0.0524 |   0.0484 |   0.044  |   0.0417 |   0.0402 |   0.0404 |    0.0405 |    0.0437 |    0.0421 |
+        | 2024-01-08 |    0.0554 |    0.0548 |    0.0549 |    0.0524 |   0.0482 |   0.0436 |   0.0411 |   0.0397 |   0.0399 |    0.0401 |    0.0433 |    0.0417 |
+        | 2024-01-09 |    0.0553 |    0.0546 |    0.0547 |    0.0524 |   0.0482 |   0.0436 |   0.0409 |   0.0397 |   0.04   |    0.0402 |    0.0433 |    0.0418 |
+        | 2024-01-10 |    0.0553 |    0.0546 |    0.0546 |    0.0523 |   0.0482 |   0.0437 |   0.041  |   0.0399 |   0.0401 |    0.0404 |    0.0435 |    0.042  |
+        | 2024-01-11 |    0.0554 |    0.0547 |    0.0546 |    0.0522 |   0.0475 |   0.0426 |   0.0402 |   0.039  |   0.0395 |    0.0398 |    0.0432 |    0.0418 |
+        | 2024-01-12 |    0.0555 |    0.0547 |    0.0545 |    0.0516 |   0.0465 |   0.0414 |   0.0392 |   0.0384 |   0.0391 |    0.0396 |    0.0432 |    0.042  |
         """
-        self._require_api_key()
+        treasury_rates = pd.DataFrame()
 
-        treasury_rates = fmp_model.get_treasury_rates(
-            api_key=self._api_key,
-            start_date=self._start_date,
-            end_date=self._end_date,
-        )
+        if self._api_key:
+            try:
+                treasury_rates = fmp_model.get_treasury_rates(
+                    api_key=self._api_key,
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
+            except (ValueError, requests.exceptions.RequestException) as error:
+                logger.warning(
+                    "Could not retrieve the Treasury rates from FinancialModelingPrep (%s), "
+                    "retrieving them from the U.S. Department of the Treasury instead.",
+                    error,
+                )
+                treasury_rates = pd.DataFrame()
 
-        # The Treasury publishes these in percentage points while every other rate method in this module returns decimals, so convert here rather than in the model -- that keeps the cached payload a faithful mirror of the endpoint. The error path returns a frame with no numeric columns, hence the guard.
+        # The Treasury publishes these in percentage points while every other rate method in this module returns decimals, so convert here rather than in the model -- that keeps the cached payload a faithful mirror of the endpoint. The error path, such as a plan that does not include the endpoint, returns a frame with no numeric columns, hence the guard.  # noqa: E501
         numeric_columns = treasury_rates.select_dtypes(include="number").columns
 
         if not numeric_columns.empty:
             treasury_rates[numeric_columns] = treasury_rates[numeric_columns] / 100
+        else:
+            # Without a key, or when FinancialModelingPrep does not serve them, the same
+            # rates come from the U.S. Department of the Treasury, already as decimals.
+            treasury_rates = self._get_keyless_treasury_rates()
 
         return finalize_dataset(
             dataset=treasury_rates,
@@ -2193,17 +2541,17 @@ class FixedIncome:
 
         | Date       |   1-3 Years |   3-5 Years |   5-7 Years |   7-10 Years |   10-15 Years |   15+ Years |
         |:-----------|------------:|------------:|------------:|-------------:|--------------:|------------:|
-        | 2024-01-01 |          77 |          94 |       108.5 |          127 |         131.5 |         118 |
-        | 2024-01-02 |          78 |          95 |       109   |          128 |         133   |         119 |
-        | 2024-01-03 |          80 |          98 |       113   |          133 |         136   |         122 |
-        | 2024-01-04 |          80 |          98 |       112   |          133 |         135   |         122 |
-        | 2024-01-05 |          80 |          98 |       112   |          132 |         134   |         121 |
-        | 2024-01-08 |          79 |          98 |       112   |          132 |         134   |         120 |
-        | 2024-01-09 |          78 |          96 |       110   |          130 |         131   |         117 |
-        | 2024-01-10 |          77 |          94 |       108   |          128 |         128   |         113 |
-        | 2024-01-11 |          75 |          94 |       107   |          128 |         127   |         113 |
-        | 2024-01-12 |          74 |          94 |       107   |          128 |         126   |         112 |
-        | 2024-01-15 |          74 |          94 |       107   |          128 |         125   |         111 |
+        | 2024-01-01 |         nan |         nan |         nan |          nan |           nan |         nan |
+        | 2024-01-02 |          78 |          95 |         109 |          128 |           133 |         119 |
+        | 2024-01-03 |          80 |          98 |         113 |          133 |           136 |         122 |
+        | 2024-01-04 |          80 |          98 |         112 |          133 |           135 |         122 |
+        | 2024-01-05 |          80 |          98 |         112 |          132 |           134 |         121 |
+        | 2024-01-08 |          79 |          98 |         112 |          132 |           134 |         120 |
+        | 2024-01-09 |          78 |          96 |         110 |          130 |           131 |         117 |
+        | 2024-01-10 |          77 |          94 |         108 |          128 |           128 |         113 |
+        | 2024-01-11 |          75 |          94 |         107 |          128 |           127 |         113 |
+        | 2024-01-12 |          74 |          94 |         107 |          128 |           126 |         112 |
+        | 2024-01-15 |          74 |          94 |         107 |          128 |           125 |         111 |
         """
         self._require_fred_api_key()
 
@@ -2285,19 +2633,19 @@ class FixedIncome:
 
         Which returns:
 
-        | Date       |    AAA |     AA |      A |    BBB |     BB |      B |    CCC |
-        |:-----------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
-        | 2024-01-01 | 0.0456 | 0.047  | 0.0505 | 0.054  | 0.0613 | 0.0752 | 0.1319 |
-        | 2024-01-02 | 0.0459 | 0.0473 | 0.0509 | 0.0543 | 0.0622 | 0.0763 | 0.1333 |
-        | 2024-01-03 | 0.0459 | 0.0474 | 0.051  | 0.0544 | 0.0634 | 0.0779 | 0.1358 |
-        | 2024-01-04 | 0.0466 | 0.0481 | 0.0518 | 0.0551 | 0.0639 | 0.0784 | 0.1367 |
-        | 2024-01-05 | 0.047  | 0.0485 | 0.0521 | 0.0554 | 0.0641 | 0.0787 | 0.137  |
-        | 2024-01-08 | 0.0465 | 0.0481 | 0.0517 | 0.055  | 0.0633 | 0.0776 | 0.1365 |
-        | 2024-01-09 | 0.0464 | 0.048  | 0.0516 | 0.0548 | 0.0629 | 0.0771 | 0.1359 |
-        | 2024-01-10 | 0.0464 | 0.048  | 0.0515 | 0.0547 | 0.0622 | 0.0762 | 0.1351 |
-        | 2024-01-11 | 0.0456 | 0.0472 | 0.0507 | 0.054  | 0.0619 | 0.076  | 0.1344 |
-        | 2024-01-12 | 0.0451 | 0.0467 | 0.0502 | 0.0534 | 0.0613 | 0.0753 | 0.1338 |
-        | 2024-01-15 | 0.0451 | 0.0467 | 0.0501 | 0.0533 | 0.0611 | 0.0751 | 0.1328 |
+        | Date       |      AAA |       AA |        A |      BBB |       BB |        B |      CCC |
+        |:-----------|---------:|---------:|---------:|---------:|---------:|---------:|---------:|
+        | 2024-01-01 | nan      | nan      | nan      | nan      | nan      | nan      | nan      |
+        | 2024-01-02 |   0.0459 |   0.0473 |   0.0509 |   0.0543 |   0.0622 |   0.0763 |   0.1333 |
+        | 2024-01-03 |   0.0459 |   0.0474 |   0.051  |   0.0544 |   0.0634 |   0.0779 |   0.1358 |
+        | 2024-01-04 |   0.0466 |   0.0481 |   0.0518 |   0.0551 |   0.0639 |   0.0784 |   0.1367 |
+        | 2024-01-05 |   0.047  |   0.0485 |   0.0521 |   0.0554 |   0.0641 |   0.0787 |   0.137  |
+        | 2024-01-08 |   0.0465 |   0.0481 |   0.0517 |   0.055  |   0.0633 |   0.0776 |   0.1365 |
+        | 2024-01-09 |   0.0464 |   0.048  |   0.0516 |   0.0548 |   0.0629 |   0.0771 |   0.1359 |
+        | 2024-01-10 |   0.0464 |   0.048  |   0.0515 |   0.0547 |   0.0622 |   0.0762 |   0.1351 |
+        | 2024-01-11 |   0.0456 |   0.0472 |   0.0507 |   0.054  |   0.0619 |   0.076  |   0.1344 |
+        | 2024-01-12 |   0.0451 |   0.0467 |   0.0502 |   0.0534 |   0.0613 |   0.0753 |   0.1338 |
+        | 2024-01-15 |   0.0451 |   0.0467 |   0.0501 |   0.0533 |   0.0611 |   0.0751 |   0.1328 |
         """
         self._require_fred_api_key()
 
@@ -2373,17 +2721,17 @@ class FixedIncome:
 
         | Date       |   1-3 Years |   3-5 Years |   5-7 Years |   7-10 Years |   10-15 Years |   15+ Years |
         |:-----------|------------:|------------:|------------:|-------------:|--------------:|------------:|
-        | 2024-01-01 |     1913.78 |     2487.68 |      809.13 |      585.705 |       4206.25 |     4358.69 |
-        | 2024-01-02 |     1912.73 |     2484.25 |      807.62 |      584.32  |       4193.7  |     4343.71 |
-        | 2024-01-03 |     1912.18 |     2483.95 |      807.54 |      583.84  |       4194.39 |     4339.07 |
-        | 2024-01-04 |     1910.86 |     2477.9  |      804.35 |      580.42  |       4163.24 |     4289.24 |
-        | 2024-01-05 |     1910.86 |     2475.75 |      802.82 |      578.73  |       4148.31 |     4262.52 |
-        | 2024-01-08 |     1912.48 |     2480.39 |      804.97 |      580.71  |       4167.04 |     4302.16 |
-        | 2024-01-09 |     1913.5  |     2482.27 |      805.72 |      581.26  |       4173.04 |     4303.34 |
-        | 2024-01-10 |     1914.12 |     2483.6  |      806.21 |      581.29  |       4175.16 |     4304.82 |
-        | 2024-01-11 |     1918.28 |     2492.25 |      809.94 |      583.92  |       4200.49 |     4330.72 |
-        | 2024-01-12 |     1922.1  |     2498.89 |      812.41 |      585.2   |       4213.47 |     4338.43 |
-        | 2024-01-15 |     1922.67 |     2499.76 |      812.67 |      585.41  |       4215.34 |     4340.24 |
+        | 2024-01-01 |      nan    |      nan    |      nan    |       nan    |        nan    |      nan    |
+        | 2024-01-02 |     1912.73 |     2484.25 |      807.62 |       584.32 |       4193.7  |     4343.71 |
+        | 2024-01-03 |     1912.18 |     2483.95 |      807.54 |       583.84 |       4194.39 |     4339.07 |
+        | 2024-01-04 |     1910.86 |     2477.9  |      804.35 |       580.42 |       4163.24 |     4289.24 |
+        | 2024-01-05 |     1910.86 |     2475.75 |      802.82 |       578.73 |       4148.31 |     4262.52 |
+        | 2024-01-08 |     1912.48 |     2480.39 |      804.97 |       580.71 |       4167.04 |     4302.16 |
+        | 2024-01-09 |     1913.5  |     2482.27 |      805.72 |       581.26 |       4173.04 |     4303.34 |
+        | 2024-01-10 |     1914.12 |     2483.6  |      806.21 |       581.29 |       4175.16 |     4304.82 |
+        | 2024-01-11 |     1918.28 |     2492.25 |      809.94 |       583.92 |       4200.49 |     4330.72 |
+        | 2024-01-12 |     1922.1  |     2498.89 |      812.41 |       585.2  |       4213.47 |     4338.43 |
+        | 2024-01-15 |     1922.67 |     2499.76 |      812.67 |       585.41 |       4215.34 |     4340.24 |
         """
         self._require_fred_api_key()
 
@@ -2458,19 +2806,19 @@ class FixedIncome:
 
         Which returns:
 
-        | Date       |    AAA |     AA |      A |    BBB |     BB |      B |    CCC |
-        |:-----------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
-        | 2024-01-01 | 0.0456 | 0.0472 | 0.0503 | 0.0542 | 0.0645 | 0.0786 | 0.1316 |
-        | 2024-01-02 | 0.046  | 0.0475 | 0.0506 | 0.0546 | 0.0652 | 0.0796 | 0.1329 |
-        | 2024-01-03 | 0.0461 | 0.0475 | 0.0507 | 0.0547 | 0.0662 | 0.081  | 0.1353 |
-        | 2024-01-04 | 0.0468 | 0.0483 | 0.0515 | 0.0554 | 0.0665 | 0.0814 | 0.136  |
-        | 2024-01-05 | 0.0471 | 0.0486 | 0.0518 | 0.0557 | 0.0667 | 0.0816 | 0.1362 |
-        | 2024-01-08 | 0.0466 | 0.0482 | 0.0514 | 0.0553 | 0.066  | 0.0806 | 0.1359 |
-        | 2024-01-09 | 0.0465 | 0.0481 | 0.0513 | 0.0551 | 0.0656 | 0.0803 | 0.1353 |
-        | 2024-01-10 | 0.0465 | 0.0481 | 0.0512 | 0.0551 | 0.065  | 0.0795 | 0.1345 |
-        | 2024-01-11 | 0.0458 | 0.0473 | 0.0504 | 0.0543 | 0.0648 | 0.0793 | 0.134  |
-        | 2024-01-12 | 0.0453 | 0.0468 | 0.0499 | 0.0537 | 0.0642 | 0.0786 | 0.1335 |
-        | 2024-01-15 | 0.0452 | 0.0468 | 0.0498 | 0.0537 | 0.064  | 0.0784 | 0.1325 |
+        | Date       |      AAA |       AA |        A |      BBB |       BB |        B |      CCC |
+        |:-----------|---------:|---------:|---------:|---------:|---------:|---------:|---------:|
+        | 2024-01-01 | nan      | nan      | nan      | nan      | nan      | nan      | nan      |
+        | 2024-01-02 |   0.046  |   0.0475 |   0.0506 |   0.0546 |   0.0652 |   0.0796 |   0.1329 |
+        | 2024-01-03 |   0.0461 |   0.0475 |   0.0507 |   0.0547 |   0.0662 |   0.081  |   0.1353 |
+        | 2024-01-04 |   0.0468 |   0.0483 |   0.0515 |   0.0554 |   0.0665 |   0.0814 |   0.136  |
+        | 2024-01-05 |   0.0471 |   0.0486 |   0.0518 |   0.0557 |   0.0667 |   0.0816 |   0.1362 |
+        | 2024-01-08 |   0.0466 |   0.0482 |   0.0514 |   0.0553 |   0.066  |   0.0806 |   0.1359 |
+        | 2024-01-09 |   0.0465 |   0.0481 |   0.0513 |   0.0551 |   0.0656 |   0.0803 |   0.1353 |
+        | 2024-01-10 |   0.0465 |   0.0481 |   0.0512 |   0.0551 |   0.065  |   0.0795 |   0.1345 |
+        | 2024-01-11 |   0.0458 |   0.0473 |   0.0504 |   0.0543 |   0.0648 |   0.0793 |   0.134  |
+        | 2024-01-12 |   0.0453 |   0.0468 |   0.0499 |   0.0537 |   0.0642 |   0.0786 |   0.1335 |
+        | 2024-01-15 |   0.0452 |   0.0468 |   0.0498 |   0.0537 |   0.064  |   0.0784 |   0.1325 |
         """
         self._require_fred_api_key()
 
@@ -2493,6 +2841,1286 @@ class FixedIncome:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+        )
+
+    @handle_errors
+    def get_hqm_corporate_bond_yield_curve(
+        self,
+        rate: str = "spot",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the High Quality Market (HQM) corporate bond yield curve of the U.S.
+        Department of the Treasury: the yields of high quality (AAA, AA and A rated) US
+        corporate bonds by maturity, from 6 months to 100 years, monthly from 1984. The
+        Treasury builds it for discounting long-dated liabilities, which is why it is the
+        prescribed discount curve for US corporate pension obligations, and its long history
+        makes it a natural basis for modelling how corporate yields and spreads move.
+
+        Two curves are available. Spot rates (rate="spot") are zero-coupon yields, the rate
+        to discount a single payment at that maturity, for 17 maturities. Par yields
+        (rate="par") are the coupons a bond priced at par would pay, for 2, 5, 10 and 30
+        years, comparable to the Treasury par yield curve (see `get_treasury_rates`). Every
+        value is the average over the month.
+
+        The data comes from FRED, which republishes the Treasury's curve, so a free FRED API
+        key is required. The rates are returned as decimal fractions (0.0558 for 5.58%).
+
+        See definition: https://home.treasury.gov/data/treasury-coupon-issues-and-corporate-bond-yield-curves
+
+        Also known as: HQM curve, corporate bond yield curve, pension discount curve, AA
+        corporate curve.
+
+        Args:
+            rate (str, optional): "spot" for the spot rates or "par" for the par yields.
+                Defaults to "spot".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The monthly average rates, indexed by month with a column per maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_hqm_corporate_bond_yield_curve()[['1Y', '5Y', '10Y', '30Y', '100Y']]
+        ```
+
+        Which returns:
+
+        |         |     1Y |     5Y |    10Y |    30Y |   100Y |
+        |:--------|-------:|-------:|-------:|-------:|-------:|
+        | 2026-03 | 0.0406 | 0.0447 | 0.0514 | 0.0614 | 0.0653 |
+        | 2026-04 | 0.0408 | 0.0449 | 0.0513 | 0.0612 | 0.065  |
+        | 2026-05 | 0.0414 | 0.0467 | 0.0528 | 0.0622 | 0.0656 |
+        | 2026-06 | 0.0422 | 0.0472 | 0.0527 | 0.0611 | 0.0641 |
+        | 2026-07 | 0.0433 | 0.0488 | 0.0545 | 0.0643 | 0.0677 |
+        | 2026-08 | 0.0431 | 0.0497 | 0.0558 | 0.0665 | 0.0702 |
+        """
+        self._require_fred_api_key()
+        if rate not in ("spot", "par"):
+            raise ValueError(f"The rate must be 'spot' or 'par', not {rate!r}.")
+
+        hqm_curve = fred_model.get_hqm_corporate_bond_yield_curve(
+            rate, self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=hqm_curve,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_hqm_corporate_bond_spread(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Computes the credit spread of high quality US corporate bonds per maturity: the
+        Treasury's High Quality Market (HQM) corporate par yield minus the Treasury constant
+        maturity yield, at 2, 5, 10 and 30 years, monthly from 1984. Both legs are par
+        yields averaged over the month, so they are directly comparable. The spread is what
+        investors demand for the default and liquidity risk of investment grade companies,
+        and its shape across maturities, usually wider for longer maturities, shows how that
+        compensation grows with time.
+
+        Unlike the ICE BofA option-adjusted spreads (see `get_ice_bofa_option_adjusted_spread`),
+        of which FRED only carries the last three years, this spread covers four decades, long
+        enough to calibrate how credit spreads behave through several business cycles.
+
+        The data comes from FRED, so a free FRED API key is required. The spreads are returned
+        as decimal fractions (0.0079 for 0.79 percentage points).
+
+        Also known as: corporate credit spread curve, credit spread term structure,
+        investment grade spread.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The monthly spreads, indexed by month with a column per maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_hqm_corporate_bond_spread()
+        ```
+
+        Which returns:
+
+        |         |     2Y |     5Y |    10Y |    30Y |
+        |:--------|-------:|-------:|-------:|-------:|
+        | 2026-03 | 0.0048 | 0.006  | 0.0078 | 0.0091 |
+        | 2026-04 | 0.0042 | 0.0053 | 0.0071 | 0.0084 |
+        | 2026-05 | 0.0037 | 0.005  | 0.007  | 0.0082 |
+        | 2026-06 | 0.0035 | 0.0049 | 0.0071 | 0.0083 |
+        | 2026-07 | 0.0035 | 0.0053 | 0.0075 | 0.0092 |
+        | 2026-08 | 0.0036 | 0.0056 | 0.0079 | 0.0095 |
+        """
+        self._require_fred_api_key()
+
+        hqm_spread = fred_model.get_hqm_corporate_bond_spread(
+            self._start_date, self._end_date, self._fred_api_key
+        )
+
+        return finalize_dataset(
+            dataset=hqm_spread,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_corporate_bond_yields(
+        self,
+        countries: list[str] | str | None = None,
+        spread: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the yields of corporate bonds of a variety of countries, by rating where
+        the source splits them, monthly and with long histories: the input for a credit
+        spread factor outside the United States, where corporate bond indices by rating
+        (iBoxx, ICE BofA) are licensed data.
+
+        - Germany: the average yield on debt securities outstanding of non-MFI corporations
+          the Bundesbank publishes monthly from 1957 (monthly averages), all ratings
+          together ("All ratings"). No API key is needed.
+        - Australia: the yields of non-financial corporate bonds rated A and BBB with a
+          target tenor of 3, 5, 7 and 10 years the Reserve Bank of Australia publishes from
+          2005 (end of month), e.g. "BBB 10Y". No API key is needed.
+        - United States: Moody's seasoned Aaa and Baa corporate bond yields, from 1919. This
+          requires a FRED API key (the fred_api_key of the FixedIncome class); see
+          get_moodys_corporate_bond_yields for daily data.
+
+        With spread=True each yield is returned as a spread over government bonds: for
+        Germany over the yield on public debt securities outstanding (from 1956), for
+        Australia over the Australian government bond yield of the same tenor (end of
+        month, interpolated between 5 and 10 years for 7 years, from 2013), and for the
+        United States over the 10-year Treasury yield.
+
+        The yields are decimal fractions (0.0446 for 4.46%), with one column per country
+        and rating.
+
+        See definition: https://www.bundesbank.de/en/statistics/money-and-capital-markets
+
+        Also known as: corporate credit spread, corporate bond yield by rating, euro credit
+        spread, BBB spread.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to retrieve, from
+                "Germany", "Australia" and "United States". Defaults to None, which
+                retrieves every country available, the United States only with a FRED API
+                key.
+            spread (bool, optional): Whether to return the spread over government bonds
+                instead of the yield. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The yields (or spreads) as decimals, indexed by month with a column
+            per country and rating.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        corporate_bond_yields = fixedincome.get_corporate_bond_yields(
+            countries=['Germany', 'Australia'], spread=True
+        )
+
+        corporate_bond_yields.loc[
+            :, (slice(None), ['All ratings', 'A 5Y', 'BBB 5Y', 'BBB 10Y'])
+        ].droplevel(0, axis=1)
+        ```
+
+        Which returns:
+
+        |         |   All ratings |   A 5Y |   BBB 5Y |   BBB 10Y |
+        |:--------|--------------:|-------:|---------:|----------:|
+        | 2026-03 |        0.01   | 0.0097 |   0.0123 |    0.0114 |
+        | 2026-04 |        0.0091 | 0.0085 |   0.011  |    0.01   |
+        | 2026-05 |        0.0086 | 0.0089 |   0.011  |    0.0097 |
+        | 2026-06 |        0.0084 | 0.0086 |   0.0103 |    0.0088 |
+        | 2026-07 |        0.0085 | 0.0085 |   0.0102 |    0.0086 |
+        | 2026-08 |        0.0085 | 0.0083 |   0.0099 |    0.0084 |
+        """
+        start_date = buffered_start_date(self._start_date, "monthly")
+
+        def germany() -> pd.DataFrame:
+            yields = bundesbank_model.get_corporate_bond_yield(
+                start_date, self._end_date
+            )
+
+            if yields.empty:
+                return yields
+
+            corporate = (
+                yields["Corporate"] - yields["Public"]
+                if spread
+                else yields["Corporate"]
+            )
+
+            return corporate.to_frame("All ratings")
+
+        def australia() -> pd.DataFrame:
+            yields = rba_model.get_corporate_bond_yields()
+
+            if yields.empty or not spread:
+                return yields
+
+            government = rba_model.get_yield_curve()
+
+            if government.empty:
+                return pd.DataFrame()
+
+            # The government yields on the last trading day of each month, at the tenors
+            # of the corporate bonds.
+            government = resample_to_period(government, "monthly")
+            government["7Y"] = (government["5Y"] * 3 + government["10Y"] * 2) / 5
+
+            return pd.DataFrame(
+                {
+                    column: yields[column] - government[column.split(" ")[1]]
+                    for column in yields.columns
+                }
+            ).dropna(how="all")
+
+        def united_states() -> pd.DataFrame:
+            moodys = (
+                fred_model.get_moodys_corporate_bond_spreads(
+                    "monthly", start_date, self._end_date, self._fred_api_key
+                )
+                if spread
+                else fred_model.get_moodys_corporate_bond_yields(
+                    "monthly", start_date, self._end_date, self._fred_api_key
+                )
+            )
+
+            return moodys[[column for column in ("Aaa", "Baa") if column in moodys]]
+
+        sources = {"Germany": germany, "Australia": australia}
+
+        if self._fred_api_key:
+            sources["United States"] = united_states
+
+        requested = (
+            list(sources)
+            if countries is None
+            else [countries] if isinstance(countries, str) else list(countries)
+        )
+
+        if "United States" in requested and not self._fred_api_key:
+            self._require_fred_api_key()
+
+        if unavailable := [country for country in requested if country not in sources]:
+            logger.warning(
+                "Corporate bond yields are not available for %s. They cover %s.",
+                ", ".join(unavailable),
+                ", ".join(sources),
+            )
+
+        frames = {
+            country: values
+            for country in requested
+            if country in sources and not (values := sources[country]()).empty
+        }
+
+        if not frames:
+            return pd.DataFrame()
+
+        corporate_bond_yields = pd.concat(frames, axis=1).sort_index()
+        corporate_bond_yields.index.name = None
+        corporate_bond_yields.columns.names = ["Country", "Rating"]
+
+        return finalize_dataset(
+            dataset=corporate_bond_yields,
+            indicator_name="Corporate Bond Yields",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_rating_transition_matrix(
+        self,
+        agency: str = "S&P",
+        rating_type: str = "corporate",
+        year: int | None = None,
+        horizon: int = 1,
+        probabilities: bool = True,
+        include_withdrawals: bool = False,
+        region: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieves the rating transition matrix of a credit rating agency: for every rating
+        at the start of a period, the share of ratings that ended the period in each rating
+        category, in default or withdrawn. It is the input of rating migration and default
+        models, such as the Jarrow-Lando-Turnbull model, and of credit portfolio models.
+
+        The data comes from CEREP, the central repository where every credit rating agency
+        registered in the European Union reports its ratings to ESMA, published twice a
+        year with periods from 1989. It covers the global ratings of agencies such as S&P,
+        Moody's, Fitch, DBRS and Scope, for corporates (non-financial, financial and
+        insurance), sovereigns, structured finance and covered bonds, in each agency's own
+        rating scale. No API key is needed.
+
+        By default the matrix is withdrawal-adjusted, the convention of the agencies' own
+        default studies: ratings withdrawn during the period are left out, so each row sums
+        to 1. The matrix compares the rating at the start of the period with the rating at
+        its end, so a default that was followed by a new rating within the period (as after
+        a distressed exchange) shows as that new rating; get_default_rates counts every
+        default within the period and is the measure to calibrate default rates on. With include_withdrawals=True they are a separate "Withdrawals" column, and
+        with probabilities=False the counts are returned instead.
+
+        See definition: https://registers.esma.europa.eu/cerep-publication/
+
+        Also known as: rating migration matrix, credit migration matrix, transition
+        probabilities.
+
+        Args:
+            agency (str, optional): The rating agency, e.g. "S&P", "Moody's", "Fitch",
+                "DBRS", "Scope" or "Kroll", or the CEREP code of any registered agency.
+                Defaults to "S&P".
+            rating_type (str, optional): "corporate", "sovereign", "structured_finance" or
+                "covered_bonds". Defaults to "corporate".
+            year (int | None, optional): The first year of the period. Defaults to None,
+                which takes the latest year published.
+            horizon (int, optional): The length of the period in years, from 1 January of
+                year. Defaults to 1.
+            probabilities (bool, optional): Whether to return the share of ratings per row
+                instead of the number. Defaults to True.
+            include_withdrawals (bool, optional): Whether to keep the ratings withdrawn
+                during the period as a "Withdrawals" column. Defaults to False.
+            region (str | None, optional): The area of the rated entities: "Africa",
+                "America", "Asia", "Europe", "EU members", "International" or "Oceania".
+                Defaults to None, which covers all of them.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The transition matrix, with a row per rating at the start of the
+            period and a column per rating at its end.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(end_date="2025-12-31")
+
+        transition_matrix = fixedincome.get_rating_transition_matrix(agency='S&P', year=2025)
+
+        transition_matrix.loc['AAA':'CCC', ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'D']]
+        ```
+
+        Which returns:
+
+        | From Rating   |   AAA |     AA |      A |    BBB |     BB |      B |    CCC |      D |
+        |:--------------|------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
+        | AAA           |     1 | 0      | 0      | 0      | 0      | 0      | 0      | 0      |
+        | AA            |     0 | 0.9518 | 0.0482 | 0      | 0      | 0      | 0      | 0      |
+        | A             |     0 | 0.0135 | 0.9646 | 0.0219 | 0      | 0      | 0      | 0      |
+        | BBB           |     0 | 0.0006 | 0.0355 | 0.9563 | 0.007  | 0.0006 | 0      | 0      |
+        | BB            |     0 | 0      | 0      | 0.0353 | 0.9283 | 0.0353 | 0.0011 | 0      |
+        | B             |     0 | 0      | 0      | 0      | 0.0387 | 0.9001 | 0.0558 | 0.0023 |
+        | CCC           |     0 | 0      | 0      | 0      | 0      | 0.18   | 0.76   | 0.03   |
+        """
+        agency_code = esma_model.resolve_agency(agency)
+
+        if rating_type not in esma_model.RATING_TYPES:
+            raise ValueError(
+                f"The rating_type must be one of {', '.join(map(repr, esma_model.RATING_TYPES))}, "
+                f"not {rating_type!r}."
+            )
+        if horizon < 1:
+            raise ValueError(f"The horizon must be at least 1 year, not {horizon}.")
+
+        # The statistics of a year are published in the first half of the next one.
+        years = [year] if year else [datetime.now().year - 1, datetime.now().year - 2]
+        matrix = pd.DataFrame()
+
+        for start_year in years:
+            matrix = esma_model.get_transition_matrix(
+                agency_code,
+                rating_type,
+                pd.Timestamp(f"{start_year}-01-01"),
+                pd.Timestamp(f"{start_year + horizon - 1}-12-31"),
+                region,
+            )
+            if not matrix.empty:
+                break
+
+        if matrix.empty:
+            return matrix
+
+        if not include_withdrawals:
+            matrix = matrix.drop(columns="Withdrawals", errors="ignore")
+
+        # Ratings no longer outstanding at the start have no row of their own to speak of.
+        matrix = matrix.loc[matrix.sum(axis=1) > 0]
+
+        if probabilities:
+            matrix = matrix.div(matrix.sum(axis=1), axis=0)
+
+        matrix = finalize_dataset(
+            dataset=matrix,
+            start_date=None,
+            end_date=None,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            apply_slice=False,
+        )
+        matrix.index.name = "From Rating"
+
+        return matrix
+
+    @handle_errors
+    def get_default_rates(
+        self,
+        agency: str = "S&P",
+        rating_type: str = "corporate",
+        region: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieves the one-year default rates per rating of a credit rating agency, year by
+        year from 1989: the share of the ratings outstanding at the start of each year that
+        defaulted within it. The history of default rates per rating calibrates the default
+        intensity of credit risk models and shows how defaults cluster in recessions.
+
+        The data comes from CEREP, the central repository where every credit rating agency
+        registered in the European Union reports its ratings to ESMA, in each agency's own
+        rating scale (AAA to C for S&P and Fitch, Aaa to C for Moody's). Only the years
+        between the start and end date are retrieved, one request per year. No API key is
+        needed. CEREP answers slowly (up to half a minute per year), so a long history takes
+        a few minutes the first time; each year is cached afterwards. The years before an
+        agency reported to CEREP read as zero defaults and are left out, so the history
+        starts at the first year with a default.
+
+        See definition: https://registers.esma.europa.eu/cerep-publication/
+
+        Also known as: default frequency, annual default rate by rating, historical default
+        rates.
+
+        Args:
+            agency (str, optional): The rating agency, e.g. "S&P", "Moody's", "Fitch",
+                "DBRS", "Scope" or "Kroll", or the CEREP code of any registered agency.
+                Defaults to "S&P".
+            rating_type (str, optional): "corporate", "sovereign", "structured_finance" or
+                "covered_bonds". Defaults to "corporate".
+            region (str | None, optional): The area of the rated entities: "Africa",
+                "America", "Asia", "Europe", "EU members", "International" or "Oceania".
+                Defaults to None, which covers all of them.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The default rates as decimals, indexed by year with a column per
+            rating.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2018-01-01', end_date='2025-12-31')
+
+        default_rates = fixedincome.get_default_rates(agency='S&P')
+
+        default_rates[['BBB', 'BB', 'B', 'CCC']]
+        ```
+
+        Which returns:
+
+        |      |    BBB |     BB |      B |    CCC |
+        |:-----|-------:|-------:|-------:|-------:|
+        | 2018 | 0      | 0      | 0.0094 | 0.2617 |
+        | 2019 | 0.0016 | 0      | 0.0182 | 0.3534 |
+        | 2020 | 0      | 0.0097 | 0.038  | 0.4661 |
+        | 2021 | 0      | 0      | 0.0039 | 0.0895 |
+        | 2022 | 0      | 0.0046 | 0.0115 | 0.1402 |
+        | 2023 | 0.0006 | 0.001  | 0.0138 | 0.3116 |
+        | 2024 | 0      | 0.0021 | 0.0188 | 0.2852 |
+        | 2025 | 0      | 0.0011 | 0.0146 | 0.252  |
+        """
+        agency_code = esma_model.resolve_agency(agency)
+
+        if rating_type not in esma_model.RATING_TYPES:
+            raise ValueError(
+                f"The rating_type must be one of {', '.join(map(repr, esma_model.RATING_TYPES))}, "
+                f"not {rating_type!r}."
+            )
+
+        # CEREP's periods start in 1989; a year is published in the first half of the next.
+        first_year = max(pd.Timestamp(self._start_date).year, 1989)
+        last_year = min(pd.Timestamp(self._end_date).year, datetime.now().year - 1)
+        years = list(range(first_year, last_year + 1))
+
+        if not years:
+            logger.warning(
+                "CEREP publishes default rates for the years from 1989 to %s.",
+                datetime.now().year - 1,
+            )
+            return pd.DataFrame()
+
+        results = helpers.run_in_parallel(
+            lambda year: esma_model.get_default_rates(
+                agency_code,
+                rating_type,
+                pd.Timestamp(f"{year}-01-01"),
+                pd.Timestamp(f"{year}-12-31"),
+                region,
+            ),
+            [(year,) for year in years],
+            max_workers=6,
+        )
+        default_rates = {
+            year: rates["Default Rate"]
+            for year, rates in zip(years, results, strict=True)
+            if not rates.empty
+        }
+
+        if not default_rates:
+            return pd.DataFrame()
+
+        default_rates = pd.DataFrame(default_rates).T
+        default_rates.index = pd.PeriodIndex(
+            [str(year) for year in default_rates.index], freq="Y"
+        )
+
+        # The years before an agency reported to CEREP read as zero for every rating, so
+        # the history starts at the first year with a default.
+        with_defaults = default_rates.fillna(0).gt(0).any(axis=1)
+        default_rates = (
+            default_rates.loc[with_defaults.idxmax() :]
+            if with_defaults.any()
+            else default_rates
+        )
+
+        return finalize_dataset(
+            dataset=default_rates.dropna(how="all", axis=1),
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_moodys_corporate_bond_yields(
+        self,
+        period: str = "daily",
+        spread: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves Moody's seasoned corporate bond yields for Aaa (the highest rating) and Baa
+        (the lowest investment grade rating) US corporate bonds, the longest running corporate
+        bond yield benchmark there is: daily from 1986 and monthly from 1919.
+
+        With spread=True the spreads over the 10-year Treasury yield are returned instead,
+        together with the Baa minus Aaa spread, the classic measure of default risk in the
+        academic literature (e.g. Fama and French, 1989), which widens sharply in recessions.
+        Monthly spreads start in 1953, when the monthly 10-year Treasury yield does.
+
+        Monthly values are the averages over the month, as Moody's publishes them; weekly
+        values are the yields on the last day of each week (weeks end on Friday).
+
+        The data comes from FRED, so a free FRED API key is required. The yields and spreads
+        are returned as decimal fractions (0.0675 for 6.75%).
+
+        Also known as: Moody's Aaa, Moody's Baa, corporate bond yields by rating, default
+        spread, credit spread.
+
+        Args:
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            spread (bool, optional): Whether to return the spreads over the 10-year Treasury
+                yield instead of the yields. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The "Aaa" and "Baa" yields, or with spread=True the "Aaa", "Baa" and
+            "Baa - Aaa" spreads.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_moodys_corporate_bond_yields(period='monthly', spread=True)
+        ```
+
+        Which returns:
+
+        |         |    Aaa |    Baa |   Baa - Aaa |
+        |:--------|-------:|-------:|------------:|
+        | 2026-03 | 0.0123 | 0.0179 |      0.0056 |
+        | 2026-04 | 0.011  | 0.0171 |      0.0061 |
+        | 2026-05 | 0.0108 | 0.0162 |      0.0054 |
+        | 2026-06 | 0.0105 | 0.0153 |      0.0048 |
+        | 2026-07 | 0.0116 | 0.0159 |      0.0043 |
+        | 2026-08 | 0.012  | 0.0164 |      0.0044 |
+        """
+        self._require_fred_api_key()
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "Moody's corporate bond yield"
+        )
+        frequency = "monthly" if period == "monthly" else "daily"
+
+        moodys = (
+            fred_model.get_moodys_corporate_bond_spreads(
+                frequency, self._start_date, self._end_date, self._fred_api_key
+            )
+            if spread
+            else fred_model.get_moodys_corporate_bond_yields(
+                frequency, self._start_date, self._end_date, self._fred_api_key
+            )
+        )
+
+        if period == "weekly":
+            moodys = resample_to_period(moodys, "weekly")
+
+        return finalize_dataset(
+            dataset=moodys,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_excess_bond_premium(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the credit spread of Gilchrist and Zakrajšek (2012) and its excess bond
+        premium, monthly from 1973, as the Federal Reserve Board updates them. The GZ credit
+        spread is the average spread of US corporate bonds over Treasuries with the same cash
+        flows, built bond by bond from the secondary market. The excess bond premium is the
+        part of that spread that expected defaults do not explain: a measure of investors'
+        appetite for credit risk, and one of the best predictors of economic activity in the
+        literature. The Recession Probability column is the probability of a recession over
+        the next twelve months the premium implies.
+
+        Gilchrist, S., & Zakrajšek, E. (2012). Credit Spreads and Business Cycle
+        Fluctuations. American Economic Review, 102(4), 1692-1720.
+        https://doi.org/10.1257/aer.102.4.1692
+
+        No API key is needed. The spread and premium are returned as decimal fractions
+        (0.0084 for 0.84 percentage points) and the probability as a fraction (0.108 for
+        10.8%).
+
+        See definition: https://www.federalreserve.gov/econres/notes/feds-notes/updating-the-recession-risk-and-the-excess-bond-premium-20161006.html
+
+        Also known as: GZ spread, Gilchrist-Zakrajšek spread, EBP, credit market sentiment.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The "GZ Credit Spread", "Excess Bond Premium" and "Recession
+            Probability", indexed by month.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-02-01', end_date='2026-07-31')
+
+        fixedincome.get_excess_bond_premium()
+        ```
+
+        Which returns:
+
+        | date    |   GZ Credit Spread |   Excess Bond Premium |   Recession Probability |
+        |:--------|-------------------:|----------------------:|------------------------:|
+        | 2026-02 |             0.0097 |               -0.0026 |                  0.1222 |
+        | 2026-03 |             0.0103 |               -0.0026 |                  0.1208 |
+        | 2026-04 |             0.0092 |               -0.002  |                  0.1374 |
+        | 2026-05 |             0.0083 |               -0.0037 |                  0.0951 |
+        | 2026-06 |             0.0086 |               -0.0028 |                  0.1152 |
+        | 2026-07 |             0.0084 |               -0.0031 |                  0.1093 |
+        """
+        excess_bond_premium = frb_model.get_excess_bond_premium()
+
+        return finalize_dataset(
+            dataset=excess_bond_premium,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_eiopa_risk_free_rate(
+        self,
+        countries: list[str] | str | None = None,
+        curve: str = "spot_no_va",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the risk-free interest rate term structures the European Insurance and
+        Occupational Pensions Authority (EIOPA) publishes monthly: the curves European
+        insurers must discount their liabilities with under Solvency II. They cover the euro
+        and the currencies of every country of the European Economic Area, plus Switzerland,
+        the United Kingdom, Australia, Canada, China, Colombia, Hong Kong, Japan, Taiwan and
+        the United States, for maturities of 1 to 150 years. Beyond the last liquid maturity
+        each curve converges to the ultimate forward rate (UFR), as Solvency II prescribes.
+
+        Four curves are published: the basic spot curve (curve="spot_no_va"), the spot curve
+        with the volatility adjustment (curve="spot_with_va"), and the basic curve after the
+        interest rate shocks of the Solvency II standard formula (curve="shock_up" and
+        curve="shock_down"). EIOPA ships the shocked worksheets as formulas without computed
+        values, so they are computed here with those formulas: upwards by the relative shock
+        per maturity and at least one percentage point, downwards by the relative shock with
+        negative rates left unchanged. Every value is a decimal fraction (0.0358 for 3.58%),
+        at the end of the month the release is for.
+
+        No API key is needed. EIOPA's page links the releases from January 2023; each is a
+        separate file, so only the months between the start and end date are downloaded, and
+        a release is cached for a year since it does not change.
+
+        See definition: https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en
+
+        Also known as: Solvency II discount curve, EIOPA RFR, risk-free rate term structure,
+        UFR curve.
+
+        Args:
+            countries (list[str] | str | None, optional): The currencies or countries to include,
+                as EIOPA names them, e.g. 'Euro Area', 'United Kingdom' or 'United States'.
+                Defaults to None, which returns all of them.
+            curve (str, optional): "spot_no_va", "spot_with_va", "shock_up" or "shock_down".
+                Defaults to "spot_no_va".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The rates, indexed by month with a column per currency or country and
+            maturity ("1Y" to "150Y").
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-07-01', end_date='2026-09-30')
+
+        curves = fixedincome.get_eiopa_risk_free_rate(countries=['Euro Area', 'United Kingdom'])
+
+        curves.loc[:, (slice(None), ['1Y', '10Y', '30Y', '60Y', '150Y'])]
+        ```
+
+        Which returns:
+
+        |         |   ('Euro Area', '1Y') |   ('United Kingdom', '1Y') |   ('Euro Area', '10Y') |   ('United Kingdom', '10Y') |   ('Euro Area', '30Y') |
+        |:--------|----------------------:|---------------------------:|-----------------------:|----------------------------:|-----------------------:|
+        | 2026-07 |                0.0283 |                     0.0415 |                 0.0316 |                      0.0468 |                 0.0337 |
+        | 2026-08 |                0.0292 |                     0.0418 |                 0.0327 |                      0.0473 |                 0.0345 |
+        | 2026-09 |                0.0327 |                     0.0445 |                 0.0358 |                      0.0501 |                 0.0351 |
+        """
+        if curve not in {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}:
+            raise ValueError(
+                f"The curve must be one of {', '.join({**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES})}, not {curve!r}."
+            )
+        if countries is not None and not isinstance(countries, str | list | tuple):
+            raise TypeError(
+                "The countries must be a name or a list of names, such as 'Euro Area' or "
+                f"['Euro Area', 'Japan'], not a {type(countries).__name__} ({countries!r})."
+            )
+
+        term_structures = eiopa_model.get_risk_free_rate_term_structures(
+            curve, self._start_date, self._end_date
+        )
+
+        if countries is not None and not term_structures.empty:
+            requested = [countries] if isinstance(countries, str) else list(countries)
+            available = list(dict.fromkeys(term_structures.columns.get_level_values(0)))
+
+            if unknown := [name for name in requested if name not in available]:
+                logger.warning(
+                    "EIOPA publishes no risk-free rates for %s. It covers %s.",
+                    ", ".join(unknown),
+                    ", ".join(available),
+                )
+
+            term_structures = term_structures.loc[
+                :, term_structures.columns.get_level_values(0).isin(requested)
+            ]
+
+        return finalize_dataset(
+            dataset=term_structures,
+            indicator_name="EIOPA Risk-Free Rate",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_eiopa_symmetric_adjustment(
+        self,
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the symmetric adjustment of the equity capital charge of Solvency II, the
+        "equity dampener" EIOPA publishes, daily from 1991, and the equity charges of the
+        standard formula it results in. The adjustment raises the charge when equity prices
+        are above their three-year average and lowers it when they are below, between -10%
+        and +10%, so insurers are not forced to sell equities into a falling market. With
+        get_eiopa_risk_free_rate it completes the market inputs of the standard formula's
+        market risk module.
+
+        The "Type 1 Equity Charge" (equities listed in the EEA or OECD) is 39% plus the
+        adjustment and the "Type 2 Equity Charge" (other equities) 49% plus the adjustment.
+        Every value is a decimal fraction (0.0771 for 7.71%). No API key is needed. Weekly
+        and monthly periods take the value on the last day of each period, which is the
+        value insurers apply at that reporting date.
+
+        See definition: https://www.eiopa.europa.eu/tools-and-data/symmetric-adjustment-equity-capital-charge_en
+
+        Also known as: equity dampener, symmetric adjustment, Solvency II equity charge.
+
+        Args:
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The symmetric adjustment and the type 1 and type 2 equity charges,
+            indexed by date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_eiopa_symmetric_adjustment(period='monthly')
+        ```
+
+        Which returns:
+
+        |         |   Symmetric Adjustment |   Type 1 Equity Charge |   Type 2 Equity Charge |
+        |:--------|-----------------------:|-----------------------:|-----------------------:|
+        | 2026-04 |                 0.0767 |                 0.4667 |                 0.5667 |
+        | 2026-05 |                 0.0868 |                 0.4768 |                 0.5768 |
+        | 2026-06 |                 0.0894 |                 0.4794 |                 0.5794 |
+        | 2026-07 |                 0.0951 |                 0.4851 |                 0.5851 |
+        | 2026-08 |                 0.0938 |                 0.4838 |                 0.5838 |
+        | 2026-09 |                 0.0771 |                 0.4671 |                 0.5671 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "EIOPA symmetric adjustment"
+        )
+        symmetric_adjustment = resample_to_period(
+            eiopa_model.get_symmetric_adjustment(), period
+        )
+        if not symmetric_adjustment.empty:
+            symmetric_adjustment.index.name = None
+
+        return finalize_dataset(
+            dataset=symmetric_adjustment,
+            indicator_name="EIOPA Symmetric Adjustment",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_bank_of_england_yield_curve(
+        self,
+        curve: str = "nominal",
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the UK yield curves the Bank of England estimates daily from 1985, for
+        maturities from 0.5 years to 40 years (25 years for OIS): the nominal spot curve of
+        UK government bonds (gilts) and the spot curve of overnight index swaps on SONIA (OIS,
+        from 2009). Unlike the par yields of 5, 10 and 20 years in
+        `get_government_bond_yield_curve`, these are zero-coupon spot rates over the full
+        range of maturities with history back to 1985.
+
+        The Bank of England's real and implied inflation curves are part of
+        `economics.get_real_yield_curve` and `economics.get_breakeven_inflation_expectations`
+        (countries='United Kingdom').
+
+        No API key is needed. The archive is a set of large files, of which only those
+        covering the requested years are read, and they are cached since past years do not
+        change. Weekly and monthly periods take the curve on the last day of each period.
+
+        See definition: https://www.bankofengland.co.uk/statistics/yield-curves
+
+        Also known as: gilt curve, UK spot curve, SONIA OIS curve.
+
+        Args:
+            curve (str, optional): "nominal" or "ois". Defaults to "nominal".
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The spot rates as decimals, indexed by date with a column per
+            maturity in years, in steps of half a year.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_bank_of_england_yield_curve(period='monthly')[
+            ['1Y', '3Y', '5Y', '10Y', '20Y', '30Y']
+        ]
+        ```
+
+        Which returns:
+
+        |         |     1Y |     3Y |     5Y |    10Y |    20Y |    30Y |
+        |:--------|-------:|-------:|-------:|-------:|-------:|-------:|
+        | 2026-04 | 0.0426 | 0.0433 | 0.0447 | 0.0506 | 0.0573 | 0.0581 |
+        | 2026-05 | 0.0403 | 0.0414 | 0.043  | 0.0486 | 0.0555 | 0.0563 |
+        | 2026-06 | 0.0402 | 0.041  | 0.0427 | 0.0483 | 0.0552 | 0.0561 |
+        | 2026-07 | 0.0417 | 0.0438 | 0.0456 | 0.051  | 0.058  | 0.0589 |
+        | 2026-08 | 0.0418 | 0.0441 | 0.046  | 0.0514 | 0.0582 | 0.0591 |
+        | 2026-09 | 0.0442 | 0.0478 | 0.0494 | 0.054  | 0.0598 | 0.06   |
+        """
+        if curve in ("real", "inflation"):
+            raise ValueError(
+                f"The {curve} curve of the Bank of England is part of economics."
+                + (
+                    "get_real_yield_curve"
+                    if curve == "real"
+                    else "get_breakeven_inflation_expectations"
+                )
+                + "(countries='United Kingdom')."
+            )
+        if curve not in ("nominal", "ois"):
+            raise ValueError(f"The curve must be 'nominal' or 'ois', not {curve!r}.")
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "Bank of England yield curve"
+        )
+
+        spot_curve = resample_to_period(
+            boe_model.get_spot_curve(
+                curve, buffered_start_date(self._start_date, period), self._end_date
+            ),
+            period,
+        )
+
+        return finalize_dataset(
+            dataset=spot_curve,
+            indicator_name="Bank of England Yield Curve",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_corporate_borrowing_cost(
+        self,
+        countries: list[str] | str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the composite cost of borrowing for non-financial corporations the European
+        Central Bank publishes monthly from 2003, for the euro area and every member: the
+        average interest rate on new bank loans to companies across maturities and loan sizes.
+        Euro area companies borrow mostly from banks rather than in the bond market, which
+        makes this the broadest measure of their cost of credit, and the closest freely
+        available proxy for euro area corporate credit conditions, since euro area corporate
+        bond indices are licensed data.
+
+        No API key is needed. The rate is a decimal fraction (0.0377 for 3.77%).
+
+        See definition: https://data.ecb.europa.eu/data/datasets/MIR
+
+        Also known as: cost of borrowing for corporations, euro area lending rate, corporate
+        credit cost.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include, e.g.
+                'Euro Area' or ['Germany', 'Italy']. Defaults to None, which returns all of them.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The rate, indexed by month with a column per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-03-01', end_date='2026-08-31')
+
+        fixedincome.get_corporate_borrowing_cost(
+            countries=['Euro Area', 'Germany', 'France', 'Italy', 'Spain']
+        )
+        ```
+
+        Which returns:
+
+        |         |   Euro Area |   Germany |   France |   Italy |   Spain |
+        |:--------|------------:|----------:|---------:|--------:|--------:|
+        | 2026-03 |      0.0358 |    0.0381 |   0.035  |  0.0349 |  0.0328 |
+        | 2026-04 |      0.0362 |    0.0378 |   0.0353 |  0.0365 |  0.0345 |
+        | 2026-05 |      0.0363 |    0.0372 |   0.0352 |  0.0377 |  0.0351 |
+        | 2026-06 |      0.0379 |    0.04   |   0.0367 |  0.0377 |  0.0355 |
+        | 2026-07 |      0.038  |    0.0398 |   0.0363 |  0.0386 |  0.037  |
+        | 2026-08 |      0.0377 |    0.0388 |   0.037  |  0.0385 |  0.0363 |
+        """
+        borrowing_cost = economics_ecb_model.get_corporate_borrowing_cost(
+            buffered_start_date(self._start_date, "monthly"), self._end_date
+        )
+
+        return finalize_dataset(
+            dataset=borrowing_cost,
+            indicator_name="Corporate Borrowing Cost",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            countries=countries,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_financial_stress_index(
+        self,
+        countries: list[str] | str | None = None,
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the Composite Indicator of Systemic Stress (CISS) the European Central Bank
+        publishes daily for the euro area, its largest members, the United Kingdom, the United
+        States and China, back to 1980 for some. The index combines stress in money, bond,
+        equity and foreign exchange markets and among financial intermediaries into a number
+        between 0 (calm) and 1 (crisis), weighting the segments more heavily when they are
+        stressed at the same time; it peaked in 2008 and in the euro area debt crisis.
+
+        Hollo, D., Kremer, M., & Lo Duca, M. (2012). CISS - A Composite Indicator of
+        Systemic Stress in the Financial System. ECB Working Paper No. 1426.
+
+        No API key is needed. Weekly and monthly periods take the index on the last day of
+        each period.
+
+        See definition: https://data.ecb.europa.eu/data/datasets/CISS
+
+        Also known as: CISS, systemic stress, financial stress, financial conditions.
+
+        Args:
+            countries (list[str] | str | None, optional): The areas to include, e.g. 'Euro Area'
+                or ['United States', 'United Kingdom']. Defaults to None, which returns all of them.
+            period (str, optional): Whether to return the daily, weekly or monthly data.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The index, indexed by date with a column per area.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-04-01', end_date='2026-09-30')
+
+        fixedincome.get_financial_stress_index(
+            countries=['Euro Area', 'United States', 'United Kingdom', 'China'], period='monthly'
+        )
+        ```
+
+        Which returns:
+
+        |         |   Euro Area |   United States |   United Kingdom |   China |
+        |:--------|------------:|----------------:|-----------------:|--------:|
+        | 2026-04 |      0.004  |          0.0134 |           0.0222 |  0.0199 |
+        | 2026-05 |      0.0058 |          0.0069 |           0.0309 |  0.0059 |
+        | 2026-06 |      0.0098 |          0.0095 |           0.0072 |  0.0308 |
+        | 2026-07 |      0.0129 |          0.0493 |           0.0075 |  0.0209 |
+        | 2026-08 |      0.0205 |          0.0194 |           0.0011 |  0.0072 |
+        | 2026-09 |      0.0132 |          0.0092 |           0.0122 |  0.0015 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "financial stress index"
+        )
+
+        stress_index = resample_to_period(
+            economics_ecb_model.get_financial_stress_index(
+                buffered_start_date(self._start_date, period), self._end_date
+            ),
+            period,
+        )
+
+        return finalize_dataset(
+            dataset=stress_index,
+            indicator_name="Financial Stress Index",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            countries=countries,
+            dropna=True,
         )
 
     @handle_errors
@@ -2536,7 +4164,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(start_date='2023-12-01')
+        fixedincome = FixedIncome(start_date='2023-12-01', end_date="2025-12-31")
 
         euribor_rates = fixedincome.get_euribor_rates()
         ```
@@ -2545,10 +4173,31 @@ class FixedIncome:
 
         |         |   1-Month |   3-Month |   6-Month |   12-Month |
         |:--------|----------:|----------:|----------:|-----------:|
-        | 2023-12 |    0.0386 |    0.0393 |    0.0392 |     0.0367 |
+        | 2023-12 |    0.0386 |    0.0393 |    0.0393 |     0.0368 |
         | 2024-01 |    0.0387 |    0.0393 |    0.0389 |     0.0361 |
         | 2024-02 |    0.0387 |    0.0392 |    0.039  |     0.0367 |
         | 2024-03 |    0.0385 |    0.0392 |    0.0389 |     0.0372 |
+        | 2024-04 |    0.0385 |    0.0389 |    0.0384 |     0.037  |
+        | 2024-05 |    0.0382 |    0.0381 |    0.0379 |     0.0368 |
+        | 2024-06 |    0.0363 |    0.0372 |    0.0371 |     0.0365 |
+        | 2024-07 |    0.0362 |    0.0368 |    0.0364 |     0.0353 |
+        | 2024-08 |    0.036  |    0.0355 |    0.0342 |     0.0317 |
+        | 2024-09 |    0.0344 |    0.0343 |    0.0326 |     0.0294 |
+        | 2024-10 |    0.0321 |    0.0317 |    0.03   |     0.0269 |
+        | 2024-11 |    0.0307 |    0.0301 |    0.0279 |     0.0251 |
+        | 2024-12 |    0.0289 |    0.0282 |    0.0263 |     0.0244 |
+        | 2025-01 |    0.0279 |    0.027  |    0.0261 |     0.0253 |
+        | 2025-02 |    0.0261 |    0.0252 |    0.0246 |     0.0241 |
+        | 2025-03 |    0.024  |    0.0244 |    0.0239 |     0.024  |
+        | 2025-04 |    0.0224 |    0.0225 |    0.022  |     0.0214 |
+        | 2025-05 |    0.0209 |    0.0209 |    0.0212 |     0.0208 |
+        | 2025-06 |    0.0193 |    0.0198 |    0.0205 |     0.0208 |
+        | 2025-07 |    0.0189 |    0.0199 |    0.0206 |     0.0208 |
+        | 2025-08 |    0.0189 |    0.0202 |    0.0208 |     0.0211 |
+        | 2025-09 |    0.019  |    0.0203 |    0.021  |     0.0217 |
+        | 2025-10 |    0.0191 |    0.0203 |    0.0211 |     0.0219 |
+        | 2025-11 |    0.0191 |    0.0204 |    0.0213 |     0.0222 |
+        | 2025-12 |    0.0192 |    0.0205 |    0.0214 |     0.0227 |
         """
         if isinstance(maturities, str):
             maturities = [maturities]
@@ -2604,6 +4253,7 @@ class FixedIncome:
             row_slice=True,
         )
 
+    @handle_errors
     def get_european_central_bank_rates(
         self,
         rate: str | None = None,
@@ -2648,7 +4298,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(start_date='2023-12-01')
+        fixedincome = FixedIncome(start_date='2023-12-01', end_date="2025-12-31")
 
         fixedincome.get_european_central_bank_rates()
         ```
@@ -2657,24 +4307,16 @@ class FixedIncome:
 
         |            |   Refinancing |   Lending |   Deposit |
         |:-----------|--------------:|----------:|----------:|
-        | 2023-12-01 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-02 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-03 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-04 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-05 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-06 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-07 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-08 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-09 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-10 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-11 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-12 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-13 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-14 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-15 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-16 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-17 |         0.045 |    0.0475 |      0.04 |
-        | 2023-12-18 |         0.045 |    0.0475 |      0.04 |
+        | 2025-12-22 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-23 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-24 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-25 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-26 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-27 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-28 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-29 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-30 |        0.0215 |     0.024 |      0.02 |
+        | 2025-12-31 |        0.0215 |     0.024 |      0.02 |
         """
         if rate and rate not in ["refinancing", "lending", "deposit"]:
             raise ValueError(
@@ -2706,6 +4348,7 @@ class FixedIncome:
             row_slice=True,
         )
 
+    @handle_errors
     def get_federal_reserve_rates(
         self,
         rate: str = "EFFR",
@@ -2769,7 +4412,7 @@ class FixedIncome:
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(start_date='2023-12-01')
+        fixedincome = FixedIncome(start_date='2023-12-01', end_date="2025-12-31")
 
         effr = fixedincome.get_federal_reserve_rates()
 
@@ -2780,16 +4423,16 @@ class FixedIncome:
 
         | Effective Date   |   Rate |   1st Percentile |   25th Percentile |   75th Percentile |   99th Percentile |
         |:-----------------|-------:|-----------------:|------------------:|------------------:|------------------:|
-        | 2023-12-01       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0544 |
-        | 2023-12-04       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-05       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-06       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-07       | 0.0533 |            0.053 |            0.0531 |            0.0534 |            0.0545 |
-        | 2023-12-08       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-11       | 0.0533 |            0.053 |            0.0532 |            0.0533 |            0.0545 |
-        | 2023-12-12       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0544 |
-        | 2023-12-13       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0545 |
-        | 2023-12-14       | 0.0533 |            0.053 |            0.0531 |            0.0533 |            0.0535 |
+        | 2025-12-17       | 0.0364 |            0.036 |            0.0363 |            0.0365 |            0.0366 |
+        | 2025-12-18       | 0.0364 |            0.036 |            0.0364 |            0.0365 |            0.0366 |
+        | 2025-12-19       | 0.0364 |            0.036 |            0.0364 |            0.0365 |            0.0365 |
+        | 2025-12-22       | 0.0364 |            0.036 |            0.0364 |            0.0365 |            0.0365 |
+        | 2025-12-23       | 0.0364 |            0.036 |            0.0363 |            0.0365 |            0.0365 |
+        | 2025-12-24       | 0.0364 |            0.036 |            0.0364 |            0.0365 |            0.0365 |
+        | 2025-12-26       | 0.0364 |            0.036 |            0.0363 |            0.0365 |            0.0365 |
+        | 2025-12-29       | 0.0364 |            0.036 |            0.0363 |            0.0365 |            0.0368 |
+        | 2025-12-30       | 0.0364 |            0.036 |            0.0364 |            0.0365 |            0.0368 |
+        | 2025-12-31       | 0.0364 |            0.036 |            0.0364 |            0.0365 |            0.0369 |
         """
         rate = rate.upper()
 

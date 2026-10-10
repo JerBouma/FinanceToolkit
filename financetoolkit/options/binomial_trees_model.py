@@ -50,6 +50,17 @@ def calculate_risk_neutral_probability(
         np.exp((risk_free_rate - dividend_yield) * timestep) - down_movement
     ) / (up_movement - down_movement)
 
+    # Outside 0 to 1 the tree weighs its branches with negative probabilities and
+    # produces prices that allow arbitrage. It happens when a step's growth at the cost of
+    # carry exceeds its up movement, i.e. a low volatility for the length of a step.
+    if np.any((risk_neutral_probability < 0) | (risk_neutral_probability > 1)):
+        raise ValueError(
+            f"The risk-neutral probability ({np.round(risk_neutral_probability, 4)}) is "
+            "not between 0 and 1, because the volatility is too low for the length of "
+            "each step compared to the risk-free rate minus the dividend yield. Use more "
+            "steps (shorter time steps) or check the volatility."
+        )
+
     return risk_neutral_probability
 
 

@@ -146,3 +146,15 @@ def test_get_residual_income_type_error():
             cost_of_equity=0.10,
             book_value_of_equity=6000,
         )
+
+
+def test_graham_number_needs_positive_earnings_and_book_value():
+    import numpy as np
+
+    graham_number = intrinsic_model.get_graham_number(
+        earnings_per_share=pd.Series([2.0, -2.0, 2.0]),
+        book_value_per_share=pd.Series([10.0, -10.0, -10.0]),
+    )
+
+    assert graham_number.iloc[0] == np.sqrt(22.5 * 2 * 10)
+    assert graham_number.iloc[1:].isna().all()

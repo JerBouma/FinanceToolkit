@@ -158,10 +158,17 @@ def get_weighted_average_cost_of_capital(
         income_tax_expense, income_before_tax
     )
 
+    # Without debt there is no cost of debt (0 / 0 interest over debt) and the debt
+    # carries no weight, so the WACC is the cost of equity rather than missing.
+    without_debt = market_value_debt == 0
+    cost_of_debt = cost_of_debt.mask(without_debt & cost_of_debt.isna(), 0)
+    after_tax_cost_of_debt = (
+        debt_weight * cost_of_debt * (1 - corporate_tax_rate)
+    ).mask(without_debt, 0)
+
     # Calculate the Weighted Average Cost of Capital
     weighted_average_cost_of_capital = (
-        equity_weight * cost_of_equity
-        + debt_weight * cost_of_debt * (1 - corporate_tax_rate)
+        equity_weight * cost_of_equity + after_tax_cost_of_debt
     )
 
     # Create a dictionary with the WACC components

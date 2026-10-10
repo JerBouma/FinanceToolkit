@@ -35,12 +35,18 @@ categories:
 #   FINANCE_TOOLKIT_CACHE_TTL      — TTL in seconds (integer)
 #   FINANCE_TOOLKIT_CACHE_ENABLED  — true/false, overrides the "auto" below
 #
-# "auto" means: on for a local server (stdio transport, one user, one machine),
-# off for a hosted one (MCP_TRANSPORT=sse or streamable-http). A hosted server
-# serves every user from one process against one database, so a shared entry
-# would mean one subscriber's paid data answering another user's request, and
-# nothing evicts downloaded source data off disk. Neither is worth the upside
-# there, so a hosted deployment fetches live unless it opts back in explicitly.
+# enabled is one of "full", "shared", "off" (or true/false for full/off) or "auto":
+#   full    everything: the source data and the tool responses (ttl_seconds).
+#   shared  the source data of every source except FinancialModelingPrep, and no
+#           tool responses.
+#   off     nothing; every request is fetched live.
+# "auto" means full for a local server (stdio transport, one user, one machine)
+# and shared for a hosted one (MCP_TRANSPORT=sse or streamable-http). A hosted
+# server serves every user from one process against one database. Its users share
+# the official statistics, Yahoo Finance and the other public sources, while
+# FinancialModelingPrep data belongs to each subscriber and is always retrieved
+# with the user's own key. A tool response is not shared, since it may be
+# calculated from FinancialModelingPrep data.
 # ──────────────────────────────────────────────────────────────────────────────
 cache:
   enabled: auto
@@ -156,6 +162,20 @@ direct_methods:
   - "get_treasury_data"
   - "get_market_risk_premium"
   - "get_commitment_of_traders"
+  - "get_executives"
+  - "get_executive_compensation"
+  - "get_company_notes"
+  - "get_employee_count"
+  - "get_shares_float"
+  - "get_mergers_acquisitions"
+  - "get_stock_splits"
+  - "get_insider_trade_statistics"
+  - "get_stock_grades"
+  - "get_etf_holdings"
+  - "get_etf_information"
+  - "get_etf_country_weightings"
+  - "get_etf_sector_weightings"
+  - "get_earnings_call_transcripts"
   # - "get_exchange_rates"
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -403,7 +423,7 @@ tool_groups:
 
   - tool_name:    "performance"
     display_name: "Performance Metrics"
-    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio incl. standard/adjusted/probabilistic/deflated methods, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns — Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Does NOT support period='daily'; use weekly, monthly, quarterly, or yearly instead."
+    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio incl. standard/adjusted/probabilistic/deflated methods, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns — Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports period='daily' only together with rolling=N (e.g. period='daily', rolling=60 for a rolling 60-day figure); per-period results use weekly, monthly, quarterly, or yearly."
     module_name:  "performance"
     category:     "ticker"
 
@@ -429,7 +449,7 @@ tool_groups:
   # All government debt, deficit, expenditure, revenue, tax, and trust metrics.
   - tool_name:       "government"
     display_name:    "Government & Fiscal Metrics"
-    description:     "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax revenue, trust in government). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series."
+    description:     "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax revenue, trust in government). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. level='consolidated' (default, longest history), 'general' (general government) or 'central' (central government) selects the level of government for debt, deficit, expenditure, revenue and tax revenue."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "government_economy"
@@ -451,7 +471,7 @@ tool_groups:
   # confidence indices, house/rent prices, exchange rates, share prices.
   - tool_name:       "macroeconomics"
     display_name:    "General Economy"
-    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_consumer_price_index accepts oecd_source=true for monthly/quarterly OECD data instead of the default annual GMDB source. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only, FRED-backed indicators (get_retail_sales, get_industrial_production_index, get_housing_starts, get_real_personal_income, get_recession_indicator, get_commercial_real_estate_prices) — these require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html) and only return a 'United States' column regardless of the countries= argument. Every rate and ratio this tool returns is a decimal fraction, not a percentage: an inflation rate of 4.1% comes back as 0.0412 and a debt-to-GDP ratio of 131.7% as 1.3173. Multiply by 100 before presenting them as percentages."
+    description:     "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation rate, trade balance, imports, exports, investment, consumption, business/consumer confidence, house prices, rent prices, exchange rates, real effective exchange rate, money supply, household savings rate, household debt-to-income ratio, output gap, real interest rate, misery index, banking/currency/sovereign debt crisis indicators, commercial real estate prices, commodity forward curves). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum, e.g. a trailing-4-quarter sum) on the raw series. get_gross_domestic_product_growth returns the latest quarterly real GDP growth (quarter on quarter, or year_over_year=true) without an API key. get_shiller_stock_market_data returns Robert Shiller's monthly US stock market data from 1871 (price, dividend, earnings, CPI, long rate, CAPE; no countries needed). get_exchange_rates accepts period='daily' or 'weekly' and end_of_period=true for month-, quarter- or year-end rates (BIS, no key). get_commercial_real_estate_prices covers around twenty economies (BIS, no key). get_inflation_rate and get_consumer_price_index default to annual data; pass period='monthly' for the latest monthly figures without an API key (Eurostat incl. the euro area flash estimate, the ONS for the United Kingdom, the Statistics Bureau of Japan, and the BIS for around sixty other countries incl. the United States, China, India and Brazil). get_consumer_price_index also accepts oecd_source=true for monthly/quarterly OECD data only. get_commodity_forward_curve requires a commodity= argument instead of countries= (e.g. 'Crude Oil', 'Gold') and returns dated futures contracts, not a country series. Also includes six US-only indicators that only return a 'United States' column regardless of the countries= argument: get_industrial_production_index (Federal Reserve G.17) and get_recession_indicator (NBER business cycle dates) work without an API key, while get_retail_sales, get_housing_starts, get_real_personal_income and get_commercial_real_estate_prices require a free FRED API key (optional; get one at https://fred.stlouisfed.org/docs/api/api_key.html). get_economic_calendar returns scheduled economic data releases (event, previous, estimate, actual, impact) rather than a country series. By default it returns only High impact releases from the past 23 days to the coming 7 days; narrow it with countries= (e.g. 'United States') and currencies= (e.g. 'USD,EUR'), filter on event names with events= (e.g. events='PMI' for the purchasing managers' indices with consensus, or 'CPI,Unemployment'), pass impact='Medium' or 'High,Medium' for more, impact='All' for every release, and start_date/end_date for another window (keep it to a few weeks: one month of every country is over 2,000 releases). Its Unit column gives each release's unit; releases quoted in percent and its Change % column are decimals like the rest. Every rate and ratio this tool returns is a decimal fraction, not a percentage: an inflation rate of 4.1% comes back as 0.0412 and a debt-to-GDP ratio of 131.7% as 1.3173. Multiply by 100 before presenting them as percentages. Global Macro Database options: usd=true returns GDP, GDP per capita, consumption, investment, fixed investment, exports, imports, trade balance and current account in millions of US dollars (comparable across countries); get_total_consumption and get_total_consumption_to_gdp_ratio accept component='total', 'household' or 'government'; get_house_prices with inflation_adjusted=true returns real house prices. Yearly GMDB series end at the last observation; pass gmdb_forecasts=true to include the IMF projections up to five years ahead. get_implied_volatility returns volatility indices by market and maturity as decimals, no countries needed (markets='US Equity' VIX 9D-1Y from 1990, 'Euro Area Equity' VSTOXX 1M-24M from 1999, 'Emerging Markets Equity', 'US Equity Volatility' VVIX, 'US Treasury Bonds' VXTLT, 'Crude Oil', 'Gold'; with an FMP key also 'US Treasury Rates' MOVE and 'Japan Government Bonds'), period='daily', 'weekly' or 'monthly'. get_stress_test_scenario returns regulators' stress test scenarios (authority='federal_reserve' quarterly US and international variables incl. Treasury and BBB yields, equity, house prices and VIX; authority='esrb' the EBA bank stress test, yearly, every EU country plus iTraxx spreads), scenario='baseline', 'adverse' or 'historic' (Fed history from 1976), countries= optional; the scenario path is not cut to start_date/end_date. Long-horizon data: get_long_run_asset_returns returns yearly total returns 1870-2020 for 18 advanced economies (Jordà-Schularick-Taylor; asset_class='equity'|'housing'|'bonds'|'bills'|'risky'|'safe'|'wealth', real=true for real returns; licensed for non-commercial use only, so it requires accept_licence=true; countries= optional). get_millennium_of_macroeconomic_data returns the Bank of England's annual UK series from as early as 1086 to 2016 (series= e.g. 'Bank Rate,Consols,Share prices'; set start_date far back, e.g. 1700-01-01). get_scenario_set returns De Nederlandsche Bank's pension scenario set (20,000 scenarios over 100 years, measure='real_world' or 'market_consistent'): quantiles per horizon year of nominal zero rates 1Y-30Y, the euro area 10Y real rate, equity returns and EU/NL inflation; the first call takes one to two minutes. get_asset_class_proxies returns monthly total returns of listed funds tracking private equity, infrastructure, hedge funds, merger arbitrage, private credit, real estate and investment grade and high yield credit (asset_classes=, period='daily'|'weekly'|'monthly')."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "general_economy"
@@ -469,6 +489,8 @@ tool_groups:
       - "get_fixed_investment_to_gdp_ratio"
       - "get_gross_domestic_product"
       - "get_gross_domestic_product_deflator"
+      - "get_gross_domestic_product_growth"
+      - "get_shiller_stock_market_data"
       - "get_house_prices"
       - "get_imports"
       - "get_imports_to_gdp_ratio"
@@ -500,6 +522,13 @@ tool_groups:
       - "get_real_gross_domestic_product_usd"
       - "get_real_gross_domestic_product_per_capita"
       - "get_trade_balance"
+      - "get_implied_volatility"
+      - "get_stress_test_scenario"
+      - "get_long_run_asset_returns"
+      - "get_millennium_of_macroeconomic_data"
+      - "get_scenario_set"
+      - "get_asset_class_proxies"
+      - "get_economic_calendar"
 
   # ── Environment & ESG (mixed: economics + toolkit) ───────────────────────
   # Carbon footprint and renewable energy come from Economics (use countries=).
@@ -507,19 +536,27 @@ tool_groups:
   # BOTH tickers= and countries= are accepted.
   - tool_name:       "environment"
     display_name:    "Environment & ESG"
-    description:     "Environmental and ESG data. For ESG scores (E, S, G ratings) use tickers='AAPL'. For carbon footprint and renewable energy data use countries='United States' (also supports rolling=N and trailing=N smoothing/summation). This is the only tool that accepts BOTH tickers= and countries= depending on the indicator."
+    description:     "Environmental and ESG data. For ESG scores (E, S, G ratings) use tickers='AAPL'. For carbon footprint and renewable energy data use countries='United States' (also supports rolling=N and trailing=N smoothing/summation). This is the only tool that accepts BOTH tickers= and countries= depending on the indicator. get_carbon_price returns the EU ETS carbon price (EEX primary auctions of EU emission allowances, euro per tonne of CO2, daily from 2020, no key and no countries needed), period='daily', 'weekly' or 'monthly'. get_climate_scenario returns NGFS climate scenario paths (Phase 5, yearly 2022-2050, around fifty countries and regions, no key): variable='gdp'|'inflation'|'long_term_interest_rate'|'long_term_real_interest_rate'|'policy_rate'|'unemployment_rate'|'equity_prices'|'effective_exchange_rate'|'oil_price'|'gas_price'|'coal_price'|'carbon_price' (carbon price per model region to 2100), scenario='Net Zero 2050'|'Below 2°C'|'Low demand'|'Delayed transition'|'Nationally Determined Contributions (NDCs)'|'Current Policies'|'Fragmented World'|'Baseline', model='REMIND-MAgPIE'|'GCAM'|'MESSAGEix-GLOBIOM', risk='combined'|'transition'|'physical', deviation=true for the deviation from the baseline; countries= optional."
     module_name:     "mixed"
     category:        "mixed"
     index_category:  "environment"
     method_override:
       - "get_carbon_footprint"
       - "get_renewable_energy"
+      - "get_carbon_price"
+      - "get_climate_scenario"
       - "get_esg_scores"
     method_to_module:
       get_carbon_footprint:
         module:   "economics"
         category: "standalone"
       get_renewable_energy:
+        module:   "economics"
+        category: "standalone"
+      get_carbon_price:
+        module:   "economics"
+        category: "standalone"
+      get_climate_scenario:
         module:   "economics"
         category: "standalone"
       get_esg_scores:
@@ -530,7 +567,7 @@ tool_groups:
   # Unemployment, labour productivity, population, poverty, income inequality.
   - tool_name:       "jobs"
     display_name:    "Jobs & Society"
-    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series. Also includes two US-only, FRED-backed labor indicators (get_nonfarm_payrolls, get_initial_jobless_claims) — these require a FRED API key and only return a 'United States' column regardless of the countries= argument."
+    description:     "Labour and social metrics by country (unemployment rate, labour productivity, population statistics, poverty rate, income inequality). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. get_life_table returns Eurostat life tables by age 0-95 for European countries, yearly from 1960 (measure='death_probability'|'survival_probability'|'death_rate'|'survivors'|'deaths'|'person_years'|'total_person_years'|'life_expectancy', sex='total'|'male'|'female'); keep countries to one or two, since each country has 96 ages. get_unemployment_rate accepts period='monthly' for the latest monthly figures without an API key (Eurostat, the ONS for the United Kingdom, the IBGE for Brazil, the BLS for the latest US months, the OECD for every other country). Supports rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum) on the raw series. Also includes two US-only, FRED-backed labor indicators (get_nonfarm_payrolls, get_initial_jobless_claims) — these require a FRED API key and only return a 'United States' column regardless of the countries= argument."
     module_name:     "economics"
     category:        "standalone"
     index_category:  "jobs_and_society"
@@ -540,6 +577,7 @@ tool_groups:
       - "get_population_statistics"
       - "get_poverty_rate"
       - "get_unemployment_rate"
+      - "get_life_table"
       - "get_nonfarm_payrolls"
       - "get_initial_jobless_claims"
 
@@ -550,7 +588,7 @@ tool_groups:
   # All indicators use countries= (both modules are CATEGORY_STANDALONE).
   - tool_name:       "rates"
     display_name:    "Interest Rates"
-    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates, official U.S. Treasury par yield curve, yield curve slope). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. The central bank policy rate, short/long-term rate, and yield curve slope indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum). Also includes get_mortgage_rate_30_year, get_real_yield_curve (FRED TIPS real yields) and get_breakeven_inflation_expectations — three US-only FRED-backed indicators. A FRED API key is optional and free (get one at https://fred.stlouisfed.org/docs/api/api_key.html); without it these three return no data, while get_treasury_rates and every other indicator in this tool work without one. FRED-backed indicators only return a 'United States' column regardless of the countries= argument."
+    description:     "Interest rate data (central bank policy rates, short/long-term rates, government bond yields, ICE BofA corporate bond series, EURIBOR, ECB rates, Federal Reserve rates, official U.S. Treasury par yield curve, yield curve slope). Requires countries='United States' — use comma-separated values for multiple countries. Do NOT use tickers= for this tool. Supports start_date/end_date and quarterly=true. Recent data without an API key: get_central_bank_policy_rate accepts period='daily', 'weekly' or 'monthly' (BIS, around fifty central banks incl. 'Euro Area'); get_long_term_interest_rate accepts period='daily' or 'weekly' (10-year yields of the United States, United Kingdom, Japan and Euro Area); get_overnight_rate returns €STR, SONIA, TONA and SOFR (Euro Area, United Kingdom, Japan, United States) with period='daily', 'weekly' or 'monthly'. get_government_bond_yield_curve returns full government yield curves (columns per country and maturity, e.g. 3M to 30Y) for the United States, Euro Area, Germany, United Kingdom, Japan, Canada, Sweden, Norway and Australia, daily, weekly or monthly, plus the monthly 10-year yield of every other EU member (e.g. France, Italy, Spain) with period='monthly'; keep the date range short (a few weeks) or use period='monthly', since one country is up to 15 maturities per day. get_treasury_rates returns the US par yield curve and works without an API key. The central bank policy rate, short/long-term rate, overnight rate and yield curve slope indicators additionally support rolling=N (moving-average smoothing) and trailing=N (trailing N-period sum). Also includes get_mortgage_rate_30_year (Freddie Mac, US only, works without an API key). Inflation-linked curves without an API key, columns per country and maturity, countries= optional: get_real_yield_curve (real yields of inflation-linked government bonds: United States TIPS, United Kingdom index-linked gilts, Germany inflation-linked federal bonds at constant maturities) and get_breakeven_inflation_expectations (market-implied inflation, nominal minus real: United States incl. 5Y5Y forward, United Kingdom RPI implied inflation, Germany as the euro area proxy), both with period='daily', 'weekly' or 'monthly'; get_inflation_expectations (survey-based longer-term inflation expectations: Germany 5Y and 10Y monthly from 1989 via Consensus Economics, Euro Area 5Y from the ECB Survey of Professional Forecasters from 1999), period='monthly' or 'quarterly'. Long-history US credit series: get_hqm_corporate_bond_yield_curve (Treasury HQM corporate curve, rate='spot' for 6 months to 100 years or 'par', monthly from 1984), get_hqm_corporate_bond_spread (HQM par minus Treasury yields at 2, 5, 10 and 30 years, from 1984), get_moodys_corporate_bond_yields (Aaa and Baa, daily from 1986 or period='monthly' from 1919; spread=true for the spreads over the 10-year Treasury and Baa - Aaa) and get_excess_bond_premium (Gilchrist-Zakrajšek credit spread, excess bond premium and implied recession probability, monthly from 1973, no key needed). Also without a key: get_eiopa_risk_free_rate (EIOPA Solvency II risk-free curves for the euro and 40 other currencies, 1 to 150 years, monthly from 2023; countries= e.g. 'Euro Area,United Kingdom', curve='spot_no_va'|'spot_with_va'|'shock_up'|'shock_down'), get_bank_of_england_yield_curve (UK zero-coupon spot curve, curve='nominal'|'ois', 0.5 to 40 years, daily from 1985), get_corporate_borrowing_cost (ECB cost of bank borrowing for euro area companies, monthly from 2003), get_corporate_bond_yields (monthly corporate bond yields by country: Germany all ratings from 1957 (Bundesbank), Australia A and BBB at 3, 5, 7 and 10 years from 2005 (RBA), United States Moody's Aaa/Baa with a FRED key; spread=true for the spread over government bonds), get_rating_transition_matrix (ESMA CEREP rating migration matrix of a rating agency, agency='S&P'|'Moody's'|'Fitch'|'DBRS'|'Scope'|..., rating_type='corporate'|'sovereign'|'structured_finance'|'covered_bonds', year=, horizon= years, region= e.g. 'Europe'; probabilities, withdrawal-adjusted), get_default_rates (one-year default rates per rating per year from the agency's first reported year, ESMA CEREP; slow the first time, about 30 seconds per year), get_eiopa_symmetric_adjustment (Solvency II equity dampener and type 1/type 2 equity charges, daily from 1991) and get_financial_stress_index (ECB CISS for the euro area, its members, the UK, US and China, daily from 1980). The HQM, Moody's and ICE BofA series require a free FRED API key (get one at https://fred.stlouisfed.org/docs/api/api_key.html)."
     module_name:     "mixed"
     category:        "mixed"
     index_category:  "interest_rates"
@@ -558,7 +596,9 @@ tool_groups:
       - "get_central_bank_policy_rate"
       - "get_short_term_interest_rate"
       - "get_long_term_interest_rate"
+      - "get_overnight_rate"
       - "get_government_bond_yield"
+      - "get_government_bond_yield_curve"
       - "get_euribor_rates"
       - "get_european_central_bank_rates"
       - "get_federal_reserve_rates"
@@ -566,9 +606,22 @@ tool_groups:
       - "get_ice_bofa_option_adjusted_spread"
       - "get_ice_bofa_total_return"
       - "get_ice_bofa_yield_to_worst"
+      - "get_hqm_corporate_bond_yield_curve"
+      - "get_hqm_corporate_bond_spread"
+      - "get_moodys_corporate_bond_yields"
+      - "get_excess_bond_premium"
+      - "get_eiopa_risk_free_rate"
+      - "get_bank_of_england_yield_curve"
+      - "get_corporate_borrowing_cost"
+      - "get_corporate_bond_yields"
+      - "get_rating_transition_matrix"
+      - "get_default_rates"
+      - "get_eiopa_symmetric_adjustment"
+      - "get_financial_stress_index"
       - "get_mortgage_rate_30_year"
       - "get_real_yield_curve"
       - "get_breakeven_inflation_expectations"
+      - "get_inflation_expectations"
       - "get_treasury_rates"
       - "get_yield_curve_slope"
     method_to_module:
@@ -581,7 +634,13 @@ tool_groups:
       get_long_term_interest_rate:
         module:   "economics"
         category: "standalone"
+      get_overnight_rate:
+        module:   "economics"
+        category: "standalone"
       get_government_bond_yield:
+        module:   "fixedincome"
+        category: "standalone"
+      get_government_bond_yield_curve:
         module:   "fixedincome"
         category: "standalone"
       get_euribor_rates:
@@ -605,6 +664,42 @@ tool_groups:
       get_ice_bofa_yield_to_worst:
         module:   "fixedincome"
         category: "standalone"
+      get_hqm_corporate_bond_yield_curve:
+        module:   "fixedincome"
+        category: "standalone"
+      get_hqm_corporate_bond_spread:
+        module:   "fixedincome"
+        category: "standalone"
+      get_moodys_corporate_bond_yields:
+        module:   "fixedincome"
+        category: "standalone"
+      get_excess_bond_premium:
+        module:   "fixedincome"
+        category: "standalone"
+      get_eiopa_risk_free_rate:
+        module:   "fixedincome"
+        category: "standalone"
+      get_bank_of_england_yield_curve:
+        module:   "fixedincome"
+        category: "standalone"
+      get_corporate_borrowing_cost:
+        module:   "fixedincome"
+        category: "standalone"
+      get_corporate_bond_yields:
+        module:   "fixedincome"
+        category: "standalone"
+      get_rating_transition_matrix:
+        module:   "fixedincome"
+        category: "standalone"
+      get_default_rates:
+        module:   "fixedincome"
+        category: "standalone"
+      get_eiopa_symmetric_adjustment:
+        module:   "fixedincome"
+        category: "standalone"
+      get_financial_stress_index:
+        module:   "fixedincome"
+        category: "standalone"
       get_mortgage_rate_30_year:
         module:   "economics"
         category: "standalone"
@@ -612,6 +707,9 @@ tool_groups:
         module:   "economics"
         category: "standalone"
       get_breakeven_inflation_expectations:
+        module:   "economics"
+        category: "standalone"
+      get_inflation_expectations:
         module:   "economics"
         category: "standalone"
       get_treasury_rates:
@@ -647,7 +745,7 @@ tool_groups:
   # ── Discovery ────────────────────────────────────────────────────────────
   - tool_name:    "discovery"
     display_name: "Market Discovery"
-    description:  "Market discovery tools (lists of stocks/ETFs/cryptocurrencies, stock screener, gainers, losers, sector performance, earnings/dividend calendars). No tickers or countries needed."
+    description:  "Market discovery tools (lists of stocks/ETFs/cryptocurrencies, stock screener, gainers, losers, sector performance, earnings/dividend calendars, latest 8-K SEC filings, latest insider trades). No tickers or countries needed."
     module_name:  "discovery"
     category:     "discovery"
 
@@ -655,7 +753,7 @@ tool_groups:
   # Method list is populated at startup from toolkit_direct_methods above.
   - tool_name:                    "market_data"
     display_name:                 "Raw Financial Data"
-    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters."
+    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, ETF/fund holdings, information and country/sector weightings, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters. The ETF/fund methods return no data for tickers that are not an ETF or fund. get_earnings_call_transcripts returns the full text of the most recent call per ticker (often 40,000+ characters); pass latest=false for every call in the date range."
     module_name:                  "toolkit"
     category:                     "toolkit"
     use_direct_methods:   true
@@ -696,6 +794,43 @@ utility_tools:
 # entire daily return series by default (within_period=False), which needs no intraday
 # data. Performance metrics remain per-period by construction, and the server never
 # fetches intraday data, so a daily period cannot work there.
+# A rolling window reads the regular daily data, so the block does not apply when
+# rolling is set.
 blocked_periods:
   performance:
     - "daily"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MCP-only method defaults
+# Applied by the tool wrapper when the caller leaves a parameter unset, so a broad
+# question gets a focused, token-friendly answer. An explicit value always wins, and
+# the Python methods keep their own defaults. lookback_days/lookahead_days replace the
+# tool's default date range (five years) when the caller left both dates unset.
+# ──────────────────────────────────────────────────────────────────────────────
+method_defaults:
+  # One month of every country is over 2,000 releases (about 145,000 tokens); the
+  # high-impact releases of a 30-day window around today are typically 50 to 150.
+  get_economic_calendar:
+    impact: "High"
+    lookback_days: 23
+    lookahead_days: 7
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Methods that accept countries but may be called without them
+# Every other method that accepts countries requires them over MCP, since without
+# them a country indicator returns every country it covers. These either return a
+# handful of columns or filter on their own arguments.
+# ──────────────────────────────────────────────────────────────────────────────
+countries_optional:
+  - "get_economic_calendar"
+  - "get_government_bond_yield_curve"
+  - "get_overnight_rate"
+  - "get_corporate_borrowing_cost"
+  - "get_financial_stress_index"
+  - "get_real_yield_curve"
+  - "get_breakeven_inflation_expectations"
+  - "get_inflation_expectations"
+  - "get_corporate_bond_yields"
+  - "get_stress_test_scenario"
+  - "get_climate_scenario"
+  - "get_long_run_asset_returns"

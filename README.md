@@ -580,9 +580,11 @@ When looking at a company such as Hyundai Motor Company (ticker: 005380.KS), you
 
 Most functions will have the option to define the `trailing` parameter. This lets you define the number of periods that you want to use to calculate the trailing metrics. For example, if you want to calculate the trailing 12-month (TTM) Price-to-Earnings Ratio, you can set `trailing=4` when you have set `quarterly=True` in the Toolkit initialization. The same goes for growth metrics which can be calculated by setting `growth=True`. This will calculate the growth for each period based on the previous period. This also includes a `lag` parameter in which you can define lagged growth. Furthermore, you can also combine the trailing and growth parameters to get trailing growth. For example, set `trailing=4` and `growth=True`  for the Price-to-Earnings Ratio which will then calculate the TTM growth.
 
-> **How can I save the data periodically so that I don't have to retrieve it every single time again?**
+> **Does the Finance Toolkit retrieve the same data every time I run it?**
 
-The Toolkit has the option to work with cached data through `use_cached_data=True` when initializing the Toolkit class. Any data that comes from an external source (financial statements, historical prices, economic indicators, and so on) is then stored in a local SQLite database and reused on the next run. Anything the Toolkit calculates itself is never cached, it is always derived from that data on demand.
+No. Any data that comes from an external source (financial statements, historical prices, economic indicators, yield curves, news and so on) is cached automatically in a local SQLite database and reused on the next run, in the Toolkit as well as in the Economics, Fixed Income, Discovery and Portfolio modules. Anything the Finance Toolkit calculates itself, such as ratios, models and risk metrics, is never cached: it is always derived from that data on demand, so it reflects the latest version of the Finance Toolkit.
+
+Cached data does not go stale. Each dataset is retrieved again once it may have changed: prices and financial statements after a day (prices only for the last week, since older bars no longer change), quotes after a minute, company profiles after a month and economic releases according to how often they are published. An answer that a source has no data, such as the ETF holdings of a company, is cached as well, while a failed request, such as a rate limit, is not.
 
 The cache keeps track of what it already holds per ticker and per date range, which means changing a parameter does not throw the rest away:
 
@@ -590,7 +592,20 @@ The cache keeps track of what it already holds per ticker and per date range, wh
 - Widening the period only retrieves the years that were missing.
 - Adding a ticker only retrieves that one ticker.
 
-By default the database lives in your user configuration directory, which is the same one the MCP server uses, so both share a single cache. You can also select a specific location by providing a string to the `use_cached_data` parameter, which will store the database in the provided folder.
+The database lives in your user configuration directory, which is the same one the MCP server uses, so both share a single cache. You can choose where it is stored, or switch caching off:
+
+```python
+from financetoolkit import Economics, Toolkit
+
+# Store the cache in a specific folder
+toolkit = Toolkit(["AAPL", "MSFT"], use_cached_data="datasets")
+
+# Retrieve everything every time
+toolkit = Toolkit(["AAPL", "MSFT"], use_cached_data=False)
+economics = Economics(use_cached_data=False)
+```
+
+Setting the `FINANCE_TOOLKIT_CACHE_ENABLED` environment variable to `0` switches caching off by default everywhere, which suits environments where nothing should be written to disk, such as a continuous integration job. `FINANCE_TOOLKIT_CACHE_DB` moves the shared database to another file.
 
 To see what is currently stored, use `toolkit.get_cache_contents()`. It reports the entries grouped by source and dataset:
 
@@ -621,6 +636,58 @@ This is related to the `benchmark_ticker` parameter which is set to "SPY" (S&P 5
 > **Data collection seems to be slow, what could be the issue?**
 
 Generally, it should take less than 15 seconds to retrieve the historical data of 100 tickers. If it takes much longer, this could be due to reaching the API limit (the Starter plan has 250 requests per minute), due to a slow internet connection or due to unoptimized code. The Finance Toolkit collects data with a bounded pool of worker threads (10 by default, configurable through the `FINANCETOOLKIT_MAX_WORKERS` environment variable) over a shared connection, so it is recommended to initialize the Toolkit with all tickers you want to analyze at once rather than one at a time. If it is taking 10+ minutes consider having a look at [this issue](https://github.com/JerBouma/FinanceToolkit/issues/99#issuecomment-1889726000) that managed to resolve the problem.
+
+> **I work behind a corporate proxy and get "certificate verify failed" errors, how do I solve this?**
+
+Many corporate networks inspect encrypted traffic. The proxy opens every HTTPS connection on your behalf and presents a certificate signed by your company's own root certificate instead of the website's real one. Your browser trusts that root certificate because IT installed it on your computer, but Python does not: it checks certificates against its own list of public certificate authorities (the `certifi` package), which does not include your company's. The result is an error such as `SSLError: certificate verify failed: self-signed certificate in certificate chain`.
+
+When a certificate cannot be verified, the Finance Toolkit first retries with your operating system's certificate file, where Python can find one (usually on Linux, not on Windows). If that fails as well, what happens next depends on whether the request carries an API key:
+
+- Requests without an API key, such as those to the ECB, Eurostat or the BIS, are retried without verifying the certificate. A warning is logged when this happens.
+- Requests with an API key, such as those to FinancialModelingPrep and FRED, are **not** retried without verification. The key is part of the web address, so anyone who can intercept an unverified connection could read it and use your subscription. The request fails with an error that explains the options below.
+
+The recommended solution is to tell Python to trust your company's root certificate, so every connection stays verified:
+
+1. Obtain the root certificate as a `.pem` (or `.crt`) file. Your IT department can usually provide it. You can also export it from your browser by opening the certificate details of any HTTPS website and exporting the top certificate in the chain ("Base-64 encoded" on Windows).
+2. Combine it with Python's public certificates. The next step replaces Python's list rather than adding to it, so without the public certificates every connection that does not go through the proxy would fail:
+
+    ```bash
+    # Prints the location of Python's public certificates
+    python -c "import certifi; print(certifi.where())"
+
+    # macOS and Linux: combine both into one file
+    cat /path/printed/above/cacert.pem /path/to/company-root.pem > ~/combined-certificates.pem
+    ```
+
+    On Windows you can open both files in a text editor and paste the company certificate at the end of a copy of `cacert.pem`.
+
+3. Point `REQUESTS_CA_BUNDLE` to the combined file before using the Finance Toolkit:
+
+    ```bash
+    # macOS and Linux, e.g. in ~/.bashrc or ~/.zshrc
+    export REQUESTS_CA_BUNDLE=~/combined-certificates.pem
+
+    # Windows (PowerShell), for every window opened afterwards
+    setx REQUESTS_CA_BUNDLE "C:\Users\you\combined-certificates.pem"
+    ```
+
+    `setx` does not change the window it runs in, so open a new terminal (or restart your editor) afterwards.
+
+    Or set it within Python, before the first request:
+
+    ```python
+    import os
+
+    os.environ["REQUESTS_CA_BUNDLE"] = "/path/to/combined-certificates.pem"
+
+    from financetoolkit import Toolkit
+    ```
+
+    When you use the MCP server, add the variable to the `env` section of the server in your AI assistant's configuration instead.
+
+Alternatively, if your company's root certificate is already installed in your operating system (which is usually the case on managed Windows and macOS computers), the `truststore` package lets Python use the operating system's certificates directly. Install it with `pip install truststore` and run `import truststore; truststore.inject_into_ssl()` at the start of your script.
+
+If none of this is possible, you can accept the risk and allow requests with an API key to be sent without verification by setting `FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL=1` in the same way as above. Only do so on a network you trust: the connection is then encrypted to whoever answers it, which may not be the website you think you are talking to, and your API key is readable to them.
 
 > **Are you part of FinancialModelingPrep?**
 

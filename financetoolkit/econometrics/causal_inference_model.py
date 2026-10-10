@@ -117,16 +117,16 @@ def get_iv_2sls(
     y = 1.0 + 2.0 * x + 0.9 * confounder + rng.standard_normal(n) * 0.3
 
     result = causal_inference_model.get_iv_2sls(y, x, instrument)
-    print(regression_model.regression_summary_table(result).round(4))
+    regression_model.regression_summary_table(result).round(4)
     ```
 
     Which returns (recovering the true slope of 2.0, unlike naive OLS which would be
     biased upward by the shared confounder):
 
     |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-    |:----------|---------------:|--------------:|---------------:|-----------:|
-    | Intercept |         0.9465 |        0.0211 |        44.9292 |     0.0000 |
-    | X         |         2.0243 |        0.0259 |        78.2066 |     0.0000 |
+    |:----------|--------------:|-------------:|--------------:|----------:|
+    | Intercept |        0.9465 |       0.0211 |       44.9292 |         0 |
+    | X         |        2.0243 |       0.0259 |       78.2066 |         0 |
     """
     y_values = _to_target_vector(y)
     endogenous_values, endogenous_names = _to_design_matrix(
@@ -295,17 +295,17 @@ def get_difference_in_differences(
     result = causal_inference_model.get_difference_in_differences(
         pd.Series(y), pd.Series(treated), pd.Series(post)
     )
-    print(regression_model.regression_summary_table(result).round(4))
+    regression_model.regression_summary_table(result).round(4)
     ```
 
     Which returns (recovering the true treatment effect of 3.0 in the `Treated x Post` row):
 
-    |                 |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-    |:----------------|---------------:|--------------:|---------------:|-----------:|
-    | Intercept       |         0.9645 |        0.0263 |        36.6630 |     0.0000 |
-    | Treated         |         0.5413 |        0.0372 |        14.5482 |     0.0000 |
-    | Post            |         0.2317 |        0.0372 |         6.2270 |     0.0000 |
-    | Treated x Post  |         2.9370 |        0.0526 |        55.8183 |     0.0000 |
+    |                |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |:---------------|--------------:|-------------:|--------------:|----------:|
+    | Intercept      |        0.9645 |       0.0263 |       36.663  |         0 |
+    | Treated        |        0.5413 |       0.0372 |       14.5482 |         0 |
+    | Post           |        0.2317 |       0.0372 |        6.227  |         0 |
+    | Treated x Post |        2.937  |       0.0526 |       55.8183 |         0 |
     """
     y_values = _to_target_vector(y)
     treated_values = _to_target_vector(treated)
@@ -469,21 +469,21 @@ def get_regression_discontinuity(
     y = 1.0 + 0.3 * running + true_jump * (running >= 0) + rng.standard_normal(n) * 0.5
 
     result = causal_inference_model.get_regression_discontinuity(y, running, cutoff=0.0)
-    print(causal_inference_model.regression_discontinuity_summary_table(result).round(4))
+    causal_inference_model.regression_discontinuity_summary_table(result).round(4)
     ```
 
     Which returns (recovering the true jump of 4.0 at the cutoff):
 
-    |               |    Value |
-    |:--------------|---------:|
-    | Discontinuity |   4.0129 |
-    | Std. Error    |   0.0449 |
-    | t-Statistic   |  89.2815 |
-    | P-Value       |   0.0000 |
-    | Cutoff        |   0.0000 |
-    | Bandwidth     |   9.9877 |
-    | N Left        | 1013     |
-    | N Right       |  986     |
+    |               |     Value |
+    |:--------------|----------:|
+    | Discontinuity |    4.0129 |
+    | Std. Error    |    0.0449 |
+    | t-Statistic   |   89.2815 |
+    | P-Value       |    0      |
+    | Cutoff        |    0      |
+    | Bandwidth     |    9.9877 |
+    | N Left        | 1013      |
+    | N Right       |  986      |
     """
     if kernel not in ("uniform", "triangular"):
         raise ValueError(
@@ -702,21 +702,21 @@ def get_propensity_score_matching(
     result = causal_inference_model.get_propensity_score_matching(
         treatment, outcome, covariate
     )
-    print(causal_inference_model.propensity_score_matching_summary(result).round(4))
+    causal_inference_model.propensity_score_matching_summary(result).round(4)
     ```
 
     Which returns (recovering the true effect of 2.0 in `att`, unlike the naive,
     upward-biased mean difference `outcome[treatment == 1].mean() - outcome[treatment == 0].mean()`):
 
-    | Metric        |    Value |
-    |:--------------|---------:|
-    | ATT           |   2.0647 |
-    | Std. Error    |   0.0302 |
-    | t-Statistic   |  68.2821 |
-    | P-Value       |   0.0000 |
-    | Matched Pairs |  562     |
-    | N Treated     | 1024     |
-    | N Control     |  976     |
+    |               |         0 |
+    |:--------------|----------:|
+    | ATT           |    2.0647 |
+    | Std. Error    |    0.0302 |
+    | t-Statistic   |   68.2821 |
+    | P-Value       |    0      |
+    | Matched Pairs |  562      |
+    | N Treated     | 1024      |
+    | N Control     |  976      |
     """
     treatment_values = _to_target_vector(treatment)
     outcome_values = _to_target_vector(outcome)

@@ -356,15 +356,15 @@ def get_ols(
     y = 0.02 + 1.2 * x + rng.standard_normal(100) * 0.05
 
     result = regression_model.get_ols(y, x)
-    print(regression_model.regression_summary_table(result).round(4))
+    regression_model.regression_summary_table(result).round(4)
     ```
 
     Which returns:
 
     |               |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-    |:--------------|---------------:|--------------:|---------------:|-----------:|
-    | Intercept     |         0.0198 |        0.0049 |         4.0254 |     0.0001 |
-    | Market Return |         1.2060 |        0.0063 |       190.1749 |     0.0000 |
+    |:--------------|--------------:|-------------:|--------------:|----------:|
+    | Intercept     |        0.0198 |       0.0049 |        4.0254 |    0.0001 |
+    | Market Return |        1.206  |       0.0063 |      190.175  |    0      |
     """
     y_values = _to_target_vector(y)
     x_values, feature_names = _to_design_matrix(x, add_constant)

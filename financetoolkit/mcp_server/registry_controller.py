@@ -21,14 +21,21 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
+from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
     to_boolean,
     validate_date,
 )
+from financetoolkit.mcp_server.diagnostics_model import (
+    capture_call_messages,
+    redact,
+    summarize_reasons,
+)
 from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -53,7 +60,9 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "Required — omitting it returns the list of available indicators."
     ),
     "tickers": "Comma-separated ticker symbols, e.g. 'AAPL,MSFT,GOOGL'.",
-    "countries": "Comma-separated country names, e.g. 'United States,Germany,Japan'.",
+    "countries": (
+        "Country names, comma-separated or as a list, e.g. 'United States,Germany,Japan'."
+    ),
     "start_date": "Start of the date range in YYYY-MM-DD format.",
     "end_date": "End of the date range in YYYY-MM-DD format.",
     "quarterly": "Return quarterly data instead of annual when True.",
@@ -91,14 +100,31 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "downside, e.g. 0.0 for downside relative to a zero return."
     ),
     "days": "Number of calendar days used in day-count-based calculations.",
-    "period": "Observation frequency, e.g. 'monthly', 'quarterly', or 'annual'.",
+    "period": (
+        "Observation frequency, e.g. 'daily', 'weekly', 'monthly', 'quarterly', or 'annual' "
+        "(supported values differ per method)."
+    ),
     "measure": "Sub-measure selector, e.g. 'M1', 'M2', or 'M3' for money supply.",
     "gmdb_source": (
         "Use the Global Macro Database as the data source when True, rather than the "
         "OECD. The two are independent providers with different country and period "
         "coverage; both return rates and ratios as decimal fractions."
     ),
+    "gmdb_forecasts": (
+        "Set to true to include the years the Global Macro Database projects (IMF World "
+        "Economic Outlook, up to five years ahead); by default a yearly series ends with "
+        "its last observation."
+    ),
     "inflation_adjusted": "Adjust nominal values for inflation when True.",
+    "usd": (
+        "Return levels in millions of US dollars instead of national currency when True, "
+        "which makes them comparable across countries (Global Macro Database)."
+    ),
+    "component": ("Part of final consumption: 'total', 'household' or 'government'."),
+    "level": (
+        "Level of government: 'consolidated' (longest history), 'general' (central, "
+        "state and local government and social security) or 'central'."
+    ),
     "bond_price": "Clean price of the bond per 100 face value.",
     "coupon_rate": "Annual coupon rate as a decimal, e.g. 0.05 for 5 %.",
     "years_to_maturity": "Years remaining until the bond matures.",
@@ -299,6 +325,21 @@ class RouterGroupSpec(NamedTuple):
     description: str | None = None
 
 
+def _split_values(value: object) -> list[str]:
+    """
+    Splits tickers or countries given as a comma-separated string or as a list.
+
+    Args:
+        value (object): The value as the client sent it.
+
+    Returns:
+        list[str]: The individual values, stripped of surrounding spaces.
+    """
+    items = value if isinstance(value, list | tuple) else str(value).split(",")
+
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
 class ToolRegistry:
     """Dynamically builds and registers categorical master tools on a FastMCP instance.
 
@@ -319,6 +360,9 @@ class ToolRegistry:
         direct_methods: list[str],
         tool_groups: list[dict[str, Any]],
         blocked_periods: dict[str, list[str]] | None = None,
+        method_defaults: dict[str, dict[str, Any]] | None = None,
+        countries_optional: list[str] | None = None,
+        analytics: UsageAnalytics | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -342,6 +386,14 @@ class ToolRegistry:
                 exposed as top-level tools instead of via router groups.
             tool_groups (list[dict[str, Any]]): List of router group specifications
                 from the config dict.
+            blocked_periods (dict[str, list[str]] | None): Per tool, the periods it does not support.
+            method_defaults (dict[str, dict[str, Any]] | None): Per method, MCP-only defaults applied
+                when the caller leaves a parameter unset, plus an optional lookback_days and
+                lookahead_days window used when the caller leaves the dates at the tool default.
+            countries_optional (list[str] | None): Methods that accept countries but may be
+                called without them; every other method that accepts countries requires them.
+            analytics (UsageAnalytics | None): Counts the calls of every tool when the
+                server's usage analytics are on. Defaults to None.
         """
         self._mcp = mcp
         self._provider = provider
@@ -357,6 +409,9 @@ class ToolRegistry:
             tool: frozenset(periods)
             for tool, periods in (blocked_periods or {}).items()
         }
+        self._method_defaults: dict[str, dict[str, Any]] = method_defaults or {}
+        self._countries_optional: frozenset[str] = frozenset(countries_optional or [])
+        self._analytics = analytics
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -542,16 +597,12 @@ class ToolRegistry:
 
             raw_tickers = kwargs.pop("tickers", None)
             tickers = (
-                [t.strip().upper() for t in str(raw_tickers).split(",") if t.strip()]
+                [t.strip().upper() for t in _split_values(raw_tickers)]
                 if raw_tickers
                 else None
             )
             raw_countries = kwargs.pop("countries", None)
-            countries = (
-                [c.strip() for c in str(raw_countries).split(",") if c.strip()]
-                if raw_countries
-                else None
-            )
+            countries = _split_values(raw_countries) if raw_countries else None
 
             # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
@@ -570,6 +621,32 @@ class ToolRegistry:
                     "Please provide one or more ticker symbols, e.g. `tickers='AAPL'` "
                     "or `tickers='AAPL,MSFT'`."
                 )
+
+            # Tickers on a tool that works with countries would otherwise be dropped as an
+            # unknown parameter and every country returned.
+            if (
+                tickers
+                and not countries
+                and effective_category
+                == inspector.categories.get("standalone", "standalone")
+            ):
+                return (
+                    f"`{tool_name}` (`{method_name}`) works with countries, not tickers. "
+                    "Please provide `countries`, e.g. `countries='United States'` or "
+                    "`countries='Germany,Japan'`."
+                )
+
+            # A date that was given but cannot be read is an error, not a reason to quietly
+            # answer for the default range instead.
+            for date_parameter in ("start_date", "end_date"):
+                given = kwargs.get(date_parameter)
+                if given and not validation_model.is_valid_date(
+                    str(given).replace("/", "-")
+                ):
+                    return (
+                        f"Invalid `{date_parameter}` for `{tool_name}` (`{method_name}`): "
+                        f"'{given}'. Please use a date written as YYYY-MM-DD, e.g. '2026-01-31'."
+                    )
 
             quarterly = to_boolean(kwargs.pop("quarterly", False))
             start_date = validate_date(
@@ -595,6 +672,20 @@ class ToolRegistry:
             )
 
             accepted_params = method_param_names.get(method_name, set())
+
+            # Without countries a country indicator returns every country it has, often sixty
+            # or more columns, which is rarely what was asked and costs many tokens.
+            if (
+                not countries
+                and "countries" in accepted_params
+                and method_name not in self._countries_optional
+            ):
+                return (
+                    f"`{tool_name}` (`{method_name}`) requires a `countries` parameter. "
+                    "Please provide one or more countries, e.g. `countries='United States'` "
+                    "or `countries='Germany,Japan'`."
+                )
+
             method_kwargs = {}
             for pname, pann, _ in param_meta:
                 if pname in kwargs:
@@ -606,6 +697,30 @@ class ToolRegistry:
                         continue
                     method_kwargs[pname] = coerce_value(val, pann)
 
+            # MCP-only defaults (config.yaml method_defaults) keep a broad request small: they
+            # apply only to what the caller left unset, so an explicit value always wins. The
+            # dates count as unset when both are still the tool defaults.
+            method_defaults = self._method_defaults.get(method_name, {})
+            if (
+                "lookback_days" in method_defaults
+                or "lookahead_days" in method_defaults
+            ) and (start_date, end_date) == (inspector.start_date, inspector.end_date):
+                today = datetime.now()
+                start_date = (
+                    today - timedelta(days=int(method_defaults.get("lookback_days", 0)))
+                ).strftime("%Y-%m-%d")
+                end_date = (
+                    today
+                    + timedelta(days=int(method_defaults.get("lookahead_days", 0)))
+                ).strftime("%Y-%m-%d")
+            for pname, value in method_defaults.items():
+                if (
+                    pname not in ("lookback_days", "lookahead_days")
+                    and pname in accepted_params
+                    and method_kwargs.get(pname) in (None, "")
+                ):
+                    method_kwargs[pname] = value
+
             if kwargs:
                 logger.warning(
                     "Unknown parameter(s) passed to %s (%s) and ignored: %s",
@@ -615,14 +730,30 @@ class ToolRegistry:
                 )
 
             # Validate that the requested period (if any) is not blocked for this tool
-            if blocked_periods_for_tool and "period" in method_kwargs:
+            # A rolling window reads the regular data of the period, which every period
+            # has, so the block only applies to results within each period.
+            if (
+                blocked_periods_for_tool
+                and "period" in method_kwargs
+                and not method_kwargs.get("rolling")
+            ):
                 requested_period = str(method_kwargs["period"]).lower()
                 if requested_period in blocked_periods_for_tool:
-                    allowed = ["weekly", "monthly", "quarterly", "yearly"]
+                    allowed = [
+                        period
+                        for period in (
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly",
+                        )
+                        if period not in blocked_periods_for_tool
+                    ]
                     return (
                         f"`{tool_name}` (`{method_name}`) does not support "
-                        f"`period='{requested_period}'`. "
-                        f"Please use one of: {', '.join(allowed)}."
+                        f"`period='{requested_period}'` without a `rolling` window. "
+                        f"Please use one of: {', '.join(allowed)}, or set `rolling`."
                     )
 
             if method_dispatch and method_name in method_dispatch:
@@ -632,18 +763,21 @@ class ToolRegistry:
 
             try:
                 call_started = time.perf_counter()
-                result = provider.call_method(
-                    module_name=dispatch_module,
-                    method_name=method_name,
-                    category=dispatch_category,
-                    tickers=tickers,
-                    countries=countries,
-                    start_date=start_date,
-                    end_date=end_date,
-                    quarterly=quarterly,
-                    benchmark_ticker=benchmark_ticker,
-                    **method_kwargs,
-                )
+                # The warnings and errors logged during the call explain an empty result,
+                # e.g. a missing API key, so they are passed on rather than lost.
+                with capture_call_messages() as call_messages:
+                    result = provider.call_method(
+                        module_name=dispatch_module,
+                        method_name=method_name,
+                        category=dispatch_category,
+                        tickers=tickers,
+                        countries=countries,
+                        start_date=start_date,
+                        end_date=end_date,
+                        quarterly=quarterly,
+                        benchmark_ticker=benchmark_ticker,
+                        **method_kwargs,
+                    )
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
                 # a repeat call should be near-instant off the provider cache).
@@ -667,14 +801,20 @@ class ToolRegistry:
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
                     )
-                formatted = format_result(result, notes=notes or None)
+                formatted = format_result(
+                    result,
+                    notes=notes or None,
+                    reason=summarize_reasons(call_messages),
+                )
                 return formatted
             except (ValueError, KeyError) as exc:
-                return f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
+                return (
+                    f"Invalid input for `{tool_name}` (`{method_name}`): {redact(exc)}"
+                )
             except TypeError as exc:
-                return f"Parameter error for `{tool_name}` (`{method_name}`): {exc}"
+                return f"Parameter error for `{tool_name}` (`{method_name}`): {redact(exc)}"
             except ConnectionError as exc:
-                return f"API connection failed: {exc}"
+                return f"API connection failed: {redact(exc)}"
             except Exception as exc:
                 logger.warning(
                     "Tool %s (%s) failed: %s",
@@ -685,7 +825,7 @@ class ToolRegistry:
                 )
                 return (
                     f"`{tool_name}` (`{method_name}`) failed with error: "
-                    f"{type(exc).__name__}: {exc}"
+                    f"{type(exc).__name__}: {redact(exc)}"
                 )
 
         P = inspect.Parameter
@@ -834,7 +974,6 @@ class ToolRegistry:
             description = (
                 f"{spec.display_name}. Set `indicator` to one of: {method_list}."
             )
-        description = description[:1500]
 
         try:
             fn = self._build_router_wrapper(
@@ -847,6 +986,10 @@ class ToolRegistry:
             )
             fn.__name__ = spec.tool_name
             fn.__doc__ = description
+
+            if self._analytics is not None:
+                fn = self._analytics.counted(spec.tool_name, fn)
+
             self._mcp.add_tool(
                 fn,
                 name=spec.tool_name,

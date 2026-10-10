@@ -8,6 +8,7 @@ from scipy.stats import norm
 from financetoolkit.options import black_scholes_model
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_delta(
     stock_price: float,
     strike_price: float,
@@ -50,6 +51,7 @@ def get_delta(
     return option_delta
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_dual_delta(
     stock_price: float,
     strike_price: float,
@@ -96,6 +98,7 @@ def get_dual_delta(
     return dual_delta
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_vega(
     stock_price: float,
     strike_price: float,
@@ -145,6 +148,7 @@ def get_vega(
     return vega
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_theta(
     stock_price: float,
     strike_price: float,
@@ -222,6 +226,7 @@ def get_theta(
     return theta
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_rho(
     stock_price: float,
     strike_price: float,
@@ -282,6 +287,7 @@ def get_rho(
     return rho
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_epsilon(
     stock_price: float,
     strike_price: float,
@@ -333,6 +339,7 @@ def get_epsilon(
     return epsilon
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_lambda(
     stock_price: float,
     strike_price: float,
@@ -382,6 +389,7 @@ def get_lambda(
     return lambda_value
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_gamma(
     stock_price: float,
     strike_price: float,
@@ -419,6 +427,7 @@ def get_gamma(
     return gamma
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_dual_gamma(
     stock_price: float,
     strike_price: float,
@@ -462,6 +471,7 @@ def get_dual_gamma(
     return dual_gamma
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_vanna(
     stock_price: float,
     strike_price: float,
@@ -503,6 +513,7 @@ def get_vanna(
     return vanna
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_charm(
     stock_price: float,
     strike_price: float,
@@ -572,6 +583,7 @@ def get_charm(
     return charm
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_vomma(
     stock_price: float,
     strike_price: float,
@@ -618,6 +630,7 @@ def get_vomma(
     return vomma
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_vera(
     stock_price: float,
     strike_price: float,
@@ -663,6 +676,7 @@ def get_vera(
     return vera
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_veta(
     stock_price: float,
     strike_price: float,
@@ -729,6 +743,7 @@ def get_veta(
     return veta
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_second_order_partial_derivative(
     stock_price: float,
     strike_price: float,
@@ -771,6 +786,7 @@ def get_second_order_partial_derivative(
     return second_order_partial_derivative
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_speed(
     stock_price: float,
     strike_price: float,
@@ -811,6 +827,7 @@ def get_speed(
     return speed
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_zomma(
     stock_price: float,
     strike_price: float,
@@ -853,6 +870,7 @@ def get_zomma(
     return zomma
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_color(
     stock_price: float,
     strike_price: float,
@@ -925,6 +943,7 @@ def get_color(
     return color
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_ultima(
     stock_price: float,
     strike_price: float,

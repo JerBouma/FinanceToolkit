@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.technicals.overlap_model import (
+    apply_to_rolling_windows,
     get_exponential_moving_average,
     get_moving_average,
 )
@@ -154,12 +155,23 @@ def get_aroon_indicator(
     Returns:
         pd.DataFrame: Aroon Up and Aroon Down values.
     """
+
     # The lookback spans today plus the previous window bars, so the extreme can be up to window periods old and the indicator can reach zero. Reversing before taking the extreme breaks ties on the most recent occurrence, as the definition requires.  # noqa: E501
-    periods_since_high = prices_high.rolling(window=window + 1).apply(
-        lambda values: window - (len(values) - 1 - values[::-1].argmax()), raw=True
+    def periods_since(extreme):
+        def calculation(windows):
+            # The position of the extreme counted back from the most recent bar, missing
+            # for a window that holds a missing price, as with rolling().apply().
+            periods = extreme(windows[..., ::-1], axis=-1).astype(float)
+
+            return np.where(np.isnan(windows).any(axis=-1), np.nan, periods)
+
+        return calculation
+
+    periods_since_high = apply_to_rolling_windows(
+        prices_high, window + 1, periods_since(np.argmax)
     )
-    periods_since_low = prices_low.rolling(window=window + 1).apply(
-        lambda values: window - (len(values) - 1 - values[::-1].argmin()), raw=True
+    periods_since_low = apply_to_rolling_windows(
+        prices_low, window + 1, periods_since(np.argmin)
     )
 
     aroon_up = ((window - periods_since_high) / window) * 100
@@ -210,9 +222,12 @@ def get_commodity_channel_index(
     sma_typical_prices = typical_prices.rolling(window=window).mean()
 
     # Every point in the window is measured against the current window's mean, rather than each point against the mean of its own trailing window.  # noqa: E501
-    mean_deviation = typical_prices.rolling(window=window).apply(
-        lambda window_values: np.abs(window_values - window_values.mean()).mean(),
-        raw=True,
+    mean_deviation = apply_to_rolling_windows(
+        typical_prices,
+        window,
+        lambda windows: np.abs(windows - windows.mean(axis=-1, keepdims=True)).mean(
+            axis=-1
+        ),
     )
 
     cci_values = (typical_prices - sma_typical_prices) / (constant * mean_deviation)
@@ -569,8 +584,10 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
     """
     price_diff = prices_close.diff(1)
 
-    up_sum = price_diff.where(price_diff > 0, 0).rolling(window=window).sum()
-    down_sum = abs(price_diff.where(price_diff < 0, 0)).rolling(window=window).sum()
+    # The first price has no change, which is missing rather than a zero change, so the
+    # first sums cover a full window of changes.
+    up_sum = price_diff.clip(lower=0).rolling(window=window).sum()
+    down_sum = (-price_diff).clip(lower=0).rolling(window=window).sum()
 
     cmo = ((up_sum - down_sum) / (up_sum + down_sum)) * 100
     return cmo
@@ -779,9 +796,11 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
     # Calculate price changes
     price_diff = prices.diff(1)
 
-    # Calculate upward and downward price changes
-    up_changes = price_diff.where(price_diff > 0, 0)
-    down_changes = -price_diff.where(price_diff < 0, 0)
+    # Calculate upward and downward price changes. The first price has no change, which
+    # stays missing rather than counting as a zero change, so the first average covers
+    # the first window of actual changes, as Wilder (1978) defines it.
+    up_changes = price_diff.clip(lower=0)
+    down_changes = (-price_diff).clip(lower=0)
 
     # Calculate average gains and losses over the specified window using Wilder's smoothing
     avg_gain = get_wilder_moving_average(up_changes, window)

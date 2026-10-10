@@ -3,6 +3,8 @@
 __docformat__ = "google"
 
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -108,21 +110,26 @@ def get_wilder_moving_average(
         return wilder_average
 
     start_position = values.index.get_loc(first_valid_index)
-    wilder_average.iloc[start_position] = seed.iloc[start_position]
+
+    # The recursion runs on plain Python floats, since writing a pandas Series one
+    # element at a time costs tens of microseconds per element.
+    current_values = values.to_numpy(dtype="float64").tolist()
+    averages = [math.nan] * length
+    averages[start_position] = float(seed.iloc[start_position])
 
     for i in range(start_position + 1, length):
-        current_value = values.iloc[i]
-        previous_average = wilder_average.iloc[i - 1]
+        current_value = current_values[i]
+        previous_average = averages[i - 1]
 
-        if pd.isna(current_value):
-            wilder_average.iloc[i] = previous_average
+        if math.isnan(current_value):
+            averages[i] = previous_average
             continue
 
-        wilder_average.iloc[i] = previous_average + (1 / window) * (
+        averages[i] = previous_average + (1 / window) * (
             current_value - previous_average
         )
 
-    return wilder_average
+    return pd.Series(averages, index=values.index, dtype="float64")
 
 
 def get_average_true_range(
@@ -236,8 +243,6 @@ def get_supertrend(
 
     length = len(prices_close)
 
-    final_upper_band = pd.Series(index=prices_close.index, dtype="float64")
-    final_lower_band = pd.Series(index=prices_close.index, dtype="float64")
     supertrend = pd.Series(index=prices_close.index, dtype="float64")
     trend_direction = pd.Series(index=prices_close.index, dtype="float64")
 
@@ -248,58 +253,63 @@ def get_supertrend(
             axis=1,
         )
 
-    final_upper_band.iloc[0] = basic_upper_band.iloc[0]
-    final_lower_band.iloc[0] = basic_lower_band.iloc[0]
-    trend_direction.iloc[0] = 1
-    supertrend.iloc[0] = final_lower_band.iloc[0]
+    # The recursion runs on plain Python lists, since writing pandas Series one element
+    # at a time costs tens of microseconds per element.
+    basic_upper = basic_upper_band.to_numpy(dtype="float64").tolist()
+    basic_lower = basic_lower_band.to_numpy(dtype="float64").tolist()
+    close = prices_close.to_numpy(dtype="float64").tolist()
+    final_upper = [math.nan] * length
+    final_lower = [math.nan] * length
+    direction = [math.nan] * length
+    trend = [math.nan] * length
+
+    final_upper[0] = basic_upper[0]
+    final_lower[0] = basic_lower[0]
+    direction[0] = 1.0
+    trend[0] = final_lower[0]
 
     for i in range(1, length):
-        if pd.isna(basic_upper_band.iloc[i]) or pd.isna(basic_lower_band.iloc[i]):
-            final_upper_band.iloc[i] = final_upper_band.iloc[i - 1]
-            final_lower_band.iloc[i] = final_lower_band.iloc[i - 1]
-            trend_direction.iloc[i] = trend_direction.iloc[i - 1]
-            supertrend.iloc[i] = supertrend.iloc[i - 1]
+        if math.isnan(basic_upper[i]) or math.isnan(basic_lower[i]):
+            final_upper[i] = final_upper[i - 1]
+            final_lower[i] = final_lower[i - 1]
+            direction[i] = direction[i - 1]
+            trend[i] = trend[i - 1]
             continue
 
         # The bands are NaN until the Average True Range has a full window, so the first bar with valid bands seeds the recursion. Comparing against the NaN carried in from the previous bar would fail both branches and propagate NaN indefinitely.  # noqa: E501
-        if pd.isna(final_upper_band.iloc[i - 1]) or pd.isna(
-            final_lower_band.iloc[i - 1]
-        ):
-            final_upper_band.iloc[i] = basic_upper_band.iloc[i]
-            final_lower_band.iloc[i] = basic_lower_band.iloc[i]
-            trend_direction.iloc[i] = 1
-            supertrend.iloc[i] = final_lower_band.iloc[i]
+        if math.isnan(final_upper[i - 1]) or math.isnan(final_lower[i - 1]):
+            final_upper[i] = basic_upper[i]
+            final_lower[i] = basic_lower[i]
+            direction[i] = 1.0
+            trend[i] = final_lower[i]
             continue
 
-        if (
-            basic_upper_band.iloc[i] < final_upper_band.iloc[i - 1]
-            or prices_close.iloc[i - 1] > final_upper_band.iloc[i - 1]
-        ):
-            final_upper_band.iloc[i] = basic_upper_band.iloc[i]
+        if basic_upper[i] < final_upper[i - 1] or close[i - 1] > final_upper[i - 1]:
+            final_upper[i] = basic_upper[i]
         else:
-            final_upper_band.iloc[i] = final_upper_band.iloc[i - 1]
+            final_upper[i] = final_upper[i - 1]
 
-        if (
-            basic_lower_band.iloc[i] > final_lower_band.iloc[i - 1]
-            or prices_close.iloc[i - 1] < final_lower_band.iloc[i - 1]
-        ):
-            final_lower_band.iloc[i] = basic_lower_band.iloc[i]
+        if basic_lower[i] > final_lower[i - 1] or close[i - 1] < final_lower[i - 1]:
+            final_lower[i] = basic_lower[i]
         else:
-            final_lower_band.iloc[i] = final_lower_band.iloc[i - 1]
+            final_lower[i] = final_lower[i - 1]
 
-        if trend_direction.iloc[i - 1] == 1:
-            if prices_close.iloc[i] < final_lower_band.iloc[i]:
-                trend_direction.iloc[i] = -1
-                supertrend.iloc[i] = final_upper_band.iloc[i]
+        if direction[i - 1] == 1:
+            if close[i] < final_lower[i]:
+                direction[i] = -1.0
+                trend[i] = final_upper[i]
             else:
-                trend_direction.iloc[i] = 1
-                supertrend.iloc[i] = final_lower_band.iloc[i]
-        elif prices_close.iloc[i] > final_upper_band.iloc[i]:
-            trend_direction.iloc[i] = 1
-            supertrend.iloc[i] = final_lower_band.iloc[i]
+                direction[i] = 1.0
+                trend[i] = final_lower[i]
+        elif close[i] > final_upper[i]:
+            direction[i] = 1.0
+            trend[i] = final_lower[i]
         else:
-            trend_direction.iloc[i] = -1
-            supertrend.iloc[i] = final_upper_band.iloc[i]
+            direction[i] = -1.0
+            trend[i] = final_upper[i]
+
+    supertrend = pd.Series(trend, index=prices_close.index, dtype="float64")
+    trend_direction = pd.Series(direction, index=prices_close.index, dtype="float64")
 
     return pd.concat(
         [supertrend, trend_direction], keys=["Supertrend", "Trend Direction"], axis=1

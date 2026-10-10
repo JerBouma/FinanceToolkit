@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import contextlib
+import contextvars
 import inspect
 import os
 from collections.abc import Callable, Iterable
@@ -13,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import bounded_ffill
+from financetoolkit.utilities.statistics_model import apply_rounding, bounded_ffill
 
 logger = logger_model.get_logger()
 
@@ -91,7 +92,12 @@ def run_in_parallel(
         max_workers = determine_max_workers()
 
     with ThreadPoolExecutor(max_workers=min(max_workers, len(worker_args))) as executor:
-        futures = [executor.submit(worker, *args) for args in worker_args]
+        # Every worker runs in a copy of the caller's context, so context-bound state,
+        # such as the messages an MCP tool call collects, also covers the workers.
+        futures = [
+            executor.submit(contextvars.copy_context().run, worker, *args)
+            for args in worker_args
+        ]
 
         # Collecting in submission order keeps the result aligned with worker_args;
         # the calls themselves still run concurrently.
@@ -218,9 +224,13 @@ def enrich_historical_data(
         pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).
     """
 
-    historical_data["Return"] = bounded_ffill(
-        historical_data[return_column]
-    ).pct_change()
+    # A price of 0, such as a faulty bar or a futures contract settling at 0, has no
+    # return from or to it, and an infinite return would carry into every cumulative one.
+    historical_data["Return"] = (
+        bounded_ffill(historical_data[return_column])
+        .pct_change()
+        .replace([np.inf, -np.inf], np.nan)
+    )
 
     historical_data["Cumulative Return"] = 1
 
@@ -236,6 +246,34 @@ def enrich_historical_data(
     ).cumprod()
 
     return historical_data
+
+
+PERIODS_BY_FREQUENCY = {
+    "D": "daily",
+    "W": "weekly",
+    "M": "monthly",
+    "Q": "quarterly",
+    "Y": "yearly",
+    "A": "yearly",
+}
+
+
+def period_of_result(result: pd.DataFrame) -> str | None:
+    """
+    Determine the period of a result from the frequency of the dates on either axis.
+
+    Args:
+        result (pd.DataFrame): The result, with dates as index or as columns.
+
+    Returns:
+        str | None: "daily", "weekly", "monthly", "quarterly" or "yearly", or None when
+            neither axis holds periods.
+    """
+    for axis in (result.index, result.columns):
+        if isinstance(axis, pd.PeriodIndex):
+            return PERIODS_BY_FREQUENCY.get(axis.freqstr[0])
+
+    return None
 
 
 def handle_portfolio(func):
@@ -284,6 +322,12 @@ def handle_portfolio(func):
 
             if rounding is None:
                 rounding = self._rounding
+
+            # The weights belong to the periods of the result, which the frequency of its
+            # dates tells most reliably: a method's default period differs per module
+            # (e.g. daily for most risk metrics, yearly for the ratios).
+            period = period_of_result(result) or period
+
             if period is None:
                 period = "quarterly" if getattr(self, "_quarterly", False) else "yearly"
 
@@ -304,9 +348,11 @@ def handle_portfolio(func):
                 # reindex fills periods missing from weights with NaN rather than raising.
                 weights = weights.reindex(result_without_benchmark.columns).T
 
-                weighted_averages = round(
+                # Only the weights of the tickers with a value count, so a missing value
+                # does not pull the portfolio towards zero.
+                weighted_averages = apply_rounding(
                     (result_without_benchmark * weights).sum(axis=0)
-                    / weights.sum(axis=0),
+                    / weights.where(result_without_benchmark.notna()).sum(axis=0),
                     rounding,
                 )
 
@@ -317,9 +363,9 @@ def handle_portfolio(func):
             ):
                 weights = weights.reindex(result.index)
 
-                weighted_averages = round(
+                weighted_averages = apply_rounding(
                     (result_without_benchmark * weights).sum(axis=1)
-                    / weights.sum(axis=1),
+                    / weights.where(result_without_benchmark.notna()).sum(axis=1),
                     rounding,
                 )
 

@@ -2,6 +2,10 @@
 
 __docformat__ = "google"
 
+from collections.abc import Callable
+from typing import Any
+
+import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
@@ -276,3 +280,46 @@ def show_input_info(
         )
 
     logger.info("Risk Free Rate: %s%%", round(risk_free_rate * 100, 2))
+
+
+def evaluate_on_grid(
+    function: Callable[[Any, Any], Any],
+    strike_prices: list[float],
+    times_to_expiration: list[float],
+) -> dict[float, dict[float, float]]:
+    """
+    Evaluates an option formula for every strike price and time to expiration in one call
+    on arrays, instead of once per combination, which is as exact and many times faster
+    since the formulas are numpy operations. A formula that does not accept arrays is
+    evaluated per combination instead.
+
+    Args:
+        function (Callable): The formula, a function of the strike price and the time to
+            expiration.
+        strike_prices (list[float]): The strike prices.
+        times_to_expiration (list[float]): The times to expiration in years.
+
+    Returns:
+        dict[float, dict[float, float]]: The value per strike price and time to expiration.
+    """
+    strikes = list(strike_prices)
+    times = list(times_to_expiration)
+    grid_strikes = np.repeat(np.asarray(strikes, dtype=float), len(times))
+    grid_times = np.tile(np.asarray(times, dtype=float), len(strikes))
+
+    try:
+        values = np.asarray(function(grid_strikes, grid_times), dtype=float)
+        if values.shape != grid_strikes.shape:
+            raise ValueError("The formula does not return a value per combination.")
+    except (ValueError, TypeError):
+        return {
+            strike: {time: function(strike, time) for time in times}
+            for strike in strikes
+        }
+
+    values = values.reshape(len(strikes), len(times))
+
+    return {
+        strike: {time: float(values[row, column]) for column, time in enumerate(times)}
+        for row, strike in enumerate(strikes)
+    }

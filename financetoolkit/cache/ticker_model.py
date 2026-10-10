@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from financetoolkit.utilities import error_model
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
+
 if TYPE_CHECKING:
     from financetoolkit.cache.cache_controller import Cache
 
@@ -192,8 +197,12 @@ def collect_per_ticker(
     if not missing_tickers:
         return combine_tickers(cached_frames, tickers, ticker_axis), []
 
+    failures_before = error_model.get_request_failures()
     result = collector(missing_tickers)
     fetched, invalid_tickers = result if isinstance(result, tuple) else (result, [])
+    # Without a failed request in the meantime, a ticker missing from the answer has no
+    # such data (e.g. ETF holdings of a company), which is cached so it is not asked again.
+    answered = error_model.get_request_failures() == failures_before
 
     if isinstance(fetched, pd.DataFrame) and not fetched.empty:
         if cache is not None:
@@ -211,4 +220,30 @@ def collect_per_ticker(
 
         cached_frames.append(fetched)
 
-    return combine_tickers(cached_frames, tickers, ticker_axis), invalid_tickers
+    combined = combine_tickers(cached_frames, tickers, ticker_axis)
+
+    # Said once per call, so an empty result explains itself, e.g. an ETF dataset asked of
+    # a company or a ticker the source does not know.
+    if without_data := [
+        ticker
+        for ticker in missing_tickers
+        if (selected := select_ticker(combined, ticker, ticker_axis)) is None
+        or selected.empty
+    ]:
+        if cache is not None and answered:
+            for ticker in without_data:
+                cache.set(
+                    source=source,
+                    dataset=dataset,
+                    entity=ticker,
+                    data=pd.DataFrame(),
+                    parameters=parameters,
+                )
+
+        logger.warning(
+            "No %s data is available for %s.",
+            dataset.replace("_", " "),
+            ", ".join(without_data),
+        )
+
+    return combined, invalid_tickers

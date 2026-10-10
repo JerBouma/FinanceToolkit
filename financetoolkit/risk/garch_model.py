@@ -1,5 +1,7 @@
 """GARCH Model"""
 
+import math
+
 import numpy as np
 import pandas as pd
 from scipy import optimize
@@ -99,6 +101,37 @@ def _fit_multi_start(
         return np.full(dim, np.nan)
 
     return best_x
+
+
+def _linear_variance_recursion(
+    driver: np.ndarray, persistence: float, first_variance: float, time_steps: int
+) -> np.ndarray:
+    """
+    Computes the variance recursion of GARCH(1, 1) and GJR-GARCH(1, 1),
+    sigma2[i] = driver[i - 1] + persistence * sigma2[i - 1], from sigma2[0].
+
+    Args:
+        driver (np.ndarray): The part of each step that does not depend on the previous
+            variance, for steps 1 to time_steps - 1.
+        persistence (float): The weight of the previous variance (beta).
+        first_variance (float): The variance of the first step.
+        time_steps (int): The number of steps.
+
+    Returns:
+        np.ndarray: The variance of every step.
+    """
+    sigma2 = np.empty(time_steps)
+    sigma2[0] = first_variance
+
+    if time_steps > 1:
+        # scipy.signal takes around a second to import, so only where it is needed.
+        from scipy import signal  # noqa: PLC0415
+
+        sigma2[1:], _ = signal.lfilter(
+            [1.0], [1.0, -persistence], driver, zi=[persistence * first_variance]
+        )
+
+    return sigma2
 
 
 def garch_log_maximization(
@@ -268,19 +301,17 @@ def get_garch(
         if time_steps is None:
             time_steps = len(returns)
 
-        # Initialize sigma2 with zeros and set the first value
-        sigma2 = np.zeros(time_steps)
-        sigma2[0] = returns[0] ** 2
+        omega, alpha, beta = weights[0], weights[1], weights[2]
 
-        # Calculate sigma2 values using a vectorized approach
-        for i in range(1, time_steps):
-            sigma2[i] = (
-                weights[0]
-                + weights[1] * returns[i - 1] ** 2
-                + weights[2] * sigma2[i - 1]
-            )
-
-        return sigma2
+        # sigma2[i] = omega + alpha * returns[i - 1] ** 2 + beta * sigma2[i - 1] is a
+        # first-order linear recursion, which lfilter computes in compiled code with the
+        # same operations in the same order as the loop it replaces.
+        return _linear_variance_recursion(
+            omega + alpha * returns[: time_steps - 1] ** 2,
+            beta,
+            returns[0] ** 2,
+            time_steps,
+        )
 
     raise TypeError("Expects pd.DataFrame or pd.Series or np.ndarry, no other value.")
 
@@ -539,19 +570,16 @@ def get_gjr_garch(
             time_steps = len(returns)
 
         omega, alpha, gamma, beta = weights
+        lagged = returns[: time_steps - 1]
+        indicator = np.where(lagged < 0, 1.0, 0.0)
 
-        sigma2 = np.zeros(time_steps)
-        sigma2[0] = returns[0] ** 2
-
-        for i in range(1, time_steps):
-            indicator = 1.0 if returns[i - 1] < 0 else 0.0
-            sigma2[i] = (
-                omega
-                + (alpha + gamma * indicator) * returns[i - 1] ** 2
-                + beta * sigma2[i - 1]
-            )
-
-        return sigma2
+        # A first-order linear recursion like GARCH, see _linear_variance_recursion.
+        return _linear_variance_recursion(
+            omega + (alpha + gamma * indicator) * lagged**2,
+            beta,
+            returns[0] ** 2,
+            time_steps,
+        )
 
     raise TypeError("Expects pd.DataFrame or pd.Series or np.ndarry, no other value.")
 
@@ -805,27 +833,31 @@ def get_egarch(
         if time_steps is None:
             time_steps = len(returns)
 
-        omega, alpha, gamma, beta = weights
-        expected_absolute_z = np.sqrt(2 / np.pi)
+        omega, alpha, gamma, beta = (float(weight) for weight in weights)
+        expected_absolute_z = math.sqrt(2 / math.pi)
 
-        log_sigma2 = np.zeros(time_steps)
-        sigma2 = np.zeros(time_steps)
-        log_sigma2[0] = np.log(returns[0] ** 2 + 1e-12)
-        sigma2[0] = np.exp(log_sigma2[0])
+        # The log variance depends on the previous variance itself, so the recursion
+        # cannot be vectorised. It runs on plain Python floats: indexing numpy arrays and
+        # calling numpy on single numbers costs around a microsecond each, which made the
+        # likelihood, evaluated thousands of times per fit, the bulk of an EGARCH fit.
+        lagged = returns[: time_steps - 1].tolist()
+        sigma2 = [0.0] * time_steps
+        log_variance = math.log(float(returns[0]) ** 2 + 1e-12)
+        sigma2[0] = math.exp(log_variance)
 
-        for i in range(1, time_steps):
-            standardized_shock = returns[i - 1] / np.sqrt(sigma2[i - 1])
-            log_sigma2[i] = (
+        for i, previous_return in enumerate(lagged, start=1):
+            standardized_shock = previous_return / math.sqrt(sigma2[i - 1])
+            log_variance = (
                 omega
-                + beta * log_sigma2[i - 1]
+                + beta * log_variance
                 + alpha * (abs(standardized_shock) - expected_absolute_z)
                 + gamma * standardized_shock
             )
             # Without clipping, an overflow step makes the likelihood spuriously attractive.
-            log_sigma2[i] = np.clip(log_sigma2[i], -20, 20)
-            sigma2[i] = np.exp(log_sigma2[i])
+            log_variance = min(max(log_variance, -20.0), 20.0)
+            sigma2[i] = math.exp(log_variance)
 
-        return sigma2
+        return np.array(sigma2)
 
     raise TypeError("Expects pd.DataFrame or pd.Series or np.ndarry, no other value.")
 

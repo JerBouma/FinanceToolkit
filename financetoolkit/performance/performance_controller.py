@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import warnings
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
@@ -11,7 +12,6 @@ from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import (
     determine_within_dataset,
     determine_within_historical_data,
-    handle_errors,
 )
 from financetoolkit.risk.risk_model import (
     get_kurtosis,
@@ -23,8 +23,10 @@ from financetoolkit.risk.risk_model import (
     get_volatility,
 )
 from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
     apply_rounding,
     convert_annualized_rate_to_period,
     finalize_dataset,
@@ -35,6 +37,8 @@ from financetoolkit.utilities.statistics_model import (
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
+# The examples' output tables are wider than the line length.
+# ruff: noqa: E501
 
 logger = get_logger()
 
@@ -78,7 +82,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_capital_asset_pricing_model(period='quarterly')
         ```
@@ -87,11 +96,25 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022Q3 | -0.0684 | -0.1047 |
-        | 2022Q4 |  0.0857 |  0.0828 |
-        | 2023Q1 |  0.075  |  0.1121 |
-        | 2023Q2 |  0.0922 |  0.1342 |
-        | 2023Q3 |  0.0052 | -0.0482 |
+        | 2021Q2 |  0.1157 |  0.1366 |
+        | 2021Q3 |  0.0064 |  0.0053 |
+        | 2021Q4 |  0.1214 |  0.1869 |
+        | 2022Q1 | -0.0577 | -0.1017 |
+        | 2022Q2 | -0.2135 | -0.3321 |
+        | 2022Q3 | -0.0597 | -0.0828 |
+        | 2022Q4 |  0.1059 |  0.0998 |
+        | 2023Q1 |  0.0831 |  0.152  |
+        | 2023Q2 |  0.1032 |  0.1756 |
+        | 2023Q3 | -0.0416 | -0.1029 |
+        | 2023Q4 |  0.102  |  0.2474 |
+        | 2024Q1 |  0.1038 |  0.1406 |
+        | 2024Q2 |  0.0525 |  0.0589 |
+        | 2024Q3 |  0.0571 |  0.1525 |
+        | 2024Q4 |  0.0217 |  0.0516 |
+        | 2025Q1 | -0.0386 | -0.1499 |
+        | 2025Q2 |  0.1473 |  0.2038 |
+        | 2025Q3 |  0.1031 |  0.1768 |
+        | 2025Q4 |  0.0236 |  0.0495 |
         """
         self._tickers = tickers
         self._tickers_without_portfolio = [
@@ -220,7 +243,7 @@ class Performance:
                 Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -241,7 +264,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.collect_all_metrics().xs("AAPL", level=1, axis=1)
         ```
@@ -250,15 +278,14 @@ class Performance:
 
         |      |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |
         |:-----|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|
-        | 2021 |     0.5253 |                 1.4003 |                   1.1039 |     0.0065 |           0.0108 |
-        | 2022 |     0.4781 |                 1.3096 |                   1.3186 |    -0.1669 |           0.0115 |
-        | 2023 |     0.576  |                 1.1815 |                   0.9655 |     0.3293 |           0.009  |
-        | 2024 |     0.5    |                 1.117  |                   1.0492 |     0.1905 |           0.0121 |
-        | 2025 |     0.472  |                 1.0324 |                   1.1132 |     0.0709 |           0.0139 |
-        | 2026 |     0.5099 |                 0.678  |                   0.5418 |     0.0919 |           0.0169 |
+        | 2022 |     0.4781 |                 1.3094 |                   1.3191 |    -0.1669 |           0.0115 |
+        | 2023 |     0.58   |                 1.1825 |                   0.9646 |     0.3292 |           0.009  |
+        | 2024 |     0.5    |                 1.1178 |                   1.0487 |     0.1906 |           0.0121 |
+        | 2025 |     0.472  |                 1.0324 |                   1.0986 |     0.0709 |           0.0139 |
+        | 2021 |     0.4921 |                 1.3819 |                   1.422  |   nan      |           0.0118 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        rounding = rounding if rounding else self._rounding
+        rounding = rounding if rounding is not None else self._rounding
 
         performance_metrics = {
             "Alpha": self.get_alpha(
@@ -489,7 +516,7 @@ class Performance:
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -509,7 +536,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "AMZN"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_beta()
         ```
@@ -518,12 +550,11 @@ class Performance:
 
         | Date   |   AAPL |   AMZN |
         |:-------|-------:|-------:|
-        | 2021   | 1.3093 | 1.0276 |
-        | 2022   | 1.2989 | 1.6292 |
-        | 2023   | 1.1    | 1.5133 |
-        | 2024   | 0.9656 | 1.5442 |
-        | 2025   | 1.2485 | 1.3264 |
-        | 2026   | 0.7887 | 1.281  |
+        | 2021   | 1.3203 | 1.0432 |
+        | 2022   | 1.3026 | 1.6343 |
+        | 2023   | 1.1148 | 1.5303 |
+        | 2024   | 0.9688 | 1.5491 |
+        | 2025   | 1.2546 | 1.3254 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -603,7 +634,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -623,7 +654,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_capital_asset_pricing_model()
         ```
@@ -632,12 +668,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.3494 |  0.4914 |
-        | 2022   | -0.2646 | -0.3666 |
-        | 2023   |  0.2633 |  0.4905 |
-        | 2024   |  0.2266 |  0.4924 |
-        | 2025   |  0.1938 |  0.3135 |
-        | 2026   |  0.0822 |  0.1364 |
+        | 2022   | -0.2485 | -0.345  |
+        | 2023   |  0.2874 |  0.5403 |
+        | 2024   |  0.2425 |  0.5291 |
+        | 2025   |  0.2117 |  0.3446 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -724,7 +758,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_factor_asset_correlations()["AAPL"]
         ```
@@ -733,12 +772,11 @@ class Performance:
 
         |      |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
         |:-----|---------:|--------:|--------:|--------:|--------:|
-        | 2021 |   0.6626 | -0.0091 | -0.3248 | -0.0655 | -0.0029 |
-        | 2022 |   0.8796 |  0.0561 | -0.5479 | -0.2577 | -0.4763 |
-        | 2023 |   0.6988 | -0.0083 | -0.2833 | -0.1014 | -0.463  |
-        | 2024 |   0.5184 |  0.0358 | -0.3171 | -0.0563 | -0.0977 |
-        | 2025 |   0.7408 |  0.0646 | -0.2085 | -0.1108 |  0.0761 |
-        | 2026 |   0.4609 |  0.0502 | -0.1759 | -0.0847 | -0.0546 |
+        | 2021 |   0.6661 | -0.0576 | -0.436  | -0.1188 | -0.0529 |
+        | 2022 |   0.8797 |  0.0565 | -0.5481 | -0.2579 | -0.4763 |
+        | 2023 |   0.6987 | -0.0083 | -0.2832 | -0.1014 | -0.4615 |
+        | 2024 |   0.5185 |  0.0353 | -0.3175 | -0.056  | -0.0849 |
+        | 2025 |   0.7407 |  0.0654 | -0.2097 | -0.1083 |  0.0753 |
         """
 
         factors_to_calculate = (
@@ -809,7 +847,8 @@ class Performance:
         )
 
         self._factor_asset_correlations = apply_rounding(
-            factor_asset_correlations, rounding if rounding else self._rounding
+            factor_asset_correlations,
+            rounding if rounding is not None else self._rounding,
         ).loc[self._start_date : self._end_date]
 
         return filter_columns(self._factor_asset_correlations, show_columns)
@@ -857,20 +896,35 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2023-01-01")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2023-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_factor_correlations()
         ```
 
         Which returns:
 
-        |                 |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
-        |:----------------|---------:|--------:|--------:|--------:|--------:|
-        | (2026, 'Mkt-RF')|   1      |  0.1702 | -0.4054 | -0.5902 | -0.4198 |
-        | (2026, 'SMB')   |   0.1702 |  1      |  0.2113 | -0.1127 |  0.2437 |
-        | (2026, 'HML')   |  -0.4054 |  0.2113 |  1      |  0.3432 |  0.7051 |
-        | (2026, 'RMW')   |  -0.5902 | -0.1127 |  0.3432 |  1      |  0.4182 |
-        | (2026, 'CMA')   |  -0.4198 |  0.2437 |  0.7051 |  0.4182 |  1      |
+        |                                     |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
+        |:------------------------------------|---------:|--------:|--------:|--------:|--------:|
+        | (Period('2023', 'Y-DEC'), 'Mkt-RF') |   1      |  0.297  | -0.0436 | -0.327  | -0.4582 |
+        | (Period('2023', 'Y-DEC'), 'SMB')    |   0.297  |  1      |  0.4115 | -0.3984 |  0.0737 |
+        | (Period('2023', 'Y-DEC'), 'HML')    |  -0.0436 |  0.4115 |  1      |  0.2133 |  0.6075 |
+        | (Period('2023', 'Y-DEC'), 'RMW')    |  -0.327  | -0.3984 |  0.2133 |  1      |  0.3029 |
+        | (Period('2023', 'Y-DEC'), 'CMA')    |  -0.4582 |  0.0737 |  0.6075 |  0.3029 |  1      |
+        | (Period('2024', 'Y-DEC'), 'Mkt-RF') |   1      |  0.2546 | -0.2273 | -0.3827 | -0.1223 |
+        | (Period('2024', 'Y-DEC'), 'SMB')    |   0.2546 |  1      |  0.418  | -0.4877 |  0.0798 |
+        | (Period('2024', 'Y-DEC'), 'HML')    |  -0.2273 |  0.418  |  1      |  0.1307 |  0.0939 |
+        | (Period('2024', 'Y-DEC'), 'RMW')    |  -0.3827 | -0.4877 |  0.1307 |  1      | -0.1003 |
+        | (Period('2024', 'Y-DEC'), 'CMA')    |  -0.1223 |  0.0798 |  0.0939 | -0.1003 |  1      |
+        | (Period('2025', 'Y-DEC'), 'Mkt-RF') |   1      |  0.1744 | -0.3814 | -0.4273 |  0.0586 |
+        | (Period('2025', 'Y-DEC'), 'SMB')    |   0.1744 |  1      |  0.2143 | -0.2924 |  0.2143 |
+        | (Period('2025', 'Y-DEC'), 'HML')    |  -0.3814 |  0.2143 |  1      |  0.3573 |  0.2218 |
+        | (Period('2025', 'Y-DEC'), 'RMW')    |  -0.4273 | -0.2924 |  0.3573 |  1      |  0.0657 |
+        | (Period('2025', 'Y-DEC'), 'CMA')    |   0.0586 |  0.2143 |  0.2218 |  0.0657 |  1      |
         """
         factors_to_calculate = (
             factors_to_calculate
@@ -897,15 +951,37 @@ class Performance:
                 performance_model.obtain_fama_and_french_dataset()
             )
 
+        # The correlations are calculated for the whole periods within the date range
+        # only, rather than for every period since 1963 and then sliced.
+        period_symbol = PERIOD_TRANSLATION[period]
+        first_period_start = (
+            pd.Period(self._start_date, freq=period_symbol).start_time
+            if self._start_date
+            else None
+        )
+        last_period_end = (
+            pd.Period(self._end_date, freq=period_symbol).end_time
+            if self._end_date
+            else None
+        )
+        factor_dataset = self._fama_and_french_dataset[factors_to_calculate]
+        factor_dates = factor_dataset.index.to_timestamp()
+        within_range = np.ones(len(factor_dataset), dtype=bool)
+
+        if first_period_start is not None:
+            within_range &= factor_dates >= first_period_start
+        if last_period_end is not None:
+            within_range &= factor_dates <= last_period_end
+
         fama_and_french_period = determine_within_dataset(
-            self._fama_and_french_dataset[factors_to_calculate],
+            factor_dataset.loc[within_range],
             period,
             correlation=True,
         )
 
         # The Ken French dataset starts in 1963, so without this slice the result covers six decades regardless of the date range the Toolkit was initialised with.  # noqa: E501
         self._factor_correlations = apply_rounding(
-            fama_and_french_period, rounding if rounding else self._rounding
+            fama_and_french_period, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
         return self._factor_correlations
@@ -1007,7 +1083,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         # Calculate Fama and French 5 Factor model scores
         toolkit.performance.get_fama_and_french_model()["AAPL"]
@@ -1015,14 +1096,13 @@ class Performance:
 
         Which returns (the MSE column is omitted here for brevity):
 
-        |      |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   RMW Slope |   CMA Slope |   R Squared |
-        |:-----|------------:|---------------:|------------:|------------:|------------:|------------:|------------:|
-        | 2021 |      0.0002 |         1.1928 |     -0.174  |     -1.1611 |      0.3114 |      1.9876 |      0.7193 |
-        | 2022 |     -0.0001 |         1.2569 |     -0.2956 |     -0.6153 |      0.2337 |      0.6806 |      0.8178 |
-        | 2023 |      0.0003 |         1.1335 |     -0.0897 |     -0.4493 |      0.4512 |      0.0025 |      0.5908 |
-        | 2024 |      0.0002 |         0.8749 |      0.2648 |     -0.5816 |      0.729  |      0.0359 |      0.3496 |
-        | 2025 |     -0.0001 |         1.4494 |     -0.0714 |      0.1007 |      0.8112 |      0.0136 |      0.6031 |
-        | 2026 |      0.0004 |         1.1722 |     -0.1766 |     -0.3145 |      0.463  |      0.7267 |      0.2918 |
+        |      |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   RMW Slope |   CMA Slope |   Mean Squared Error (MSE) |   R Squared |
+        |:-----|------------:|---------------:|------------:|------------:|------------:|------------:|---------------------------:|------------:|
+        | 2021 |      0      |         1.3145 |     -0.2741 |     -0.9797 |      0.3115 |      1.6357 |                     0.0001 |      0.7587 |
+        | 2022 |     -0.0001 |         1.2569 |     -0.2955 |     -0.6166 |      0.2339 |      0.683  |                     0.0001 |      0.818  |
+        | 2023 |      0.0003 |         1.1311 |     -0.0898 |     -0.445  |      0.4512 |     -0.0069 |                     0.0001 |      0.5905 |
+        | 2024 |      0.0002 |         0.8772 |      0.2648 |     -0.5829 |      0.7336 |      0.0606 |                     0.0001 |      0.3501 |
+        | 2025 |     -0.0001 |         1.4474 |     -0.0767 |      0.107  |      0.8063 |      0.0257 |                     0.0002 |      0.6027 |
         """
         if method not in ["simple", "multi"]:
             raise ValueError(
@@ -1046,9 +1126,11 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
 
-        self._fama_and_french_dataset = (
-            performance_model.obtain_fama_and_french_dataset()
-        )
+        if self._fama_and_french_dataset.empty:
+            self._fama_and_french_dataset = (
+                performance_model.obtain_fama_and_french_dataset()
+            )
+
         fama_and_french_period = determine_within_dataset(
             self._fama_and_french_dataset, period, correlation=False
         )
@@ -1182,7 +1264,7 @@ class Performance:
             )
 
         self._fama_and_french_model = apply_rounding(
-            fama_and_french_model, rounding if rounding else self._rounding
+            fama_and_french_model, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
         if include_daily_residuals:
@@ -1226,7 +1308,7 @@ class Performance:
             )
 
             self._fama_and_french_residuals = apply_rounding(
-                daily_residuals_df, rounding if rounding else self._rounding
+                daily_residuals_df, rounding if rounding is not None else self._rounding
             ).loc[self._start_date : self._end_date]
 
             return (
@@ -1318,18 +1400,40 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AMZN", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_carhart_four_factor_model(period="quarterly")["AMZN"]
         ```
 
         Which returns (columns are Intercept, Mkt-RF/SMB/HML/MOM Slope, MSE and R Squared, per ticker):
 
-        |        |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   MOM Slope |   R Squared |
-        |:-------|------------:|---------------:|------------:|------------:|------------:|------------:|
-        | 2025Q4 |      0.0004 |         1.0218 |     -0.2372 |      0.2779 |     -0.2565 |      0.417  |
-        | 2026Q1 |     -0.0004 |         1.1562 |     -0.6432 |      0.3531 |      0.0224 |      0.3379 |
-        | 2026Q2 |      0.0009 |         0.8212 |      0.1163 |     -0.151  |     -0.1926 |      0.1799 |
+        |        |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   MOM Slope |   Mean Squared Error (MSE) |   R Squared |
+        |:-------|------------:|---------------:|------------:|------------:|------------:|---------------------------:|------------:|
+        | 2021Q1 |      0.0007 |         0.693  |     -0.3265 |     -0.4391 |      0.1835 |                     0.0001 |      0.6836 |
+        | 2021Q2 |      0.0005 |         0.8978 |     -0.0839 |     -0.5207 |     -0.0226 |                     0.0001 |      0.4758 |
+        | 2021Q3 |     -0.0004 |         1.3049 |     -0.1957 |     -0.5054 |     -0.1656 |                     0.0001 |      0.363  |
+        | 2021Q4 |     -0.001  |         1.1025 |     -0.3979 |     -0.4752 |     -0.2752 |                     0.0001 |      0.4805 |
+        | 2022Q1 |      0.0011 |         1.3057 |     -0.6168 |      0.0545 |     -0.9572 |                     0.0004 |      0.5827 |
+        | 2022Q2 |     -0.0011 |         1.4273 |     -0.6967 |     -0.3486 |     -0.4826 |                     0.0003 |      0.7936 |
+        | 2022Q3 |      0.0027 |         1.34   |     -1.311  |      0.0417 |     -0.9466 |                     0.0001 |      0.8026 |
+        | 2022Q4 |     -0.0042 |         0.9708 |     -0.8204 |     -0.6269 |     -0.633  |                     0.0003 |      0.7038 |
+        | 2023Q1 |     -0.0004 |         1.0735 |     -0.1457 |     -0.4162 |     -0.7099 |                     0.0002 |      0.6934 |
+        | 2023Q2 |      0.001  |         0.9296 |     -0.321  |     -1.2957 |     -0.7959 |                     0.0002 |      0.4925 |
+        | 2023Q3 |      0.0006 |         1.7583 |     -0.6457 |     -0.1542 |     -0.3941 |                     0.0002 |      0.3885 |
+        | 2023Q4 |      0.0007 |         1.3123 |      0.5404 |     -0.0812 |      1.3102 |                     0.0001 |      0.5996 |
+        | 2024Q1 |     -0.0006 |         1.6036 |     -0.2896 |     -0.2613 |      0.407  |                     0.0001 |      0.6386 |
+        | 2024Q2 |      0.0002 |         1.0116 |      0.3988 |     -0.9563 |     -0.0864 |                     0.0001 |      0.4468 |
+        | 2024Q3 |     -0.0016 |         1.4312 |     -0.1908 |     -0.0594 |      0.2389 |                     0.0002 |      0.5795 |
+        | 2024Q4 |      0.0019 |         1.6443 |     -0.2264 |     -0.506  |     -0.1046 |                     0.0002 |      0.5502 |
+        | 2025Q1 |     -0.0006 |         1.1099 |      0.2159 |     -0.2128 |      0.1184 |                     0.0001 |      0.647  |
+        | 2025Q2 |     -0      |         1.0987 |      0.4679 |     -0.6058 |     -0.2748 |                     0.0002 |      0.8102 |
+        | 2025Q3 |     -0.002  |         1.9426 |     -0.6088 |      0.1629 |      0.0168 |                     0.0002 |      0.288  |
+        | 2025Q4 |      0.0004 |         1.8577 |     -0.6249 |     -0.6308 |     -0.574  |                     0.0002 |      0.4685 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -1403,7 +1507,7 @@ class Performance:
         )
 
         self._carhart_four_factor_model = apply_rounding(
-            carhart_model, rounding if rounding else self._rounding
+            carhart_model, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
         return filter_columns(
@@ -1450,12 +1554,14 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
+            show_full_results (bool, optional): Whether to show the actual and benchmark returns next to the
+                Alpha. Defaults to False.
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Alpha is calculated as the rolling mean excess return over this many periods across
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1472,7 +1578,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_alpha()
         ```
@@ -1481,12 +1592,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.0678 |  0.2272 |
-        | 2022   | -0.0735 | -0.4555 |
-        | 2023   |  0.2389 |  0.7743 |
-        | 2024   |  0.0677 |  0.3922 |
-        | 2025   | -0.0779 | -0.0499 |
-        | 2026   |  0.0431 | -0.2173 |
+        | 2022   | -0.0823 | -0.4685 |
+        | 2023   |  0.2283 |  0.7554 |
+        | 2024   |  0.0583 |  0.3764 |
+        | 2025   | -0.0867 | -0.0636 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=False)
@@ -1501,9 +1610,9 @@ class Performance:
         else:
             alpha = performance_model.get_alpha(returns, benchmark_returns)
 
-        alpha = apply_rounding(alpha, rounding if rounding else self._rounding).loc[
-            self._start_date : self._end_date
-        ]
+        alpha = apply_rounding(
+            alpha, rounding if rounding is not None else self._rounding
+        ).loc[self._start_date : self._end_date]
 
         alpha = alpha.dropna(how="all", axis=0)
 
@@ -1569,7 +1678,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1589,7 +1698,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_jensens_alpha()
         ```
@@ -1598,12 +1712,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   | -0.0112 |  0.0062 |
-        | 2022   | -0.0037 | -0.2837 |
-        | 2023   |  0.2185 |  0.5267 |
-        | 2024   |  0.0741 |  0.1328 |
-        | 2025   | -0.1082 | -0.1999 |
-        | 2026   |  0.0531 | -0.2615 |
+        | 2022   | -0.0156 | -0.3053 |
+        | 2023   |  0.2027 |  0.4769 |
+        | 2024   |  0.0646 |  0.0961 |
+        | 2025   | -0.1212 | -0.231  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1683,7 +1795,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1703,7 +1815,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_treynor_ratio()
         ```
@@ -1712,12 +1829,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.2468 |  0.2586 |
-        | 2022   | -0.2364 | -0.3971 |
-        | 2023   |  0.4028 |  0.4422 |
-        | 2024   |  0.2641 |  0.243  |
-        | 2025   |  0.0352 |  0.0323 |
-        | 2026   |  0.1146 | -0.0879 |
+        | 2022   | -0.2325 | -0.3961 |
+        | 2023   |  0.4049 |  0.4352 |
+        | 2024   |  0.2698 |  0.2435 |
+        | 2025   |  0.039  |  0.0322 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1883,7 +1998,7 @@ class Performance:
             is known.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1907,7 +2022,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_sharpe_ratio()
         ```
@@ -1916,12 +2036,11 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.1277 |  0.1334 |
-        | 2022   | -0.0482 | -0.0812 |
-        | 2023   |  0.1189 |  0.095  |
-        | 2024   |  0.07   |  0.0637 |
+        | 2021   |  0.0859 |  0.0581 |
+        | 2022   | -0.0484 | -0.0812 |
+        | 2023   |  0.1193 |  0.095  |
+        | 2024   |  0.0702 |  0.0637 |
         | 2025   |  0.0188 |  0.0263 |
-        | 2026   |  0.0475 | -0.0604 |
 
         And, asking for the probability that these Sharpe ratios are genuine instead:
 
@@ -1933,12 +2052,11 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 0.8922 | 0.9022 |
-        | 2022   | 0.225  | 0.0998 |
-        | 2023   | 0.9684 | 0.9323 |
-        | 2024   | 0.8693 | 0.8496 |
-        | 2025   | 0.618  | 0.6618 |
-        | 2026   | 0.7167 | 0.2264 |
+        | 2021   | 0.9117 | 0.8251 |
+        | 2022   | 0.2241 | 0.0999 |
+        | 2023   | 0.9688 | 0.9323 |
+        | 2024   | 0.8698 | 0.8496 |
+        | 2025   | 0.6177 | 0.6618 |
         """
         if method not in ("standard", "adjusted", "probabilistic", "deflated"):
             raise ValueError(
@@ -2081,7 +2199,7 @@ class Performance:
             full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2101,7 +2219,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_sortino_ratio()
         ```
@@ -2110,12 +2233,11 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.197  |  0.2049 |
-        | 2022   | -0.0675 | -0.1069 |
-        | 2023   |  0.1839 |  0.1462 |
-        | 2024   |  0.1071 |  0.1044 |
-        | 2025   |  0.0283 |  0.0391 |
-        | 2026   |  0.0665 | -0.0789 |
+        | 2021   |  0.129  |  0.0906 |
+        | 2022   | -0.0678 | -0.1069 |
+        | 2023   |  0.1846 |  0.1462 |
+        | 2024   |  0.1073 |  0.1044 |
+        | 2025   |  0.0282 |  0.0391 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2175,7 +2297,7 @@ class Performance:
             rolling (int): The rolling period to use to calculate the Ulcer Index. Defaults to 14.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2193,7 +2315,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_ulcer_performance_index()
         ```
@@ -2202,12 +2329,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   | -0.4626 | -0.2002 |
-        | 2022   | -4.5193 | -5.0182 |
-        | 2023   | 13.6486 | 11.6618 |
-        | 2024   |  7.6983 |  6.3795 |
+        | 2022   | -4.5178 | -5.0182 |
+        | 2023   | 13.666  | 11.6618 |
+        | 2024   |  7.6992 |  6.3795 |
         | 2025   |  0.9945 |  0.7159 |
-        | 2026   |  2.2021 | -3.5198 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -2277,7 +2402,7 @@ class Performance:
             Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2296,7 +2421,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_calmar_ratio()
         ```
@@ -2305,12 +2435,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  1.8052 |  1.3727 |
-        | 2022   | -0.8734 | -0.8942 |
-        | 2023   |  3.1929 |  3.1074 |
-        | 2024   |  1.9404 |  1.461  |
-        | 2025   |  0.2834 |  0.2356 |
-        | 2026   |  1.0648 | -0.5212 |
+        | 2022   | -0.8691 | -0.8942 |
+        | 2023   |  3.2887 |  3.1074 |
+        | 2024   |  2.0024 |  1.461  |
+        | 2025   |  0.2995 |  0.2356 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2375,7 +2503,7 @@ class Performance:
             conventionally 0.1 (10%). Defaults to 0.1.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2394,7 +2522,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_sterling_ratio()
         ```
@@ -2403,12 +2536,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  2.0094 |  1.7258 |
-        | 2022   | -1.074  | -1.4667 |
-        | 2023   |  3.2891 |  4.193  |
-        | 2024   |  1.9286 |  2.1544 |
-        | 2025   |  0.4371 |  0.3785 |
-        | 2026   |  0.886  | -0.6097 |
+        | 2022   | -1.0657 | -1.4667 |
+        | 2023   |  3.3684 |  4.193  |
+        | 2024   |  1.9821 |  2.1544 |
+        | 2025   |  0.4622 |  0.3785 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2467,7 +2598,7 @@ class Performance:
             year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2488,7 +2619,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_burke_ratio()
         ```
@@ -2497,12 +2633,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.2606 |  0.1513 |
-        | 2022   | -0.1172 | -0.1172 |
-        | 2023   |  0.502  |  0.4155 |
-        | 2024   |  0.2519 |  0.1765 |
-        | 2025   |  0.0246 |  0.0195 |
-        | 2026   |  0.1417 | -0.1284 |
+        | 2022   | -0.117  | -0.1172 |
+        | 2023   |  0.5201 |  0.4155 |
+        | 2024   |  0.2617 |  0.1765 |
+        | 2025   |  0.0275 |  0.0195 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2576,7 +2710,7 @@ class Performance:
             return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2596,7 +2730,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_m2_ratio()
         ```
@@ -2605,12 +2744,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.0065 |  0.0112 |
         | 2022   | -0.1669 | -0.2118 |
-        | 2023   |  0.3293 |  0.2753 |
-        | 2024   |  0.1905 |  0.1604 |
+        | 2023   |  0.3292 |  0.2753 |
+        | 2024   |  0.1906 |  0.1604 |
         | 2025   |  0.0709 |  0.0637 |
-        | 2026   |  0.0919 | -0.0461 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         period_returns = self._get_column(period, "Return", within_period=False)
@@ -2689,7 +2826,7 @@ class Performance:
             full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2709,7 +2846,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_tracking_error()
         ```
@@ -2718,12 +2860,11 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 0.0118 | 0.0317 |
+        | 2021   | 0.0118 | 0.0316 |
         | 2022   | 0.0115 | 0.0344 |
         | 2023   | 0.009  | 0.0304 |
         | 2024   | 0.0121 | 0.0369 |
         | 2025   | 0.0139 | 0.0328 |
-        | 2026   | 0.0154 | 0.0226 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2804,7 +2945,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2824,7 +2965,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_information_ratio()
         ```
@@ -2833,12 +2979,11 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.0253 |  0.0381 |
-        | 2022   | -0.0212 | -0.0739 |
-        | 2023   |  0.0833 |  0.0817 |
-        | 2024   |  0.0231 |  0.0499 |
-        | 2025   | -0.0106 |  0.0164 |
-        | 2026   |  0.0269 | -0.0641 |
+        | 2021   |  0.0267 |  0.0306 |
+        | 2022   | -0.0253 | -0.0758 |
+        | 2023   |  0.08   |  0.0798 |
+        | 2024   |  0.0208 |  0.0486 |
+        | 2025   | -0.0128 |  0.015  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2901,7 +3046,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2920,7 +3065,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_upside_capture_ratio()
         ```
@@ -2929,12 +3079,11 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 1.3754 | 2.1079 |
-        | 2022   | 1.3044 | 1.7261 |
-        | 2023   | 1.1783 | 2.3099 |
-        | 2024   | 1.1158 | 2.5976 |
-        | 2025   | 1.0162 | 2.2065 |
-        | 2026   | 0.766  | 1.593  |
+        | 2021   | 1.3819 | 2.1068 |
+        | 2022   | 1.3094 | 1.7316 |
+        | 2023   | 1.1825 | 2.3099 |
+        | 2024   | 1.1178 | 2.5882 |
+        | 2025   | 1.0324 | 2.2452 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -2986,7 +3135,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3005,7 +3154,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_downside_capture_ratio()
         ```
@@ -3014,12 +3168,11 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 1.4016 | 2.0639 |
-        | 2022   | 1.3043 | 2.0238 |
-        | 2023   | 0.9486 | 1.8386 |
-        | 2024   | 1.0337 | 2.4414 |
-        | 2025   | 1.0842 | 2.2603 |
-        | 2026   | 0.5691 | 2.2236 |
+        | 2021   | 1.422  | 2.2024 |
+        | 2022   | 1.3191 | 2.0483 |
+        | 2023   | 0.9646 | 1.8781 |
+        | 2024   | 1.0487 | 2.4773 |
+        | 2025   | 1.0986 | 2.3391 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -3067,7 +3220,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3086,7 +3239,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_win_rate()
         ```
@@ -3095,12 +3253,11 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 0.4921 | 0.5    |
-        | 2022   | 0.4821 | 0.498  |
-        | 2023   | 0.576  | 0.532  |
-        | 2024   | 0.504  | 0.4683 |
+        | 2021   | 0.4921 | 0.496  |
+        | 2022   | 0.4781 | 0.498  |
+        | 2023   | 0.58   | 0.532  |
+        | 2024   | 0.5    | 0.4683 |
         | 2025   | 0.472  | 0.468  |
-        | 2026   | 0.504  | 0.472  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -3150,7 +3307,7 @@ class Performance:
             Defaults to 3.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3173,7 +3330,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_kappa_ratio()
         ```
@@ -3182,12 +3344,11 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.1414 |  0.1382 |
-        | 2022   | -0.052  | -0.0816 |
-        | 2023   |  0.1284 |  0.1026 |
-        | 2024   |  0.0767 |  0.0749 |
+        | 2021   |  0.0943 |  0.0653 |
+        | 2022   | -0.0522 | -0.0815 |
+        | 2023   |  0.1288 |  0.1026 |
+        | 2024   |  0.0768 |  0.0749 |
         | 2025   |  0.0186 |  0.0275 |
-        | 2026   |  0.0441 | -0.0538 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)
@@ -3247,7 +3408,7 @@ class Performance:
             the threshold between gains and losses. Defaults to 0.0.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3266,7 +3427,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_omega_ratio()
         ```
@@ -3275,12 +3441,11 @@ class Performance:
 
         |      |   AAPL |   TSLA |
         |:-----|-------:|-------:|
-        | 2021 | 1.2354 | 1.1945 |
-        | 2022 | 0.892  | 0.8129 |
-        | 2023 | 1.4034 | 1.3043 |
-        | 2024 | 1.2462 | 1.2098 |
-        | 2025 | 1.0873 | 1.0871 |
-        | 2026 | 1.2062 | 0.9358 |
+        | 2021 | 1.2633 | 1.1824 |
+        | 2022 | 0.8939 | 0.8129 |
+        | 2023 | 1.4113 | 1.3043 |
+        | 2024 | 1.2514 | 1.2098 |
+        | 2025 | 1.0901 | 1.0871 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3340,7 +3505,7 @@ class Performance:
             Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3359,7 +3524,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_gain_to_pain_ratio()
         ```
@@ -3368,12 +3538,11 @@ class Performance:
 
         |      |    AAPL |    TSLA |
         |:-----|--------:|--------:|
-        | 2021 |  0.2354 |  0.1945 |
-        | 2022 | -0.108  | -0.1871 |
-        | 2023 |  0.4034 |  0.3043 |
-        | 2024 |  0.2462 |  0.2098 |
-        | 2025 |  0.0873 |  0.0871 |
-        | 2026 |  0.2062 | -0.0642 |
+        | 2021 |  0.2633 |  0.1824 |
+        | 2022 | -0.1061 | -0.1871 |
+        | 2023 |  0.4113 |  0.3043 |
+        | 2024 |  0.2514 |  0.2098 |
+        | 2025 |  0.0901 |  0.0871 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3433,20 +3602,25 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_compound_growth_rate()
         ```
 
         Which returns:
 
-        |                                       |   AAPL |    TSLA |   Benchmark |
-        |:--------------------------------------|-------:|--------:|------------:|
-        | Compound Annual Growth Rate (CAGR)    | 0.1219 | -0.0124 |      0.1158 |
-        | Compound Quarterly Growth Rate (CQGR) | 0.041  |  0.0124 |      0.0332 |
-        | Compound Monthly Growth Rate (CMGR)   | 0.0123 |  0.005  |      0.0101 |
-        | Compound Weekly Growth Rate (CWGR)    | 0.0029 |  0.0012 |      0.0024 |
-        | Compound Daily Growth Rate (CDGR)     | 0.0006 |  0.0003 |      0.0005 |
+        |                                       |   AAPL |   TSLA |   Benchmark |
+        |:--------------------------------------|-------:|-------:|------------:|
+        | Compound Annual Growth Rate (CAGR)    | 0.1181 | 0.063  |      0.1099 |
+        | Compound Quarterly Growth Rate (CQGR) | 0.0444 | 0.0377 |      0.0325 |
+        | Compound Monthly Growth Rate (CMGR)   | 0.0128 | 0.009  |      0.0116 |
+        | Compound Weekly Growth Rate (CWGR)    | 0.0029 | 0.0016 |      0.0025 |
+        | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0005 |
         """
         compound_growth_rates = {}
 
@@ -3473,7 +3647,7 @@ class Performance:
         compound_growth_rate = pd.DataFrame(compound_growth_rates).T
 
         compound_growth_rate = apply_rounding(
-            compound_growth_rate, rounding if rounding else self._rounding
+            compound_growth_rate, rounding if rounding is not None else self._rounding
         )
 
         return compound_growth_rate
@@ -3529,7 +3703,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AMZN", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_returns(period="yearly")
         ```
@@ -3538,12 +3717,11 @@ class Performance:
 
         | Date   |    AMZN |    TSLA |   Benchmark |
         |:-------|--------:|--------:|------------:|
-        | 2021   |  0.0236 |  0.4983 |      0.2701 |
-        | 2022   | -0.496  | -0.6503 |     -0.1949 |
-        | 2023   |  0.8089 |  1.0174 |      0.2429 |
-        | 2024   |  0.4449 |  0.6255 |      0.2339 |
-        | 2025   |  0.0516 |  0.1129 |      0.1638 |
-        | 2026   |  0.0508 | -0.1254 |      0.0918 |
+        | 2021   |  0.0462 |  0.4488 |      0.3056 |
+        | 2022   | -0.496  | -0.6503 |     -0.1816 |
+        | 2023   |  0.8089 |  1.0174 |      0.2616 |
+        | 2024   |  0.4449 |  0.6255 |      0.2492 |
+        | 2025   |  0.0516 |  0.1129 |      0.1776 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3624,7 +3802,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AMZN", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_excess_return(period="yearly")
         ```
@@ -3633,12 +3816,11 @@ class Performance:
 
         | Date   |    AMZN |    TSLA |   Benchmark |
         |:-------|--------:|--------:|------------:|
-        | 2021   |  0.0085 |  0.4832 |      0.255  |
-        | 2022   | -0.5348 | -0.6891 |     -0.2337 |
-        | 2023   |  0.7702 |  0.9787 |      0.2042 |
-        | 2024   |  0.3992 |  0.5798 |      0.1882 |
-        | 2025   |  0.01   |  0.0713 |      0.1222 |
-        | 2026   |  0.0059 | -0.1703 |      0.0469 |
+        | 2021   |  0.0311 |  0.4337 |      0.2905 |
+        | 2022   | -0.5348 | -0.6891 |     -0.2204 |
+        | 2023   |  0.7702 |  0.9787 |      0.2229 |
+        | 2024   |  0.3992 |  0.5798 |      0.2035 |
+        | 2025   |  0.01   |  0.0713 |      0.136  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3699,7 +3881,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AMZN", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_correlation_matrix()
         ```
@@ -3708,9 +3895,9 @@ class Performance:
 
         |           |   AMZN |   TSLA |   Benchmark |
         |:----------|-------:|-------:|------------:|
-        | AMZN      | 1      | 0.935  |      0.7751 |
-        | TSLA      | 0.935  | 1      |      0.8982 |
-        | Benchmark | 0.7751 | 0.8982 |      1      |
+        | AMZN      | 1      | 0.9985 |      0.912  |
+        | TSLA      | 0.9985 | 1      |      0.9315 |
+        | Benchmark | 0.912  | 0.9315 |      1      |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3721,7 +3908,7 @@ class Performance:
         correlation_matrix = performance_model.get_correlation_matrix(returns)
 
         return apply_rounding(
-            correlation_matrix, rounding if rounding else self._rounding
+            correlation_matrix, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors
@@ -3754,7 +3941,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AMZN", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_covariance_matrix()
         ```
@@ -3763,9 +3955,9 @@ class Performance:
 
         |           |   AMZN |   TSLA |   Benchmark |
         |:----------|-------:|-------:|------------:|
-        | AMZN      | 0.1944 | 0.2418 |      0.0592 |
-        | TSLA      | 0.2418 | 0.344  |      0.0913 |
-        | Benchmark | 0.0592 | 0.0913 |      0.0301 |
+        | AMZN      | 0.3122 | 0.4018 |      0.1064 |
+        | TSLA      | 0.4018 | 0.5186 |      0.1401 |
+        | Benchmark | 0.1064 | 0.1401 |      0.0436 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3776,7 +3968,7 @@ class Performance:
         covariance_matrix = performance_model.get_covariance_matrix(returns)
 
         return apply_rounding(
-            covariance_matrix, rounding if rounding else self._rounding
+            covariance_matrix, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio
@@ -3823,7 +4015,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3844,7 +4036,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_appraisal_ratio()
         ```
@@ -3853,11 +4050,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.0946 | -0.5928 |
-        | 2023   |  1.4422 |  1.0563 |
-        | 2024   |  0.3371 |  0.1716 |
-        | 2025   | -0.5687 | -0.5019 |
-        | 2026   |  0.1411 | -1.8633 |
+        | 2022   | -0.0937 | -0.5925 |
+        | 2023   |  1.4388 |  1.0553 |
+        | 2024   |  0.3379 |  0.1715 |
+        | 2025   | -0.5682 | -0.5018 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3978,7 +4174,7 @@ class Performance:
             the full return history instead of per `period`. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4000,7 +4196,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_fama_decomposition().xs("AAPL", level=0, axis=1)
         ```
@@ -4009,12 +4210,10 @@ class Performance:
 
         | Date   |   Selectivity |   Diversification |
         |:-------|--------------:|------------------:|
-        | 2021   |        0.0113 |           -0.0084 |
-        | 2022   |        0.022  |           -0.0375 |
+        | 2022   |        0.0219 |           -0.0374 |
         | 2023   |        0.1048 |            0.0979 |
-        | 2024   |       -0.1053 |            0.1698 |
-        | 2025   |       -0.1774 |            0.056  |
-        | 2026   |       -0.0958 |            0.1246 |
+        | 2024   |       -0.1051 |            0.1697 |
+        | 2025   |       -0.1773 |            0.0561 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4121,7 +4320,7 @@ class Performance:
             for the worst 5% of outcomes). Defaults to 0.05.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4145,7 +4344,12 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_starr_ratio()
         ```
@@ -4154,11 +4358,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.4203 | -0.4759 |
-        | 2023   |  1.0763 |  0.8716 |
-        | 2024   |  0.5566 |  0.4707 |
+        | 2022   | -0.4259 | -0.4759 |
+        | 2023   |  1.0764 |  0.8716 |
+        | 2024   |  0.5567 |  0.4707 |
         | 2025   |  0.0677 |  0.0554 |
-        | 2026   |  0.1743 | -0.3805 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4226,7 +4429,7 @@ class Performance:
             best/worst 5% of outcomes). Defaults to 0.05.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4245,20 +4448,24 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_rachev_ratio()
         ```
 
         Which returns:
 
-        | Date   |   AAPL |   TSLA |
-        |:-------|-------:|-------:|
-        | 2022   | 1.0788 | 0.9467 |
-        | 2023   | 1.0726 | 1.1169 |
-        | 2024   | 1.1443 | 1.3081 |
-        | 2025   | 1.0729 | 1.0925 |
-        | 2026   | 0.8627 | 0.8404 |
+        |      |   AAPL |   TSLA |
+        |:-----|-------:|-------:|
+        | 2022 | 1.0786 | 0.9469 |
+        | 2023 | 1.0743 | 1.1169 |
+        | 2024 | 1.1441 | 1.3081 |
+        | 2025 | 1.0735 | 1.0925 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4316,7 +4523,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4337,18 +4544,25 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_treynor_mazuy_model().xs("AAPL", level=0, axis=1)
         ```
 
         Which returns:
 
-        | Date   |   Alpha |   Beta |   Gamma |   R Squared |
-        |:-------|--------:|-------:|--------:|------------:|
-        | 2024   |  0.0009 | 0.944  | -9.4286 |      0.294  |
-        | 2025   | -0.0005 | 1.2237 |  1.6352 |      0.5693 |
-        | 2026   |  0.0006 | 0.6632 | -2.6122 |      0.1087 |
+        |      |   Alpha |   Beta |   Gamma |   R Squared |
+        |:-----|--------:|-------:|--------:|------------:|
+        | 2021 | -0.0007 | 1.3263 |  9.8102 |      0.4698 |
+        | 2022 | -0.0007 | 1.3052 |  2.7524 |      0.7847 |
+        | 2023 | -0.0003 | 1.0941 | 14.403  |      0.5256 |
+        | 2024 |  0.0009 | 0.9439 | -9.4418 |      0.2941 |
+        | 2025 | -0.0005 | 1.2229 |  1.6316 |      0.5689 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)
@@ -4427,7 +4641,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | str, optional): The lag to use for the growth calculation. Defaults to 1.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4448,18 +4662,25 @@ class Performance:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["AAPL", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
         toolkit.performance.get_henriksson_merton_model().xs("AAPL", level=0, axis=1)
         ```
 
         Which returns:
 
-        | Date   |   Alpha |   Beta |   Up Market Beta |   R Squared |
-        |:-------|--------:|-------:|-----------------:|------------:|
-        | 2024   |  0.0013 | 1.1387 |          -0.3553 |      0.2926 |
-        | 2025   | -0.0009 | 1.1732 |           0.152  |      0.5673 |
-        | 2026   |  0.0008 | 0.7243 |          -0.1232 |      0.1088 |
+        |      |   Alpha |   Beta |   Up Market Beta |   R Squared |
+        |:-----|--------:|-------:|-----------------:|------------:|
+        | 2021 | -0.0005 | 1.2449 |           0.1476 |      0.4661 |
+        | 2022 | -0.0011 | 1.22   |           0.1684 |      0.784  |
+        | 2023 | -0.0006 | 0.9024 |           0.3969 |      0.5214 |
+        | 2024 |  0.0013 | 1.1395 |          -0.3574 |      0.2927 |
+        | 2025 | -0.0009 | 1.1728 |           0.1513 |      0.5669 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)

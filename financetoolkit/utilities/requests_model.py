@@ -2,14 +2,22 @@
 
 __docformat__ = "google"
 
+import importlib.util
+import os
 import re
+import ssl
 
 import requests
 from requests.adapters import HTTPAdapter
 
+from financetoolkit.cache.request_model import CREDENTIAL_PARAMETERS, redact_credentials
 from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
+
+BROTLI_AVAILABLE = bool(
+    importlib.util.find_spec("brotli") or importlib.util.find_spec("brotlicffi")
+)
 
 HEADERS = {
     "User-Agent": (
@@ -19,9 +27,27 @@ HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate, br",
+    # Brotli is only offered when a decoder is installed: requests cannot decode it on
+    # its own, and a server that prefers it would otherwise answer with unreadable bytes.
+    "Accept-Encoding": "gzip, deflate, br" if BROTLI_AVAILABLE else "gzip, deflate",
     "Connection": "keep-alive",
 }
+
+# Some official sources (the Reserve Bank of Australia, De Nederlandsche Bank) turn away
+# requests that present themselves as a browser without being one, so for those the
+# Finance Toolkit names itself.
+TOOLKIT_HEADERS = {
+    "User-Agent": "financetoolkit (+https://github.com/JerBouma/FinanceToolkit)"
+}
+
+# Set to 1 to send requests that carry an API key without verifying the certificate when
+# verification fails, which exposes the key to whoever intercepts the connection.
+# Pointing REQUESTS_CA_BUNDLE to the certificate of a corporate proxy is the safe fix.
+UNVERIFIED_SSL_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL"
+
+CREDENTIAL_IN_URL = re.compile(
+    r"[?&](" + "|".join(CREDENTIAL_PARAMETERS) + r")=", re.IGNORECASE
+)
 
 # Sized comfortably above the default number of worker threads (see helpers.DEFAULT_MAX_WORKERS) so that every concurrent API call can keep its connection alive; a larger worker count still works, urllib3 simply discards the surplus connections after use.  # noqa: E501
 CONNECTION_POOL_SIZE = 32
@@ -75,7 +101,13 @@ def get_request(
     Returns:
         requests.Response: The HTTP response object.
 
+    A request that carries an API key is not retried without verification unless
+    FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL is set to 1, since an intercepted connection would
+    hand over the key; REQUESTS_CA_BUNDLE can point to a corporate proxy's certificate.
+
     Raises:
+        requests.exceptions.SSLError: If the certificate cannot be verified for a request
+            that carries an API key.
         requests.exceptions.RequestException: If the request fails even without SSL verification.
     """
     headers = {**HEADERS, **(extra_headers or {})}
@@ -84,10 +116,44 @@ def get_request(
         response.raise_for_status()
         return response
     except requests.exceptions.SSLError:
+        # certifi has dropped some older roots that servers still chain to, such as
+        # Comodo's "AAA Certificate Services" (STOXX), while the operating system still
+        # trusts them, so the system's certificates are tried before not verifying.
+        system_certificates = ssl.get_default_verify_paths().cafile
+        if system_certificates and os.path.exists(system_certificates):
+            try:
+                response = SESSION.get(
+                    url, headers=headers, timeout=timeout, verify=system_certificates
+                )
+                response.raise_for_status()
+                return response
+            except requests.exceptions.SSLError:
+                pass
+
+        carries_credentials = bool(CREDENTIAL_IN_URL.search(url)) or any(
+            header.lower() == "authorization" for header in (extra_headers or {})
+        )
+
+        if (
+            carries_credentials
+            and os.environ.get(UNVERIFIED_SSL_ENVIRONMENT_VARIABLE) != "1"
+        ):
+            # An unverified connection could be intercepted, which would hand over the
+            # API key, so a request carrying one is not retried without verification.
+            logger.error(
+                "SSL certificate verification failed for %s. The request carries an API "
+                "key and is therefore not retried without verification. In a corporate "
+                "network with its own certificates, set REQUESTS_CA_BUNDLE to the path of "
+                "that certificate, or set %s=1 to retry without verification regardless.",
+                redact_credentials(url),
+                UNVERIFIED_SSL_ENVIRONMENT_VARIABLE,
+            )
+            raise
+
         logger.warning(
             "SSL certificate verification failed for %s. Retrying without verification. "
             "This is common in corporate networks with self-signed certificates.",
-            url,
+            redact_credentials(url),
         )
         response = SESSION.get(
             url, headers=headers, timeout=timeout, verify=False  # noqa

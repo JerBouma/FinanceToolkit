@@ -932,6 +932,42 @@ def get_short_term_interest_rate(
     return short_term_interest_rate
 
 
+def get_gross_domestic_product_growth(
+    year_over_year: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """
+    Get the quarterly growth of real gross domestic product (GDP) for a variety of
+    countries from the OECD's Quarterly National Accounts. The growth is measured in
+    chain-linked volumes and is seasonally and calendar adjusted, the headline figure
+    national statistical offices publish.
+
+    Args:
+        year_over_year (bool): Whether to return the change on the same quarter a year
+            earlier instead of on the previous quarter. Defaults to False.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: The growth as a decimal (0.006 for 0.6%), indexed by quarter with a
+        column per country.
+    """
+    transformation = "GY" if year_over_year else "G1"
+
+    oecd_data_string = (
+        "OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD,/"
+        f"Q.Y..S1..B1GQ._Z...PC.L.{transformation}."
+    )
+
+    gross_domestic_product_growth = collect_oecd_data(
+        oecd_data_string, "Q", start_date, end_date
+    )
+
+    # The OECD publishes the growth in percent.
+    return gross_domestic_product_growth / 100
+
+
 def get_consumer_price_index(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):

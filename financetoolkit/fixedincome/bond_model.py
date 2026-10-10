@@ -1,7 +1,72 @@
 """Bond Model Module"""
 
+import math
+
 import numpy as np
 import pandas as pd
+
+
+def get_number_of_periods(years_to_maturity: float, frequency: int) -> int:
+    """
+    The number of coupons until maturity.
+
+    Settlement is assumed to fall on a coupon date, so the maturity is a whole number of
+    periods, which is not truncated: 0.29 years of 100 periods a year is
+    28.999999999999996 periods in floating point, and 29 coupons. A maturity between
+    coupon dates counts the coupon of the partial period too (2.75 years of semi-annual
+    coupons is 6 coupons), each still discounted as a whole period.
+
+    Args:
+        years_to_maturity (float): The number of years until the bond matures.
+        frequency (int): The number of coupon payments per year.
+
+    Returns:
+        int: The number of coupon periods.
+    """
+    periods = years_to_maturity * frequency
+    whole_periods = round(periods)
+
+    if math.isclose(periods, whole_periods, abs_tol=1e-9):
+        return whole_periods
+
+    return math.ceil(periods)
+
+
+def solve_with_secant_method(
+    function, guess: float, tolerance: float, max_iterations: int
+) -> float:
+    """
+    Find the rate at which a function is zero with the secant method.
+
+    Args:
+        function (Callable): The function of the rate to find the root of.
+        guess (float): The rate to start from.
+        tolerance (float): The step size below which the rate is accepted.
+        max_iterations (int): The maximum number of steps.
+
+    Returns:
+        float: The rate, or NaN when it does not converge.
+    """
+    # The second starting point differs from the first even for a guess of 0.
+    previous_rate = guess
+    rate = guess + max(abs(guess) * 0.1, 1e-4)
+
+    for _ in range(max_iterations):
+        value, previous_value = function(rate), function(previous_rate)
+
+        if value == previous_value:
+            # A flat step cannot be extrapolated; the rate is only accepted as the root
+            # when the function is already zero there.
+            return rate if value == 0 else np.nan
+
+        next_rate = rate - value * (rate - previous_rate) / (value - previous_value)
+
+        if abs(next_rate - rate) < tolerance:
+            return next_rate
+
+        previous_rate, rate = rate, next_rate
+
+    return np.nan
 
 
 def get_bond_price(
@@ -49,7 +114,7 @@ def get_bond_price(
         float: The price of the bond.
     """
     coupon_payment = (par_value * coupon_rate) / frequency
-    total_periods = int(years_to_maturity * frequency)
+    total_periods = get_number_of_periods(years_to_maturity, frequency)
     present_value: int | float = 0
 
     # Calculate the present value of coupon payments
@@ -147,28 +212,13 @@ def get_yield_to_maturity(
     # Define the function to solve
     def bond_value(ytm):
         value = 0
-        total_periods = int(years_to_maturity * frequency)
+        total_periods = get_number_of_periods(years_to_maturity, frequency)
         for t in range(1, total_periods + 1):
             value += coupon_rate * par_value / frequency / ((1 + ytm / frequency) ** t)
         value += par_value / ((1 + ytm / frequency) ** total_periods)
         return value - bond_price
 
-    # Initial values
-    ytm0 = guess
-    ytm1 = guess * 1.1  # Slightly higher guess for the secant method
-
-    # Iterative process using the secant method
-    for _ in range(max_iterations):
-        ytm_next = ytm1 - bond_value(ytm1) * (ytm1 - ytm0) / (
-            bond_value(ytm1) - bond_value(ytm0)
-        )
-        if abs(ytm_next - ytm1) < tolerance:
-            return ytm_next
-        ytm0 = ytm1
-        ytm1 = ytm_next
-
-    # If the method fails to converge
-    return np.nan
+    return solve_with_secant_method(bond_value, guess, tolerance, max_iterations)
 
 
 def get_macaulays_duration(
@@ -207,7 +257,7 @@ def get_macaulays_duration(
     Returns:
         float: The Macaulay's duration of the bond.
     """
-    total_periods = int(years_to_maturity * frequency)
+    total_periods = get_number_of_periods(years_to_maturity, frequency)
     present_value_sum = 0
     cash_flow_weighted_sum = 0
 
@@ -222,7 +272,8 @@ def get_macaulays_duration(
     present_value_sum += par_value / (
         (1 + yield_to_maturity / frequency) ** total_periods
     )
-    cash_flow_weighted_sum += years_to_maturity * (
+    # At the last coupon date, the same moment the price discounts the principal to.
+    cash_flow_weighted_sum += (total_periods / frequency) * (
         par_value / ((1 + yield_to_maturity / frequency) ** total_periods)
     )
 
@@ -536,7 +587,7 @@ def _get_bond_price_from_curve(
         float: The price of the bond as implied by the spot curve.
     """
     spot_rates_sorted = spot_rates.sort_index()
-    total_periods = int(round(years_to_maturity * frequency))
+    total_periods = get_number_of_periods(years_to_maturity, frequency)
     coupon_payment = (par_value * coupon_rate) / frequency
 
     bond_price = 0.0
@@ -623,22 +674,7 @@ def get_z_spread(
             - bond_price
         )
 
-    # Initial values
-    spread0 = guess
-    spread1 = guess * 1.1  # Slightly higher guess for the secant method
-
-    # Iterative process using the secant method
-    for _ in range(max_iterations):
-        spread_next = spread1 - price_difference(spread1) * (spread1 - spread0) / (
-            price_difference(spread1) - price_difference(spread0)
-        )
-        if abs(spread_next - spread1) < tolerance:
-            return spread_next
-        spread0 = spread1
-        spread1 = spread_next
-
-    # If the method fails to converge
-    return np.nan
+    return solve_with_secant_method(price_difference, guess, tolerance, max_iterations)
 
 
 def get_bond_equivalent_yield(discount_yield: float, days_to_maturity: float) -> float:

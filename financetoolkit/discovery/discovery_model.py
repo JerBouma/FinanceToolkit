@@ -62,12 +62,24 @@ def get_cached_financial_data(
         if cached_response is not None:
             return cached_response
 
+    failures_before = error_model.get_request_failures()
     response = get_financial_data(
         url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
     )
 
-    # An empty frame may be a rate limit or plan error, not a genuine result.
-    if cache is not None and isinstance(response, pd.DataFrame) and not response.empty:
+    # An empty frame is a genuine result unless the request failed (a rate limit or a
+    # plan restriction), in which case it is asked again next time.
+    if (
+        cache is not None
+        and isinstance(response, pd.DataFrame)
+        and (
+            not response.empty
+            or (
+                error_model.get_request_failures() == failures_before
+                and not error_model.is_error_response(response)
+            )
+        )
+    ):
         cache.set(
             source=policy_model.FINANCIAL_MODELING_PREP,
             dataset="discovery",
@@ -1034,6 +1046,8 @@ def search_crypto_news(
     symbols: str | list[str],
     limit: int = 100,
     pages: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -1046,6 +1060,8 @@ def search_crypto_news(
         limit (int, optional): The number of articles to return per page. Defaults to 100.
         pages (int, optional): The number of pages to collect, each page is a separate
             API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -1055,6 +1071,11 @@ def search_crypto_news(
         "https://financialmodelingprep.com/stable/news/crypto"
         f"?symbols={_normalize_symbols(symbols)}&limit={limit}&apikey={api_key}"
     )
+
+    if start_date:
+        base_url += f"&from={start_date}"
+    if end_date:
+        base_url += f"&to={end_date}"
 
     crypto_news = _get_news_pages(
         base_url=base_url, pages=pages, user_subscription=user_subscription
@@ -1068,6 +1089,8 @@ def search_forex_news(
     symbols: str | list[str],
     limit: int = 100,
     pages: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
@@ -1080,6 +1103,8 @@ def search_forex_news(
         limit (int, optional): The number of articles to return per page. Defaults to 100.
         pages (int, optional): The number of pages to collect, each page is a separate
             API call, e.g. pages=5 makes 5 calls. Defaults to 1.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -1089,6 +1114,11 @@ def search_forex_news(
         "https://financialmodelingprep.com/stable/news/forex"
         f"?symbols={_normalize_symbols(symbols)}&limit={limit}&apikey={api_key}"
     )
+
+    if start_date:
+        base_url += f"&from={start_date}"
+    if end_date:
+        base_url += f"&to={end_date}"
 
     forex_news = _get_news_pages(
         base_url=base_url, pages=pages, user_subscription=user_subscription
@@ -1593,3 +1623,167 @@ def _format_mergers_acquisitions(mergers_acquisitions: pd.DataFrame) -> pd.DataF
     mergers_acquisitions = mergers_acquisitions.set_index("Symbol").sort_index()
 
     return mergers_acquisitions
+
+
+def get_earnings_calendar(
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the earnings releases of all companies in a date range, with the reported and
+    estimated earnings per share and revenue.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the earnings releases, indexed by symbol.
+    """
+    url = f"https://financialmodelingprep.com/stable/earnings-calendar?apikey={api_key}"
+
+    if start_date:
+        url += f"&from={start_date}"
+    if end_date:
+        url += f"&to={end_date}"
+
+    earnings_calendar = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if earnings_calendar.empty:
+        return earnings_calendar
+
+    earnings_calendar = earnings_calendar.rename(
+        columns={
+            "symbol": "Symbol",
+            "date": "Date",
+            "epsActual": "EPS",
+            "epsEstimated": "Estimated EPS",
+            "revenueActual": "Revenue",
+            "revenueEstimated": "Estimated Revenue",
+            "lastUpdated": "Last Updated",
+        }
+    )
+
+    earnings_calendar = earnings_calendar.sort_values(["Date", "Symbol"])
+
+    return earnings_calendar.set_index("Symbol")
+
+
+def get_sec_filings_8k(
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 100,
+    page: int = 0,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the most recent 8-K filings with the SEC: the reports companies file to announce
+    a material event, such as an acquisition, a change of management or results.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        start_date (str, optional): The start date to filter data with.
+        end_date (str, optional): The end date to filter data with.
+        limit (int, optional): The number of results to return. Defaults to 100.
+        page (int, optional): The page number to retrieve. Defaults to 0.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the 8-K filings, indexed by symbol.
+    """
+    url = (
+        "https://financialmodelingprep.com/stable/sec-filings-8k"
+        f"?page={page}&limit={limit}&apikey={api_key}"
+    )
+
+    if start_date:
+        url += f"&from={start_date}"
+    if end_date:
+        url += f"&to={end_date}"
+
+    filings = get_cached_financial_data(url=url, user_subscription=user_subscription)
+
+    if filings.empty:
+        return filings
+
+    filings = filings.rename(
+        columns={
+            "symbol": "Symbol",
+            "cik": "CIK",
+            "filingDate": "Filing Date",
+            "acceptedDate": "Accepted Date",
+            "formType": "Form Type",
+            "hasFinancials": "Has Financials",
+            "link": "Link",
+            "finalLink": "Final Link",
+        }
+    )
+
+    return filings.set_index("Symbol")
+
+
+def get_insider_trading_latest(
+    api_key: str,
+    date: str | None = None,
+    limit: int = 100,
+    page: int = 0,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the most recent trades by company insiders (officers, directors and large
+    shareholders) as reported in their Form 4 filings.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        date (str, optional): Only return the trades filed on this date.
+        limit (int, optional): The number of results to return. Defaults to 100.
+        page (int, optional): The page number to retrieve. Defaults to 0.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: DataFrame of the latest insider trades, indexed by symbol.
+    """
+    url = (
+        "https://financialmodelingprep.com/stable/insider-trading/latest"
+        f"?page={page}&limit={limit}&apikey={api_key}"
+    )
+
+    if date:
+        url += f"&date={date}"
+
+    insider_trading = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if insider_trading.empty:
+        return insider_trading
+
+    insider_trading = insider_trading.rename(
+        columns={
+            "symbol": "Symbol",
+            "filingDate": "Filing Date",
+            "transactionDate": "Transaction Date",
+            "reportingName": "Reporting Name",
+            "typeOfOwner": "Type of Owner",
+            "transactionType": "Transaction Type",
+            "acquisitionOrDisposition": "Acquisition or Disposition",
+            "directOrIndirect": "Direct or Indirect",
+            "securitiesTransacted": "Securities Transacted",
+            "price": "Price",
+            "securitiesOwned": "Securities Owned",
+            "securityName": "Security Name",
+            "formType": "Form Type",
+            "reportingCik": "Reporting CIK",
+            "companyCik": "Company CIK",
+            "url": "URL",
+        }
+    )
+
+    return insider_trading.set_index("Symbol")

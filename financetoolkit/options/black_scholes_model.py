@@ -39,6 +39,7 @@ def _validate_numeric_inputs(**kwargs) -> None:
             )
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_d1(
     stock_price: float | pd.Series | np.ndarray,
     strike_price: float | pd.Series | np.ndarray,
@@ -61,7 +62,6 @@ def get_d1(
     Returns:
         float | pd.Series: The d1 value.
     """
-    np.seterr(divide="ignore", invalid="ignore")
 
     return (
         np.log(stock_price / strike_price)
@@ -69,6 +69,7 @@ def get_d1(
     ) / (volatility * np.sqrt(time_to_expiration))
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_d2(
     d1: float | pd.Series | np.ndarray,
     volatility: float | pd.Series | np.ndarray,
@@ -85,7 +86,6 @@ def get_d2(
     Returns:
         float | pd.Series: The d2 value.
     """
-    np.seterr(divide="ignore", invalid="ignore")
 
     return d1 - volatility * np.sqrt(time_to_expiration)
 
@@ -125,13 +125,33 @@ def get_black_scholes(
     d2 = get_d2(d1, volatility, time_to_expiration)
 
     if put_option:
-        return strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(
+        value = strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(
             -d2
         ) - stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(-d1)
+    else:
+        value = stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(
+            d1
+        ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(d2)
 
-    return stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(
-        d1
-    ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(d2)
+    # At expiration the option is worth its intrinsic value. The formula gets there for
+    # every price except the strike itself, where d1 is 0 / 0.
+    at_expiration = np.asarray(time_to_expiration) <= 0
+
+    if np.any(at_expiration):
+        intrinsic_value = np.maximum(
+            (
+                (strike_price - stock_price)
+                if put_option
+                else (stock_price - strike_price)
+            ),
+            0,
+        )
+        value = np.where(at_expiration, intrinsic_value, value)
+
+        if np.ndim(value) == 0:
+            value = float(value)
+
+    return value
 
 
 def get_implied_volatility(
@@ -683,6 +703,7 @@ def _bjerksund_stensland_call(
     )
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_bjerksund_stensland(
     stock_price: float,
     strike_price: float,
@@ -757,8 +778,6 @@ def get_bjerksund_stensland(
             raise TypeError(
                 f"{name} must be a float or int, received {type(value).__name__}."
             )
-
-    np.seterr(divide="ignore", invalid="ignore")
 
     cost_of_carry = risk_free_rate - dividend_yield
 

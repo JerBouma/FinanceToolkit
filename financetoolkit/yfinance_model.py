@@ -3,19 +3,18 @@
 __docformat__ = "google"
 
 import warnings
-from datetime import datetime, timedelta
-from http.client import RemoteDisconnected
-from urllib.error import HTTPError, URLError
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 import yfinance.exceptions
 
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
@@ -81,15 +80,13 @@ def get_financial_statement(
                 "Please choose either 'balance', 'income', or "
                 "cashflow' for the statement parameter."
             )
-    except (
-        HTTPError,
-        URLError,
-        RemoteDisconnected,
-        IndexError,
-        AttributeError,
-    ):
+    except (OSError, IndexError, AttributeError):
+        # OSError covers the network errors of both urllib and curl_cffi, which yfinance
+        # uses in recent versions, such as a timeout or a refused connection.
+        error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
+        error_model.report_request_failure()
         error_code = (
             "YFINANCE RATE LIMIT REACHED FALLBACK"
             if fallback
@@ -125,7 +122,7 @@ def get_financial_statement(
 
     # Left as NaN, not filled with 0, matching the Toolkit-wide convention for unreported line items.
     if financial_statement.isna().to_numpy().any():
-        financial_statement = financial_statement.infer_objects(copy=False)
+        financial_statement = financial_statement.infer_objects()
 
     return financial_statement
 
@@ -207,16 +204,15 @@ def get_reported_currency(ticker: str) -> str:
     try:
         information = yf.Ticker(ticker).get_info() or {}
     except (
-        HTTPError,
-        URLError,
-        RemoteDisconnected,
+        OSError,
         IndexError,
         AttributeError,
         KeyError,
         TypeError,
         ValueError,
-        yf.exceptions.YFRateLimitError,
+        yf.exceptions.YFException,
     ):
+        error_model.report_request_failure()
         return ""
 
     # financialCurrency is the statement currency. currency is the trading currency and is only a fallback, since for most listings the two are in fact the same.  # noqa: E501
@@ -321,11 +317,16 @@ def get_historical_data(
                 :, "Close"
             ].to_numpy()
 
-    except (HTTPError, URLError, RemoteDisconnected, IndexError):
+    except (OSError, IndexError):
+        error_model.report_request_failure()
         return pd.DataFrame()
     except yf.exceptions.YFRateLimitError:
+        error_model.report_request_failure()
         error_code = "YFINANCE RATE LIMIT REACHED" + (" FALLBACK" if fallback else "")
         return pd.DataFrame(columns=[error_code])
+    except yf.exceptions.YFException:
+        # Such as a delisted ticker or one without prices in the range.
+        return pd.DataFrame()
 
     if not historical_data.empty and historical_data.loc[start:end].empty:
         logger.warning(
@@ -341,9 +342,9 @@ def get_historical_data(
 
     if divide_ohlc_by:
         # NaN divided by divide_ohlc_by is fine, so those warnings are ignored.
-        np.seterr(divide="ignore", invalid="ignore")
         # In case tickers are presented in percentages or similar
-        historical_data = historical_data.div(divide_ohlc_by)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            historical_data = historical_data.div(divide_ohlc_by)
 
     historical_data = historical_data.loc[
         ~historical_data.index.duplicated(keep="first")
@@ -392,9 +393,6 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         - Timezone: The timezone the instrument is traded in.
         - Exchange Timezone Name: The name of the timezone the instrument is traded in.
 
-    Args:
-        ticker (str): the ticker to retrieve statistics for.
-
     These describe the instrument itself (its currency, exchange and listing date)
     rather than its price, so they change very rarely and are cached per ticker.
 
@@ -402,7 +400,7 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         ticker (str): the ticker to retrieve statistics for.
 
     Returns:
-        pd.Series: A Sries containing the statistics for the given ticker.
+        pd.Series: A Series containing the statistics for the given ticker.
     """
     cache = get_active_cache()
 
@@ -416,10 +414,17 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         if cached_statistics is not None:
             return cached_statistics
 
-    response = get_request(
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
-        timeout=60,
-    )
+    try:
+        response = get_request(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
+            timeout=60,
+        )
+    except requests.exceptions.RequestException:
+        # Yahoo Finance answers 404 for a symbol it does not know, such as the
+        # "Portfolio" a Portfolio's Toolkit includes, which has no statistics. A
+        # timeout is reported the same way, so one slow ticker does not fail the rest.
+        error_model.report_request_failure()
+        return pd.Series()
 
     if response.status_code == 200:  # noqa
         data = response.json()
@@ -427,11 +432,15 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         try:
             statistics = data["chart"]["result"][0]["meta"]
 
+            # The dates are the exchange's calendar dates: a timestamp read in the
+            # machine's own timezone would move a day for users east or west of it.
+            exchange_offset = timedelta(seconds=statistics.get("gmtoffset") or 0)
+
             for timestamp_data in ["firstTradeDate", "regularMarketTime"]:
                 if timestamp_data in statistics and statistics[timestamp_data]:
                     timestamp = (
-                        datetime.fromtimestamp(0)
-                        + timedelta(seconds=statistics[timestamp_data])
+                        datetime.fromtimestamp(statistics[timestamp_data], tz=UTC)
+                        + exchange_offset
                     ).strftime("%Y-%m-%d")
                     statistics[timestamp_data] = timestamp
 

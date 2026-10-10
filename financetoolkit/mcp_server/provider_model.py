@@ -21,6 +21,7 @@ from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
+from financetoolkit.mcp_server.diagnostics_model import FMP_KEY_HINT
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -104,6 +105,7 @@ class ToolkitProvider:
         api_key: str = API_KEY,
         fred_api_key: str = FRED_API_KEY,
         cache_enabled: bool = True,
+        excluded_sources: frozenset[str] = frozenset(),
     ) -> None:
         """
         Initializes the ToolkitProvider.
@@ -127,6 +129,9 @@ class ToolkitProvider:
                 Defaults to True, which suits a local single-user server; a hosted
                 one is expected to pass False (see ``_resolve_cache_enabled`` in
                 ``mcp_controller``). Defaults to True.
+            excluded_sources (frozenset[str], optional): Sources whose data is never
+                cached, such as FinancialModelingPrep on a hosted server, where it
+                belongs to each subscriber. Defaults to an empty set.
         """
         # A placeholder from the docs counts as no key, so tools answer with the "key required" message.
         self._api_key = validation_model.resolve_api_key(api_key)
@@ -139,13 +144,14 @@ class ToolkitProvider:
 
         # The same cache the library uses; a disabled one never opens the database.
         self._cache: Cache = cache_controller.get_cache(
-            location=database_location, enabled=cache_enabled
+            location=database_location,
+            enabled=cache_enabled,
+            excluded_sources=excluded_sources,
         )
 
-        # What Toolkit and Discovery get as `use_cached_data`: the path, or False.
-        self._use_cached_data: bool | str = (
-            database_location if cache_enabled else False
-        )
+        # What Toolkit and Discovery get as `use_cached_data`: this cache, so they leave
+        # out the same sources, or False.
+        self._use_cached_data: bool | Cache = self._cache if cache_enabled else False
 
         if cache_enabled:
             cache_controller.set_active_cache(self._cache)
@@ -320,7 +326,15 @@ class ToolkitProvider:
 
         if isinstance(result, pd.Series):
             result = result.to_frame()
-        if self._cache_ttl and isinstance(result, pd.DataFrame):
+        # An empty result is not cached: it usually means a missing API key or an
+        # unreachable source, and a cached copy would keep answering "No data available"
+        # after the key is added or the source is back.
+        if (
+            self._cache_ttl
+            and isinstance(result, pd.DataFrame)
+            and not result.empty
+            and bool(result.notna().to_numpy().any())
+        ):
             self._cache.set(
                 source=MCP_CACHE_SOURCE,
                 dataset=MCP_CACHE_DATASET,
@@ -492,13 +506,7 @@ class ToolkitProvider:
                 return self._toolkit_cache[cache_key]
 
             if not effective_key:
-                raise ValueError(
-                    "A FinancialModelingPrep API key is required for this tool. "
-                    "Local setup: set FINANCIAL_MODELING_PREP_API_KEY in your "
-                    "environment or .env file. Hosted setup: pass your key via the "
-                    "`X-FMP-API-Key` header or a `?fmp_api_key=...` URL parameter. "
-                    "Get a key with 15% off via https://www.jeroenbouma.com/fmp"
-                )
+                raise ValueError(FMP_KEY_HINT)
 
             toolkit_instance: Toolkit = Toolkit(
                 tickers=tickers,
@@ -676,6 +684,7 @@ class ToolkitProvider:
                         quarterly=quarterly,
                         fred_api_key=effective_fred_key,
                         cache=self._cache,
+                        api_key=effective_key,
                     )
                 elif module_name == "fixedincome":
                     # get_treasury_rates is served by FMP, so without the key it silently returns no data.

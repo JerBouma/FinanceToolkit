@@ -596,3 +596,49 @@ def test_get_henriksson_merton_model_type_error():
         performance_model.get_henriksson_merton_model(
             pd.Series([0.1, 0.2]).to_numpy(), pd.Series([0.1, 0.2])
         )
+
+
+def test_get_beta_of_an_asset_with_a_shorter_history():
+    """The benchmark variance is taken over the dates the asset has returns, too."""
+    rng = np.random.default_rng(0)
+    # The benchmark is three times as volatile before the asset is listed.
+    benchmark = pd.Series(np.r_[rng.normal(0, 0.03, 250), rng.normal(0, 0.01, 250)])
+    asset = benchmark + rng.normal(0, 0.002, 500)
+    asset[:250] = np.nan
+    returns = pd.DataFrame({"Listed Later": asset, "Half": 0.5 * benchmark})
+
+    beta = performance_model.get_beta(returns, benchmark)
+
+    assert beta["Listed Later"] == pytest.approx(1, abs=0.01)
+    assert beta["Half"] == pytest.approx(0.5)
+    assert performance_model.get_beta(asset, benchmark) == pytest.approx(
+        beta["Listed Later"]
+    )
+
+    within_period = performance_model.get_beta(
+        returns.set_axis(
+            pd.MultiIndex.from_arrays([np.repeat([1, 2], 250), returns.index])
+        ),
+        benchmark.set_axis(
+            pd.MultiIndex.from_arrays([np.repeat([1, 2], 250), returns.index])
+        ),
+    )
+
+    assert np.isnan(within_period.loc[1, "Listed Later"])
+    assert within_period.loc[2, "Listed Later"] == pytest.approx(1, abs=0.01)
+
+
+def test_a_factor_file_is_downloaded_once_per_session(monkeypatch):
+    """Every factor model call reads the file, which is downloaded only once."""
+    downloads = []
+
+    def fake_get_request(url, timeout):  # noqa: ARG001
+        downloads.append(url)
+        return type("Response", (), {"content": b"zip"})()
+
+    monkeypatch.setattr(performance_model, "get_request", fake_get_request)
+    monkeypatch.setattr(performance_model, "_factor_files", {})
+
+    assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
+    assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
+    assert downloads == ["https://example.com/f.zip"]

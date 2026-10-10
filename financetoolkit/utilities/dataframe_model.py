@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import contextlib
 from collections.abc import Mapping
 
 import pandas as pd
@@ -271,7 +272,8 @@ def concat_frames(frames: Mapping[str, object]) -> pd.DataFrame:
         frames (Mapping[str, object]): The results, keyed by the metric name.
 
     Returns:
-        pd.DataFrame: The stacked DataFrame with the metric name as the outer index.
+        pd.DataFrame: The stacked DataFrame with the metric name as the outer index and
+        the columns in order.
 
     Raises:
         TypeError: If one of the results is not a DataFrame.
@@ -285,4 +287,14 @@ def concat_frames(frames: Mapping[str, object]) -> pd.DataFrame:
             )
         dataframes[name] = frame
 
-    return pd.concat(dataframes)
+    combined = pd.concat(dataframes)
+
+    # The frames can cover different periods, such as a balance sheet item that starts a
+    # year before the share prices; concat appends the periods only some frames have, so
+    # the columns are put back in order to keep slicing by date possible.
+    if not combined.columns.is_monotonic_increasing:
+        # Columns of mixed types cannot be ordered and are left as they are.
+        with contextlib.suppress(TypeError):
+            combined = combined.sort_index(axis=1)
+
+    return combined

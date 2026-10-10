@@ -167,9 +167,19 @@ def get_graham_number(
         book_value_per_share (float or pd.Series): Book value per share of the company.
 
     Returns:
-        float | pd.Series: The Graham Number value.
+        float | pd.Series: The Graham Number value, missing where earnings or book value
+        are not positive.
     """
-    return np.sqrt(22.5 * earnings_per_share * book_value_per_share)
+    # The formula assumes a profitable company with positive equity: a loss and negative
+    # equity would multiply into a positive fair value, and a single negative one into
+    # the square root of a negative number.
+    product = 22.5 * earnings_per_share * book_value_per_share
+    profitable_with_equity = (earnings_per_share > 0) & (book_value_per_share > 0)
+
+    if isinstance(product, pd.Series | pd.DataFrame):
+        return np.sqrt(product.where(profitable_with_equity))
+
+    return float(np.sqrt(product)) if profitable_with_equity else np.nan
 
 
 def get_free_cash_flow_to_firm(

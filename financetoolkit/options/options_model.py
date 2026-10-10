@@ -6,6 +6,10 @@ import yfinance as yf
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.economics import cboe_model
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -30,7 +34,16 @@ def get_option_expiry_dates(ticker: str) -> list[str]:
         if cached_dates is not None:
             return cached_dates
 
-    expiry_dates = list(yf.Ticker(ticker).options)
+    try:
+        expiry_dates = list(yf.Ticker(ticker).options)
+    except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
+        logger.info("Yahoo Finance has no options of %s (%s).", ticker, error)
+        expiry_dates = []
+
+    # Cboe's delayed quotes list every US-listed option when Yahoo Finance has none.
+    if not expiry_dates:
+        chain = cboe_model.get_option_chain(ticker)
+        expiry_dates = sorted(chain["Expiration"].unique()) if not chain.empty else []
 
     if cache is not None and expiry_dates:
         cache.set(
@@ -82,8 +95,19 @@ def get_option_chains(
                 result_dict[ticker] = cached_chain
                 continue
 
-        option_chain = yf.Ticker(ticker).option_chain(expiration_date)
-        options_df = option_chain.puts if put_option else option_chain.calls
+        try:
+            option_chain = yf.Ticker(ticker).option_chain(expiration_date)
+            options_df = option_chain.puts if put_option else option_chain.calls
+        except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
+            logger.info("Yahoo Finance has no option chain of %s (%s).", ticker, error)
+            options_df = pd.DataFrame()
+
+        if options_df.empty:
+            options_df = _get_cboe_option_chain(ticker, expiration_date, put_option)
+            if options_df.empty:
+                continue
+            result_dict[ticker] = options_df
+            continue
 
         options_df = options_df.rename(
             columns={
@@ -120,6 +144,9 @@ def get_option_chains(
                 parameters=cache_parameters,
             )
 
+    if not result_dict:
+        return pd.DataFrame()
+
     result_final = pd.concat(result_dict)
     if "Last Trade Date" in result_final.columns:
         result_final["Last Trade Date"] = pd.to_datetime(
@@ -129,6 +156,66 @@ def get_option_chains(
     result_final.index.names = ["Ticker", "Strike Price"]
 
     return result_final
+
+
+def _get_cboe_option_chain(
+    ticker: str, expiration_date: str, put_option: bool
+) -> pd.DataFrame:
+    """
+    Retrieves the calls or puts of one expiry from Cboe's delayed quotes, in the layout of
+    the Yahoo Finance option chain.
+
+    Args:
+        ticker (str): The ticker, e.g. "AAPL" or "^SPX".
+        expiration_date (str): The expiry (YYYY-MM-DD).
+        put_option (bool): Whether to return the puts instead of the calls.
+
+    Returns:
+        pd.DataFrame: The options, indexed by strike price.
+    """
+    chain = cboe_model.get_option_chain(ticker)
+
+    if chain.empty:
+        return chain
+
+    chain = chain[
+        (chain["Expiration"] == expiration_date) & (chain["Put"] == put_option)
+    ]
+
+    # Index options can list a monthly and a weekly contract (SPX and SPXW) on the same
+    # strike and expiry; the one more widely held is kept.
+    chain = chain.sort_values("Open Interest").drop_duplicates("Strike", keep="last")
+    in_the_money = (
+        chain["Strike"] > chain["Underlying Price"]
+        if put_option
+        else chain["Strike"] < chain["Underlying Price"]
+    )
+
+    return (
+        chain.assign(
+            Currency="USD",
+            **{"Last Trade Date": None, "In The Money": in_the_money},
+        )[
+            [
+                "Contract Symbol",
+                "Strike",
+                "Currency",
+                "Last Price",
+                "Change",
+                "Percent Change",
+                "Volume",
+                "Open Interest",
+                "Bid",
+                "Ask",
+                "Expiration",
+                "Last Trade Date",
+                "Implied Volatility",
+                "In The Money",
+            ]
+        ]
+        .set_index("Strike")
+        .sort_index()
+    )
 
 
 def get_monte_carlo_option_price(
@@ -228,6 +315,53 @@ def get_monte_carlo_option_price(
             f"time_steps must be a positive integer, received {time_steps!r}."
         )
 
+    prices, standard_errors = get_monte_carlo_option_prices(
+        stock_price=stock_price,
+        strike_prices=np.array([strike_price], dtype=float),
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
+        put_option=put_option,
+        simulations=simulations,
+        time_steps=time_steps,
+        seed=seed,
+    )
+
+    return float(prices[0]), float(standard_errors[0])
+
+
+def _simulate_terminal_stock_prices(
+    stock_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_yield: float,
+    simulations: int,
+    time_steps: int,
+    seed: int | None,
+) -> np.ndarray:
+    """
+    Simulates the stock price at expiration of Geometric Brownian Motion paths under the
+    risk-neutral measure.
+
+    Every path is built from time_steps shocks as before, so a seed gives the same terminal
+    prices; only the end of each path is exponentiated, since a European payoff needs
+    nothing else.
+
+    Args:
+        stock_price (float): The current stock price.
+        risk_free_rate (float): The risk-free rate.
+        volatility (float): The volatility.
+        time_to_expiration (float): The time to expiration in years.
+        dividend_yield (float): The dividend yield.
+        simulations (int): The number of paths.
+        time_steps (int): The number of steps per path.
+        seed (int | None): The seed of the random number generator.
+
+    Returns:
+        np.ndarray: The stock price at expiration of every path.
+    """
     random_number_generator = np.random.default_rng(seed)
 
     time_delta = time_to_expiration / time_steps
@@ -237,19 +371,71 @@ def get_monte_carlo_option_price(
     random_shocks = random_number_generator.standard_normal((simulations, time_steps))
     log_returns = drift + diffusion * random_shocks
     log_paths = np.cumsum(log_returns, axis=1)
-    stock_price_paths = stock_price * np.exp(log_paths)
 
-    terminal_stock_prices = stock_price_paths[:, -1]
+    return stock_price * np.exp(log_paths[:, -1])
 
-    if put_option:
-        payoffs = np.maximum(strike_price - terminal_stock_prices, 0)
-    else:
-        payoffs = np.maximum(terminal_stock_prices - strike_price, 0)
 
+def get_monte_carlo_option_prices(
+    stock_price: float,
+    strike_prices: np.ndarray,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_yield: float = 0.0,
+    put_option: bool = False,
+    simulations: int = 10_000,
+    time_steps: int = 100,
+    seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Calculates the Monte Carlo price of European options with several strike prices from
+    one set of simulated paths, see get_monte_carlo_option_price. Pricing every strike on
+    the same paths (common random numbers) gives the same prices as simulating per strike
+    with the same seed, keeps the prices consistent across strikes and simulates once
+    rather than once per strike.
+
+    Args:
+        stock_price (float): The current stock price.
+        strike_prices (np.ndarray): The strike prices.
+        risk_free_rate (float): The risk-free rate.
+        volatility (float): The volatility.
+        time_to_expiration (float): The time to expiration in years.
+        dividend_yield (float, optional): The dividend yield. Defaults to 0.0.
+        put_option (bool, optional): Whether to price puts instead of calls. Defaults to
+            False.
+        simulations (int, optional): The number of simulated paths. Defaults to 10,000.
+        time_steps (int, optional): The number of steps per path. Defaults to 100.
+        seed (int | None, optional): The seed of the random number generator. Defaults to
+            None.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price.
+    """
+    terminal_stock_prices = _simulate_terminal_stock_prices(
+        stock_price,
+        risk_free_rate,
+        volatility,
+        time_to_expiration,
+        dividend_yield,
+        simulations,
+        time_steps,
+        seed,
+    )
     discount_factor = np.exp(-risk_free_rate * time_to_expiration)
-    discounted_payoffs = discount_factor * payoffs
+    option_prices = np.empty(len(strike_prices))
+    standard_errors = np.empty(len(strike_prices))
 
-    option_price = float(discounted_payoffs.mean())
-    standard_error = float(discounted_payoffs.std(ddof=1) / np.sqrt(simulations))
+    # One strike at a time keeps the memory to one payoff per path.
+    for position, strike_price in enumerate(strike_prices):
+        if put_option:
+            payoffs = np.maximum(strike_price - terminal_stock_prices, 0)
+        else:
+            payoffs = np.maximum(terminal_stock_prices - strike_price, 0)
 
-    return option_price, standard_error
+        discounted_payoffs = discount_factor * payoffs
+        option_prices[position] = discounted_payoffs.mean()
+        standard_errors[position] = discounted_payoffs.std(ddof=1) / np.sqrt(
+            simulations
+        )
+
+    return option_prices, standard_errors

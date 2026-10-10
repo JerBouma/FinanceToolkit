@@ -121,6 +121,44 @@ def test_handle_errors_decorator_strict_mode_raises():
         test_function()
 
 
+@pytest.mark.parametrize("error", [KeyError, ValueError, AttributeError])
+def test_handle_errors_decorator_missing_benchmark(error):
+    """Test that a metric needing an absent benchmark explains how to set one."""
+
+    @error_model.handle_errors
+    def get_beta():
+        raise error("Benchmark")
+
+    with patch("financetoolkit.utilities.error_model.logger") as mock_logger:
+        result = get_beta()
+
+    assert result.empty
+    assert "benchmark_ticker" in mock_logger.error.call_args[0][0]
+
+
+def test_handle_errors_decorator_strict_mode_raises_a_missing_benchmark(monkeypatch):
+    """Test that strict mode raises a missing benchmark too."""
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+
+    @error_model.handle_errors
+    def get_beta():
+        raise KeyError("Benchmark")
+
+    with patch("financetoolkit.utilities.error_model.logger"), pytest.raises(KeyError):
+        get_beta()
+
+
+def test_handle_errors_decorator_other_errors_propagate():
+    """Test that an error unrelated to the data is not turned into an empty result."""
+
+    @error_model.handle_errors
+    def interrupted():
+        raise RuntimeError("Interrupted")
+
+    with pytest.raises(RuntimeError):
+        interrupted()
+
+
 def test_handle_errors_decorator_zero_division_error():
     """Test handle_errors decorator with ZeroDivisionError."""
 

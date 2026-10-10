@@ -286,25 +286,24 @@ class UsageAnalytics:
             stored = json.loads(self.location.read_text(encoding="utf-8"))
 
             def first(*names: str, default: Any) -> Any:
-                # Earlier versions of the counter named some totals differently.
+                # The counter the hosted server ran before (v2.2.1) named these by_tool,
+                # by_day, user_calls and user_first_seen.
                 return next((stored[name] for name in names if name in stored), default)
 
             with self._lock:
-                self.total_calls = int(first("total_calls", "total", default=0))
+                self.total_calls = int(first("total_calls", default=0))
                 self.failed_calls = int(first("failed_calls", default=0))
                 self.calls_per_tool = dict(
-                    first("calls_per_tool", "tools", "tool_calls", default={})
+                    first("calls_per_tool", "by_tool", default={})
                 )
                 self.failures_per_tool = dict(first("failures_per_tool", default={}))
                 self.seconds_per_tool = dict(first("seconds_per_tool", default={}))
-                self.calls_per_day = dict(
-                    first("calls_per_day", "days", "daily", default={})
-                )
+                self.calls_per_day = dict(first("calls_per_day", "by_day", default={}))
                 self.calls_per_user = dict(
-                    first("calls_per_user", "users", "user_calls", default={})
+                    first("calls_per_user", "user_calls", default={})
                 )
                 self.first_seen = dict(
-                    first("first_seen", "users_first_seen", default={})
+                    first("first_seen", "user_first_seen", default={})
                 )
         except Exception as error:  # noqa: BLE001
             logger.warning(

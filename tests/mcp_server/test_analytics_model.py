@@ -129,3 +129,29 @@ def test_the_stats_page_shows_totals_only(tmp_path):
     assert stats["top_tools"][0]["tool"] == "ratios"
     assert len(stats["daily_calls"]) == analytics_model.DAILY_SERIES_DAYS
     assert "calls_per_user" not in stats
+
+
+def test_the_counts_of_the_earlier_hosted_counter_carry_over(tmp_path):
+    """The file the hosted server wrote before v2.2.2, with its own key names."""
+    legacy = f"u_{hashlib.sha256(b'KEY').hexdigest()[:12]}"
+    (tmp_path / "mcp_stats.json").write_text(
+        json.dumps(
+            {
+                "total_calls": 24000,
+                "by_tool": {"ratios": 15000, "rates": 9000},
+                "by_day": {"2026-10-01": 24000},
+                "user_calls": {legacy: 23990, "anonymous": 10},
+                "user_first_seen": {legacy: "2026-09-01", "anonymous": "2026-09-02"},
+            }
+        )
+    )
+    analytics = make_analytics(tmp_path)
+    analytics.load()
+    analytics.counted("ratios", get_ratio)("AAPL")
+
+    assert analytics.total_calls == 24001  # noqa: PLR2004
+    assert analytics.calls_per_tool == {"ratios": 15001, "rates": 9000}
+    assert analytics.calls_per_day["2026-10-01"] == 24000  # noqa: PLR2004
+    assert analytics.calls_per_user[analytics.user_id("KEY")] == 23991  # noqa: PLR2004
+    assert analytics.first_seen[analytics.user_id("KEY")] == "2026-09-01"
+    assert analytics.summary()["unique_users"] == 1

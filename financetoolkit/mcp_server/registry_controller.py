@@ -29,6 +29,7 @@ from financetoolkit.mcp_server.coercion_model import (
 )
 from financetoolkit.mcp_server.diagnostics_model import (
     capture_call_messages,
+    missing_data_notes,
     redact,
     summarize_reasons,
 )
@@ -801,6 +802,9 @@ class ToolRegistry:
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
                     )
+                # Tickers left out of an otherwise answered call are named, e.g. a symbol
+                # the source does not know.
+                notes = list(notes) + missing_data_notes(call_messages)
                 formatted = format_result(
                     result,
                     notes=notes or None,

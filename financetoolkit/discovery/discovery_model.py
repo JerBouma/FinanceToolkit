@@ -2010,8 +2010,8 @@ def get_sec_filings_8k(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with.
-        end_date (str, optional): The end date to filter data with.
+        start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
+        end_date (str, optional): The end date to filter data with. Defaults to today.
         limit (int, optional): The number of results to return. Defaults to 100.
         page (int, optional): The page number to retrieve. Defaults to 0.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
@@ -2024,10 +2024,12 @@ def get_sec_filings_8k(
         f"?page={page}&limit={limit}&apikey={api_key}"
     )
 
-    if start_date:
-        url += f"&from={start_date}"
-    if end_date:
-        url += f"&to={end_date}"
+    # Without a range the endpoint answers with filings from March 2024, so the most
+    # recent filings are the last 30 days unless a range is given.
+    today = pd.Timestamp.today().normalize()
+    start_date = start_date or f"{today - pd.Timedelta(days=30):%Y-%m-%d}"
+    end_date = end_date or f"{today:%Y-%m-%d}"
+    url += f"&from={start_date}&to={end_date}"
 
     filings = get_cached_financial_data(url=url, user_subscription=user_subscription)
 

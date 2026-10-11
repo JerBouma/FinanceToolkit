@@ -1976,8 +1976,8 @@ class Discovery:
         Also known as: current reports, material event filings, SEC filings.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
+            end_date (str, optional): The end date to filter data with. Defaults to today.
             limit (int, optional): The number of results to return. Defaults to 100.
             page (int, optional): The page number to retrieve. Defaults to 0.
 

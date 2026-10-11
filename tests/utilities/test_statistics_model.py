@@ -424,3 +424,15 @@ def test_calculate_growth_from_zero_is_missing_not_infinite():
     assert single.loc["Dividends", 2023] == 1.0
     assert np.isnan(multiple.loc[("Dividends", "Lag 2"), 2023])
     assert list(multiple.index) == [("Dividends", "Lag 1"), ("Dividends", "Lag 2")]
+
+
+def test_country_short_forms_and_casing_resolve_to_the_source_names():
+    from financetoolkit.utilities.statistics_model import normalize_country_name
+
+    known = ["United States", "United Kingdom", "Euro Area", "Germany"]
+
+    assert normalize_country_name("USA", known) == "United States"
+    assert normalize_country_name("uk", known) == "United Kingdom"
+    assert normalize_country_name("eurozone", known) == "Euro Area"
+    assert normalize_country_name("germany", known) == "Germany"
+    assert normalize_country_name("Atlantis", known) == "Atlantis"

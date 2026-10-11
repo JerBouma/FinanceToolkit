@@ -828,6 +828,11 @@ method_defaults:
   get_earnings_calendar:
     lookback_days: 1825
     lookahead_days: 120
+  # Every company's releases of the coming week, rather than the source's default of
+  # the past six weeks (4,000 rows).
+  discovery.get_earnings_calendar:
+    lookback_days: 0
+    lookahead_days: 7
   # A world equity fund holds well over a thousand assets; the largest 25 are what a
   # question about its exposure needs. limit= asks for more.
   get_etf_holdings:

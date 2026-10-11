@@ -339,3 +339,41 @@ def test_an_argument_the_indicator_does_not_take_is_named(captured):
     )[0][0].text
 
     assert "`short_window` is not used by `get_relative_strength_index`" in text
+
+
+def test_a_tool_specific_default_applies_to_that_tool_only(captured):
+    today = datetime.now()
+
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "discovery", {"indicator": "get_earnings_calendar"}
+        )
+    )
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data", {"indicator": "get_earnings_calendar", "tickers": "AAPL"}
+        )
+    )
+
+    # The market-wide calendar looks a week ahead, a company's five years back too.
+    assert captured[0]["start_date"] == today.strftime("%Y-%m-%d")
+    assert captured[0]["end_date"] == (today + timedelta(days=7)).strftime("%Y-%m-%d")
+    assert captured[1]["start_date"] == (today - timedelta(days=1825)).strftime(
+        "%Y-%m-%d"
+    )
+
+
+def test_an_unknown_period_is_named_with_the_known_ones(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {
+                "indicator": "get_sharpe_ratio",
+                "tickers": "AAPL",
+                "period": "fortnightly",
+            },
+        )
+    )[0][0].text
+
+    assert "Invalid `period`" in text and "monthly" in text
+    assert captured == []

@@ -3,6 +3,9 @@
 __docformat__ = "google"
 
 
+import difflib
+from collections.abc import Iterable
+
 import numpy as np
 import pandas as pd
 
@@ -36,6 +39,54 @@ PERIODS_PER_YEAR = {
     "quarterly": 4,
     "yearly": 1,
 }
+
+
+# Short forms of country names, matched in lowercase, and the names the sources use.
+COUNTRY_ALIASES = {
+    "us": "United States",
+    "u.s.": "United States",
+    "usa": "United States",
+    "u.s.a.": "United States",
+    "america": "United States",
+    "united states of america": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "britain": "United Kingdom",
+    "great britain": "United Kingdom",
+    "england": "United Kingdom",
+    "eurozone": "Euro Area",
+    "euro zone": "Euro Area",
+    "euro-zone": "Euro Area",
+    "ea": "Euro Area",
+    "eu": "European Union",
+    "korea": "South Korea",
+    "republic of korea": "South Korea",
+    "holland": "Netherlands",
+    "the netherlands": "Netherlands",
+    "uae": "United Arab Emirates",
+    "czechia": "Czech Republic",
+    "turkiye": "Turkey",
+    "türkiye": "Turkey",
+}
+
+
+def normalize_country_name(country: object, known: Iterable[object]) -> object:
+    """
+    The name a source uses for a country written as a short form or in any casing, e.g.
+    "USA" or "united states" for "United States". A name that matches nothing known is
+    returned as it was given.
+
+    Args:
+        country (object): The country as given.
+        known (Iterable[object]): The country names available.
+
+    Returns:
+        object: The matching known name, or the country as given.
+    """
+    by_lowercase = {str(name).lower(): name for name in known}
+    text = str(country).strip()
+
+    return by_lowercase.get(COUNTRY_ALIASES.get(text.lower(), text).lower(), country)
 
 
 def convert_annualized_rate_to_period(
@@ -203,15 +254,40 @@ def finalize_dataset(
         # Economic indicators are indexed by date with countries as columns.
         if isinstance(countries, str):
             countries = [countries]
+        # Common short forms and any casing resolve to the names the sources use, e.g.
+        # "USA" or "united states" to "United States".
+        selected_countries: list[object] = [
+            normalize_country_name(country, dataset.columns) for country in countries
+        ]
         missing_countries = [
-            country for country in countries if country not in dataset.columns
+            country for country in selected_countries if country not in dataset.columns
         ]
         if missing_countries:
+            suggestions = [
+                (
+                    f"'{country}' (did you mean '{close[0]}'?)"
+                    if (
+                        close := difflib.get_close_matches(
+                            str(country),
+                            [str(column) for column in dataset.columns],
+                            n=1,
+                            cutoff=0.75,
+                        )
+                    )
+                    else f"'{country}'"
+                )
+                for country in missing_countries
+            ]
             logger.warning(
-                f"The following countries are not available for {indicator_name}: {missing_countries}"
+                f"The following countries are not available for {indicator_name}: "
+                f"{', '.join(suggestions)}"
             )
         dataset = dataset[
-            [country for country in countries if country not in missing_countries]
+            [
+                country
+                for country in selected_countries
+                if country not in missing_countries
+            ]
         ]
 
     # After the country selection, so a row that is empty for every selected country goes

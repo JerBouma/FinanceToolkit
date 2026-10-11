@@ -81,7 +81,7 @@ MAX_SYMBOL_LENGTH = 12
 
 
 @functools.cache
-def _country_names() -> frozenset[str]:
+def country_names() -> frozenset[str]:
     """The country and region names the economic sources use."""
 
     return frozenset(
@@ -97,7 +97,7 @@ def _country_names() -> frozenset[str]:
 
 def _are_countries(values: pd.Index) -> bool:
     """Whether every label is a country or region, as in an economic indicator."""
-    return len(values) > 0 and all(str(value) in _country_names() for value in values)
+    return len(values) > 0 and all(str(value) in country_names() for value in values)
 
 
 def _describe_level(values: pd.Index) -> str:
@@ -285,11 +285,16 @@ def _is_time_index(index: pd.Index) -> bool:
     return isinstance(first_level, pd.DatetimeIndex | pd.PeriodIndex)
 
 
+# The share of rows a trailing period needs a value for to count as the latest one.
+MINIMUM_PERIOD_COVERAGE = 0.5
+
+
 def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd.Series:
     """
     The first (positive limit) or last (negative limit) rows, like head and tail. A table
     with its periods as columns, such as a ratio per ticker and year, is a time series read
-    sideways, so its first or last periods are selected instead.
+    sideways, so its first or last periods are selected instead; the last periods leave
+    out trailing ones that most rows have no value for yet.
 
     Args:
         data (pd.DataFrame | pd.Series): The result.
@@ -299,7 +304,21 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
         pd.DataFrame | pd.Series: The selection.
     """
     if isinstance(data, pd.DataFrame) and has_period_columns(data):
-        return data.iloc[:, :limit] if limit > 0 else data.iloc[:, limit:]
+        if limit > 0:
+            return data.iloc[:, :limit]
+
+        # The latest periods that most rows have (a year most companies have not reported
+        # yet is not the latest one to show), unless that would leave nothing.
+        reported = len(data.columns)
+        coverage = data.notna().mean()
+        while (
+            reported > 1
+            and len(data) > 1
+            and coverage.iloc[reported - 1] < MINIMUM_PERIOD_COVERAGE
+        ):
+            reported -= 1
+
+        return data.iloc[:, :reported].iloc[:, limit:]
 
     return data.head(limit) if limit > 0 else data.tail(-limit)
 

@@ -75,6 +75,17 @@ def _install_handler() -> None:
         toolkit_logger.addHandler(_HANDLER)
 
 
+def current_call_messages() -> list[str] | None:
+    """
+    The messages collected so far for the tool call that is running, or None outside one.
+    The provider adds the messages of a cached result to it, as they are not logged again.
+
+    Returns:
+        list[str] | None: The collected messages, which may be extended.
+    """
+    return _CALL_MESSAGES.get()
+
+
 def redact(text: object) -> str:
     """
     Removes credentials from a message before it is returned to the client, such as the
@@ -110,9 +121,10 @@ def capture_call_messages() -> Generator[list[str]]:
 
 # The warnings that qualify a result: tickers left out of it, such as "No quote data is
 # available for EURUSD=X.", and metrics that do not apply to some of them, such as the
-# Altman Z-Score of an insurer.
+# Altman Z-Score of an insurer, and countries an indicator does not cover.
 MISSING_DATA_PATTERN = re.compile(
     r"^No (?:\w+ )*data (?:is available|found) for\b|\bdoes not apply to\b"
+    r"|^The following countries are not available for\b"
 )
 
 

@@ -21,7 +21,10 @@ from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
-from financetoolkit.mcp_server.diagnostics_model import FMP_KEY_HINT
+from financetoolkit.mcp_server.diagnostics_model import (
+    FMP_KEY_HINT,
+    current_call_messages,
+)
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -36,6 +39,8 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # Tool responses are computed output, so they sit under their own source.
 MCP_CACHE_SOURCE = policy_model.MCP
 MCP_CACHE_DATASET = "tool"
+# The warnings logged while a cached response was computed, replayed with it.
+MCP_CACHE_MESSAGES_DATASET = "tool_messages"
 
 # Part of every tool response cache key, so a release that changes a formula can never be answered from the previous release's cached numbers.  # noqa: E501
 try:
@@ -291,11 +296,25 @@ class ToolkitProvider:
                 logger.info(
                     f"Acquired cache information ({module_name}, {method_name})"
                 )
+                # The warnings of the call that produced it (a country not covered, a
+                # ticker without data) qualify a cached answer just the same.
+                cached_messages = self._cache.get(
+                    source=MCP_CACHE_SOURCE,
+                    dataset=MCP_CACHE_MESSAGES_DATASET,
+                    entity=f"{module_name}.{method_name}",
+                    parameters=cache_params,
+                    ttl=self._cache_ttl,
+                )
+                call_messages = current_call_messages()
+                if cached_messages is not None and call_messages is not None:
+                    call_messages.extend(cached_messages["Message"].astype(str))
                 return cached
 
         logger.info(
             f"Calling Finance Toolkit functionality ({module_name}, {method_name})"
         )
+        call_messages = current_call_messages()
+        first_message = len(call_messages) if call_messages is not None else 0
 
         if category == "ticker":
             # Functionality reached through a sub-module property (ratios, models, options).
@@ -390,6 +409,14 @@ class ToolkitProvider:
                 data=result,
                 parameters=cache_params,
             )
+            if call_messages is not None and call_messages[first_message:]:
+                self._cache.set(
+                    source=MCP_CACHE_SOURCE,
+                    dataset=MCP_CACHE_MESSAGES_DATASET,
+                    entity=f"{module_name}.{method_name}",
+                    data=pd.DataFrame({"Message": call_messages[first_message:]}),
+                    parameters=cache_params,
+                )
 
         return result
 

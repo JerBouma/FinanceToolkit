@@ -37,6 +37,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
+    country_names,
     format_result,
     has_period_columns,
     select_rows,
@@ -46,6 +47,7 @@ from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
 
@@ -210,6 +212,11 @@ def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
 
 # The length of an indicator's summary in the search results.
 MAXIMUM_SUMMARY_CHARACTERS = 200
+
+
+# The periods the toolkit resamples to, and the intervals of intraday data.
+PERIODS = ("daily", "weekly", "monthly", "quarterly", "yearly", "annual")
+INTRADAY_PERIODS = ("1min", "5min", "15min", "30min", "1hour")
 
 
 def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
@@ -750,7 +757,9 @@ class ToolRegistry:
         # An MCP-only default (config.yaml method_defaults) replaces the indicator's own one, and its parameter is advertised as unset like a disputed one: a schema default would always arrive as an explicit value and so never let the MCP default apply.  # noqa: E501
         mcp_default_params: set[str] = set()
         for method_name in group_methods:
-            for pname, value in self._method_defaults.get(method_name, {}).items():
+            for pname, value in self._method_defaults.get(
+                f"{tool_name}.{method_name}", self._method_defaults.get(method_name, {})
+            ).items():
                 if method_name in parameter_defaults.get(pname, {}):
                     parameter_defaults[pname][method_name] = value
                     mcp_default_params.add(pname)
@@ -814,7 +823,16 @@ class ToolRegistry:
                 else None
             )
             raw_countries = kwargs.pop("countries", None)
-            countries = _split_values(raw_countries) if raw_countries else None
+            # Short forms and any casing ("USA", "eurozone") become the names the sources
+            # use, before a source is asked for them by name.
+            countries = (
+                [
+                    normalize_country_name(country, country_names())
+                    for country in _split_values(raw_countries)
+                ]
+                if raw_countries
+                else None
+            )
 
             # A market-wide snapshot (config.yaml tickers_optional) does not depend on the
             # tickers, but the Toolkit it is reached through needs one to be built.
@@ -956,14 +974,25 @@ class ToolRegistry:
                         continue
                     method_kwargs[pname] = coerce_value(val, pann)
 
+            # Discovery takes a range only when one is given (see provider_model).
+            if effective_category == inspector.categories.get("discovery", "discovery"):
+                start_date = given_dates.get("start_date", "")
+                end_date = given_dates.get("end_date", "")
+
             # MCP-only defaults (config.yaml method_defaults) keep a broad request small: they
             # apply only to what the caller left unset, so an explicit value always wins. The
-            # dates count as unset when both are still the tool defaults.
-            method_defaults = self._method_defaults.get(method_name, {})
+            # dates count as unset when both are still the tool defaults. A "tool.method" key
+            # applies to that tool only, for a method name two tools share.
+            method_defaults = self._method_defaults.get(
+                f"{tool_name}.{method_name}", self._method_defaults.get(method_name, {})
+            )
             if (
                 "lookback_days" in method_defaults
                 or "lookahead_days" in method_defaults
-            ) and (start_date, end_date) == (inspector.start_date, inspector.end_date):
+            ) and (start_date, end_date) in (
+                (inspector.start_date, inspector.end_date),
+                ("", ""),
+            ):
                 today = datetime.now()
                 start_date = (
                     today - timedelta(days=int(method_defaults.get("lookback_days", 0)))
@@ -979,11 +1008,6 @@ class ToolRegistry:
                     and method_kwargs.get(pname) in (None, "")
                 ):
                     method_kwargs[pname] = value
-
-            # Discovery takes a range only when one is given (see provider_model).
-            if effective_category == inspector.categories.get("discovery", "discovery"):
-                start_date = given_dates.get("start_date", "")
-                end_date = given_dates.get("end_date", "")
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
@@ -1031,6 +1055,19 @@ class ToolRegistry:
                     method_name,
                     ", ".join(kwargs.keys()),
                 )
+
+            # A period the toolkit does not know would surface as a confusing missing-item
+            # error from deep inside the calculation.
+            if method_kwargs.get("period") not in (None, ""):
+                known_periods = (
+                    INTRADAY_PERIODS if method_name == "get_intraday_data" else PERIODS
+                )
+                if str(method_kwargs["period"]).lower() not in known_periods:
+                    return (
+                        f"Invalid `period` for `{tool_name}` (`{method_name}`): "
+                        f"'{method_kwargs['period']}'. Please use one of: "
+                        f"{', '.join(known_periods)}."
+                    )
 
             # Validate that the requested period (if any) is not blocked for this tool
             # A rolling window reads the regular data of the period, which every period
@@ -1166,7 +1203,22 @@ class ToolRegistry:
                             if isinstance(result, pd.DataFrame)
                             else result.index
                         )
-                        result = select_rows(result, row_selection)
+                        selected = select_rows(result, row_selection)
+                        if (
+                            row_selection < 0
+                            and isinstance(result, pd.DataFrame)
+                            and has_period_columns(result)
+                            and result.columns[-1] not in selected.columns
+                        ):
+                            skipped = result.columns[
+                                result.columns.get_loc(selected.columns[-1]) + 1 :
+                            ]
+                            notes.append(
+                                f"{', '.join(map(str, skipped))} "
+                                f"{'is' if len(skipped) == 1 else 'are'} left out: most rows "
+                                "have no value for it yet. Use start_date/end_date to see it."
+                            )
+                        result = selected
                         # The latest period may not be reported yet for every ticker; a row
                         # without any value at all is not worth a mention.
                         if (

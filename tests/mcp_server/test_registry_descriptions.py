@@ -238,3 +238,17 @@ def test_an_unnamed_level_of_countries_is_called_country():
     records = json.loads(format_result(money))
 
     assert records[0]["country"] == "Japan" and records[0]["M1"] == 2.0  # noqa: PLR2004
+
+
+def test_the_last_periods_skip_one_most_rows_have_not_reported():
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import select_rows
+
+    caps = pd.DataFrame(
+        {"2024": [1.0, 2.0, 3.0], "2025": [1.5, 2.5, 3.5], "2026": [None, None, 4.0]},
+        index=["AAPL", "KO", "MSFT"],
+    )
+    caps.columns = pd.PeriodIndex(caps.columns, freq="Y")
+
+    assert select_rows(caps, -1).columns.astype(str).tolist() == ["2025"]

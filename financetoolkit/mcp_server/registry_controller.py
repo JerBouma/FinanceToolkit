@@ -40,6 +40,7 @@ from financetoolkit.mcp_server.formatting_model import (
     country_names,
     format_result,
     has_period_columns,
+    is_yearly,
     select_rows,
 )
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
@@ -1331,6 +1332,16 @@ class ToolRegistry:
                                 f"limit={row_selection - 1 if row_selection < 0 else row_selection + 1} "
                                 "includes one more period."
                             )
+                # Most economic series are yearly only, whatever quarterly asks for.
+                if (
+                    quarterly
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                    and is_yearly(result.index)
+                ):
+                    notes.append(
+                        f"Quarterly data is not available for `{method_name}`, so the yearly "
+                        "figures are shown."
+                    )
                 if ignored_params:
                     notes.append(
                         ", ".join(f"`{pname}`" for pname in ignored_params)

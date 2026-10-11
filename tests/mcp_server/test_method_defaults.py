@@ -377,3 +377,26 @@ def test_an_unknown_period_is_named_with_the_known_ones(captured):
 
     assert "Invalid `period`" in text and "monthly" in text
     assert captured == []
+
+
+def test_a_yearly_answer_to_a_quarterly_question_says_so(monkeypatch):
+    def debt(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"United States": [37.0, 38.1]},
+            index=pd.period_range("2024", periods=2, freq="Y"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", debt)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "government",
+            {
+                "indicator": "get_government_debt",
+                "countries": "United States",
+                "quarterly": True,
+            },
+        )
+    )[0][0].text
+
+    assert "Quarterly data is not available" in text

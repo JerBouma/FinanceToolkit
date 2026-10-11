@@ -296,3 +296,16 @@ Returns:
         "window": "The number of periods.",
         "put_option": "Whether to use puts instead of calls.",
     }
+
+
+def test_the_last_rows_of_a_series_are_the_last_ones_with_data():
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import select_rows
+
+    poverty = pd.Series(
+        [0.18, 0.18, None, None],
+        index=pd.period_range("2022", periods=4, freq="Y"),
+    )
+
+    assert select_rows(poverty, -1).index.astype(str).tolist() == ["2023"]

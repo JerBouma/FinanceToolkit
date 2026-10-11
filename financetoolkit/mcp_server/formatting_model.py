@@ -320,7 +320,23 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
 
         return data.iloc[:, :reported].iloc[:, limit:]
 
+    # The last (or first) rows with data: a yearly series often ends before the window
+    # does, and its empty last years are not the most recent figures anyone asks for.
+    if _is_time_index(data.index):
+        first, last = data.first_valid_index(), data.last_valid_index()
+        if first is not None and last is not None:
+            data = data.loc[first:last]
+
     return data.head(limit) if limit > 0 else data.tail(-limit)
+
+
+def is_yearly(index: pd.Index) -> bool:
+    """Whether the rows (the first level of them) are years."""
+    first_level = index.levels[0] if isinstance(index, pd.MultiIndex) else index
+
+    return isinstance(first_level, pd.PeriodIndex) and str(
+        first_level.freqstr
+    ).startswith(("Y", "A"))
 
 
 def has_period_columns(dataframe: pd.DataFrame) -> bool:

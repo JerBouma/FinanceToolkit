@@ -324,3 +324,18 @@ def test_discovery_passes_a_range_only_when_one_is_given(monkeypatch):
     call(start_date="2026-10-12", end_date="2026-10-31")
 
     assert ranges == [(None, None), ("2026-10-12", "2026-10-31")]
+
+
+def test_an_argument_the_indicator_does_not_take_is_named(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "momentum",
+            {
+                "indicator": "get_relative_strength_index",
+                "tickers": "AAPL",
+                "short_window": 5,
+            },
+        )
+    )[0][0].text
+
+    assert "`short_window` is not used by `get_relative_strength_index`" in text

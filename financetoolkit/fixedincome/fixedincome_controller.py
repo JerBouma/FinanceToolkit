@@ -522,6 +522,7 @@ class FixedIncome:
         bond_prices_df.columns = years_to_maturity_dates
 
         bond_prices_df.index.name = "Coupon Rate"
+        bond_prices_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -677,6 +678,7 @@ class FixedIncome:
         bond_prices_df.columns = years_to_maturity_dates
 
         bond_prices_df.index.name = "Coupon Rate"
+        bond_prices_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -819,6 +821,7 @@ class FixedIncome:
         yield_to_maturities_df.columns = years_to_maturity_dates
 
         yield_to_maturities_df.index.name = "Bond Price"
+        yield_to_maturities_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -1388,6 +1391,7 @@ class FixedIncome:
         z_spreads_df.columns = list(years_to_maturity)
 
         z_spreads_df.index.name = "Bond Price"
+        z_spreads_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -1740,6 +1744,7 @@ class FixedIncome:
         price_changes_df.columns = list(years_to_maturity)
 
         price_changes_df.index.name = "Coupon Rate"
+        price_changes_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(

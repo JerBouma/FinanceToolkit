@@ -913,10 +913,24 @@ class ToolRegistry:
                 else:
                     row_selection = rows_limit
 
-            for pname, pann, _ in param_meta:
+            # Arguments the indicator does not take (another indicator of the tool does) are
+            # named in the answer, so a caller does not believe they were used.
+            ignored_params: list[str] = []
+            for pname, pann, pdefault in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
                     if pname not in accepted_params:
+                        advertised = (
+                            None
+                            if pname in disputed_params
+                            else (
+                                pdefault
+                                if pdefault is not inspect.Parameter.empty
+                                else ""
+                            )
+                        )
+                        if val not in (None, "") and val != advertised:
+                            ignored_params.append(pname)
                         continue
                     # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
                     if pname in disputed_params and val in (None, ""):
@@ -1153,6 +1167,13 @@ class ToolRegistry:
                                 f"limit={row_selection - 1 if row_selection < 0 else row_selection + 1} "
                                 "includes one more period."
                             )
+                if ignored_params:
+                    notes.append(
+                        ", ".join(f"`{pname}`" for pname in ignored_params)
+                        + f" {'is' if len(ignored_params) == 1 else 'are'} not used by "
+                        f"`{method_name}` and {'was' if len(ignored_params) == 1 else 'were'} "
+                        "ignored."
+                    )
                 if unmatched_columns:
                     notes.append(
                         "show_columns: "

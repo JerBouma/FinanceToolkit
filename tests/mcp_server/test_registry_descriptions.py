@@ -199,3 +199,42 @@ def test_floats_lose_their_binary_artefacts_and_infinity_becomes_null():
         {"index": 0, "Weight": 0.0831795225},
         {"index": 1, "Weight": None},
     ]
+
+
+def test_a_factor_model_has_a_row_per_ticker_and_the_coefficients_as_keys():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    model = pd.DataFrame(
+        [[0.1, 1.2, 0.2, 0.9]],
+        index=pd.period_range("2026", periods=1, freq="Y"),
+        columns=pd.MultiIndex.from_product(
+            [["ASML.AS", "MSFT"], ["Intercept", "Mkt-RF Slope"]]
+        ),
+    )
+
+    records = json.loads(format_result(model))
+
+    assert records[0]["ticker"] == "ASML.AS"
+    assert records[0]["Mkt-RF Slope"] == 1.2  # noqa: PLR2004
+
+
+def test_an_unnamed_level_of_countries_is_called_country():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    money = pd.DataFrame(
+        [[1.0, 2.0, 3.0, 4.0]],
+        index=pd.period_range("2025", periods=1, freq="Y"),
+        columns=pd.MultiIndex.from_product([["Japan", "United States"], ["M0", "M1"]]),
+    )
+
+    records = json.loads(format_result(money))
+
+    assert records[0]["country"] == "Japan" and records[0]["M1"] == 2.0  # noqa: PLR2004

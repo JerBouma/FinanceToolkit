@@ -170,19 +170,27 @@ def finalize_dataset(
 
     if apply_slice:
         had_data = not dataset.empty
+        periods = dataset.index if row_slice else dataset.columns
+        available = (
+            f" The data runs from {periods.min()} to {periods.max()}."
+            if had_data and len(periods)
+            else ""
+        )
         dataset = (
             dataset.loc[start_date:end_date]
             if row_slice
             else dataset.loc[:, start_date:end_date]
         )
 
-        # Data exists, just not in the window, e.g. a weekend or a range not published yet.
+        # Data exists, just not in the window, e.g. a weekend, a range not published yet
+        # or a historical dataset that ends long ago; where it does run says what to ask.
         if had_data and dataset.empty:
             logger.warning(
-                "There are no %sobservations between %s and %s.",
+                "There are no %sobservations between %s and %s.%s",
                 f"{indicator_name} " if indicator_name else "",
                 start_date,
                 end_date,
+                available,
             )
 
     if countries is not None and not isinstance(countries, str | list | tuple):

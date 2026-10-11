@@ -8,6 +8,7 @@ nesting is explicit, and there is no parsing ambiguity.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import math
 from typing import Any
@@ -15,6 +16,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from financetoolkit.economics.helpers import COUNTRY_CODES
+from financetoolkit.economics.oecd_model import CODE_TO_COUNTRY
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -73,6 +76,47 @@ def _idx_key(index: pd.Index) -> str:
 STACKABLE_COLUMN_LEVELS = 2
 
 
+# The longest symbol counted as a ticker, with an exchange suffix (ASML.AS, BTC-USD).
+MAX_SYMBOL_LENGTH = 12
+
+
+@functools.cache
+def _country_names() -> frozenset[str]:
+    """The country and region names the economic sources use."""
+
+    return frozenset(
+        {
+            *COUNTRY_CODES.values(),
+            *CODE_TO_COUNTRY.values(),
+            "Euro Area",
+            "European Union",
+            "World",
+        }
+    )
+
+
+def _are_countries(values: pd.Index) -> bool:
+    """Whether every label is a country or region, as in an economic indicator."""
+    return len(values) > 0 and all(str(value) in _country_names() for value in values)
+
+
+def _describe_level(values: pd.Index) -> str:
+    """The key for an unnamed column level that becomes rows: country, ticker or series."""
+    if _are_countries(values):
+        return "country"
+
+    return "ticker" if _looks_like_tickers(values) else "series"
+
+
+def _looks_like_tickers(values: pd.Index) -> bool:
+    """Whether every label is a ticker symbol (short and uppercase) or 'Benchmark'."""
+    return len(values) > 0 and all(
+        str(value) == "Benchmark"
+        or (len(str(value)) <= MAX_SYMBOL_LENGTH and str(value) == str(value).upper())
+        for value in values
+    )
+
+
 def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
     """Convert a FinanceToolkit DataFrame to a flat list of JSON-serializable dicts.
 
@@ -103,12 +147,42 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
             for column in dataframe.columns
         ]
 
+    # Numbered columns with a name, such as the maturities of a bond calculation, carry
+    # that name in their keys ("Years to Maturity 5" rather than "5.0").
+    if (
+        not isinstance(dataframe.columns, pd.MultiIndex)
+        and dataframe.columns.name
+        and len(dataframe.columns)
+        and all(
+            isinstance(label, int | float | np.number) and not isinstance(label, bool)
+            for label in dataframe.columns
+        )
+    ):
+        dataframe = dataframe.copy()
+        dataframe.columns = [
+            f"{dataframe.columns.name} {float(label):g}" for label in dataframe.columns
+        ]
+
     # ── Case 1: MultiIndex columns (metric, ticker) ───────────────────────────
     if isinstance(dataframe.columns, pd.MultiIndex):
         orig_name = _idx_key(dataframe.index)
-        ticker_name = dataframe.columns.names[-1] or "ticker"
+        # Usually (metric, ticker), but a factor model is (ticker, coefficient): the level
+        # with the tickers is the one that becomes rows, so the metrics stay the keys.
+        first = dataframe.columns.unique(level=0)
+        last = dataframe.columns.unique(level=-1)
+        if _are_countries(first) != _are_countries(last):
+            ticker_level = 0 if _are_countries(first) else -1
+        else:
+            ticker_level = (
+                0
+                if _looks_like_tickers(first) and not _looks_like_tickers(last)
+                else -1
+            )
+        ticker_name = dataframe.columns.names[ticker_level] or _describe_level(
+            dataframe.columns.unique(level=ticker_level)
+        )
 
-        stacked = dataframe.stack(level=-1)
+        stacked = dataframe.stack(level=ticker_level)
         stacked.index.names = [orig_name, ticker_name]
 
         flat = stacked.reset_index()

@@ -2,6 +2,9 @@
 
 __docformat__ = "google"
 
+import re
+
+import numpy as np
 import pandas as pd
 
 from financetoolkit.cache import policy_model
@@ -202,6 +205,70 @@ def _rank_listings_by_volume(
     return listings.sort_values("Volume", ascending=False, na_position="last")
 
 
+# The abbreviations in the names of preferred shares and hybrid securities, such as "Aegon
+# N.V. PRP CP SEC 6.375", case-sensitive so that a company such as Preferred Bank is not.
+HYBRID_SECURITY_PATTERN = re.compile(
+    r"\b(?:PRP|PERP|PFD|PRF|CAP SECS?|CP SECS?|FLTG RT|DEP SHS?|SUB NTS?)\b"  # codespell:ignore shs
+    r"|\s\d+\.\d+%?$|\d+\.\d+%"
+)
+
+# The company screener returns at most this many results.
+MAXIMUM_SCREENER_LIMIT = 10000
+
+# The share of the US dollar lower market cap bound sent to the screener, low enough that
+# a listing in a currency worth up to twice a dollar is not left out before converting.
+MARKET_CAP_BOUND_MARGIN = 0.5
+
+# The currency of the exchanges of each country Financial Modeling Prep lists (UK, not GB).
+COUNTRY_CURRENCIES = {
+    "US": "USD",
+    "CA": "CAD",
+    "MX": "MXN",
+    "BR": "BRL",
+    "AR": "ARS",
+    "CL": "CLP",
+    "UK": "GBP",
+    "GB": "GBP",
+    "IE": "EUR",
+    "NL": "EUR",
+    "BE": "EUR",
+    "FR": "EUR",
+    "DE": "EUR",
+    "AT": "EUR",
+    "IT": "EUR",
+    "ES": "EUR",
+    "PT": "EUR",
+    "FI": "EUR",
+    "GR": "EUR",
+    "CH": "CHF",
+    "SE": "SEK",
+    "NO": "NOK",
+    "DK": "DKK",
+    "IS": "ISK",
+    "PL": "PLN",
+    "CZ": "CZK",
+    "TR": "TRY",
+    "RU": "RUB",
+    "IL": "ILS",
+    "SA": "SAR",
+    "AE": "AED",
+    "QA": "QAR",
+    "ZA": "ZAR",
+    "IN": "INR",
+    "CN": "CNY",
+    "HK": "HKD",
+    "TW": "TWD",
+    "JP": "JPY",
+    "KR": "KRW",
+    "SG": "SGD",
+    "MY": "MYR",
+    "TH": "THB",
+    "ID": "IDR",
+    "AU": "AUD",
+    "NZ": "NZD",
+}
+
+
 def get_stock_screener(
     api_key: str,
     market_cap_higher: int | None = None,
@@ -221,10 +288,15 @@ def get_stock_screener(
     is_etf: bool | None = None,
     limit: int = 1000,
     user_subscription: str = "Free",
+    primary_only: bool = False,
 ) -> pd.DataFrame:
     """
     Get a list of instruments based on the screening criteria provided. It defaults
     to all stocks.
+
+    The market capitalisations of the listings are in their own currency, so they are
+    converted to US dollars, which the market cap bounds and the ranking use: a listing
+    in Canadian dollars no longer ranks above the same company's listing in euros.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -247,20 +319,35 @@ def get_stock_screener(
             which is also the API's own default, so hitting exactly this number means the result
             was truncated.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        primary_only (bool, optional): Whether to keep only the most traded listing of each
+            company, rather than every listing (e.g. ING in Amsterdam, New York, Toronto and
+            Frankfurt). Defaults to False.
 
     Returns:
-        pd.DataFrame: DataFrame of instruments matching the query. An empty DataFrame is returned
-            when nothing matches.
+        pd.DataFrame: DataFrame of instruments matching the query, with each listing's currency
+            and its market cap in US dollars, largest first. An empty DataFrame is returned when
+            nothing matches.
 
     Notes:
         - Every bound is compared against None rather than truthiness, so a bound of exactly zero
           (a perfectly valid beta, dividend or volume floor) is sent to the API instead of dropped.
     """
     url = f"https://financialmodelingprep.com/stable/company-screener?apikey={api_key}"
+    widened = (
+        market_cap_higher is not None or market_cap_lower is not None or primary_only
+    )
+    requested_limit = min(limit * 4, MAXIMUM_SCREENER_LIMIT) if widened else limit
 
+    # The endpoint compares market caps in each listing's own currency, while the bounds
+    # are in US dollars: the lower bound is widened for currencies worth more than a dollar
+    # and the upper bound is applied after converting, so no listing is wrongly left out.
+    # More results are asked for, since the converted bounds then narrow them down.
     query_parameters = {
-        "marketCapMoreThan": market_cap_higher,
-        "marketCapLowerThan": market_cap_lower,
+        "marketCapMoreThan": (
+            int(market_cap_higher * MARKET_CAP_BOUND_MARGIN)
+            if market_cap_higher is not None
+            else None
+        ),
         "priceMoreThan": price_higher,
         "priceLowerThan": price_lower,
         "betaMoreThan": beta_higher,
@@ -274,7 +361,7 @@ def get_stock_screener(
         "country": country,
         "exchange": exchange,
         "isEtf": is_etf,
-        "limit": limit,
+        "limit": requested_limit,
     }
 
     for parameter, value in query_parameters.items():
@@ -312,15 +399,138 @@ def get_stock_screener(
         columns=["isEtf", "isFund", "isActivelyTrading"], errors="ignore"
     )
     stock_screener = stock_screener.set_index("Symbol")
+    truncated = len(stock_screener) >= requested_limit
 
-    if len(stock_screener) >= limit:
+    # A preferred share or hybrid security has no market capitalisation of its own, while
+    # the screener reports one in the tens of billions for such a listing.
+    if {"Name", "Market Cap"}.issubset(stock_screener.columns):
+        hybrids = (
+            stock_screener["Name"].astype(str).str.contains(HYBRID_SECURITY_PATTERN)
+        )
+        stock_screener.loc[hybrids, "Market Cap"] = np.nan
+
+    stock_screener = _add_market_cap_in_dollars(
+        stock_screener, api_key, user_subscription
+    )
+    dollar_market_cap = (
+        "Market Cap (USD)"
+        if "Market Cap (USD)" in stock_screener.columns
+        else "Market Cap"
+    )
+
+    if market_cap_higher is not None:
+        stock_screener = stock_screener[
+            stock_screener[dollar_market_cap] >= market_cap_higher
+        ]
+    if market_cap_lower is not None:
+        stock_screener = stock_screener[
+            stock_screener[dollar_market_cap] <= market_cap_lower
+        ]
+
+    stock_screener = stock_screener.sort_values(
+        dollar_market_cap, ascending=False, na_position="last"
+    )
+
+    if primary_only and "Name" in stock_screener.columns:
+        # The most traded listing of a company is its primary one; volume counts shares
+        # alike on every exchange.
+        most_traded = (
+            stock_screener.sort_values("Volume", ascending=False, kind="stable")
+            if "Volume" in stock_screener.columns
+            else stock_screener
+        )
+        primary_listings = most_traded[~most_traded["Name"].duplicated()].index
+        stock_screener = stock_screener[stock_screener.index.isin(primary_listings)]
+
+    stock_screener = stock_screener.head(limit)
+
+    if truncated:
         logger.warning(
             "The screener returned the maximum of %s results, so the list is truncated. "
             "Narrow the criteria or raise the limit to see the remainder.",
-            limit,
+            requested_limit,
         )
 
     return stock_screener
+
+
+def _add_market_cap_in_dollars(
+    listings: pd.DataFrame, api_key: str, user_subscription: str
+) -> pd.DataFrame:
+    """
+    Adds each listing's currency and its market cap in US dollars. The currency follows
+    from the country of the listing's exchange, and the exchange rates are the latest
+    quotes. Without them, the listings are returned as they are, with a warning.
+
+    Args:
+        listings (pd.DataFrame): The listings, with an "Exchange Code" and "Market Cap".
+        api_key (str): The API key from Financial Modeling Prep.
+        user_subscription (str): The user subscription level.
+
+    Returns:
+        pd.DataFrame: The listings with a "Currency" and a "Market Cap (USD)" column.
+    """
+    if not {"Exchange Code", "Market Cap"}.issubset(listings.columns):
+        return listings
+
+    exchanges = get_cached_financial_data(
+        url=f"https://financialmodelingprep.com/stable/available-exchanges?apikey={api_key}",
+        user_subscription=user_subscription,
+    )
+
+    if exchanges.empty or not {"exchange", "countryCode"}.issubset(exchanges.columns):
+        logger.warning(
+            "The currencies of the exchanges could not be retrieved, so market caps are "
+            "in each listing's own currency."
+        )
+        return listings
+
+    exchange_currencies = {
+        exchange: COUNTRY_CURRENCIES.get(country_code)
+        for exchange, country_code in zip(
+            exchanges["exchange"], exchanges["countryCode"], strict=False
+        )
+    }
+    listings["Currency"] = listings["Exchange Code"].map(exchange_currencies)
+
+    foreign_currencies = sorted(
+        {currency for currency in listings["Currency"].dropna() if currency != "USD"}
+    )
+    rates = {"USD": 1.0}
+
+    if foreign_currencies:
+        quotes = get_cached_financial_data(
+            url=(
+                "https://financialmodelingprep.com/stable/batch-quote?symbols="
+                f"{','.join(f'{currency}USD' for currency in foreign_currencies)}"
+                f"&apikey={api_key}"
+            ),
+            user_subscription=user_subscription,
+        )
+
+        if not quotes.empty and {"symbol", "price"}.issubset(quotes.columns):
+            rates.update(
+                {
+                    symbol.removesuffix("USD"): price
+                    for symbol, price in zip(
+                        quotes["symbol"], quotes["price"], strict=False
+                    )
+                }
+            )
+
+    listings["Market Cap (USD)"] = listings["Market Cap"] * listings["Currency"].map(
+        rates
+    )
+
+    unconverted = listings["Market Cap"].notna() & listings["Market Cap (USD)"].isna()
+
+    if missing := sorted(set(listings.loc[unconverted, "Exchange Code"].dropna())):
+        logger.warning(
+            "The market caps of the listings on %s could not be converted to US dollars.",
+            ", ".join(missing),
+        )
+
+    return listings
 
 
 def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:

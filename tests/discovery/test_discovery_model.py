@@ -60,3 +60,60 @@ def test_an_unknown_search_method_is_refused(responses):
         )
 
     assert responses == []
+
+
+@pytest.fixture(name="screener")
+def fixture_screener(monkeypatch):
+    """Answer the screener, exchange and exchange rate endpoints offline."""
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/company-screener" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["INGS.TO", "INGA.AS", "ING", "AEH", "SMALL.T"],
+                    "companyName": [
+                        "ING Groep N.V.",
+                        "ING Groep N.V.",
+                        "ING Groep N.V.",
+                        "Aegon N.V. PRP CP SEC 6.375",
+                        "Small Japanese Co.",
+                    ],
+                    "marketCap": [117e9, 84.6e9, 95.3e9, 52e9, 1.5e12],
+                    "exchangeShortName": ["TSX", "AMS", "NYSE", "NYSE", "JPX"],
+                    "volume": [10_000, 500_000, 100_000, 1_000, 5_000],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {
+                    "exchange": ["TSX", "AMS", "NYSE", "JPX"],
+                    "countryCode": ["CA", "NL", "US", "JP"],
+                }
+            )
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["CADUSD", "EURUSD", "JPYUSD"],
+                    "price": [0.70, 1.12, 0.0065],
+                }
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+
+def test_the_screener_ranks_and_bounds_market_caps_in_dollars(screener):  # noqa: ARG001
+    listings = discovery_model.get_stock_screener(api_key="KEY", market_cap_higher=50e9)
+
+    # 117 billion Canadian dollars is less than 95 billion US dollars, 1.5 trillion yen is
+    # below the bound and the perpetual has no market cap of its own.
+    assert list(listings.index) == ["ING", "INGA.AS", "INGS.TO"]
+    assert listings.loc["INGS.TO", "Currency"] == "CAD"
+    assert listings.loc["INGS.TO", "Market Cap (USD)"] == pytest.approx(81.9e9)
+
+
+def test_the_screener_can_keep_one_listing_per_company(screener):  # noqa: ARG001
+    listings = discovery_model.get_stock_screener(api_key="KEY", primary_only=True)
+
+    assert "INGA.AS" in listings.index
+    assert not {"ING", "INGS.TO"} & set(listings.index)

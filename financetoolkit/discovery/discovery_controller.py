@@ -229,6 +229,7 @@ class Discovery:
         exchange: str | None = None,
         is_etf: bool | None = None,
         limit: int = 1000,
+        primary_only: bool = False,
     ):
         """
         Screen stocks based on a set of criteria. This can be useful to find companies that match
@@ -267,6 +268,12 @@ class Discovery:
             exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ".
             is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them.
             limit (int): The maximum number of companies to return. Defaults to 1000.
+            primary_only (bool): Whether to keep only the most traded listing of each company,
+                rather than every listing (e.g. ING in Amsterdam, New York, Toronto and
+                Frankfurt). Defaults to False.
+
+        Market caps are in each listing's own currency in "Market Cap" and in US dollars in
+        "Market Cap (USD)", which the market cap bounds and the ranking use.
 
         Returns:
             pd.DataFrame: A dataframe with all the symbols that match the query. An empty
@@ -346,6 +353,7 @@ class Discovery:
             is_etf=is_etf,
             limit=limit,
             user_subscription=self._fmp_plan,
+            primary_only=primary_only,
         )
 
         return stock_screener

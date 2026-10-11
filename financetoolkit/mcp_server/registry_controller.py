@@ -232,6 +232,9 @@ def _annotate_with_description(
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
 
+# How alike an unknown indicator name must be to a known one to be read as it.
+NEAR_CERTAIN_MATCH = 0.9
+
 # The most rows a note names one by one; more are counted instead.
 MAXIMUM_NAMED_ROWS = 10
 
@@ -869,6 +872,16 @@ class ToolRegistry:
                 and f"get_{candidate}" in method_param_names
             ):
                 candidate = f"get_{candidate}"
+            # A near-certain match (get_gordon_growth_model for get_gorden_growth_model, a
+            # spelling the package keeps for compatibility) is used, with a note.
+            indicator_note = None
+            if candidate not in method_param_names:
+                near = difflib.get_close_matches(
+                    candidate, all_indicators, n=2, cutoff=NEAR_CERTAIN_MATCH
+                )
+                if len(near) == 1:
+                    indicator_note = f"`{raw_indicator}` was read as `{near[0]}`."
+                    candidate = near[0]
             if candidate not in method_param_names:
                 elsewhere = [
                     entry["tool"]
@@ -1342,6 +1355,8 @@ class ToolRegistry:
                         f"Quarterly data is not available for `{method_name}`, so the yearly "
                         "figures are shown."
                     )
+                if indicator_note:
+                    notes.insert(0, indicator_note)
                 if ignored_params:
                     notes.append(
                         ", ".join(f"`{pname}`" for pname in ignored_params)

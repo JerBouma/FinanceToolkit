@@ -309,3 +309,20 @@ def test_the_last_rows_of_a_series_are_the_last_ones_with_data():
     )
 
     assert select_rows(poverty, -1).index.astype(str).tolist() == ["2023"]
+
+
+def test_symbols_with_an_exchange_suffix_are_called_tickers():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    ratios = pd.DataFrame({"2025": [37.1, 33.1]}, index=["ASML.AS", "SAP.DE"])
+    ratios.columns = pd.PeriodIndex(ratios.columns, freq="Y")
+    risk = pd.DataFrame(
+        {"Value at Risk": [-0.18, -0.06]}, index=["BTCUSD", "Benchmark"]
+    )
+
+    assert json.loads(format_result(ratios))[0]["ticker"] == "ASML.AS"
+    assert json.loads(format_result(risk))[0]["ticker"] == "BTCUSD"

@@ -7,7 +7,6 @@ nesting is explicit, and there is no parsing ambiguity.
 
 from __future__ import annotations
 
-import contextlib
 import functools
 import json
 import math
@@ -21,8 +20,6 @@ from financetoolkit.economics.oecd_model import CODE_TO_COUNTRY
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
-
-_MAX_TICKER_LEN = 5
 
 
 def _clean(val: Any) -> int | float | str | bool | None:
@@ -65,10 +62,10 @@ def _idx_key(index: pd.Index) -> str:
         return str(index.name)
     if isinstance(index, pd.DatetimeIndex | pd.PeriodIndex):
         return "date"
-    with contextlib.suppress(Exception):
-        sample = str(index[0])
-        if len(sample) <= _MAX_TICKER_LEN and sample.isupper():
-            return "ticker"
+    if _looks_like_tickers(index.unique()):
+        return "ticker"
+    if _are_countries(index.unique()):
+        return "country"
     return "index"
 
 
@@ -112,7 +109,11 @@ def _looks_like_tickers(values: pd.Index) -> bool:
     """Whether every label is a ticker symbol (short and uppercase) or 'Benchmark'."""
     return len(values) > 0 and all(
         str(value) == "Benchmark"
-        or (len(str(value)) <= MAX_SYMBOL_LENGTH and str(value) == str(value).upper())
+        or (
+            len(str(value)) <= MAX_SYMBOL_LENGTH
+            and str(value) == str(value).upper()
+            and any(character.isalpha() for character in str(value))
+        )
         for value in values
     )
 
@@ -199,9 +200,8 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
                 level_names.append(str(name))
                 continue
             vals = dataframe.index.get_level_values(i)
-            sample = str(vals[0]) if len(vals) else ""
             last = i == len(dataframe.index.names) - 1
-            if not last and len(sample) <= _MAX_TICKER_LEN and sample.isupper():
+            if not last and _looks_like_tickers(vals.unique()):
                 level_names.append("ticker")
             elif last:
                 level_names.append("metric")
@@ -228,15 +228,9 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
         idx_name = str(dataframe.index.name)
     elif isinstance(dataframe.columns, pd.DatetimeIndex | pd.PeriodIndex):
         # Columns are time periods → rows are either tickers or metric names
-        try:
-            sample = str(dataframe.index[0])
-            idx_name = (
-                "ticker"
-                if (len(sample) <= _MAX_TICKER_LEN and sample.isupper())
-                else "metric"
-            )
-        except Exception:
-            idx_name = "metric"
+        idx_name = (
+            "ticker" if _looks_like_tickers(dataframe.index.unique()) else "metric"
+        )
     else:
         idx_name = _idx_key(dataframe.index)
     dataframe.index.name = idx_name

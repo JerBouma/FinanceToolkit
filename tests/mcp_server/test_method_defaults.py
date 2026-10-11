@@ -400,3 +400,19 @@ def test_a_yearly_answer_to_a_quarterly_question_says_so(monkeypatch):
     )[0][0].text
 
     assert "Quarterly data is not available" in text
+
+
+def test_a_near_certain_indicator_name_is_read_as_the_known_one(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "models",
+            {
+                "indicator": "get_gordon_growth_model",
+                "tickers": "KO",
+                "rate_of_return": 0.08,
+                "growth_rate": 0.03,
+            },
+        )
+    )[0][0].text
+
+    assert "was read as `get_gorden_growth_model`" in text

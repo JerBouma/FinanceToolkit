@@ -139,7 +139,7 @@
     },
     {
       "name": "fixed_income",
-      "description": "Bond and derivative valuation calculations (bond duration, present value, yield to maturity, derivative pricing, par yield, forward rate, breakeven inflation rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield, Taylor-series price change estimate). No tickers needed \u2014 pass the bond's terms directly, e.g. par_value=1000, coupon_rate=0.05, years_to_maturity=10 with bond_price or yield_to_maturity. The breakeven inflation rate and yield curve spread read a country's current curve (countries='United States')."
+      "description": "Bond and derivative valuation calculations (bond duration, present value, yield to maturity, derivative pricing, par yield, forward rate, breakeven inflation rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield, Taylor-series price change estimate). No tickers needed \u2014 pass the bond's terms directly, e.g. par_value=1000, coupon_rate=0.05, years_to_maturity=10 with bond_price or yield_to_maturity. A bond's price is get_present_value. The breakeven inflation rate and yield curve spread read a country's current curve (countries='United States')."
     },
     {
       "name": "discovery",

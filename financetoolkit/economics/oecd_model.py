@@ -352,6 +352,33 @@ def _validate_no_country_name_collision(
     )
 
 
+def _shifted_period(date: str, period_code: str, buffer_periods: int = 0) -> pd.Period:
+    """
+    Parse a YYYY-MM-DD date string into a pandas Period of the given frequency,
+    shifted back by `buffer_periods` periods.
+
+    Args:
+        date (str): A date in YYYY-MM-DD format.
+        period_code (str): The period code of the data ('M', 'Q' or 'Y').
+        buffer_periods (int): Number of periods to subtract. Defaults to 0.
+
+    Returns:
+        pd.Period: The shifted period.
+
+    Raises:
+        ValueError: If the date does not parse to a period (pandas hands back NaT
+            rather than raising for an empty or 'NaT' string).
+    """
+    period = pd.Period(date, freq=period_code)
+
+    if not isinstance(period, pd.Period):
+        raise ValueError(f"'{date}' is not a valid date, expected YYYY-MM-DD.")
+
+    # A range ending at the period is the typed way to step back: Period arithmetic
+    # is described by the stubs as possibly yielding an offset instead.
+    return pd.period_range(end=period, periods=buffer_periods + 1)[0]
+
+
 def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) -> str:
     """
     Convert a YYYY-MM-DD date string into the OECD API's period format for the given
@@ -367,7 +394,7 @@ def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) ->
     Returns:
         str: The OECD-formatted period string (e.g. "2020", "2020-Q2" or "2020-05").
     """
-    period = pd.Period(date, freq=period_code) - buffer_periods
+    period = _shifted_period(date, period_code, buffer_periods)
 
     if period_code == "Y":
         return str(period.year)
@@ -421,7 +448,7 @@ def collect_oecd_data(
 
     if start_date:
         buffer_periods = START_BUFFER_PERIODS.get(period_code, 0)
-        buffered_period = pd.Period(start_date, freq=period_code) - buffer_periods
+        buffered_period = _shifted_period(start_date, period_code, buffer_periods)
         buffered_start_date = buffered_period.to_timestamp().strftime("%Y-%m-%d")
         extensions += (
             f"&startPeriod="
@@ -449,7 +476,7 @@ def collect_oecd_data(
             end=coverage_end,
             parameters=cache_parameters,
         )
-        cached_data = plan.cached.get(cache_entity)
+        cached_data = plan.cached_frame(cache_entity)
 
         if plan.fully_cached and cached_data is not None and not cached_data.empty:
             return cached_data
@@ -903,6 +930,42 @@ def get_short_term_interest_rate(
     short_term_interest_rate = short_term_interest_rate / 100
 
     return short_term_interest_rate
+
+
+def get_gross_domestic_product_growth(
+    year_over_year: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """
+    Get the quarterly growth of real gross domestic product (GDP) for a variety of
+    countries from the OECD's Quarterly National Accounts. The growth is measured in
+    chain-linked volumes and is seasonally and calendar adjusted, the headline figure
+    national statistical offices publish.
+
+    Args:
+        year_over_year (bool): Whether to return the change on the same quarter a year
+            earlier instead of on the previous quarter. Defaults to False.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: The growth as a decimal (0.006 for 0.6%), indexed by quarter with a
+        column per country.
+    """
+    transformation = "GY" if year_over_year else "G1"
+
+    oecd_data_string = (
+        "OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD,/"
+        f"Q.Y..S1..B1GQ._Z...PC.L.{transformation}."
+    )
+
+    gross_domestic_product_growth = collect_oecd_data(
+        oecd_data_string, "Q", start_date, end_date
+    )
+
+    # The OECD publishes the growth in percent.
+    return gross_domestic_product_growth / 100
 
 
 def get_consumer_price_index(

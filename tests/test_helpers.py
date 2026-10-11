@@ -252,3 +252,97 @@ def test_handle_portfolio_decorator_multiindex_columns():
 
     # Should not add Portfolio column for MultiIndex columns
     assert len(result.columns) == 2
+
+
+def test_run_in_parallel_preserves_order():
+    """Test that results come back in the same order as the argument tuples."""
+    result = helpers.run_in_parallel(
+        lambda base, exponent: base**exponent,
+        [(2, 3), (3, 2), (10, 0)],
+    )
+
+    assert result == [8, 9, 1]
+
+
+def test_run_in_parallel_empty_items():
+    """Test that an empty collection returns an empty list without spawning a pool."""
+    assert helpers.run_in_parallel(lambda: None, []) == []
+
+
+def test_run_in_parallel_collects_into_shared_dict():
+    """Test the pattern the data collection functions use: workers mutate a shared dict."""
+    collected: dict[str, int] = {}
+
+    def worker(ticker, dataset_dictionary):
+        dataset_dictionary[ticker] = len(ticker)
+
+    helpers.run_in_parallel(
+        worker, [(ticker, collected) for ticker in ["AAPL", "MSFT", "GOOGL"]]
+    )
+
+    assert collected == {"AAPL": 4, "MSFT": 4, "GOOGL": 5}
+
+
+def test_run_in_parallel_propagates_worker_exceptions():
+    """Test that an exception inside a worker surfaces instead of dying in its thread."""
+
+    def worker(ticker):
+        raise KeyError(f"no data for {ticker}")
+
+    try:
+        helpers.run_in_parallel(worker, [("AAPL",)])
+        raise AssertionError("Expected KeyError to propagate")
+    except KeyError:
+        pass
+
+
+def test_determine_max_workers_default():
+    """Test the default when the environment variable is not set."""
+    with patch.dict("os.environ", {}, clear=True):
+        assert helpers.determine_max_workers() == helpers.DEFAULT_MAX_WORKERS
+
+
+def test_determine_max_workers_environment_variable():
+    """Test that a positive integer in the environment variable is used."""
+    with patch.dict(
+        "os.environ", {helpers.MAX_WORKERS_ENVIRONMENT_VARIABLE: "3"}, clear=True
+    ):
+        assert helpers.determine_max_workers() == 3
+
+
+def test_determine_max_workers_invalid_environment_variable():
+    """Test that a non-positive or non-integer value falls back to the default."""
+    for invalid in ["0", "-4", "many", "2.5"]:
+        with patch.dict(
+            "os.environ",
+            {helpers.MAX_WORKERS_ENVIRONMENT_VARIABLE: invalid},
+            clear=True,
+        ):
+            assert helpers.determine_max_workers() == helpers.DEFAULT_MAX_WORKERS
+
+
+def test_handle_portfolio_weighs_the_tickers_with_a_value_by_the_result_period():
+    """The portfolio row uses the weights of the result's period and skips missing values."""
+    import numpy as np
+
+    daily = pd.period_range("2024-01-01", periods=3, freq="D")
+    yearly = pd.period_range("2024", periods=1, freq="Y")
+
+    class Module:
+        _tickers = ["A", "B", "Portfolio"]
+        _rounding = 4
+        _portfolio_weights = {
+            "daily": pd.DataFrame({"A": 0.25, "B": 0.75}, index=daily),
+            "yearly": pd.DataFrame({"A": 0.5, "B": 0.5}, index=yearly),
+        }
+
+        @helpers.handle_portfolio
+        def get_metric(self, period: str | None = None):  # noqa: ARG002
+            # Most risk metrics default to daily results.
+            return pd.DataFrame(
+                {"A": [1.0, 1.0, 1.0], "B": [3.0, np.nan, 3.0]}, index=daily
+            )
+
+    result = Module().get_metric()
+
+    assert result["Portfolio"].tolist() == [2.5, 1.0, 2.5]

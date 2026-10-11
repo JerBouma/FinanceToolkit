@@ -21,6 +21,8 @@ from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
+from financetoolkit.mcp_server.diagnostics_model import FMP_KEY_HINT
+from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -41,6 +43,54 @@ try:
 except metadata.PackageNotFoundError:  # pragma: no cover - running from a checkout
     TOOLKIT_VERSION = "unknown"
 
+# Tried in order when the benchmark is the only requested ticker, so there is still something to analyse.
+FALLBACK_BENCHMARKS = ["SPY", "QQQ", "^GSPC", "IWM", "DIA", "VTI"]
+
+
+def resolve_benchmark_ticker(
+    tickers: list[str], benchmark_ticker: str | None
+) -> tuple[str | None, str | None]:
+    """
+    Decide which benchmark the Toolkit is built with when it overlaps the tickers.
+
+    The Toolkit drops a ticker that is also the benchmark and reports it under
+    "Benchmark" instead. That is kept whenever another ticker remains, so the
+    benchmark is always the one that was asked for: silently swapping it made
+    "Benchmark" a different security (e.g. QQQ instead of SPY) and skewed every
+    benchmark-based metric. Only when the benchmark is the sole ticker, which would
+    leave nothing to analyse, is a fallback benchmark used.
+
+    Args:
+        tickers (list[str]): The requested ticker symbols.
+        benchmark_ticker (str | None): The requested benchmark ticker.
+
+    Returns:
+        tuple[str | None, str | None]: The benchmark to build the Toolkit with, and a
+            note for the response describing what happened (None when nothing did).
+    """
+    upper_tickers = [ticker.upper() for ticker in tickers]
+
+    if not benchmark_ticker or benchmark_ticker.upper() not in upper_tickers:
+        return benchmark_ticker, None
+
+    if any(ticker != benchmark_ticker.upper() for ticker in upper_tickers):
+        return benchmark_ticker, (
+            f"{benchmark_ticker} is the benchmark, so its data is reported under "
+            f"'Benchmark' rather than as a separate {benchmark_ticker} column."
+        )
+
+    for candidate in FALLBACK_BENCHMARKS:
+        if candidate.upper() not in upper_tickers:
+            return candidate, (
+                f"{benchmark_ticker} was requested as both the ticker and the benchmark, "
+                f"so {candidate} is used as the benchmark: 'Benchmark' refers to {candidate}."
+            )
+
+    return None, (
+        f"{benchmark_ticker} was requested as both the ticker and the benchmark, so the "
+        "results are calculated without a benchmark."
+    )
+
 
 class ToolkitProvider:
     """
@@ -55,6 +105,7 @@ class ToolkitProvider:
         api_key: str = API_KEY,
         fred_api_key: str = FRED_API_KEY,
         cache_enabled: bool = True,
+        excluded_sources: frozenset[str] = frozenset(),
     ) -> None:
         """
         Initializes the ToolkitProvider.
@@ -78,8 +129,12 @@ class ToolkitProvider:
                 Defaults to True, which suits a local single-user server; a hosted
                 one is expected to pass False (see ``_resolve_cache_enabled`` in
                 ``mcp_controller``). Defaults to True.
+            excluded_sources (frozenset[str], optional): Sources whose data is never
+                cached, such as FinancialModelingPrep on a hosted server, where it
+                belongs to each subscriber. Defaults to an empty set.
         """
-        self._api_key = api_key
+        # A placeholder from the docs counts as no key, so tools answer with the "key required" message.
+        self._api_key = validation_model.resolve_api_key(api_key)
         self._fred_api_key = fred_api_key
         self._cache_enabled = cache_enabled
 
@@ -89,13 +144,14 @@ class ToolkitProvider:
 
         # The same cache the library uses; a disabled one never opens the database.
         self._cache: Cache = cache_controller.get_cache(
-            location=database_location, enabled=cache_enabled
+            location=database_location,
+            enabled=cache_enabled,
+            excluded_sources=excluded_sources,
         )
 
-        # What Toolkit and Discovery get as `use_cached_data`: the path, or False.
-        self._use_cached_data: bool | str = (
-            database_location if cache_enabled else False
-        )
+        # What Toolkit and Discovery get as `use_cached_data`: this cache, so they leave
+        # out the same sources, or False.
+        self._use_cached_data: bool | Cache = self._cache if cache_enabled else False
 
         if cache_enabled:
             cache_controller.set_active_cache(self._cache)
@@ -270,7 +326,15 @@ class ToolkitProvider:
 
         if isinstance(result, pd.Series):
             result = result.to_frame()
-        if self._cache_ttl and isinstance(result, pd.DataFrame):
+        # An empty result is not cached: it usually means a missing API key or an
+        # unreachable source, and a cached copy would keep answering "No data available"
+        # after the key is added or the source is back.
+        if (
+            self._cache_ttl
+            and isinstance(result, pd.DataFrame)
+            and not result.empty
+            and bool(result.notna().to_numpy().any())
+        ):
             self._cache.set(
                 source=MCP_CACHE_SOURCE,
                 dataset=MCP_CACHE_DATASET,
@@ -292,13 +356,20 @@ class ToolkitProvider:
         fred_api_key: str = "",
     ) -> list[str]:
         """Return human-readable notes describing data transformations applied to
-        the most recent result for the given Toolkit instance (fiscal-year
-        relabelling and currency conversion).
+        the most recent result for the given Toolkit instance (benchmark handling,
+        fiscal-year relabelling and currency conversion).
 
         Returns an empty list when no transformations were applied or when the
-        Toolkit instance has not yet fetched any financial statements.
+        Toolkit instance has not yet fetched any financial statements, apart from
+        the benchmark note, which depends on the request alone.
         """
         notes: list[str] = []
+
+        # Derived from the request alone, so it is reported even when the data fetch below fails.
+        _, benchmark_note = resolve_benchmark_ticker(tickers, benchmark_ticker)
+        if benchmark_note:
+            notes.append(benchmark_note)
+
         try:
             effective_key = resolve_api_key() or api_key or self._api_key
             effective_fred_key = (
@@ -378,7 +449,7 @@ class ToolkitProvider:
         start_date: str,
         end_date: str,
         quarterly: bool,
-        benchmark_ticker: str,
+        benchmark_ticker: str | None,
         api_key: str = "",
         fred_api_key: str = "",
     ) -> Toolkit:
@@ -399,7 +470,8 @@ class ToolkitProvider:
             end_date (str): End date for the Toolkit (format YYYY-MM-DD).
             quarterly (bool): Whether to initialize the Toolkit for quarterly (True)
                 or yearly (False) statements.
-            benchmark_ticker (str): Benchmark ticker symbol to use for comparative analysis.
+            benchmark_ticker (str | None): Benchmark ticker symbol to use for comparative analysis,
+                or None to run without a benchmark.
             api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
             fred_api_key (str, optional): FRED API key, used by the Toolkit's
                 `.economics`/`.fixedincome` properties. Optional. Defaults to "".
@@ -409,29 +481,12 @@ class ToolkitProvider:
         """
         upper_tickers = [t.upper() for t in tickers]
 
-        # The Toolkit drops a ticker that is also the benchmark, so pick another one.
-        if benchmark_ticker and benchmark_ticker.upper() in upper_tickers:
-            fallback_benchmarks = ["SPY", "QQQ", "^GSPC", "IWM", "DIA", "VTI"]
-            resolved_benchmark: str | None = None
-            for candidate in fallback_benchmarks:
-                if candidate.upper() not in upper_tickers:
-                    resolved_benchmark = candidate
-                    break
-            if resolved_benchmark:
-                logger.info(
-                    "benchmark_ticker '%s' conflicts with a requested ticker. "
-                    "Automatically switching benchmark to '%s'.",
-                    benchmark_ticker,
-                    resolved_benchmark,
-                )
-                benchmark_ticker = resolved_benchmark
-            else:
-                logger.warning(
-                    "benchmark_ticker '%s' conflicts with a requested ticker and no "
-                    "non-conflicting fallback could be found. Setting benchmark_ticker to None.",
-                    benchmark_ticker,
-                )
-                benchmark_ticker = None  # type: ignore[assignment]
+        # The note half is surfaced to the model by get_transformation_notes.
+        benchmark_ticker, benchmark_note = resolve_benchmark_ticker(
+            tickers, benchmark_ticker
+        )
+        if benchmark_note:
+            logger.info(benchmark_note)
 
         # Keyed by hashed FMP+FRED key so one user's Toolkit never reaches another.
         effective_key = api_key or self._api_key
@@ -451,13 +506,7 @@ class ToolkitProvider:
                 return self._toolkit_cache[cache_key]
 
             if not effective_key:
-                raise ValueError(
-                    "A FinancialModelingPrep API key is required for this tool. "
-                    "Local setup: set FINANCIAL_MODELING_PREP_API_KEY in your "
-                    "environment or .env file. Hosted setup: pass your key via the "
-                    "`X-FMP-API-Key` header or a `?fmp_api_key=...` URL parameter. "
-                    "Get a key with 15% off via https://www.jeroenbouma.com/fmp"
-                )
+                raise ValueError(FMP_KEY_HINT)
 
             toolkit_instance: Toolkit = Toolkit(
                 tickers=tickers,
@@ -617,12 +666,11 @@ class ToolkitProvider:
             key_hash = hashlib.sha256((effective_key or "").encode()).hexdigest()
             cache_key = f"discovery|{key_hash}"
         else:
-            fred_key_hash = hashlib.sha256(
-                (effective_fred_key or "").encode()
+            # FixedIncome also holds the FMP key (treasury rates), so both keys are part of the cache key.
+            key_hash = hashlib.sha256(
+                f"{effective_key or ''}|{effective_fred_key or ''}".encode()
             ).hexdigest()
-            cache_key = (
-                f"{module_name}|{start_date}|{end_date}|{quarterly}|{fred_key_hash}"
-            )
+            cache_key = f"{module_name}|{start_date}|{end_date}|{quarterly}|{key_hash}"
 
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
@@ -636,9 +684,12 @@ class ToolkitProvider:
                         quarterly=quarterly,
                         fred_api_key=effective_fred_key,
                         cache=self._cache,
+                        api_key=effective_key,
                     )
                 elif module_name == "fixedincome":
+                    # get_treasury_rates is served by FMP, so without the key it silently returns no data.
                     instance = FixedIncome(
+                        api_key=effective_key,
                         start_date=start_date,
                         end_date=end_date,
                         quarterly=quarterly,

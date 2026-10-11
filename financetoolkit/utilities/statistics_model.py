@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -169,14 +168,27 @@ def finalize_dataset(
     elif not growth:
         dataset = apply_rounding(dataset, rounding)
 
-    if dropna:
-        dataset = dataset.dropna(how="all", axis=0)
-
     if apply_slice:
+        had_data = not dataset.empty
         dataset = (
             dataset.loc[start_date:end_date]
             if row_slice
             else dataset.loc[:, start_date:end_date]
+        )
+
+        # Data exists, just not in the window, e.g. a weekend or a range not published yet.
+        if had_data and dataset.empty:
+            logger.warning(
+                "There are no %sobservations between %s and %s.",
+                f"{indicator_name} " if indicator_name else "",
+                start_date,
+                end_date,
+            )
+
+    if countries is not None and not isinstance(countries, str | list | tuple):
+        raise TypeError(
+            "The countries must be a country name or a list of country names, such as "
+            f"'Japan' or ['Japan', 'Germany'], not a {type(countries).__name__} ({countries!r})."
         )
 
     if countries:
@@ -194,7 +206,86 @@ def finalize_dataset(
             [country for country in countries if country not in missing_countries]
         ]
 
+    # After the country selection, so a row that is empty for every selected country goes
+    # too, such as a month only an unselected country has published yet.
+    if dropna:
+        dataset = dataset.dropna(how="all", axis=0)
+
     return dataset
+
+
+def to_period_index(index: pd.Index) -> pd.PeriodIndex:
+    """
+    Returns the given index as a PeriodIndex, which is what every period based
+    calculation in the package expects its historical data to be indexed by.
+
+    Historical data is period indexed from the moment it is collected, so this is a
+    check rather than a conversion: a frame that lost its PeriodIndex somewhere along
+    the way (for example through a reset_index) would otherwise fail deep inside a
+    calculation with an unhelpful AttributeError on `asfreq`.
+
+    Args:
+        index (pd.Index): The index of a historical dataset.
+
+    Returns:
+        pd.PeriodIndex: The same index, narrowed to a PeriodIndex.
+
+    Raises:
+        TypeError: If the index is not a PeriodIndex.
+    """
+    if not isinstance(index, pd.PeriodIndex):
+        raise TypeError(
+            f"Expected a PeriodIndex, got {type(index).__name__}. Historical data must "
+            "be indexed by periods for period based calculations."
+        )
+
+    return index
+
+
+def to_multi_index(index: pd.Index) -> pd.MultiIndex:
+    """
+    Returns the given index as a MultiIndex, for the places that reshape a frame
+    (an unstack, a concat with keys) and then operate on the resulting levels.
+
+    Args:
+        index (pd.Index): The index or columns of a reshaped dataset.
+
+    Returns:
+        pd.MultiIndex: The same index, narrowed to a MultiIndex.
+
+    Raises:
+        TypeError: If the index is not a MultiIndex.
+    """
+    if not isinstance(index, pd.MultiIndex):
+        raise TypeError(
+            f"Expected a MultiIndex but received {type(index).__name__}; the "
+            "reshaping step before this point did not produce the expected levels."
+        )
+
+    return index
+
+
+def to_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
+    """
+    Returns the given index as a DatetimeIndex, the counterpart of `to_period_index`
+    for the within-period helpers that nest each observation under its period.
+
+    Args:
+        index (pd.Index): The index of a historical dataset.
+
+    Returns:
+        pd.DatetimeIndex: The same index, narrowed to a DatetimeIndex.
+
+    Raises:
+        TypeError: If the index is not a DatetimeIndex.
+    """
+    if not isinstance(index, pd.DatetimeIndex):
+        raise TypeError(
+            f"Expected a DatetimeIndex, got {type(index).__name__}. Within-period "
+            "calculations start from timestamp indexed data."
+        )
+
+    return index
 
 
 def apply_rounding(
@@ -225,8 +316,11 @@ def bounded_ffill(
     gap surfaces as a NaN growth/return rather than a fabricated flat one.
     """
     if isinstance(dataset, pd.DataFrame):
-        filled = dataset.ffill(axis=axis, limit=1)
-        has_future_data = dataset.bfill(axis=axis).notna()
+        # pandas accepts the "rows"/"index"/"columns" aliases the callers use, but its
+        # stubs only spell out the numeric form.
+        axis_number = 0 if axis in ("rows", "index") else 1
+        filled = dataset.ffill(axis=axis_number, limit=1)
+        has_future_data = dataset.bfill(axis=axis_number).notna()
     else:
         filled = dataset.ffill(limit=1)
         has_future_data = dataset.bfill().notna()
@@ -255,74 +349,69 @@ def calculate_growth(
     Returns:
         pd.Series | pd.DataFrame: the period over period growth of the dataset.
     """
-    # pandas 2.1 warns about pct_change fill even though the code handles it.
-    warnings.simplefilter(action="ignore", category=FutureWarning)
-
     if isinstance(lag, list):
-        new_index = []
+        # Each row (axis="columns") or column (axis="rows") is an entity, and every lag
+        # becomes an extra index level after it: (entity, "Lag 1"), (entity, "Lag 2").
         lag_dict = {f"Lag {lag_value}": lag_value for lag_value in lag}
+        entities = dataset.index if axis == "columns" else dataset.columns
+        new_index = pd.MultiIndex.from_tuples(
+            [
+                (*entity, lag_key) if isinstance(entity, tuple) else (entity, lag_key)
+                for entity in entities
+                for lag_key in lag_dict
+            ]
+        )
+
+        filled = bounded_ffill(dataset, axis=axis)
+        growth_per_lag = pd.concat(
+            {
+                lag_key: filled.pct_change(periods=lag_value, axis=axis)
+                for lag_key, lag_value in lag_dict.items()
+            },
+            axis=0 if axis == "columns" else 1,
+        )
+
+        # The lag is the first level after the concat and moves to the last, so the
+        # labels match new_index, which also orders the lags per entity.
+        stacked_axis = (
+            growth_per_lag.index if axis == "columns" else growth_per_lag.columns
+        )
+        stacked_axis = stacked_axis.reorder_levels(
+            list(range(1, stacked_axis.nlevels)) + [0]
+        )
 
         if axis == "columns":
-            for old_index in dataset.index:
-                for lag_value in lag_dict:
-                    new_index.append(
-                        (*old_index, lag_value)
-                        if isinstance(old_index, tuple)
-                        else (old_index, lag_value)
-                    )
-
-            dataset_lag = pd.DataFrame(
-                index=pd.MultiIndex.from_tuples(new_index),
-                columns=dataset.columns,
-                dtype=np.float64,
+            dataset_lag = growth_per_lag.set_axis(stacked_axis, axis=0).reindex(
+                new_index
             )
-
-            for new_index in dataset_lag.index:
-                lag_key = new_index[-1]
-                other_indices = new_index[:-1]
-                if len(other_indices) == 1:
-                    other_indices = other_indices[0]
-
-                dataset_lag.loc[new_index] = (
-                    bounded_ffill(dataset.loc[other_indices])
-                    .pct_change(periods=lag_dict[lag_key])  # type: ignore
-                    .to_numpy()
-                    .reshape(-1)
-                )
         else:
-            for old_index in dataset.columns:
-                for lag_value in lag_dict:
-                    new_index.append(
-                        (*old_index, lag_value)
-                        if isinstance(old_index, tuple)
-                        else (old_index, lag_value)
-                    )
-
-            dataset_lag = pd.DataFrame(
-                columns=pd.MultiIndex.from_tuples(new_index),
-                index=dataset.index,
-                dtype=np.float64,
+            dataset_lag = growth_per_lag.set_axis(stacked_axis, axis=1).reindex(
+                new_index, axis=1
             )
 
-            for new_index in dataset_lag.columns:
-                lag_key = new_index[-1]
-                other_indices = new_index[:-1]
-                if len(other_indices) == 1:
-                    other_indices = other_indices[0]
-
-                dataset_lag.loc[:, new_index] = (
-                    bounded_ffill(dataset.loc[:, other_indices])
-                    .pct_change(periods=lag_dict[lag_key])  # type: ignore
-                    .to_numpy()
-                    .reshape(-1)
-                )
-
-        return apply_rounding(dataset_lag, rounding)
+        return apply_rounding(
+            drop_infinite_growth(dataset_lag.astype(np.float64)), rounding
+        )
 
     # The forward fill has to run along the same axis as the pct_change, since a statement or ratio DataFrame is indexed by ticker with the periods as columns, so filling along the default axis would carry the previous ticker's value into the gap.  # noqa: E501
     dataset = bounded_ffill(dataset, axis=axis)
 
-    return apply_rounding(dataset.pct_change(periods=lag, axis=axis), rounding)
+    return apply_rounding(
+        drop_infinite_growth(dataset.pct_change(periods=lag, axis=axis)), rounding
+    )
+
+
+def drop_infinite_growth(growth: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+    """
+    Growth from a value of 0 is undefined, not infinite, so it is reported as missing.
+
+    Args:
+        growth (pd.Series | pd.DataFrame): The growth values.
+
+    Returns:
+        pd.Series | pd.DataFrame: The growth values with infinities replaced by NaN.
+    """
+    return growth.replace([np.inf, -np.inf], np.nan)
 
 
 def calculate_standardization(

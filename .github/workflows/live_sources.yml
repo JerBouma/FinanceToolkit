@@ -1,0 +1,70 @@
+name: Live Sources
+
+# Checks weekly that the keyless Economics sources (Eurostat, ONS, BIS, ECB, Bank of
+# England, Bank of Japan, Japan's Ministry of Finance and Statistics Bureau, the U.S.
+# Treasury and the New York Fed) still answer with current, plausible data, and opens
+# an issue when one does not, so a changed format is fixed before users run into it.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  live-sources:
+    name: Live Source Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Check every source
+        id: check
+        env:
+          FINANCETOOLKIT_LIVE_SOURCES: "1"
+        run: |
+          set -o pipefail
+          uv run pytest tests/live_sources -v --timeout=300 -p no:cacheprovider 2>&1 | tee live_sources.log
+
+      - name: Report a broken source
+        if: failure() && steps.check.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.readFileSync('live_sources.log', 'utf8');
+            const failures = log.split('\n').filter(line => line.startsWith('FAILED')).join('\n');
+            const title = 'Live source check failed';
+            const body = `The weekly check of the Economics sources failed on ${new Date().toISOString().slice(0, 10)}.\n\n` +
+              '```\n' + (failures || log.slice(-3000)) + '\n```\n\n' +
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'data-source',
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['data-source'],
+              });
+            }

@@ -239,7 +239,12 @@ def get_log_of_tangible_total_assets(
     were computed with the same log base.
     """
 
-    return _drop_non_finite(np.log(tangible_total_assets))
+    # np.log keeps the pandas container at runtime, but the ufunc stubs describe an
+    # ndarray; the ufunc fast path of `.apply` produces the same values with a typed result.
+    if isinstance(tangible_total_assets, pd.Series | pd.DataFrame):
+        return _drop_non_finite(tangible_total_assets.apply(np.log))
+
+    return _drop_non_finite(float(np.log(tangible_total_assets)))
 
 
 def get_working_capital_to_total_liabilities_ratio(

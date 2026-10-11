@@ -48,12 +48,14 @@ def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
             cache_ttl,
             database_location,
             cache_enabled,
+            excluded_sources,
         ):
             captured["api_key"] = api_key
             captured["fred_api_key"] = fred_api_key
             captured["cache_ttl"] = cache_ttl
             captured["database_location"] = database_location
             captured["cache_enabled"] = cache_enabled
+            captured["excluded_sources"] = excluded_sources
 
     class DummyInspector:
         def __init__(self, *args, **kwargs):
@@ -98,46 +100,47 @@ def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
 
     # No transport set means stdio, which is the local single-user case.
     assert captured["cache_enabled"] is True
+    assert captured["excluded_sources"] == frozenset()
 
 
-def test_cache_defaults_to_off_when_hosted(monkeypatch):
-    """Test that an HTTP transport turns caching off while stdio leaves it on.
+def test_a_hosted_server_shares_everything_but_financial_modeling_prep(monkeypatch):
+    """Test that an HTTP transport caches every source but FinancialModelingPrep.
 
-    A hosted server multiplexes every user through one process and one database,
-    so a shared entry would answer one user's request with another's paid data,
-    and downloaded source data would accumulate on disk unbounded.
+    A hosted server serves every user from one process and one database, so the
+    public sources are shared while FinancialModelingPrep data, which belongs to each
+    subscriber, is always retrieved with the user's own key.
     """
-    from financetoolkit.mcp_server.mcp_controller import _resolve_cache_enabled
+    from financetoolkit.mcp_server.mcp_controller import _resolve_cache_mode
 
     monkeypatch.delenv("FINANCE_TOOLKIT_CACHE_ENABLED", raising=False)
 
     for transport in ("sse", "streamable-http"):
         monkeypatch.setenv("MCP_TRANSPORT", transport)
-        assert _resolve_cache_enabled("auto") is False
+        assert _resolve_cache_mode("auto") == "shared"
 
     monkeypatch.setenv("MCP_TRANSPORT", "stdio")
-    assert _resolve_cache_enabled("auto") is True
+    assert _resolve_cache_mode("auto") == "full"
 
     monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-    assert _resolve_cache_enabled("auto") is True
+    assert _resolve_cache_mode("auto") == "full"
 
 
 def test_cache_enabled_env_overrides_transport(monkeypatch):
     """Test that the explicit environment override wins over both defaults."""
-    from financetoolkit.mcp_server.mcp_controller import _resolve_cache_enabled
+    from financetoolkit.mcp_server.mcp_controller import _resolve_cache_mode
 
     monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
     monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_ENABLED", "true")
 
-    assert _resolve_cache_enabled("auto") is True
+    assert _resolve_cache_mode("auto") == "full"
 
     monkeypatch.setenv("MCP_TRANSPORT", "stdio")
     monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_ENABLED", "false")
 
-    assert _resolve_cache_enabled("auto") is False
+    assert _resolve_cache_mode("auto") == "off"
 
     # An explicit boolean in config.yaml still beats the transport heuristic.
     monkeypatch.delenv("FINANCE_TOOLKIT_CACHE_ENABLED", raising=False)
     monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
 
-    assert _resolve_cache_enabled(True) is True
+    assert _resolve_cache_mode(True) == "full"

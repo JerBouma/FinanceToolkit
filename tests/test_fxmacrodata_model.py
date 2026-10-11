@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from financetoolkit.economics import fxmacrodata_model as fxmacrodata
+from financetoolkit.economics.economics_controller import Economics
 
 
 class _Response:
@@ -42,8 +43,17 @@ def fake_api(monkeypatch):
         query = parse_qs(urlparse(request.full_url).query)
         limit = int(query.get("limit", ["20"])[0])
         offset = int(query.get("offset", ["0"])[0])
-        page = rows[offset : offset + limit]
-        has_more = offset + len(page) < len(rows)
+        selected = rows
+        if "start_date" in query:
+            selected = [
+                row for row in selected if row["date"] >= query["start_date"][0]
+            ]
+        if "end_date" in query:
+            selected = [row for row in selected if row["date"] <= query["end_date"][0]]
+        if "/calendar/" in urlparse(request.full_url).path:
+            return _Response({"data": selected})
+        page = selected[offset : offset + limit]
+        has_more = offset + len(page) < len(selected)
         return _Response(
             {
                 "data": page,
@@ -51,7 +61,7 @@ def fake_api(monkeypatch):
                     "limit": limit,
                     "offset": offset,
                     "returned_count": len(page),
-                    "total_count": len(rows),
+                    "total_count": len(selected),
                     "has_more": has_more,
                     "next_offset": offset + len(page) if has_more else None,
                 },
@@ -102,6 +112,30 @@ def test_dataframe_limit_caps_rows_and_page_size(fake_api):
         (["50"], ["100"]),
     ]
     assert frame.index.max().isoformat().startswith("2024-09-06")
+
+
+def test_economics_controller_preserves_paged_date_window(fake_api):
+    economics = Economics(
+        start_date="2024-01-01", end_date="2024-12-31", use_cached_data=False
+    )
+    frame = economics.get_fxmacrodata_dataset("forex", base="eur", quote="usd")
+    assert len(frame) == 250
+    queries = [parse_qs(urlparse(request.full_url).query) for request in fake_api]
+    assert [query["offset"] for query in queries] == [["0"], ["100"], ["200"]]
+    assert all(query["start_date"] == ["2024-01-01"] for query in queries)
+    assert all(query["end_date"] == ["2024-12-31"] for query in queries)
+
+
+def test_economics_calendar_helper_preserves_date_filter(fake_api):
+    economics = Economics(
+        start_date="2024-01-10", end_date="2024-01-15", use_cached_data=False
+    )
+    frame = economics.get_fxmacrodata_release_calendar(limit=100)
+    assert frame.index.min().isoformat().startswith("2024-01-10")
+    assert frame.index.max().isoformat().startswith("2024-01-15")
+    query = parse_qs(urlparse(fake_api[0].full_url).query)
+    assert query["start_date"] == ["2024-01-10"]
+    assert query["end_date"] == ["2024-01-15"]
 
 
 def test_fetch_dataset_never_sends_limit_above_100(fake_api):

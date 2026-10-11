@@ -2,11 +2,11 @@
 
 __docformat__ = "google"
 
-import inspect
 
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.statistics_model import to_datetime_index
 
 logger = logger_model.get_logger()
 
@@ -53,9 +53,16 @@ def determine_within_historical_data(
         if not intraday_period and period == "intraday":
             continue
 
+        # The intraday entry maps each intraday_period to a symbol; every other
+        # entry is the symbol itself, and the intraday loop iteration is skipped
+        # above whenever no intraday_period was given.
         period_symbol = (
-            symbol[intraday_period] if period == "intraday" else symbol  # type: ignore
+            symbol[intraday_period]
+            if isinstance(symbol, dict) and intraday_period is not None
+            else symbol
         )
+        if not isinstance(period_symbol, str):
+            raise TypeError(f"No period symbol resolved for {period}.")
 
         if not intraday_historical_data.empty and period in [
             "intraday",
@@ -69,8 +76,8 @@ def determine_within_historical_data(
         period_data = source_data.copy()
         period_data.index = pd.MultiIndex.from_arrays(
             [
-                source_data.index.to_period(period_symbol),
-                source_data.index.to_period(inner_freq),
+                to_datetime_index(source_data.index).to_period(period_symbol),
+                to_datetime_index(source_data.index).to_period(inner_freq),
             ]
         )
 
@@ -112,105 +119,25 @@ def determine_within_dataset(
             )
         ).apply(lambda x: x.corr())
 
-        within_historical_data.index = within_historical_data.index.set_levels(
+        # The grouped correlation matrices are indexed by (period, ticker) and the
+        # outer level is relabelled from timestamps to periods.
+        grouped_index = within_historical_data.index
+        if not isinstance(grouped_index, pd.MultiIndex):
+            raise TypeError("Expected the grouped correlations to be MultiIndexed.")
+
+        within_historical_data.index = grouped_index.set_levels(
             [
-                pd.PeriodIndex(
-                    within_historical_data.index.levels[0],
-                    freq=period_symbol,
-                ),
-                within_historical_data.index.levels[1],
+                pd.PeriodIndex(grouped_index.levels[0], freq=period_symbol),
+                grouped_index.levels[1],
             ],
         )
     else:
         within_historical_data = dataset_new.copy()
         within_historical_data.index = pd.MultiIndex.from_arrays(
             [
-                dataset_new.index.to_period(period_symbol),
-                dataset_new.index.to_period("D"),
+                to_datetime_index(dataset_new.index).to_period(period_symbol),
+                to_datetime_index(dataset_new.index).to_period("D"),
             ]
         )
 
     return within_historical_data
-
-
-def handle_errors(func):
-    """
-    Decorator to handle specific performance errors that may occur in a function and provide informative messages.
-
-    Args:
-        func (function): The function to be decorated.
-
-    Returns:
-        function: The decorated function.
-
-    Raises:
-        KeyError: If an index name is missing in the provided historical data.
-        ValueError: If an error occurs while running the function, typically due to incomplete historical data.
-    """
-
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except KeyError as e:
-            function_name = func.__name__
-            if "Benchmark" in str(e):
-                logger.error(
-                    "Please set a benchmark_ticker in the Toolkit class to calculate %s. "
-                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')",
-                    function_name,
-                )
-            else:
-                logger.error(
-                    "There is an index name missing in the provided historical dataset. "
-                    "This is %s. This is required for the function (%s) "
-                    "to run. Please fill this column to be able to calculate the metrics.",
-                    e,
-                    function_name,
-                )
-            return pd.Series(dtype="object")
-        except ValueError as e:
-            function_name = func.__name__
-            if "Benchmark" in str(e):
-                logger.error(
-                    "Please set a benchmark_ticker in the Toolkit class to calculate %s. "
-                    "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')",
-                    function_name,
-                )
-            else:
-                logger.error(
-                    "An error occurred while trying to run the function " + "%s. %s",
-                    function_name,
-                    e,
-                )
-            return pd.Series(dtype="object")
-        except AttributeError as e:
-            function_name = func.__name__
-            if "Benchmark" in str(e):
-                logger.error(
-                    "Please set a benchmark_ticker in the Toolkit class to calculate %s. "
-                    + "For example: toolkit = Toolkit(['TSLA', 'AAPL', 'MSFT'], benchmark_ticker='SPY')",
-                    function_name,
-                )
-            else:
-                logger.error(
-                    "An error occurred while trying to run the function " + "%s. %s",
-                    function_name,
-                    e,
-                )
-            return pd.Series(dtype="object")
-        except ZeroDivisionError as e:
-            function_name = func.__name__
-            logger.error(
-                "An error occurred while trying to run the function " + "%s. %s",
-                function_name,
-                e,
-            )
-            return pd.Series(dtype="object")
-
-    # These steps are there to ensure the docstring of the function remains intact
-    wrapper.__doc__ = func.__doc__
-    wrapper.__name__ = func.__name__
-    wrapper.__signature__ = inspect.signature(func)
-    wrapper.__module__ = func.__module__
-
-    return wrapper

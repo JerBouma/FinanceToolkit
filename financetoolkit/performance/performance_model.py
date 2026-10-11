@@ -1,21 +1,24 @@
 """Performance Model"""
 
 import io
+import time
 import warnings
 import zipfile
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy import linalg, stats
 from scipy.stats import linregress
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.risk import cvar_model
+from financetoolkit.risk.risk_model import get_wealth_and_peak
 from financetoolkit.utilities.requests_model import get_request
-from financetoolkit.utilities.statistics_model import PERIOD_TRANSLATION
+from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
+    to_period_index,
+)
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
@@ -28,7 +31,7 @@ EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
 def get_covariance(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the covariance of returns.
 
@@ -59,15 +62,20 @@ def get_covariance(
 
             return covariance
 
-        if isinstance(returns, pd.Series | pd.core.window.rolling.Rolling):
+        if isinstance(returns, pd.Series):
+            if not isinstance(benchmark_returns, pd.Series):
+                raise TypeError(
+                    "A Series of returns needs a Series of benchmark returns."
+                )
             return returns.cov(benchmark_returns)
 
+    # A rolling window object, which pairs with either a Series or a DataFrame.
     return returns.cov(benchmark_returns)
 
 
 def get_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate beta. Beta represents the slope in the linear regression between
     the asset returns and the benchmark returns.
@@ -79,25 +87,41 @@ def get_beta(
     Returns:
         pd.Series | pd.DataFrame: _description_
     """
-    if isinstance(returns, pd.DataFrame):
-        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            combination = pd.concat([returns, benchmark_returns], axis=1)
+    if not isinstance(returns, pd.DataFrame | pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-            # Calculate Sharpe ratio for each asset (ticker) in the DataFrame
-            covariance = combination.groupby(level=0).apply(
-                lambda x: get_covariance(x[returns.columns], x[benchmark_returns.name])
-            )
-            variance = benchmark_returns.groupby(level=0).apply(lambda x: x.var())
+    frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
 
-            return covariance.div(variance, axis=0)
+    # The covariance and the benchmark variance are taken over the same dates, those on
+    # which both have a return. A benchmark variance over every date would bias the beta
+    # of an asset with a shorter history (e.g. a later listing) towards the benchmark's
+    # volatility in a period the asset was not part of.
+    benchmark = pd.DataFrame(
+        np.repeat(benchmark_returns.to_numpy()[:, None], frame.shape[1], axis=1),
+        index=frame.index,
+        columns=frame.columns,
+    )
+    both = frame.notna() & benchmark.notna()
+    asset, benchmark = frame.where(both), benchmark.where(both)
 
-        return get_covariance(returns, benchmark_returns) / benchmark_returns.var()
+    within_period = frame.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    groups = frame.index.get_level_values(0) if within_period else np.zeros(len(frame))
 
-    if isinstance(returns, pd.Series):
-        # Calculate Sharpe ratio for a single asset (ticker)
-        return get_covariance(returns, benchmark_returns) / benchmark_returns.var()
+    asset_deviation = asset - asset.groupby(groups).transform("mean")
+    benchmark_deviation = benchmark - benchmark.groupby(groups).transform("mean")
 
-    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+    # The degrees of freedom of the covariance and the variance cancel out, and a beta
+    # needs at least two shared dates (min_count).
+    beta = (asset_deviation * benchmark_deviation).groupby(groups).sum(min_count=2) / (
+        benchmark_deviation**2
+    ).groupby(groups).sum(min_count=2)
+
+    if within_period:
+        return beta.replace([np.inf, -np.inf], np.nan)
+
+    beta = beta.iloc[0].replace([np.inf, -np.inf], np.nan)
+
+    return beta if isinstance(returns, pd.DataFrame) else float(beta.iloc[0])
 
 
 def get_rolling_beta(
@@ -139,7 +163,7 @@ def get_capital_asset_pricing_model(
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment,
     such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade-off of
@@ -193,6 +217,34 @@ def get_capital_asset_pricing_model(
     return capital_asset_pricing_model
 
 
+# Ken French updates the factor files monthly, so a file downloaded in this session is
+# kept for an hour: every factor model call would otherwise download it again when the
+# Toolkit's cache is not enabled.
+FACTOR_FILE_LIFETIME_SECONDS = 3600
+_factor_files: dict[str, tuple[float, bytes]] = {}
+
+
+def download_factor_file(url: str) -> bytes:
+    """
+    Download one of Ken French's factor files, or reuse the copy downloaded within the hour.
+
+    Args:
+        url (str): The URL of the ZIP file.
+
+    Returns:
+        bytes: The ZIP file.
+    """
+    downloaded = _factor_files.get(url)
+
+    if downloaded and time.monotonic() - downloaded[0] < FACTOR_FILE_LIFETIME_SECONDS:
+        return downloaded[1]
+
+    content = get_request(url, timeout=10).content
+    _factor_files[url] = (time.monotonic(), content)
+
+    return content
+
+
 def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
     """
     This functionality returns the Fama and French 5 Factor Model dataset. It is a dataset that contains the
@@ -237,8 +289,7 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
         if cached_dataset is not None:
             return cached_dataset
 
-    response = get_request(fama_and_french_url, timeout=10)
-    zip_data = response.content
+    zip_data = download_factor_file(fama_and_french_url)
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
         # The dataset is packaged in a ZIP file, so it needs to be extracted first
@@ -342,8 +393,7 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
         if cached_dataset is not None:
             return cached_dataset
 
-    response = get_request(momentum_url, timeout=10)
-    zip_data = response.content
+    zip_data = download_factor_file(momentum_url)
 
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
         zip_file_contents = zip_file.namelist()
@@ -383,7 +433,7 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
 def get_factor_asset_correlations(
     factors: pd.DataFrame,
     excess_return: pd.Series,
-) -> pd.DataFrame:
+) -> pd.Series:
     """
     Calculates factor exposures for each asset.
 
@@ -404,17 +454,80 @@ def get_factor_asset_correlations(
         excess_returns (pd.Series): the excess returns.
 
     Returns:
-        pd.DataFrame: the factor asset correlations.
+        pd.Series: the correlation of each factor with the excess return.
     """
     correlations = factors.corrwith(excess_return)
 
     return correlations
 
 
+def _ordinary_least_squares(
+    regressors: pd.DataFrame, response: pd.Series
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """
+    Fits an ordinary least squares regression with an intercept, the way scikit-learn's
+    LinearRegression does: the data is centered, the slopes are solved with LAPACK's
+    gelsd and the intercept follows from the means.
+
+    Args:
+        regressors (pd.DataFrame): The independent variables.
+        response (pd.Series): The dependent variable.
+
+    Returns:
+        tuple[float, np.ndarray, np.ndarray]: The intercept, the slope per regressor and the
+        fitted values.
+
+    Raises:
+        ValueError: When the data contains NaN or infinite values.
+    """
+    regressor_values = np.asarray(regressors, dtype=float)
+    response_values = np.asarray(response, dtype=float)
+
+    if not (np.isfinite(regressor_values).all() and np.isfinite(response_values).all()):
+        raise ValueError(
+            "Input contains NaN or infinity, which a regression cannot fit."
+        )
+
+    regressor_mean = regressor_values.mean(axis=0)
+    response_mean = response_values.mean()
+    coefficients, *_ = linalg.lstsq(
+        regressor_values - regressor_mean,
+        response_values - response_mean,
+        lapack_driver="gelsd",
+    )
+    intercept = float(response_mean - regressor_mean @ coefficients)
+
+    return intercept, coefficients, regressor_values @ coefficients + intercept
+
+
+def _r_squared(response: pd.Series, fitted: np.ndarray) -> float:
+    """
+    Calculates the coefficient of determination, with scikit-learn's convention for a
+    response without variance: 1 for a perfect fit and 0 otherwise.
+
+    Args:
+        response (pd.Series): The dependent variable.
+        fitted (np.ndarray): The fitted values.
+
+    Returns:
+        float: The R squared.
+    """
+    response_values = np.asarray(response, dtype=float)
+    residual_sum_of_squares = float(((response_values - fitted) ** 2).sum())
+    total_sum_of_squares = float(
+        ((response_values - response_values.mean()) ** 2).sum()
+    )
+
+    if total_sum_of_squares == 0:
+        return 1.0 if residual_sum_of_squares == 0 else 0.0
+
+    return 1 - residual_sum_of_squares / total_sum_of_squares
+
+
 def get_fama_and_french_model_multi(
     excess_returns: pd.Series,
     factor_dataset: pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+) -> tuple[dict, pd.Series, str | None]:
     """
     The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
     regression analysis to better describe asset returns:
@@ -471,8 +584,9 @@ def get_fama_and_french_model_multi(
 
         return regression_results, excess_returns * np.nan, error_message
 
-    model = LinearRegression()
-    model.fit(factor_dataset, excess_returns)
+    intercept, coefficients, y_pred = _ordinary_least_squares(
+        factor_dataset, excess_returns
+    )
 
     # Check for sufficient samples before calculating R^2
     if factor_dataset.shape[0] < 2:  # noqa
@@ -482,19 +596,16 @@ def get_fama_and_french_model_multi(
         )
         r_squared = np.nan
     else:
-        # Calculate R^2 using the model's score method
-        r_squared = model.score(factor_dataset, excess_returns)
-
-    y_pred = model.predict(factor_dataset)
+        r_squared = _r_squared(excess_returns, y_pred)
 
     residuals = excess_returns - y_pred
 
-    mse = mean_squared_error(excess_returns, y_pred)
+    mse = float(np.mean((np.asarray(excess_returns, dtype=float) - y_pred) ** 2))
 
-    regression_results = {"Intercept": model.intercept_}
+    regression_results = {"Intercept": intercept}
 
     for factor in factor_dataset.columns:
-        regression_results[f"{factor} Slope"] = model.coef_[
+        regression_results[f"{factor} Slope"] = coefficients[
             factor_dataset.columns.get_loc(factor)
         ]
 
@@ -507,7 +618,7 @@ def get_fama_and_french_model_multi(
 def get_fama_and_french_model_single(
     excess_returns: pd.Series,
     factor: pd.Series,
-) -> pd.Series | pd.DataFrame:
+) -> tuple[dict, pd.Series]:
     """
     The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
     regression analysis to better describe asset returns:
@@ -580,9 +691,9 @@ def get_fama_and_french_model_single(
 
 
 def get_alpha(
-    asset_returns: pd.Series | float,
+    asset_returns: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the (arithmetic) Alpha, i.e. the asset's return in excess of the
     benchmark's return.
@@ -638,11 +749,11 @@ def get_rolling_alpha(
 
 
 def get_jensens_alpha(
-    asset_returns: pd.Series | float,
+    asset_returns: pd.Series | pd.DataFrame | float,
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate Jensen's Alpha, i.e. the return earned above what CAPM would predict
     given the asset's Beta (systematic risk exposure).
@@ -697,10 +808,10 @@ def get_jensens_alpha(
 
 
 def get_treynor_ratio(
-    asset_returns: pd.Series | float,
+    asset_returns: pd.Series | pd.DataFrame | float,
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Treynor ratio of returns, i.e. the excess return earned per unit of
     systematic (market) risk, as measured by Beta.
@@ -749,7 +860,9 @@ def get_treynor_ratio(
     return treynor_ratio
 
 
-def get_sharpe_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
+def get_sharpe_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Sharpe ratio of returns, i.e. the mean excess return per unit of total
     (upside and downside) volatility.
@@ -992,7 +1105,9 @@ def get_deflated_sharpe_ratio(
     )
 
 
-def get_sortino_ratio(excess_returns: pd.Series | pd.DataFrame) -> pd.Series:
+def get_sortino_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Sortino ratio of returns, i.e. the mean excess return per unit of
     downside deviation.
@@ -1068,14 +1183,9 @@ def get_rolling_sortino_ratio(
         pd.Series | pd.DataFrame: Rolling Sortino ratio values with time as index.
     """
 
-    def _downside_deviation(window):
-        downside = np.minimum(window, 0.0)
-
-        return np.sqrt(np.mean(downside**2))
-
     rolling_mean = excess_returns.rolling(window=window_size).mean()
-    rolling_downside_deviation = excess_returns.rolling(window=window_size).apply(
-        _downside_deviation, raw=True
+    rolling_downside_deviation = np.sqrt(
+        (excess_returns.clip(upper=0) ** 2).rolling(window=window_size).mean()
     )
 
     return rolling_mean / rolling_downside_deviation
@@ -1116,7 +1226,7 @@ def get_m2_ratio(
     risk_free_rate: pd.Series,
     asset_standard_deviation: pd.Series | pd.DataFrame,
     benchmark_standard_deviation: pd.Series | float,
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the M2 Ratio (Modigliani-Modigliani Measure) of returns.
 
@@ -1218,7 +1328,7 @@ def get_rolling_m2_ratio(
 
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Tracking Error of returns, i.e. the standard deviation of the
     difference between the asset's and the benchmark's return (the "active return").
@@ -1279,7 +1389,7 @@ def get_rolling_tracking_error(
 
 def get_information_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
-) -> pd.Series:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Information Ratio of returns, i.e. the mean active return (asset
     return minus benchmark return) per unit of Tracking Error.
@@ -1431,8 +1541,8 @@ def get_average_drawdown(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        cum_returns = (1 + returns.fillna(0)).cumprod()
-        drawdowns = cum_returns / cum_returns.cummax() - 1
+        wealth, peak = get_wealth_and_peak(returns)
+        drawdowns = wealth / peak - 1
 
     return drawdowns[drawdowns < 0].mean()
 
@@ -1509,8 +1619,8 @@ def get_burke_drawdown_measure(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        cum_returns = (1 + returns.fillna(0)).cumprod()
-        drawdowns = cum_returns / cum_returns.cummax() - 1
+        wealth, peak = get_wealth_and_peak(returns)
+        drawdowns = wealth / peak - 1
 
     return np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
 
@@ -1931,7 +2041,7 @@ def get_returns(
     dates = (
         groups
         if groups is not None
-        else returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
     period_returns = (1 + returns).groupby(dates).prod() - 1
@@ -2019,8 +2129,8 @@ def get_covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_capm_residuals(
-    excess_returns: pd.DataFrame,
-    beta: pd.DataFrame,
+    excess_returns: pd.Series | pd.DataFrame,
+    beta: pd.Series | pd.DataFrame,
     benchmark_excess_returns: pd.Series,
 ) -> pd.DataFrame:
     """
@@ -2054,6 +2164,14 @@ def get_capm_residuals(
         pd.DataFrame: The pointwise CAPM regression residuals, indexed the same way as
         `excess_returns`.
     """
+    if not isinstance(excess_returns, pd.DataFrame) or not isinstance(
+        beta, pd.DataFrame
+    ):
+        raise TypeError(
+            "The residuals are computed per ticker, which needs a DataFrame of excess "
+            "returns and a DataFrame of betas."
+        )
+
     periods = excess_returns.index.get_level_values(0).unique()
     period_residuals_list = []
 
@@ -2423,7 +2541,7 @@ def get_starr_ratio(
 def get_rachev_ratio(
     returns: pd.Series | pd.DataFrame,
     alpha: float = 0.05,
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Rachev Ratio (R-Ratio) of returns.
 
@@ -2461,7 +2579,7 @@ def get_rachev_ratio(
         the best/worst 5% of outcomes). Defaults to 0.05.
 
     Returns:
-        pd.Series | pd.DataFrame: Rachev Ratio values.
+        pd.Series | pd.DataFrame | float: Rachev Ratio values, a single float for a Series.
     """
     right_tail_expected_shortfall = -cvar_model.get_cvar_historic(-returns, alpha)
     left_tail_expected_shortfall = -cvar_model.get_cvar_historic(returns, alpha)
@@ -2500,7 +2618,7 @@ def _get_market_timing_regression(
     Notes:
     - Rows in which the asset's or the benchmark's excess return is NaN are dropped
     before fitting. Every return series starts with at least one NaN (the first
-    observation has no prior close to compare against), and `LinearRegression` raises
+    observation has no prior close to compare against), and the regression raises
     on NaN inputs, so without this the regression fails for the very first period of
     any dataset.
     """
@@ -2526,18 +2644,17 @@ def _get_market_timing_regression(
         # Robust handling of insufficient data points for regression method
         return regression_results_nan, excess_returns * np.nan
 
-    model = LinearRegression()
-    model.fit(factor_dataset, excess_returns_valid)
-
-    y_pred = model.predict(factor_dataset)
+    intercept, coefficients, y_pred = _ordinary_least_squares(
+        factor_dataset, excess_returns_valid
+    )
     residuals = excess_returns_valid - y_pred
 
-    r_squared = model.score(factor_dataset, excess_returns_valid)
+    r_squared = _r_squared(excess_returns_valid, y_pred)
 
     regression_results = {
-        "Alpha": model.intercept_,
-        "Beta": model.coef_[0],
-        second_regressor_name: model.coef_[1],
+        "Alpha": intercept,
+        "Beta": coefficients[0],
+        second_regressor_name: coefficients[1],
         "R Squared": r_squared,
     }
 

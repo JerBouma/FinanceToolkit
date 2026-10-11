@@ -13,9 +13,9 @@ from financetoolkit.ratios import (
 
 
 def get_return_on_assets_criteria(
-    net_income: float | pd.Series | pd.DataFrame,
-    average_total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    net_income: pd.DataFrame,
+    average_total_assets: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculates the Return on Assets (ROA) criteria for the Piotroski F-Score model.
 
@@ -30,11 +30,11 @@ def get_return_on_assets_criteria(
         - Return on Assets Criteria = Return on Assets (ROA) > 0
 
     Args:
-        net_income (float | pd.Series | pd.DataFrame): The net income of the company.
-        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company.
+        net_income (pd.DataFrame): The net income of the company.
+        average_total_assets (pd.DataFrame): The average total assets of the company.
 
     Returns:
-        float | pd.Series | pd.DataFrame: A boolean value indicating whether the company meets the
+        pd.DataFrame: A boolean value indicating whether the company meets the
         Return on Assets (ROA) criteria.
 
     Notes:
@@ -52,8 +52,8 @@ def get_return_on_assets_criteria(
 
 
 def get_operating_cashflow_criteria(
-    operating_cashflow: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    operating_cashflow: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculates the operating cash flow criteria for the Piotroski F-Score model.
 
@@ -66,10 +66,10 @@ def get_operating_cashflow_criteria(
             - Operating Cash Flow Criteria = Operating Cash Flow > 0
 
     Args:
-        operating_cashflow (float | pd.Series | pd.DataFrame): The operating cash flow of a company.
+        operating_cashflow (pd.DataFrame): The operating cash flow of a company.
 
     Returns:
-        float | pd.Series | pd.DataFrame: A binary metric indicating whether the
+        pd.DataFrame: A binary metric indicating whether the
         operating cash flow is positive (1) or not (0).
     """
     operating_cashflow_criteria = operating_cashflow > 0
@@ -78,9 +78,9 @@ def get_operating_cashflow_criteria(
 
 
 def get_change_in_return_on_asset_criteria(
-    net_income: float | pd.Series | pd.DataFrame,
-    average_total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    net_income: pd.DataFrame,
+    average_total_assets: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculates the change in the return on assets (F_dROA) criteria for the Piotroski F-Score
     model.
@@ -97,12 +97,12 @@ def get_change_in_return_on_asset_criteria(
         (ROA, t-1)
 
     Args:
-        net_income (float | pd.Series | pd.DataFrame): The net income of the company for the period.
-        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company
+        net_income (pd.DataFrame): The net income of the company for the period.
+        average_total_assets (pd.DataFrame): The average total assets of the company
         for the period.
 
     Returns:
-        float | pd.Series | pd.DataFrame: A boolean value indicating whether the ROA has increased
+        pd.DataFrame: A boolean value indicating whether the ROA has increased
         compared to the previous period.
 
     """
@@ -118,11 +118,11 @@ def get_change_in_return_on_asset_criteria(
 
 
 def get_accruals_criteria(
-    net_income: float | pd.Series | pd.DataFrame,
-    average_total_assets: float | pd.Series | pd.DataFrame,
-    operating_cashflow: float | pd.Series | pd.DataFrame,
-    total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    net_income: pd.DataFrame,
+    average_total_assets: pd.DataFrame,
+    operating_cashflow: pd.DataFrame,
+    total_assets: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculates the accruals criteria (F_ACCRUAL) for the Piotroski F-Score model.
 
@@ -136,11 +136,11 @@ def get_accruals_criteria(
         - Accruals Criteria = (Operating Cashflow / Total Assets) > Return on Assets
 
     Args:
-        net_income (float | pd.Series | pd.DataFrame): The net income of the company.
-        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of the company,
+        net_income (pd.DataFrame): The net income of the company.
+        average_total_assets (pd.DataFrame): The average total assets of the company,
         used as the denominator of the Return on Assets.
-        operating_cashflow (float | pd.Series | pd.DataFrame): The operating cashflow of the company.
-        total_assets (float | pd.Series | pd.DataFrame): The total assets of the company, used as the
+        operating_cashflow (pd.DataFrame): The operating cashflow of the company.
+        total_assets (pd.DataFrame): The total assets of the company, used as the
         denominator of the operating cashflow. This must be the *same* asset base as
         average_total_assets: Piotroski (2000) scales both Return on Assets and Cash Flow from Operations
         by the same total assets figure, which is what makes the comparison reduce to the sign of
@@ -148,7 +148,7 @@ def get_accruals_criteria(
         and a point-in-time one here) biases the signal by the growth rate of the balance sheet.
 
     Returns:
-        float | pd.Series | pd.DataFrame: The accruals criteria for the company.
+        pd.DataFrame: The accruals criteria for the company.
 
     References:
     - Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement Information to
@@ -167,9 +167,9 @@ def get_accruals_criteria(
 
 
 def get_change_in_leverage_criteria(
-    long_term_debt: float | pd.Series | pd.DataFrame,
-    average_total_assets: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
+    long_term_debt: pd.DataFrame,
+    average_total_assets: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculate the change in leverage criteria (F_dLEVER) for the Piotroski F-Score model.
 
@@ -185,13 +185,13 @@ def get_change_in_leverage_criteria(
         - Change in Leverage Criteria = Leverage Ratio (t) < Leverage Ratio (t-1)
 
     Args:
-        long_term_debt (float | pd.Series | pd.DataFrame): The total long term debt of a company, which
+        long_term_debt (pd.DataFrame): The total long term debt of a company, which
         can be a float or a time-series.
-        average_total_assets (float | pd.Series | pd.DataFrame): The average total assets of a company
+        average_total_assets (pd.DataFrame): The average total assets of a company
         over the beginning and the end of the period, which can be a float or a time-series.
 
     Returns:
-        float | pd.Series | pd.DataFrame: A boolean criteria indicating whether the leverage ratio
+        pd.DataFrame: A boolean criteria indicating whether the leverage ratio
         decreased compared to the previous period (True for decrease, False for increase or no change).
 
     Notes:
@@ -213,9 +213,9 @@ def get_change_in_leverage_criteria(
 
 
 def get_change_in_current_ratio_criteria(
-    current_assets: pd.Series | pd.DataFrame,
-    current_liabilities: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    current_assets: pd.DataFrame,
+    current_liabilities: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Current Ratio over time.
 
@@ -228,13 +228,13 @@ def get_change_in_current_ratio_criteria(
         - Current Ratio Criteria = Current Ratio > Current Ratio Shifted
 
     Args:
-        current_assets (pd.Series | pd.DataFrame): The current assets of a company, which can
+        current_assets (pd.DataFrame): The current assets of a company, which can
         be a time-series.
-        current_liabilities (pd.Series | pd.DataFrame): The current liabilities of a company, which
+        current_liabilities (pd.DataFrame): The current liabilities of a company, which
         can be a time-series.
 
     Returns:
-        pd.Series | pd.DataFrame: A boolean criteria indicating whether the Current Ratio increased compared
+        pd.DataFrame: A boolean criteria indicating whether the Current Ratio increased compared
         to the previous period (True for increase, False for decrease or no change).
 
     Notes:
@@ -252,8 +252,8 @@ def get_change_in_current_ratio_criteria(
 
 
 def get_number_of_shares_criteria(
-    common_stock_issued: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    common_stock_issued: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculate the equity issuance (EQ_OFFER) criteria for the Piotroski F-Score model.
 
@@ -268,11 +268,11 @@ def get_number_of_shares_criteria(
         - Number of Shares Criteria = Common Stock Issued == 0
 
     Args:
-        common_stock_issued (pd.Series | pd.DataFrame): The proceeds from common stock issued by
+        common_stock_issued (pd.DataFrame): The proceeds from common stock issued by
         the company during the period, as a time-series.
 
     Returns:
-        pd.Series | pd.DataFrame: A boolean criteria that is True when the company issued no
+        pd.DataFrame: A boolean criteria that is True when the company issued no
         common stock during the period (the favourable case, scoring 1) and False when it did
         issue common stock (scoring 0).
 
@@ -289,9 +289,9 @@ def get_number_of_shares_criteria(
 
 
 def get_gross_margin_criteria(
-    revenue: pd.Series | pd.DataFrame,
-    cost_of_goods_sold: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    revenue: pd.DataFrame,
+    cost_of_goods_sold: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Gross Margin over time.
 
@@ -299,11 +299,11 @@ def get_gross_margin_criteria(
     the cost of goods sold. It reflects the profitability of a company's core operations.
 
     Args:
-        revenue (pd.Series | pd.DataFrame): The revenue generated by a company, which can be a time-series.
-        cost_of_goods_sold (pd.Series | pd.DataFrame): The cost of goods sold by a company, which can be a time-series.
+        revenue (pd.DataFrame): The revenue generated by a company, which can be a time-series.
+        cost_of_goods_sold (pd.DataFrame): The cost of goods sold by a company, which can be a time-series.
 
     Returns:
-        pd.Series | pd.DataFrame: A boolean criteria indicating whether the Gross Margin increased compared to the
+        pd.DataFrame: A boolean criteria indicating whether the Gross Margin increased compared to the
         previous period (True for increase, False for decrease or no change).
 
     Notes:
@@ -321,9 +321,9 @@ def get_gross_margin_criteria(
 
 
 def get_asset_turnover_ratio_criteria(
-    sales: pd.Series | pd.DataFrame,
-    average_total_assets: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    sales: pd.DataFrame,
+    average_total_assets: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Asset Turnover Ratio over time.
 
@@ -331,13 +331,13 @@ def get_asset_turnover_ratio_criteria(
     from its total assets. It indicates the company's ability to efficiently utilize its assets to generate revenue.
 
     Args:
-        sales (pd.Series | pd.DataFrame): The sales or revenue generated by a company, which can
+        sales (pd.DataFrame): The sales or revenue generated by a company, which can
         be a time-series or DataFrame.
-        average_total_assets (pd.Series | pd.DataFrame): The average total assets of a company, which can
+        average_total_assets (pd.DataFrame): The average total assets of a company, which can
         be a time-series or DataFrame.
 
     Returns:
-        pd.Series | pd.DataFrame: A boolean criteria indicating whether the Asset Turnover Ratio increased compared to the
+        pd.DataFrame: A boolean criteria indicating whether the Asset Turnover Ratio increased compared to the
         previous period (True for increase, False for decrease or no change).
 
     Notes:
@@ -357,16 +357,16 @@ def get_asset_turnover_ratio_criteria(
 
 
 def get_piotroski_score(
-    return_on_assets_criteria: float | pd.Series | pd.DataFrame,
-    operating_cashflow_criteria: float | pd.Series | pd.DataFrame,
-    change_in_return_on_asset_criteria: float | pd.Series | pd.DataFrame,
-    accruals_criteria: float | pd.Series | pd.DataFrame,
-    change_in_leverage_criteria: float | pd.Series | pd.DataFrame,
-    change_in_current_ratio_criteria: float | pd.Series | pd.DataFrame,
-    number_of_shares_criteria: float | pd.Series | pd.DataFrame,
-    gross_margin_criteria: float | pd.Series | pd.DataFrame,
-    asset_turnover_ratio_criteria: float | pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+    return_on_assets_criteria: pd.DataFrame,
+    operating_cashflow_criteria: pd.DataFrame,
+    change_in_return_on_asset_criteria: pd.DataFrame,
+    accruals_criteria: pd.DataFrame,
+    change_in_leverage_criteria: pd.DataFrame,
+    change_in_current_ratio_criteria: pd.DataFrame,
+    number_of_shares_criteria: pd.DataFrame,
+    gross_margin_criteria: pd.DataFrame,
+    asset_turnover_ratio_criteria: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Calculate the Piotroski Score, a comprehensive financial assessment tool that helps investors and analysts
     evaluate a company's financial health and fundamental strength.
@@ -396,27 +396,27 @@ def get_piotroski_score(
     suggesting potential financial weaknesses.
 
     Args:
-        return_on_assets_criteria (float | pd.Series | pd.DataFrame): Criteria indicating
+        return_on_assets_criteria (pd.DataFrame): Criteria indicating
         the company's return on assets.
-        operating_cashflow_criteria (float | pd.Series | pd.DataFrame): Criteria indicating the company's
+        operating_cashflow_criteria (pd.DataFrame): Criteria indicating the company's
         operating cash flow.
-        change_in_return_on_asset_criteria (float | pd.Series | pd.DataFrame): Criteria indicating changes
+        change_in_return_on_asset_criteria (pd.DataFrame): Criteria indicating changes
         in return on assets.
-        accruals_criteria (float | pd.Series | pd.DataFrame): Criteria indicating
+        accruals_criteria (pd.DataFrame): Criteria indicating
         the quality of earnings.
-        change_in_leverage_criteria (float | pd.Series | pd.DataFrame): Criteria indicating changes
+        change_in_leverage_criteria (pd.DataFrame): Criteria indicating changes
         in leverage.
-        change_in_current_ratio_criteria (float | pd.Series | pd.DataFrame): Criteria indicating changes
+        change_in_current_ratio_criteria (pd.DataFrame): Criteria indicating changes
         in the current ratio.
-        number_of_shares_criteria (float | pd.Series | pd.DataFrame): Criteria indicating the issuance
+        number_of_shares_criteria (pd.DataFrame): Criteria indicating the issuance
         of common shares.
-        gross_margin_criteria (float | pd.Series | pd.DataFrame): Criteria indicating the company's
+        gross_margin_criteria (pd.DataFrame): Criteria indicating the company's
         gross margin.
-        asset_turnover_ratio_criteria (float | pd.Series | pd.DataFrame): Criteria indicating the company's
+        asset_turnover_ratio_criteria (pd.DataFrame): Criteria indicating the company's
         asset turnover ratio.
 
     Returns:
-        pd.Series | pd.DataFrame: The Piotroski Score, a numerical representation of a company's
+        pd.DataFrame: The Piotroski Score, a numerical representation of a company's
         fundamental financial strength.
         A higher score indicates stronger financial health, while a lower score may suggest potential weaknesses.
 
@@ -430,34 +430,23 @@ def get_piotroski_score(
     - Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement Information to
     Separate Winners from Losers." Journal of Accounting Research, Vol. 38, Supplement, 2000, pp. 1-41.
     """
-    if isinstance(return_on_assets_criteria, pd.Series | pd.DataFrame):
-        return_on_assets_criteria = return_on_assets_criteria.astype(int)
+    return_on_assets_criteria = return_on_assets_criteria.astype(int)
 
-    if isinstance(operating_cashflow_criteria, pd.Series | pd.DataFrame):
-        operating_cashflow_criteria = operating_cashflow_criteria.astype(int)
+    operating_cashflow_criteria = operating_cashflow_criteria.astype(int)
 
-    if isinstance(change_in_return_on_asset_criteria, pd.Series | pd.DataFrame):
-        change_in_return_on_asset_criteria = change_in_return_on_asset_criteria.astype(
-            int
-        )
+    change_in_return_on_asset_criteria = change_in_return_on_asset_criteria.astype(int)
 
-    if isinstance(accruals_criteria, pd.Series | pd.DataFrame):
-        accruals_criteria = accruals_criteria.astype(int)
+    accruals_criteria = accruals_criteria.astype(int)
 
-    if isinstance(change_in_leverage_criteria, pd.Series | pd.DataFrame):
-        change_in_leverage_criteria = change_in_leverage_criteria.astype(int)
+    change_in_leverage_criteria = change_in_leverage_criteria.astype(int)
 
-    if isinstance(change_in_current_ratio_criteria, pd.Series | pd.DataFrame):
-        change_in_current_ratio_criteria = change_in_current_ratio_criteria.astype(int)
+    change_in_current_ratio_criteria = change_in_current_ratio_criteria.astype(int)
 
-    if isinstance(number_of_shares_criteria, pd.Series | pd.DataFrame):
-        number_of_shares_criteria = number_of_shares_criteria.astype(int)
+    number_of_shares_criteria = number_of_shares_criteria.astype(int)
 
-    if isinstance(gross_margin_criteria, pd.Series | pd.DataFrame):
-        gross_margin_criteria = gross_margin_criteria.astype(int)
+    gross_margin_criteria = gross_margin_criteria.astype(int)
 
-    if isinstance(asset_turnover_ratio_criteria, pd.Series | pd.DataFrame):
-        asset_turnover_ratio_criteria = asset_turnover_ratio_criteria.astype(int)
+    asset_turnover_ratio_criteria = asset_turnover_ratio_criteria.astype(int)
 
     piotroski_score = (
         return_on_assets_criteria

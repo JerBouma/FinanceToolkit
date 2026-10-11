@@ -437,10 +437,12 @@ class ControllerInspector:
             self._categories.get("ticker") in effective
             or self._categories.get("toolkit") in effective
         ):
-            params.append(P("tickers", POS, default="", annotation=str))
+            # A list is accepted as well as a comma-separated string, since clients
+            # commonly send one.
+            params.append(P("tickers", POS, default="", annotation=str | list[str]))
 
         if self._categories.get("standalone") in effective:
-            params.append(P("countries", POS, default="", annotation=str))
+            params.append(P("countries", POS, default="", annotation=str | list[str]))
 
         if self._categories.get("discovery") not in effective:
             params.extend(

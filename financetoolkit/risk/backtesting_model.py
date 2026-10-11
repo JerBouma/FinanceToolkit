@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+
 import numpy as np
 import pandas as pd
 from scipy import special, stats
@@ -61,6 +62,8 @@ def get_kupiec_test(
             }
         )
     if isinstance(returns, pd.Series):
+        if not isinstance(var_estimates, pd.Series):
+            raise TypeError("A Series of returns needs a Series of VaR estimates.")
         aligned = _align(returns, var_estimates)
         breaches = int((aligned["returns"] < aligned["var"]).sum())
         n = len(aligned)
@@ -125,6 +128,8 @@ def get_christoffersen_test(
             }
         )
     if isinstance(returns, pd.Series):
+        if not isinstance(var_estimates, pd.Series):
+            raise TypeError("A Series of returns needs a Series of VaR estimates.")
         aligned = _align(returns, var_estimates)
         breach = (aligned["returns"] < aligned["var"]).astype(int).to_numpy()
 

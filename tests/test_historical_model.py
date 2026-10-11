@@ -106,3 +106,35 @@ def test_reaches_further_back_compares_across_index_types():
     truncated_fmp.index = truncated_fmp.index.to_timestamp()
 
     assert historical_model._reaches_further_back(yahoo, truncated_fmp)
+
+
+def test_fill_non_trading_days_keeps_returns_consistent_with_prices():
+    """A holiday on one exchange gets a price, no volume and no invented return."""
+    import numpy as np
+
+    index = pd.period_range("2024-01-01", periods=5, freq="D")
+    frames = {
+        # A has no row for 3 January, B traded that day.
+        "A": pd.DataFrame(
+            {"Adj Close": [100.0, 101.0, 103.0, 104.0], "Volume": 10.0},
+            index=index.delete(2),
+        ),
+        "B": pd.DataFrame(
+            {"Adj Close": [50.0, 51, 52, 53, 54], "Volume": 5.0}, index=index
+        ),
+    }
+
+    for frame in frames.values():
+        frame["Return"] = frame["Adj Close"].pct_change()
+
+    historical_data = pd.concat(frames).unstack(level=0)
+
+    filled = historical_model.fill_non_trading_days(historical_data)
+
+    assert filled.loc[index[2], ("Adj Close", "A")] == 102.0
+    assert filled.loc[index[2], ("Volume", "A")] == 0
+    # The returns compound to the actual move, 100 to 104, and B is untouched.
+    assert np.isclose((1 + filled[("Return", "A")].fillna(0)).prod(), 1.04)
+    pd.testing.assert_series_equal(
+        filled[("Return", "B")], historical_data[("Return", "B")]
+    )

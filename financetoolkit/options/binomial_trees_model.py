@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+
 import numpy as np
 import pandas as pd
 
@@ -49,6 +50,17 @@ def calculate_risk_neutral_probability(
         np.exp((risk_free_rate - dividend_yield) * timestep) - down_movement
     ) / (up_movement - down_movement)
 
+    # Outside 0 to 1 the tree weighs its branches with negative probabilities and
+    # produces prices that allow arbitrage. It happens when a step's growth at the cost of
+    # carry exceeds its up movement, i.e. a low volatility for the length of a step.
+    if np.any((risk_neutral_probability < 0) | (risk_neutral_probability > 1)):
+        raise ValueError(
+            f"The risk-neutral probability ({np.round(risk_neutral_probability, 4)}) is "
+            "not between 0 and 1, because the volatility is too low for the length of "
+            "each step compared to the risk-free rate minus the dividend yield. Use more "
+            "steps (shorter time steps) or check the volatility."
+        )
+
     return risk_neutral_probability
 
 
@@ -58,7 +70,7 @@ def calculate_stock_prices(
     down_movement: float,
     period_length: int,
     show_unique_combinations: bool = True,
-):
+) -> pd.DataFrame:
     """
     Calculates stock prices at each node.
 
@@ -163,32 +175,40 @@ def calculate_stock_prices(
     return combinations_df
 
 
-def get_call_option_payoffs(stock_price: float, strike_price: float):
+def get_call_option_payoffs(
+    stock_price: float | pd.Series | np.ndarray, strike_price: float
+) -> float | pd.Series | np.ndarray:
     """
     Calculates call option payoffs at maturity.
 
     Args:
-        stock_price (float): Stock price
+        stock_price (float | pd.Series | np.ndarray): Stock price, or a range of stock
+            prices to evaluate the payoff over.
         strike_price (float): Option strike price
 
     Returns:
-        float: Call option payoff at maturity
+        float | pd.Series | np.ndarray: Call option payoff at maturity, in the
+            shape of the stock price input.
     """
     call_option_payoff = np.maximum(stock_price - strike_price, 0)
 
     return call_option_payoff
 
 
-def get_put_option_payoffs(stock_price: float, strike_price: float):
+def get_put_option_payoffs(
+    stock_price: float | pd.Series | np.ndarray, strike_price: float
+) -> float | pd.Series | np.ndarray:
     """
     Calculates put option payoffs at maturity.
 
     Args:
-        stock_price (float): Stock price
+        stock_price (float | pd.Series | np.ndarray): Stock price, or a range of stock
+            prices to evaluate the payoff over.
         strike_price (float): Option strike price
 
     Returns:
-        float: Put option payoff at maturity
+        float | pd.Series | np.ndarray: Put option payoff at maturity, in the
+            shape of the stock price input.
     """
     put_option_payoff = np.maximum(strike_price - stock_price, 0)
 
@@ -326,7 +346,7 @@ def get_option_payoffs(
 def get_strategy_payoff(
     stock_price: float | pd.Series | np.ndarray,
     legs: list[dict[str, float | bool | str]],
-) -> float | pd.Series:
+) -> float | pd.Series | np.ndarray:
     """
     Calculate the net expiration profit and loss (P&L) of a multi-leg option (and,
     optionally, stock) strategy.

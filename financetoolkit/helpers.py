@@ -3,16 +3,105 @@
 __docformat__ = "google"
 
 import contextlib
+import contextvars
 import inspect
+import os
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 
 import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import bounded_ffill
+from financetoolkit.utilities.statistics_model import apply_rounding, bounded_ffill
 
 logger = logger_model.get_logger()
+
+
+# Set FINANCETOOLKIT_MAX_WORKERS to raise or lower the number of API calls made at the same time; the default is a deliberate middle ground between fetching a large universe quickly and not tripping the data providers' rate limits (which the retry logic in fmp_model.get_financial_data absorbs when they are hit anyway).  # noqa: E501
+MAX_WORKERS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_MAX_WORKERS"
+
+DEFAULT_MAX_WORKERS = 10
+
+
+def determine_max_workers() -> int:
+    """
+    Determines the number of worker threads used for concurrent API calls, taking the
+    FINANCETOOLKIT_MAX_WORKERS environment variable when it is set to a positive integer
+    and falling back to DEFAULT_MAX_WORKERS otherwise.
+
+    Returns:
+        int: The number of worker threads to use.
+    """
+    max_workers = os.environ.get(MAX_WORKERS_ENVIRONMENT_VARIABLE, "").strip()
+
+    if max_workers:
+        try:
+            if int(max_workers) > 0:
+                return int(max_workers)
+
+            raise ValueError("The number of workers must be positive.")
+        except ValueError:
+            logger.warning(
+                "The %s environment variable is set to %s which is not a positive "
+                "integer. Using the default of %d instead.",
+                MAX_WORKERS_ENVIRONMENT_VARIABLE,
+                max_workers,
+                DEFAULT_MAX_WORKERS,
+            )
+
+    return DEFAULT_MAX_WORKERS
+
+
+def run_in_parallel(
+    worker: Callable,
+    worker_args: Iterable[tuple],
+    max_workers: int | None = None,
+) -> list:
+    """
+    Runs a worker function over a collection of argument tuples with a bounded pool of
+    threads, which is what every data collection function uses to make multiple API
+    calls at the same time. For example, collecting historical data of 100 tickers
+    this way takes seconds rather than minutes.
+
+    A bounded pool (rather than one thread per ticker) keeps the number of concurrent
+    API calls predictable regardless of how large the ticker universe is, which is
+    kinder to both the data providers' rate limits and the local machine. Exceptions
+    raised inside a worker are re-raised here instead of dying silently inside their
+    thread, so a genuine defect surfaces as an immediate, traceable failure.
+
+    Args:
+        worker (Callable): The function to execute for each tuple of arguments.
+        worker_args (Iterable[tuple]): The argument tuples, one per call, e.g. one per
+        ticker. Each tuple is unpacked into the worker.
+        max_workers (int | None, optional): The maximum number of threads to use.
+        Defaults to None, which uses the FINANCETOOLKIT_MAX_WORKERS environment
+        variable when set and DEFAULT_MAX_WORKERS otherwise.
+
+    Returns:
+        list: The worker results in the same order as worker_args, which is how the
+        collection functions hand per-ticker results back without sharing state.
+    """
+    worker_args = list(worker_args)
+
+    if not worker_args:
+        return []
+
+    if max_workers is None:
+        max_workers = determine_max_workers()
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(worker_args))) as executor:
+        # Every worker runs in a copy of the caller's context, so context-bound state,
+        # such as the messages an MCP tool call collects, also covers the workers.
+        futures = [
+            executor.submit(contextvars.copy_context().run, worker, *args)
+            for args in worker_args
+        ]
+
+        # Collecting in submission order keeps the result aligned with worker_args;
+        # the calls themselves still run concurrently.
+        return [future.result() for future in futures]
 
 
 def convert_period_end_dates_to_calendar_periods(
@@ -67,10 +156,10 @@ def convert_period_end_dates_to_calendar_periods(
         calendar_periods = (end_dates.to_period("M") - 1).asfreq("Q")
     else:
         fiscal_periods = end_dates.to_period("Y")
-        calendar_periods = pd.PeriodIndex(
-            (end_dates.year - (end_dates.month < 6).astype(int)).astype(str),  # noqa
-            freq="Y",
-        )
+        # A fiscal year ending before June is labelled with the previous calendar
+        # year; shifting back five months lands January to May in that year and
+        # leaves June to December where they are.
+        calendar_periods = (end_dates.to_period("M") - 5).asfreq("Y")
 
     shifted_mask = calendar_periods != fiscal_periods
 
@@ -135,9 +224,13 @@ def enrich_historical_data(
         pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).
     """
 
-    historical_data["Return"] = bounded_ffill(
-        historical_data[return_column]
-    ).pct_change()
+    # A price of 0, such as a faulty bar or a futures contract settling at 0, has no
+    # return from or to it, and an infinite return would carry into every cumulative one.
+    historical_data["Return"] = (
+        bounded_ffill(historical_data[return_column])
+        .pct_change()
+        .replace([np.inf, -np.inf], np.nan)
+    )
 
     historical_data["Cumulative Return"] = 1
 
@@ -153,6 +246,34 @@ def enrich_historical_data(
     ).cumprod()
 
     return historical_data
+
+
+PERIODS_BY_FREQUENCY = {
+    "D": "daily",
+    "W": "weekly",
+    "M": "monthly",
+    "Q": "quarterly",
+    "Y": "yearly",
+    "A": "yearly",
+}
+
+
+def period_of_result(result: pd.DataFrame) -> str | None:
+    """
+    Determine the period of a result from the frequency of the dates on either axis.
+
+    Args:
+        result (pd.DataFrame): The result, with dates as index or as columns.
+
+    Returns:
+        str | None: "daily", "weekly", "monthly", "quarterly" or "yearly", or None when
+            neither axis holds periods.
+    """
+    for axis in (result.index, result.columns):
+        if isinstance(axis, pd.PeriodIndex):
+            return PERIODS_BY_FREQUENCY.get(axis.freqstr[0])
+
+    return None
 
 
 def handle_portfolio(func):
@@ -201,6 +322,12 @@ def handle_portfolio(func):
 
             if rounding is None:
                 rounding = self._rounding
+
+            # The weights belong to the periods of the result, which the frequency of its
+            # dates tells most reliably: a method's default period differs per module
+            # (e.g. daily for most risk metrics, yearly for the ratios).
+            period = period_of_result(result) or period
+
             if period is None:
                 period = "quarterly" if getattr(self, "_quarterly", False) else "yearly"
 
@@ -221,9 +348,11 @@ def handle_portfolio(func):
                 # reindex fills periods missing from weights with NaN rather than raising.
                 weights = weights.reindex(result_without_benchmark.columns).T
 
-                weighted_averages = round(
+                # Only the weights of the tickers with a value count, so a missing value
+                # does not pull the portfolio towards zero.
+                weighted_averages = apply_rounding(
                     (result_without_benchmark * weights).sum(axis=0)
-                    / weights.sum(axis=0),
+                    / weights.where(result_without_benchmark.notna()).sum(axis=0),
                     rounding,
                 )
 
@@ -234,9 +363,9 @@ def handle_portfolio(func):
             ):
                 weights = weights.reindex(result.index)
 
-                weighted_averages = round(
+                weighted_averages = apply_rounding(
                     (result_without_benchmark * weights).sum(axis=1)
-                    / weights.sum(axis=1),
+                    / weights.where(result_without_benchmark.notna()).sum(axis=1),
                     rounding,
                 )
 

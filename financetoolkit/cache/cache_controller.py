@@ -169,6 +169,31 @@ class CachePlan:
         """
         return [entity for entity, gaps in self.missing.items() if gaps]
 
+    def cached_frame(self, entity: str) -> pd.DataFrame | None:
+        """
+        The cached data for `entity` narrowed to a DataFrame, for the datasets that
+        only ever store frames; None when nothing is cached for it.
+
+        Args:
+            entity (str): The entity (ticker, series id, country) to look up.
+
+        Returns:
+            pd.DataFrame | None: The cached frame, or None when absent.
+
+        Raises:
+            TypeError: If the cached entry is a Series, which means the dataset is
+                written by one code path and read by another that disagree on shape.
+        """
+        cached = self.cached.get(entity)
+
+        if cached is not None and not isinstance(cached, pd.DataFrame):
+            raise TypeError(
+                f"The cached entry for {entity!r} is a {type(cached).__name__}, but a "
+                "DataFrame was expected."
+            )
+
+        return cached
+
     @property
     def fully_cached(self) -> bool:
         """
@@ -219,7 +244,12 @@ class Cache:
     written here.
     """
 
-    def __init__(self, location: str | Path | None = None, enabled: bool = True):
+    def __init__(
+        self,
+        location: str | Path | None = None,
+        enabled: bool = True,
+        excluded_sources: frozenset[str] | set[str] | None = None,
+    ):
         """
         Initialize the cache against a database location.
 
@@ -228,7 +258,12 @@ class Cache:
                 selects the shared, platform-specific default location.
             enabled (bool): When False every read misses and every write is a
                 no-op, so callers do not need to branch on whether caching is on.
+            excluded_sources (frozenset[str] | set[str] | None): Sources that are
+                never read from or written to the cache, e.g. FinancialModelingPrep
+                on a hosted MCP server, where its data belongs to each subscriber
+                rather than to every user of the server. Defaults to None.
         """
+        self._excluded_sources: frozenset[str] = frozenset(excluded_sources or ())
         self._enabled = enabled
         self._location = resolve_cache_location(location)
         self._backend = None
@@ -293,6 +328,22 @@ class Cache:
         """
         return self._location
 
+    def serves(self, source: str) -> bool:
+        """
+        Whether data from a source is read from and written to this cache.
+
+        Args:
+            source (str): The external data source.
+
+        Returns:
+            bool: False when the cache is disabled or the source is excluded.
+        """
+        return (
+            self._enabled
+            and self._backend is not None
+            and source not in self._excluded_sources
+        )
+
     def create_key(
         self, source: str, dataset: str, parameters: dict[str, Any] | None = None
     ) -> str:
@@ -355,7 +406,7 @@ class Cache:
         )
         requested_end = coverage_model.normalize_date(end) if end else reference
 
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             plan.missing = {
                 entity: [(requested_start, requested_end)] for entity in entity_list
             }
@@ -456,7 +507,7 @@ class Cache:
             parameters (dict[str, Any] | None): Parameters that change the data.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return
 
         key = self.create_key(source, dataset, parameters)
@@ -549,7 +600,7 @@ class Cache:
         Returns:
             Any | None: The cached value, or None when absent or expired.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return None
 
         key = self.create_key(source, dataset, parameters)
@@ -597,7 +648,7 @@ class Cache:
             data (Any): The value to store. Any picklable object is accepted.
             parameters (dict[str, Any] | None): Parameters that change the data.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return
 
         key = self.create_key(source, dataset, parameters)
@@ -634,7 +685,7 @@ class Cache:
         Returns:
             int: The number of stored payloads removed.
         """
-        if not self._enabled or self._backend is None:
+        if not self.serves(source):
             return 0
 
         return self._backend.delete_entity(
@@ -736,14 +787,19 @@ class Cache:
         if not self._enabled or self._backend is None:
             return {"enabled": False, "location": str(self._location)}
 
-        statistics = self._backend.get_statistics()
+        # The backend only reports row counts; the flags added here widen the value type.
+        statistics: dict[str, Any] = dict(self._backend.get_statistics())
         statistics["enabled"] = True
         statistics["location"] = str(self._location)
 
         return statistics
 
 
-def get_cache(location: str | Path | None = None, enabled: bool = True) -> Cache:
+def get_cache(
+    location: str | Path | None = None,
+    enabled: bool = True,
+    excluded_sources: frozenset[str] | set[str] | None = None,
+) -> Cache:
     """
     Return the shared cache instance for a location.
 
@@ -756,6 +812,8 @@ def get_cache(location: str | Path | None = None, enabled: bool = True) -> Cache
             selects the shared default location.
         enabled (bool): When False a disabled cache is returned, which misses on
             every read and ignores every write.
+        excluded_sources (frozenset[str] | set[str] | None): Sources this cache never
+            reads or writes, see Cache. Defaults to None.
 
     Returns:
         Cache: The cache instance for this location.
@@ -763,13 +821,18 @@ def get_cache(location: str | Path | None = None, enabled: bool = True) -> Cache
     if not enabled:
         return Cache(location=location, enabled=False)
 
+    excluded = frozenset(excluded_sources or ())
     resolved = str(resolve_cache_location(location))
+    # One instance per location and per set of excluded sources.
+    registry_key = f"{resolved}|{','.join(sorted(excluded))}"
 
     with _REGISTRY_LOCK:
-        if resolved not in _CACHE_REGISTRY:
-            _CACHE_REGISTRY[resolved] = Cache(location=location, enabled=True)
+        if registry_key not in _CACHE_REGISTRY:
+            _CACHE_REGISTRY[registry_key] = Cache(
+                location=location, enabled=True, excluded_sources=excluded
+            )
 
-        return _CACHE_REGISTRY[resolved]
+        return _CACHE_REGISTRY[registry_key]
 
 
 def reset_cache_registry() -> None:
@@ -783,18 +846,41 @@ def reset_cache_registry() -> None:
         _CACHE_REGISTRY.clear()
 
 
+# Data retrieved from an external source is cached by default. Setting this variable to
+# 0 (or false, no, off) turns that default off for every Toolkit, Economics, Fixed Income,
+# Discovery and Portfolio instance that does not pass use_cached_data itself, which suits
+# environments where nothing should be written, such as a continuous integration job. The
+# MCP server reads the same variable to decide whether it caches.
+CACHE_ENVIRONMENT_VARIABLE = "FINANCE_TOOLKIT_CACHE_ENABLED"
+
+
+def is_cached_by_default() -> bool:
+    """
+    Whether external data is cached when use_cached_data is not given.
+
+    Returns:
+        bool: False when FINANCE_TOOLKIT_CACHE_ENABLED is 0, false, no or off, otherwise True.
+    """
+    return os.environ.get(CACHE_ENVIRONMENT_VARIABLE, "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def parse_use_cached_data(
-    use_cached_data: bool | str,
+    use_cached_data: bool | str | None = None,
 ) -> tuple[bool, str | None]:
     """
-    Interpret the Toolkit's ``use_cached_data`` argument.
+    Interpret the ``use_cached_data`` argument of the Toolkit and the other modules.
 
-    Preserves the existing convention where ``True`` means "cache in the default
-    location" and a string means "cache in this directory", while routing both to
-    the new database backed cache.
+    ``None``, the default, caches in the shared location unless FINANCE_TOOLKIT_CACHE_ENABLED
+    turns the default off, ``True`` and ``False`` switch caching on or off and a string
+    caches in that directory or database file.
 
     Args:
-        use_cached_data (bool | str): The value passed to the Toolkit.
+        use_cached_data (bool | str | None): The value passed to the Toolkit.
 
     Returns:
         tuple[bool, str | None]: Whether caching is enabled, and the location to
@@ -803,7 +889,35 @@ def parse_use_cached_data(
     if isinstance(use_cached_data, str):
         return True, use_cached_data
 
+    if use_cached_data is None:
+        return is_cached_by_default(), None
+
     return bool(use_cached_data), None
+
+
+def resolve_cache(
+    use_cached_data: "bool | str | Cache | None" = None, cache: "Cache | None" = None
+) -> "Cache":
+    """
+    The cache a module uses: the one passed to it, or the one use_cached_data selects.
+
+    Args:
+        use_cached_data (bool | str | Cache | None): See parse_use_cached_data. A Cache
+            is used as is, such as the MCP server's, which may exclude sources.
+        cache (Cache | None): A cache to use as is, which takes precedence.
+
+    Returns:
+        Cache: The cache, disabled when caching is switched off.
+    """
+    if cache is not None:
+        return cache
+
+    if isinstance(use_cached_data, Cache):
+        return use_cached_data
+
+    enabled, location = parse_use_cached_data(use_cached_data)
+
+    return get_cache(location=location, enabled=enabled)
 
 
 def format_timestamp(timestamp: float) -> str:

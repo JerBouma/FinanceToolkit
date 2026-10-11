@@ -122,6 +122,7 @@ def _barrier_term(
     )
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_barrier_option(
     stock_price: float,
     strike_price: float,
@@ -213,8 +214,6 @@ def get_barrier_option(
     if knock_type not in ("in", "out"):
         raise ValueError(f"knock_type must be 'in' or 'out', received {knock_type!r}.")
 
-    np.seterr(divide="ignore", invalid="ignore")
-
     cost_of_carry = risk_free_rate - dividend_yield
     volatility_time = volatility * np.sqrt(time_to_expiration)
     mu = (cost_of_carry - volatility**2 / 2) / volatility**2
@@ -280,9 +279,36 @@ def get_barrier_option(
     else:  # up-and-out
         value = (B - D + F) if in_the_money_barrier_side else (A - C + F)
 
+    # The formulas assume the barrier has not been reached yet. Once it has, a knock-out
+    # option is gone and pays its rebate, and a knock-in option is a regular option;
+    # the formulas would otherwise give e.g. a negative knock-out price.
+    breached = (
+        stock_price <= barrier
+        if barrier_direction == "down"
+        else stock_price >= barrier
+    )
+
+    if breached and knock_type == "out":
+        value = rebate
+    elif breached:
+        d1 = (
+            np.log(stock_price / strike_price)
+            + (cost_of_carry + volatility**2 / 2) * time_to_expiration
+        ) / volatility_time
+        d2 = d1 - volatility_time
+        value = phi * (
+            stock_price
+            * np.exp((cost_of_carry - risk_free_rate) * time_to_expiration)
+            * norm.cdf(phi * d1)
+            - strike_price
+            * np.exp(-risk_free_rate * time_to_expiration)
+            * norm.cdf(phi * d2)
+        )
+
     return value
 
 
+@np.errstate(divide="ignore", invalid="ignore")
 def get_asian_option(
     stock_price: float,
     strike_price: float,
@@ -348,8 +374,6 @@ def get_asian_option(
         time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
     )
-
-    np.seterr(divide="ignore", invalid="ignore")
 
     cost_of_carry = risk_free_rate - dividend_yield
 

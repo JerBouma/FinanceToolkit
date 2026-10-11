@@ -1,6 +1,5 @@
 """Cache Resilience Tests"""
 
-import os
 import sqlite3
 import threading
 
@@ -74,19 +73,18 @@ def test_a_corrupt_database_does_not_break_the_caller(tmp_path, caplog):
 
 
 def test_a_read_only_location_does_not_break_the_caller(tmp_path, caplog):
-    """Test that a directory that cannot be written to degrades gracefully."""
-    directory = tmp_path / "readonly"
-    directory.mkdir()
-    os.chmod(directory, 0o500)
+    """Test that a location that cannot be written to degrades gracefully."""
+    # A directory cannot be created inside a regular file, not even by root, who ignores
+    # read-only permissions (a chmod 0o500 directory would still be writable in CI
+    # containers and local root shells).
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("")
 
-    try:
-        with caplog.at_level("WARNING"):
-            cache = cache_controller.Cache(location=directory / "cache.db")
+    with caplog.at_level("WARNING"):
+        cache = cache_controller.Cache(location=blocker / "cache.db")
 
-        assert not cache.enabled
-        assert "Continuing without caching" in caplog.text
-    finally:
-        os.chmod(directory, 0o700)
+    assert not cache.enabled
+    assert "Continuing without caching" in caplog.text
 
 
 def test_an_unreadable_payload_is_a_miss_not_a_crash(tmp_path):

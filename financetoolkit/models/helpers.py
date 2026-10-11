@@ -5,6 +5,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import to_datetime_index
+
 # pylint: disable=protected-access
 
 PERIOD_TRANSLATION: dict[str, str] = {
@@ -39,8 +41,8 @@ def determine_within_historical_data(
         period_data = daily_historical_data.copy()
         period_data.index = pd.MultiIndex.from_arrays(
             [
-                daily_historical_data.index.to_period(symbol),
-                daily_historical_data.index.to_period("D"),
+                to_datetime_index(daily_historical_data.index).to_period(symbol),
+                to_datetime_index(daily_historical_data.index).to_period("D"),
             ]
         )
 

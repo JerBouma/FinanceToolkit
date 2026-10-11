@@ -409,3 +409,18 @@ def test_finalize_dataset_countries_missing_logs_warning():
 
     assert "United States" in result.columns
     assert "Atlantis" not in result.columns
+
+
+def test_calculate_growth_from_zero_is_missing_not_infinite():
+    """Growth from a value of 0 is undefined, for a single lag and a list of lags."""
+    dataset = pd.DataFrame(
+        [[0.0, 5.0, 10.0]], index=["Dividends"], columns=[2021, 2022, 2023]
+    )
+
+    single = statistics_model.calculate_growth(dataset, lag=1, rounding=None)
+    multiple = statistics_model.calculate_growth(dataset, lag=[1, 2], rounding=None)
+
+    assert np.isnan(single.loc["Dividends", 2022])
+    assert single.loc["Dividends", 2023] == 1.0
+    assert np.isnan(multiple.loc[("Dividends", "Lag 2"), 2023])
+    assert list(multiple.index) == [("Dividends", "Lag 1"), ("Dividends", "Lag 2")]

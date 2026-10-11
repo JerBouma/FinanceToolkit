@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
@@ -80,7 +82,14 @@ def get_arch_lm_test(
             return pd.Series({"ARCH-LM Statistic": np.nan, "P-Value": np.nan})
 
         try:
-            lm_statistic, p_value, _, _ = het_arch(residuals, nlags=lags)
+            # het_arch calls acorr_lm, which on statsmodels 0.15 announces a result object for 0.16; the tuple used here is unaffected until then.  # noqa: E501
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="acorr_lm currently returns",
+                    category=FutureWarning,
+                )
+                lm_statistic, p_value, _, _ = het_arch(residuals, nlags=lags)
         except (ValueError, np.linalg.LinAlgError):
             return pd.Series({"ARCH-LM Statistic": np.nan, "P-Value": np.nan})
 
@@ -89,9 +98,7 @@ def get_arch_lm_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_jarque_bera_test(
-    returns: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
     Calculate the Jarque-Bera test for normality, via
     `statsmodels.stats.stattools.jarque_bera`.
@@ -359,9 +366,7 @@ def get_variance_ratio_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_cusum_test(
-    returns: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
+def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
     Calculate the CUSUM test for the stability of the mean of returns over time, via
     `statsmodels.stats.diagnostic.breaks_cusumolsresid`.

@@ -172,12 +172,19 @@ def read_normalization_file(statement: str, format_location: str = ""):
     if format_location:
         file_location = f"{format_location}/{statement}.csv"
     else:
-        file_location = resources.files(__package__).joinpath(  # type: ignore
+        file_location = resources.files(__package__).joinpath(
             f"normalization/{statement}.csv"
         )
 
     try:
-        normalization = pd.read_csv(file_location, index_col=[0]).iloc[:, 0]
+        # A user supplied location is a plain path while the packaged default is a
+        # resource that may live inside a zip, so both are handed over as open files.
+        with (
+            open(file_location, encoding="utf-8")
+            if isinstance(file_location, str)
+            else file_location.open(encoding="utf-8")
+        ) as csv_file:
+            normalization = pd.read_csv(csv_file, index_col=[0]).iloc[:, 0]
     except FileNotFoundError:
         return pd.Series()
 
@@ -189,7 +196,7 @@ def read_normalization_file(statement: str, format_location: str = ""):
 
 def convert_financial_statements(
     financial_statements: pd.DataFrame,
-    statement_format: pd.DataFrame = pd.DataFrame(),
+    statement_format: pd.Series | pd.DataFrame = pd.DataFrame(),
     adjust_financial_statements: bool = True,
     reverse_dates: bool = False,
 ):
@@ -199,7 +206,7 @@ def convert_financial_statements(
 
     Args:
         financial_statements (pd.DataFrame): DataFrame containing the financial statement data.
-        statement_format (pd.DataFrame): Optional DataFrame containing the names of the financial statement line
+        statement_format (pd.Series | pd.DataFrame): Optional mapping of the names of the financial statement line
                             items to include in the output. Rows should contain the original name of the line item,
                             and columns should contain the desired name for that line item.
         adjust_financial_statements (bool): Whether to add every line item in the format that the provider did not
@@ -346,13 +353,26 @@ def copy_normalization_files(
         if format_location:
             file_location = f"{format_location}/{statement}.csv"
         else:
-            file_location = resources.files(__package__).joinpath(  # type: ignore
+            file_location = resources.files(__package__).joinpath(
                 f"normalization/{statement}.csv"
             )
 
+        def copy_to(target: Path) -> None:
+            # A user supplied location is a plain path while the packaged default is a
+            # resource that may live inside a zip, so both are copied as open files.
+            with (
+                (
+                    open(file_location, "rb")
+                    if isinstance(file_location, str)
+                    else file_location.open("rb")
+                ) as source,
+                open(target, "wb") as sink,
+            ):
+                shutil.copyfileobj(source, sink)
+
         destination = save_location / f"{statement}.csv"
         try:
-            shutil.copyfile(file_location, destination)
+            copy_to(destination)
         except PermissionError:
             fallback = Path.cwd() / f"{statement}.csv"
             logger.warning(
@@ -360,4 +380,4 @@ def copy_normalization_files(
                 destination,
                 fallback,
             )
-            shutil.copyfile(file_location, fallback)
+            copy_to(fallback)

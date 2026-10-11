@@ -14,18 +14,18 @@ AAPL,Goodwill,,,,
 AAPL,Intangible Assets,,,,
 AAPL,Goodwill and Intangible Assets,,,,
 AAPL,Long Term Investments,,0.2675,-0.0553,-0.1677
-AAPL,Tax Assets,,,inf,0.1611
+AAPL,Tax Assets,,,,0.1611
 AAPL,Other Fixed Assets,,0.1417,-0.2612,0.2657
 AAPL,Fixed Assets,,0.1998,0.0055,-0.0383
 AAPL,Other Assets,,,,
 AAPL,Total Assets,,0.0837,0.005,-0.0005
 AAPL,Accounts Payable,,0.2948,0.1708,-0.0235
-AAPL,Other Payables,,,inf,0.346
+AAPL,Other Payables,,,,0.346
 AAPL,Total Payables,,0.2948,0.2904,0.0108
 AAPL,Accrued Expenses,,,,
 AAPL,Short Term Debt,,0.1339,0.3521,-0.2512
 AAPL,Current Capital Lease Obligations Current,,0.0466,0.0884,-0.0529
-AAPL,Tax Payables,,,inf,0.346
+AAPL,Tax Payables,,,,0.346
 AAPL,Deferred Revenue,,0.1459,0.0394,0.0188
 AAPL,Other Current Liabilities,,0.115,0.145,-0.0797
 AAPL,Total Current Liabilities,,0.1906,0.2271,-0.0563

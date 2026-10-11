@@ -4,6 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import to_datetime_index
+
 # pylint: disable=protected-access
 
 PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
@@ -14,7 +16,7 @@ PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
         "30min": "D",
         "1hour": "D",
     },
-    # The daily period nests the intraday observations of a single day, so it is only available when intraday data was fetched -- exactly the condition the Risk and Econometrics controllers already guard their period="daily" branches with.  # noqa: E501
+    # The daily period nests the intraday observations of a single day, so it is only available when intraday data was fetched -- exactly the condition the Risk controller guards its period="daily" branches with, and the Econometrics controller its period="daily" branches that ask for within_period=True.  # noqa: E501
     "daily": "D",
     "weekly": "W",
     "monthly": "M",
@@ -57,9 +59,16 @@ def determine_within_historical_data(
         if intraday_historical_data.empty and period == "daily":
             continue
 
+        # The intraday entry maps each intraday_period to a symbol; every other
+        # entry is the symbol itself, and the intraday loop iteration is skipped
+        # above whenever no intraday_period was given.
         period_symbol = (
-            symbol[intraday_period] if period == "intraday" else symbol  # type: ignore
+            symbol[intraday_period]
+            if isinstance(symbol, dict) and intraday_period is not None
+            else symbol
         )
+        if not isinstance(period_symbol, str):
+            raise TypeError(f"No period symbol resolved for {period}.")
 
         if not intraday_historical_data.empty and period in [
             "intraday",
@@ -74,8 +83,8 @@ def determine_within_historical_data(
         period_data = source_data.copy()
         period_data.index = pd.MultiIndex.from_arrays(
             [
-                source_data.index.to_period(period_symbol),
-                source_data.index.to_period(inner_freq),
+                to_datetime_index(source_data.index).to_period(period_symbol),
+                to_datetime_index(source_data.index).to_period(inner_freq),
             ]
         )
 

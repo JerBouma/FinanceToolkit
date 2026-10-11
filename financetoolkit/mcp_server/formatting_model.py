@@ -152,9 +152,28 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
     ]
 
 
+def _no_data(reason: str | None) -> str:
+    """
+    Builds the response for a call without data, with the reason when one is known.
+
+    Args:
+        reason (str | None): Why there is no data, e.g. a missing API key.
+
+    Returns:
+        str: The JSON response.
+    """
+    payload = {"error": "No data available."}
+
+    if reason:
+        payload["reason"] = reason
+
+    return json.dumps(payload)
+
+
 def format_result(
     dataset: dict | pd.Series | pd.DataFrame | int | float | str | None,
     notes: list[str] | None = None,
+    reason: str | None = None,
 ) -> str:
     """Format a Finance Toolkit result as a compact JSON string for LLM consumption.
 
@@ -163,6 +182,9 @@ def format_result(
         notes: Optional list of strings describing data transformations applied
             (e.g. currency conversion, fiscal-year relabelling). When provided
             they are included under a ``"_notes"`` key in the top-level object.
+        reason: Optional explanation of why there is no data, such as a missing API
+            key or an unreachable source, included under a ``"reason"`` key when the
+            dataset turns out to be empty.
 
     Returns:
         A JSON string.  DataFrames become lists of flat records; dicts of
@@ -183,14 +205,14 @@ def format_result(
         return payload
 
     if dataset is None:
-        return json.dumps({"error": "No data available."})
+        return _no_data(reason)
 
     if isinstance(dataset, pd.Series):
         dataset = dataset.to_frame()
 
     if isinstance(dataset, pd.DataFrame):
         if dataset.empty or not int(dataset.notna().to_numpy().sum()):
-            return json.dumps({"error": "No data available."})
+            return _no_data(reason)
         return json.dumps(_inject(_df_to_records(dataset)), default=str)
 
     if isinstance(dataset, dict):

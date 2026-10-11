@@ -247,7 +247,7 @@ def test_global_macro_database_is_cached_whole(cache, monkeypatch):
         index=pd.PeriodIndex(["2020", "2021"], freq="Y"),
     )
     cache.set(
-        source="GlobalMacroDatabase", dataset="dataset", entity="global", data=dataset
+        source="GlobalMacroDatabase", dataset="dataset", entity="release", data=dataset
     )
 
     result = gmdb_model.collect_global_macro_database_dataset(cache=cache)

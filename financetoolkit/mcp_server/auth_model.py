@@ -564,7 +564,7 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
 """
 
 
-def _get_secret_key() -> bytes:
+def get_secret_key() -> bytes:
     """Load or generate a stable secret key stored in the global configuration directory."""
     # First check environment variable
     env_key = os.environ.get("FT_MCP_SECRET_KEY")
@@ -609,7 +609,7 @@ def sign_jwt(payload: dict[str, Any], expires_in: int = 2592000) -> str:
     payload_b64 = _base64url_encode(json.dumps(payload_copy).encode("utf-8"))
 
     message = f"{header_b64}.{payload_b64}".encode()
-    secret = _get_secret_key()
+    secret = get_secret_key()
     signature = hmac.new(secret, message, hashlib.sha256).digest()
     signature_b64 = _base64url_encode(signature)
 
@@ -626,7 +626,7 @@ def verify_jwt(token: str) -> dict[str, Any] | None:
         header_b64, payload_b64, signature_b64 = parts
 
         message = f"{header_b64}.{payload_b64}".encode()
-        secret = _get_secret_key()
+        secret = get_secret_key()
         expected_signature = hmac.new(secret, message, hashlib.sha256).digest()
         expected_signature_b64 = _base64url_encode(expected_signature)
 
@@ -800,11 +800,11 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Bypass authorization checks for discovery, oauth, health and diagnostic endpoints
+        # Bypass authorization checks for discovery, oauth, health, diagnostic and usage statistics endpoints
         if (
             path.startswith("/.well-known")
             or path.startswith("/oauth")
-            or path in {"/health", "/diagnostics"}
+            or path in {"/health", "/diagnostics", "/stats"}
         ):
             return await call_next(request)
 

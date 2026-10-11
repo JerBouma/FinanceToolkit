@@ -71,7 +71,7 @@ AAPL,Common Stock Issued,Lag 3,,,,-1.0
 AAPL,Common Stock Purchased,Lag 1,,0.1881,0.0399,-0.1326
 AAPL,Common Stock Purchased,Lag 2,,,0.2356,-0.098
 AAPL,Common Stock Purchased,Lag 3,,,,0.0718
-AAPL,Net Preferred Stock Issued,Lag 1,,-inf,-1.0,
+AAPL,Net Preferred Stock Issued,Lag 1,,,-1.0,
 AAPL,Net Preferred Stock Issued,Lag 2,,,,-1.0
 AAPL,Net Preferred Stock Issued,Lag 3,,,,
 AAPL,Common Dividends Paid,Lag 1,,0.0274,0.0259,0.0124

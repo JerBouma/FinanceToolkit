@@ -2,9 +2,11 @@
 
 __docformat__ = "google"
 
+import math
+
 import numpy as np
 import pandas as pd
-from scipy.signal import argrelextrema
+from numpy.lib.stride_tricks import sliding_window_view
 
 
 def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -205,11 +207,40 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Returns:
         pd.Series: WMA values.
     """
-    weights = np.arange(1, window + 1)
+    weights = np.arange(1, window + 1, dtype=float)
 
-    return prices.rolling(window=window).apply(
-        lambda x: np.dot(x, weights) / weights.sum(), raw=True
+    # One matrix product over every window at once instead of a Python call per window.
+    # A window holding a missing price is missing, as with rolling().apply().
+    return apply_to_rolling_windows(
+        prices, window, lambda windows: windows @ weights / weights.sum()
     )
+
+
+def apply_to_rolling_windows(
+    data: pd.Series | pd.DataFrame, window: int, calculation
+) -> pd.Series | pd.DataFrame:
+    """
+    Apply a calculation to every rolling window of a Series or of each DataFrame column.
+
+    Args:
+        data (pd.Series | pd.DataFrame): The values, with time as index.
+        window (int): The number of values in each window.
+        calculation (Callable): Takes an array of windows, with the values of each window
+            along the last axis, and returns one value per window.
+
+    Returns:
+        pd.Series | pd.DataFrame: The result, missing for the first window - 1 rows.
+    """
+    values = data.to_numpy(dtype=float)
+    result = np.full(values.shape, np.nan)
+
+    if window >= 1 and len(values) >= window:
+        result[window - 1 :] = calculation(sliding_window_view(values, window, axis=0))
+
+    if isinstance(data, pd.DataFrame):
+        return pd.DataFrame(result, index=data.index, columns=data.columns)
+
+    return pd.Series(result, index=data.index, name=data.name)
 
 
 def get_kaufman_adaptive_moving_average(
@@ -291,19 +322,25 @@ def get_kaufman_adaptive_moving_average(
         return kama
 
     start_position = prices.index.get_loc(first_valid_index)
-    kama.iloc[start_position] = prices.iloc[start_position]
+
+    # The recursion runs on plain Python lists, since writing a pandas Series one element
+    # at a time costs tens of microseconds per element.
+    price_values = prices.to_numpy(dtype="float64").tolist()
+    constants = smoothing_constant.to_numpy(dtype="float64").tolist()
+    averages = [math.nan] * length
+    averages[start_position] = price_values[start_position]
 
     for i in range(start_position + 1, length):
-        smoothing_constant_value = smoothing_constant.iloc[i]
-        if pd.isna(smoothing_constant_value):
-            kama.iloc[i] = kama.iloc[i - 1]
+        smoothing_constant_value = constants[i]
+        if math.isnan(smoothing_constant_value):
+            averages[i] = averages[i - 1]
             continue
 
-        kama.iloc[i] = kama.iloc[i - 1] + smoothing_constant_value * (
-            prices.iloc[i] - kama.iloc[i - 1]
+        averages[i] = averages[i - 1] + smoothing_constant_value * (
+            price_values[i] - averages[i - 1]
         )
 
-    return kama
+    return pd.Series(averages, index=prices.index, dtype="float64")
 
 
 def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -420,48 +457,48 @@ def get_parabolic_sar(
     if length == 0:
         return sar
 
+    # The recursion runs on plain Python lists, since reading and writing pandas Series
+    # one element at a time costs tens of microseconds per element.
+    high = prices_high.to_numpy(dtype="float64").tolist()
+    low = prices_low.to_numpy(dtype="float64").tolist()
+
     uptrend = True
     af = af_start
-    extreme_point = prices_high.iloc[0]
-    sar.iloc[0] = prices_low.iloc[0]
+    extreme_point = high[0]
+    sar_values = [math.nan] * length
+    sar_values[0] = low[0]
 
     for i in range(1, length):
-        prior_sar = sar.iloc[i - 1]
+        prior_sar = sar_values[i - 1]
 
         if uptrend:
             current_sar = prior_sar + af * (extreme_point - prior_sar)
-            current_sar = min(
-                current_sar, prices_low.iloc[i - 1], prices_low.iloc[max(i - 2, 0)]
-            )
+            current_sar = min(current_sar, low[i - 1], low[max(i - 2, 0)])
 
-            if prices_low.iloc[i] < current_sar:
+            if low[i] < current_sar:
                 uptrend = False
-                current_sar = max(
-                    extreme_point, prices_high.iloc[i], prices_high.iloc[i - 1]
-                )
-                extreme_point = prices_low.iloc[i]
+                current_sar = max(extreme_point, high[i], high[i - 1])
+                extreme_point = low[i]
                 af = af_start
-            elif prices_high.iloc[i] > extreme_point:
-                extreme_point = prices_high.iloc[i]
+            elif high[i] > extreme_point:
+                extreme_point = high[i]
                 af = min(af + af_increment, af_max)
         else:
             current_sar = prior_sar - af * (prior_sar - extreme_point)
-            current_sar = max(
-                current_sar, prices_high.iloc[i - 1], prices_high.iloc[max(i - 2, 0)]
-            )
+            current_sar = max(current_sar, high[i - 1], high[max(i - 2, 0)])
 
-            if prices_high.iloc[i] > current_sar:
+            if high[i] > current_sar:
                 uptrend = True
-                current_sar = min(
-                    extreme_point, prices_low.iloc[i], prices_low.iloc[i - 1]
-                )
-                extreme_point = prices_high.iloc[i]
+                current_sar = min(extreme_point, low[i], low[i - 1])
+                extreme_point = high[i]
                 af = af_start
-            elif prices_low.iloc[i] < extreme_point:
-                extreme_point = prices_low.iloc[i]
+            elif low[i] < extreme_point:
+                extreme_point = low[i]
                 af = min(af + af_increment, af_max)
 
-        sar.iloc[i] = current_sar
+        sar_values[i] = current_sar
+
+    sar = pd.Series(sar_values, index=prices_high.index, dtype="float64")
 
     return sar
 
@@ -642,6 +679,9 @@ def get_support_resistance_levels(
             "Support", reindexed to `prices` and forward-filled, so that every date carries
             the most recently confirmed level (NaN before the first level is confirmed).
     """
+    # scipy.signal takes around a second to import, so only where it is needed.
+    from scipy.signal import argrelextrema  # noqa: PLC0415
+
     local_maxima_indices = argrelextrema(prices.to_numpy(), np.greater, order=window)[0]
     local_minima_indices = argrelextrema(prices.to_numpy(), np.less, order=window)[0]
 

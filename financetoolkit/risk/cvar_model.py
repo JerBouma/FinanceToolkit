@@ -15,7 +15,9 @@ ALPHA_CONSTRAINT = 0.5
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
-def get_cvar_historic(returns: pd.Series | pd.DataFrame, alpha: float) -> pd.Series:
+def get_cvar_historic(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the historical Conditional Value at Risk (CVaR) of returns.
 
@@ -29,22 +31,22 @@ def get_cvar_historic(returns: pd.Series | pd.DataFrame, alpha: float) -> pd.Ser
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            periods = returns.index.get_level_values(0).unique()
-            period_data_list = []
+            value_at_risk = returns.groupby(level=0, sort=False).quantile(alpha)
+            value_at_risk = value_at_risk.reindex(
+                returns.index.get_level_values(0)
+            ).set_axis(returns.index)
+            result = (
+                returns.where(returns <= value_at_risk)
+                .groupby(level=0, sort=False)
+                .mean()
+            )
+            result.index.name = None
 
-            for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_cvar_historic, alpha=alpha
-                )
-                period_data.name = sub_period
+            return result
 
-                if not period_data.empty:
-                    period_data_list.append(period_data)
+        value_at_risk = returns.quantile(alpha)
 
-            value_at_risk = pd.concat(period_data_list, axis=1)
-
-            return value_at_risk.T
-        return returns.aggregate(get_cvar_historic, alpha=alpha)
+        return returns.where(returns <= value_at_risk).mean()
     if isinstance(returns, pd.Series):
         return returns[
             returns <= var_model.get_var_historic(returns, alpha)
@@ -79,7 +81,7 @@ def get_rolling_cvar_historic(
 
 def get_cvar_gaussian(
     returns: pd.Series | pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on the gaussian distribution.
 
@@ -115,7 +117,7 @@ def get_cvar_gaussian(
 
 def get_cvar_studentt(
     returns: pd.Series | pd.DataFrame, alpha: float
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on the Student-T distribution.
 
@@ -252,7 +254,7 @@ def get_cvar_logistic(
 
 def get_cvar_cornish_fisher(
     returns: pd.Series | pd.DataFrame, alpha: float, number_of_quantiles: int = 1000
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on the Cornish-Fisher
     (modified Gaussian) expansion.

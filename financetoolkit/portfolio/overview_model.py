@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.statistics_model import to_period_index
 
 logger = logger_model.get_logger()
 
@@ -140,7 +141,7 @@ def _calculate_portfolio_volatility(
         returns_for_covariance = asset_returns.reindex(columns=weights.index)
 
         # The most recent calendar year, matching the individual Volatility column.
-        periods = returns_for_covariance.index.asfreq("Y")
+        periods = to_period_index(returns_for_covariance.index).asfreq("Y")
         recent_returns = returns_for_covariance[periods == periods[-1]]
 
         # Columns that are entirely missing would propagate NaNs across the matrix.
@@ -522,7 +523,9 @@ def create_transactions_performance(
         transaction_value / period_performance["Benchmark Price"]
     )
 
-    dates = period_performance.index.get_level_values(date_column).asfreq(period_string)
+    dates = to_period_index(
+        period_performance.index.get_level_values(date_column)
+    ).asfreq(period_string)
 
     period_performance_grouped = period_performance.groupby(
         [dates, ticker_column], observed=True

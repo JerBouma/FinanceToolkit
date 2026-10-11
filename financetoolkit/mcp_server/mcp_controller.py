@@ -207,6 +207,7 @@ def _build_mcp_app() -> FastMCP:
 
     mcp = FastMCP(
         name="Finance Toolkit Analyst",
+        instructions=configuration.get("instructions"),
         log_level="CRITICAL",
         host="0.0.0.0",  # noqa: S104
     )

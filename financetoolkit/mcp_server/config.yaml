@@ -63,6 +63,27 @@ responses:
   max_characters: 60000
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Server instructions
+# Sent to the client once when it connects, so an agent knows how to find an
+# indicator and how to read and narrow the answers before its first call.
+# ──────────────────────────────────────────────────────────────────────────────
+instructions: >-
+  The Finance Toolkit calculates financial data with about 500 indicators: prices and
+  financial statements, ratios, valuation and risk models, performance, technical
+  indicators, options and bonds, econometrics and macroeconomic data by country. Each tool groups indicators of
+  one kind; pass the indicator by name (e.g. valuation with
+  indicator='get_price_to_earnings_ratio'). When unsure which indicator or tool fits,
+  call search_metrics with what you want to measure. Company tools take tickers (e.g.
+  'AAPL,ASML.AS'); country tools take countries (e.g. 'United States,Germany'). Rates,
+  ratios and returns are decimal fractions (0.05 is 5%), and a 'Benchmark' entry is the
+  benchmark ticker (SPY unless benchmark_ticker says otherwise). Keep answers small:
+  limit=-5 gives the last five periods (5 the first five), show_columns keeps the named
+  fields, and start_date/end_date or period narrow the range; an answer that is still
+  too large is cut, with a note. Read the _notes of an answer: they say what was left
+  out, ignored or converted. To find which tickers exist (by sector, country or
+  exchange), use the Finance Database server.
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Module → Python class mapping
 # Keys are short logical names used throughout the server.
 # Values are fully-qualified class paths used for dynamic loading.

@@ -326,3 +326,19 @@ def test_symbols_with_an_exchange_suffix_are_called_tickers():
 
     assert json.loads(format_result(ratios))[0]["ticker"] == "ASML.AS"
     assert json.loads(format_result(risk))[0]["ticker"] == "BTCUSD"
+
+
+def test_the_server_tells_a_client_how_to_use_it():
+    import importlib
+    import sys
+
+    for module in (
+        "financetoolkit.mcp_server.mcp_controller",
+        "financetoolkit.mcp_server.registry_controller",
+        "financetoolkit.mcp_server.tools_model",
+    ):
+        sys.modules.pop(module, None)
+    mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
+
+    assert "search_metrics" in mcp_controller.mcp.instructions
+    assert "decimal fractions" in mcp_controller.mcp.instructions

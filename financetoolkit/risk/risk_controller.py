@@ -5324,6 +5324,7 @@ class Risk:
         autocorrelation = returns.apply(
             lambda column: risk_model.get_autocorrelation(column, lags=lags)
         )
+        autocorrelation.index.name = "Lag"
 
         return apply_rounding(
             autocorrelation, rounding if rounding is not None else self._rounding

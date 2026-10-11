@@ -141,6 +141,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "the calendar year for e.g. Apple and Microsoft). Leave unset for the most recent."
     ),
     "window": "The number of periods the indicator looks back over, e.g. 14 or 20.",
+    "weights": (
+        "The portfolio weight per ticker as an object, e.g. {'AAPL': 0.6, 'MSFT': 0.4}; "
+        "equal weights when left unset."
+    ),
     "lags": "The number of lags (past periods) the test or model uses, e.g. 1 or 5.",
     "column": "The price column to use, e.g. 'Close' or 'Adj Close'.",
     "strike_price_range": (
@@ -531,6 +535,14 @@ def _simplify_annotation(ann: Any) -> Any:
         scalars.append(a)
 
     if not scalars:
+        # A mapping without a single-value form (portfolio weights per ticker) stays one,
+        # so a caller can pass {"AAPL": 0.6, "MSFT": 0.4}.
+        mapping = next(
+            (a for a in args if typing.get_origin(a) is dict and typing.get_args(a)),
+            None,
+        )
+        if mapping is not None:
+            return mapping | None if has_none else mapping
         return str | None if has_none else str
 
     # Merge int + float → float (float is the wider type)

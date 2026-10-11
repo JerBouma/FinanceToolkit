@@ -106,9 +106,9 @@ def _describe_level(values: pd.Index) -> str:
 
 
 def _looks_like_tickers(values: pd.Index) -> bool:
-    """Whether every label is a ticker symbol (short and uppercase) or 'Benchmark'."""
+    """Whether every label is a ticker symbol (short and uppercase), 'Benchmark' or 'Portfolio'."""
     return len(values) > 0 and all(
-        str(value) == "Benchmark"
+        str(value) in ("Benchmark", "Portfolio")
         or (
             len(str(value)) <= MAX_SYMBOL_LENGTH
             and str(value) == str(value).upper()

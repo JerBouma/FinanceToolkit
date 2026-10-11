@@ -81,3 +81,84 @@ def test_an_unnamed_result_is_named_after_its_method():
 
     assert readable_name("get_value_at_risk") == "Value at Risk"
     assert readable_name("get_return_on_equity") == "Return on Equity"
+
+
+def test_a_large_answer_is_cut_to_its_most_recent_rows():
+    import json
+
+    import numpy as np
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    prices = pd.DataFrame(
+        {"Close": np.arange(5000.0)},
+        index=pd.period_range("2006-01-01", periods=5000, freq="D"),
+    )
+
+    answer = json.loads(format_result(prices, max_characters=5000))
+
+    assert len(json.dumps(answer["data"])) <= 5000  # noqa: PLR2004
+    assert answer["data"][-1]["Close"] == 4999  # noqa: PLR2004
+    assert "last" in answer["_notes"][0] and "start_date" in answer["_notes"][0]
+
+    # A small answer is left as it is.
+    assert "_notes" not in json.loads(
+        format_result(prices.tail(3), max_characters=5000)
+    )
+
+
+def test_a_very_wide_answer_keeps_its_first_columns():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    curve = pd.DataFrame(
+        [[0.02] * 3000] * 3, columns=[f"{year}Y" for year in range(1, 3001)]
+    )
+
+    answer = json.loads(format_result(curve, max_characters=4000))
+
+    assert len(json.dumps(answer["data"])) <= 4000  # noqa: PLR2004
+    assert "columns" in answer["_notes"][0]
+
+
+def test_a_long_text_is_shortened_rather_than_dropped():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    transcripts = pd.DataFrame(
+        {"Date": ["2026-07-30", "2026-07-29"], "Transcript": ["word " * 20000] * 2},
+        index=["AAPL", "MSFT"],
+    )
+
+    answer = json.loads(format_result(transcripts, max_characters=10000))
+
+    assert len(json.dumps(answer["data"])) <= 10000  # noqa: PLR2004
+    assert all(record["Transcript"].endswith("...") for record in answer["data"])
+    assert "texts shortened" in answer["_notes"][0]
+
+
+def test_columns_of_three_levels_are_joined_into_one_name():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    draws = pd.DataFrame(
+        [[0.01, 0.02]],
+        columns=pd.MultiIndex.from_tuples(
+            [("AAPL", "MSFT", "AAPL"), ("AAPL", "MSFT", "MSFT")]
+        ),
+    )
+
+    record = json.loads(format_result(draws))[0]
+
+    assert record["AAPL | MSFT | AAPL"] == 0.01  # noqa: PLR2004
+    assert record["AAPL | MSFT | MSFT"] == 0.02  # noqa: PLR2004

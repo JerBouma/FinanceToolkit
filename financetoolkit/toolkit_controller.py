@@ -3766,7 +3766,8 @@ class Toolkit:
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
             limit (int | None): The number of largest holdings (by weight) to keep per fund, e.g.
-                10 for the top 10. Defaults to None, which keeps every holding. The holdings carry
+                10 for the top 10, or of the smallest for a negative number, e.g. -10. Defaults to
+                None, which keeps every holding. The holdings carry
                 no sector or country; get_etf_sector_weightings and get_etf_country_weightings
                 break the fund down by those.
 
@@ -3818,14 +3819,15 @@ class Toolkit:
         etf_holdings = self._etf_holdings
 
         if limit is not None and not etf_holdings.empty and "Weight" in etf_holdings:
-            # The largest holdings of each fund, as a full fund can hold thousands.
+            # The largest holdings of each fund (or, for a negative limit, the smallest), as
+            # a full fund can hold thousands.
             etf_holdings = (
                 etf_holdings.assign(
                     _weight=pd.to_numeric(etf_holdings["Weight"], errors="coerce")
                 )
-                .sort_values("_weight", ascending=False, kind="stable")
+                .sort_values("_weight", ascending=limit < 0, kind="stable")
                 .groupby(level=0, sort=False)
-                .head(limit)
+                .head(abs(limit))
                 .drop(columns="_weight")
                 .reindex(etf_holdings.index.get_level_values(0).unique(), level=0)
             )

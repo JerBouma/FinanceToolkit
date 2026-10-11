@@ -126,6 +126,28 @@ def _resolve_cache_mode(configured: object) -> str:
     return "shared" if hosted else "full"
 
 
+def _resolve_max_response_characters(configured: object) -> int | None:
+    """
+    The size a tool response may have: FT_MCP_MAX_RESPONSE_CHARACTERS when set, otherwise
+    the config.yaml value. Zero switches the limit off.
+
+    Args:
+        configured (object): The ``responses.max_characters`` value from config.yaml.
+
+    Returns:
+        int | None: The number of characters, or None for no limit.
+    """
+    override = os.environ.get("FT_MCP_MAX_RESPONSE_CHARACTERS", "").strip()
+    value = override if override.isdigit() else configured
+
+    try:
+        characters = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+    return characters if characters > 0 else None
+
+
 def _build_mcp_app() -> FastMCP:
     """
     Bootstrap the MCP application and return the configured FastMCP instance.
@@ -220,6 +242,9 @@ def _build_mcp_app() -> FastMCP:
         method_defaults=configuration.get("method_defaults", {}),
         countries_optional=configuration.get("countries_optional", []),
         analytics=analytics,
+        max_response_characters=_resolve_max_response_characters(
+            configuration.get("responses", {}).get("max_characters")
+        ),
     )
 
     utility_registry = UtilityToolRegistry(

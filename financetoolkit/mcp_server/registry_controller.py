@@ -17,6 +17,7 @@ import typing
 from datetime import datetime, timedelta
 from typing import Annotated, Any, NamedTuple
 
+import pandas as pd
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
@@ -55,6 +56,10 @@ _OPAQUE_TYPES = {
 }
 
 # Injected into each tool's Args docstring so FastMCP can surface them.
+# The indicators whose own limit also takes a negative number, for the last rows.
+NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
+
+
 _PARAM_DESCRIPTIONS: dict[str, str] = {
     "indicator": (
         "Name of the specific metric to calculate, e.g. 'get_asset_turnover_ratio'. "
@@ -122,7 +127,11 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "maturity_years": (
         "Comma-separated maturities in years to return, e.g. '1,2,5,10,20,30'."
     ),
-    "limit": "The maximum number of rows to return, e.g. the largest holdings of a fund.",
+    "limit": (
+        "The rows to return, like head and tail: 5 for the first five, -5 for the last five "
+        "(the most recent of a time series). For ETF holdings the largest (or, negative, the "
+        "smallest) by weight, and for a list (e.g. news or a screener) its length."
+    ),
     "gmdb_forecasts": (
         "Set to true to include the years the Global Macro Database projects (IMF World "
         "Economic Outlook, up to five years ahead); by default a yearly series ends with "
@@ -376,6 +385,7 @@ class ToolRegistry:
         method_defaults: dict[str, dict[str, Any]] | None = None,
         countries_optional: list[str] | None = None,
         analytics: UsageAnalytics | None = None,
+        max_response_characters: int | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -407,6 +417,8 @@ class ToolRegistry:
                 called without them; every other method that accepts countries requires them.
             analytics (UsageAnalytics | None): Counts the calls of every tool when the
                 server's usage analytics are on. Defaults to None.
+            max_response_characters (int | None): The size a response may have; a larger
+                one is cut with a note on how to narrow it. Defaults to None (no limit).
         """
         self._mcp = mcp
         self._provider = provider
@@ -425,6 +437,7 @@ class ToolRegistry:
         self._method_defaults: dict[str, dict[str, Any]] = method_defaults or {}
         self._countries_optional: frozenset[str] = frozenset(countries_optional or [])
         self._analytics = analytics
+        self._max_response_characters = max_response_characters
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -546,6 +559,7 @@ class ToolRegistry:
         inspector = self._inspector
         provider = self._provider
         blocked_periods_for_tool = self._blocked_periods.get(tool_name, frozenset())
+        max_response_characters = self._max_response_characters
 
         def owning_class(method_name: str) -> type:
             # Dispatch groups map each method to its controller; plain groups share
@@ -571,7 +585,16 @@ class ToolRegistry:
         parameter_defaults = inspector.collect_group_parameter_defaults(
             cls, group_methods, spec.collect_method, method_to_cls
         )
-        disputed_params = inspector.find_disputed_parameters(parameter_defaults)
+        # An MCP-only default (config.yaml method_defaults) replaces the indicator's own one, and its parameter is advertised as unset like a disputed one: a schema default would always arrive as an explicit value and so never let the MCP default apply.  # noqa: E501
+        mcp_default_params: set[str] = set()
+        for method_name in group_methods:
+            for pname, value in self._method_defaults.get(method_name, {}).items():
+                if method_name in parameter_defaults.get(pname, {}):
+                    parameter_defaults[pname][method_name] = value
+                    mcp_default_params.add(pname)
+        disputed_params = (
+            inspector.find_disputed_parameters(parameter_defaults) | mcp_default_params
+        )
 
         def wrapper(**kwargs):
             """
@@ -699,7 +722,29 @@ class ToolRegistry:
                     "or `countries='Germany,Japan'`."
                 )
 
+            # limit selects rows like head and tail: 5 for the first five, -5 for the last
+            # five. An indicator with a limit of its own (e.g. the largest ETF holdings or
+            # the length of a list) receives it instead, when it supports the value.
+            raw_limit = kwargs.pop("limit", None)
+            try:
+                rows_limit = int(raw_limit) if raw_limit not in (None, "") else None
+            except (TypeError, ValueError):
+                return (
+                    f"Invalid input for `{tool_name}` (`{method_name}`): limit must be a "
+                    f"whole number, e.g. 5 for the first five rows or -5 for the last "
+                    f"five, not {raw_limit!r}."
+                )
+            row_selection = None
+
             method_kwargs = {}
+            if rows_limit is not None:
+                if "limit" in method_param_names.get(method_name, set()) and (
+                    rows_limit > 0 or method_name in NEGATIVE_LIMIT_METHODS
+                ):
+                    method_kwargs["limit"] = rows_limit
+                else:
+                    row_selection = rows_limit
+
             for pname, pann, _ in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
@@ -803,6 +848,12 @@ class ToolRegistry:
                 )
                 if show_columns is not None:
                     result = _filter_columns(result, show_columns)
+                if row_selection and isinstance(result, pd.DataFrame | pd.Series):
+                    result = (
+                        result.head(row_selection)
+                        if row_selection > 0
+                        else result.tail(-row_selection)
+                    )
                 notes: list[str] = []
                 if dispatch_category in ("ticker", "toolkit") and tickers:
                     notes = provider.get_transformation_notes(
@@ -821,6 +872,7 @@ class ToolRegistry:
                     result,
                     notes=notes or None,
                     reason=summarize_reasons(call_messages),
+                    max_characters=max_response_characters,
                 )
                 return formatted
             except (ValueError, KeyError) as exc:
@@ -907,6 +959,18 @@ class ToolRegistry:
                 annotation=_annotate_with_description("show_columns", str | None),
             )
         )
+
+        # Every tool can select rows; a group whose indicator has a limit of its own already
+        # lists it.
+        if "limit" not in {p.name for p in sig_params}:
+            sig_params.append(
+                P(
+                    "limit",
+                    POS,
+                    default=None,
+                    annotation=_annotate_with_description("limit", int | None),
+                )
+            )
 
         wrapper.__signature__ = inspect.Signature(sig_params, return_annotation=str)
         wrapper.__annotations__ = {p.name: p.annotation for p in sig_params}

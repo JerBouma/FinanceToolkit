@@ -65,6 +65,10 @@ def _idx_key(index: pd.Index) -> str:
     return "index"
 
 
+# Column levels a table may have for one level to be stacked into its rows.
+STACKABLE_COLUMN_LEVELS = 2
+
+
 def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
     """Convert a FinanceToolkit DataFrame to a flat list of JSON-serializable dicts.
 
@@ -82,6 +86,19 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
        The index value becomes one key (name inferred from dtype/content);
        columns become the remaining keys.
     """
+    # Columns of three or more levels (such as a copula's ticker pair and ticker) would
+    # leave tuple keys and mostly empty records once one level is stacked, so their
+    # levels are joined into one name per column and the table is treated as flat.
+    if (
+        isinstance(dataframe.columns, pd.MultiIndex)
+        and dataframe.columns.nlevels > STACKABLE_COLUMN_LEVELS
+    ):
+        dataframe = dataframe.copy()
+        dataframe.columns = [
+            " | ".join(str(part) for part in column if str(part))
+            for column in dataframe.columns
+        ]
+
     # ── Case 1: MultiIndex columns (metric, ticker) ───────────────────────────
     if isinstance(dataframe.columns, pd.MultiIndex):
         orig_name = _idx_key(dataframe.index)
@@ -170,10 +187,120 @@ def _no_data(reason: str | None) -> str:
     return json.dumps(payload)
 
 
+# The number of rows a cut answer keeps at least, before columns are cut as well.
+MINIMUM_ROWS = 5
+
+# Texts (such as an earnings call transcript) are shortened to no fewer characters than
+# this before columns are cut, since a column without its text answers nothing.
+MINIMUM_TEXT_CHARACTERS = 500
+
+NARROWING_HINT = (
+    "Narrow it with start_date/end_date, a longer period (e.g. period='monthly'), "
+    "show_columns, fewer tickers or countries, or limit= where the indicator has it."
+)
+
+
+def _is_time_index(index: pd.Index) -> bool:
+    """Whether the rows are dates, whose most recent ones a cut answer keeps."""
+    first_level = index.levels[0] if isinstance(index, pd.MultiIndex) else index
+
+    return isinstance(first_level, pd.DatetimeIndex | pd.PeriodIndex)
+
+
+def _fit_to_size(
+    dataframe: pd.DataFrame, max_characters: int
+) -> tuple[list[dict], str | None]:
+    """
+    Cuts a table until its records fit the size a response may have: the most recent rows
+    of a time series (the first rows otherwise), then long texts to their first characters,
+    and the first columns when even a few rows are too wide.
+
+    Args:
+        dataframe (pd.DataFrame): The table.
+        max_characters (int): The size the records may have as JSON.
+
+    Returns:
+        tuple[list[dict], str | None]: The records, and a note on what was cut, if anything.
+    """
+    records = _df_to_records(dataframe)
+    size = len(json.dumps(records, default=str))
+
+    if size <= max_characters:
+        return records, None
+
+    rows, columns = dataframe.shape
+    kept_rows, kept_columns = rows, columns
+    text_characters: int | None = None
+    from_end = _is_time_index(dataframe.index)
+
+    def longest_text(part: pd.DataFrame) -> int:
+        texts = part.select_dtypes(include=["object", "string"])
+
+        return (
+            int(
+                texts.map(lambda value: len(value) if isinstance(value, str) else 0)
+                .max()
+                .max()
+            )
+            if not texts.empty
+            else 0
+        )  # noqa: E501
+
+    while size > max_characters and (kept_rows > MINIMUM_ROWS or kept_columns > 1):
+        if kept_rows > MINIMUM_ROWS:
+            # Proportionally fewer rows, with a margin, and at least halving the excess.
+            kept_rows = max(
+                MINIMUM_ROWS,
+                min(kept_rows // 2 + 1, int(kept_rows * max_characters / size * 0.9)),
+            )
+        elif (
+            longest := text_characters or longest_text(dataframe)
+        ) > MINIMUM_TEXT_CHARACTERS:
+            text_characters = max(
+                MINIMUM_TEXT_CHARACTERS,
+                min(longest // 2 + 1, int(longest * max_characters / size * 0.9)),
+            )
+        else:
+            kept_columns = max(1, kept_columns // 2)
+
+        part = dataframe.iloc[-kept_rows:] if from_end else dataframe.iloc[:kept_rows]
+        part = part.iloc[:, :kept_columns]
+
+        if text_characters is not None:
+            part = part.map(
+                lambda value: (
+                    value[:text_characters] + "..."
+                    if isinstance(value, str) and len(value) > text_characters
+                    else value
+                )
+            )
+
+        records = _df_to_records(part)
+        size = len(json.dumps(records, default=str))
+
+    shown = (
+        f"the {'last' if from_end else 'first'} {kept_rows:,} of {rows:,} rows"
+        if kept_rows < rows
+        else "every row"
+    )
+
+    if text_characters is not None:
+        shown += f", texts shortened to their first {text_characters:,} characters"
+
+    if kept_columns < columns:
+        shown += f" and the first {kept_columns:,} of {columns:,} columns"
+
+    return (
+        records,
+        f"The answer was too large and was cut: it shows {shown}. {NARROWING_HINT}",
+    )
+
+
 def format_result(
     dataset: dict | pd.Series | pd.DataFrame | int | float | str | None,
     notes: list[str] | None = None,
     reason: str | None = None,
+    max_characters: int | None = None,
 ) -> str:
     """Format a Finance Toolkit result as a compact JSON string for LLM consumption.
 
@@ -185,6 +312,8 @@ def format_result(
         reason: Optional explanation of why there is no data, such as a missing API
             key or an unreachable source, included under a ``"reason"`` key when the
             dataset turns out to be empty.
+        max_characters: Optional size a response may have. A larger table is cut to the
+            most recent rows (or the first columns) with a note on how to narrow it.
 
     Returns:
         A JSON string.  DataFrames become lists of flat records; dicts of
@@ -213,14 +342,30 @@ def format_result(
     if isinstance(dataset, pd.DataFrame):
         if dataset.empty or not int(dataset.notna().to_numpy().sum()):
             return _no_data(reason)
+        if max_characters:
+            records, cut_note = _fit_to_size(dataset, max_characters)
+            if cut_note:
+                notes = [*(notes or []), cut_note]
+            return json.dumps(_inject(records), default=str)
         return json.dumps(_inject(_df_to_records(dataset)), default=str)
 
     if isinstance(dataset, dict):
         out: dict[str, Any] = {}
+        tables = [
+            value for value in dataset.values() if isinstance(value, pd.DataFrame)
+        ]
         for key, value in dataset.items():
             if isinstance(value, pd.DataFrame):
                 if not value.empty and int(value.notna().to_numpy().sum()):
-                    out[str(key)] = _df_to_records(value)
+                    if max_characters:
+                        # The tables share the size a response may have.
+                        out[str(key)], cut_note = _fit_to_size(
+                            value, max_characters // max(1, len(tables))
+                        )
+                        if cut_note:
+                            notes = [*(notes or []), f"{key}: {cut_note}"]
+                    else:
+                        out[str(key)] = _df_to_records(value)
                 else:
                     out[str(key)] = []
             else:

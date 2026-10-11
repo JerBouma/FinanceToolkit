@@ -53,6 +53,16 @@ cache:
   ttl_seconds: 600
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Response size
+# A response larger than this many characters (about four per token) is cut to its
+# most recent rows, or its first columns, with a note on how to narrow the request,
+# so a broad question cannot flood the client's context. FT_MCP_MAX_RESPONSE_CHARACTERS
+# overrides it; 0 switches the limit off.
+# ──────────────────────────────────────────────────────────────────────────────
+responses:
+  max_characters: 60000
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Module → Python class mapping
 # Keys are short logical names used throughout the server.
 # Values are fully-qualified class paths used for dynamic loading.
@@ -430,7 +440,7 @@ tool_groups:
 
   - tool_name:    "risk"
     display_name: "Risk Metrics"
-    description:  "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility incl. close_to_close/parkinson/garman_klass/rogers_satchell/yang_zhang estimators, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports period='daily' for whole-series calculations; rolling and per-period outputs use weekly, monthly, quarterly, or yearly."
+    description:  "Pre-computed risk metrics (VaR incl. historic/gaussian/cf/studentt/evt distributions, CVaR, EVaR, GARCH volatility, max drawdown, drawdown duration, drawdown recovery time, Conditional Drawdown at Risk (CDaR), Tail Ratio, skewness, kurtosis, downside deviation, Variance, Volatility incl. close_to_close/parkinson/garman_klass/rogers_satchell/yang_zhang estimators, Excess Volatility). VaR, CVaR, skewness, kurtosis, CDaR, Tail Ratio, downside deviation, Variance, Volatility and Excess Volatility support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports period='daily' for whole-series calculations; rolling and per-period outputs use weekly, monthly, quarterly, or yearly. get_copula_simulation returns 100 simulated joint draws unless n_simulations= asks for more."
     module_name:  "risk"
     category:     "ticker"
 
@@ -442,7 +452,7 @@ tool_groups:
 
   - tool_name:    "options"
     display_name: "Options"
-    description:  "Option pricing and Greeks (Black-Scholes model, binomial tree, delta, gamma, theta, vega, rho, implied volatility). Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:  "Option pricing and Greeks (Black-Scholes model, binomial tree, delta, gamma, theta, vega, rho, implied volatility). Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_stock_price_simulation returns the unique price levels per time step; pass show_unique_combinations=false for every simulated path. A wide strike_step_size keeps the binomial tree and Greeks compact."
     module_name:  "options"
     category:     "ticker"
 
@@ -820,6 +830,14 @@ method_defaults:
   # 150 maturities per country and month; maturity_years= asks for others.
   get_eiopa_risk_free_rate:
     maturity_years: [1, 2, 5, 10, 20, 30]
+  # 10,000 joint draws are over four million characters; 100 show the shape of the
+  # dependence. n_simulations= asks for more (larger answers are cut to the first rows).
+  get_copula_simulation:
+    n_simulations: 100
+  # Every simulated path is a column (2,048 by default); the unique price levels per
+  # step are the same information in about 20 rows.
+  get_stock_price_simulation:
+    show_unique_combinations: true
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Methods that accept countries but may be called without them

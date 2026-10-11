@@ -91,3 +91,76 @@ def test_large_outputs_default_to_a_compact_selection(captured):
         )
     )
     assert captured[-1]["limit"] == 25  # noqa: PLR2004
+
+
+def test_the_server_cuts_an_answer_that_is_too_large(monkeypatch):
+    import numpy as np
+
+    def huge(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"Close": np.arange(200_000.0)},
+            index=pd.period_range("1500-01-01", periods=200_000, freq="D"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", huge)
+
+    result = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance", {"indicator": "get_sharpe_ratio", "tickers": "AAPL"}
+        )
+    )
+    text = result[0][0].text
+
+    assert len(text) < 62_000  # noqa: PLR2004
+    assert "was too large and was cut" in text
+
+
+def test_limit_selects_the_first_or_last_rows(monkeypatch):
+    import json
+
+    def prices(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"Close": [1.0, 2.0, 3.0, 4.0]},
+            index=pd.period_range("2026-01-01", periods=4, freq="D"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", prices)
+
+    def closes(limit):
+        result = asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "performance",
+                {"indicator": "get_sharpe_ratio", "tickers": "AAPL", "limit": limit},
+            )
+        )
+        return [row["Close"] for row in json.loads(result[0][0].text)]
+
+    assert closes(2) == [1.0, 2.0]
+    assert closes(-2) == [3.0, 4.0]
+
+
+def test_an_indicator_with_its_own_limit_receives_it(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data",
+            {"indicator": "get_etf_holdings", "tickers": "IWDA.AS", "limit": -10},
+        )
+    )
+
+    assert captured[-1]["limit"] == -10  # noqa: PLR2004
+
+
+def test_a_method_default_replaces_the_indicators_own_default(captured):
+    def simulations(**arguments):
+        asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "risk",
+                {"indicator": "get_copula_simulation", "tickers": "AAPL", **arguments},
+            )
+        )
+        return captured[-1]["n_simulations"]
+
+    # The tool schema must not carry the indicator's 10,000, or the MCP default of 100
+    # could never apply; an explicit value still wins.
+    assert simulations() == 100  # noqa: PLR2004
+    assert simulations(n_simulations=5000) == 5000  # noqa: PLR2004

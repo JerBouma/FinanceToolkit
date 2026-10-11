@@ -36,7 +36,11 @@ from financetoolkit.mcp_server.diagnostics_model import (
     redact,
     summarize_reasons,
 )
-from financetoolkit.mcp_server.formatting_model import format_result, select_rows
+from financetoolkit.mcp_server.formatting_model import (
+    format_result,
+    has_period_columns,
+    select_rows,
+)
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
@@ -506,6 +510,7 @@ class ToolRegistry:
         analytics: UsageAnalytics | None = None,
         max_response_characters: int | None = None,
         full_text_methods: list[str] | None = None,
+        tickers_optional: list[str] | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -542,6 +547,9 @@ class ToolRegistry:
             full_text_methods (list[str] | None): Methods whose answer is only of use in full,
                 such as an earnings call transcript: they take one ticker, return one item and
                 are never cut. Defaults to None.
+            tickers_optional (list[str] | None): Toolkit methods that answer the same for any
+                ticker (market-wide snapshots) and so may be called without tickers.
+                Defaults to None.
         """
         self._mcp = mcp
         self._provider = provider
@@ -563,6 +571,7 @@ class ToolRegistry:
         self._analytics = analytics
         self._max_response_characters = max_response_characters
         self._full_text_methods: frozenset[str] = frozenset(full_text_methods or [])
+        self._tickers_optional: frozenset[str] = frozenset(tickers_optional or [])
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -788,6 +797,11 @@ class ToolRegistry:
             raw_countries = kwargs.pop("countries", None)
             countries = _split_values(raw_countries) if raw_countries else None
 
+            # A market-wide snapshot (config.yaml tickers_optional) does not depend on the
+            # tickers, but the Toolkit it is reached through needs one to be built.
+            if not tickers and method_name in self._tickers_optional:
+                tickers = ["SPY"]
+
             # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
             if method_dispatch and method_name in method_dispatch:
@@ -832,6 +846,12 @@ class ToolRegistry:
                         f"'{given}'. Please use a date written as YYYY-MM-DD, e.g. '2026-01-31'."
                     )
 
+            # The range as given, for the discovery calendars that only take one when asked.
+            given_dates = {
+                name: str(kwargs.get(name)).replace("/", "-")
+                for name in ("start_date", "end_date")
+                if kwargs.get(name)
+            }
             quarterly = to_boolean(kwargs.pop("quarterly", False))
             start_date = validate_date(
                 kwargs.pop("start_date", inspector.start_date) or inspector.start_date,
@@ -926,6 +946,11 @@ class ToolRegistry:
                     and method_kwargs.get(pname) in (None, "")
                 ):
                     method_kwargs[pname] = value
+
+            # Discovery takes a range only when one is given (see provider_model).
+            if effective_category == inspector.categories.get("discovery", "discovery"):
+                start_date = given_dates.get("start_date", "")
+                end_date = given_dates.get("end_date", "")
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
@@ -1084,7 +1109,50 @@ class ToolRegistry:
                         )
                 # After the check for missing tickers, which needs every row of a column.
                 if row_selection and isinstance(result, pd.DataFrame | pd.Series):
-                    result = select_rows(result, row_selection)
+                    # One row per ticker (a figure over the whole period) has no first or
+                    # last rows to speak of; cutting it would only drop tickers.
+                    row_labels = {
+                        str(label)
+                        for label in result.index.get_level_values(0).unique()
+                    }
+                    if (
+                        tickers
+                        and row_labels <= {*tickers, "Benchmark"}
+                        and not (
+                            isinstance(result, pd.DataFrame)
+                            and has_period_columns(result)
+                        )
+                    ):
+                        notes.append(
+                            f"limit={row_selection} was not applied: the answer has one row "
+                            "per ticker rather than one per period."
+                        )
+                    else:
+                        reported = (
+                            result.index[result.notna().any(axis=1)]
+                            if isinstance(result, pd.DataFrame)
+                            else result.index
+                        )
+                        result = select_rows(result, row_selection)
+                        # The latest period may not be reported yet for every ticker; a row
+                        # without any value at all is not worth a mention.
+                        if (
+                            isinstance(result, pd.DataFrame)
+                            and has_period_columns(result)
+                            and (
+                                empty_rows := result.index[
+                                    result.isna().all(axis=1)
+                                    & result.index.isin(reported)
+                                ]
+                            ).size
+                        ):
+                            notes.append(
+                                f"{', '.join(map(str, empty_rows.unique()))} "
+                                f"{'has' if empty_rows.unique().size == 1 else 'have'} no "
+                                "value for the selected periods (e.g. not reported yet); "
+                                f"limit={row_selection - 1 if row_selection < 0 else row_selection + 1} "
+                                "includes one more period."
+                            )
                 if unmatched_columns:
                     notes.append(
                         "show_columns: "

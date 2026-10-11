@@ -522,16 +522,16 @@ class Discovery:
 
         | Symbol   |   Price | Name                                 |   Change |   Change % | Exchange   |
         |:---------|--------:|:-------------------------------------|---------:|-----------:|:-----------|
-        | AIFU     | 12.85   | AIFU Inc.                            |   1.67   |    14.9374 | NASDAQ     |
-        | ALISU    | 16.65   | Calisa Acquisition Corp Units        |   5.84   |    54.0241 | NASDAQ     |
-        | ALPXR    |  0.1911 | Alpex Acquisition Corp. Rt           |   0.0311 |    19.4375 | NASDAQ     |
-        | AMBR     |  2.28   | Amber International Holding Ltd      |   0.29   |    14.5729 | NASDAQ     |
-        | AMPGZ    |  0.18   | Amplitech Group, Inc. Series B Right |   0.055  |    44      | NASDAQ     |
-        | BIYA     |  2.3    | Baiya International Group Inc.       |   0.935  |    68.4982 | NASDAQ     |
-        | BSP      | 41.07   | Bending Spoons S.p.A.                |   8      |    24.1911 | NASDAQ     |
-        | CANG     |  3.58   | Cango Inc.                           |   0.56   |    18.5431 | NYSE       |
         | CCAQU    | 19.49   | Collective Acquisition Corp.         |   8.81   |    82.4906 | NASDAQ     |
+        | BIYA     |  2.3    | Baiya International Group Inc.       |   0.935  |    68.4982 | NASDAQ     |
+        | ALISU    | 16.65   | Calisa Acquisition Corp Units        |   5.84   |    54.0241 | NASDAQ     |
+        | AMPGZ    |  0.18   | Amplitech Group, Inc. Series B Right |   0.055  |    44      | NASDAQ     |
+        | BSP      | 41.07   | Bending Spoons S.p.A.                |   8      |    24.1911 | NASDAQ     |
+        | ALPXR    |  0.1911 | Alpex Acquisition Corp. Rt           |   0.0311 |    19.4375 | NASDAQ     |
+        | CANG     |  3.58   | Cango Inc.                           |   0.56   |    18.5431 | NYSE       |
         | CCG      |  5.77   | Cheche Group Inc.                    |   0.8    |    16.0966 | NASDAQ     |
+        | AIFU     | 12.85   | AIFU Inc.                            |   1.67   |    14.9374 | NASDAQ     |
+        | AMBR     |  2.28   | Amber International Holding Ltd      |   0.29   |    14.5729 | NASDAQ     |
         """
         biggest_gainers = discovery_model.get_biggest_gainers(
             api_key=self._api_key, user_subscription=self._fmp_plan
@@ -563,15 +563,15 @@ class Discovery:
 
         | Symbol   |   Price | Name                                                |    Change |   Change % | Exchange   |
         |:---------|--------:|:----------------------------------------------------|----------:|-----------:|:-----------|
-        | AIXI     |  1.32   | Xiao-I Corporation                                  |  -0.53    |   -28.6486 | NASDAQ     |
-        | ALMR     | 27.77   | Alamar Biosciences, Inc.                            |  -4.49    |   -13.9182 | NASDAQ     |
-        | AVAT     |  1.66   | Avalanche Treasury Corporation Class A Common Stock |  -0.41    |   -19.8068 | NASDAQ     |
-        | BBUL     | 12.8794 | GraniteShares 2x Long BB Daily ETF                  |  -2.6906  |   -17.2807 | NASDAQ     |
-        | BLIN     |  0.7821 | Bridgeline Digital, Inc.                            |  -0.11035 |   -12.3648 | NASDAQ     |
-        | BRNX     |  1.53   | BrenX Ltd.                                          |  -0.27    |   -15      | NASDAQ     |
         | BULG     | 21.1116 | Leverage Shares 2x Long BULL Daily ETF              | -12.9859  |   -38.0846 | NASDAQ     |
+        | AIXI     |  1.32   | Xiao-I Corporation                                  |  -0.53    |   -28.6486 | NASDAQ     |
+        | AVAT     |  1.66   | Avalanche Treasury Corporation Class A Common Stock |  -0.41    |   -19.8068 | NASDAQ     |
         | BULL     |  5.89   | Webull Corporation Class A Ordinary Shares          |  -1.39    |   -19.0934 | NASDAQ     |
+        | BBUL     | 12.8794 | GraniteShares 2x Long BB Daily ETF                  |  -2.6906  |   -17.2807 | NASDAQ     |
+        | BRNX     |  1.53   | BrenX Ltd.                                          |  -0.27    |   -15      | NASDAQ     |
         | BURU     |  1.03   | Nuburu, Inc.                                        |  -0.17    |   -14.1667 | AMEX       |
+        | ALMR     | 27.77   | Alamar Biosciences, Inc.                            |  -4.49    |   -13.9182 | NASDAQ     |
+        | BLIN     |  0.7821 | Bridgeline Digital, Inc.                            |  -0.11035 |   -12.3648 | NASDAQ     |
         | CDLX     |  2.28   | Cardlytics, Inc.                                    |  -0.32    |   -12.3077 | NASDAQ     |
         """
 

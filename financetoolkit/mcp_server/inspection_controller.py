@@ -444,7 +444,16 @@ class ControllerInspector:
         if self._categories.get("standalone") in effective:
             params.append(P("countries", POS, default="", annotation=str | list[str]))
 
-        if self._categories.get("discovery") not in effective:
+        if self._categories.get("discovery") in effective:
+            # Discovery lists are snapshots; only the calendars and filings take a range,
+            # and only when one is given, so their own default window applies otherwise.
+            params.extend(
+                [
+                    P("start_date", POS, default="", annotation=str),
+                    P("end_date", POS, default="", annotation=str),
+                ]
+            )
+        else:
             params.extend(
                 [
                     P("start_date", POS, default=self._start_date, annotation=str),

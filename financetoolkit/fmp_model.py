@@ -1883,10 +1883,17 @@ def get_commitment_of_traders(
         tuple[pd.DataFrame, list[str]]: the Commitment of Traders report data and the tickers without data.
     """
 
+    # Without a date range the endpoint answers with a few reports from early 2024 only.
+    date_range = "".join(
+        f"&{name}={str(date)[:10]}"
+        for name, date in (("from", start_date), ("to", end_date))
+        if date
+    )
+
     def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/commitment-of-traders-report?"
-            f"symbol={ticker}&apikey={api_key}"
+            f"symbol={ticker}{date_range}&apikey={api_key}"
         )
         cot_report = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription

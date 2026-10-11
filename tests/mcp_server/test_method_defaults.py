@@ -265,3 +265,62 @@ def test_a_ticker_without_data_and_an_unknown_column_are_named(monkeypatch):
     assert '"NOTATICKER"' not in text
     assert "No data is available for NOTATICKER" in text
     assert "'RSI' is not part of this answer" in text
+
+
+def test_limit_does_not_cut_an_answer_of_one_row_per_ticker(monkeypatch):
+    def cvar(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"Conditional Value at Risk": [-0.26, -0.28, -0.18]},
+            index=pd.Index(["AAPL", "MSFT", "Benchmark"], name="ticker"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", cvar)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "risk",
+            {
+                "indicator": "get_conditional_value_at_risk",
+                "tickers": "AAPL,MSFT",
+                "period": "yearly",
+                "limit": -2,
+            },
+        )
+    )[0][0].text
+
+    assert '"AAPL"' in text and "was not applied" in text
+
+
+def test_a_market_wide_snapshot_needs_no_tickers(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data", {"indicator": "get_market_risk_premium"}
+        )
+    )
+
+    assert len(captured) == 1
+
+
+def test_discovery_passes_a_range_only_when_one_is_given(monkeypatch):
+    from financetoolkit.discovery.discovery_controller import Discovery
+
+    ranges = []
+
+    def calendar(self, start_date=None, end_date=None):  # noqa: ARG001
+        ranges.append((start_date, end_date))
+        return pd.DataFrame({"Date": ["2026-10-12"]}, index=["AAPL"])
+
+    monkeypatch.setattr(Discovery, "__init__", lambda self, **kwargs: None)
+    monkeypatch.setattr(Discovery, "get_ipo_calendar", calendar)
+
+    def call(**arguments):
+        asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "discovery", {"indicator": "get_ipo_calendar", **arguments}
+            )
+        )
+
+    call()
+    call(start_date="2026-10-12", end_date="2026-10-31")
+
+    assert ranges == [(None, None), ("2026-10-12", "2026-10-31")]

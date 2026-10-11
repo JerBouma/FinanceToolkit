@@ -764,7 +764,7 @@ tool_groups:
   # Method list is populated at startup from toolkit_direct_methods above.
   - tool_name:                    "market_data"
     display_name:                 "Raw Financial Data"
-    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, ETF/fund holdings, information and country/sector weightings, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters. The ETF/fund methods return no data for tickers that are not an ETF or fund. get_earnings_call_transcripts returns the full, never shortened text (often 40,000 to 60,000 characters) of one call of one ticker: the most recent, or the one of fiscal_period (e.g. '2025Q4', the company's own fiscal quarter); call it once per ticker and period. A period without a transcript is answered with the most recent periods that have one. Currency and crypto pairs may be written either way: EURUSD or EURUSD=X, BTCUSD or BTC-USD. To find which instruments exist, use the Finance Database server. get_etf_holdings returns the 25 largest holdings of each fund by weight unless limit= asks for more; it holds no sector or country per holding, so use get_etf_sector_weightings and get_etf_country_weightings for those breakdowns, or the Finance Database server to classify the holdings."
+    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, ETF/fund holdings, information and country/sector weightings, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium (by country) and get_treasury_data (US Treasury rates) are market-wide and need no tickers. get_commitment_of_traders takes CFTC futures symbols, e.g. tickers='NG' (natural gas) or 'GC' (gold), not stocks. The ETF/fund methods return no data for tickers that are not an ETF or fund. get_earnings_call_transcripts returns the full, never shortened text (often 40,000 to 60,000 characters) of one call of one ticker: the most recent, or the one of fiscal_period (e.g. '2025Q4', the company's own fiscal quarter); call it once per ticker and period. A period without a transcript is answered with the most recent periods that have one. Currency and crypto pairs may be written either way: EURUSD or EURUSD=X, BTCUSD or BTC-USD. To find which instruments exist, use the Finance Database server. get_etf_holdings returns the 25 largest holdings of each fund by weight unless limit= asks for more; it holds no sector or country per holding, so use get_etf_sector_weightings and get_etf_country_weightings for those breakdowns, or the Finance Database server to classify the holdings."
     module_name:                  "toolkit"
     index_category:               "market_data"
     category:                     "toolkit"
@@ -823,6 +823,11 @@ method_defaults:
     impact: "High"
     lookback_days: 23
     lookahead_days: 7
+  # The default window ends today, which would hide the next (announced) report; it is
+  # what a question about a company's earnings date is usually after.
+  get_earnings_calendar:
+    lookback_days: 1825
+    lookahead_days: 120
   # A world equity fund holds well over a thousand assets; the largest 25 are what a
   # question about its exposure needs. limit= asks for more.
   get_etf_holdings:
@@ -847,6 +852,15 @@ method_defaults:
 # ──────────────────────────────────────────────────────────────────────────────
 full_text_methods:
   - "get_earnings_call_transcripts"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Toolkit methods that may be called without tickers
+# Market-wide snapshots that answer the same for any ticker; the Toolkit they are
+# reached through is built with a placeholder.
+# ──────────────────────────────────────────────────────────────────────────────
+tickers_optional:
+  - "get_market_risk_premium"
+  - "get_treasury_data"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Methods that accept countries but may be called without them

@@ -246,6 +246,7 @@ def _build_mcp_app() -> FastMCP:
             configuration.get("responses", {}).get("max_characters")
         ),
         full_text_methods=configuration.get("full_text_methods", []),
+        tickers_optional=configuration.get("tickers_optional", []),
     )
 
     utility_registry = UtilityToolRegistry(

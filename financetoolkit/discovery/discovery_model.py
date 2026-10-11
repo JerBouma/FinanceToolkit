@@ -692,7 +692,10 @@ def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.Dat
         }
     )
 
-    biggest_gainers = biggest_gainers.set_index("Symbol").sort_index()
+    # The largest rise first, so the head of the list is what its name promises.
+    biggest_gainers = biggest_gainers.set_index("Symbol").sort_values(
+        "Change %", ascending=False, kind="stable"
+    )
 
     return biggest_gainers
 
@@ -728,7 +731,10 @@ def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.Data
         }
     )
 
-    biggest_losers = biggest_losers.set_index("Symbol").sort_index()
+    # The largest fall first, so the head of the list is what its name promises.
+    biggest_losers = biggest_losers.set_index("Symbol").sort_values(
+        "Change %", ascending=True, kind="stable"
+    )
 
     return biggest_losers
 
@@ -766,7 +772,8 @@ def get_most_active_stocks(
         }
     )
 
-    most_active = most_active.set_index("Symbol").sort_index()
+    # Kept in the source's order, the most traded first, as there is no volume to sort on.
+    most_active = most_active.set_index("Symbol")
 
     return most_active
 
@@ -1444,10 +1451,12 @@ def get_ipo_calendar(
             "shares": "Shares",
             "priceRange": "Price Range",
             "marketCap": "Market Cap",
+            "dealSize": "Deal Size",
         }
     )
 
-    ipo_calendar = ipo_calendar.set_index("Symbol").sort_index()
+    # In date order, as a calendar is read.
+    ipo_calendar = ipo_calendar.sort_values("Date", kind="stable").set_index("Symbol")
 
     return ipo_calendar
 
@@ -1598,7 +1607,10 @@ def get_stock_splits_calendar(
         }
     )
 
-    splits_calendar = splits_calendar.set_index("Symbol").sort_index()
+    # In date order, as a calendar is read.
+    splits_calendar = splits_calendar.sort_values("Date", kind="stable").set_index(
+        "Symbol"
+    )
 
     return splits_calendar
 

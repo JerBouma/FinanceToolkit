@@ -352,7 +352,13 @@ class ToolkitProvider:
             instance = Discovery(
                 api_key=effective_key, use_cached_data=self._use_cached_data
             )
-            result = getattr(instance, method_name)(**method_kwargs)
+            method = getattr(instance, method_name)
+            # The calendars and filings take a range, passed on only when one is given.
+            accepted = inspect.signature(method).parameters
+            for name, value in (("start_date", start_date), ("end_date", end_date)):
+                if value and name in accepted:
+                    method_kwargs[name] = value
+            result = method(**method_kwargs)
         else:
             raise ValueError(
                 f"Unknown category '{category}' for module '{module_name}'"

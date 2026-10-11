@@ -224,13 +224,13 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
     Returns:
         pd.DataFrame | pd.Series: The selection.
     """
-    if isinstance(data, pd.DataFrame) and _has_period_columns(data):
+    if isinstance(data, pd.DataFrame) and has_period_columns(data):
         return data.iloc[:, :limit] if limit > 0 else data.iloc[:, limit:]
 
     return data.head(limit) if limit > 0 else data.tail(-limit)
 
 
-def _has_period_columns(dataframe: pd.DataFrame) -> bool:
+def has_period_columns(dataframe: pd.DataFrame) -> bool:
     """Whether the periods are the columns (and not the rows), as with ratios."""
     return not _is_time_index(dataframe.index) and _is_time_index(dataframe.columns)
 
@@ -261,7 +261,7 @@ def _fit_to_size(
     text_characters: int | None = None
     from_end = _is_time_index(dataframe.index)
     # Periods as columns (a ratio per ticker and year) keep their most recent ones.
-    latest_columns = _has_period_columns(dataframe)
+    latest_columns = has_period_columns(dataframe)
 
     def longest_text(part: pd.DataFrame) -> int:
         texts = part.select_dtypes(include=["object", "string"])

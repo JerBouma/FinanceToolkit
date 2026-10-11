@@ -31,3 +31,27 @@ def test_the_server_reports_the_finance_toolkit_version():
     options = mcp_controller.mcp._mcp_server.create_initialization_options()
 
     assert options.server_version == metadata.version("financetoolkit")
+
+
+def test_tickers_without_data_are_named_in_the_answer():
+    from financetoolkit.mcp_server.diagnostics_model import missing_data_notes
+
+    assert missing_data_notes(
+        [
+            "No quote data is available for EURUSD=X, BTC-USD.",
+            "No quote data is available for EURUSD=X, BTC-USD.",
+            "Something unrelated",
+        ]
+    ) == ["No quote data is available for EURUSD=X, BTC-USD."]
+
+
+def test_the_search_tools_say_they_belong_to_the_finance_toolkit():
+    tools = {tool.name: tool for tool in asyncio.run(mcp_controller.mcp.list_tools())}
+
+    for name in ("search_metric_categories", "search_by_category", "search_metrics"):
+        assert tools[name].description.startswith("Finance Toolkit:")
+
+    # Looking up instruments is left to the Finance Database MCP server, whose tools do
+    # not share a name with these.
+    assert "search_instruments" not in tools
+    assert "search_categories" not in tools

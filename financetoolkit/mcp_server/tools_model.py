@@ -1,13 +1,15 @@
 """
 Utility MCP tools for the Finance Toolkit MCP server.
 
-Registers the four built-in discovery and utility tools that operate on the
-*tool index* (the registry) rather than directly on Finance Toolkit controllers:
+Registers the three built-in utility tools that operate on the *tool index* (the
+registry) rather than directly on Finance Toolkit controllers:
 
-- ``list_categories``          — table of registered categories + counts
-- ``list_metrics_by_category`` — all metrics within a single category
+- ``search_metric_categories`` — table of registered categories + counts
+- ``search_by_category``       — all metrics within a single category
 - ``search_metrics``           — fuzzy keyword search across all metrics
-- ``search_instruments``       — look up ticker symbols by name/ISIN/CIK/…
+
+Looking up which instruments exist (by name, ISIN or CUSIP) is left to the Finance
+Database MCP server, so the two servers do not offer overlapping tools.
 
 These tools complement the dynamically-registered router groups produced by
 ``ToolRegistry``. They cannot be generated via the router pattern because they
@@ -26,12 +28,9 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics
-from financetoolkit.mcp_server.diagnostics_model import redact
-from financetoolkit.mcp_server.formatting_model import format_result
 from financetoolkit.utilities.logger_model import get_logger
 
 if TYPE_CHECKING:
-    from financetoolkit.mcp_server.provider_model import ToolkitProvider
     from financetoolkit.mcp_server.registry_controller import ToolRegistry
 
 logger = get_logger()
@@ -52,8 +51,6 @@ class UtilityToolRegistry:
     Args:
         mcp (FastMCP): The FastMCP server instance to register tools on.
         registry (ToolRegistry): The populated tool registry.
-        provider (ToolkitProvider): Provider used for live data calls
-            (``search_instruments``).
         search_stop_words (list[str]): List of stop words to ignore during search.
         category_descriptions (dict[str, str]): Descriptions for each category.
     """
@@ -62,7 +59,6 @@ class UtilityToolRegistry:
         self,
         mcp: FastMCP,
         registry: ToolRegistry,
-        provider: ToolkitProvider,
         search_stop_words: list[str],
         category_descriptions: dict[str, str],
         analytics: UsageAnalytics | None = None,
@@ -75,8 +71,6 @@ class UtilityToolRegistry:
             registry (ToolRegistry): The populated tool registry used to query the
                 tool index. register_all_tools() must be called on the ToolRegistry
                 before calling register_all_tools() on this registry.
-            provider (ToolkitProvider): Provider used for live data calls in
-                search_instruments.
             search_stop_words (list[str]): Words to exclude from keyword search
                 tokenization (e.g. "the", "and", "for").
             category_descriptions (dict[str, str]): Human-readable description for
@@ -87,7 +81,6 @@ class UtilityToolRegistry:
         self._mcp = mcp
         self._analytics = analytics
         self._registry = registry
-        self._provider = provider
         self._search_stop_words: frozenset[str] = frozenset(search_stop_words)
         self._category_descriptions: dict[str, str] = category_descriptions
 
@@ -107,14 +100,17 @@ class UtilityToolRegistry:
             openWorldHint=False,
         )
         tools = [
-            (self.list_categories, "search_categories", "List Categories"),
+            (
+                self.list_categories,
+                "search_metric_categories",
+                "List Metric Categories",
+            ),
             (
                 self.list_metrics_by_category,
                 "search_by_category",
                 "List Metrics by Category",
             ),
             (self.search_metrics, "search_metrics", "Search Metrics"),
-            (self.search_instruments, "search_instruments", "Search Instruments"),
         ]
         for method, tool_name, title in tools:
             self._mcp.add_tool(
@@ -137,10 +133,11 @@ class UtilityToolRegistry:
 
     # ── Tool methods ──────────────────────────────────────────────────────────
     def list_categories(self) -> str:
-        """List all available metric categories and how many tools each contains.
+        """Finance Toolkit: list the categories of what this server calculates (prices,
+        financial statements, ratios, models, risk, economics) and how many tools each has.
 
         Use this first to understand what is available, then call
-        ``list_metrics_by_category`` with a specific category name.
+        ``search_by_category`` with a specific category name.
 
         Returns:
             str: Markdown table of categories, tool counts, and descriptions.
@@ -169,10 +166,11 @@ class UtilityToolRegistry:
             ),
         ],  # noqa: E501
     ) -> str:
-        """List every available metric/tool within a category.
+        """Finance Toolkit: list every metric/tool within a category of prices, financial
+        statements, ratios and other calculations.
 
         Args:
-            category: One of the category names returned by ``list_categories``,
+            category: One of the category names returned by ``search_metric_categories``,
                 e.g. ``ratios``, ``technicals``, ``economics``, ``discovery``.
 
         Returns:
@@ -209,7 +207,8 @@ class UtilityToolRegistry:
             ),
         ],  # noqa: E501
     ) -> str:
-        """Search across all metrics by keyword with typo tolerance.
+        """Finance Toolkit: search the metrics this server calculates (prices, financial
+        statements, ratios and more) by keyword, with typo tolerance.
 
         Supports minor typos and common financial abbreviations. Tokens
         shorter than four characters bypass fuzzy matching and require an
@@ -259,7 +258,7 @@ class UtilityToolRegistry:
         if not hits:
             return (
                 f"No strong matches for '{query}'. "
-                "Try `list_categories()` to browse all modules."
+                "Try `search_metric_categories` to browse all modules."
             )
 
         lines = [
@@ -271,43 +270,3 @@ class UtilityToolRegistry:
             lines.append(f"| `{h['category']}` | `{h['tool']}` | {h['description']} |")
         result = "\n".join(lines)
         return result
-
-    def search_instruments(
-        self,
-        query: Annotated[
-            str,
-            Field(
-                description="Company name, ticker symbol, CIK, CUSIP, or ISIN to look up, e.g. "
-                "'Apple', 'AAPL', or '0000320193'."
-            ),
-        ],  # noqa: E501
-        search_method: Annotated[
-            str,
-            Field(
-                description="Lookup strategy: 'name', 'symbol', 'cik', 'cusip', or 'isin'. Defaults to 'name'."
-            ),
-        ] = "name",  # noqa: E501
-    ) -> str:
-        """Search for ticker symbols by company name, symbol, CIK, CUSIP, or ISIN.
-
-        Args:
-            query: The search term, e.g. ``'Apple'``, ``'META'``, ``'0000320193'``.
-            search_method: Lookup strategy — one of ``'name'``, ``'symbol'``,
-                ``'cik'``, ``'cusip'``, or ``'isin'``. Defaults to ``'name'``.
-
-        Returns:
-            str: Formatted Markdown table of matching instruments, or an error
-                message if the search fails.
-        """
-        try:
-            result = self._provider.call_method(
-                module_name="discovery",
-                method_name="search_instruments",
-                category="discovery",
-                query=query,
-                search_method=search_method,
-            )
-            formatted = format_result(result)
-            return formatted
-        except Exception as exc:
-            return f"Search failed: {redact(exc)}"

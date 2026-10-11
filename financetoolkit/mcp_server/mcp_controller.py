@@ -225,7 +225,6 @@ def _build_mcp_app() -> FastMCP:
     utility_registry = UtilityToolRegistry(
         mcp=mcp,
         registry=toolkit_registry,
-        provider=provider,
         search_stop_words=configuration["search_stop_words"],
         category_descriptions=configuration["category_descriptions"],
         analytics=analytics,

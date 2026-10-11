@@ -79,9 +79,10 @@ module_class_map:
 # data sources and not relevant for users of the MCP tools.
 #
 # Discovery's search_* methods are not reachable either, since method discovery
-# only picks up get_* names. That is deliberate: search_instruments is already
-# registered as a utility tool, and the search_*_news methods duplicate the
-# get_*_news ones with a ticker filter the LLM can apply itself.
+# only picks up get_* names. That is deliberate: looking up instruments is left to
+# the Finance Database MCP server, so the two servers do not overlap, and the
+# search_*_news methods duplicate the get_*_news ones with a ticker filter the LLM
+# can apply itself.
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
@@ -753,7 +754,7 @@ tool_groups:
   # Method list is populated at startup from toolkit_direct_methods above.
   - tool_name:                    "market_data"
     display_name:                 "Raw Financial Data"
-    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, ETF/fund holdings, information and country/sector weightings, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters. The ETF/fund methods return no data for tickers that are not an ETF or fund. get_earnings_call_transcripts returns the full text of the most recent call per ticker (often 40,000+ characters); pass latest=false for every call in the date range."
+    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, ETF/fund holdings, information and country/sector weightings, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium and get_commitment_of_traders are ticker/country-agnostic snapshots and ignore most other parameters. The ETF/fund methods return no data for tickers that are not an ETF or fund. get_earnings_call_transcripts returns the full text of the most recent call per ticker (often 40,000+ characters); pass latest=false for every call in the date range. Currency and crypto pairs may be written either way: EURUSD or EURUSD=X, BTCUSD or BTC-USD. To find which instruments exist, use the Finance Database server."
     module_name:                  "toolkit"
     category:                     "toolkit"
     use_direct_methods:   true
@@ -770,7 +771,7 @@ tool_groups:
 # the AI-facing prompt hint and may be verbose.
 # ──────────────────────────────────────────────────────────────────────────────
 utility_tools:
-  - tool_name: "search_categories"
+  - tool_name: "search_metric_categories"
     description: "List all available metric categories with tool counts and descriptions."
 
   - tool_name: "search_by_category"
@@ -778,9 +779,6 @@ utility_tools:
 
   - tool_name: "search_metrics"
     description: "Fuzzy keyword search across all 500+ available methods."
-
-  - tool_name: "search_instruments"
-    description: "Look up ticker symbols by company name, ISIN, CIK, CUSIP, or keyword."
 
 
 # ──────────────────────────────────────────────────────────────────────────────

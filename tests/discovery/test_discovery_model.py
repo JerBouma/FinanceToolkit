@@ -117,3 +117,36 @@ def test_the_screener_can_keep_one_listing_per_company(screener):  # noqa: ARG00
 
     assert "INGA.AS" in listings.index
     assert not {"ING", "INGS.TO"} & set(listings.index)
+
+
+def test_a_company_keeps_the_market_cap_and_listing_of_its_home_exchange(monkeypatch):
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/company-screener" in url:
+            # A CEDEAR in Buenos Aires trades in fractions of a share: more volume, and a
+            # market cap far too large.
+            return pd.DataFrame(
+                {
+                    "symbol": ["AMD.BA", "AMD"],
+                    "companyName": ["Advanced Micro Devices, Inc."] * 2,
+                    "marketCap": [1.0e15, 400e9],
+                    "exchangeShortName": ["BUE", "NASDAQ"],
+                    "country": ["US", "US"],
+                    "volume": [9_000_000, 40_000],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["BUE", "NASDAQ"], "countryCode": ["AR", "US"]}
+            )
+        if "/batch-quote" in url:
+            return pd.DataFrame({"symbol": ["ARSUSD"], "price": [0.001]})
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    every_listing = discovery_model.get_stock_screener(api_key="KEY")
+    primary = discovery_model.get_stock_screener(api_key="KEY", primary_only=True)
+
+    assert (every_listing["Market Cap (USD)"] == 400e9).all()
+    assert list(primary.index) == ["AMD"]
+    assert "_home_listing" not in primary.columns

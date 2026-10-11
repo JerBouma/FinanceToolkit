@@ -220,6 +220,9 @@ MAXIMUM_SCREENER_LIMIT = 10000
 MARKET_CAP_BOUND_MARGIN = 0.5
 
 # The currency of the exchanges of each country Financial Modeling Prep lists (UK, not GB).
+# A helper column of the screener: whether a listing trades in the company's own country.
+HOME_LISTING = "_home_listing"
+
 COUNTRY_CURRENCIES = {
     "US": "USD",
     "CA": "CAD",
@@ -319,7 +322,8 @@ def get_stock_screener(
             which is also the API's own default, so hitting exactly this number means the result
             was truncated.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        primary_only (bool, optional): Whether to keep only the most traded listing of each
+        primary_only (bool, optional): Whether to keep only the home listing (on an exchange in
+            the company's country, the most traded one among several) of each
             company, rather than every listing (e.g. ING in Amsterdam, New York, Toronto and
             Frankfurt). Defaults to False.
 
@@ -336,7 +340,13 @@ def get_stock_screener(
     widened = (
         market_cap_higher is not None or market_cap_lower is not None or primary_only
     )
-    requested_limit = min(limit * 4, MAXIMUM_SCREENER_LIMIT) if widened else limit
+    # One listing per company needs room for the companies listed many times over (ASML
+    # has six listings), whose foreign listings can also rank above the home one.
+    requested_limit = (
+        min(limit * (10 if primary_only else 4), MAXIMUM_SCREENER_LIMIT)
+        if widened
+        else limit
+    )
 
     # The endpoint compares market caps in each listing's own currency, while the bounds
     # are in US dollars: the lower bound is widened for currencies worth more than a dollar
@@ -432,17 +442,25 @@ def get_stock_screener(
     )
 
     if primary_only and "Name" in stock_screener.columns:
-        # The most traded listing of a company is its primary one; volume counts shares
-        # alike on every exchange.
+        # The primary listing of a company is the one in its own country, and among those
+        # (or without one) the most traded; volume alone favours depositary receipts that
+        # trade in fractions of a share, such as CEDEARs.
+        order = [
+            column
+            for column in (HOME_LISTING, "Volume")
+            if column in stock_screener.columns
+        ]
         most_traded = (
-            stock_screener.sort_values("Volume", ascending=False, kind="stable")
-            if "Volume" in stock_screener.columns
+            stock_screener.sort_values(order, ascending=False, kind="stable")
+            if order
             else stock_screener
         )
         primary_listings = most_traded[~most_traded["Name"].duplicated()].index
         stock_screener = stock_screener[stock_screener.index.isin(primary_listings)]
 
-    stock_screener = stock_screener.head(limit)
+    stock_screener = stock_screener.drop(columns=HOME_LISTING, errors="ignore").head(
+        limit
+    )
 
     if truncated:
         logger.warning(
@@ -492,6 +510,14 @@ def _add_market_cap_in_dollars(
         )
     }
     listings["Currency"] = listings["Exchange Code"].map(exchange_currencies)
+    # Whether a listing trades in the company's own country, which marks its home listing.
+    exchange_countries = dict(
+        zip(exchanges["exchange"], exchanges["countryCode"], strict=False)
+    )
+    if "Country" in listings.columns:
+        listings[HOME_LISTING] = listings["Exchange Code"].map(
+            exchange_countries
+        ) == listings["Country"].astype(str).str.upper().replace({"UK": "GB"})
 
     foreign_currencies = sorted(
         {currency for currency in listings["Currency"].dropna() if currency != "USD"}
@@ -521,6 +547,19 @@ def _add_market_cap_in_dollars(
     listings["Market Cap (USD)"] = listings["Market Cap"] * listings["Currency"].map(
         rates
     )
+
+    # A market cap belongs to the company, not to one of its listings: a depositary receipt
+    # abroad (such as a CEDEAR in Buenos Aires) can report one many times too large, so every
+    # listing of a company takes the one of its home listing.
+    if HOME_LISTING in listings.columns and "Name" in listings.columns:
+        home_caps = (
+            listings[listings[HOME_LISTING] & listings["Market Cap (USD)"].notna()]
+            .groupby("Name")["Market Cap (USD)"]
+            .first()
+        )
+        listings["Market Cap (USD)"] = (
+            listings["Name"].map(home_caps).fillna(listings["Market Cap (USD)"])
+        )
 
     unconverted = listings["Market Cap"].notna() & listings["Market Cap (USD)"].isna()
 

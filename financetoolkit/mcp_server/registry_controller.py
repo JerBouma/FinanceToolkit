@@ -361,6 +361,10 @@ def _unmatched_columns(
     available: list[str] = []
 
     for table in tables:
+        # The row index is part of every record too, such as a news item's Published Date.
+        for name in table.index.names:
+            if name is not None and str(name) not in available:
+                available.append(str(name))
         axes = [table.columns] if isinstance(table, pd.DataFrame) else []
         if not isinstance(
             table.index.get_level_values(-1), pd.DatetimeIndex | pd.PeriodIndex

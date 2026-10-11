@@ -268,9 +268,10 @@ class Discovery:
             exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ".
             is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them.
             limit (int): The maximum number of companies to return. Defaults to 1000.
-            primary_only (bool): Whether to keep only the most traded listing of each company,
-                rather than every listing (e.g. ING in Amsterdam, New York, Toronto and
-                Frankfurt). Defaults to False.
+            primary_only (bool): Whether to keep only the home listing of each company (on an
+                exchange in its own country, the most traded one among several) rather than
+                every listing (e.g. ING in Amsterdam, New York, Toronto and Frankfurt).
+                Defaults to False.
 
         Market caps are in each listing's own currency in "Market Cap" and in US dollars in
         "Market Cap (USD)", which the market cap bounds and the ranking use.

@@ -193,9 +193,10 @@ def _filter_dataframe_columns(
         valid_idx = [c for c in show_columns if c in available_idx]
         if valid_idx:
             filtered = df.loc[[idx_map[c] for c in valid_idx]]
-            # One metric row means the label is known, so squeeze to period to value.
+            # One metric row means the label is known, so squeeze to period to value. Only
+            # the rows are squeezed, so a single column (one ticker) keeps its label.
             if len(filtered) == 1:
-                return filtered.squeeze()
+                return filtered.squeeze(axis=0)
             return filtered
 
     all_available = available_cols + (

@@ -235,3 +235,33 @@ def test_the_benchmark_note_is_left_out_without_a_benchmark(monkeypatch):
     )[0][0].text
 
     assert "benchmark" not in text.lower()
+
+
+def test_a_ticker_without_data_and_an_unknown_column_are_named(monkeypatch):
+    def rsi(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {
+                "AAPL": [55.0, 56.0],
+                "NOTATICKER": [None, None],
+                "Benchmark": [60.0, 61.0],
+            },
+            index=pd.period_range("2026-10-08", periods=2, freq="D"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", rsi)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "momentum",
+            {
+                "indicator": "get_relative_strength_index",
+                "tickers": "AAPL,NOTATICKER",
+                "show_columns": "AAPL,RSI",
+                "limit": -1,
+            },
+        )
+    )[0][0].text
+
+    assert '"NOTATICKER"' not in text
+    assert "No data is available for NOTATICKER" in text
+    assert "'RSI' is not part of this answer" in text

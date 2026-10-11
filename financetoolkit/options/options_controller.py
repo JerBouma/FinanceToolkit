@@ -674,6 +674,8 @@ class Options:
         implied_volatility_df = (
             pd.DataFrame(implied_volatility).unstack().dropna().sort_index()
         )
+        # Named like the option chains, so the strike price is not mistaken for a metric.
+        implied_volatility_df.index.names = ["Ticker", "Strike Price"]
 
         implied_volatility_df = apply_rounding(
             implied_volatility_df, rounding if rounding is not None else self._rounding

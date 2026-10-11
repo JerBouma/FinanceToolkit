@@ -1379,6 +1379,14 @@ def get_quote(
         dataset_dictionary=quote_dict, user_subscription=user_subscription
     )
 
+    # A ticker the source does not know comes back empty, and is left out rather than
+    # failing the quotes of the others.
+    quote_dict = {
+        ticker: data
+        for ticker, data in quote_dict.items()
+        if not data.empty and 0 in data.columns
+    }
+
     # Empty when every ticker returned an error, such as a rate limit.
     quote_dataframe = pd.DataFrame()
 

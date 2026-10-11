@@ -231,6 +231,67 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
     return {"summary": summary, "aliases": aliases.group(1).strip() if aliases else ""}
 
 
+def _unmatched_columns(
+    result: object, show_columns: list[str]
+) -> tuple[list[str], list[str]]:
+    """The requested show_columns a result does not have, and the names it does have.
+
+    The names are the column labels on every level and, unless the rows are dates, the row
+    labels of the last index level (the line items of a financial statement).
+
+    Args:
+        result (object): The value returned by the indicator, before filtering.
+        show_columns (list[str]): The requested names.
+
+    Returns:
+        tuple[list[str], list[str]]: The names not found, and at most 40 available names.
+    """
+    tables = (
+        [result]
+        if isinstance(result, pd.DataFrame | pd.Series)
+        else (
+            [value for value in result.values() if isinstance(value, pd.DataFrame)]
+            if isinstance(result, dict)
+            else []
+        )
+    )
+    available: list[str] = []
+
+    for table in tables:
+        axes = [table.columns] if isinstance(table, pd.DataFrame) else []
+        if not isinstance(
+            table.index.get_level_values(-1), pd.DatetimeIndex | pd.PeriodIndex
+        ):
+            axes.append(table.index)
+        for axis in axes:
+            levels = (
+                range(axis.nlevels) if axis is not table.index else [axis.nlevels - 1]
+            )
+            for level in levels:
+                for label in axis.get_level_values(level).unique():
+                    if str(label) not in available:
+                        available.append(str(label))
+
+    if not available:
+        return [], []
+
+    return [name for name in show_columns if name not in available], available[:40]
+
+
+def _labels(result: pd.DataFrame | pd.Series) -> set[str]:
+    """Every index and column label of a result, on every level, as text."""
+    axes = [result.index] + (
+        [result.columns] if isinstance(result, pd.DataFrame) else []
+    )
+
+    return {
+        str(label)
+        for axis in axes
+        for level in range(axis.nlevels)
+        for label in axis.get_level_values(level).unique()
+    }
+
+
 def _mentions_benchmark(result: object) -> bool:
     """Whether a result has a 'Benchmark' row or column, as a benchmark-based metric does.
 
@@ -972,10 +1033,12 @@ class ToolRegistry:
                     (time.perf_counter() - call_started) * 1000,
                     len(tickers) if tickers else 0,
                 )
+                unmatched_columns: list[str] = []
                 if show_columns is not None:
+                    unmatched_columns, available_columns = _unmatched_columns(
+                        result, show_columns
+                    )
                     result = _filter_columns(result, show_columns)
-                if row_selection and isinstance(result, pd.DataFrame | pd.Series):
-                    result = select_rows(result, row_selection)
                 notes: list[str] = []
                 if dispatch_category in ("ticker", "toolkit") and tickers:
                     notes = provider.get_transformation_notes(
@@ -990,6 +1053,46 @@ class ToolRegistry:
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
                 notes = list(notes) + missing_data_notes(call_messages)
+                # A ticker the sources do not know is dropped from the answer; when the
+                # others are there, say which one is missing rather than leave it out quietly.
+                if (
+                    tickers
+                    and len(tickers) > 1
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                ):
+                    # An empty column of its own counts as missing too.
+                    if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:
+                        empty = [
+                            ticker
+                            for ticker in tickers
+                            if ticker in result.columns and result[ticker].isna().all()
+                        ]
+                        if len(empty) < len(result.columns):
+                            result = result.drop(columns=empty)
+                    labels = _labels(result)
+                    absent = [
+                        ticker
+                        for ticker in tickers
+                        if ticker not in labels
+                        and not any(ticker in note for note in notes)
+                    ]
+                    if absent and len(absent) < len(tickers):
+                        notes.append(
+                            f"No data is available for {', '.join(absent)}, so "
+                            f"{'it is' if len(absent) == 1 else 'they are'} left out. "
+                            "Please check the symbol (e.g. ASML.AS for Amsterdam)."
+                        )
+                # After the check for missing tickers, which needs every row of a column.
+                if row_selection and isinstance(result, pd.DataFrame | pd.Series):
+                    result = select_rows(result, row_selection)
+                if unmatched_columns:
+                    notes.append(
+                        "show_columns: "
+                        + ", ".join(f"'{name}'" for name in unmatched_columns)
+                        + " is not part of this answer. Available: "
+                        + ", ".join(available_columns)
+                        + "."
+                    )
                 # A note on how the benchmark was chosen only confuses an answer that has
                 # no benchmark in it, such as an ETF's holdings.
                 if not _mentions_benchmark(result):

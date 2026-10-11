@@ -378,14 +378,14 @@ tool_groups:
 
   - tool_name:      "momentum"
     display_name:   "Momentum Indicators"
-    description:    "Momentum technical indicators (RSI, MACD, Stochastic Oscillator, Williams %R, Aroon). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:    "Momentum technical indicators (RSI, MACD, Stochastic Oscillator, Williams %R, Aroon, ADX, CCI, MFI, rate of change, Ichimoku Cloud, awesome, ultimate and Chande momentum oscillators, vortex, Know Sure Thing and more). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
     collect_method: "collect_momentum_indicators"
 
   - tool_name:      "overlap"
     display_name:   "Overlap Indicators"
-    description:    "Overlap technical indicators (SMA, EMA, Bollinger Bands, Keltner Channels). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:    "Overlap technical indicators drawn over the price (simple, exponential, double exponential, triangular, weighted, Hull and Kaufman adaptive moving averages, TRIX, VWAP, Parabolic SAR, pivot points, Fibonacci retracement levels, support and resistance levels). Applied to price data automatically — no need to fetch prices first. Bollinger Bands and Keltner Channels are in the volatility tool. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
     # Support/Resistance returns one row per level so collect_overlap_indicators cannot include it,
@@ -409,7 +409,7 @@ tool_groups:
 
   - tool_name:      "volatility"
     display_name:   "Volatility Indicators"
-    description:    "Volatility technical indicators (ATR, True Range). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:    "Volatility technical indicators (Bollinger Bands, Keltner Channels, Donchian Channels, True Range, Average True Range, Supertrend, volatility cone). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
     # The Volatility Cone is indexed by rolling window so collect_volatility_indicators cannot include it,
@@ -446,7 +446,7 @@ tool_groups:
 
   - tool_name:    "econometrics"
     display_name: "Econometrics Tests"
-    description:  "Statistical/econometric tests on price or return series (unit root: ADF/KPSS/Phillips-Perron/Zivot-Andrews, cointegration: Engle-Granger/Johansen, Granger causality, ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM, Diebold-Mariano forecast comparison). Use for pairs-trading/spread-modeling foundations or diagnosing return-series properties. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:  "Statistical and econometric analysis of price or return series: unit root tests (ADF, KPSS, Phillips-Perron, Zivot-Andrews), cointegration (Engle-Granger, Johansen, VECM), Granger causality, VAR forecasts, impulse responses and variance decomposition, ARIMA forecasts, regressions (OLS, WLS, GLS, quantile, logistic, probit, IV/2SLS, Fama-MacBeth, fixed and random effects panels), causal designs (difference-in-differences, event study, regression discontinuity, synthetic control, propensity score matching), diagnostics (ARCH-LM, Jarque-Bera, Ljung-Box, Durbin-Watson, Breusch-Pagan, White, Ramsey RESET, VIF, Chow, CUSUM, variance ratio) and forecast comparison (Diebold-Mariano, RMSE, MAE). No need to fetch price data first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:  "econometrics"
     category:     "ticker"
 
@@ -735,7 +735,7 @@ tool_groups:
   # yield-to-maturity, and derivative pricing models.
   - tool_name:       "fixed_income"
     display_name:    "Bond & Derivative Valuations"
-    description:     "Bond and derivative valuation calculations (bond duration, present value, yield-to-maturity, derivative pricing, par yield, forward rate, breakeven inflation rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield, Taylor-series price change estimate). No tickers or countries needed — provide bond/derivative parameters (e.g. face_value, coupon_rate, maturity, spot_rates) directly as arguments."
+    description:     "Bond and derivative valuation calculations (bond duration, present value, yield to maturity, derivative pricing, par yield, forward rate, breakeven inflation rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield, Taylor-series price change estimate). No tickers needed — pass the bond's terms directly, e.g. par_value=1000, coupon_rate=0.05, years_to_maturity=10 with bond_price or yield_to_maturity. The breakeven inflation rate and yield curve spread read a country's current curve (countries='United States')."
     module_name:     "fixedincome"
     category:        "standalone"
     index_category:  "fixed_income"
@@ -756,7 +756,7 @@ tool_groups:
   # ── Discovery ────────────────────────────────────────────────────────────
   - tool_name:    "discovery"
     display_name: "Market Discovery"
-    description:  "Market discovery tools (lists of stocks/ETFs/cryptocurrencies, stock screener, gainers, losers, sector performance, earnings/dividend calendars, latest 8-K SEC filings, latest insider trades). No tickers or countries needed. The stock screener ranks by market cap in US dollars ('Market Cap (USD)'; 'Market Cap' is in the listing's own currency) and returns every listing of a company unless primary_only=true; to screen by classification, use the Finance Database server."
+    description:  "Market discovery (lists of stocks, ETFs, indices, currencies, commodities and cryptocurrencies, stock screener, biggest gainers and losers, most active stocks, sector and industry performance and P/E, earnings, IPO and stock split calendars, latest 8-K filings, insider trades and mergers, market news and press releases). No tickers or countries needed. The calendars and filings take start_date/end_date; the market-wide earnings calendar covers the coming week unless a range is given. Sector and industry performance and P/E take date= for one day's snapshot or sector=/industry= for a history (the last year unless start_date/end_date say otherwise). The stock screener ranks by market cap in US dollars ('Market Cap (USD)'; 'Market Cap' is in the listing's own currency) and returns every listing of a company unless primary_only=true; to screen by classification, use the Finance Database server."
     module_name:  "discovery"
     category:     "discovery"
 

@@ -616,7 +616,9 @@ def get_sectors_performance(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         start_date (str, optional): The start date to filter data with, e.g. "2024-01-01".
+            Defaults to a year ago.
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
+            Defaults to today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -627,15 +629,11 @@ def get_sectors_performance(
     sector_changes = {}
 
     for sector in FMP_SECTORS:
+        # A year up to today unless a range is given (see _history_range).
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
-
-        if start_date:
-            url += f"&from={start_date}"
-        if end_date:
-            url += f"&to={end_date}"
 
         sector_performance = get_cached_financial_data(
             url=url, user_subscription=user_subscription

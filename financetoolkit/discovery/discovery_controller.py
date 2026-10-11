@@ -455,12 +455,14 @@ class Discovery:
         date, so 1.25 means +1.25% and not +125%. One API call is made per sector because the
         combined endpoint this used to read was retired and now answers with an empty response.
 
-        Without a date range the API hands back only the earliest days it holds, so pass
-        `start_date` and `end_date` to look at a recent window.
+        Without a date range the API hands back only the earliest days it holds, so the
+        last year up to today is retrieved unless `start_date` and `end_date` say otherwise.
 
         Args:
             start_date (str | None): The start date to filter data with, e.g. "2024-01-01".
+                Defaults to a year ago.
             end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
+                Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with the sectors performance for each sector.

@@ -8692,8 +8692,8 @@ class Economics:
                 "REMIND-MAgPIE", "GCAM" or "MESSAGEix-GLOBIOM". Defaults to "REMIND-MAgPIE".
             countries (list[str] | str | None, optional): The countries or regions to
                 include. Defaults to None, which includes all of them.
-            risk (str, optional): "combined", "transition" or "physical". Defaults to
-                "combined".
+            risk (str, optional): "combined", "transition" or "physical". Current Policies has
+                physical risk only, which is also its combined risk. Defaults to "combined".
             deviation (bool, optional): Whether to return the deviation from the baseline
                 instead of the level. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -8756,6 +8756,15 @@ class Economics:
                 )
             climate_scenario = ngfs_model.get_carbon_price(scenario, model)
         else:
+            # Current Policies has no transition (that is the scenario), so NGFS publishes
+            # its physical risk only, which is then also its combined risk.
+            if scenario == "Current Policies" and risk == "combined":
+                risk = "physical"
+            elif scenario == "Current Policies" and risk == "transition":
+                raise ValueError(
+                    "Current Policies has no transition risk: it is the scenario without a "
+                    "transition. Use risk='physical' or 'combined' for its physical risk."
+                )
             climate_scenario = ngfs_model.get_nigem_scenario(
                 variable, scenario, model, risk, deviation
             )

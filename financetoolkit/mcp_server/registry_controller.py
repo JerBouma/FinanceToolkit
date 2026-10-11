@@ -139,6 +139,18 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "The company's fiscal quarter, e.g. '2025Q4' (its own fiscal year, which differs from "
         "the calendar year for e.g. Apple and Microsoft). Leave unset for the most recent."
     ),
+    "window": "The number of periods the indicator looks back over, e.g. 14 or 20.",
+    "column": "The price column to use, e.g. 'Close' or 'Adj Close'.",
+    "strike_price_range": (
+        "Only strikes within this fraction of the current stock price, e.g. 0.05 for the "
+        "strikes within 5% of it."
+    ),
+    "legs": (
+        "The strategy as a list of legs. An option leg: {'strike_price': 340, "
+        "'put_option': false, 'position': 'long' or 'short', 'premium': 4.2}; a stock leg: "
+        "{'instrument': 'stock', 'position': 'long', 'premium': 336}. E.g. a bull call "
+        "spread is a long call at a lower and a short call at a higher strike."
+    ),
     "limit": (
         "The rows to return, like head and tail: 5 for the first five, -5 for the last five "
         "(the most recent of a time series). A table with its periods as columns (financial "
@@ -186,7 +198,9 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
 _DISPUTED_DEFAULT_DETAIL_LIMIT = 320
 
 
-def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
+def _annotate_with_description(
+    name: str, ann: Any, suffix: str = "", documented: str = ""
+) -> Any:
     """Wrap *ann* in ``Annotated[ann, Field(description=...)]`` for JSON schema output.
 
     Pydantic reads the ``Field(description=...)`` metadata and includes it in the
@@ -198,11 +212,13 @@ def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
         ann (Any): The annotation to wrap.
         suffix (str): Extra text appended to the description, used to spell out
             defaults that differ between the indicators of a router group.
+        documented (str): The description the indicators' docstrings give, used when
+            there is no shared description for the parameter.
 
     Returns:
         Any: The annotated type carrying the description metadata.
     """
-    desc = _PARAM_DESCRIPTIONS.get(name, f"Value for {name}.")
+    desc = _PARAM_DESCRIPTIONS.get(name) or documented or f"Value for {name}."
 
     if suffix:
         desc = f"{desc} {suffix}"
@@ -214,9 +230,55 @@ def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
 
+# The most rows a note names one by one; more are counted instead.
+MAXIMUM_NAMED_ROWS = 10
+
 # The periods the toolkit resamples to, and the intervals of intraday data.
 PERIODS = ("daily", "weekly", "monthly", "quarterly", "yearly", "annual")
 INTRADAY_PERIODS = ("1min", "5min", "15min", "30min", "1hour")
+
+
+# The longest parameter description taken from a docstring.
+MAXIMUM_DOCUMENTED_CHARACTERS = 300
+
+
+def _docstring_arguments(docstring: str) -> dict[str, str]:
+    """The description of each argument in the Args section of a Google-style docstring.
+
+    A "Defaults to ..." sentence is left out: the schema carries the default, and where the
+    indicators of a tool disagree, the description lists each one.
+
+    Args:
+        docstring (str): The cleaned docstring.
+
+    Returns:
+        dict[str, str]: Per argument name, its description on one line.
+    """
+    section = re.search(
+        r"^Args:\s*\n(.*?)(?=^\S|\Z)", docstring, flags=re.MULTILINE | re.DOTALL
+    )
+    if section is None:
+        return {}
+
+    arguments: dict[str, str] = {}
+    name = ""
+    for line in section.group(1).splitlines():
+        match = re.match(r"^\s{2,8}(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$", line)
+        if match and (not name or len(line) - len(line.lstrip()) <= 8):  # noqa: PLR2004
+            name = match.group(1)
+            arguments[name] = match.group(2).strip()
+        elif name and line.strip():
+            arguments[name] += " " + line.strip()
+
+    cleaned: dict[str, str] = {}
+    for argument, raw in arguments.items():
+        text = re.sub(r"\s*Defaults to [^.]*(?:\.\d[^.]*)*\.?", "", raw).strip()
+        if len(text) > MAXIMUM_DOCUMENTED_CHARACTERS:
+            text = text[: MAXIMUM_DOCUMENTED_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
+        if text:
+            cleaned[argument] = text if text.endswith((".", "?", "...")) else f"{text}."
+
+    return cleaned
 
 
 def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
@@ -229,7 +291,8 @@ def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
         mcp (Any): The FastMCP server.
         tool_name (str): The tool whose input schema to trim.
     """
-    tool = mcp._tool_manager.get_tool(tool_name)
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
     if tool is None:
         return
 
@@ -414,8 +477,11 @@ def _simplify_annotation(ann: Any) -> Any:
     origin = typing.get_origin(ann)
     args = typing.get_args(ann)
 
-    # Bare list[T] → T
+    # Bare list[T] → T, except a list of objects (option strategy legs), which has no
+    # single-value form.
     if origin is list:
+        if args and typing.get_origin(args[0]) is dict:
+            return ann
         return args[0] if args else str
 
     # A bare opaque type outside a union falls back to str, as the union case does.
@@ -1178,6 +1244,13 @@ class ToolRegistry:
                             "Please check the symbol (e.g. ASML.AS for Amsterdam)."
                         )
                 # After the check for missing tickers, which needs every row of a column.
+                # A plain list, such as the expiration dates of an option chain.
+                if row_selection and isinstance(result, list | tuple):
+                    result = (
+                        list(result[:row_selection])
+                        if row_selection > 0
+                        else list(result[row_selection:])
+                    )
                 if row_selection and isinstance(result, pd.DataFrame | pd.Series):
                     # One row per ticker (a figure over the whole period) has no first or
                     # last rows to speak of; cutting it would only drop tickers.
@@ -1188,6 +1261,7 @@ class ToolRegistry:
                     if (
                         tickers
                         and row_labels <= {*tickers, "Benchmark"}
+                        and len(result.index) == len(row_labels)
                         and not (
                             isinstance(result, pd.DataFrame)
                             and has_period_columns(result)
@@ -1231,10 +1305,15 @@ class ToolRegistry:
                                 ]
                             ).size
                         ):
+                            names = [str(label) for label in empty_rows.unique()]
                             notes.append(
-                                f"{', '.join(map(str, empty_rows.unique()))} "
-                                f"{'has' if empty_rows.unique().size == 1 else 'have'} no "
-                                "value for the selected periods (e.g. not reported yet); "
+                                (
+                                    f"{', '.join(names)} "
+                                    f"{'has' if len(names) == 1 else 'have'} no "
+                                    if len(names) <= MAXIMUM_NAMED_ROWS
+                                    else f"{len(names):,} rows have no "
+                                )
+                                + "value for the selected periods (e.g. not reported yet); "
                                 f"limit={row_selection - 1 if row_selection < 0 else row_selection + 1} "
                                 "includes one more period."
                             )
@@ -1323,6 +1402,16 @@ class ToolRegistry:
             for p in common
         ]
 
+        # What the indicators' own docstrings say about each parameter, for the ones
+        # without a shared description.
+        documented: dict[str, str] = {}
+        for method_name in group_methods:
+            owner = owning_class(method_name)
+            for pname, text in _docstring_arguments(
+                inspect.getdoc(getattr(owner, method_name, None)) or ""
+            ).items():
+                documented.setdefault(pname, text)
+
         for p in extra_params:
             ann = (
                 _simplify_annotation(p.annotation)
@@ -1337,10 +1426,13 @@ class ToolRegistry:
                     p.name,
                     typing.Optional[ann],  # noqa: UP045
                     suffix=_describe_disputed_default(parameter_defaults[p.name]),
+                    documented=documented.get(p.name, ""),
                 )
             else:
                 default = p.default if p.default is not P.empty else ""
-                annotation = _annotate_with_description(p.name, ann)
+                annotation = _annotate_with_description(
+                    p.name, ann, documented=documented.get(p.name, "")
+                )
 
             sig_params.append(P(p.name, POS, default=default, annotation=annotation))
 

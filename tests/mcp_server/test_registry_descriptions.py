@@ -252,3 +252,47 @@ def test_the_last_periods_skip_one_most_rows_have_not_reported():
     caps.columns = pd.PeriodIndex(caps.columns, freq="Y")
 
     assert select_rows(caps, -1).columns.astype(str).tolist() == ["2025"]
+
+
+def test_every_parameter_has_a_real_description():
+    import asyncio
+    import importlib
+    import sys
+
+    # Imported afresh, as another test leaves the server modules built on a stub.
+    for module in (
+        "financetoolkit.mcp_server.mcp_controller",
+        "financetoolkit.mcp_server.registry_controller",
+        "financetoolkit.mcp_server.tools_model",
+    ):
+        sys.modules.pop(module, None)
+    mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
+
+    placeholders = [
+        f"{tool.name}.{name}"
+        for tool in asyncio.run(mcp_controller.mcp.list_tools())
+        for name, schema in tool.inputSchema.get("properties", {}).items()
+        if schema.get("description", "Value for").startswith("Value for")
+    ]
+
+    assert placeholders == []
+
+
+def test_docstring_arguments_are_read_without_their_defaults():
+    from financetoolkit.mcp_server.registry_controller import _docstring_arguments
+
+    docstring = """Calculate something.
+
+Args:
+    window (int, optional): The number of periods. Defaults to 14.
+    put_option (bool): Whether to use puts
+        instead of calls.
+
+Returns:
+    pd.Series: The result.
+"""
+
+    assert _docstring_arguments(docstring) == {
+        "window": "The number of periods.",
+        "put_option": "Whether to use puts instead of calls.",
+    }

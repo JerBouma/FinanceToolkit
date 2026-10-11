@@ -505,5 +505,11 @@ def format_result(
     if isinstance(dataset, int | float | str):
         return json.dumps(_inject({"value": _clean(dataset)}))
 
+    # A plain list of values, such as the expiration dates of an option chain.
+    if isinstance(dataset, list | tuple):
+        if not dataset:
+            return _no_data(reason)
+        return json.dumps(_inject([_clean(value) for value in dataset]), default=str)
+
     logger.warning("Unexpected result type: %s. Returning raw string.", type(dataset))
     return json.dumps(_inject({"value": str(dataset)}))

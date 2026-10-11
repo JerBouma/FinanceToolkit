@@ -452,7 +452,7 @@ tool_groups:
 
   - tool_name:    "options"
     display_name: "Options"
-    description:  "Option pricing and Greeks (Black-Scholes model, binomial tree, delta, gamma, theta, vega, rho, implied volatility). Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_stock_price_simulation returns the unique price levels per time step; pass show_unique_combinations=false for every simulated path. A wide strike_step_size keeps the binomial tree and Greeks compact."
+    description:  "Option pricing and Greeks (Black-Scholes model, binomial tree, delta, gamma, theta, vega, rho, implied volatility). Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_stock_price_simulation returns the unique price levels per time step; pass show_unique_combinations=false for every simulated path. get_binomial_model covers the strikes within 5% of the price unless strike_price_range= asks for more; strike_price_range also narrows the Greeks and get_option_chains. get_strategy_payoff takes legs as a list of objects, e.g. [{'strike_price': 340, 'position': 'long'}, {'strike_price': 360, 'position': 'short'}]."
     module_name:  "options"
     category:     "ticker"
 
@@ -844,6 +844,10 @@ method_defaults:
   # dependence. n_simulations= asks for more (larger answers are cut to the first rows).
   get_copula_simulation:
     n_simulations: 100
+  # Every strike has a node per up and down move; the strikes within 5% of the price
+  # (rather than 25%) keep the tree readable. strike_price_range= asks for more.
+  get_binomial_model:
+    strike_price_range: 0.05
   # Every simulated path is a column (2,048 by default); the unique price levels per
   # step are the same information in about 20 rows.
   get_stock_price_simulation:

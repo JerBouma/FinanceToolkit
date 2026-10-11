@@ -962,6 +962,8 @@ class Options:
             }
         )
         volatility_surface.index.names = ["Ticker", "Strike Price"]
+        # In expiration order, whatever order the tickers' expiries were collected in.
+        volatility_surface = volatility_surface[sorted(volatility_surface.columns)]
 
         return apply_rounding(
             volatility_surface, rounding if rounding is not None else self._rounding

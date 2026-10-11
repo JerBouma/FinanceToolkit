@@ -11,6 +11,7 @@ from __future__ import annotations
 import difflib
 import importlib
 import inspect
+import re
 import time
 import types
 import typing
@@ -35,7 +36,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
     redact,
     summarize_reasons,
 )
-from financetoolkit.mcp_server.formatting_model import format_result
+from financetoolkit.mcp_server.formatting_model import format_result, select_rows
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
@@ -134,8 +135,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
     "limit": (
         "The rows to return, like head and tail: 5 for the first five, -5 for the last five "
-        "(the most recent of a time series). For ETF holdings the largest (or, negative, the "
-        "smallest) by weight, and for a list (e.g. news or a screener) its length."
+        "(the most recent of a time series). A table with its periods as columns (financial "
+        "statements, ratios) keeps its first or last periods instead. For ETF holdings the "
+        "largest (or, negative, the smallest) by weight, and for a list (e.g. news or a "
+        "screener) its length."
     ),
     "gmdb_forecasts": (
         "Set to true to include the years the Global Macro Database projects (IMF World "
@@ -199,6 +202,56 @@ def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
         desc = f"{desc} {suffix}"
 
     return Annotated[ann, PydanticField(description=desc)]  # type: ignore[valid-type]
+
+
+# The length of an indicator's summary in the search results.
+MAXIMUM_SUMMARY_CHARACTERS = 200
+
+
+def _summarize_docstring(docstring: str) -> dict[str, str]:
+    """The first sentence of a docstring and its "Also known as" aliases.
+
+    Args:
+        docstring (str): The cleaned docstring of an indicator.
+
+    Returns:
+        dict[str, str]: The ``summary`` (at most 200 characters) and the ``aliases``.
+    """
+    paragraph = " ".join(docstring.split("\n\n", maxsplit=1)[0].split())
+    sentence = re.split(r"(?<=[a-z0-9)])\. ", paragraph)[0].rstrip(".")
+    summary = (
+        sentence
+        if len(sentence) <= MAXIMUM_SUMMARY_CHARACTERS
+        else sentence[: MAXIMUM_SUMMARY_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
+    )
+    aliases = re.search(
+        r"Also known as:\s*(.+?)(?:\.\s*$|\.\n|$)", docstring, re.MULTILINE
+    )
+
+    return {"summary": summary, "aliases": aliases.group(1).strip() if aliases else ""}
+
+
+def _mentions_benchmark(result: object) -> bool:
+    """Whether a result has a 'Benchmark' row or column, as a benchmark-based metric does.
+
+    Args:
+        result (object): The value returned by the indicator.
+
+    Returns:
+        bool: True when one of the index or column labels is 'Benchmark'.
+    """
+    if not isinstance(result, pd.DataFrame | pd.Series):
+        return False
+
+    axes = [result.index] + (
+        [result.columns] if isinstance(result, pd.DataFrame) else []
+    )
+
+    return any(
+        "Benchmark" in axis.get_level_values(level).astype(str)
+        for axis in axes
+        for level in range(axis.nlevels)
+    )
 
 
 def _describe_disputed_default(per_method: dict[str, Any]) -> str:
@@ -433,6 +486,7 @@ class ToolRegistry:
         self._provider = provider
         self._inspector = inspector
         self._tool_index: dict[str, list[dict[str, str]]] = {}
+        self._indicator_index: list[dict[str, str]] = []
         self._module_class_map: dict[str, type] = self._resolve_class_map(
             module_class_map
         )
@@ -495,6 +549,15 @@ class ToolRegistry:
                 registered under that category.
         """
         return self._tool_index
+
+    def get_indicator_index(self) -> list[dict[str, str]]:
+        """Return every registered indicator with its tool, summary and aliases.
+
+        Returns:
+            list[dict[str, str]]: One entry per indicator with the keys ``tool``,
+                ``indicator``, ``summary`` and ``aliases``.
+        """
+        return self._indicator_index
 
     def build_router_group_specs(self) -> list[RouterGroupSpec]:
         """Build the list of ``RouterGroupSpec`` objects from the config.
@@ -628,6 +691,17 @@ class ToolRegistry:
             ):
                 candidate = f"get_{candidate}"
             if candidate not in method_param_names:
+                elsewhere = [
+                    entry["tool"]
+                    for entry in self._indicator_index
+                    if entry["indicator"] == candidate
+                ]
+                if elsewhere:
+                    return (
+                        f"`{candidate}` is not part of `{tool_name}`; it is an indicator of "
+                        + " and ".join(f"`{tool}`" for tool in elsewhere)
+                        + f". Please call that tool with `indicator='{candidate}'`."
+                    )
                 close = difflib.get_close_matches(
                     candidate, all_indicators, n=3, cutoff=0.6
                 )
@@ -637,7 +711,10 @@ class ToolRegistry:
                 return (
                     f"Unknown indicator `{raw_indicator}` for `{tool_name}`."
                     f"{suggestion}\n"
-                    "Available: " + ", ".join(all_indicators)
+                    "Available: "
+                    + ", ".join(all_indicators)
+                    + ". Use `search_metrics` "
+                    "to find an indicator by what it measures."
                 )
             method_name = candidate
 
@@ -789,6 +866,22 @@ class ToolRegistry:
                 ):
                     method_kwargs[pname] = value
 
+            # An indicator that needs inputs the caller left out is answered with which ones,
+            # rather than with the TypeError calling it would raise.
+            missing_inputs = [
+                pname
+                for pname, per_method in parameter_defaults.items()
+                if per_method.get(method_name, None) is inspect.Parameter.empty
+                and method_kwargs.get(pname) in (None, "")
+            ]
+            if missing_inputs:
+                listed = ", ".join(f"`{pname}`" for pname in missing_inputs)
+                return (
+                    f"`{tool_name}` (`{method_name}`) requires {listed}. Please provide "
+                    f"{'it' if len(missing_inputs) == 1 else 'them'}; the tool's parameter "
+                    "descriptions explain each one."
+                )
+
             # A transcript is of use only in full, and a full one is about as large as an
             # answer may be, so these return one item of one ticker and are never cut.
             full_text = method_name in self._full_text_methods
@@ -882,11 +975,7 @@ class ToolRegistry:
                 if show_columns is not None:
                     result = _filter_columns(result, show_columns)
                 if row_selection and isinstance(result, pd.DataFrame | pd.Series):
-                    result = (
-                        result.head(row_selection)
-                        if row_selection > 0
-                        else result.tail(-row_selection)
-                    )
+                    result = select_rows(result, row_selection)
                 notes: list[str] = []
                 if dispatch_category in ("ticker", "toolkit") and tickers:
                     notes = provider.get_transformation_notes(
@@ -901,6 +990,10 @@ class ToolRegistry:
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
                 notes = list(notes) + missing_data_notes(call_messages)
+                # A note on how the benchmark was chosen only confuses an answer that has
+                # no benchmark in it, such as an ETF's holdings.
+                if not _mentions_benchmark(result):
+                    notes = [note for note in notes if "the benchmark" not in note]
                 formatted = format_result(
                     result,
                     notes=notes or None,
@@ -932,8 +1025,13 @@ class ToolRegistry:
         P = inspect.Parameter
         POS = P.POSITIONAL_OR_KEYWORD
         indicator_choices = group_methods
+        # The choices are advertised as an enum, but any text is accepted: an indicator of
+        # another tool (or a near miss) is then answered with where it is, rather than with
+        # a validation error that only lists this tool's indicators.
         indicator_ann = (
-            typing.Literal[tuple(indicator_choices)]  # ty: ignore[invalid-type-form]
+            Annotated[
+                str, PydanticField(json_schema_extra={"enum": list(indicator_choices)})
+            ]
             if indicator_choices
             else str
         )
@@ -1079,6 +1177,20 @@ class ToolRegistry:
         if not group_methods:
             logger.warning(f"No methods found for group '{spec.tool_name}' — skipping")
             return False
+
+        # Each indicator by name, the first sentence of its docstring and its aliases, so
+        # search_metrics can point at the indicator itself rather than only its tool.
+        for method_name in group_methods:
+            owner = (method_to_cls or {}).get(method_name) or cls
+            self._indicator_index.append(
+                {
+                    "tool": spec.tool_name,
+                    "indicator": method_name,
+                    **_summarize_docstring(
+                        inspect.getdoc(getattr(owner, method_name, None)) or ""
+                    ),
+                }
+            )
 
         method_list = ", ".join(group_methods)
         if spec.description:

@@ -198,3 +198,40 @@ def test_a_transcript_is_one_full_call_of_one_ticker(monkeypatch):
     assert "fiscal_period" in call(tickers="AAPL", latest=False)
     assert "e.g. '2025Q4'" in call(tickers="AAPL", fiscal_period="last quarter")
     assert len(calls) == 1
+
+
+def test_missing_required_inputs_are_named(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "models", {"indicator": "get_intrinsic_valuation", "tickers": "MSFT"}
+        )
+    )[0][0].text
+
+    assert "requires `growth_rate`" in text
+    assert captured == []
+
+
+def test_an_indicator_of_another_tool_is_pointed_there(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "overlap", {"indicator": "get_bollinger_bands", "tickers": "AAPL"}
+        )
+    )[0][0].text
+
+    assert "indicator of `volatility`" in text
+    assert captured == []
+
+
+def test_the_benchmark_note_is_left_out_without_a_benchmark(monkeypatch):
+    def holdings(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame({"Asset": ["NVDA"], "Weight": [0.08]})
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", holdings)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data", {"indicator": "get_etf_holdings", "tickers": "SPY"}
+        )
+    )[0][0].text
+
+    assert "benchmark" not in text.lower()

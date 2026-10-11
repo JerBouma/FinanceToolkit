@@ -4595,7 +4595,13 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
         period = "yearly" if period.lower() == "annual" else period.lower()
 
         if period in ("daily", "weekly"):
@@ -5106,7 +5112,13 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if gmdb_source:
 
@@ -5246,7 +5258,13 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if period.lower() in ("daily", "weekly"):
             long_term_interest_rate = resample_to_period(
@@ -5645,7 +5663,13 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if gmdb_source:
 
@@ -5907,8 +5931,9 @@ class Economics:
 
         Both sources return the rate as a decimal fraction of the labour force (0.036 for
         3.6%), so the two are directly interchangeable. Only the OECD source supports
-        monthly and quarterly frequency; the GMDB is annual only, so the period argument
-        has no effect when gmdb_source is True.
+        monthly and quarterly frequency; the GMDB is annual only, so a monthly or quarterly
+        request uses the OECD unless gmdb_source=True is passed, in which case the period
+        argument has no effect.
 
         With period="monthly" (unless gmdb_source=True is passed explicitly) the euro area
         and the countries Eurostat covers come from Eurostat and the United Kingdom from
@@ -5983,7 +6008,13 @@ class Economics:
         # The GMDB is annual, so a monthly request goes to the monthly sources unless the
         # GMDB is asked for explicitly.
         monthly = period.lower() == "monthly" and gmdb_source is not True
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if monthly:
             # Eurostat and the ONS publish weeks before the OECD republishes their figures.

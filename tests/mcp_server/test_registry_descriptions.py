@@ -162,3 +162,40 @@ def test_columns_of_three_levels_are_joined_into_one_name():
 
     assert record["AAPL | MSFT | AAPL"] == 0.01  # noqa: PLR2004
     assert record["AAPL | MSFT | MSFT"] == 0.02  # noqa: PLR2004
+
+
+def test_limit_and_the_cut_keep_the_latest_periods_of_a_sideways_table():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result, select_rows
+
+    ratios = pd.DataFrame(
+        [list(range(30))],
+        index=["AAPL"],
+        columns=pd.period_range("1997", periods=30, freq="Y"),
+    )
+
+    assert select_rows(ratios, -2).columns.astype(str).tolist() == ["2025", "2026"]
+    assert select_rows(ratios, 1).columns.astype(str).tolist() == ["1997"]
+
+    answer = json.loads(format_result(ratios, max_characters=60))
+
+    assert "2026" in answer["data"][0] and "1997" not in answer["data"][0]
+    assert "last" in answer["_notes"][0] and "periods" in answer["_notes"][0]
+
+
+def test_floats_lose_their_binary_artefacts_and_infinity_becomes_null():
+    import json
+
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import format_result
+
+    weights = pd.DataFrame({"Weight": [0.08317952249999999, float("inf")]})
+
+    assert json.loads(format_result(weights)) == [
+        {"index": 0, "Weight": 0.0831795225},
+        {"index": 1, "Weight": None},
+    ]

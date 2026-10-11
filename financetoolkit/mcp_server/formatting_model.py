@@ -35,11 +35,15 @@ def _clean(val: Any) -> int | float | str | bool | None:
         return val.strftime("%Y-%m-%d")
     if isinstance(val, np.integer):
         return int(val)
-    if isinstance(val, np.floating):
-        f = float(val)
-        return None if math.isnan(f) else f
     if isinstance(val, np.bool_):
         return bool(val)
+    if isinstance(val, float | np.floating):
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        # Twelve significant digits drop binary artefacts such as 0.08317952249999999
+        # (a weight divided by 100) without touching any meaningful precision.
+        return float(f"{f:.12g}")
     return val
 
 
@@ -207,6 +211,30 @@ def _is_time_index(index: pd.Index) -> bool:
     return isinstance(first_level, pd.DatetimeIndex | pd.PeriodIndex)
 
 
+def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd.Series:
+    """
+    The first (positive limit) or last (negative limit) rows, like head and tail. A table
+    with its periods as columns, such as a ratio per ticker and year, is a time series read
+    sideways, so its first or last periods are selected instead.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The result.
+        limit (int): The number of rows or periods, negative for the last ones.
+
+    Returns:
+        pd.DataFrame | pd.Series: The selection.
+    """
+    if isinstance(data, pd.DataFrame) and _has_period_columns(data):
+        return data.iloc[:, :limit] if limit > 0 else data.iloc[:, limit:]
+
+    return data.head(limit) if limit > 0 else data.tail(-limit)
+
+
+def _has_period_columns(dataframe: pd.DataFrame) -> bool:
+    """Whether the periods are the columns (and not the rows), as with ratios."""
+    return not _is_time_index(dataframe.index) and _is_time_index(dataframe.columns)
+
+
 def _fit_to_size(
     dataframe: pd.DataFrame, max_characters: int
 ) -> tuple[list[dict], str | None]:
@@ -232,6 +260,8 @@ def _fit_to_size(
     kept_rows, kept_columns = rows, columns
     text_characters: int | None = None
     from_end = _is_time_index(dataframe.index)
+    # Periods as columns (a ratio per ticker and year) keep their most recent ones.
+    latest_columns = _has_period_columns(dataframe)
 
     def longest_text(part: pd.DataFrame) -> int:
         texts = part.select_dtypes(include=["object", "string"])
@@ -264,7 +294,11 @@ def _fit_to_size(
             kept_columns = max(1, kept_columns // 2)
 
         part = dataframe.iloc[-kept_rows:] if from_end else dataframe.iloc[:kept_rows]
-        part = part.iloc[:, :kept_columns]
+        part = (
+            part.iloc[:, -kept_columns:]
+            if latest_columns
+            else part.iloc[:, :kept_columns]
+        )
 
         if text_characters is not None:
             part = part.map(
@@ -288,7 +322,10 @@ def _fit_to_size(
         shown += f", texts shortened to their first {text_characters:,} characters"
 
     if kept_columns < columns:
-        shown += f" and the first {kept_columns:,} of {columns:,} columns"
+        shown += (
+            f" and the {'last' if latest_columns else 'first'} {kept_columns:,} of "
+            f"{columns:,} {'periods' if latest_columns else 'columns'}"
+        )
 
     return (
         records,

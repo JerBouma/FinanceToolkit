@@ -36,6 +36,18 @@ if TYPE_CHECKING:
 logger = get_logger()
 
 
+def join_initials(text: str) -> str:
+    """Writes abbreviations such as P/E and P/B as one word (PE, PB) for the search."""
+    return re.sub(r"\b([A-Za-z])/([A-Za-z])\b", r"\1\2", text)
+
+
+# Shorter search words must match a whole word, as fuzzy matching makes them match anything.
+FUZZY_MINIMUM_LENGTH = 4
+
+# The share of the search words an indicator has to match to be listed.
+MINIMUM_INDICATOR_SCORE = 0.6
+
+
 class UtilityToolRegistry:
     """
     Registers the built-in utility and discovery tools on a FastMCP instance.
@@ -197,6 +209,86 @@ class UtilityToolRegistry:
         result = "\n".join(lines)
         return result
 
+    def _search_indicators(self, query_tokens: list[str]) -> list[dict[str, str]]:
+        """
+        Ranks the indicators by how well their name, aliases and summary match the query.
+
+        A word of the name or an alias counts fully and a word of the summary half. A close
+        spelling (four letters or more) only counts for a word that matches nothing exactly,
+        so "sharpe" does not also find "share" while "equitty" still finds "equity". The whole
+        query as the name or an alias ranks first; short tokens such as "pe" must match a
+        whole word.
+
+        Args:
+            query_tokens (list[str]): The lowercase search words, without stop words.
+
+        Returns:
+            list[dict[str, str]]: At most 15 indicators, the best match first.
+        """
+
+        def words(text: str) -> list[str]:
+            return [
+                word
+                for word in re.findall(r"[a-z0-9]+", join_initials(text).lower())
+                if word not in self._search_stop_words
+            ]
+
+        entries = []
+        for entry in self._registry.get_indicator_index():
+            name = words(entry["indicator"].removeprefix("get_").replace("_", " "))
+            aliases = [words(alias) for alias in entry["aliases"].split(",")]
+            title_words = set(name).union(*aliases)
+            entries.append(
+                (entry, name, aliases, title_words, set(words(entry["summary"])))
+            )
+
+        def exact(token: str, vocabulary: set[str]) -> bool:
+            return token in vocabulary or (
+                len(token) >= FUZZY_MINIMUM_LENGTH
+                and any(word.startswith(token) for word in vocabulary)
+            )
+
+        known = {
+            token
+            for token in query_tokens
+            for _, _, _, title_words, summary_words in entries
+            if exact(token, title_words) or token in summary_words
+        }
+
+        scored: list[tuple[float, int, dict[str, str]]] = []
+
+        for position, (entry, name, aliases, title_words, summary_words) in enumerate(
+            entries
+        ):
+            score = 0.0
+
+            for token in query_tokens:
+                if exact(token, title_words):
+                    score += 1.0
+                elif token in summary_words:
+                    score += 0.5
+                elif token in known or len(token) < FUZZY_MINIMUM_LENGTH:
+                    continue
+                elif difflib.get_close_matches(token, title_words, n=1, cutoff=0.8):
+                    score += 0.7
+                elif difflib.get_close_matches(token, summary_words, n=1, cutoff=0.8):
+                    score += 0.3
+
+            score /= len(query_tokens)
+
+            # The query as the indicator's name, or as one of its aliases.
+            if query_tokens == name:
+                score += 1.5
+            elif query_tokens in aliases:
+                score += 1.0
+
+            if score >= MINIMUM_INDICATOR_SCORE:
+                scored.append((score, position, entry))
+
+        scored.sort(key=lambda item: (-item[0], item[1]))
+
+        return [entry for _, _, entry in scored[:15]]
+
     def search_metrics(
         self,
         query: Annotated[
@@ -225,7 +317,7 @@ class UtilityToolRegistry:
         index = self._registry.get_tool_index()
         query_tokens = [
             w.lower()
-            for w in re.findall(r"\b[a-zA-Z]{2,}\b", query)
+            for w in re.findall(r"\b[a-zA-Z]{2,}\b", join_initials(query))
             if w.lower() not in self._search_stop_words
         ]
         if not query_tokens:
@@ -233,6 +325,30 @@ class UtilityToolRegistry:
                 f"No meaningful search terms in '{query}'. "
                 "Try a more specific keyword."
             )
+
+        # Indicators first: an agent asking for "free cash flow yield" needs the indicator
+        # and its tool, not every tool whose description mentions cash flow.
+        indicator_hits = self._search_indicators(query_tokens)
+
+        if indicator_hits:
+            lines = [
+                f"### Search results for '{query}' — {len(indicator_hits)} indicators\n",
+                "| Tool | Indicator | Description |",
+                "| --- | --- | --- |",
+            ]
+            for entry in indicator_hits:
+                aliases = (
+                    f" Also known as: {entry['aliases']}." if entry["aliases"] else ""
+                )
+                lines.append(
+                    f"| `{entry['tool']}` | `{entry['indicator']}` | {entry['summary']}.{aliases} |"
+                )
+            first = indicator_hits[0]
+            lines.append(
+                f"\nCall the tool with the indicator, e.g. `{first['tool']}` with "
+                f"`indicator='{first['indicator']}'`; the tool's description lists its parameters."
+            )
+            return "\n".join(lines)
 
         results: list[tuple[float, dict]] = []
         for cat, tools in index.items():

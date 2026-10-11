@@ -1602,7 +1602,11 @@ class Discovery:
         return splits_calendar
 
     def get_sector_performance(
-        self, date: str | None = None, sector: str | None = None
+        self,
+        date: str | None = None,
+        sector: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns sector performance — the average price change per sector. Provide
@@ -1614,6 +1618,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+            start_date (str, optional): The start of the history of one sector. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with sector performance, indexed by Sector
@@ -1651,13 +1658,19 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             sector=sector,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
         return sector_performance
 
     def get_industry_performance(
-        self, date: str | None = None, industry: str | None = None
+        self,
+        date: str | None = None,
+        industry: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns industry performance — the average price change per industry. Provide
@@ -1669,6 +1682,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+            start_date (str, optional): The start of the history of one industry. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with industry performance, indexed by Industry
@@ -1706,13 +1722,19 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             industry=industry,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
         return industry_performance
 
     def get_sector_pe(
-        self, date: str | None = None, sector: str | None = None
+        self,
+        date: str | None = None,
+        sector: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns sector price-to-earnings (P/E) ratios. Provide exactly one of `date`
@@ -1724,6 +1746,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+            start_date (str, optional): The start of the history of one sector. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with sector P/E ratios, indexed by Sector
@@ -1761,13 +1786,19 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             sector=sector,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
         return sector_pe
 
     def get_industry_pe(
-        self, date: str | None = None, industry: str | None = None
+        self,
+        date: str | None = None,
+        industry: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns industry price-to-earnings (P/E) ratios. Provide exactly one of
@@ -1779,6 +1810,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+            start_date (str, optional): The start of the history of one industry. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with industry P/E ratios, indexed by Industry
@@ -1816,6 +1850,8 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             industry=industry,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 

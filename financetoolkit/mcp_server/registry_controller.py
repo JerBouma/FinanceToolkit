@@ -68,8 +68,8 @@ NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
 
 _PARAM_DESCRIPTIONS: dict[str, str] = {
     "indicator": (
-        "Name of the specific metric to calculate, e.g. 'get_asset_turnover_ratio'. "
-        "Required — omitting it returns the list of available indicators."
+        "Name of the specific metric to calculate, one of the listed values. Required — "
+        "search_metrics finds the indicator (and its tool) for a metric by name."
     ),
     "tickers": "Comma-separated ticker symbols, e.g. 'AAPL,MSFT,GOOGL'.",
     "countries": (
@@ -210,6 +210,25 @@ def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
 
 # The length of an indicator's summary in the search results.
 MAXIMUM_SUMMARY_CHARACTERS = 200
+
+
+def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
+    """Drop the titles pydantic gives every parameter ("Start Date" for start_date).
+
+    They repeat the parameter name and add about 14,000 characters to the tool listing
+    every client reads before its first call.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose input schema to trim.
+    """
+    tool = mcp._tool_manager.get_tool(tool_name)
+    if tool is None:
+        return
+
+    tool.parameters.pop("title", None)
+    for schema in tool.parameters.get("properties", {}).values():
+        schema.pop("title", None)
 
 
 def _summarize_docstring(docstring: str) -> dict[str, str]:
@@ -1385,12 +1404,10 @@ class ToolRegistry:
             )
 
         method_list = ", ".join(group_methods)
-        if spec.description:
-            description = f"{spec.description}\n\nAvailable indicators: {method_list}."
-        else:
-            description = (
-                f"{spec.display_name}. Set `indicator` to one of: {method_list}."
-            )
+        # The indicators are the enum of the indicator parameter, so the tool description
+        # does not repeat them; the category listing (search_by_category) does show them.
+        description = spec.description or f"{spec.display_name}."
+        index_description = f"{description}\n\nAvailable indicators: {method_list}."
 
         try:
             fn = self._build_router_wrapper(
@@ -1422,8 +1439,9 @@ class ToolRegistry:
             if index_cat not in self._tool_index:
                 self._tool_index[index_cat] = []
             self._tool_index[index_cat].append(
-                {"tool": spec.tool_name, "description": description}
+                {"tool": spec.tool_name, "description": index_description}
             )
+            _strip_schema_titles(self._mcp, spec.tool_name)
             return True
         except Exception as exc:
             logger.warning(f"Failed to register group '{spec.tool_name}': {exc}")

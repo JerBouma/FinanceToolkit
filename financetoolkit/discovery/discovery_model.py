@@ -1615,11 +1615,32 @@ def get_stock_splits_calendar(
     return splits_calendar
 
 
+def _history_range(start_date: str | None, end_date: str | None) -> str:
+    """
+    The from and to parameters of a sector or industry history: without them the
+    endpoints answer with February 2024 only, so a year up to today is the default.
+
+    Args:
+        start_date (str | None): The start date, a year ago when None.
+        end_date (str | None): The end date, today when None.
+
+    Returns:
+        str: The query string part, e.g. "&from=2025-10-11&to=2026-10-11".
+    """
+    today = pd.Timestamp.today().normalize()
+    start = pd.Timestamp(start_date) if start_date else today - pd.DateOffset(years=1)
+    end = pd.Timestamp(end_date) if end_date else today
+
+    return f"&from={start:%Y-%m-%d}&to={end:%Y-%m-%d}"
+
+
 def get_sector_performance(
     api_key: str,
     date: str | None = None,
     sector: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get sector performance. Provide exactly one of `date` (a snapshot across all
@@ -1630,6 +1651,8 @@ def get_sector_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of sector performance, indexed by Sector (snapshot)
@@ -1646,7 +1669,7 @@ def get_sector_performance(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     sector_performance = get_cached_financial_data(
@@ -1679,6 +1702,8 @@ def get_industry_performance(
     date: str | None = None,
     industry: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get industry performance. Provide exactly one of `date` (a snapshot across all
@@ -1690,6 +1715,8 @@ def get_industry_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of industry performance, indexed by Industry (snapshot)
@@ -1706,7 +1733,7 @@ def get_industry_performance(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-performance"
-            f"?industry={industry}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     industry_performance = get_cached_financial_data(
@@ -1739,6 +1766,8 @@ def get_sector_pe(
     date: str | None = None,
     sector: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1750,6 +1779,8 @@ def get_sector_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of sector P/E ratios, indexed by Sector (snapshot)
@@ -1766,7 +1797,7 @@ def get_sector_pe(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-pe"
-            f"?sector={sector}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     sector_pe = get_cached_financial_data(url=url, user_subscription=user_subscription)
@@ -1797,6 +1828,8 @@ def get_industry_pe(
     date: str | None = None,
     industry: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1808,6 +1841,8 @@ def get_industry_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of industry P/E ratios, indexed by Industry (snapshot)
@@ -1824,7 +1859,7 @@ def get_industry_pe(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-pe"
-            f"?industry={industry}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     industry_pe = get_cached_financial_data(

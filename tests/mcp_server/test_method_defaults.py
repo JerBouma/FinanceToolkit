@@ -164,3 +164,37 @@ def test_a_method_default_replaces_the_indicators_own_default(captured):
     # could never apply; an explicit value still wins.
     assert simulations() == 100  # noqa: PLR2004
     assert simulations(n_simulations=5000) == 5000  # noqa: PLR2004
+
+
+def test_a_transcript_is_one_full_call_of_one_ticker(monkeypatch):
+    calls = []
+
+    def transcript(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        calls.append(kwargs)
+        return pd.DataFrame(
+            {"Date": ["2025-10-30"], "Transcript": ["word " * 30_000]},
+            index=pd.Index(["2025Q4"], name="Fiscal Period"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", transcript)
+
+    def call(**arguments):
+        result = asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "market_data",
+                {"indicator": "get_earnings_call_transcripts", **arguments},
+            )
+        )
+        return result[0][0].text
+
+    # 150,000 characters, well over the response size, and still returned in full.
+    text = call(tickers="AAPL", fiscal_period="2025Q4")
+
+    assert len(text) > 150_000  # noqa: PLR2004
+    assert "was cut" not in text
+    assert calls[-1]["fiscal_period"] == "2025Q4"
+
+    assert "one ticker at a time" in call(tickers="AAPL,MSFT")
+    assert "fiscal_period" in call(tickers="AAPL", latest=False)
+    assert "e.g. '2025Q4'" in call(tickers="AAPL", fiscal_period="last quarter")
+    assert len(calls) == 1

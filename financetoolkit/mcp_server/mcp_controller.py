@@ -245,6 +245,7 @@ def _build_mcp_app() -> FastMCP:
         max_response_characters=_resolve_max_response_characters(
             configuration.get("responses", {}).get("max_characters")
         ),
+        full_text_methods=configuration.get("full_text_methods", []),
     )
 
     utility_registry = UtilityToolRegistry(

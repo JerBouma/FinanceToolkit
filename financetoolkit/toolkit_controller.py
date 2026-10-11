@@ -380,7 +380,9 @@ class Toolkit:
             self._earnings_call_transcripts: pd.DataFrame = pd.DataFrame()
             # Which selection the stored transcripts hold, so switching between the latest
             # transcript and the full range does not serve the other one.
-            self._earnings_call_transcripts_latest: bool | None = None
+            self._earnings_call_transcripts_selection: (
+                tuple[bool, str | None] | None
+            ) = None
 
             # Resolved per ticker on request, so a different list reuses what it shares.
 
@@ -4039,7 +4041,10 @@ class Toolkit:
         return self._etf_sector_weightings
 
     def get_earnings_call_transcripts(
-        self, latest: bool = True, overwrite: bool = False
+        self,
+        latest: bool = True,
+        fiscal_period: str | None = None,
+        overwrite: bool = False,
     ):
         """
         Obtain the earnings call transcripts of each company: the full text of the call,
@@ -4050,8 +4055,10 @@ class Toolkit:
 
         A transcript is long (often 40,000 to 60,000 characters) and every quarter is a
         separate request. By default only the most recent transcript is retrieved. With
+        fiscal_period (e.g. "2025Q4") the call of that fiscal quarter is retrieved, and with
         latest=False every transcript between this Toolkit instance's start_date and
-        end_date is retrieved instead. Each transcript is cached on its own, since a
+        end_date. A fiscal period without a transcript is logged together with the most
+        recent periods that do have one. Each transcript is cached on its own, since a
         published transcript does not change, so a quarter is only retrieved once.
 
         Also known as: earnings call, conference call transcript, earnings transcript.
@@ -4059,6 +4066,10 @@ class Toolkit:
         Args:
             latest (bool): Whether to only retrieve the most recent transcript. When False,
                 every transcript between the start_date and end_date is retrieved. Defaults to True.
+            fiscal_period (str | None): The fiscal quarter of the call to retrieve, written as
+                "2025Q4" (or "2025-Q4", "Q4 2025"). It is the company's own fiscal year, which
+                differs from the calendar year for e.g. Apple and Microsoft. Takes precedence
+                over latest. Defaults to None.
             overwrite (bool): Defines whether to overwrite the existing data.
 
         Returns:
@@ -4095,7 +4106,7 @@ class Toolkit:
         if (
             self._earnings_call_transcripts.empty
             or overwrite
-            or self._earnings_call_transcripts_latest != latest
+            or self._earnings_call_transcripts_selection != (latest, fiscal_period)
         ):
             self._earnings_call_transcripts, self._invalid_tickers = (
                 self._collect_per_ticker(
@@ -4104,6 +4115,7 @@ class Toolkit:
                     ticker_axis=ticker_model.TICKER_ON_INDEX,
                     parameters={
                         "latest": latest,
+                        "fiscal_period": fiscal_period,
                         "start_date": self._start_date,
                         "end_date": self._end_date,
                     },
@@ -4114,10 +4126,11 @@ class Toolkit:
                         end_date=self._end_date,
                         latest=latest,
                         user_subscription=self._fmp_plan,
+                        fiscal_period=fiscal_period,
                     ),
                 )
             )
-            self._earnings_call_transcripts_latest = latest
+            self._earnings_call_transcripts_selection = (latest, fiscal_period)
 
         self._remove_invalid()
 

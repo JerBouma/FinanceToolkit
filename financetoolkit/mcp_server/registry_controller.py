@@ -22,6 +22,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
+from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
@@ -126,6 +127,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
     "maturity_years": (
         "Comma-separated maturities in years to return, e.g. '1,2,5,10,20,30'."
+    ),
+    "fiscal_period": (
+        "The company's fiscal quarter, e.g. '2025Q4' (its own fiscal year, which differs from "
+        "the calendar year for e.g. Apple and Microsoft). Leave unset for the most recent."
     ),
     "limit": (
         "The rows to return, like head and tail: 5 for the first five, -5 for the last five "
@@ -386,6 +391,7 @@ class ToolRegistry:
         countries_optional: list[str] | None = None,
         analytics: UsageAnalytics | None = None,
         max_response_characters: int | None = None,
+        full_text_methods: list[str] | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -419,6 +425,9 @@ class ToolRegistry:
                 server's usage analytics are on. Defaults to None.
             max_response_characters (int | None): The size a response may have; a larger
                 one is cut with a note on how to narrow it. Defaults to None (no limit).
+            full_text_methods (list[str] | None): Methods whose answer is only of use in full,
+                such as an earnings call transcript: they take one ticker, return one item and
+                are never cut. Defaults to None.
         """
         self._mcp = mcp
         self._provider = provider
@@ -438,6 +447,7 @@ class ToolRegistry:
         self._countries_optional: frozenset[str] = frozenset(countries_optional or [])
         self._analytics = analytics
         self._max_response_characters = max_response_characters
+        self._full_text_methods: frozenset[str] = frozenset(full_text_methods or [])
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -779,6 +789,29 @@ class ToolRegistry:
                 ):
                     method_kwargs[pname] = value
 
+            # A transcript is of use only in full, and a full one is about as large as an
+            # answer may be, so these return one item of one ticker and are never cut.
+            full_text = method_name in self._full_text_methods
+            if full_text:
+                if tickers and len(tickers) > 1:
+                    return (
+                        f"`{tool_name}` (`{method_name}`) returns the full text for one ticker "
+                        f"at a time. Please call it once per ticker, e.g. `tickers='{tickers[0]}'`."
+                    )
+                if method_kwargs.get("latest") is False:
+                    return (
+                        f"`{tool_name}` (`{method_name}`) returns one full text at a time. "
+                        "Please pick one with `fiscal_period`, e.g. `fiscal_period='2025Q4'`; "
+                        "without it, the most recent one is returned."
+                    )
+                if method_kwargs.get("fiscal_period") not in (None, ""):
+                    try:
+                        parse_fiscal_period(method_kwargs["fiscal_period"])
+                    except ValueError as exc:
+                        return (
+                            f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
+                        )
+
             if kwargs:
                 logger.warning(
                     "Unknown parameter(s) passed to %s (%s) and ignored: %s",
@@ -872,7 +905,7 @@ class ToolRegistry:
                     result,
                     notes=notes or None,
                     reason=summarize_reasons(call_messages),
-                    max_characters=max_response_characters,
+                    max_characters=None if full_text else max_response_characters,
                 )
                 return formatted
             except (ValueError, KeyError) as exc:

@@ -2882,6 +2882,31 @@ def get_etf_sector_weightings(
     )
 
 
+def parse_fiscal_period(fiscal_period: str) -> tuple[int, int]:
+    """
+    Reads a fiscal period such as "2025Q4", "2025-Q4" or "Q4 2025" as a year and quarter.
+
+    Args:
+        fiscal_period (str): The fiscal period.
+
+    Returns:
+        tuple[int, int]: The fiscal year and the quarter (1 to 4).
+
+    Raises:
+        ValueError: When the period holds no four-digit year and quarter.
+    """
+    text = str(fiscal_period).upper()
+    year = re.search(r"(?<!\d)(\d{4})(?!\d)", text)
+    quarter = re.search(r"Q([1-4])(?!\d)", text)
+
+    if year is None or quarter is None:
+        raise ValueError(
+            f"Please write the fiscal period as a year and quarter, e.g. '2025Q4', not '{fiscal_period}'."
+        )
+
+    return int(year.group(1)), int(quarter.group(1))
+
+
 def get_earnings_call_transcripts(
     tickers: list[str] | str,
     api_key: str,
@@ -2889,6 +2914,7 @@ def get_earnings_call_transcripts(
     end_date: str | None = None,
     latest: bool = True,
     user_subscription: str = "Free",
+    fiscal_period: str | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Retrieves the earnings call transcripts of each ticker.
@@ -2896,9 +2922,10 @@ def get_earnings_call_transcripts(
     The endpoint returns one transcript per call, so collecting a history means one call
     per quarter. To keep that affordable, the quarters that have a transcript are listed
     first (one call per ticker) and only the transcripts that are needed are retrieved:
-    the most recent one by default, or every one between the start and end date. Each
-    transcript is cached on its own, because a published transcript does not change, so
-    a quarter is only ever retrieved once no matter how often a history is requested.
+    the most recent one by default, the one of a given fiscal period, or every one between
+    the start and end date. Each transcript is cached on its own, because a published
+    transcript does not change, so a quarter is only ever retrieved once no matter how
+    often a history is requested.
 
     Args:
         tickers (list[str] | str): The tickers to retrieve the transcripts for.
@@ -2907,12 +2934,17 @@ def get_earnings_call_transcripts(
         end_date (str | None): The end date of the calls to retrieve when latest is False.
         latest (bool): Whether to only retrieve the most recent transcript. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
+        fiscal_period (str | None): The fiscal period of the one call to retrieve, such as
+            "2025Q4", instead of the latest or a date range. Defaults to None.
 
     Returns:
         tuple[pd.DataFrame, list[str]]: The transcripts indexed by ticker and fiscal
             period, and the tickers for which no data could be found.
     """
     cache = get_active_cache()
+    requested_period = (
+        parse_fiscal_period(fiscal_period) if fiscal_period is not None else None
+    )
 
     def transcript(ticker: str, fiscal_year: int, quarter: int) -> pd.DataFrame:
         entity = f"{ticker}|{fiscal_year}Q{quarter}"
@@ -2952,7 +2984,32 @@ def get_earnings_call_transcripts(
         calls["date"] = pd.to_datetime(calls["date"])
         calls = calls.sort_values("date")
 
-        if latest:
+        if requested_period is not None:
+            matching = (calls["fiscalYear"].astype(int) == requested_period[0]) & (
+                calls["quarter"].astype(int) == requested_period[1]
+            )
+
+            if not matching.any():
+                # The periods that do have a transcript, newest first, so the caller can
+                # pick one rather than guess again.
+                available = ", ".join(
+                    f"{int(year)}Q{int(quarter)}"
+                    for year, quarter in zip(
+                        calls["fiscalYear"].iloc[::-1][:12],
+                        calls["quarter"].iloc[::-1][:12],
+                    )
+                )
+                logger.warning(
+                    "No earnings call transcript data is available for %s in %sQ%s. "
+                    "The most recent fiscal periods with a transcript are: %s.",
+                    ticker,
+                    requested_period[0],
+                    requested_period[1],
+                    available or "none",
+                )
+
+            calls = calls[matching]
+        elif latest:
             calls = calls.tail(1)
         else:
             calls = (

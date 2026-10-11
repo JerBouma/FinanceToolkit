@@ -5181,6 +5181,12 @@ class Econometrics:
             )
         }
 
+        if not values:
+            raise ValueError(
+                "The RMSE compares two series, a forecast and the actual values, so it "
+                "needs at least two tickers (or include_benchmark=True for the benchmark)."
+            )
+
         result = pd.Series(values, name="RMSE")
         result.index = result.index.set_names(["Ticker A", "Ticker B"])
 
@@ -5262,6 +5268,12 @@ class Econometrics:
                 include_benchmark=include_benchmark
             )
         }
+
+        if not values:
+            raise ValueError(
+                "The MAE compares two series, a forecast and the actual values, so it "
+                "needs at least two tickers (or include_benchmark=True for the benchmark)."
+            )
 
         result = pd.Series(values, name="MAE")
         result.index = result.index.set_names(["Ticker A", "Ticker B"])

@@ -1260,6 +1260,11 @@ class ToolRegistry:
                     tickers
                     and len(tickers) > 1
                     and isinstance(result, pd.DataFrame | pd.Series)
+                    # A regression's dependent ticker (or a pair's) is no row of the answer.
+                    and not any(
+                        pname.endswith(("_ticker", "_tickers"))
+                        for pname in method_kwargs
+                    )
                 ):
                     # An empty column of its own counts as missing too.
                     if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:

@@ -8262,9 +8262,11 @@ class Economics:
         volatility index, fear index.
 
         Args:
-            markets (list[str] | str | None, optional): The markets to retrieve, from those
-                listed above. Defaults to None, which retrieves every market that needs no
-                API key, and the MOVE and JGB VIX as well when an API key is set.
+            markets (list[str] | str | None, optional): The markets to retrieve, from
+                "US Equity", "Euro Area Equity", "Emerging Markets Equity", "US Equity
+                Volatility", "US Treasury Bonds", "Crude Oil", "Gold", "US Treasury Rates" and
+                "Japan Government Bonds". Defaults to None, which retrieves every market that
+                needs no API key, and the MOVE and JGB VIX as well when an API key is set.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
@@ -8677,7 +8679,11 @@ class Economics:
         physical risk, carbon price path.
 
         Args:
-            variable (str, optional): The variable, from those listed above. Defaults to
+            variable (str, optional): The variable: "gdp", "inflation",
+                "long_term_interest_rate", "long_term_real_interest_rate", "policy_rate",
+                "unemployment_rate", "equity_prices", "effective_exchange_rate",
+                "domestic_demand", "exports", "imports", "oil_price", "gas_price",
+                "coal_price" or "carbon_price" (units above). Defaults to
                 "long_term_interest_rate".
             scenario (str, optional): "Net Zero 2050", "Below 2°C", "Low demand", "Delayed
                 transition", "Nationally Determined Contributions (NDCs)", "Current
@@ -9076,7 +9082,9 @@ class Economics:
             measure (str, optional): "real_world" or "market_consistent". Defaults to
                 "real_world".
             variables (list[str] | str | None, optional): The variables to include, from
-                those listed above. Defaults to None, which includes all of them.
+                "Nominal rate 1Y", "Nominal rate 5Y", "Nominal rate 10Y", "Nominal rate 20Y",
+                "Nominal rate 30Y", "Real rate EU 10Y", "Equity return", "Inflation EU" and
+                "Inflation NL". Defaults to None, which includes all of them.
             quantiles (list[float] | None, optional): The quantiles of the distribution
                 per year. Defaults to None, which is [0.01, 0.05, 0.25, 0.5, 0.75, 0.95,
                 0.99].
@@ -9221,7 +9229,9 @@ class Economics:
 
         Args:
             asset_classes (list[str] | str | None, optional): The asset classes to include,
-                from those listed above. Defaults to None, which includes all of them.
+                from "Private Equity", "Infrastructure", "Hedge Funds", "Merger Arbitrage",
+                "Private Credit", "Real Estate", "Investment Grade Credit" and "High Yield
+                Credit". Defaults to None, which includes all of them.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "monthly".
             returns (bool, optional): Whether to return the total return per period instead

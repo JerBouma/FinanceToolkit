@@ -140,6 +140,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "the calendar year for e.g. Apple and Microsoft). Leave unset for the most recent."
     ),
     "window": "The number of periods the indicator looks back over, e.g. 14 or 20.",
+    "lags": "The number of lags (past periods) the test or model uses, e.g. 1 or 5.",
     "column": "The price column to use, e.g. 'Close' or 'Adj Close'.",
     "strike_price_range": (
         "Only strikes within this fraction of the current stock price, e.g. 0.05 for the "
@@ -238,6 +239,9 @@ PERIODS = ("daily", "weekly", "monthly", "quarterly", "yearly", "annual")
 INTRADAY_PERIODS = ("1min", "5min", "15min", "30min", "1hour")
 
 
+# The most distinct docstring descriptions of one parameter that are listed per indicator.
+MAXIMUM_DESCRIPTION_VERSIONS = 3
+
 # The longest parameter description taken from a docstring.
 MAXIMUM_DOCUMENTED_CHARACTERS = 300
 
@@ -272,7 +276,13 @@ def _docstring_arguments(docstring: str) -> dict[str, str]:
 
     cleaned: dict[str, str] = {}
     for argument, raw in arguments.items():
-        text = re.sub(r"\s*Defaults to [^.]*(?:\.\d[^.]*)*\.?", "", raw).strip()
+        # Up to the end of its sentence: a full stop followed by a capital or the end, so
+        # "Defaults to 0.0, i.e. ..." and "Defaults to 1.5." go as a whole.
+        text = re.sub(
+            r"\s*Defaults to .*?(?:\.(?=\s+[A-Z`(])|\.?$)", "", raw, flags=re.DOTALL
+        ).strip()
+        # Pointers to the rest of the docstring mean nothing in a tool schema.
+        text = re.sub(r",? (?:as )?(?:described|listed|see) above", "", text)
         if len(text) > MAXIMUM_DOCUMENTED_CHARACTERS:
             text = text[: MAXIMUM_DOCUMENTED_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
         if text:
@@ -1404,13 +1414,27 @@ class ToolRegistry:
 
         # What the indicators' own docstrings say about each parameter, for the ones
         # without a shared description.
-        documented: dict[str, str] = {}
+        versions: dict[str, dict[str, list[str]]] = {}
         for method_name in group_methods:
             owner = owning_class(method_name)
             for pname, text in _docstring_arguments(
                 inspect.getdoc(getattr(owner, method_name, None)) or ""
             ).items():
-                documented.setdefault(pname, text)
+                versions.setdefault(pname, {}).setdefault(text, []).append(method_name)
+        # A parameter that means something else per indicator (performance's method is a
+        # regression method for one and a Sharpe ratio variant for another) says so.
+        documented: dict[str, str] = {
+            pname: (
+                " ".join(
+                    f"For {', '.join(methods)}: {text}"
+                    for text, methods in texts.items()
+                )
+                if 1 < len(texts) <= MAXIMUM_DESCRIPTION_VERSIONS
+                # Many versions: the shortest is usually the generic one.
+                else min(texts, key=len)
+            )
+            for pname, texts in versions.items()
+        }
 
         for p in extra_params:
             ann = (

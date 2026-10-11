@@ -153,6 +153,10 @@ class Discovery:
         The search instruments function allows you to search for a company or financial instrument
         by name. It returns a dataframe with all the symbols that match the query.
 
+        An ISIN or CUSIP search returns every listing of the security, most traded first, so
+        the primary listing leads (e.g. AAPL before AAPL.MX). The Market Cap of each listing
+        is in the listing's own currency.
+
         Also known as: find companies, lookup stocks, ticker search, instrument search.
 
         Args:

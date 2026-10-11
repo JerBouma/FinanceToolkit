@@ -90,6 +90,16 @@ def get_cached_financial_data(
     return response
 
 
+# The parameter each search of Financial Modeling Prep takes the query as.
+SEARCH_PARAMETERS = {
+    "name": "query",
+    "symbol": "query",
+    "cik": "cik",
+    "cusip": "cusip",
+    "isin": "isin",
+}
+
+
 def get_instruments(
     api_key: str,
     query: str,
@@ -107,7 +117,18 @@ def get_instruments(
     Returns:
         pd.DataFrame: DataFrame of instruments.
     """
-    url = f"https://financialmodelingprep.com/stable/search-{search_method}?query={query}&apikey={api_key}"
+    if search_method not in SEARCH_PARAMETERS:
+        raise ValueError(
+            f"The search method {search_method!r} is not valid. Choose from "
+            f"{', '.join(SEARCH_PARAMETERS)}."
+        )
+
+    # The identifier searches take the identifier as their own parameter: given `query`,
+    # FinancialModelingPrep ignores it and answers with Apple for every ISIN or CUSIP.
+    url = (
+        f"https://financialmodelingprep.com/stable/search-{search_method}"
+        f"?{SEARCH_PARAMETERS[search_method]}={query}&apikey={api_key}"
+    )
 
     instruments_query = get_cached_financial_data(
         url=url, user_subscription=user_subscription
@@ -135,7 +156,50 @@ def get_instruments(
 
         instruments_query = instruments_query.set_index("Symbol")
 
+        if search_method in ("isin", "cusip"):
+            instruments_query = _rank_listings_by_volume(
+                instruments_query, api_key, user_subscription
+            )
+
     return instruments_query
+
+
+def _rank_listings_by_volume(
+    listings: pd.DataFrame, api_key: str, user_subscription: str
+) -> pd.DataFrame:
+    """
+    Puts the primary listing of an ISIN or CUSIP first. The search ranks the listings by
+    their market capitalisation in their own currency, so a listing in Mexican pesos came
+    before the one in US dollars; trading volume counts shares on every exchange alike,
+    and the primary listing trades by far the most.
+
+    Args:
+        listings (pd.DataFrame): The listings, indexed by symbol.
+        api_key (str): The API key from Financial Modeling Prep.
+        user_subscription (str): The user subscription level.
+
+    Returns:
+        pd.DataFrame: The listings with their exchange and volume, most traded first.
+    """
+    quotes = get_cached_financial_data(
+        url=(
+            "https://financialmodelingprep.com/stable/batch-quote"
+            f"?symbols={','.join(listings.index)}&apikey={api_key}"
+        ),
+        user_subscription=user_subscription,
+    )
+
+    if quotes.empty or not {"symbol", "volume"}.issubset(quotes.columns):
+        return listings
+
+    quotes = quotes.drop_duplicates("symbol").set_index("symbol")
+
+    if "exchange" in quotes.columns and "Exchange Code" not in listings.columns:
+        listings["Exchange Code"] = quotes["exchange"].reindex(listings.index)
+
+    listings["Volume"] = quotes["volume"].reindex(listings.index)
+
+    return listings.sort_values("Volume", ascending=False, na_position="last")
 
 
 def get_stock_screener(

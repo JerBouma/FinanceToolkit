@@ -213,6 +213,60 @@ def is_currency_pair(ticker: str) -> bool:
     )
 
 
+# The quote currencies of crypto pairs besides the fiat currencies, as in ETH-BTC.
+CRYPTO_QUOTE_CURRENCIES = {"USDT", "USDC", "BTC", "ETH"}
+
+
+def to_financial_modeling_prep_symbol(symbol: str) -> str:
+    """
+    Writes a Yahoo Finance currency or crypto symbol as FinancialModelingPrep writes it,
+    so either form can be passed: EURUSD=X becomes EURUSD and BTC-USD becomes BTCUSD.
+    Any other symbol, such as a share class (BRK-B), is returned unchanged.
+
+    Args:
+        symbol (str): The symbol, e.g. "EURUSD=X" or "BTC-USD".
+
+    Returns:
+        str: The symbol as FinancialModelingPrep writes it.
+    """
+    upper = symbol.strip().upper()
+
+    if upper.endswith("=X") and is_currency_pair(upper):
+        return upper.removesuffix("=X")
+
+    base, separator, quote = upper.partition("-")
+
+    if (
+        separator
+        and len(base) > 1
+        and base.isalnum()
+        and (quote in CURRENCY_CODES or quote in CRYPTO_QUOTE_CURRENCIES)
+    ):
+        return f"{base}{quote}"
+
+    return symbol
+
+
+def to_yahoo_finance_symbol(symbol: str) -> str:
+    """
+    Writes a FinancialModelingPrep currency pair as Yahoo Finance writes it: EURUSD
+    becomes EURUSD=X. A crypto pair such as BTCUSD cannot be told apart from a share
+    ticker reliably, so it, and any other symbol, is returned unchanged.
+
+    Args:
+        symbol (str): The symbol, e.g. "EURUSD".
+
+    Returns:
+        str: The symbol as Yahoo Finance writes it.
+    """
+    upper = symbol.strip().upper()
+
+    if is_currency_pair(upper) and not upper.endswith("=X"):
+        return f"{upper}=X"
+
+    return symbol
+
+
 def get_fx_ticker(base_currency: str, quote_currency: str) -> str:
     """
     Returns the ticker to request historical exchange rate data for from a data

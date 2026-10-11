@@ -632,3 +632,21 @@ def test_a_rating_with_a_missing_score_is_kept(responses):
     ratings, _ = fmp_model.get_rating(tickers="AAPL", api_key="KEY")
 
     assert ratings["Rating"].tolist() == ["A", "A-"]
+
+
+def test_yahoo_finance_symbols_are_requested_as_financial_modeling_prep_writes_them(
+    monkeypatch,
+):
+    requested = []
+
+    def fake_get_request(url, timeout):  # noqa: ARG001
+        requested.append(url)
+        return _Response(200, "[]")
+
+    monkeypatch.setattr(fmp_model, "get_request", fake_get_request)
+
+    fmp_model.get_financial_data(
+        "https://financialmodelingprep.com/stable/batch-quote?symbols=AAPL,EURUSD=X,BTC-USD&apikey=K"
+    )
+
+    assert "symbols=AAPL,EURUSD,BTCUSD&" in requested[0]

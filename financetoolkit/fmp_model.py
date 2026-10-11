@@ -6,6 +6,7 @@ __docformat__ = "google"
 import hashlib
 import importlib.util
 import random
+import re
 import time
 from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
@@ -17,7 +18,7 @@ import pandas as pd
 import requests
 from urllib3.exceptions import MaxRetryError
 
-from financetoolkit import helpers
+from financetoolkit import currencies_model, helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.utilities import error_model, logger_model
@@ -73,6 +74,30 @@ def determine_retry_delay(attempt: int) -> float:
     return delay * (1 + random.uniform(0, 0.5))  # noqa: S311
 
 
+SYMBOL_PARAMETER = re.compile(r"([?&]symbols?=)([^&]*)")
+
+
+def to_financial_modeling_prep_symbols(url: str) -> str:
+    """
+    Writes the symbols of a request as FinancialModelingPrep writes them, so a Yahoo
+    Finance currency or crypto symbol (EURUSD=X, BTC-USD) returns data as well.
+
+    Args:
+        url (str): The request URL.
+
+    Returns:
+        str: The URL with its symbol or symbols parameter rewritten.
+    """
+    return SYMBOL_PARAMETER.sub(
+        lambda match: match.group(1)
+        + ",".join(
+            currencies_model.to_financial_modeling_prep_symbol(symbol)
+            for symbol in match.group(2).split(",")
+        ),
+        url,
+    )
+
+
 def get_financial_data(
     url: str,
     sleep_timer: bool = True,
@@ -96,6 +121,7 @@ def get_financial_data(
             Returns an empty DataFrame with specific column names indicating errors like 'LIMIT REACH',
             'INVALID API KEY', etc., in case of API issues.
     """
+    url = to_financial_modeling_prep_symbols(url)
     error_retry_counter = 0
     limit_retry_counter = 0
 

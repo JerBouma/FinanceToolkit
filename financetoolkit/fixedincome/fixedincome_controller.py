@@ -3647,6 +3647,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        maturity_years: list[int] | None = None,
     ):
         """
         Retrieves the risk-free interest rate term structures the European Insurance and
@@ -3687,6 +3688,9 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            maturity_years (list[int] | None, optional): The maturities in years to keep, e.g.
+                [1, 2, 5, 10, 20, 30] for the key points of the curve. Defaults to None, which
+                keeps every maturity from 1 to 150 years.
 
         Returns:
             pd.DataFrame: The rates, indexed by month with a column per currency or country and
@@ -3739,6 +3743,15 @@ class FixedIncome:
 
             term_structures = term_structures.loc[
                 :, term_structures.columns.get_level_values(0).isin(requested)
+            ]
+
+        if maturity_years is not None:
+            # 150 maturities per country and month are rarely all needed.
+            term_structures = term_structures.loc[
+                :,
+                term_structures.columns.get_level_values(1).isin(
+                    [f"{maturity}Y" for maturity in maturity_years]
+                ),
             ]
 
         return finalize_dataset(

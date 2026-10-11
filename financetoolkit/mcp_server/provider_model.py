@@ -92,6 +92,40 @@ def resolve_benchmark_ticker(
     )
 
 
+LOWERCASE_WORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "by",
+    "for",
+    "in",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+}
+
+
+def readable_name(method_name: str) -> str:
+    """
+    Turns a method's name into a column name, e.g. get_value_at_risk into Value at Risk.
+
+    Args:
+        method_name (str): The method's name.
+
+    Returns:
+        str: The readable name.
+    """
+    words = method_name.removeprefix("get_").split("_")
+
+    return " ".join(
+        word if index and word in LOWERCASE_WORDS else word.capitalize()
+        for index, word in enumerate(words)
+    )
+
+
 class ToolkitProvider:
     """
     Stateless provider that routes MCP tool calls to the appropriate
@@ -325,7 +359,15 @@ class ToolkitProvider:
             )
 
         if isinstance(result, pd.Series):
-            result = result.to_frame()
+            # An unnamed result is named after its method, e.g. "Value at Risk", rather than
+            # becoming a column called 0.
+            result = result.to_frame(
+                name=(
+                    result.name
+                    if result.name is not None
+                    else readable_name(method_name)
+                )
+            )
         # An empty result is not cached: it usually means a missing API key or an
         # unreachable source, and a cached copy would keep answering "No data available"
         # after the key is added or the source is back.

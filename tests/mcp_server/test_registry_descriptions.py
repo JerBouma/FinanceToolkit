@@ -55,3 +55,29 @@ def test_the_search_tools_say_they_belong_to_the_finance_toolkit():
     # not share a name with these.
     assert "search_instruments" not in tools
     assert "search_categories" not in tools
+
+
+def test_a_category_of_one_tool_is_named_after_it():
+    """An agent can go from a category straight to its tool."""
+    from collections import defaultdict
+
+    with open("financetoolkit/mcp_server/config.yaml", encoding="utf-8") as file:
+        config = yaml.safe_load(file)
+
+    tools_per_category = defaultdict(list)
+
+    for group in config["tool_groups"]:
+        category = group.get("index_category") or group["module_name"]
+        tools_per_category[category].append(group["tool_name"])
+
+    for category, tools in tools_per_category.items():
+        if len(tools) == 1:
+            assert tools == [category]
+        assert category in config["category_descriptions"]
+
+
+def test_an_unnamed_result_is_named_after_its_method():
+    from financetoolkit.mcp_server.provider_model import readable_name
+
+    assert readable_name("get_value_at_risk") == "Value at Risk"
+    assert readable_name("get_return_on_equity") == "Return on Equity"

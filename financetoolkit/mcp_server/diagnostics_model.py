@@ -108,15 +108,18 @@ def capture_call_messages() -> Generator[list[str]]:
         _CALL_MESSAGES.reset(token)
 
 
-# The warnings that name tickers left out of a result, such as "No quote data is available
-# for EURUSD=X." or "No data found for the following tickers: XYZ".
-MISSING_DATA_PATTERN = re.compile(r"^No (?:\w+ )*data (?:is available|found) for\b")
+# The warnings that qualify a result: tickers left out of it, such as "No quote data is
+# available for EURUSD=X.", and metrics that do not apply to some of them, such as the
+# Altman Z-Score of an insurer.
+MISSING_DATA_PATTERN = re.compile(
+    r"^No (?:\w+ )*data (?:is available|found) for\b|\bdoes not apply to\b"
+)
 
 
 def missing_data_notes(messages: list[str] | None) -> list[str]:
     """
-    The warnings about tickers left out of a result, so a client sees which are missing
-    rather than finding them silently absent.
+    The warnings that qualify a result, so a client sees which tickers are missing rather
+    than finding them silently absent, and for which a metric does not apply.
 
     Args:
         messages (list[str] | None): The messages collected during the call.

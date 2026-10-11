@@ -74,3 +74,20 @@ def test_daily_performance_needs_a_rolling_window(captured):
 
     assert captured[-1]["period"] == "daily"
     assert captured[-1]["rolling"] == 20  # noqa: PLR2004
+
+
+def test_large_outputs_default_to_a_compact_selection(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "rates",
+            {"indicator": "get_eiopa_risk_free_rate", "countries": "Netherlands"},
+        )
+    )
+    assert captured[-1]["maturity_years"] == [1, 2, 5, 10, 20, 30]
+
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data", {"indicator": "get_etf_holdings", "tickers": "IWDA.AS"}
+        )
+    )
+    assert captured[-1]["limit"] == 25  # noqa: PLR2004

@@ -111,6 +111,18 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "OECD. The two are independent providers with different country and period "
         "coverage; both return rates and ratios as decimal fractions."
     ),
+    "annualize": (
+        "Set to true to annualize a Sharpe ratio (by default it is per observation, e.g. "
+        "per day, so roughly sqrt(252) smaller than the annualized figure)."
+    ),
+    "primary_only": (
+        "Set to true to keep only the most traded listing of each company rather than "
+        "every listing (e.g. ING in Amsterdam, New York, Toronto and Frankfurt)."
+    ),
+    "maturity_years": (
+        "Comma-separated maturities in years to return, e.g. '1,2,5,10,20,30'."
+    ),
+    "limit": "The maximum number of rows to return, e.g. the largest holdings of a fund.",
     "gmdb_forecasts": (
         "Set to true to include the years the Global Macro Database projects (IMF World "
         "Economic Outlook, up to five years ahead); by default a yearly series ends with "

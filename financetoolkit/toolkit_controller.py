@@ -3746,7 +3746,10 @@ class Toolkit:
         return filter_columns(self._stock_grades, show_columns)
 
     def get_etf_holdings(
-        self, overwrite: bool = False, show_columns: list[str] | None = None
+        self,
+        overwrite: bool = False,
+        show_columns: list[str] | None = None,
+        limit: int | None = None,
     ):
         """
         Obtain the holdings of each ETF or fund: every asset it holds with the number of
@@ -3762,6 +3765,10 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
+            limit (int | None): The number of largest holdings (by weight) to keep per fund, e.g.
+                10 for the top 10. Defaults to None, which keeps every holding. The holdings carry
+                no sector or country; get_etf_sector_weightings and get_etf_country_weightings
+                break the fund down by those.
 
         Returns:
             pd.DataFrame: The holdings per ticker, indexed by asset.
@@ -3808,12 +3815,25 @@ class Toolkit:
                 ),
             )
 
-        if len(self._tickers) == 1 and not self._etf_holdings.empty:
-            return filter_columns(
-                self._etf_holdings.loc[self._tickers[0]], show_columns
+        etf_holdings = self._etf_holdings
+
+        if limit is not None and not etf_holdings.empty and "Weight" in etf_holdings:
+            # The largest holdings of each fund, as a full fund can hold thousands.
+            etf_holdings = (
+                etf_holdings.assign(
+                    _weight=pd.to_numeric(etf_holdings["Weight"], errors="coerce")
+                )
+                .sort_values("_weight", ascending=False, kind="stable")
+                .groupby(level=0, sort=False)
+                .head(limit)
+                .drop(columns="_weight")
+                .reindex(etf_holdings.index.get_level_values(0).unique(), level=0)
             )
 
-        return filter_columns(self._etf_holdings, show_columns)
+        if len(self._tickers) == 1 and not etf_holdings.empty:
+            return filter_columns(etf_holdings.loc[self._tickers[0]], show_columns)
+
+        return filter_columns(etf_holdings, show_columns)
 
     def get_etf_information(self, overwrite: bool = False):
         """

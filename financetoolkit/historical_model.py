@@ -694,11 +694,6 @@ def get_historical_data(
     if historical_data_dict and len(no_data) != len(tickers):
         historical_data = pd.concat(historical_data_dict).unstack(level=0)
         historical_data = historical_data.reindex(reorder_tickers, level=1, axis=1)
-        # In date order without repeated dates, as every date slice of it requires; a
-        # history joined from two sources (or a cache and a fresh download) need not be.
-        historical_data = historical_data[
-            ~historical_data.index.duplicated(keep="last")
-        ].sort_index()
 
         if "Dividends" in historical_data.columns:
             historical_data["Dividends"] = historical_data["Dividends"].fillna(0)
@@ -715,6 +710,13 @@ def get_historical_data(
             historical_data.index = pd.PeriodIndex(
                 historical_data.index, freq=INTERVAL_STR[interval]
             )
+
+        # In date order without repeated dates, as every date slice of it requires; a
+        # history joined from two sources (or a cache and a fresh download) need not be.
+        # After the rows that are no dates (of a ticker without data) are gone.
+        historical_data = historical_data[
+            ~historical_data.index.duplicated(keep="last")
+        ].sort_index()
 
         return historical_data, no_data
 

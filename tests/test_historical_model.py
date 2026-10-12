@@ -138,3 +138,50 @@ def test_fill_non_trading_days_keeps_returns_consistent_with_prices():
     pd.testing.assert_series_equal(
         filled[("Return", "B")], historical_data[("Return", "B")]
     )
+
+
+def test_a_ticker_without_data_does_not_break_the_others(monkeypatch):
+    # The ticker without data is filled with placeholder rows that are no dates, which
+    # must be gone before the history is put in date order.
+    def fmp(ticker, start, end, interval, api_key, **kwargs):
+        if ticker == "NOTATICKER":
+            return pd.DataFrame()
+        index = pd.PeriodIndex(
+            pd.date_range("2024-01-01", periods=3, freq="D"), freq="D"
+        )
+        return pd.DataFrame(
+            {
+                "Open": 1.0,
+                "High": 1.0,
+                "Low": 1.0,
+                "Close": [1.0, 2.0, 3.0],
+                "Adj Close": [1.0, 2.0, 3.0],
+                "Volume": 1,
+                "Dividends": 0.0,
+            },
+            index=index,
+        )
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fmp)
+    # Yahoo Finance answers an unknown ticker with a frame of numbered rows, not dates.
+    monkeypatch.setattr(
+        historical_model.yfinance_model,
+        "get_historical_data",
+        lambda *args, **kwargs: pd.DataFrame(
+            {
+                column: [float("nan")]
+                for column in ("Open", "High", "Low", "Close", "Adj Close", "Volume")
+            }
+        ),
+    )
+
+    data, no_data = historical_model.get_historical_data(
+        ["AAPL", "NOTATICKER"],
+        api_key="KEY",
+        start="2024-01-01",
+        end="2024-01-10",
+        sleep_timer=False,
+    )
+
+    assert data.index.is_monotonic_increasing
+    assert data["Close"]["AAPL"].tolist()[:3] == [1.0, 2.0, 3.0]

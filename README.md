@@ -564,10 +564,6 @@ For manual config, add the following to your client's MCP config file (e.g. `cla
 
 Alternatively, download the [Finance Toolkit MCPB bundle](https://github.com/JerBouma/FinanceToolkit/releases/latest/download/financetoolkit.mcpb) and open it with Claude Desktop. An installation dialog will prompt for your FMP API key.
 
-### How the server answers
-
-Each tool groups the indicators of one kind (valuation, risk, rates and so on); the assistant finds the right one with `search_metrics`, which also understands questions such as "how expensive is the stock" or "bankruptcy risk". Answers are compact JSON with rates and ratios as decimals, and they are kept small enough for an assistant to read: `limit=-5` returns the last five periods (`5` the first five), `show_columns` keeps the named fields, and an answer that is still too large is cut to its most recent rows with a note on how to narrow the request. Notes also say what was left out, ignored or converted, such as a ticker without data or fiscal years shown as calendar years.
-
 # Questions & Answers
 
 This section includes frequently asked questions and is meant to clear up confusion about certain results and/or deviations from other sources. If you have any questions that are not answered here, feel free to reach out to me via the contact details below.

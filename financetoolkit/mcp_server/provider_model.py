@@ -514,15 +514,14 @@ class ToolkitProvider:
             if shifted:
                 # Values are bare years for annual data and period labels such as "2026Q1" for quarterly data, so an example carries both cases.  # noqa: E501
                 fiscal, calendar = shifted[0]
-                fy_tickers.append(
-                    f"{ticker} ({len(shifted)} periods, e.g. {fiscal} to {calendar})"
-                )
+                fy_tickers.append(f"{ticker} (e.g. fiscal {fiscal} as {calendar})")
             elif malformed:
                 fy_tickers.append(f"{ticker} (periods relabelled, detail unavailable)")
 
         if fy_tickers:
             notes.append(
-                f"Fiscal Year to Calendar Year mapped for: {', '.join(fy_tickers)}"
+                "Fiscal years are shown as the calendar year they mostly fall in, so "
+                f"companies compare like for like: {', '.join(fy_tickers)}"
             )
 
         stmt_currencies: pd.Series = getattr(
@@ -537,7 +536,8 @@ class ToolkitProvider:
                     converted_currencies.append(f"{ticker} ({src} to {dst})")
             if converted_currencies:
                 notes.append(
-                    f"Aligned Financial Statements with OHLC for: {', '.join(converted_currencies)}"
+                    "Financial statements are converted to the currency of the share "
+                    f"price for: {', '.join(converted_currencies)}"
                 )
 
         return notes

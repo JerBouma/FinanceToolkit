@@ -218,10 +218,9 @@ class Economics:
             pd.DataFrame: The dataset, with a (variable, country) column per series.
         """
         if gmdb_forecasts not in self._gmdb_datasets:
-            self._gmdb_datasets[gmdb_forecasts] = (
-                gmdb_model.collect_global_macro_database_dataset(
-                    cache=self._cache, include_forecasts=gmdb_forecasts
-                )
+            # Shared by every instance in the process (see gmdb_model.get_shared_dataset).
+            self._gmdb_datasets[gmdb_forecasts] = gmdb_model.get_shared_dataset(
+                cache=self._cache, include_forecasts=gmdb_forecasts
             )
 
         return self._gmdb_datasets[gmdb_forecasts]

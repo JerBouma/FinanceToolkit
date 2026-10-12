@@ -164,6 +164,25 @@ def test_projected_years_are_a_choice_per_method(monkeypatch):
     assert projected_year not in observed.dropna(how="all").index
     assert projected.loc[projected_year, "Germany"] == pytest.approx(0.64)
     assert observed_again.equals(observed)
-    # Each version of the database is read once per instance.
+    # Each version of the database is read once (and then shared).
     releases = [url for url in requested if url != gmdb_model.VERSIONS_URL]
     assert len(releases) == 2  # noqa: PLR2004
+
+
+def test_the_dataset_is_read_once_and_shared(monkeypatch):
+    from financetoolkit.economics import gmdb_model
+
+    reads = []
+
+    def collect(cache=None, include_forecasts=False):
+        reads.append(include_forecasts)
+        return pd.DataFrame({("ngdp", "Germany"): [1.0]})
+
+    monkeypatch.setattr(gmdb_model, "collect_global_macro_database_dataset", collect)
+    monkeypatch.setattr(gmdb_model, "_SHARED_DATASETS", {})
+
+    first = gmdb_model.get_shared_dataset()
+    second = gmdb_model.get_shared_dataset()
+
+    assert first is second
+    assert reads == [False]

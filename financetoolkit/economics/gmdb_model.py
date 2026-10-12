@@ -1,6 +1,8 @@
 """Global Macro Database (GMDB) Model"""
 
 import io
+import threading
+import time
 
 import numpy as np
 import pandas as pd
@@ -93,6 +95,44 @@ def _parse_dataset(content: bytes, include_forecasts: bool) -> pd.DataFrame:
     gmd_dataset = to_dataframe(gmd_dataset.unstack(level=1))
 
     return gmd_dataset.dropna(axis="columns", how="all").sort_index(axis=1)
+
+
+# One copy of the dataset per process, shared by every Economics instance: it is over
+# 100 MB in memory and takes seconds to read, so a server that meets many date ranges
+# (one instance each) would otherwise hold and read it once per range. Kept for an hour,
+# after which the next request reads the (cached or newly released) file again.
+SHARED_DATASET_SECONDS = 3600
+_SHARED_DATASETS: dict[bool, tuple[float, pd.DataFrame]] = {}
+_SHARED_DATASETS_LOCK = threading.Lock()
+
+
+def get_shared_dataset(
+    cache: Cache | None = None, include_forecasts: bool = False
+) -> pd.DataFrame:
+    """
+    The Global Macro Database dataset, read once per hour per process and shared.
+
+    Args:
+        cache (Cache | None): An optional cache to serve the dataset from and store it in.
+        include_forecasts (bool): Whether to keep the years that are projections. Defaults
+            to False.
+
+    Returns:
+        pd.DataFrame: The dataset (see collect_global_macro_database_dataset). It is shared,
+            so it must not be modified in place.
+    """
+    with _SHARED_DATASETS_LOCK:
+        stored = _SHARED_DATASETS.get(include_forecasts)
+        if stored is not None and time.monotonic() - stored[0] < SHARED_DATASET_SECONDS:
+            return stored[1]
+
+        dataset = collect_global_macro_database_dataset(
+            cache=cache, include_forecasts=include_forecasts
+        )
+        if not dataset.empty:
+            _SHARED_DATASETS[include_forecasts] = (time.monotonic(), dataset)
+
+        return dataset
 
 
 def collect_global_macro_database_dataset(

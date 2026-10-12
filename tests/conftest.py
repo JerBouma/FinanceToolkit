@@ -736,3 +736,13 @@ def economics_module(live_mode):
         end_date="2023-12-31",
         gmdb_source=True,
     )
+
+
+@pytest.fixture(autouse=True)
+def fresh_global_macro_database():
+    """Every test reads its own Global Macro Database rather than the process-wide copy."""
+    from financetoolkit.economics import gmdb_model
+
+    gmdb_model._SHARED_DATASETS.clear()
+    yield
+    gmdb_model._SHARED_DATASETS.clear()

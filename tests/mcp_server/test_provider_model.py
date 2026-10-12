@@ -128,3 +128,31 @@ def test_fixedincome_instances_are_not_shared_between_fmp_keys(provider):
         "first-key",
         "second-key",
     ]
+
+
+def test_the_standalone_instances_are_bounded_least_recently_used_first(
+    monkeypatch, provider
+):
+    class LightEconomics:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_inflation_rate(self):
+            return pd.Series([0.02], name="Germany")
+
+    monkeypatch.setattr(provider_model, "Economics", LightEconomics)
+
+    starts = ["2000-01-01", "2005-01-01", "2010-01-01", "2015-01-01", "2020-01-01"]
+    for start in starts:
+        provider.call_standalone_module_functionality(
+            module_name="economics",
+            method_name="get_inflation_rate",
+            start_date=start,
+            end_date="2026-01-01",
+            quarterly=False,
+        )
+
+    kept = list(provider._standalone_cache)
+
+    assert len(kept) == provider_model.MAXIMUM_STANDALONE_INSTANCES
+    assert not any("2000-01-01" in key for key in kept)

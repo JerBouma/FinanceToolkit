@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import os
 import time
+from collections import OrderedDict
 from importlib import metadata
 from threading import Lock
 from typing import Any
@@ -37,6 +38,12 @@ API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 
 # Optional — only gates the subset of Economics/FixedIncome tools backed by FRED.
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
+
+# The most Toolkit instances (per tickers, dates and key) and Economics, Fixed Income or
+# Discovery instances (per dates and key) the provider keeps; the least recently used go
+# first. An Economics instance holds the Global Macro Database, over 100 MB, so few.
+MAXIMUM_TOOLKIT_INSTANCES = 64
+MAXIMUM_STANDALONE_INSTANCES = 4
 
 # Tool responses are computed output, so they sit under their own source.
 MCP_CACHE_SOURCE = policy_model.MCP
@@ -200,8 +207,10 @@ class ToolkitProvider:
             # set_active_cache refuses a downgrade, so withdrawing has to be explicit.
             cache_controller.clear_active_cache()
 
-        self._toolkit_cache: dict[str, Any] = {}
-        self._standalone_cache: dict[str, Any] = {}
+        # Least recently used first; bounded, as a hosted server meets many distinct requests
+        # and an Economics instance holds the Global Macro Database (over 100 MB) per range.
+        self._toolkit_cache: OrderedDict[str, Any] = OrderedDict()
+        self._standalone_cache: OrderedDict[str, Any] = OrderedDict()
         self._lock = Lock()
         self._last_eviction = 0.0
 
@@ -616,6 +625,7 @@ class ToolkitProvider:
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
             if cache_key in self._toolkit_cache:
+                self._toolkit_cache.move_to_end(cache_key)
                 return self._toolkit_cache[cache_key]
 
             if not effective_key:
@@ -633,6 +643,8 @@ class ToolkitProvider:
                 use_cached_data=self._use_cached_data,
             )
             self._toolkit_cache[cache_key] = toolkit_instance
+            while len(self._toolkit_cache) > MAXIMUM_TOOLKIT_INSTANCES:
+                self._toolkit_cache.popitem(last=False)
 
         return toolkit_instance
 
@@ -788,6 +800,8 @@ class ToolkitProvider:
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
             instance = self._standalone_cache.get(cache_key)
+            if instance is not None:
+                self._standalone_cache.move_to_end(cache_key)
 
             if instance is None:
                 if module_name == "economics":
@@ -817,6 +831,8 @@ class ToolkitProvider:
                     raise ValueError(f"Unknown standalone module: {module_name}")
 
                 self._standalone_cache[cache_key] = instance
+                while len(self._standalone_cache) > MAXIMUM_STANDALONE_INSTANCES:
+                    self._standalone_cache.popitem(last=False)
 
         method = getattr(instance, method_name)
 

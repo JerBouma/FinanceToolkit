@@ -481,3 +481,23 @@ def test_limit_leaves_a_table_of_metrics_per_ticker_whole(monkeypatch):
     )[0][0].text
 
     assert "Free Float" in text and "one column per ticker" in text
+
+
+def test_an_empty_answer_over_a_weekend_says_why(monkeypatch):
+    monkeypatch.setattr(
+        ToolkitProvider, "call_method", lambda self, *args, **kwargs: pd.DataFrame()
+    )
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data",
+            {
+                "indicator": "get_historical_data",
+                "tickers": "AAPL",
+                "start_date": "2026-10-11",
+                "end_date": "2026-10-11",
+            },
+        )
+    )[0][0].text
+
+    assert "no trading days" in text

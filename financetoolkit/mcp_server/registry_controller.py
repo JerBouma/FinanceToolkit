@@ -8,6 +8,7 @@ correct underlying method.
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import importlib
 import inspect
@@ -238,6 +239,9 @@ def _annotate_with_description(
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
 
+# A window of at most this many days can be empty for lack of trading days alone.
+SHORT_WINDOW_DAYS = 3
+
 # How alike an unknown indicator name must be to a known one to be read as it.
 NEAR_CERTAIN_MATCH = 0.9
 
@@ -416,6 +420,33 @@ def _table_names(method_kwargs: dict[str, Any], count: int) -> list[str]:
         *names,
         *(f"Table {number}" for number in range(len(names) + 1, count + 1)),
     ][:count]
+
+
+def _short_window_reason(category: str, start_date: str, end_date: str) -> str | None:
+    """Why a market data request over a few days can be empty: no trading on those days.
+
+    Args:
+        category (str): The dispatch category of the call.
+        start_date (str): The start of the window.
+        end_date (str): The end of the window.
+
+    Returns:
+        str | None: The reason, or None when the window is not that short.
+    """
+    if category not in ("ticker", "toolkit") or not start_date or not end_date:
+        return None
+
+    with contextlib.suppress(ValueError):
+        days = (
+            datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)
+        ).days
+        if days <= SHORT_WINDOW_DAYS:
+            return (
+                f"There were no trading days between {start_date} and {end_date} (a "
+                "weekend or holiday). Widen the range, e.g. start_date a week earlier."
+            )
+
+    return None
 
 
 def _labels(result: pd.DataFrame | pd.Series) -> set[str]:
@@ -1487,7 +1518,8 @@ class ToolRegistry:
                 formatted = format_result(
                     result,
                     notes=notes or None,
-                    reason=summarize_reasons(call_messages),
+                    reason=summarize_reasons(call_messages)
+                    or _short_window_reason(dispatch_category, start_date, end_date),
                     max_characters=None if full_text else max_response_characters,
                 )
                 return formatted

@@ -66,6 +66,9 @@ def _idx_key(index: pd.Index) -> str:
         return "ticker"
     if _are_countries(index.unique()):
         return "country"
+    # Labels in words (Price, P-Value, Lower Tail Dependence) are what a row measures.
+    if len(index) and all(isinstance(label, str) for label in index):
+        return "metric"
     return "index"
 
 

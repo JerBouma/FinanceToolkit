@@ -356,7 +356,7 @@ def _unmatched_columns(
         show_columns (list[str]): The requested names.
 
     Returns:
-        tuple[list[str], list[str]]: The names not found, and at most 40 available names.
+        tuple[list[str], list[str]]: The names not found, and the available names.
     """
     tables = (
         [result]
@@ -391,7 +391,7 @@ def _unmatched_columns(
     if not available:
         return [], []
 
-    return [name for name in show_columns if name not in available], available[:40]
+    return [name for name in show_columns if name not in available], available
 
 
 def _table_names(method_kwargs: dict[str, Any], count: int) -> list[str]:
@@ -1273,6 +1273,18 @@ class ToolRegistry:
                     )
                 unmatched_columns: list[str] = []
                 if show_columns is not None:
+                    # Matched in any casing ("close" for Close), as the names are shown
+                    # in a response and typed back by hand.
+                    _, available_columns = _unmatched_columns(result, show_columns)
+                    by_lowercase = {name.lower(): name for name in available_columns}
+                    show_columns = [
+                        (
+                            name
+                            if name in available_columns
+                            else by_lowercase.get(name.lower(), name)
+                        )
+                        for name in show_columns
+                    ]
                     unmatched_columns, available_columns = _unmatched_columns(
                         result, show_columns
                     )
@@ -1396,7 +1408,14 @@ class ToolRegistry:
                                 ]
                             ).size
                         ):
-                            names = [str(label) for label in empty_rows.unique()]
+                            names = [
+                                (
+                                    " ".join(map(str, label))
+                                    if isinstance(label, tuple)
+                                    else str(label)
+                                )
+                                for label in empty_rows.unique()
+                            ]
                             notes.append(
                                 (
                                     f"{', '.join(names)} "
@@ -1435,7 +1454,7 @@ class ToolRegistry:
                         "show_columns: "
                         + ", ".join(f"'{name}'" for name in unmatched_columns)
                         + " is not part of this answer. Available: "
-                        + ", ".join(available_columns)
+                        + ", ".join(available_columns[:40])
                         + "."
                     )
                 # A note on how the benchmark was chosen only confuses an answer that has

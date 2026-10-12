@@ -443,3 +443,22 @@ def test_a_result_and_its_detail_become_named_tables(monkeypatch):
 
     assert '"Model"' in text and '"Daily Residuals"' in text
     assert "-0.005" in text and "0.006" not in text
+
+
+def test_show_columns_matches_names_in_any_casing(monkeypatch):
+    def quote(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"AAPL": [336.6, 4.9e12], "MSFT": [535.1, 4.0e12]},
+            index=["Price", "Market Capitalization"],
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", quote)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data",
+            {"indicator": "get_quote", "tickers": "AAPL,MSFT", "show_columns": "price"},
+        )
+    )[0][0].text
+
+    assert '"Price": 336.6' in text and "Market Capitalization" not in text

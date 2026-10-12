@@ -501,3 +501,38 @@ def test_an_empty_answer_over_a_weekend_says_why(monkeypatch):
     )[0][0].text
 
     assert "no trading days" in text
+
+
+def test_a_curve_is_passed_by_maturity_and_its_absence_is_named(captured):
+    def call(**arguments):
+        return asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "fixed_income",
+                {
+                    "indicator": "get_yield_curve_spread",
+                    "short_maturity": 2,
+                    "long_maturity": 10,
+                    **arguments,
+                },
+            )
+        )[0][0].text
+
+    assert "sample curve" in call()
+    assert "sample curve" not in call(spot_rates={"2": 0.048, "10": 0.0524})
+    assert captured[-1]["spot_rates"] == {2.0: 0.048, 10.0: 0.0524}
+
+
+def test_a_number_parameter_also_takes_a_list(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "fixed_income",
+            {
+                "indicator": "get_duration",
+                "par_value": 1000,
+                "coupon_rate": [0.03, 0.05],
+                "years_to_maturity": [5, 10],
+            },
+        )
+    )
+
+    assert captured[-1]["coupon_rate"] == [0.03, 0.05]

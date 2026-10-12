@@ -239,6 +239,9 @@ def _annotate_with_description(
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
 
+# The yield curves the fixed income calculations take, which default to a sample curve.
+CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
+
 # A window of at most this many days can be empty for lack of trading days alone.
 SHORT_WINDOW_DAYS = 3
 
@@ -594,7 +597,11 @@ def _simplify_annotation(ann: Any) -> Any:
         # A mapping without a single-value form (portfolio weights per ticker) stays one,
         # so a caller can pass {"AAPL": 0.6, "MSFT": 0.4}.
         mapping = next(
-            (a for a in args if typing.get_origin(a) is dict and typing.get_args(a)),
+            (
+                (a if typing.get_args(a) else dict[str, float])
+                for a in args
+                if typing.get_origin(a) is dict or a is dict
+            ),
             None,
         )
         if mapping is not None:
@@ -606,6 +613,20 @@ def _simplify_annotation(ann: Any) -> Any:
         scalars = [x for x in scalars if x is not int]
 
     scalar = scalars[0]
+
+    # A number that may also be a list of numbers (coupon rates or maturities for a bond
+    # sensitivity table, lags for growth) accepts both, as the indicator does.
+    if scalar in (int, float) and any(
+        a is list
+        or (
+            typing.get_origin(a) is list
+            and all(arg in (int, float) for arg in typing.get_args(a))
+        )
+        for a in args
+    ):
+        combined = scalar | list[scalar]
+        return combined | None if has_none else combined
+
     return scalar | None if has_none else scalar
 
 
@@ -1171,6 +1192,34 @@ class ToolRegistry:
                 ):
                     method_kwargs[pname] = value
 
+            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number.
+            curve_note = None
+            for curve in CURVE_PARAMETERS:
+                given = method_kwargs.get(curve)
+                if isinstance(given, dict):
+                    try:
+                        method_kwargs[curve] = {
+                            float(maturity): float(rate)
+                            for maturity, rate in given.items()
+                        }
+                    except (TypeError, ValueError):
+                        return (
+                            f"Invalid `{curve}` for `{tool_name}` (`{method_name}`): give the "
+                            "rate per maturity in years, e.g. {'1': 0.042, '10': 0.043}."
+                        )
+            if missing_curves := [
+                curve
+                for curve in CURVE_PARAMETERS
+                if curve in accepted_params
+                and method_kwargs.get(curve) in (None, "", {})
+            ]:
+                curve_note = (
+                    f"{', '.join(f'`{curve}`' for curve in missing_curves)} "
+                    f"{'was' if len(missing_curves) == 1 else 'were'} not given, so a fixed "
+                    "sample curve was used for illustration, not market data. Pass the "
+                    "current curve, e.g. from get_treasury_rates in the rates tool."
+                )
+
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
             missing_inputs = [
@@ -1493,6 +1542,8 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
+                if curve_note:
+                    notes.append(curve_note)
                 # The inputs an option model used, which it only logs.
                 if method_kwargs.get("show_input_info"):
                     notes.extend(input_info)

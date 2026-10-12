@@ -41,6 +41,56 @@ def join_initials(text: str) -> str:
     return re.sub(r"\b([A-Za-z])/([A-Za-z])\b", r"\1\2", text)
 
 
+# Words for what an analyst wants to know that no indicator is named after, and the
+# indicators that answer them. A query with such a word lists these first.
+SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "expensive": (
+        "get_price_to_earnings_ratio",
+        "get_ev_to_ebitda_ratio",
+        "get_price_to_book_ratio",
+    ),
+    "cheap": (
+        "get_price_to_earnings_ratio",
+        "get_ev_to_ebitda_ratio",
+        "get_price_to_book_ratio",
+    ),
+    "overvalued": (
+        "get_price_to_earnings_ratio",
+        "get_intrinsic_valuation",
+        "get_ev_to_ebitda_ratio",
+    ),
+    "undervalued": (
+        "get_price_to_earnings_ratio",
+        "get_intrinsic_valuation",
+        "get_ev_to_ebitda_ratio",
+    ),
+    "bankruptcy": ("get_altman_z_score", "get_ohlson_o_score", "get_zmijewski_score"),
+    "distress": ("get_altman_z_score", "get_ohlson_o_score", "get_zmijewski_score"),
+    "default": (
+        "get_altman_z_score",
+        "get_default_rates",
+        "get_rating_transition_matrix",
+    ),
+    "correlation": ("get_correlation_matrix",),
+    "insider": ("get_insider_trade_statistics", "get_insider_trading_latest"),
+    "target": ("get_analyst_estimates", "get_stock_grades"),
+    "forecast": (
+        "get_analyst_estimates",
+        "get_inflation_expectations",
+        "get_arima_forecast",
+    ),
+    "revenue": (
+        "get_income_statement",
+        "get_revenue_product_segmentation",
+        "get_revenue_geographic_segmentation",
+    ),
+    "history": ("get_historical_data",),
+    "greeks": ("get_delta", "get_gamma", "get_theta", "get_vega", "get_rho"),
+    "bond": ("get_present_value", "get_yield_to_maturity", "get_duration"),
+    "buyback": ("get_buyback_yield", "get_shareholder_yield"),
+    "buybacks": ("get_buyback_yield", "get_shareholder_yield"),
+}
+
 # Shorter search words must match a whole word, as fuzzy matching makes them match anything.
 FUZZY_MINIMUM_LENGTH = 4
 
@@ -255,6 +305,16 @@ class UtilityToolRegistry:
             if exact(token, title_words) or token in summary_words
         }
 
+        # Indicators named in SEARCH_CONCEPTS for a word of the query rank first.
+        concept_hits: dict[str, float] = {}
+        for token in query_tokens:
+            names = SEARCH_CONCEPTS.get(token, ())
+            for position, name in enumerate(names):
+                # The first indicator of a concept is the most direct answer.
+                concept_hits[name] = max(
+                    concept_hits.get(name, 0.0), 2.0 + 0.1 * (len(names) - position)
+                )
+
         scored: list[tuple[float, int, dict[str, str]]] = []
 
         for position, (entry, name, aliases, title_words, summary_words) in enumerate(
@@ -281,6 +341,8 @@ class UtilityToolRegistry:
                 score += 1.5
             elif query_tokens in aliases:
                 score += 1.0
+
+            score += concept_hits.get(entry["indicator"], 0.0)
 
             if score >= MINIMUM_INDICATOR_SCORE:
                 scored.append((score, position, entry))

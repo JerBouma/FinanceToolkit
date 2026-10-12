@@ -27,6 +27,11 @@ def search(query):
         ("return on equitty", ("profitability", "get_return_on_equity")),
         ("RSI", ("momentum", "get_relative_strength_index")),
         ("bollinger", ("volatility", "get_bollinger_bands")),
+        ("how expensive is the stock", ("valuation", "get_price_to_earnings_ratio")),
+        ("bankruptcy risk", ("models", "get_altman_z_score")),
+        ("correlation between stocks", ("performance", "get_correlation_matrix")),
+        ("latest inflation", ("macroeconomics", "get_inflation_rate")),
+        ("current ratio", ("liquidity", "get_current_ratio")),
     ],
 )
 def test_the_best_matching_indicator_comes_first(query, expected):

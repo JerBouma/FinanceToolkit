@@ -786,3 +786,48 @@ def test_calendar_events_filter_and_survey_levels(monkeypatch):
         0.03
     )
     assert everything.loc["Unemployment Rate (Aug)", "Actual"] == pytest.approx(0.041)
+
+
+def test_calendar_events_match_without_spaces_or_hyphens(monkeypatch):
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    releases = pd.DataFrame(
+        [
+            {
+                "date": "2026-10-02 12:30:00",
+                "country": "US",
+                "event": "Non Farm Payrolls (Sep)",
+            },
+            {
+                "date": "2026-10-02 12:30:00",
+                "country": "US",
+                "event": "Nonfarm Payrolls Private (Sep)",
+            },
+            {
+                "date": "2026-10-03 12:30:00",
+                "country": "US",
+                "event": "Unemployment Rate (Sep)",
+            },
+        ]
+    ).assign(
+        currency="USD",
+        previous=None,
+        estimate=None,
+        actual=1.0,
+        unit=None,
+        impact="High",
+    )
+    monkeypatch.setattr(
+        economics_fmp_model,
+        "get_cached_financial_data",
+        lambda url, user_subscription="Free": releases.copy(),
+    )
+
+    payrolls = economics_fmp_model.get_economic_calendar(
+        "key", "2026-09-01", "2026-10-03", events="Nonfarm Payrolls"
+    )
+
+    assert sorted(payrolls["Event"]) == [
+        "Non Farm Payrolls (Sep)",
+        "Nonfarm Payrolls Private (Sep)",
+    ]

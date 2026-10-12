@@ -420,3 +420,27 @@ def test_determine_currencies_single_period():
 
 
 # ruff: noqa
+
+
+@pytest.mark.parametrize(
+    ("symbol", "financial_modeling_prep", "yahoo_finance"),
+    [
+        ("EURUSD=X", "EURUSD", "EURUSD=X"),
+        ("EURUSD", "EURUSD", "EURUSD=X"),
+        ("BTC-USD", "BTCUSD", "BTC-USD"),
+        ("ETH-BTC", "ETHBTC", "ETH-BTC"),
+        # Share classes and other symbols are left alone.
+        ("BRK-B", "BRK-B", "BRK-B"),
+        ("AAPL", "AAPL", "AAPL"),
+        ("^AEX", "^AEX", "^AEX"),
+        ("IWDA.AS", "IWDA.AS", "IWDA.AS"),
+    ],
+)
+def test_symbols_are_written_as_each_provider_writes_them(
+    symbol, financial_modeling_prep, yahoo_finance
+):
+    assert (
+        currencies_model.to_financial_modeling_prep_symbol(symbol)
+        == financial_modeling_prep
+    )
+    assert currencies_model.to_yahoo_finance_symbol(symbol) == yahoo_finance

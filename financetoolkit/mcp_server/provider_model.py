@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import os
 import time
+from collections import OrderedDict
 from importlib import metadata
 from threading import Lock
 from typing import Any
@@ -21,7 +22,12 @@ from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
-from financetoolkit.mcp_server.diagnostics_model import FMP_KEY_HINT
+from financetoolkit.mcp_server.diagnostics_model import (
+    FMP_KEY_HINT,
+    add_call_input_info,
+    call_input_info,
+    current_call_messages,
+)
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -33,9 +39,17 @@ API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 # Optional — only gates the subset of Economics/FixedIncome tools backed by FRED.
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
+# The most Toolkit instances (per tickers, dates and key) and Economics, Fixed Income or
+# Discovery instances (per dates and key) the provider keeps; the least recently used go
+# first. An Economics instance holds the Global Macro Database, over 100 MB, so few.
+MAXIMUM_TOOLKIT_INSTANCES = 64
+MAXIMUM_STANDALONE_INSTANCES = 4
+
 # Tool responses are computed output, so they sit under their own source.
 MCP_CACHE_SOURCE = policy_model.MCP
 MCP_CACHE_DATASET = "tool"
+# The warnings logged while a cached response was computed, replayed with it.
+MCP_CACHE_MESSAGES_DATASET = "tool_messages"
 
 # Part of every tool response cache key, so a release that changes a formula can never be answered from the previous release's cached numbers.  # noqa: E501
 try:
@@ -89,6 +103,40 @@ def resolve_benchmark_ticker(
     return None, (
         f"{benchmark_ticker} was requested as both the ticker and the benchmark, so the "
         "results are calculated without a benchmark."
+    )
+
+
+LOWERCASE_WORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "by",
+    "for",
+    "in",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+}
+
+
+def readable_name(method_name: str) -> str:
+    """
+    Turns a method's name into a column name, e.g. get_value_at_risk into Value at Risk.
+
+    Args:
+        method_name (str): The method's name.
+
+    Returns:
+        str: The readable name.
+    """
+    words = method_name.removeprefix("get_").split("_")
+
+    return " ".join(
+        word if index and word in LOWERCASE_WORDS else word.capitalize()
+        for index, word in enumerate(words)
     )
 
 
@@ -159,8 +207,10 @@ class ToolkitProvider:
             # set_active_cache refuses a downgrade, so withdrawing has to be explicit.
             cache_controller.clear_active_cache()
 
-        self._toolkit_cache: dict[str, Any] = {}
-        self._standalone_cache: dict[str, Any] = {}
+        # Least recently used first; bounded, as a hosted server meets many distinct requests
+        # and an Economics instance holds the Global Macro Database (over 100 MB) per range.
+        self._toolkit_cache: OrderedDict[str, Any] = OrderedDict()
+        self._standalone_cache: OrderedDict[str, Any] = OrderedDict()
         self._lock = Lock()
         self._last_eviction = 0.0
 
@@ -257,11 +307,37 @@ class ToolkitProvider:
                 logger.info(
                     f"Acquired cache information ({module_name}, {method_name})"
                 )
+                # The warnings of the call that produced it (a country not covered, a
+                # ticker without data) qualify a cached answer just the same.
+                cached_messages = self._cache.get(
+                    source=MCP_CACHE_SOURCE,
+                    dataset=MCP_CACHE_MESSAGES_DATASET,
+                    entity=f"{module_name}.{method_name}",
+                    parameters=cache_params,
+                    ttl=self._cache_ttl,
+                )
+                call_messages = current_call_messages()
+                if cached_messages is not None and call_messages is not None:
+                    kinds = (
+                        cached_messages["Kind"]
+                        if "Kind" in cached_messages.columns
+                        else pd.Series("warning", index=cached_messages.index)
+                    )
+                    call_messages.extend(
+                        cached_messages.loc[kinds == "warning", "Message"].astype(str)
+                    )
+                    add_call_input_info(
+                        list(
+                            cached_messages.loc[kinds == "input", "Message"].astype(str)
+                        )
+                    )
                 return cached
 
         logger.info(
             f"Calling Finance Toolkit functionality ({module_name}, {method_name})"
         )
+        call_messages = current_call_messages()
+        first_message = len(call_messages) if call_messages is not None else 0
 
         if category == "ticker":
             # Functionality reached through a sub-module property (ratios, models, options).
@@ -318,14 +394,42 @@ class ToolkitProvider:
             instance = Discovery(
                 api_key=effective_key, use_cached_data=self._use_cached_data
             )
-            result = getattr(instance, method_name)(**method_kwargs)
+            method = getattr(instance, method_name)
+            # The calendars and filings take a range, passed on only when one is given.
+            accepted = inspect.signature(method).parameters
+            for name, value in (("start_date", start_date), ("end_date", end_date)):
+                if value and name in accepted:
+                    method_kwargs[name] = value
+            result = method(**method_kwargs)
         else:
             raise ValueError(
                 f"Unknown category '{category}' for module '{module_name}'"
             )
 
+        # An option chain carries its expiration date as an attribute, which no answer
+        # would show; as a column it does, also from the cache.
+        expiration = (
+            getattr(result, "name", None) if isinstance(result, pd.DataFrame) else None
+        )
+        if (
+            module_name == "options"
+            and isinstance(expiration, str)
+            and validation_model.is_valid_date(expiration)
+            and "Expiration Date" not in result.columns
+        ):
+            result = result.copy()
+            result.insert(0, "Expiration Date", expiration)
+
         if isinstance(result, pd.Series):
-            result = result.to_frame()
+            # An unnamed result is named after its method, e.g. "Value at Risk", rather than
+            # becoming a column called 0.
+            result = result.to_frame(
+                name=(
+                    result.name
+                    if result.name is not None
+                    else readable_name(method_name)
+                )
+            )
         # An empty result is not cached: it usually means a missing API key or an
         # unreachable source, and a cached copy would keep answering "No data available"
         # after the key is added or the source is back.
@@ -342,6 +446,24 @@ class ToolkitProvider:
                 data=result,
                 parameters=cache_params,
             )
+            warnings = (
+                call_messages[first_message:] if call_messages is not None else []
+            )
+            inputs = call_input_info()
+            if warnings or inputs:
+                self._cache.set(
+                    source=MCP_CACHE_SOURCE,
+                    dataset=MCP_CACHE_MESSAGES_DATASET,
+                    entity=f"{module_name}.{method_name}",
+                    data=pd.DataFrame(
+                        {
+                            "Message": [*warnings, *inputs],
+                            "Kind": ["warning"] * len(warnings)
+                            + ["input"] * len(inputs),
+                        }
+                    ),
+                    parameters=cache_params,
+                )
 
         return result
 
@@ -415,15 +537,14 @@ class ToolkitProvider:
             if shifted:
                 # Values are bare years for annual data and period labels such as "2026Q1" for quarterly data, so an example carries both cases.  # noqa: E501
                 fiscal, calendar = shifted[0]
-                fy_tickers.append(
-                    f"{ticker} ({len(shifted)} periods, e.g. {fiscal} to {calendar})"
-                )
+                fy_tickers.append(f"{ticker} (e.g. fiscal {fiscal} as {calendar})")
             elif malformed:
                 fy_tickers.append(f"{ticker} (periods relabelled, detail unavailable)")
 
         if fy_tickers:
             notes.append(
-                f"Fiscal Year to Calendar Year mapped for: {', '.join(fy_tickers)}"
+                "Fiscal years are shown as the calendar year they mostly fall in, so "
+                f"companies compare like for like: {', '.join(fy_tickers)}"
             )
 
         stmt_currencies: pd.Series = getattr(
@@ -438,7 +559,8 @@ class ToolkitProvider:
                     converted_currencies.append(f"{ticker} ({src} to {dst})")
             if converted_currencies:
                 notes.append(
-                    f"Aligned Financial Statements with OHLC for: {', '.join(converted_currencies)}"
+                    "Financial statements are converted to the currency of the share "
+                    f"price for: {', '.join(converted_currencies)}"
                 )
 
         return notes
@@ -503,6 +625,7 @@ class ToolkitProvider:
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
             if cache_key in self._toolkit_cache:
+                self._toolkit_cache.move_to_end(cache_key)
                 return self._toolkit_cache[cache_key]
 
             if not effective_key:
@@ -520,6 +643,8 @@ class ToolkitProvider:
                 use_cached_data=self._use_cached_data,
             )
             self._toolkit_cache[cache_key] = toolkit_instance
+            while len(self._toolkit_cache) > MAXIMUM_TOOLKIT_INSTANCES:
+                self._toolkit_cache.popitem(last=False)
 
         return toolkit_instance
 
@@ -675,6 +800,8 @@ class ToolkitProvider:
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
             instance = self._standalone_cache.get(cache_key)
+            if instance is not None:
+                self._standalone_cache.move_to_end(cache_key)
 
             if instance is None:
                 if module_name == "economics":
@@ -704,6 +831,8 @@ class ToolkitProvider:
                     raise ValueError(f"Unknown standalone module: {module_name}")
 
                 self._standalone_cache[cache_key] = instance
+                while len(self._standalone_cache) > MAXIMUM_STANDALONE_INSTANCES:
+                    self._standalone_cache.popitem(last=False)
 
         method = getattr(instance, method_name)
 

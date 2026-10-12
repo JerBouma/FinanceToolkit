@@ -184,11 +184,20 @@ def get_economic_calendar(
         country_codes = country_codes[economic_calendar.index]
 
     if requested_events := _as_list(events):
-        # Matched as plain text, so a name like "S&P Global PMI" needs no escaping.
+        # Matched as plain text, so a name like "S&P Global PMI" needs no escaping, and
+        # without spaces or hyphens, as the source writes "Non Farm Payrolls" for the
+        # headline and "Nonfarm Payrolls Private" for its private part.
         matches = pd.Series(False, index=economic_calendar.index)
-        names = economic_calendar["event"].fillna("").str.lower()
+        names = (
+            economic_calendar["event"]
+            .fillna("")
+            .str.lower()
+            .str.replace(r"[\s-]", "", regex=True)
+        )
         for event in requested_events:
-            matches |= names.str.contains(event.lower(), regex=False)
+            matches |= names.str.contains(
+                re.sub(r"[\s-]", "", event.lower()), regex=False
+            )
         economic_calendar = economic_calendar[matches]
         country_codes = country_codes[economic_calendar.index]
 

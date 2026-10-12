@@ -126,6 +126,28 @@ def _resolve_cache_mode(configured: object) -> str:
     return "shared" if hosted else "full"
 
 
+def _resolve_max_response_characters(configured: object) -> int | None:
+    """
+    The size a tool response may have: FT_MCP_MAX_RESPONSE_CHARACTERS when set, otherwise
+    the config.yaml value. Zero switches the limit off.
+
+    Args:
+        configured (object): The ``responses.max_characters`` value from config.yaml.
+
+    Returns:
+        int | None: The number of characters, or None for no limit.
+    """
+    override = os.environ.get("FT_MCP_MAX_RESPONSE_CHARACTERS", "").strip()
+    value = override if override.isdigit() else configured
+
+    try:
+        characters = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+    return characters if characters > 0 else None
+
+
 def _build_mcp_app() -> FastMCP:
     """
     Bootstrap the MCP application and return the configured FastMCP instance.
@@ -185,6 +207,7 @@ def _build_mcp_app() -> FastMCP:
 
     mcp = FastMCP(
         name="Finance Toolkit Analyst",
+        instructions=configuration.get("instructions"),
         log_level="CRITICAL",
         host="0.0.0.0",  # noqa: S104
     )
@@ -220,12 +243,16 @@ def _build_mcp_app() -> FastMCP:
         method_defaults=configuration.get("method_defaults", {}),
         countries_optional=configuration.get("countries_optional", []),
         analytics=analytics,
+        max_response_characters=_resolve_max_response_characters(
+            configuration.get("responses", {}).get("max_characters")
+        ),
+        full_text_methods=configuration.get("full_text_methods", []),
+        tickers_optional=configuration.get("tickers_optional", []),
     )
 
     utility_registry = UtilityToolRegistry(
         mcp=mcp,
         registry=toolkit_registry,
-        provider=provider,
         search_stop_words=configuration["search_stop_words"],
         category_descriptions=configuration["category_descriptions"],
         analytics=analytics,

@@ -251,6 +251,7 @@ POLICIES: dict[str, CachePolicy] = {
     f"{KEN_FRENCH}.factors_decimal": CachePolicy(ttl_seconds=7 * DAY),
     # Computed MCP tool responses layered on top of the source caches.
     f"{MCP}.tool": CachePolicy(ttl_seconds=DAY),
+    f"{MCP}.tool_messages": CachePolicy(ttl_seconds=DAY),
 }
 
 

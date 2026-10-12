@@ -9,6 +9,7 @@ carry no runtime dependencies on live controller instances.
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import re
 from datetime import datetime, timedelta
@@ -292,6 +293,18 @@ class ControllerInspector:
             if meth_func is None:
                 continue
             for p in self.extract_extra_params(meth_func):
+                # The same name with another type in another indicator (q is an ARIMA order
+                # and a quantile) accepts both, so neither indicator's values are refused.
+                if (
+                    p.name in seen
+                    and p.annotation is not inspect.Parameter.empty
+                    and seen[p.name].annotation is not inspect.Parameter.empty
+                    and p.annotation != seen[p.name].annotation
+                ):
+                    with contextlib.suppress(TypeError):
+                        seen[p.name] = seen[p.name].replace(
+                            annotation=seen[p.name].annotation | p.annotation
+                        )
                 if p.name not in seen:
                     seen[p.name] = p
         return list(seen.values())
@@ -444,7 +457,16 @@ class ControllerInspector:
         if self._categories.get("standalone") in effective:
             params.append(P("countries", POS, default="", annotation=str | list[str]))
 
-        if self._categories.get("discovery") not in effective:
+        if self._categories.get("discovery") in effective:
+            # Discovery lists are snapshots; only the calendars and filings take a range,
+            # and only when one is given, so their own default window applies otherwise.
+            params.extend(
+                [
+                    P("start_date", POS, default="", annotation=str),
+                    P("end_date", POS, default="", annotation=str),
+                ]
+            )
+        else:
             params.extend(
                 [
                     P("start_date", POS, default=self._start_date, annotation=str),

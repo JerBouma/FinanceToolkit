@@ -56,7 +56,7 @@ from financetoolkit.fixedincome import bundesbank_model, fed_model
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.statistics_model import finalize_dataset
+from financetoolkit.utilities.statistics_model import euro_area_hint, finalize_dataset
 
 logger = get_logger()
 
@@ -218,10 +218,9 @@ class Economics:
             pd.DataFrame: The dataset, with a (variable, country) column per series.
         """
         if gmdb_forecasts not in self._gmdb_datasets:
-            self._gmdb_datasets[gmdb_forecasts] = (
-                gmdb_model.collect_global_macro_database_dataset(
-                    cache=self._cache, include_forecasts=gmdb_forecasts
-                )
+            # Shared by every instance in the process (see gmdb_model.get_shared_dataset).
+            self._gmdb_datasets[gmdb_forecasts] = gmdb_model.get_shared_dataset(
+                cache=self._cache, include_forecasts=gmdb_forecasts
             )
 
         return self._gmdb_datasets[gmdb_forecasts]
@@ -4595,7 +4594,13 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
         period = "yearly" if period.lower() == "annual" else period.lower()
 
         if period in ("daily", "weekly"):
@@ -4858,6 +4863,8 @@ class Economics:
             if isinstance(countries, str):
                 countries = [countries]
 
+            full_money_supply = money_supply
+
             if isinstance(money_supply.columns, pd.MultiIndex):
                 available_countries = money_supply.columns.get_level_values(1).unique()
                 missing_countries = [
@@ -4886,6 +4893,19 @@ class Economics:
             if missing_countries:
                 logger.warning(
                     f"The following countries are not available for Money Supply: {missing_countries}"
+                )
+
+            # Euro members have no money supply of their own since 1999, only the area does.
+            if not money_supply.empty and bool(money_supply.isna().all().all()):
+                found = [
+                    country for country in countries if country not in missing_countries
+                ]
+                logger.warning(
+                    "There are no Money Supply observations for %s between %s and %s.%s",
+                    ", ".join(found),
+                    self._start_date,
+                    self._end_date,
+                    euro_area_hint(found, full_money_supply),
                 )
 
         return money_supply
@@ -5106,7 +5126,13 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if gmdb_source:
 
@@ -5246,7 +5272,13 @@ class Economics:
             else "quarterly" if self._quarterly else "yearly"
         )
 
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if period.lower() in ("daily", "weekly"):
             long_term_interest_rate = resample_to_period(
@@ -5645,7 +5677,13 @@ class Economics:
             if period is not None
             else "quarterly" if self._quarterly else "yearly"
         )
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if gmdb_source:
 
@@ -5907,8 +5945,9 @@ class Economics:
 
         Both sources return the rate as a decimal fraction of the labour force (0.036 for
         3.6%), so the two are directly interchangeable. Only the OECD source supports
-        monthly and quarterly frequency; the GMDB is annual only, so the period argument
-        has no effect when gmdb_source is True.
+        monthly and quarterly frequency; the GMDB is annual only, so a monthly or quarterly
+        request uses the OECD unless gmdb_source=True is passed, in which case the period
+        argument has no effect.
 
         With period="monthly" (unless gmdb_source=True is passed explicitly) the euro area
         and the countries Eurostat covers come from Eurostat and the United Kingdom from
@@ -5983,7 +6022,13 @@ class Economics:
         # The GMDB is annual, so a monthly request goes to the monthly sources unless the
         # GMDB is asked for explicitly.
         monthly = period.lower() == "monthly" and gmdb_source is not True
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+        # The GMDB is annual, so a monthly or quarterly request goes to the sources that
+        # have that frequency unless the GMDB is asked for explicitly.
+        gmdb_source = (
+            gmdb_source
+            if gmdb_source is not None
+            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+        )
 
         if monthly:
             # Eurostat and the ONS publish weeks before the OECD republishes their figures.
@@ -8231,9 +8276,11 @@ class Economics:
         volatility index, fear index.
 
         Args:
-            markets (list[str] | str | None, optional): The markets to retrieve, from those
-                listed above. Defaults to None, which retrieves every market that needs no
-                API key, and the MOVE and JGB VIX as well when an API key is set.
+            markets (list[str] | str | None, optional): The markets to retrieve, from
+                "US Equity", "Euro Area Equity", "Emerging Markets Equity", "US Equity
+                Volatility", "US Treasury Bonds", "Crude Oil", "Gold", "US Treasury Rates" and
+                "Japan Government Bonds". Defaults to None, which retrieves every market that
+                needs no API key, and the MOVE and JGB VIX as well when an API key is set.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
@@ -8646,7 +8693,11 @@ class Economics:
         physical risk, carbon price path.
 
         Args:
-            variable (str, optional): The variable, from those listed above. Defaults to
+            variable (str, optional): The variable: "gdp", "inflation",
+                "long_term_interest_rate", "long_term_real_interest_rate", "policy_rate",
+                "unemployment_rate", "equity_prices", "effective_exchange_rate",
+                "domestic_demand", "exports", "imports", "oil_price", "gas_price",
+                "coal_price" or "carbon_price" (units above). Defaults to
                 "long_term_interest_rate".
             scenario (str, optional): "Net Zero 2050", "Below 2°C", "Low demand", "Delayed
                 transition", "Nationally Determined Contributions (NDCs)", "Current
@@ -8655,8 +8706,8 @@ class Economics:
                 "REMIND-MAgPIE", "GCAM" or "MESSAGEix-GLOBIOM". Defaults to "REMIND-MAgPIE".
             countries (list[str] | str | None, optional): The countries or regions to
                 include. Defaults to None, which includes all of them.
-            risk (str, optional): "combined", "transition" or "physical". Defaults to
-                "combined".
+            risk (str, optional): "combined", "transition" or "physical". Current Policies has
+                physical risk only, which is also its combined risk. Defaults to "combined".
             deviation (bool, optional): Whether to return the deviation from the baseline
                 instead of the level. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -8719,6 +8770,15 @@ class Economics:
                 )
             climate_scenario = ngfs_model.get_carbon_price(scenario, model)
         else:
+            # Current Policies has no transition (that is the scenario), so NGFS publishes
+            # its physical risk only, which is then also its combined risk.
+            if scenario == "Current Policies" and risk == "combined":
+                risk = "physical"
+            elif scenario == "Current Policies" and risk == "transition":
+                raise ValueError(
+                    "Current Policies has no transition risk: it is the scenario without a "
+                    "transition. Use risk='physical' or 'combined' for its physical risk."
+                )
             climate_scenario = ngfs_model.get_nigem_scenario(
                 variable, scenario, model, risk, deviation
             )
@@ -9045,7 +9105,9 @@ class Economics:
             measure (str, optional): "real_world" or "market_consistent". Defaults to
                 "real_world".
             variables (list[str] | str | None, optional): The variables to include, from
-                those listed above. Defaults to None, which includes all of them.
+                "Nominal rate 1Y", "Nominal rate 5Y", "Nominal rate 10Y", "Nominal rate 20Y",
+                "Nominal rate 30Y", "Real rate EU 10Y", "Equity return", "Inflation EU" and
+                "Inflation NL". Defaults to None, which includes all of them.
             quantiles (list[float] | None, optional): The quantiles of the distribution
                 per year. Defaults to None, which is [0.01, 0.05, 0.25, 0.5, 0.75, 0.95,
                 0.99].
@@ -9190,7 +9252,9 @@ class Economics:
 
         Args:
             asset_classes (list[str] | str | None, optional): The asset classes to include,
-                from those listed above. Defaults to None, which includes all of them.
+                from "Private Equity", "Infrastructure", "Hedge Funds", "Merger Arbitrage",
+                "Private Credit", "Real Estate", "Investment Grade Credit" and "High Yield
+                Credit". Defaults to None, which includes all of them.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "monthly".
             returns (bool, optional): Whether to return the total return per period instead

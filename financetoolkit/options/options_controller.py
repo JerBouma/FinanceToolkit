@@ -174,6 +174,7 @@ class Options:
         put_option: bool = False,
         show_expiration_dates: bool = False,
         rounding: int | None = None,
+        strike_price_range: float | None = None,
     ):
         """
         Get the Option Chains which gives information about the currently available
@@ -199,6 +200,9 @@ class Options:
                 the option chains. Defaults to False.
             use the first available expiration date.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            strike_price_range (float | None, optional): Only the strikes within this fraction of the
+                current stock price, e.g. 0.05 for strikes within 5% of it. Defaults to None, which
+                keeps every strike.
 
         Returns:
             pd.DataFrame: the option chains containing the tickers and strike prices as
@@ -284,6 +288,16 @@ class Options:
         option_chains["Implied Volatility"] = option_chains["Implied Volatility"].pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
         )
+
+        if strike_price_range is not None:
+            # The strikes around the current price, where the trading (and the question) is.
+            current_prices = self._prices.iloc[-1]
+            spot = option_chains.index.get_level_values(0).map(current_prices)
+            strikes = option_chains.index.get_level_values(1)
+            option_chains = option_chains[
+                (strikes >= spot * (1 - strike_price_range))
+                & (strikes <= spot * (1 + strike_price_range))
+            ]
 
         option_chains.name = expiration_date
 
@@ -674,6 +688,8 @@ class Options:
         implied_volatility_df = (
             pd.DataFrame(implied_volatility).unstack().dropna().sort_index()
         )
+        # Named like the option chains, so the strike price is not mistaken for a metric.
+        implied_volatility_df.index.names = ["Ticker", "Strike Price"]
 
         implied_volatility_df = apply_rounding(
             implied_volatility_df, rounding if rounding is not None else self._rounding
@@ -946,6 +962,8 @@ class Options:
             }
         )
         volatility_surface.index.names = ["Ticker", "Strike Price"]
+        # In expiration order, whatever order the tickers' expiries were collected in.
+        volatility_surface = volatility_surface[sorted(volatility_surface.columns)]
 
         return apply_rounding(
             volatility_surface, rounding if rounding is not None else self._rounding

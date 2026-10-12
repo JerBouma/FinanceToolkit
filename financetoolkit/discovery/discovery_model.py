@@ -2,13 +2,18 @@
 
 __docformat__ = "google"
 
+import re
+
+import numpy as np
 import pandas as pd
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
+from financetoolkit.economics.helpers import COUNTRY_CODES
 from financetoolkit.fmp_model import get_financial_data
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = logger_model.get_logger()
 
@@ -90,6 +95,16 @@ def get_cached_financial_data(
     return response
 
 
+# The parameter each search of Financial Modeling Prep takes the query as.
+SEARCH_PARAMETERS = {
+    "name": "query",
+    "symbol": "query",
+    "cik": "cik",
+    "cusip": "cusip",
+    "isin": "isin",
+}
+
+
 def get_instruments(
     api_key: str,
     query: str,
@@ -107,7 +122,18 @@ def get_instruments(
     Returns:
         pd.DataFrame: DataFrame of instruments.
     """
-    url = f"https://financialmodelingprep.com/stable/search-{search_method}?query={query}&apikey={api_key}"
+    if search_method not in SEARCH_PARAMETERS:
+        raise ValueError(
+            f"The search method {search_method!r} is not valid. Choose from "
+            f"{', '.join(SEARCH_PARAMETERS)}."
+        )
+
+    # The identifier searches take the identifier as their own parameter: given `query`,
+    # FinancialModelingPrep ignores it and answers with Apple for every ISIN or CUSIP.
+    url = (
+        f"https://financialmodelingprep.com/stable/search-{search_method}"
+        f"?{SEARCH_PARAMETERS[search_method]}={query}&apikey={api_key}"
+    )
 
     instruments_query = get_cached_financial_data(
         url=url, user_subscription=user_subscription
@@ -135,7 +161,142 @@ def get_instruments(
 
         instruments_query = instruments_query.set_index("Symbol")
 
+        if search_method in ("isin", "cusip"):
+            instruments_query = _rank_listings_by_volume(
+                instruments_query, api_key, user_subscription
+            )
+
     return instruments_query
+
+
+def _rank_listings_by_volume(
+    listings: pd.DataFrame, api_key: str, user_subscription: str
+) -> pd.DataFrame:
+    """
+    Puts the primary listing of an ISIN or CUSIP first. The search ranks the listings by
+    their market capitalisation in their own currency, so a listing in Mexican pesos came
+    before the one in US dollars; trading volume counts shares on every exchange alike,
+    and the primary listing trades by far the most.
+
+    Args:
+        listings (pd.DataFrame): The listings, indexed by symbol.
+        api_key (str): The API key from Financial Modeling Prep.
+        user_subscription (str): The user subscription level.
+
+    Returns:
+        pd.DataFrame: The listings with their exchange and volume, most traded first.
+    """
+    quotes = get_cached_financial_data(
+        url=(
+            "https://financialmodelingprep.com/stable/batch-quote"
+            f"?symbols={','.join(listings.index)}&apikey={api_key}"
+        ),
+        user_subscription=user_subscription,
+    )
+
+    if quotes.empty or not {"symbol", "volume"}.issubset(quotes.columns):
+        return listings
+
+    quotes = quotes.drop_duplicates("symbol").set_index("symbol")
+
+    if "exchange" in quotes.columns and "Exchange Code" not in listings.columns:
+        listings["Exchange Code"] = quotes["exchange"].reindex(listings.index)
+
+    listings["Volume"] = quotes["volume"].reindex(listings.index)
+
+    return listings.sort_values("Volume", ascending=False, na_position="last")
+
+
+# The abbreviations in the names of preferred shares and hybrid securities, such as "Aegon
+# N.V. PRP CP SEC 6.375", case-sensitive so that a company such as Preferred Bank is not.
+HYBRID_SECURITY_PATTERN = re.compile(
+    r"\b(?:PRP|PERP|PFD|PRF|CAP SECS?|CP SECS?|FLTG RT|DEP SHS?|SUB NTS?)\b"  # codespell:ignore shs
+    r"|\s\d+\.\d+%?$|\d+\.\d+%"
+)
+
+# The company screener returns at most this many results.
+MAXIMUM_SCREENER_LIMIT = 10000
+
+# The share of the US dollar lower market cap bound sent to the screener, low enough that
+# a listing in a currency worth up to twice a dollar is not left out before converting.
+MARKET_CAP_BOUND_MARGIN = 0.5
+
+# The currency of the exchanges of each country Financial Modeling Prep lists (UK, not GB).
+# A helper column of the screener: whether a listing trades in the company's own country.
+HOME_LISTING = "_home_listing"
+
+COUNTRY_CURRENCIES = {
+    "US": "USD",
+    "CA": "CAD",
+    "MX": "MXN",
+    "BR": "BRL",
+    "AR": "ARS",
+    "CL": "CLP",
+    "UK": "GBP",
+    "GB": "GBP",
+    "IE": "EUR",
+    "NL": "EUR",
+    "BE": "EUR",
+    "FR": "EUR",
+    "DE": "EUR",
+    "AT": "EUR",
+    "IT": "EUR",
+    "ES": "EUR",
+    "PT": "EUR",
+    "FI": "EUR",
+    "GR": "EUR",
+    "CH": "CHF",
+    "SE": "SEK",
+    "NO": "NOK",
+    "DK": "DKK",
+    "IS": "ISK",
+    "PL": "PLN",
+    "CZ": "CZK",
+    "TR": "TRY",
+    "RU": "RUB",
+    "IL": "ILS",
+    "SA": "SAR",
+    "AE": "AED",
+    "QA": "QAR",
+    "ZA": "ZAR",
+    "IN": "INR",
+    "CN": "CNY",
+    "HK": "HKD",
+    "TW": "TWD",
+    "JP": "JPY",
+    "KR": "KRW",
+    "SG": "SGD",
+    "MY": "MYR",
+    "TH": "THB",
+    "ID": "IDR",
+    "AU": "AUD",
+    "NZ": "NZD",
+}
+
+
+def _to_country_code(country: str | None) -> str | None:
+    """
+    The two-letter code the screener takes for a country written as a code or a name, such
+    as "Netherlands", "netherlands" or "UK".
+
+    Args:
+        country (str | None): The country.
+
+    Returns:
+        str | None: The code, or the country as given when it is not known.
+    """
+    if country is None or len(country.strip()) == 2:  # noqa: PLR2004
+        # The ISO code of the United Kingdom is GB, which is what the screener uses.
+        code = country.strip().upper() if country else country
+        return "GB" if code == "UK" else code
+
+    name = normalize_country_name(country, COUNTRY_CODES.values())
+    # The first code of a country wins: GB rather than UK for the United Kingdom.
+    codes: dict[str, str] = {}
+    for code, value in COUNTRY_CODES.items():
+        codes.setdefault(value, code)
+
+    return codes.get(str(name), country)
 
 
 def get_stock_screener(
@@ -157,10 +318,15 @@ def get_stock_screener(
     is_etf: bool | None = None,
     limit: int = 1000,
     user_subscription: str = "Free",
+    primary_only: bool = False,
 ) -> pd.DataFrame:
     """
     Get a list of instruments based on the screening criteria provided. It defaults
     to all stocks.
+
+    The market capitalisations of the listings are in their own currency, so they are
+    converted to US dollars, which the market cap bounds and the ranking use: a listing
+    in Canadian dollars no longer ranks above the same company's listing in euros.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -172,31 +338,57 @@ def get_stock_screener(
         beta_lower (int, optional): The beta lower than. Defaults to None.
         volume_higher (int, optional): The volume higher than. Defaults to None.
         volume_lower (int, optional): The volume lower than. Defaults to None.
-        dividend_higher (int, optional): The dividend higher than. Defaults to None.
-        dividend_lower (int, optional): The dividend lower than. Defaults to None.
+        dividend_higher (int, optional): The minimum last annual dividend per share, an amount
+            in the listing's currency rather than a yield. Defaults to None.
+        dividend_lower (int, optional): The maximum last annual dividend per share, an amount
+            in the listing's currency rather than a yield. Defaults to None.
         sector (str, optional): The sector to restrict the screen to, e.g. "Energy".
         industry (str, optional): The industry to restrict the screen to, e.g. "Biotechnology".
-        country (str, optional): The two-letter country code to restrict the screen to, e.g. "US".
+        country (str, optional): The country to restrict the screen to, as a two-letter code
+            ("NL") or a name ("Netherlands"). Defaults to None.
         exchange (str, optional): The exchange code to restrict the screen to, e.g. "NASDAQ".
-        is_etf (bool, optional): Whether the instrument is an ETF. Defaults to None.
+        is_etf (bool, optional): True for ETFs only. Defaults to None, which screens stocks
+            only (no ETFs or funds), as does False.
         limit (int, optional): The maximum number of results the API returns. Defaults to 1000,
             which is also the API's own default, so hitting exactly this number means the result
             was truncated.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        primary_only (bool, optional): Whether to keep only the home listing (on an exchange in
+            the company's country, the most traded one among several) of each
+            company, rather than every listing (e.g. ING in Amsterdam, New York, Toronto and
+            Frankfurt). Defaults to False.
 
     Returns:
-        pd.DataFrame: DataFrame of instruments matching the query. An empty DataFrame is returned
-            when nothing matches.
+        pd.DataFrame: DataFrame of instruments matching the query, with each listing's currency
+            and its market cap in US dollars, largest first. An empty DataFrame is returned when
+            nothing matches.
 
     Notes:
         - Every bound is compared against None rather than truthiness, so a bound of exactly zero
           (a perfectly valid beta, dividend or volume floor) is sent to the API instead of dropped.
     """
     url = f"https://financialmodelingprep.com/stable/company-screener?apikey={api_key}"
+    widened = (
+        market_cap_higher is not None or market_cap_lower is not None or primary_only
+    )
+    # One listing per company needs room for the companies listed many times over (ASML
+    # has six listings), whose foreign listings can also rank above the home one.
+    requested_limit = (
+        min(limit * (10 if primary_only else 4), MAXIMUM_SCREENER_LIMIT)
+        if widened
+        else limit
+    )
 
+    # The endpoint compares market caps in each listing's own currency, while the bounds
+    # are in US dollars: the lower bound is widened for currencies worth more than a dollar
+    # and the upper bound is applied after converting, so no listing is wrongly left out.
+    # More results are asked for, since the converted bounds then narrow them down.
     query_parameters = {
-        "marketCapMoreThan": market_cap_higher,
-        "marketCapLowerThan": market_cap_lower,
+        "marketCapMoreThan": (
+            int(market_cap_higher * MARKET_CAP_BOUND_MARGIN)
+            if market_cap_higher is not None
+            else None
+        ),
         "priceMoreThan": price_higher,
         "priceLowerThan": price_lower,
         "betaMoreThan": beta_higher,
@@ -207,10 +399,13 @@ def get_stock_screener(
         "dividendLowerThan": dividend_lower,
         "sector": sector,
         "industry": industry,
-        "country": country,
+        "country": _to_country_code(country),
         "exchange": exchange,
-        "isEtf": is_etf,
-        "limit": limit,
+        # Stocks unless ETFs are asked for: the endpoint otherwise mixes in ETFs and mutual
+        # funds, which have no market capitalisation of their own.
+        "isEtf": str(bool(is_etf)).lower(),
+        "isFund": "false",
+        "limit": requested_limit,
     }
 
     for parameter, value in query_parameters.items():
@@ -248,15 +443,167 @@ def get_stock_screener(
         columns=["isEtf", "isFund", "isActivelyTrading"], errors="ignore"
     )
     stock_screener = stock_screener.set_index("Symbol")
+    truncated = len(stock_screener) >= requested_limit
 
-    if len(stock_screener) >= limit:
+    # A preferred share or hybrid security has no market capitalisation of its own, while
+    # the screener reports one in the tens of billions for such a listing.
+    if {"Name", "Market Cap"}.issubset(stock_screener.columns):
+        hybrids = (
+            stock_screener["Name"].astype(str).str.contains(HYBRID_SECURITY_PATTERN)
+        )
+        stock_screener.loc[hybrids, "Market Cap"] = np.nan
+
+    stock_screener = _add_market_cap_in_dollars(
+        stock_screener, api_key, user_subscription
+    )
+    dollar_market_cap = (
+        "Market Cap (USD)"
+        if "Market Cap (USD)" in stock_screener.columns
+        else "Market Cap"
+    )
+
+    if market_cap_higher is not None:
+        stock_screener = stock_screener[
+            stock_screener[dollar_market_cap] >= market_cap_higher
+        ]
+    if market_cap_lower is not None:
+        stock_screener = stock_screener[
+            stock_screener[dollar_market_cap] <= market_cap_lower
+        ]
+
+    stock_screener = stock_screener.sort_values(
+        dollar_market_cap, ascending=False, na_position="last"
+    )
+
+    if primary_only and "Name" in stock_screener.columns:
+        # The primary listing of a company is the one in its own country, and among those
+        # (or without one) the most traded; volume alone favours depositary receipts that
+        # trade in fractions of a share, such as CEDEARs.
+        order = [
+            column
+            for column in (HOME_LISTING, "Volume")
+            if column in stock_screener.columns
+        ]
+        most_traded = (
+            stock_screener.sort_values(order, ascending=False, kind="stable")
+            if order
+            else stock_screener
+        )
+        primary_listings = most_traded[~most_traded["Name"].duplicated()].index
+        stock_screener = stock_screener[stock_screener.index.isin(primary_listings)]
+
+    stock_screener = stock_screener.drop(columns=HOME_LISTING, errors="ignore").head(
+        limit
+    )
+
+    if truncated:
         logger.warning(
             "The screener returned the maximum of %s results, so the list is truncated. "
             "Narrow the criteria or raise the limit to see the remainder.",
-            limit,
+            requested_limit,
         )
 
     return stock_screener
+
+
+def _add_market_cap_in_dollars(
+    listings: pd.DataFrame, api_key: str, user_subscription: str
+) -> pd.DataFrame:
+    """
+    Adds each listing's currency and its market cap in US dollars. The currency follows
+    from the country of the listing's exchange, and the exchange rates are the latest
+    quotes. Without them, the listings are returned as they are, with a warning.
+
+    Args:
+        listings (pd.DataFrame): The listings, with an "Exchange Code" and "Market Cap".
+        api_key (str): The API key from Financial Modeling Prep.
+        user_subscription (str): The user subscription level.
+
+    Returns:
+        pd.DataFrame: The listings with a "Currency" and a "Market Cap (USD)" column.
+    """
+    if not {"Exchange Code", "Market Cap"}.issubset(listings.columns):
+        return listings
+
+    exchanges = get_cached_financial_data(
+        url=f"https://financialmodelingprep.com/stable/available-exchanges?apikey={api_key}",
+        user_subscription=user_subscription,
+    )
+
+    if exchanges.empty or not {"exchange", "countryCode"}.issubset(exchanges.columns):
+        logger.warning(
+            "The currencies of the exchanges could not be retrieved, so market caps are "
+            "in each listing's own currency."
+        )
+        return listings
+
+    exchange_currencies = {
+        exchange: COUNTRY_CURRENCIES.get(country_code)
+        for exchange, country_code in zip(
+            exchanges["exchange"], exchanges["countryCode"], strict=False
+        )
+    }
+    listings["Currency"] = listings["Exchange Code"].map(exchange_currencies)
+    # Whether a listing trades in the company's own country, which marks its home listing.
+    exchange_countries = dict(
+        zip(exchanges["exchange"], exchanges["countryCode"], strict=False)
+    )
+    if "Country" in listings.columns:
+        listings[HOME_LISTING] = listings["Exchange Code"].map(
+            exchange_countries
+        ) == listings["Country"].astype(str).str.upper().replace({"UK": "GB"})
+
+    foreign_currencies = sorted(
+        {currency for currency in listings["Currency"].dropna() if currency != "USD"}
+    )
+    rates = {"USD": 1.0}
+
+    if foreign_currencies:
+        quotes = get_cached_financial_data(
+            url=(
+                "https://financialmodelingprep.com/stable/batch-quote?symbols="
+                f"{','.join(f'{currency}USD' for currency in foreign_currencies)}"
+                f"&apikey={api_key}"
+            ),
+            user_subscription=user_subscription,
+        )
+
+        if not quotes.empty and {"symbol", "price"}.issubset(quotes.columns):
+            rates.update(
+                {
+                    symbol.removesuffix("USD"): price
+                    for symbol, price in zip(
+                        quotes["symbol"], quotes["price"], strict=False
+                    )
+                }
+            )
+
+    listings["Market Cap (USD)"] = listings["Market Cap"] * listings["Currency"].map(
+        rates
+    )
+
+    # A market cap belongs to the company, not to one of its listings: a depositary receipt
+    # abroad (such as a CEDEAR in Buenos Aires) can report one many times too large, so every
+    # listing of a company takes the one of its home listing.
+    if HOME_LISTING in listings.columns and "Name" in listings.columns:
+        home_caps = (
+            listings[listings[HOME_LISTING] & listings["Market Cap (USD)"].notna()]
+            .groupby("Name")["Market Cap (USD)"]
+            .first()
+        )
+        listings["Market Cap (USD)"] = (
+            listings["Name"].map(home_caps).fillna(listings["Market Cap (USD)"])
+        )
+
+    unconverted = listings["Market Cap"].notna() & listings["Market Cap (USD)"].isna()
+
+    if missing := sorted(set(listings.loc[unconverted, "Exchange Code"].dropna())):
+        logger.warning(
+            "The market caps of the listings on %s could not be converted to US dollars.",
+            ", ".join(missing),
+        )
+
+    return listings
 
 
 def get_stock_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
@@ -342,7 +689,9 @@ def get_sectors_performance(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         start_date (str, optional): The start date to filter data with, e.g. "2024-01-01".
+            Defaults to a year ago.
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
+            Defaults to today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -353,15 +702,11 @@ def get_sectors_performance(
     sector_changes = {}
 
     for sector in FMP_SECTORS:
+        # A year up to today unless a range is given (see _history_range).
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
-
-        if start_date:
-            url += f"&from={start_date}"
-        if end_date:
-            url += f"&to={end_date}"
 
         sector_performance = get_cached_financial_data(
             url=url, user_subscription=user_subscription
@@ -418,7 +763,10 @@ def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.Dat
         }
     )
 
-    biggest_gainers = biggest_gainers.set_index("Symbol").sort_index()
+    # The largest rise first, so the head of the list is what its name promises.
+    biggest_gainers = biggest_gainers.set_index("Symbol").sort_values(
+        "Change %", ascending=False, kind="stable"
+    )
 
     return biggest_gainers
 
@@ -454,7 +802,10 @@ def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.Data
         }
     )
 
-    biggest_losers = biggest_losers.set_index("Symbol").sort_index()
+    # The largest fall first, so the head of the list is what its name promises.
+    biggest_losers = biggest_losers.set_index("Symbol").sort_values(
+        "Change %", ascending=True, kind="stable"
+    )
 
     return biggest_losers
 
@@ -492,7 +843,8 @@ def get_most_active_stocks(
         }
     )
 
-    most_active = most_active.set_index("Symbol").sort_index()
+    # Kept in the source's order, the most traded first, as there is no volume to sort on.
+    most_active = most_active.set_index("Symbol")
 
     return most_active
 
@@ -1170,10 +1522,12 @@ def get_ipo_calendar(
             "shares": "Shares",
             "priceRange": "Price Range",
             "marketCap": "Market Cap",
+            "dealSize": "Deal Size",
         }
     )
 
-    ipo_calendar = ipo_calendar.set_index("Symbol").sort_index()
+    # In date order, as a calendar is read.
+    ipo_calendar = ipo_calendar.sort_values("Date", kind="stable").set_index("Symbol")
 
     return ipo_calendar
 
@@ -1324,9 +1678,31 @@ def get_stock_splits_calendar(
         }
     )
 
-    splits_calendar = splits_calendar.set_index("Symbol").sort_index()
+    # In date order, as a calendar is read.
+    splits_calendar = splits_calendar.sort_values("Date", kind="stable").set_index(
+        "Symbol"
+    )
 
     return splits_calendar
+
+
+def _history_range(start_date: str | None, end_date: str | None) -> str:
+    """
+    The from and to parameters of a sector or industry history: without them the
+    endpoints answer with February 2024 only, so a year up to today is the default.
+
+    Args:
+        start_date (str | None): The start date, a year ago when None.
+        end_date (str | None): The end date, today when None.
+
+    Returns:
+        str: The query string part, e.g. "&from=2025-10-11&to=2026-10-11".
+    """
+    today = pd.Timestamp.today().normalize()
+    start = pd.Timestamp(start_date) if start_date else today - pd.DateOffset(years=1)
+    end = pd.Timestamp(end_date) if end_date else today
+
+    return f"&from={start:%Y-%m-%d}&to={end:%Y-%m-%d}"
 
 
 def get_sector_performance(
@@ -1334,6 +1710,8 @@ def get_sector_performance(
     date: str | None = None,
     sector: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get sector performance. Provide exactly one of `date` (a snapshot across all
@@ -1344,6 +1722,8 @@ def get_sector_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of sector performance, indexed by Sector (snapshot)
@@ -1360,7 +1740,7 @@ def get_sector_performance(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     sector_performance = get_cached_financial_data(
@@ -1393,6 +1773,8 @@ def get_industry_performance(
     date: str | None = None,
     industry: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get industry performance. Provide exactly one of `date` (a snapshot across all
@@ -1404,6 +1786,8 @@ def get_industry_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of industry performance, indexed by Industry (snapshot)
@@ -1420,7 +1804,7 @@ def get_industry_performance(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-performance"
-            f"?industry={industry}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     industry_performance = get_cached_financial_data(
@@ -1453,6 +1837,8 @@ def get_sector_pe(
     date: str | None = None,
     sector: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1464,6 +1850,8 @@ def get_sector_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of sector P/E ratios, indexed by Sector (snapshot)
@@ -1480,7 +1868,7 @@ def get_sector_pe(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-pe"
-            f"?sector={sector}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     sector_pe = get_cached_financial_data(url=url, user_subscription=user_subscription)
@@ -1511,6 +1899,8 @@ def get_industry_pe(
     date: str | None = None,
     industry: str | None = None,
     user_subscription: str = "Free",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Get industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1522,6 +1912,8 @@ def get_industry_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to today.
 
     Returns:
         pd.DataFrame: DataFrame of industry P/E ratios, indexed by Industry (snapshot)
@@ -1538,7 +1930,7 @@ def get_industry_pe(
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-pe"
-            f"?industry={industry}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
         )
 
     industry_pe = get_cached_financial_data(
@@ -1689,8 +2081,8 @@ def get_sec_filings_8k(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with.
-        end_date (str, optional): The end date to filter data with.
+        start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
+        end_date (str, optional): The end date to filter data with. Defaults to today.
         limit (int, optional): The number of results to return. Defaults to 100.
         page (int, optional): The page number to retrieve. Defaults to 0.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
@@ -1703,10 +2095,12 @@ def get_sec_filings_8k(
         f"?page={page}&limit={limit}&apikey={api_key}"
     )
 
-    if start_date:
-        url += f"&from={start_date}"
-    if end_date:
-        url += f"&to={end_date}"
+    # Without a range the endpoint answers with filings from March 2024, so the most
+    # recent filings are the last 30 days unless a range is given.
+    today = pd.Timestamp.today().normalize()
+    start_date = start_date or f"{today - pd.Timedelta(days=30):%Y-%m-%d}"
+    end_date = end_date or f"{today:%Y-%m-%d}"
+    url += f"&from={start_date}&to={end_date}"
 
     filings = get_cached_financial_data(url=url, user_subscription=user_subscription)
 

@@ -711,6 +711,13 @@ def get_historical_data(
                 historical_data.index, freq=INTERVAL_STR[interval]
             )
 
+        # In date order without repeated dates, as every date slice of it requires; a
+        # history joined from two sources (or a cache and a fresh download) need not be.
+        # After the rows that are no dates (of a ticker without data) are gone.
+        historical_data = historical_data[
+            ~historical_data.index.duplicated(keep="last")
+        ].sort_index()
+
         return historical_data, no_data
 
     return pd.DataFrame(), no_data

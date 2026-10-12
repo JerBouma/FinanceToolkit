@@ -153,6 +153,10 @@ class Discovery:
         The search instruments function allows you to search for a company or financial instrument
         by name. It returns a dataframe with all the symbols that match the query.
 
+        An ISIN or CUSIP search returns every listing of the security, most traded first, so
+        the primary listing leads (e.g. AAPL before AAPL.MX). The Market Cap of each listing
+        is in the listing's own currency.
+
         Also known as: find companies, lookup stocks, ticker search, instrument search.
 
         Args:
@@ -225,6 +229,7 @@ class Discovery:
         exchange: str | None = None,
         is_etf: bool | None = None,
         limit: int = 1000,
+        primary_only: bool = False,
     ):
         """
         Screen stocks based on a set of criteria. This can be useful to find companies that match
@@ -263,6 +268,13 @@ class Discovery:
             exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ".
             is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them.
             limit (int): The maximum number of companies to return. Defaults to 1000.
+            primary_only (bool): Whether to keep only the home listing of each company (on an
+                exchange in its own country, the most traded one among several) rather than
+                every listing (e.g. ING in Amsterdam, New York, Toronto and Frankfurt).
+                Defaults to False.
+
+        Market caps are in each listing's own currency in "Market Cap" and in US dollars in
+        "Market Cap (USD)", which the market cap bounds and the ranking use.
 
         Returns:
             pd.DataFrame: A dataframe with all the symbols that match the query. An empty
@@ -342,6 +354,7 @@ class Discovery:
             is_etf=is_etf,
             limit=limit,
             user_subscription=self._fmp_plan,
+            primary_only=primary_only,
         )
 
         return stock_screener
@@ -443,12 +456,14 @@ class Discovery:
         date, so 1.25 means +1.25% and not +125%. One API call is made per sector because the
         combined endpoint this used to read was retired and now answers with an empty response.
 
-        Without a date range the API hands back only the earliest days it holds, so pass
-        `start_date` and `end_date` to look at a recent window.
+        Without a date range the API hands back only the earliest days it holds, so the
+        last year up to today is retrieved unless `start_date` and `end_date` say otherwise.
 
         Args:
             start_date (str | None): The start date to filter data with, e.g. "2024-01-01".
+                Defaults to a year ago.
             end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
+                Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with the sectors performance for each sector.
@@ -510,16 +525,16 @@ class Discovery:
 
         | Symbol   |   Price | Name                                 |   Change |   Change % | Exchange   |
         |:---------|--------:|:-------------------------------------|---------:|-----------:|:-----------|
-        | AIFU     | 12.85   | AIFU Inc.                            |   1.67   |    14.9374 | NASDAQ     |
-        | ALISU    | 16.65   | Calisa Acquisition Corp Units        |   5.84   |    54.0241 | NASDAQ     |
-        | ALPXR    |  0.1911 | Alpex Acquisition Corp. Rt           |   0.0311 |    19.4375 | NASDAQ     |
-        | AMBR     |  2.28   | Amber International Holding Ltd      |   0.29   |    14.5729 | NASDAQ     |
-        | AMPGZ    |  0.18   | Amplitech Group, Inc. Series B Right |   0.055  |    44      | NASDAQ     |
-        | BIYA     |  2.3    | Baiya International Group Inc.       |   0.935  |    68.4982 | NASDAQ     |
-        | BSP      | 41.07   | Bending Spoons S.p.A.                |   8      |    24.1911 | NASDAQ     |
-        | CANG     |  3.58   | Cango Inc.                           |   0.56   |    18.5431 | NYSE       |
         | CCAQU    | 19.49   | Collective Acquisition Corp.         |   8.81   |    82.4906 | NASDAQ     |
+        | BIYA     |  2.3    | Baiya International Group Inc.       |   0.935  |    68.4982 | NASDAQ     |
+        | ALISU    | 16.65   | Calisa Acquisition Corp Units        |   5.84   |    54.0241 | NASDAQ     |
+        | AMPGZ    |  0.18   | Amplitech Group, Inc. Series B Right |   0.055  |    44      | NASDAQ     |
+        | BSP      | 41.07   | Bending Spoons S.p.A.                |   8      |    24.1911 | NASDAQ     |
+        | ALPXR    |  0.1911 | Alpex Acquisition Corp. Rt           |   0.0311 |    19.4375 | NASDAQ     |
+        | CANG     |  3.58   | Cango Inc.                           |   0.56   |    18.5431 | NYSE       |
         | CCG      |  5.77   | Cheche Group Inc.                    |   0.8    |    16.0966 | NASDAQ     |
+        | AIFU     | 12.85   | AIFU Inc.                            |   1.67   |    14.9374 | NASDAQ     |
+        | AMBR     |  2.28   | Amber International Holding Ltd      |   0.29   |    14.5729 | NASDAQ     |
         """
         biggest_gainers = discovery_model.get_biggest_gainers(
             api_key=self._api_key, user_subscription=self._fmp_plan
@@ -551,15 +566,15 @@ class Discovery:
 
         | Symbol   |   Price | Name                                                |    Change |   Change % | Exchange   |
         |:---------|--------:|:----------------------------------------------------|----------:|-----------:|:-----------|
-        | AIXI     |  1.32   | Xiao-I Corporation                                  |  -0.53    |   -28.6486 | NASDAQ     |
-        | ALMR     | 27.77   | Alamar Biosciences, Inc.                            |  -4.49    |   -13.9182 | NASDAQ     |
-        | AVAT     |  1.66   | Avalanche Treasury Corporation Class A Common Stock |  -0.41    |   -19.8068 | NASDAQ     |
-        | BBUL     | 12.8794 | GraniteShares 2x Long BB Daily ETF                  |  -2.6906  |   -17.2807 | NASDAQ     |
-        | BLIN     |  0.7821 | Bridgeline Digital, Inc.                            |  -0.11035 |   -12.3648 | NASDAQ     |
-        | BRNX     |  1.53   | BrenX Ltd.                                          |  -0.27    |   -15      | NASDAQ     |
         | BULG     | 21.1116 | Leverage Shares 2x Long BULL Daily ETF              | -12.9859  |   -38.0846 | NASDAQ     |
+        | AIXI     |  1.32   | Xiao-I Corporation                                  |  -0.53    |   -28.6486 | NASDAQ     |
+        | AVAT     |  1.66   | Avalanche Treasury Corporation Class A Common Stock |  -0.41    |   -19.8068 | NASDAQ     |
         | BULL     |  5.89   | Webull Corporation Class A Ordinary Shares          |  -1.39    |   -19.0934 | NASDAQ     |
+        | BBUL     | 12.8794 | GraniteShares 2x Long BB Daily ETF                  |  -2.6906  |   -17.2807 | NASDAQ     |
+        | BRNX     |  1.53   | BrenX Ltd.                                          |  -0.27    |   -15      | NASDAQ     |
         | BURU     |  1.03   | Nuburu, Inc.                                        |  -0.17    |   -14.1667 | AMEX       |
+        | ALMR     | 27.77   | Alamar Biosciences, Inc.                            |  -4.49    |   -13.9182 | NASDAQ     |
+        | BLIN     |  0.7821 | Bridgeline Digital, Inc.                            |  -0.11035 |   -12.3648 | NASDAQ     |
         | CDLX     |  2.28   | Cardlytics, Inc.                                    |  -0.32    |   -12.3077 | NASDAQ     |
         """
 
@@ -1590,7 +1605,11 @@ class Discovery:
         return splits_calendar
 
     def get_sector_performance(
-        self, date: str | None = None, sector: str | None = None
+        self,
+        date: str | None = None,
+        sector: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns sector performance — the average price change per sector. Provide
@@ -1602,6 +1621,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+            start_date (str, optional): The start of the history of one sector. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with sector performance, indexed by Sector
@@ -1639,13 +1661,19 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             sector=sector,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
         return sector_performance
 
     def get_industry_performance(
-        self, date: str | None = None, industry: str | None = None
+        self,
+        date: str | None = None,
+        industry: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns industry performance — the average price change per industry. Provide
@@ -1657,6 +1685,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+            start_date (str, optional): The start of the history of one industry. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with industry performance, indexed by Industry
@@ -1694,13 +1725,19 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             industry=industry,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
         return industry_performance
 
     def get_sector_pe(
-        self, date: str | None = None, sector: str | None = None
+        self,
+        date: str | None = None,
+        sector: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns sector price-to-earnings (P/E) ratios. Provide exactly one of `date`
@@ -1712,6 +1749,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+            start_date (str, optional): The start of the history of one sector. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with sector P/E ratios, indexed by Sector
@@ -1749,13 +1789,19 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             sector=sector,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
         return sector_pe
 
     def get_industry_pe(
-        self, date: str | None = None, industry: str | None = None
+        self,
+        date: str | None = None,
+        industry: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> pd.DataFrame:
         """
         Returns industry price-to-earnings (P/E) ratios. Provide exactly one of
@@ -1767,6 +1813,9 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+            start_date (str, optional): The start of the history of one industry. Defaults to a year
+                ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to today.
 
         Returns:
             pd.DataFrame: A dataframe with industry P/E ratios, indexed by Industry
@@ -1804,6 +1853,8 @@ class Discovery:
             api_key=self._api_key,
             date=date,
             industry=industry,
+            start_date=start_date,
+            end_date=end_date,
             user_subscription=self._fmp_plan,
         )
 
@@ -1928,8 +1979,8 @@ class Discovery:
         Also known as: current reports, material event filings, SEC filings.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
+            end_date (str, optional): The end date to filter data with. Defaults to today.
             limit (int, optional): The number of results to return. Defaults to 100.
             page (int, optional): The page number to retrieve. Defaults to 0.
 

@@ -278,6 +278,48 @@ def test_transcripts_only_retrieve_what_is_needed_and_cache_each_one(
     ]
 
 
+def test_a_transcript_is_retrieved_for_one_fiscal_period(responses, caplog):
+    canned, requested = responses
+    canned["earning-call-transcript-dates"] = [
+        {"fiscalYear": 2026, "quarter": quarter, "date": date}
+        for quarter, date in [(3, "2026-07-30"), (2, "2026-04-30"), (1, "2026-01-29")]
+    ]
+    canned["earning-call-transcript"] = [
+        {"symbol": "AAPL", "content": "Good afternoon."}
+    ]
+
+    transcripts, _ = fmp_model.get_earnings_call_transcripts(
+        ["AAPL"], "key", fiscal_period="Q2 2026"
+    )
+
+    assert transcripts.loc["AAPL"].index.tolist() == ["2026Q2"]
+    assert [url for url in requested if "earning-call-transcript?" in url] == [
+        "https://financialmodelingprep.com/stable/earning-call-transcript?symbol=AAPL&year=2026&quarter=2&apikey=key"
+    ]
+
+    # A period without a transcript names the periods that do have one.
+    transcripts, missing = fmp_model.get_earnings_call_transcripts(
+        ["AAPL"], "key", fiscal_period="2030Q1"
+    )
+
+    assert transcripts.empty
+    assert missing == ["AAPL"]
+    assert "2026Q3, 2026Q2, 2026Q1" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("period", "expected"),
+    [("2025Q4", (2025, 4)), ("2025-q1", (2025, 1)), ("Q3 2024", (2024, 3))],
+)
+def test_fiscal_periods_are_read_in_several_forms(period, expected):
+    assert fmp_model.parse_fiscal_period(period) == expected
+
+
+def test_an_unreadable_fiscal_period_is_an_error():
+    with pytest.raises(ValueError, match="2025Q4"):
+        fmp_model.parse_fiscal_period("last quarter")
+
+
 @pytest.mark.parametrize(
     ("ticker", "expected"),
     [
@@ -632,3 +674,21 @@ def test_a_rating_with_a_missing_score_is_kept(responses):
     ratings, _ = fmp_model.get_rating(tickers="AAPL", api_key="KEY")
 
     assert ratings["Rating"].tolist() == ["A", "A-"]
+
+
+def test_yahoo_finance_symbols_are_requested_as_financial_modeling_prep_writes_them(
+    monkeypatch,
+):
+    requested = []
+
+    def fake_get_request(url, timeout):  # noqa: ARG001
+        requested.append(url)
+        return _Response(200, "[]")
+
+    monkeypatch.setattr(fmp_model, "get_request", fake_get_request)
+
+    fmp_model.get_financial_data(
+        "https://financialmodelingprep.com/stable/batch-quote?symbols=AAPL,EURUSD=X,BTC-USD&apikey=K"
+    )
+
+    assert "symbols=AAPL,EURUSD,BTCUSD&" in requested[0]

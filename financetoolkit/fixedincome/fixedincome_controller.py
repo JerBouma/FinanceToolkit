@@ -522,6 +522,7 @@ class FixedIncome:
         bond_prices_df.columns = years_to_maturity_dates
 
         bond_prices_df.index.name = "Coupon Rate"
+        bond_prices_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -677,6 +678,7 @@ class FixedIncome:
         bond_prices_df.columns = years_to_maturity_dates
 
         bond_prices_df.index.name = "Coupon Rate"
+        bond_prices_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -819,6 +821,7 @@ class FixedIncome:
         yield_to_maturities_df.columns = years_to_maturity_dates
 
         yield_to_maturities_df.index.name = "Bond Price"
+        yield_to_maturities_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -1388,6 +1391,7 @@ class FixedIncome:
         z_spreads_df.columns = list(years_to_maturity)
 
         z_spreads_df.index.name = "Bond Price"
+        z_spreads_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -1740,6 +1744,7 @@ class FixedIncome:
         price_changes_df.columns = list(years_to_maturity)
 
         price_changes_df.index.name = "Coupon Rate"
+        price_changes_df.columns.name = "Years to Maturity"
 
         if show_input_info:
             logger.info(
@@ -3647,6 +3652,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        maturity_years: list[int] | None = None,
     ):
         """
         Retrieves the risk-free interest rate term structures the European Insurance and
@@ -3687,6 +3693,9 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            maturity_years (list[int] | None, optional): The maturities in years to keep, e.g.
+                [1, 2, 5, 10, 20, 30] for the key points of the curve. Defaults to None, which
+                keeps every maturity from 1 to 150 years.
 
         Returns:
             pd.DataFrame: The rates, indexed by month with a column per currency or country and
@@ -3739,6 +3748,15 @@ class FixedIncome:
 
             term_structures = term_structures.loc[
                 :, term_structures.columns.get_level_values(0).isin(requested)
+            ]
+
+        if maturity_years is not None:
+            # 150 maturities per country and month are rarely all needed.
+            term_structures = term_structures.loc[
+                :,
+                term_structures.columns.get_level_values(1).isin(
+                    [f"{maturity}Y" for maturity in maturity_years]
+                ),
             ]
 
         return finalize_dataset(

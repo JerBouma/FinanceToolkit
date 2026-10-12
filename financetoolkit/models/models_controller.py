@@ -25,6 +25,7 @@ from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import liquidity_model, profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
@@ -33,6 +34,9 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 # pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
+
+
+logger = get_logger()
 
 
 class Models:
@@ -2609,6 +2613,25 @@ class Models:
             .swaplevel(0, 1)
             .reindex(self._tickers, level=0)
         )
+
+        # The model was estimated on manufacturing firms. A company without any cost of
+        # goods sold, such as a bank or an insurer, has no working capital or sales in its
+        # sense, so its score (e.g. "distress") says nothing; the result says so.
+        cost_of_goods_sold = self._income_statement.loc[:, "Cost of Goods Sold", :]
+
+        if not_applicable := [
+            ticker
+            for ticker in cost_of_goods_sold.index
+            # Most periods without, as a stray figure in one year does not make one.
+            if (cost_of_goods_sold.loc[ticker].dropna() == 0).mean()
+            >= 0.5  # noqa: PLR2004
+        ]:
+            logger.warning(
+                "The Altman Z-Score does not apply to companies that report no cost of "
+                "goods sold, as banks and insurers do: the model was estimated on "
+                "manufacturing firms, so it is no measure of financial distress for %s.",
+                ", ".join(not_applicable),
+            )
 
         altman_results = finalize_dataset(
             dataset=altman_results,

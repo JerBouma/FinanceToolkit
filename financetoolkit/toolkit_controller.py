@@ -380,7 +380,9 @@ class Toolkit:
             self._earnings_call_transcripts: pd.DataFrame = pd.DataFrame()
             # Which selection the stored transcripts hold, so switching between the latest
             # transcript and the full range does not serve the other one.
-            self._earnings_call_transcripts_latest: bool | None = None
+            self._earnings_call_transcripts_selection: (
+                tuple[bool, str | None] | None
+            ) = None
 
             # Resolved per ticker on request, so a different list reuses what it shares.
 
@@ -3746,7 +3748,10 @@ class Toolkit:
         return filter_columns(self._stock_grades, show_columns)
 
     def get_etf_holdings(
-        self, overwrite: bool = False, show_columns: list[str] | None = None
+        self,
+        overwrite: bool = False,
+        show_columns: list[str] | None = None,
+        limit: int | None = None,
     ):
         """
         Obtain the holdings of each ETF or fund: every asset it holds with the number of
@@ -3762,6 +3767,11 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
+            limit (int | None): The number of largest holdings (by weight) to keep per fund, e.g.
+                10 for the top 10, or of the smallest for a negative number, e.g. -10. Defaults to
+                None, which keeps every holding. The holdings carry
+                no sector or country; get_etf_sector_weightings and get_etf_country_weightings
+                break the fund down by those.
 
         Returns:
             pd.DataFrame: The holdings per ticker, indexed by asset.
@@ -3808,12 +3818,26 @@ class Toolkit:
                 ),
             )
 
-        if len(self._tickers) == 1 and not self._etf_holdings.empty:
-            return filter_columns(
-                self._etf_holdings.loc[self._tickers[0]], show_columns
+        etf_holdings = self._etf_holdings
+
+        if limit is not None and not etf_holdings.empty and "Weight" in etf_holdings:
+            # The largest holdings of each fund (or, for a negative limit, the smallest), as
+            # a full fund can hold thousands.
+            etf_holdings = (
+                etf_holdings.assign(
+                    _weight=pd.to_numeric(etf_holdings["Weight"], errors="coerce")
+                )
+                .sort_values("_weight", ascending=limit < 0, kind="stable")
+                .groupby(level=0, sort=False)
+                .head(abs(limit))
+                .drop(columns="_weight")
+                .reindex(etf_holdings.index.get_level_values(0).unique(), level=0)
             )
 
-        return filter_columns(self._etf_holdings, show_columns)
+        if len(self._tickers) == 1 and not etf_holdings.empty:
+            return filter_columns(etf_holdings.loc[self._tickers[0]], show_columns)
+
+        return filter_columns(etf_holdings, show_columns)
 
     def get_etf_information(self, overwrite: bool = False):
         """
@@ -3925,9 +3949,9 @@ class Toolkit:
         |:---------------|-------:|-------:|
         | United States  | 0.9445 | 0.9733 |
         | United Kingdom | 0.0164 | 0.0048 |
+        | Netherlands    | 0.0135 | 0.0003 |
         | Canada         | 0.0096 | 0.0007 |
         | Singapore      | 0.0074 | 0.0025 |
-        | Netherlands    | 0.0135 | 0.0003 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3946,7 +3970,13 @@ class Toolkit:
                 ),
             )
 
-        return self._etf_country_weightings
+        # The largest weights first, so the head of the table is what a fund is made of.
+        if self._etf_country_weightings.empty:
+            return self._etf_country_weightings
+
+        return self._etf_country_weightings.sort_values(
+            by=self._etf_country_weightings.columns[0], ascending=False, kind="stable"
+        )
 
     def get_etf_sector_weightings(self, overwrite: bool = False):
         """
@@ -3984,18 +4014,18 @@ class Toolkit:
 
         | Sector                 |          QQQ |       VTI |
         |:-----------------------|-------------:|----------:|
-        | Basic Materials        |   0.00912283 | 0.0222419 |
-        | Cash & Others          |   0.00248307 | 0.001929  |
+        | Technology             |   0.610092   | 0.365041  |
         | Communication Services |   0.118947   | 0.086689  |
         | Consumer Cyclical      |   0.0972185  | 0.0898289 |
         | Consumer Defensive     |   0.0549628  | 0.0425139 |
-        | Energy                 |   0.00442936 | 0.037377  |
-        | Financial Services     |   0.0018637  | 0.123878  |
-        | Healthcare             |   0.0358905  | 0.0998086 |
-        | Industrials            |   0.054947   | 0.0881844 |
-        | Technology             |   0.610092   | 0.365041  |
         | Utilities              |   0.0100427  | 0.0197311 |
+        | Basic Materials        |   0.00912283 | 0.0222419 |
+        | Energy                 |   0.00442936 | 0.037377  |
         | Real Estate            | nan          | 0.0227773 |
+        | Industrials            |   0.054947   | 0.0881844 |
+        | Healthcare             |   0.0358905  | 0.0998086 |
+        | Cash & Others          |   0.00248307 | 0.001929  |
+        | Financial Services     |   0.0018637  | 0.123878  |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4014,10 +4044,19 @@ class Toolkit:
                 ),
             )
 
-        return self._etf_sector_weightings
+        # The largest weights first, so the head of the table is what a fund is made of.
+        if self._etf_sector_weightings.empty:
+            return self._etf_sector_weightings
+
+        return self._etf_sector_weightings.sort_values(
+            by=self._etf_sector_weightings.columns[0], ascending=False, kind="stable"
+        )
 
     def get_earnings_call_transcripts(
-        self, latest: bool = True, overwrite: bool = False
+        self,
+        latest: bool = True,
+        fiscal_period: str | None = None,
+        overwrite: bool = False,
     ):
         """
         Obtain the earnings call transcripts of each company: the full text of the call,
@@ -4028,8 +4067,10 @@ class Toolkit:
 
         A transcript is long (often 40,000 to 60,000 characters) and every quarter is a
         separate request. By default only the most recent transcript is retrieved. With
+        fiscal_period (e.g. "2025Q4") the call of that fiscal quarter is retrieved, and with
         latest=False every transcript between this Toolkit instance's start_date and
-        end_date is retrieved instead. Each transcript is cached on its own, since a
+        end_date. A fiscal period without a transcript is logged together with the most
+        recent periods that do have one. Each transcript is cached on its own, since a
         published transcript does not change, so a quarter is only retrieved once.
 
         Also known as: earnings call, conference call transcript, earnings transcript.
@@ -4037,6 +4078,10 @@ class Toolkit:
         Args:
             latest (bool): Whether to only retrieve the most recent transcript. When False,
                 every transcript between the start_date and end_date is retrieved. Defaults to True.
+            fiscal_period (str | None): The fiscal quarter of the call to retrieve, written as
+                "2025Q4" (or "2025-Q4", "Q4 2025"). It is the company's own fiscal year, which
+                differs from the calendar year for e.g. Apple and Microsoft. Takes precedence
+                over latest. Defaults to None.
             overwrite (bool): Defines whether to overwrite the existing data.
 
         Returns:
@@ -4073,7 +4118,7 @@ class Toolkit:
         if (
             self._earnings_call_transcripts.empty
             or overwrite
-            or self._earnings_call_transcripts_latest != latest
+            or self._earnings_call_transcripts_selection != (latest, fiscal_period)
         ):
             self._earnings_call_transcripts, self._invalid_tickers = (
                 self._collect_per_ticker(
@@ -4082,6 +4127,7 @@ class Toolkit:
                     ticker_axis=ticker_model.TICKER_ON_INDEX,
                     parameters={
                         "latest": latest,
+                        "fiscal_period": fiscal_period,
                         "start_date": self._start_date,
                         "end_date": self._end_date,
                     },
@@ -4092,10 +4138,11 @@ class Toolkit:
                         end_date=self._end_date,
                         latest=latest,
                         user_subscription=self._fmp_plan,
+                        fiscal_period=fiscal_period,
                     ),
                 )
             )
-            self._earnings_call_transcripts_latest = latest
+            self._earnings_call_transcripts_selection = (latest, fiscal_period)
 
         self._remove_invalid()
 

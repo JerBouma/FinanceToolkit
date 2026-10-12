@@ -75,3 +75,20 @@ def test_a_curl_timeout_from_yfinance_is_no_data(monkeypatch):
     monkeypatch.setattr(yfinance_model.yf, "Ticker", SlowTicker)
 
     assert yfinance_model.get_financial_statement("AAPL", statement="balance").empty
+
+
+def test_a_currency_pair_is_requested_as_yahoo_finance_writes_it(monkeypatch):
+    requested = []
+
+    class FakeTicker:
+        def __init__(self, ticker):
+            requested.append(ticker)
+
+        def history(self, **kwargs):  # noqa: ARG002
+            raise OSError("offline")
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
+
+    yfinance_model.get_historical_data("EURUSD", start="2025-01-01", end="2025-01-31")
+
+    assert requested == ["EURUSD=X"]

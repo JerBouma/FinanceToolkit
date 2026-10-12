@@ -8,19 +8,23 @@ correct underlying method.
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import importlib
 import inspect
+import re
 import time
 import types
 import typing
 from datetime import datetime, timedelta
 from typing import Annotated, Any, NamedTuple
 
+import pandas as pd
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
+from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
@@ -28,16 +32,26 @@ from financetoolkit.mcp_server.coercion_model import (
     validate_date,
 )
 from financetoolkit.mcp_server.diagnostics_model import (
+    call_input_info,
     capture_call_messages,
+    missing_data_notes,
     redact,
     summarize_reasons,
 )
-from financetoolkit.mcp_server.formatting_model import format_result
+from financetoolkit.mcp_server.formatting_model import (
+    country_names,
+    format_result,
+    has_period_columns,
+    is_time_index_of,
+    is_yearly,
+    select_rows,
+)
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
 
@@ -54,10 +68,14 @@ _OPAQUE_TYPES = {
 }
 
 # Injected into each tool's Args docstring so FastMCP can surface them.
+# The indicators whose own limit also takes a negative number, for the last rows.
+NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
+
+
 _PARAM_DESCRIPTIONS: dict[str, str] = {
     "indicator": (
-        "Name of the specific metric to calculate, e.g. 'get_asset_turnover_ratio'. "
-        "Required — omitting it returns the list of available indicators."
+        "Name of the specific metric to calculate, one of the listed values. Required — "
+        "search_metrics finds the indicator (and its tool) for a metric by name."
     ),
     "tickers": "Comma-separated ticker symbols, e.g. 'AAPL,MSFT,GOOGL'.",
     "countries": (
@@ -110,6 +128,45 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "OECD. The two are independent providers with different country and period "
         "coverage; both return rates and ratios as decimal fractions."
     ),
+    "annualize": (
+        "Set to true to annualize a Sharpe ratio (by default it is per observation, e.g. "
+        "per day, so roughly sqrt(252) smaller than the annualized figure)."
+    ),
+    "primary_only": (
+        "Set to true to keep only the most traded listing of each company rather than "
+        "every listing (e.g. ING in Amsterdam, New York, Toronto and Frankfurt)."
+    ),
+    "maturity_years": (
+        "Comma-separated maturities in years to return, e.g. '1,2,5,10,20,30'."
+    ),
+    "fiscal_period": (
+        "The company's fiscal quarter, e.g. '2025Q4' (its own fiscal year, which differs from "
+        "the calendar year for e.g. Apple and Microsoft). Leave unset for the most recent."
+    ),
+    "window": "The number of periods the indicator looks back over, e.g. 14 or 20.",
+    "weights": (
+        "The portfolio weight per ticker as an object, e.g. {'AAPL': 0.6, 'MSFT': 0.4}; "
+        "equal weights when left unset."
+    ),
+    "lags": "The number of lags (past periods) the test or model uses, e.g. 1 or 5.",
+    "column": "The price column to use, e.g. 'Close' or 'Adj Close'.",
+    "strike_price_range": (
+        "Only strikes within this fraction of the current stock price, e.g. 0.05 for the "
+        "strikes within 5% of it."
+    ),
+    "legs": (
+        "The strategy as a list of legs. An option leg: {'strike_price': 340, "
+        "'put_option': false, 'position': 'long' or 'short', 'premium': 4.2}; a stock leg: "
+        "{'instrument': 'stock', 'position': 'long', 'premium': 336}. E.g. a bull call "
+        "spread is a long call at a lower and a short call at a higher strike."
+    ),
+    "limit": (
+        "The rows to return, like head and tail: 5 for the first five, -5 for the last five "
+        "(the most recent of a time series). A table with its periods as columns (financial "
+        "statements, ratios) keeps its first or last periods instead. For ETF holdings the "
+        "largest (or, negative, the smallest) by weight, and for a list (e.g. news or a "
+        "screener) its length."
+    ),
     "gmdb_forecasts": (
         "Set to true to include the years the Global Macro Database projects (IMF World "
         "Economic Outlook, up to five years ahead); by default a yearly series ends with "
@@ -150,7 +207,9 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
 _DISPUTED_DEFAULT_DETAIL_LIMIT = 320
 
 
-def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
+def _annotate_with_description(
+    name: str, ann: Any, suffix: str = "", documented: str = ""
+) -> Any:
     """Wrap *ann* in ``Annotated[ann, Field(description=...)]`` for JSON schema output.
 
     Pydantic reads the ``Field(description=...)`` metadata and includes it in the
@@ -162,16 +221,284 @@ def _annotate_with_description(name: str, ann: Any, suffix: str = "") -> Any:
         ann (Any): The annotation to wrap.
         suffix (str): Extra text appended to the description, used to spell out
             defaults that differ between the indicators of a router group.
+        documented (str): The description the indicators' docstrings give, used when
+            there is no shared description for the parameter.
 
     Returns:
         Any: The annotated type carrying the description metadata.
     """
-    desc = _PARAM_DESCRIPTIONS.get(name, f"Value for {name}.")
+    desc = _PARAM_DESCRIPTIONS.get(name) or documented or f"Value for {name}."
 
     if suffix:
         desc = f"{desc} {suffix}"
 
     return Annotated[ann, PydanticField(description=desc)]  # type: ignore[valid-type]
+
+
+# The length of an indicator's summary in the search results.
+MAXIMUM_SUMMARY_CHARACTERS = 200
+
+
+# The inputs of a bond or derivative calculation whose defaults are assumptions about the
+# instrument, named in the answer when the caller leaves them out.
+ASSUMED_INPUTS = (
+    "par_value",
+    "coupon_rate",
+    "yield_to_maturity",
+    "bond_price",
+    "volatility",
+    "strike_rate",
+    "notional",
+)
+
+# The yield curves the fixed income calculations take, which default to a sample curve.
+CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
+
+# A window of at most this many days can be empty for lack of trading days alone.
+SHORT_WINDOW_DAYS = 3
+
+# How alike an unknown indicator name must be to a known one to be read as it.
+NEAR_CERTAIN_MATCH = 0.9
+
+# The most rows a note names one by one; more are counted instead.
+MAXIMUM_NAMED_ROWS = 10
+
+# The periods the toolkit resamples to, and the intervals of intraday data.
+PERIODS = ("daily", "weekly", "monthly", "quarterly", "yearly", "annual")
+INTRADAY_PERIODS = ("1min", "5min", "15min", "30min", "1hour")
+
+
+# The most distinct docstring descriptions of one parameter that are listed per indicator.
+MAXIMUM_DESCRIPTION_VERSIONS = 3
+
+# The longest parameter description taken from a docstring.
+MAXIMUM_DOCUMENTED_CHARACTERS = 300
+
+
+def _docstring_arguments(docstring: str) -> dict[str, str]:
+    """The description of each argument in the Args section of a Google-style docstring.
+
+    A "Defaults to ..." sentence is left out: the schema carries the default, and where the
+    indicators of a tool disagree, the description lists each one.
+
+    Args:
+        docstring (str): The cleaned docstring.
+
+    Returns:
+        dict[str, str]: Per argument name, its description on one line.
+    """
+    section = re.search(
+        r"^Args:\s*\n(.*?)(?=^\S|\Z)", docstring, flags=re.MULTILINE | re.DOTALL
+    )
+    if section is None:
+        return {}
+
+    arguments: dict[str, str] = {}
+    name = ""
+    for line in section.group(1).splitlines():
+        match = re.match(r"^\s{2,8}(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$", line)
+        if match and (not name or len(line) - len(line.lstrip()) <= 8):  # noqa: PLR2004
+            name = match.group(1)
+            arguments[name] = match.group(2).strip()
+        elif name and line.strip():
+            arguments[name] += " " + line.strip()
+
+    cleaned: dict[str, str] = {}
+    for argument, raw in arguments.items():
+        # Up to the end of its sentence: a full stop followed by a capital or the end, so
+        # "Defaults to 0.0, i.e. ..." and "Defaults to 1.5." go as a whole.
+        text = re.sub(
+            r"\s*Defaults to .*?(?:\.(?=\s+[A-Z`(])|\.?$)", "", raw, flags=re.DOTALL
+        ).strip()
+        # Pointers to the rest of the docstring mean nothing in a tool schema.
+        text = re.sub(r",? (?:as )?(?:described|listed|see) above", "", text)
+        if len(text) > MAXIMUM_DOCUMENTED_CHARACTERS:
+            text = text[: MAXIMUM_DOCUMENTED_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
+        if text:
+            cleaned[argument] = text if text.endswith((".", "?", "...")) else f"{text}."
+
+    return cleaned
+
+
+def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
+    """Drop the titles pydantic gives every parameter ("Start Date" for start_date).
+
+    They repeat the parameter name and add about 14,000 characters to the tool listing
+    every client reads before its first call.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose input schema to trim.
+    """
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
+    if tool is None:
+        return
+
+    tool.parameters.pop("title", None)
+    for schema in tool.parameters.get("properties", {}).values():
+        schema.pop("title", None)
+
+
+def _summarize_docstring(docstring: str) -> dict[str, str]:
+    """The first sentence of a docstring and its "Also known as" aliases.
+
+    Args:
+        docstring (str): The cleaned docstring of an indicator.
+
+    Returns:
+        dict[str, str]: The ``summary`` (at most 200 characters) and the ``aliases``.
+    """
+    paragraph = " ".join(docstring.split("\n\n", maxsplit=1)[0].split())
+    sentence = re.split(r"(?<=[a-z0-9)])\. ", paragraph)[0].rstrip(".")
+    summary = (
+        sentence
+        if len(sentence) <= MAXIMUM_SUMMARY_CHARACTERS
+        else sentence[: MAXIMUM_SUMMARY_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
+    )
+    aliases = re.search(
+        r"Also known as:\s*(.+?)(?:\.\s*$|\.\n|$)", docstring, re.MULTILINE
+    )
+
+    return {"summary": summary, "aliases": aliases.group(1).strip() if aliases else ""}
+
+
+def _unmatched_columns(
+    result: object, show_columns: list[str]
+) -> tuple[list[str], list[str]]:
+    """The requested show_columns a result does not have, and the names it does have.
+
+    The names are the column labels on every level and, unless the rows are dates, the row
+    labels of the last index level (the line items of a financial statement).
+
+    Args:
+        result (object): The value returned by the indicator, before filtering.
+        show_columns (list[str]): The requested names.
+
+    Returns:
+        tuple[list[str], list[str]]: The names not found, and the available names.
+    """
+    tables = (
+        [result]
+        if isinstance(result, pd.DataFrame | pd.Series)
+        else (
+            [value for value in result.values() if isinstance(value, pd.DataFrame)]
+            if isinstance(result, dict)
+            else []
+        )
+    )
+    available: list[str] = []
+
+    for table in tables:
+        # The row index is part of every record too, such as a news item's Published Date.
+        for name in table.index.names:
+            if name is not None and str(name) not in available:
+                available.append(str(name))
+        axes = [table.columns] if isinstance(table, pd.DataFrame) else []
+        if not isinstance(
+            table.index.get_level_values(-1), pd.DatetimeIndex | pd.PeriodIndex
+        ):
+            axes.append(table.index)
+        for axis in axes:
+            levels = (
+                range(axis.nlevels) if axis is not table.index else [axis.nlevels - 1]
+            )
+            for level in levels:
+                for label in axis.get_level_values(level).unique():
+                    if str(label) not in available:
+                        available.append(str(label))
+
+    if not available:
+        return [], []
+
+    return [name for name in show_columns if name not in available], available
+
+
+def _table_names(method_kwargs: dict[str, Any], count: int) -> list[str]:
+    """The names of the tables an indicator returns together, after the option that asked.
+
+    Args:
+        method_kwargs (dict[str, Any]): The arguments of the call.
+        count (int): The number of tables.
+
+    Returns:
+        list[str]: One name per table.
+    """
+    if method_kwargs.get("include_daily_residuals"):
+        names = ["Model", "Daily Residuals"]
+    elif method_kwargs.get("show_standard_error"):
+        names = ["Price", "Standard Error"]
+    else:
+        names = ["Result"]
+
+    return [
+        *names,
+        *(f"Table {number}" for number in range(len(names) + 1, count + 1)),
+    ][:count]
+
+
+def _short_window_reason(category: str, start_date: str, end_date: str) -> str | None:
+    """Why a market data request over a few days can be empty: no trading on those days.
+
+    Args:
+        category (str): The dispatch category of the call.
+        start_date (str): The start of the window.
+        end_date (str): The end of the window.
+
+    Returns:
+        str | None: The reason, or None when the window is not that short.
+    """
+    if category not in ("ticker", "toolkit") or not start_date or not end_date:
+        return None
+
+    with contextlib.suppress(ValueError):
+        days = (
+            datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)
+        ).days
+        if days <= SHORT_WINDOW_DAYS:
+            return (
+                f"There were no trading days between {start_date} and {end_date} (a "
+                "weekend or holiday). Widen the range, e.g. start_date a week earlier."
+            )
+
+    return None
+
+
+def _labels(result: pd.DataFrame | pd.Series) -> set[str]:
+    """Every index and column label of a result, on every level, as text."""
+    axes = [result.index] + (
+        [result.columns] if isinstance(result, pd.DataFrame) else []
+    )
+
+    return {
+        str(label)
+        for axis in axes
+        for level in range(axis.nlevels)
+        for label in axis.get_level_values(level).unique()
+    }
+
+
+def _mentions_benchmark(result: object) -> bool:
+    """Whether a result has a 'Benchmark' row or column, as a benchmark-based metric does.
+
+    Args:
+        result (object): The value returned by the indicator.
+
+    Returns:
+        bool: True when one of the index or column labels is 'Benchmark'.
+    """
+    if not isinstance(result, pd.DataFrame | pd.Series):
+        return False
+
+    axes = [result.index] + (
+        [result.columns] if isinstance(result, pd.DataFrame) else []
+    )
+
+    return any(
+        "Benchmark" in axis.get_level_values(level).astype(str)
+        for axis in axes
+        for level in range(axis.nlevels)
+    )
 
 
 def _describe_disputed_default(per_method: dict[str, Any]) -> str:
@@ -243,8 +570,11 @@ def _simplify_annotation(ann: Any) -> Any:
     origin = typing.get_origin(ann)
     args = typing.get_args(ann)
 
-    # Bare list[T] → T
+    # Bare list[T] → T, except a list of objects (option strategy legs), which has no
+    # single-value form.
     if origin is list:
+        if args and typing.get_origin(args[0]) is dict:
+            return ann
         return args[0] if args else str
 
     # A bare opaque type outside a union falls back to str, as the union case does.
@@ -276,6 +606,18 @@ def _simplify_annotation(ann: Any) -> Any:
         scalars.append(a)
 
     if not scalars:
+        # A mapping without a single-value form (portfolio weights per ticker) stays one,
+        # so a caller can pass {"AAPL": 0.6, "MSFT": 0.4}.
+        mapping = next(
+            (
+                (a if typing.get_args(a) else dict[str, float])
+                for a in args
+                if typing.get_origin(a) is dict or a is dict
+            ),
+            None,
+        )
+        if mapping is not None:
+            return mapping | None if has_none else mapping
         return str | None if has_none else str
 
     # Merge int + float → float (float is the wider type)
@@ -283,6 +625,20 @@ def _simplify_annotation(ann: Any) -> Any:
         scalars = [x for x in scalars if x is not int]
 
     scalar = scalars[0]
+
+    # A number that may also be a list of numbers (coupon rates or maturities for a bond
+    # sensitivity table, lags for growth) accepts both, as the indicator does.
+    if scalar in (int, float) and any(
+        a is list
+        or (
+            typing.get_origin(a) is list
+            and all(arg in (int, float) for arg in typing.get_args(a))
+        )
+        for a in args
+    ):
+        combined = scalar | list[scalar]
+        return combined | None if has_none else combined
+
     return scalar | None if has_none else scalar
 
 
@@ -363,6 +719,9 @@ class ToolRegistry:
         method_defaults: dict[str, dict[str, Any]] | None = None,
         countries_optional: list[str] | None = None,
         analytics: UsageAnalytics | None = None,
+        max_response_characters: int | None = None,
+        full_text_methods: list[str] | None = None,
+        tickers_optional: list[str] | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -394,11 +753,20 @@ class ToolRegistry:
                 called without them; every other method that accepts countries requires them.
             analytics (UsageAnalytics | None): Counts the calls of every tool when the
                 server's usage analytics are on. Defaults to None.
+            max_response_characters (int | None): The size a response may have; a larger
+                one is cut with a note on how to narrow it. Defaults to None (no limit).
+            full_text_methods (list[str] | None): Methods whose answer is only of use in full,
+                such as an earnings call transcript: they take one ticker, return one item and
+                are never cut. Defaults to None.
+            tickers_optional (list[str] | None): Toolkit methods that answer the same for any
+                ticker (market-wide snapshots) and so may be called without tickers.
+                Defaults to None.
         """
         self._mcp = mcp
         self._provider = provider
         self._inspector = inspector
         self._tool_index: dict[str, list[dict[str, str]]] = {}
+        self._indicator_index: list[dict[str, str]] = []
         self._module_class_map: dict[str, type] = self._resolve_class_map(
             module_class_map
         )
@@ -412,6 +780,9 @@ class ToolRegistry:
         self._method_defaults: dict[str, dict[str, Any]] = method_defaults or {}
         self._countries_optional: frozenset[str] = frozenset(countries_optional or [])
         self._analytics = analytics
+        self._max_response_characters = max_response_characters
+        self._full_text_methods: frozenset[str] = frozenset(full_text_methods or [])
+        self._tickers_optional: frozenset[str] = frozenset(tickers_optional or [])
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -459,6 +830,15 @@ class ToolRegistry:
                 registered under that category.
         """
         return self._tool_index
+
+    def get_indicator_index(self) -> list[dict[str, str]]:
+        """Return every registered indicator with its tool, summary and aliases.
+
+        Returns:
+            list[dict[str, str]]: One entry per indicator with the keys ``tool``,
+                ``indicator``, ``summary`` and ``aliases``.
+        """
+        return self._indicator_index
 
     def build_router_group_specs(self) -> list[RouterGroupSpec]:
         """Build the list of ``RouterGroupSpec`` objects from the config.
@@ -533,6 +913,7 @@ class ToolRegistry:
         inspector = self._inspector
         provider = self._provider
         blocked_periods_for_tool = self._blocked_periods.get(tool_name, frozenset())
+        max_response_characters = self._max_response_characters
 
         def owning_class(method_name: str) -> type:
             # Dispatch groups map each method to its controller; plain groups share
@@ -558,7 +939,18 @@ class ToolRegistry:
         parameter_defaults = inspector.collect_group_parameter_defaults(
             cls, group_methods, spec.collect_method, method_to_cls
         )
-        disputed_params = inspector.find_disputed_parameters(parameter_defaults)
+        # An MCP-only default (config.yaml method_defaults) replaces the indicator's own one, and its parameter is advertised as unset like a disputed one: a schema default would always arrive as an explicit value and so never let the MCP default apply.  # noqa: E501
+        mcp_default_params: set[str] = set()
+        for method_name in group_methods:
+            for pname, value in self._method_defaults.get(
+                f"{tool_name}.{method_name}", self._method_defaults.get(method_name, {})
+            ).items():
+                if method_name in parameter_defaults.get(pname, {}):
+                    parameter_defaults[pname][method_name] = value
+                    mcp_default_params.add(pname)
+        disputed_params = (
+            inspector.find_disputed_parameters(parameter_defaults) | mcp_default_params
+        )
 
         def wrapper(**kwargs):
             """
@@ -581,7 +973,28 @@ class ToolRegistry:
                 and f"get_{candidate}" in method_param_names
             ):
                 candidate = f"get_{candidate}"
+            # A near-certain match (get_gordon_growth_model for get_gorden_growth_model, a
+            # spelling the package keeps for compatibility) is used, with a note.
+            indicator_note = None
             if candidate not in method_param_names:
+                near = difflib.get_close_matches(
+                    candidate, all_indicators, n=2, cutoff=NEAR_CERTAIN_MATCH
+                )
+                if len(near) == 1:
+                    indicator_note = f"`{raw_indicator}` was read as `{near[0]}`."
+                    candidate = near[0]
+            if candidate not in method_param_names:
+                elsewhere = [
+                    entry["tool"]
+                    for entry in self._indicator_index
+                    if entry["indicator"] == candidate
+                ]
+                if elsewhere:
+                    return (
+                        f"`{candidate}` is not part of `{tool_name}`; it is an indicator of "
+                        + " and ".join(f"`{tool}`" for tool in elsewhere)
+                        + f". Please call that tool with `indicator='{candidate}'`."
+                    )
                 close = difflib.get_close_matches(
                     candidate, all_indicators, n=3, cutoff=0.6
                 )
@@ -591,7 +1004,10 @@ class ToolRegistry:
                 return (
                     f"Unknown indicator `{raw_indicator}` for `{tool_name}`."
                     f"{suggestion}\n"
-                    "Available: " + ", ".join(all_indicators)
+                    "Available: "
+                    + ", ".join(all_indicators)
+                    + ". Use `search_metrics` "
+                    "to find an indicator by what it measures."
                 )
             method_name = candidate
 
@@ -602,7 +1018,21 @@ class ToolRegistry:
                 else None
             )
             raw_countries = kwargs.pop("countries", None)
-            countries = _split_values(raw_countries) if raw_countries else None
+            # Short forms and any casing ("USA", "eurozone") become the names the sources
+            # use, before a source is asked for them by name.
+            countries = (
+                [
+                    normalize_country_name(country, country_names())
+                    for country in _split_values(raw_countries)
+                ]
+                if raw_countries
+                else None
+            )
+
+            # A market-wide snapshot (config.yaml tickers_optional) does not depend on the
+            # tickers, but the Toolkit it is reached through needs one to be built.
+            if not tickers and method_name in self._tickers_optional:
+                tickers = ["SPY"]
 
             # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
@@ -648,6 +1078,12 @@ class ToolRegistry:
                         f"'{given}'. Please use a date written as YYYY-MM-DD, e.g. '2026-01-31'."
                     )
 
+            # The range as given, for the discovery calendars that only take one when asked.
+            given_dates = {
+                name: str(kwargs.get(name)).replace("/", "-")
+                for name in ("start_date", "end_date")
+                if kwargs.get(name)
+            }
             quarterly = to_boolean(kwargs.pop("quarterly", False))
             start_date = validate_date(
                 kwargs.pop("start_date", inspector.start_date) or inspector.start_date,
@@ -686,25 +1122,73 @@ class ToolRegistry:
                     "or `countries='Germany,Japan'`."
                 )
 
+            # limit selects rows like head and tail: 5 for the first five, -5 for the last
+            # five. An indicator with a limit of its own (e.g. the largest ETF holdings or
+            # the length of a list) receives it instead, when it supports the value.
+            raw_limit = kwargs.pop("limit", None)
+            try:
+                rows_limit = int(raw_limit) if raw_limit not in (None, "") else None
+            except (TypeError, ValueError):
+                return (
+                    f"Invalid input for `{tool_name}` (`{method_name}`): limit must be a "
+                    f"whole number, e.g. 5 for the first five rows or -5 for the last "
+                    f"five, not {raw_limit!r}."
+                )
+            row_selection = None
+
             method_kwargs = {}
-            for pname, pann, _ in param_meta:
+            if rows_limit is not None:
+                if "limit" in method_param_names.get(method_name, set()) and (
+                    rows_limit > 0 or method_name in NEGATIVE_LIMIT_METHODS
+                ):
+                    method_kwargs["limit"] = rows_limit
+                else:
+                    row_selection = rows_limit
+
+            # Arguments the indicator does not take (another indicator of the tool does) are
+            # named in the answer, so a caller does not believe they were used.
+            ignored_params: list[str] = []
+            given_params: set[str] = set()
+            for pname, pann, pdefault in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
+                    advertised = (
+                        None
+                        if pname in disputed_params
+                        else (
+                            pdefault if pdefault is not inspect.Parameter.empty else ""
+                        )
+                    )
+                    if val not in (None, "") and val != advertised:
+                        given_params.add(pname)
                     if pname not in accepted_params:
+                        if pname in given_params:
+                            ignored_params.append(pname)
                         continue
                     # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
                     if pname in disputed_params and val in (None, ""):
                         continue
                     method_kwargs[pname] = coerce_value(val, pann)
 
+            # Discovery takes a range only when one is given (see provider_model).
+            if effective_category == inspector.categories.get("discovery", "discovery"):
+                start_date = given_dates.get("start_date", "")
+                end_date = given_dates.get("end_date", "")
+
             # MCP-only defaults (config.yaml method_defaults) keep a broad request small: they
             # apply only to what the caller left unset, so an explicit value always wins. The
-            # dates count as unset when both are still the tool defaults.
-            method_defaults = self._method_defaults.get(method_name, {})
+            # dates count as unset when both are still the tool defaults. A "tool.method" key
+            # applies to that tool only, for a method name two tools share.
+            method_defaults = self._method_defaults.get(
+                f"{tool_name}.{method_name}", self._method_defaults.get(method_name, {})
+            )
             if (
                 "lookback_days" in method_defaults
                 or "lookahead_days" in method_defaults
-            ) and (start_date, end_date) == (inspector.start_date, inspector.end_date):
+            ) and (start_date, end_date) in (
+                (inspector.start_date, inspector.end_date),
+                ("", ""),
+            ):
                 today = datetime.now()
                 start_date = (
                     today - timedelta(days=int(method_defaults.get("lookback_days", 0)))
@@ -721,6 +1205,84 @@ class ToolRegistry:
                 ):
                     method_kwargs[pname] = value
 
+            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number.
+            curve_note = None
+            for curve in CURVE_PARAMETERS:
+                given = method_kwargs.get(curve)
+                if isinstance(given, dict):
+                    try:
+                        method_kwargs[curve] = {
+                            float(maturity): float(rate)
+                            for maturity, rate in given.items()
+                        }
+                    except (TypeError, ValueError):
+                        return (
+                            f"Invalid `{curve}` for `{tool_name}` (`{method_name}`): give the "
+                            "rate per maturity in years, e.g. {'1': 0.042, '10': 0.043}."
+                        )
+            if missing_curves := [
+                curve
+                for curve in CURVE_PARAMETERS
+                if curve in accepted_params
+                and method_kwargs.get(curve) in (None, "", {})
+            ]:
+                curve_note = (
+                    f"{', '.join(f'`{curve}`' for curve in missing_curves)} "
+                    f"{'was' if len(missing_curves) == 1 else 'were'} not given, so a fixed "
+                    "sample curve was used for illustration, not market data. Pass the "
+                    "current curve, e.g. from get_treasury_rates in the rates tool."
+                )
+
+            # The economic inputs of a calculation that the caller left to their defaults
+            # (a bond priced at an 8% yield) are named, as they decide the answer.
+            assumed_inputs = [
+                f"{pname}={parameter_defaults[pname][method_name]}"
+                for pname in ASSUMED_INPUTS
+                if pname in accepted_params
+                and pname not in given_params
+                and parameter_defaults.get(pname, {}).get(method_name)
+                not in (None, inspect.Parameter.empty, "")
+            ]
+
+            # An indicator that needs inputs the caller left out is answered with which ones,
+            # rather than with the TypeError calling it would raise.
+            missing_inputs = [
+                pname
+                for pname, per_method in parameter_defaults.items()
+                if per_method.get(method_name, None) is inspect.Parameter.empty
+                and method_kwargs.get(pname) in (None, "")
+            ]
+            if missing_inputs:
+                listed = ", ".join(f"`{pname}`" for pname in missing_inputs)
+                return (
+                    f"`{tool_name}` (`{method_name}`) requires {listed}. Please provide "
+                    f"{'it' if len(missing_inputs) == 1 else 'them'}; the tool's parameter "
+                    "descriptions explain each one."
+                )
+
+            # A transcript is of use only in full, and a full one is about as large as an
+            # answer may be, so these return one item of one ticker and are never cut.
+            full_text = method_name in self._full_text_methods
+            if full_text:
+                if tickers and len(tickers) > 1:
+                    return (
+                        f"`{tool_name}` (`{method_name}`) returns the full text for one ticker "
+                        f"at a time. Please call it once per ticker, e.g. `tickers='{tickers[0]}'`."
+                    )
+                if method_kwargs.get("latest") is False:
+                    return (
+                        f"`{tool_name}` (`{method_name}`) returns one full text at a time. "
+                        "Please pick one with `fiscal_period`, e.g. `fiscal_period='2025Q4'`; "
+                        "without it, the most recent one is returned."
+                    )
+                if method_kwargs.get("fiscal_period") not in (None, ""):
+                    try:
+                        parse_fiscal_period(method_kwargs["fiscal_period"])
+                    except ValueError as exc:
+                        return (
+                            f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
+                        )
+
             if kwargs:
                 logger.warning(
                     "Unknown parameter(s) passed to %s (%s) and ignored: %s",
@@ -728,6 +1290,19 @@ class ToolRegistry:
                     method_name,
                     ", ".join(kwargs.keys()),
                 )
+
+            # A period the toolkit does not know would surface as a confusing missing-item
+            # error from deep inside the calculation.
+            if method_kwargs.get("period") not in (None, ""):
+                known_periods = (
+                    INTRADAY_PERIODS if method_name == "get_intraday_data" else PERIODS
+                )
+                if str(method_kwargs["period"]).lower() not in known_periods:
+                    return (
+                        f"Invalid `period` for `{tool_name}` (`{method_name}`): "
+                        f"'{method_kwargs['period']}'. Please use one of: "
+                        f"{', '.join(known_periods)}."
+                    )
 
             # Validate that the requested period (if any) is not blocked for this tool
             # A rolling window reads the regular data of the period, which every period
@@ -778,6 +1353,7 @@ class ToolRegistry:
                         benchmark_ticker=benchmark_ticker,
                         **method_kwargs,
                     )
+                    input_info = call_input_info()
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
                 # a repeat call should be near-instant off the provider cache).
@@ -788,7 +1364,35 @@ class ToolRegistry:
                     (time.perf_counter() - call_started) * 1000,
                     len(tickers) if tickers else 0,
                 )
+                # A result and its detail (a model and its residuals, prices and their
+                # standard errors) become named tables rather than one unnamed list.
+                if isinstance(result, tuple) and all(
+                    isinstance(part, pd.DataFrame | pd.Series) for part in result
+                ):
+                    result = dict(
+                        zip(
+                            _table_names(method_kwargs, len(result)),
+                            result,
+                            strict=False,
+                        )
+                    )
+                unmatched_columns: list[str] = []
                 if show_columns is not None:
+                    # Matched in any casing ("close" for Close), as the names are shown
+                    # in a response and typed back by hand.
+                    _, available_columns = _unmatched_columns(result, show_columns)
+                    by_lowercase = {name.lower(): name for name in available_columns}
+                    show_columns = [
+                        (
+                            name
+                            if name in available_columns
+                            else by_lowercase.get(name.lower(), name)
+                        )
+                        for name in show_columns
+                    ]
+                    unmatched_columns, available_columns = _unmatched_columns(
+                        result, show_columns
+                    )
                     result = _filter_columns(result, show_columns)
                 notes: list[str] = []
                 if dispatch_category in ("ticker", "toolkit") and tickers:
@@ -801,10 +1405,203 @@ class ToolRegistry:
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
                     )
+                # Tickers left out of an otherwise answered call are named, e.g. a symbol
+                # the source does not know.
+                notes = list(notes) + missing_data_notes(call_messages)
+                # A ticker the sources do not know is dropped from the answer; when the
+                # others are there, say which one is missing rather than leave it out quietly.
+                if (
+                    tickers
+                    and len(tickers) > 1
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                    # A regression's dependent ticker (or a pair's) is no row of the answer.
+                    and not any(
+                        pname.endswith(("_ticker", "_tickers"))
+                        for pname in method_kwargs
+                    )
+                ):
+                    # An empty column of its own counts as missing too.
+                    if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:
+                        empty = [
+                            ticker
+                            for ticker in tickers
+                            if ticker in result.columns and result[ticker].isna().all()
+                        ]
+                        if len(empty) < len(result.columns):
+                            result = result.drop(columns=empty)
+                    labels = _labels(result)
+                    absent = [
+                        ticker
+                        for ticker in tickers
+                        if ticker not in labels
+                        and not any(ticker in note for note in notes)
+                    ]
+                    if absent and len(absent) < len(tickers):
+                        notes.append(
+                            f"No data is available for {', '.join(absent)}, so "
+                            f"{'it is' if len(absent) == 1 else 'they are'} left out. "
+                            "Please check the symbol (e.g. ASML.AS for Amsterdam)."
+                        )
+                # After the check for missing tickers, which needs every row of a column.
+                if row_selection and isinstance(result, dict):
+                    result = {
+                        name: (
+                            select_rows(table, row_selection)
+                            if isinstance(table, pd.DataFrame | pd.Series)
+                            else table
+                        )
+                        for name, table in result.items()
+                    }
+                # A plain list, such as the expiration dates of an option chain.
+                if row_selection and isinstance(result, list | tuple):
+                    result = (
+                        list(result[:row_selection])
+                        if row_selection > 0
+                        else list(result[row_selection:])
+                    )
+                if row_selection and isinstance(result, pd.DataFrame | pd.Series):
+                    # One row per ticker (a figure over the whole period) has no first or
+                    # last rows to speak of; cutting it would only drop tickers.
+                    row_labels = {
+                        str(label)
+                        for label in result.index.get_level_values(0).unique()
+                    }
+                    # Metrics as rows and a column per ticker (a profile, the share
+                    # float) have no first or last rows either.
+                    column_labels = (
+                        {str(label) for label in result.columns}
+                        if isinstance(result, pd.DataFrame)
+                        and result.columns.nlevels == 1
+                        else set()
+                    )
+                    per_ticker_columns = (
+                        bool(tickers)
+                        and bool(column_labels)
+                        and column_labels <= {*(tickers or []), "Benchmark"}
+                        and not is_time_index_of(result)
+                        # Named rows (an ETF's Sector) are a list a limit can shorten.
+                        and result.index.name is None
+                    )
+                    if per_ticker_columns:
+                        notes.append(
+                            f"limit={row_selection} was not applied: the answer has one "
+                            "column per ticker rather than a row per period; use "
+                            "show_columns to pick fields."
+                        )
+                    elif (
+                        tickers
+                        and row_labels <= {*tickers, "Benchmark"}
+                        and len(result.index) == len(row_labels)
+                        and not (
+                            isinstance(result, pd.DataFrame)
+                            and has_period_columns(result)
+                        )
+                    ):
+                        notes.append(
+                            f"limit={row_selection} was not applied: the answer has one row "
+                            "per ticker rather than one per period."
+                        )
+                    else:
+                        reported = (
+                            result.index[result.notna().any(axis=1)]
+                            if isinstance(result, pd.DataFrame)
+                            else result.index
+                        )
+                        selected = select_rows(result, row_selection)
+                        if (
+                            row_selection < 0
+                            and isinstance(result, pd.DataFrame)
+                            and has_period_columns(result)
+                            and result.columns[-1] not in selected.columns
+                        ):
+                            skipped = result.columns[
+                                result.columns.get_loc(selected.columns[-1]) + 1 :
+                            ]
+                            notes.append(
+                                f"{', '.join(map(str, skipped))} "
+                                f"{'is' if len(skipped) == 1 else 'are'} left out: most rows "
+                                "have no value for it yet. Use start_date/end_date to see it."
+                            )
+                        result = selected
+                        # The latest period may not be reported yet for every ticker; a row
+                        # without any value at all is not worth a mention.
+                        if (
+                            isinstance(result, pd.DataFrame)
+                            and has_period_columns(result)
+                            and (
+                                empty_rows := result.index[
+                                    result.isna().all(axis=1)
+                                    & result.index.isin(reported)
+                                ]
+                            ).size
+                        ):
+                            names = [
+                                (
+                                    " ".join(map(str, label))
+                                    if isinstance(label, tuple)
+                                    else str(label)
+                                )
+                                for label in empty_rows.unique()
+                            ]
+                            notes.append(
+                                (
+                                    f"{', '.join(names)} "
+                                    f"{'has' if len(names) == 1 else 'have'} no "
+                                    if len(names) <= MAXIMUM_NAMED_ROWS
+                                    else f"{len(names):,} rows have no "
+                                )
+                                + "value for the selected periods (e.g. not reported yet); "
+                                f"limit={row_selection - 1 if row_selection < 0 else row_selection + 1} "
+                                "includes one more period."
+                            )
+                # Most economic series are yearly only, whatever quarterly asks for.
+                if (
+                    quarterly
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                    and is_yearly(result.index)
+                ):
+                    notes.append(
+                        f"Quarterly data is not available for `{method_name}`, so the yearly "
+                        "figures are shown."
+                    )
+                if indicator_note:
+                    notes.insert(0, indicator_note)
+                if curve_note:
+                    notes.append(curve_note)
+                if assumed_inputs:
+                    notes.append(
+                        f"Assumed {', '.join(assumed_inputs)} (the "
+                        f"{'default' if len(assumed_inputs) == 1 else 'defaults'}); pass "
+                        "your own values for the bond in question."
+                    )
+                # The inputs an option model used, which it only logs.
+                if method_kwargs.get("show_input_info"):
+                    notes.extend(input_info)
+                if ignored_params:
+                    notes.append(
+                        ", ".join(f"`{pname}`" for pname in ignored_params)
+                        + f" {'is' if len(ignored_params) == 1 else 'are'} not used by "
+                        f"`{method_name}` and {'was' if len(ignored_params) == 1 else 'were'} "
+                        "ignored."
+                    )
+                if unmatched_columns:
+                    notes.append(
+                        "show_columns: "
+                        + ", ".join(f"'{name}'" for name in unmatched_columns)
+                        + " is not part of this answer. Available: "
+                        + ", ".join(available_columns[:40])
+                        + "."
+                    )
+                # A note on how the benchmark was chosen only confuses an answer that has
+                # no benchmark in it, such as an ETF's holdings.
+                if not _mentions_benchmark(result):
+                    notes = [note for note in notes if "the benchmark" not in note]
                 formatted = format_result(
                     result,
                     notes=notes or None,
-                    reason=summarize_reasons(call_messages),
+                    reason=summarize_reasons(call_messages)
+                    or _short_window_reason(dispatch_category, start_date, end_date),
+                    max_characters=None if full_text else max_response_characters,
                 )
                 return formatted
             except (ValueError, KeyError) as exc:
@@ -831,8 +1628,13 @@ class ToolRegistry:
         P = inspect.Parameter
         POS = P.POSITIONAL_OR_KEYWORD
         indicator_choices = group_methods
+        # The choices are advertised as an enum, but any text is accepted: an indicator of
+        # another tool (or a near miss) is then answered with where it is, rather than with
+        # a validation error that only lists this tool's indicators.
         indicator_ann = (
-            typing.Literal[tuple(indicator_choices)]  # ty: ignore[invalid-type-form]
+            Annotated[
+                str, PydanticField(json_schema_extra={"enum": list(indicator_choices)})
+            ]
             if indicator_choices
             else str
         )
@@ -861,6 +1663,30 @@ class ToolRegistry:
             for p in common
         ]
 
+        # What the indicators' own docstrings say about each parameter, for the ones
+        # without a shared description.
+        versions: dict[str, dict[str, list[str]]] = {}
+        for method_name in group_methods:
+            owner = owning_class(method_name)
+            for pname, text in _docstring_arguments(
+                inspect.getdoc(getattr(owner, method_name, None)) or ""
+            ).items():
+                versions.setdefault(pname, {}).setdefault(text, []).append(method_name)
+        # A parameter that means something else per indicator (performance's method is a
+        # regression method for one and a Sharpe ratio variant for another) says so.
+        documented: dict[str, str] = {
+            pname: (
+                " ".join(
+                    f"For {', '.join(methods)}: {text}"
+                    for text, methods in texts.items()
+                )
+                if 1 < len(texts) <= MAXIMUM_DESCRIPTION_VERSIONS
+                # Many versions: the shortest is usually the generic one.
+                else min(texts, key=len)
+            )
+            for pname, texts in versions.items()
+        }
+
         for p in extra_params:
             ann = (
                 _simplify_annotation(p.annotation)
@@ -875,10 +1701,13 @@ class ToolRegistry:
                     p.name,
                     typing.Optional[ann],  # noqa: UP045
                     suffix=_describe_disputed_default(parameter_defaults[p.name]),
+                    documented=documented.get(p.name, ""),
                 )
             else:
                 default = p.default if p.default is not P.empty else ""
-                annotation = _annotate_with_description(p.name, ann)
+                annotation = _annotate_with_description(
+                    p.name, ann, documented=documented.get(p.name, "")
+                )
 
             sig_params.append(P(p.name, POS, default=default, annotation=annotation))
 
@@ -891,6 +1720,18 @@ class ToolRegistry:
                 annotation=_annotate_with_description("show_columns", str | None),
             )
         )
+
+        # Every tool can select rows; a group whose indicator has a limit of its own already
+        # lists it.
+        if "limit" not in {p.name for p in sig_params}:
+            sig_params.append(
+                P(
+                    "limit",
+                    POS,
+                    default=None,
+                    annotation=_annotate_with_description("limit", int | None),
+                )
+            )
 
         wrapper.__signature__ = inspect.Signature(sig_params, return_annotation=str)
         wrapper.__annotations__ = {p.name: p.annotation for p in sig_params}
@@ -967,13 +1808,25 @@ class ToolRegistry:
             logger.warning(f"No methods found for group '{spec.tool_name}' — skipping")
             return False
 
-        method_list = ", ".join(group_methods)
-        if spec.description:
-            description = f"{spec.description}\n\nAvailable indicators: {method_list}."
-        else:
-            description = (
-                f"{spec.display_name}. Set `indicator` to one of: {method_list}."
+        # Each indicator by name, the first sentence of its docstring and its aliases, so
+        # search_metrics can point at the indicator itself rather than only its tool.
+        for method_name in group_methods:
+            owner = (method_to_cls or {}).get(method_name) or cls
+            self._indicator_index.append(
+                {
+                    "tool": spec.tool_name,
+                    "indicator": method_name,
+                    **_summarize_docstring(
+                        inspect.getdoc(getattr(owner, method_name, None)) or ""
+                    ),
+                }
             )
+
+        method_list = ", ".join(group_methods)
+        # The indicators are the enum of the indicator parameter, so the tool description
+        # does not repeat them; the category listing (search_by_category) does show them.
+        description = spec.description or f"{spec.display_name}."
+        index_description = f"{description}\n\nAvailable indicators: {method_list}."
 
         try:
             fn = self._build_router_wrapper(
@@ -1005,8 +1858,9 @@ class ToolRegistry:
             if index_cat not in self._tool_index:
                 self._tool_index[index_cat] = []
             self._tool_index[index_cat].append(
-                {"tool": spec.tool_name, "description": description}
+                {"tool": spec.tool_name, "description": index_description}
             )
+            _strip_schema_titles(self._mcp, spec.tool_name)
             return True
         except Exception as exc:
             logger.warning(f"Failed to register group '{spec.tool_name}': {exc}")

@@ -180,3 +180,11 @@ def test_filter_columns_passthrough_series():
     result = dataframe_model.filter_columns(series, ["Revenue"])
 
     pd.testing.assert_series_equal(result, series)
+
+
+def test_filtering_one_row_of_one_ticker_keeps_the_ticker():
+    from financetoolkit.utilities.dataframe_model import filter_columns
+
+    quote = pd.DataFrame({"AAPL": [336.64, "Apple Inc."]}, index=["Price", "Name"])
+
+    assert filter_columns(quote, ["Price"]).to_dict() == {"AAPL": 336.64}

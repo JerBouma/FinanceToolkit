@@ -1767,19 +1767,21 @@ class Risk:
             returns, None, time_steps
         ).dropna()
 
-        period_symbol = (
-            "W"
-            if period == "weekly"
-            else (
-                "ME" if period == "monthly" else "QE" if period == "quarterly" else "YE"
-            )
-        )
+        # The forecast steps continue the period of the returns (business days for daily).
+        period_symbol = {
+            "daily": "B",
+            "weekly": "W",
+            "monthly": "ME",
+            "quarterly": "QE",
+        }.get(period, "YE")
+        # Business days are kept as daily periods, as business-day periods are deprecated.
         period_index = pd.PeriodIndex(
             pd.date_range(
                 start=returns.index[-1].to_timestamp(),
                 periods=time_steps + 1,
                 freq=period_symbol,
-            )
+            ),
+            freq="D" if period_symbol == "B" else None,
         )
 
         sigma_2_forecast.index = period_index[1:]
@@ -2119,19 +2121,21 @@ class Risk:
             returns, None, time_steps
         ).dropna()
 
-        period_symbol = (
-            "W"
-            if period == "weekly"
-            else (
-                "ME" if period == "monthly" else "QE" if period == "quarterly" else "YE"
-            )
-        )
+        # The forecast steps continue the period of the returns (business days for daily).
+        period_symbol = {
+            "daily": "B",
+            "weekly": "W",
+            "monthly": "ME",
+            "quarterly": "QE",
+        }.get(period, "YE")
+        # Business days are kept as daily periods, as business-day periods are deprecated.
         period_index = pd.PeriodIndex(
             pd.date_range(
                 start=returns.index[-1].to_timestamp(),
                 periods=time_steps + 1,
                 freq=period_symbol,
-            )
+            ),
+            freq="D" if period_symbol == "B" else None,
         )
 
         sigma_2_forecast.index = period_index[1:]
@@ -2465,19 +2469,21 @@ class Risk:
             returns, None, time_steps
         ).dropna()
 
-        period_symbol = (
-            "W"
-            if period == "weekly"
-            else (
-                "ME" if period == "monthly" else "QE" if period == "quarterly" else "YE"
-            )
-        )
+        # The forecast steps continue the period of the returns (business days for daily).
+        period_symbol = {
+            "daily": "B",
+            "weekly": "W",
+            "monthly": "ME",
+            "quarterly": "QE",
+        }.get(period, "YE")
+        # Business days are kept as daily periods, as business-day periods are deprecated.
         period_index = pd.PeriodIndex(
             pd.date_range(
                 start=returns.index[-1].to_timestamp(),
                 periods=time_steps + 1,
                 freq=period_symbol,
-            )
+            ),
+            freq="D" if period_symbol == "B" else None,
         )
 
         sigma_2_forecast.index = period_index[1:]
@@ -5324,6 +5330,7 @@ class Risk:
         autocorrelation = returns.apply(
             lambda column: risk_model.get_autocorrelation(column, lags=lags)
         )
+        autocorrelation.index.name = "Lag"
 
         return apply_rounding(
             autocorrelation, rounding if rounding is not None else self._rounding

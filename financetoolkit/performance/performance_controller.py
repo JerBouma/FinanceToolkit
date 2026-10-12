@@ -27,6 +27,7 @@ from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
+    PERIODS_PER_YEAR,
     apply_rounding,
     convert_annualized_rate_to_period,
     finalize_dataset,
@@ -1888,6 +1889,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        annualize: bool = False,
     ):
         """
         Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
@@ -1916,11 +1918,11 @@ class Performance:
 
         Note that this is explicitly already subtracts the Risk Free Rate.
 
-        The result is **not annualized**: it is a per-observation Sharpe ratio, so a value
-        computed from daily returns is roughly SQRT(252) smaller than the annualized figure
+        By default the result is **not annualized**: it is a per-observation Sharpe ratio, so a
+        value computed from daily returns is roughly SQRT(252) smaller than the annualized figure
         usually quoted in the literature (SQRT(52), SQRT(12) and SQRT(4) for weekly, monthly
-        and quarterly returns respectively). Multiply by that factor before comparing against
-        published annualized Sharpe ratios.
+        and quarterly returns respectively). Set annualize=True to multiply by that factor, to
+        compare against published annualized Sharpe ratios.
 
         The plain Sharpe ratio only looks at the mean and standard deviation of returns, implicitly
         assuming Gaussian, i.i.d. returns and ignoring how much uncertainty surrounds the estimate
@@ -2002,6 +2004,11 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            annualize (bool, optional): Whether to annualize the Sharpe ratio, multiplying it by
+                the square root of the number of observations in a year: 252 for the daily
+                returns within each period, or the periods in a year for a rolling Sharpe ratio
+                (e.g. 12 for monthly). Only for method="standard" and "adjusted", since the other
+                methods return probabilities. Defaults to False.
 
         Returns:
             pd.DataFrame: Sharpe ratio values. For method="probabilistic" and method="deflated"
@@ -2061,6 +2068,12 @@ class Performance:
         if method not in ("standard", "adjusted", "probabilistic", "deflated"):
             raise ValueError(
                 "Method must be standard, adjusted, probabilistic, or deflated."
+            )
+
+        if annualize and method not in ("standard", "adjusted"):
+            raise ValueError(
+                "Only a standard or adjusted Sharpe ratio can be annualized, since the "
+                "probabilistic and deflated ones are probabilities."
             )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -2130,6 +2143,13 @@ class Performance:
                     skewness=skewness,
                     kurtosis=kurtosis,
                 )
+
+        if annualize:
+            # The rolling ratio uses the returns of each period, the one per period the
+            # daily returns within it.
+            result = result * np.sqrt(
+                PERIODS_PER_YEAR[period] if rolling else PERIODS_PER_YEAR["daily"]
+            )
 
         return finalize_dataset(
             dataset=result,

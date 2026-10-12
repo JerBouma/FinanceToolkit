@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import contextlib
 import logging
 import re
 from collections.abc import Generator
@@ -15,6 +16,9 @@ from financetoolkit.utilities.logger_model import get_logger
 # instead of only "No data available". A context variable keeps concurrent calls apart.
 _CALL_MESSAGES: ContextVar[list[str] | None] = ContextVar(
     "financetoolkit_call_messages", default=None
+)
+_CALL_INPUT_INFO: ContextVar[list[str] | None] = ContextVar(
+    "financetoolkit_call_input_info", default=None
 )
 
 # How many distinct reasons, and how many characters of each, a response includes.
@@ -54,7 +58,17 @@ class _CallMessageHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         messages = _CALL_MESSAGES.get()
 
-        if messages is None or record.levelno < logging.WARNING:
+        if messages is None:
+            return
+
+        # The inputs an option model reports (show_input_info) are logged as information;
+        # they are kept apart from the warnings, for the answer's notes only.
+        if record.levelno < logging.WARNING:
+            input_info = _CALL_INPUT_INFO.get()
+            with contextlib.suppress(Exception):
+                message = record.getMessage()
+                if input_info is not None and message.startswith(INPUT_INFO_PREFIXES):
+                    input_info.extend(line for line in message.splitlines() if line)
             return
 
         try:
@@ -64,7 +78,17 @@ class _CallMessageHandler(logging.Handler):
             return
 
 
-_HANDLER = _CallMessageHandler(level=logging.WARNING)
+_HANDLER = _CallMessageHandler(level=logging.INFO)
+
+# How the option models' input information (show_input_info) begins.
+INPUT_INFO_PREFIXES = (
+    "Based on the period",
+    "Dividend Yield:",
+    "Up Movement:",
+    "Down Movement:",
+    "Risk Neutral Probability:",
+    "Risk Free Rate:",
+)
 
 
 def _install_handler() -> None:
@@ -73,6 +97,17 @@ def _install_handler() -> None:
 
     if _HANDLER not in toolkit_logger.handlers:
         toolkit_logger.addHandler(_HANDLER)
+
+
+def current_call_messages() -> list[str] | None:
+    """
+    The messages collected so far for the tool call that is running, or None outside one.
+    The provider adds the messages of a cached result to it, as they are not logged again.
+
+    Returns:
+        list[str] | None: The collected messages, which may be extended.
+    """
+    return _CALL_MESSAGES.get()
 
 
 def redact(text: object) -> str:
@@ -101,11 +136,67 @@ def capture_call_messages() -> Generator[list[str]]:
     _install_handler()
     messages: list[str] = []
     token = _CALL_MESSAGES.set(messages)
+    input_token = _CALL_INPUT_INFO.set([])
 
     try:
         yield messages
     finally:
         _CALL_MESSAGES.reset(token)
+        _CALL_INPUT_INFO.reset(input_token)
+
+
+def add_call_input_info(lines: list[str]) -> None:
+    """
+    Adds input information to the running tool call, such as that of a cached answer.
+
+    Args:
+        lines (list[str]): The lines to add.
+    """
+    input_info = _CALL_INPUT_INFO.get()
+    if input_info is not None:
+        input_info.extend(lines)
+
+
+def call_input_info() -> list[str]:
+    """
+    The input information an option model logged during the running tool call, such as
+    the stock prices and volatilities it used (show_input_info).
+
+    Returns:
+        list[str]: The lines, empty outside a call or when nothing was logged.
+    """
+    return list(_CALL_INPUT_INFO.get() or [])
+
+
+# The warnings that qualify a result: tickers left out of it, such as "No quote data is
+# available for EURUSD=X.", and metrics that do not apply to some of them, such as the
+# Altman Z-Score of an insurer, and countries an indicator does not cover.
+MISSING_DATA_PATTERN = re.compile(
+    r"^No (?:\w+ )*data (?:is available|found) for\b|\bdoes not apply to\b"
+    r"|^The following countries are not available for\b"
+)
+
+
+def missing_data_notes(messages: list[str] | None) -> list[str]:
+    """
+    The warnings that qualify a result, so a client sees which tickers are missing rather
+    than finding them silently absent, and for which a metric does not apply.
+
+    Args:
+        messages (list[str] | None): The messages collected during the call.
+
+    Returns:
+        list[str]: The first line of each distinct warning, credentials redacted.
+    """
+    notes: list[str] = []
+
+    for message in messages or []:
+        first_line = redact(message.strip().splitlines()[0]) if message.strip() else ""
+
+        if MISSING_DATA_PATTERN.search(first_line) and first_line not in notes:
+            notes.append(first_line)
+
+    return notes
 
 
 def summarize_reasons(messages: list[str] | None) -> str | None:

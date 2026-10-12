@@ -14,6 +14,7 @@ import yfinance.exceptions
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.currencies_model import to_yahoo_finance_symbol
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.requests_model import get_request
 
@@ -62,7 +63,7 @@ def get_financial_statement(
         )
 
     # Create a ticker object from yfinance
-    ticker_info = yf.Ticker(ticker)
+    ticker_info = yf.Ticker(to_yahoo_finance_symbol(ticker))
 
     # Get the requested financial statement
     try:
@@ -202,7 +203,7 @@ def get_reported_currency(ticker: str) -> str:
             return cached_currency
 
     try:
-        information = yf.Ticker(ticker).get_info() or {}
+        information = yf.Ticker(to_yahoo_finance_symbol(ticker)).get_info() or {}
     except (
         OSError,
         IndexError,
@@ -300,7 +301,7 @@ def get_historical_data(
         # auto_adjust=False matches FMP (True made Close disagree by the dividend history, 1.8% median, AAPL 2022-2023); repair is disabled for synthetic instruments since yfinance's split-repair misfires on them (^IRX 100x, CL=F 10,000x after oil went negative).  # noqa: E501
         repair_splits = not (ticker.startswith("^") or "=" in ticker)
 
-        historical_data = yf.Ticker(ticker).history(
+        historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
             start=start_date_string,
             end=end_date_string,
             interval=interval,
@@ -416,7 +417,8 @@ def get_historical_statistics(ticker: str) -> pd.Series:
 
     try:
         response = get_request(
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=None",
+            "https://query1.finance.yahoo.com/v8/finance/chart/"
+            f"{to_yahoo_finance_symbol(ticker)}?interval=1d&range=None",
             timeout=60,
         )
     except requests.exceptions.RequestException:

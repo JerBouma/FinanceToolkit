@@ -3874,18 +3874,32 @@ class Ratios:
         | AAPL | 0.4178 | 0.4331 | 0.4413 | 0.4621 | 0.4691 |
         | TSLA | 0.2528 | 0.256  | 0.1825 | 0.1786 | 0.1803 |
         """
+        cost_of_goods_sold = self._income_statement.loc[:, "Cost of Goods Sold", :]
+
         if trailing:
+            cost_of_goods_sold = cost_of_goods_sold.T.rolling(trailing).sum().T
             gross_margin = profitability_model.get_gross_margin(
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
-                self._income_statement.loc[:, "Cost of Goods Sold", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
+                cost_of_goods_sold,
             )
         else:
             gross_margin = profitability_model.get_gross_margin(
                 self._income_statement.loc[:, "Revenue", :],
-                self._income_statement.loc[:, "Cost of Goods Sold", :],
+                cost_of_goods_sold,
+            )
+
+        # Banks and insurers sell no goods, so they report no cost of goods sold and their
+        # gross margin would be a meaningless 1.0; it is left out instead.
+        without_cost_of_goods = cost_of_goods_sold == 0
+        gross_margin = gross_margin.mask(without_cost_of_goods)
+
+        if without_cost_of_goods.to_numpy().any():
+            logger.warning(
+                "The gross margin does not apply to companies that report no cost of goods "
+                "sold, as banks and insurers do, so it is left out for %s in those periods.",
+                ", ".join(
+                    without_cost_of_goods.index[without_cost_of_goods.any(axis=1)]
+                ),
             )
 
         return finalize_dataset(

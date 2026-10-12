@@ -1,6 +1,6 @@
 [project]
 name = "financetoolkit"
-version = "2.2.2"
+version = "2.2.3"
 description = "Transparent and Efficient Financial Analysis"
 license = {text = "MIT"}
 authors = [

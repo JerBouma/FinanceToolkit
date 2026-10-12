@@ -317,6 +317,13 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
     # The last (or first) rows with data: a yearly series often ends before the window
     # does, and its empty last years are not the most recent figures anyone asks for.
     if _is_time_index(data.index):
+        # Rows of a date and an item (a correlation matrix per year) are selected by
+        # whole periods, so a period keeps every one of its rows.
+        if isinstance(data.index, pd.MultiIndex):
+            periods = data.dropna(how="all").index.get_level_values(0).unique()
+            chosen = periods[:limit] if limit > 0 else periods[limit:]
+            return data[data.index.get_level_values(0).isin(chosen)]
+
         first, last = data.first_valid_index(), data.last_valid_index()
         if first is not None and last is not None:
             data = data.loc[first:last]

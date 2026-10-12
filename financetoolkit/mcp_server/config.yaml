@@ -400,7 +400,7 @@ tool_groups:
   # ── Technicals (4 sub-groups) ────────────────────────────────────────────
   - tool_name:      "breadth"
     display_name:   "Breadth Indicators"
-    description:    "Market breadth technical indicators (McClellan Oscillator, OBV, Advance/Decline Line, Chaikin). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:    "Market breadth technical indicators (McClellan Oscillator, OBV, Advance/Decline Line, Chaikin, TRIN, new highs and lows). Applied to price data automatically — no need to fetch prices first. TRIN treats the given tickers as one market, so every column holds the same value; pass the market's constituents for a meaningful figure. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
     collect_method: "collect_breadth_indicators"

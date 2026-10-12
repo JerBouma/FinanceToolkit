@@ -83,7 +83,7 @@
     },
     {
       "name": "breadth",
-      "description": "Market breadth technical indicators (McClellan Oscillator, OBV, Advance/Decline Line, Chaikin). Applied to price data automatically \u2014 no need to fetch prices first. Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers."
+      "description": "Market breadth technical indicators (McClellan Oscillator, OBV, Advance/Decline Line, Chaikin, TRIN, new highs and lows). Applied to price data automatically \u2014 no need to fetch prices first. TRIN treats the given tickers as one market, so every column holds the same value; pass the market's constituents for a meaningful figure. Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers."
     },
     {
       "name": "momentum",

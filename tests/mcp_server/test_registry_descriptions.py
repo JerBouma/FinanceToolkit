@@ -342,3 +342,21 @@ def test_the_server_tells_a_client_how_to_use_it():
 
     assert "search_metrics" in mcp_controller.mcp.instructions
     assert "decimal fractions" in mcp_controller.mcp.instructions
+
+
+def test_limit_keeps_whole_periods_of_rows_per_date_and_item():
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import select_rows
+
+    correlations = pd.DataFrame(
+        {"SMB": [1.0, 0.2, 1.0, 0.3], "HML": [0.2, 1.0, 0.3, 1.0]},
+        index=pd.MultiIndex.from_product(
+            [pd.period_range("2025", periods=2, freq="Y"), ["SMB", "HML"]]
+        ),
+    )
+
+    latest = select_rows(correlations, -1)
+
+    assert latest.index.get_level_values(1).tolist() == ["SMB", "HML"]
+    assert latest.index.get_level_values(0).astype(str).unique().tolist() == ["2026"]

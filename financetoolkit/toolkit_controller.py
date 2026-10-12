@@ -3949,9 +3949,9 @@ class Toolkit:
         |:---------------|-------:|-------:|
         | United States  | 0.9445 | 0.9733 |
         | United Kingdom | 0.0164 | 0.0048 |
+        | Netherlands    | 0.0135 | 0.0003 |
         | Canada         | 0.0096 | 0.0007 |
         | Singapore      | 0.0074 | 0.0025 |
-        | Netherlands    | 0.0135 | 0.0003 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3970,7 +3970,13 @@ class Toolkit:
                 ),
             )
 
-        return self._etf_country_weightings
+        # The largest weights first, so the head of the table is what a fund is made of.
+        if self._etf_country_weightings.empty:
+            return self._etf_country_weightings
+
+        return self._etf_country_weightings.sort_values(
+            by=self._etf_country_weightings.columns[0], ascending=False, kind="stable"
+        )
 
     def get_etf_sector_weightings(self, overwrite: bool = False):
         """
@@ -4008,18 +4014,18 @@ class Toolkit:
 
         | Sector                 |          QQQ |       VTI |
         |:-----------------------|-------------:|----------:|
-        | Basic Materials        |   0.00912283 | 0.0222419 |
-        | Cash & Others          |   0.00248307 | 0.001929  |
+        | Technology             |   0.610092   | 0.365041  |
         | Communication Services |   0.118947   | 0.086689  |
         | Consumer Cyclical      |   0.0972185  | 0.0898289 |
         | Consumer Defensive     |   0.0549628  | 0.0425139 |
-        | Energy                 |   0.00442936 | 0.037377  |
-        | Financial Services     |   0.0018637  | 0.123878  |
-        | Healthcare             |   0.0358905  | 0.0998086 |
-        | Industrials            |   0.054947   | 0.0881844 |
-        | Technology             |   0.610092   | 0.365041  |
         | Utilities              |   0.0100427  | 0.0197311 |
+        | Basic Materials        |   0.00912283 | 0.0222419 |
+        | Energy                 |   0.00442936 | 0.037377  |
         | Real Estate            | nan          | 0.0227773 |
+        | Industrials            |   0.054947   | 0.0881844 |
+        | Healthcare             |   0.0358905  | 0.0998086 |
+        | Cash & Others          |   0.00248307 | 0.001929  |
+        | Financial Services     |   0.0018637  | 0.123878  |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4038,7 +4044,13 @@ class Toolkit:
                 ),
             )
 
-        return self._etf_sector_weightings
+        # The largest weights first, so the head of the table is what a fund is made of.
+        if self._etf_sector_weightings.empty:
+            return self._etf_sector_weightings
+
+        return self._etf_sector_weightings.sort_values(
+            by=self._etf_sector_weightings.columns[0], ascending=False, kind="stable"
+        )
 
     def get_earnings_call_transcripts(
         self,

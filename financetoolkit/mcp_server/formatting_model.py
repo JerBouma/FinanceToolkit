@@ -334,6 +334,11 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
     return data.head(limit) if limit > 0 else data.tail(-limit)
 
 
+def is_time_index_of(data: pd.DataFrame | pd.Series) -> bool:
+    """Whether the rows of a result are dates."""
+    return _is_time_index(data.index)
+
+
 def is_yearly(index: pd.Index) -> bool:
     """Whether the rows (the first level of them) are years."""
     first_level = index.levels[0] if isinstance(index, pd.MultiIndex) else index

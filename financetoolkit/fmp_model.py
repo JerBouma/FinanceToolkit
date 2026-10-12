@@ -2844,7 +2844,7 @@ def get_etf_country_weightings(
                 errors="coerce",
             )
             / 100
-        )
+        ).round(6)
         weights.index = pd.Index(weightings["country"], name="Country")
 
         return ticker, weights, True
@@ -2884,7 +2884,10 @@ def get_etf_sector_weightings(
             return ticker, weightings, False
 
         # Published as a percentage; every other ratio in the Finance Toolkit is a decimal.
-        weights = pd.to_numeric(weightings["weightPercentage"], errors="coerce") / 100
+        # Rounded like the other ratios, as the division leaves binary artefacts.
+        weights = (
+            pd.to_numeric(weightings["weightPercentage"], errors="coerce") / 100
+        ).round(6)
         weights.index = pd.Index(weightings["sector"], name="Sector")
 
         return ticker, weights, True

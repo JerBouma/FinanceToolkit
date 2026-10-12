@@ -41,6 +41,7 @@ from financetoolkit.mcp_server.formatting_model import (
     country_names,
     format_result,
     has_period_columns,
+    is_time_index_of,
     is_yearly,
     select_rows,
 )
@@ -1361,7 +1362,29 @@ class ToolRegistry:
                         str(label)
                         for label in result.index.get_level_values(0).unique()
                     }
-                    if (
+                    # Metrics as rows and a column per ticker (a profile, the share
+                    # float) have no first or last rows either.
+                    column_labels = (
+                        {str(label) for label in result.columns}
+                        if isinstance(result, pd.DataFrame)
+                        and result.columns.nlevels == 1
+                        else set()
+                    )
+                    per_ticker_columns = (
+                        bool(tickers)
+                        and bool(column_labels)
+                        and column_labels <= {*(tickers or []), "Benchmark"}
+                        and not is_time_index_of(result)
+                        # Named rows (an ETF's Sector) are a list a limit can shorten.
+                        and result.index.name is None
+                    )
+                    if per_ticker_columns:
+                        notes.append(
+                            f"limit={row_selection} was not applied: the answer has one "
+                            "column per ticker rather than a row per period; use "
+                            "show_columns to pick fields."
+                        )
+                    elif (
                         tickers
                         and row_labels <= {*tickers, "Benchmark"}
                         and len(result.index) == len(row_labels)

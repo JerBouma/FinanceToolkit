@@ -462,3 +462,22 @@ def test_show_columns_matches_names_in_any_casing(monkeypatch):
     )[0][0].text
 
     assert '"Price": 336.6' in text and "Market Capitalization" not in text
+
+
+def test_limit_leaves_a_table_of_metrics_per_ticker_whole(monkeypatch):
+    def float_table(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"AAPL": [0.9988, 14576491739, "https://www.sec.gov"]},
+            index=["Free Float", "Float Shares", "Source"],
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", float_table)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data",
+            {"indicator": "get_shares_float", "tickers": "AAPL", "limit": -1},
+        )
+    )[0][0].text
+
+    assert "Free Float" in text and "one column per ticker" in text

@@ -135,6 +135,11 @@ skip_methods:
   - "collect_overlap_indicators"
   - "collect_volatility_indicators"
   - "collect_all_metrics"
+  # EGARCH fits take around 45 seconds per ticker (a deterministic multi-start search),
+  # longer than an assistant waits for a tool; GARCH and GJR-GARCH remain available.
+  - "get_egarch"
+  - "get_egarch_forecast"
+  - "get_egarch_parameters"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Parameters removed from individual method signatures during inspection

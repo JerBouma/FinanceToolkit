@@ -360,3 +360,27 @@ def test_limit_keeps_whole_periods_of_rows_per_date_and_item():
 
     assert latest.index.get_level_values(1).tolist() == ["SMB", "HML"]
     assert latest.index.get_level_values(0).astype(str).unique().tolist() == ["2026"]
+
+
+def test_the_slow_egarch_fits_are_not_offered():
+    import asyncio
+    import importlib
+    import sys
+
+    for module in (
+        "financetoolkit.mcp_server.mcp_controller",
+        "financetoolkit.mcp_server.registry_controller",
+        "financetoolkit.mcp_server.tools_model",
+    ):
+        sys.modules.pop(module, None)
+    mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
+
+    risk = next(
+        tool
+        for tool in asyncio.run(mcp_controller.mcp.list_tools())
+        if tool.name == "risk"
+    )
+    indicators = risk.inputSchema["properties"]["indicator"]["enum"]
+
+    assert "get_garch" in indicators
+    assert not [name for name in indicators if "egarch" in name]

@@ -397,6 +397,20 @@ class ToolkitProvider:
                 f"Unknown category '{category}' for module '{module_name}'"
             )
 
+        # An option chain carries its expiration date as an attribute, which no answer
+        # would show; as a column it does, also from the cache.
+        expiration = (
+            getattr(result, "name", None) if isinstance(result, pd.DataFrame) else None
+        )
+        if (
+            module_name == "options"
+            and isinstance(expiration, str)
+            and validation_model.is_valid_date(expiration)
+            and "Expiration Date" not in result.columns
+        ):
+            result = result.copy()
+            result.insert(0, "Expiration Date", expiration)
+
         if isinstance(result, pd.Series):
             # An unnamed result is named after its method, e.g. "Value at Risk", rather than
             # becoming a column called 0.

@@ -23,6 +23,8 @@ from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
 from financetoolkit.mcp_server.diagnostics_model import (
     FMP_KEY_HINT,
+    add_call_input_info,
+    call_input_info,
     current_call_messages,
 )
 from financetoolkit.utilities import validation_model
@@ -307,7 +309,19 @@ class ToolkitProvider:
                 )
                 call_messages = current_call_messages()
                 if cached_messages is not None and call_messages is not None:
-                    call_messages.extend(cached_messages["Message"].astype(str))
+                    kinds = (
+                        cached_messages["Kind"]
+                        if "Kind" in cached_messages.columns
+                        else pd.Series("warning", index=cached_messages.index)
+                    )
+                    call_messages.extend(
+                        cached_messages.loc[kinds == "warning", "Message"].astype(str)
+                    )
+                    add_call_input_info(
+                        list(
+                            cached_messages.loc[kinds == "input", "Message"].astype(str)
+                        )
+                    )
                 return cached
 
         logger.info(
@@ -409,12 +423,22 @@ class ToolkitProvider:
                 data=result,
                 parameters=cache_params,
             )
-            if call_messages is not None and call_messages[first_message:]:
+            warnings = (
+                call_messages[first_message:] if call_messages is not None else []
+            )
+            inputs = call_input_info()
+            if warnings or inputs:
                 self._cache.set(
                     source=MCP_CACHE_SOURCE,
                     dataset=MCP_CACHE_MESSAGES_DATASET,
                     entity=f"{module_name}.{method_name}",
-                    data=pd.DataFrame({"Message": call_messages[first_message:]}),
+                    data=pd.DataFrame(
+                        {
+                            "Message": [*warnings, *inputs],
+                            "Kind": ["warning"] * len(warnings)
+                            + ["input"] * len(inputs),
+                        }
+                    ),
                     parameters=cache_params,
                 )
 

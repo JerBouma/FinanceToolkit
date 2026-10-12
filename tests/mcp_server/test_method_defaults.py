@@ -416,3 +416,30 @@ def test_a_near_certain_indicator_name_is_read_as_the_known_one(captured):
     )[0][0].text
 
     assert "was read as `get_gorden_growth_model`" in text
+
+
+def test_a_result_and_its_detail_become_named_tables(monkeypatch):
+    def model(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        index = pd.period_range("2026-08-28", periods=2, freq="D")
+        return (
+            pd.DataFrame({"R Squared": [0.39]}, index=["AAPL"]),
+            pd.DataFrame({"AAPL": [0.006, -0.005]}, index=index),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", model)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {
+                "indicator": "get_fama_and_french_model",
+                "tickers": "AAPL",
+                "period": "yearly",
+                "include_daily_residuals": True,
+                "limit": -1,
+            },
+        )
+    )[0][0].text
+
+    assert '"Model"' in text and '"Daily Residuals"' in text
+    assert "-0.005" in text and "0.006" not in text

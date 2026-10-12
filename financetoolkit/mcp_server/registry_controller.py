@@ -31,6 +31,7 @@ from financetoolkit.mcp_server.coercion_model import (
     validate_date,
 )
 from financetoolkit.mcp_server.diagnostics_model import (
+    call_input_info,
     capture_call_messages,
     missing_data_notes,
     redact,
@@ -391,6 +392,29 @@ def _unmatched_columns(
         return [], []
 
     return [name for name in show_columns if name not in available], available[:40]
+
+
+def _table_names(method_kwargs: dict[str, Any], count: int) -> list[str]:
+    """The names of the tables an indicator returns together, after the option that asked.
+
+    Args:
+        method_kwargs (dict[str, Any]): The arguments of the call.
+        count (int): The number of tables.
+
+    Returns:
+        list[str]: One name per table.
+    """
+    if method_kwargs.get("include_daily_residuals"):
+        names = ["Model", "Daily Residuals"]
+    elif method_kwargs.get("show_standard_error"):
+        names = ["Price", "Standard Error"]
+    else:
+        names = ["Result"]
+
+    return [
+        *names,
+        *(f"Table {number}" for number in range(len(names) + 1, count + 1)),
+    ][:count]
 
 
 def _labels(result: pd.DataFrame | pd.Series) -> set[str]:
@@ -1224,6 +1248,7 @@ class ToolRegistry:
                         benchmark_ticker=benchmark_ticker,
                         **method_kwargs,
                     )
+                    input_info = call_input_info()
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
                 # a repeat call should be near-instant off the provider cache).
@@ -1234,6 +1259,18 @@ class ToolRegistry:
                     (time.perf_counter() - call_started) * 1000,
                     len(tickers) if tickers else 0,
                 )
+                # A result and its detail (a model and its residuals, prices and their
+                # standard errors) become named tables rather than one unnamed list.
+                if isinstance(result, tuple) and all(
+                    isinstance(part, pd.DataFrame | pd.Series) for part in result
+                ):
+                    result = dict(
+                        zip(
+                            _table_names(method_kwargs, len(result)),
+                            result,
+                            strict=False,
+                        )
+                    )
                 unmatched_columns: list[str] = []
                 if show_columns is not None:
                     unmatched_columns, available_columns = _unmatched_columns(
@@ -1289,6 +1326,15 @@ class ToolRegistry:
                             "Please check the symbol (e.g. ASML.AS for Amsterdam)."
                         )
                 # After the check for missing tickers, which needs every row of a column.
+                if row_selection and isinstance(result, dict):
+                    result = {
+                        name: (
+                            select_rows(table, row_selection)
+                            if isinstance(table, pd.DataFrame | pd.Series)
+                            else table
+                        )
+                        for name, table in result.items()
+                    }
                 # A plain list, such as the expiration dates of an option chain.
                 if row_selection and isinstance(result, list | tuple):
                     result = (
@@ -1374,6 +1420,9 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
+                # The inputs an option model used, which it only logs.
+                if method_kwargs.get("show_input_info"):
+                    notes.extend(input_info)
                 if ignored_params:
                     notes.append(
                         ", ".join(f"`{pname}`" for pname in ignored_params)

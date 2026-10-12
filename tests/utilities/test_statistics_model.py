@@ -436,3 +436,29 @@ def test_country_short_forms_and_casing_resolve_to_the_source_names():
     assert normalize_country_name("eurozone", known) == "Euro Area"
     assert normalize_country_name("germany", known) == "Germany"
     assert normalize_country_name("Atlantis", known) == "Atlantis"
+
+
+def test_a_country_without_values_in_the_window_is_explained(caplog):
+    import pandas as pd
+
+    from financetoolkit.utilities.statistics_model import finalize_dataset
+
+    crises = pd.DataFrame(
+        {"Germany": [1.0, None, None], "Euro Area": [None, 0.0, 0.0]},
+        index=pd.period_range("2017", periods=3, freq="Y"),
+    )
+
+    result = finalize_dataset(
+        dataset=crises,
+        start_date="2018",
+        end_date="2019",
+        default_rounding=4,
+        axis="rows",
+        row_slice=True,
+        countries=["Germany"],
+        indicator_name="Sovereign Debt Crisis",
+    )
+
+    assert result.isna().all().all()
+    assert "The last one is from 2017" in caplog.text
+    assert "use 'Euro Area'" in caplog.text

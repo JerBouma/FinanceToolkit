@@ -279,7 +279,7 @@ category_descriptions:
   ratios:                  "Pre-computed financial ratios (PE, EPS, ROE, margins, liquidity, valuation). Use INSTEAD of raw financial statements."
   performance:             "Risk-adjusted returns (Sharpe, Sortino, alpha, beta, CAPM, Treynor, M2, tracking error, information ratio, Fama-French, period/cumulative Returns and Excess Returns). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
   risk:                    "Risk metrics (VaR incl. EVT/GPD tail fitting, CVaR, EVaR, GARCH, max drawdown, drawdown duration/recovery time, CDaR, tail ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
-  econometrics:            "Statistical/econometric tests on price or return series (unit root: ADF/KPSS/Phillips-Perron/Zivot-Andrews, cointegration: Engle-Granger/Johansen, Granger causality, ARCH-LM, Jarque-Bera, Ljung-Box, Variance Ratio, CUSUM, Diebold-Mariano forecast comparison). Use for pairs-trading/spread-modeling foundations or diagnosing return-series properties. No need to fetch price data first."
+  econometrics:            "Statistical and econometric analysis of price or return series: unit root, cointegration and causality tests, VAR and ARIMA forecasts, regressions (OLS, quantile, IV, panel), causal designs (difference-in-differences, event study, synthetic control) and diagnostics. No need to fetch price data first."
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
@@ -288,9 +288,9 @@ category_descriptions:
   environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
   jobs:                    "Labour and social metrics by country (unemployment, population, poverty, income inequality). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   rates:                   "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates, U.S. Treasury par yield curve, real (TIPS) yield curve, breakeven inflation. Use countries= param. Economics-sourced rates support rolling=/trailing=."
-  fixed_income:            "Bond and derivative valuation calculations (duration, present value, yield-to-maturity, derivative pricing, par yield, forward rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield)."
-  discovery:               "Market discovery (stock/ETF/crypto lists, screener, gainers/losers, sector performance). No tickers needed."
-  market_data:             "Raw data (historical prices, financial statements, company profile, quotes, market risk premium, Commitment of Traders). Use ratios/performance/risk tools for computed metrics."
+  fixed_income:            "Bond and derivative valuation calculations (a bond's price is present value; duration, yield to maturity, derivative pricing, par yield, forward rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield)."
+  discovery:               "Market discovery (lists of stocks, ETFs, indices, currencies and cryptocurrencies, stock screener, gainers and losers, sector and industry performance, earnings, IPO and split calendars, 8-K filings, insider trades, news). No tickers needed."
+  market_data:             "Raw data (historical prices, financial statements, company profile, quotes, analyst estimates, earnings calendar and call transcripts, ETF holdings, insider statistics, market risk premium, Commitment of Traders). Use ratios/performance/risk tools for computed metrics."
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Router group specifications

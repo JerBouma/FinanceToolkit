@@ -56,7 +56,7 @@ from financetoolkit.fixedincome import bundesbank_model, fed_model
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.statistics_model import finalize_dataset
+from financetoolkit.utilities.statistics_model import euro_area_hint, finalize_dataset
 
 logger = get_logger()
 
@@ -4864,6 +4864,8 @@ class Economics:
             if isinstance(countries, str):
                 countries = [countries]
 
+            full_money_supply = money_supply
+
             if isinstance(money_supply.columns, pd.MultiIndex):
                 available_countries = money_supply.columns.get_level_values(1).unique()
                 missing_countries = [
@@ -4892,6 +4894,19 @@ class Economics:
             if missing_countries:
                 logger.warning(
                     f"The following countries are not available for Money Supply: {missing_countries}"
+                )
+
+            # Euro members have no money supply of their own since 1999, only the area does.
+            if not money_supply.empty and bool(money_supply.isna().all().all()):
+                found = [
+                    country for country in countries if country not in missing_countries
+                ]
+                logger.warning(
+                    "There are no Money Supply observations for %s between %s and %s.%s",
+                    ", ".join(found),
+                    self._start_date,
+                    self._end_date,
+                    euro_area_hint(found, full_money_supply),
                 )
 
         return money_supply

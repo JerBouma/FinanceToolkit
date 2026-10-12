@@ -213,7 +213,8 @@ class UtilityToolRegistry:
         total = sum(len(v) for v in index.values())
         lines.append(f"\n**Total tools: {total}**")
         lines.append(
-            "\n**Tip:** Use `search_metrics('keyword')` to find tools by keyword."
+            "\n**Tip:** Use `search_metrics('what you want to measure')` to find the "
+            "indicator and its tool."
         )
         result = "\n".join(lines)
         return result

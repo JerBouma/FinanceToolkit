@@ -70,6 +70,56 @@ COUNTRY_ALIASES = {
 }
 
 
+# The members of the euro area, whose monetary statistics are published for the area.
+EURO_AREA_MEMBERS = frozenset(
+    {
+        "Austria",
+        "Belgium",
+        "Croatia",
+        "Cyprus",
+        "Estonia",
+        "Finland",
+        "France",
+        "Germany",
+        "Greece",
+        "Ireland",
+        "Italy",
+        "Latvia",
+        "Lithuania",
+        "Luxembourg",
+        "Malta",
+        "Netherlands",
+        "Portugal",
+        "Slovakia",
+        "Slovenia",
+        "Spain",
+    }
+)
+
+
+def euro_area_hint(countries: Iterable[object], dataset: pd.DataFrame) -> str:
+    """
+    A pointer to the euro area for euro members without data of their own, such as the
+    money supply or an overnight rate, which are published for the area as a whole.
+
+    Args:
+        countries (Iterable[object]): The countries without data.
+        dataset (pd.DataFrame): The indicator, to check whether it has the euro area.
+
+    Returns:
+        str: The hint, or an empty string when it does not apply.
+    """
+    members = [
+        str(country) for country in countries if str(country) in EURO_AREA_MEMBERS
+    ]
+
+    return (
+        f" For {', '.join(members)}, use 'Euro Area', which this indicator covers."
+        if members and "Euro Area" in map(str, dataset.columns.get_level_values(-1))
+        else ""
+    )
+
+
 def normalize_country_name(country: object, known: Iterable[object]) -> object:
     """
     The name a source uses for a country written as a short form or in any casing, e.g.
@@ -219,6 +269,8 @@ def finalize_dataset(
     elif not growth:
         dataset = apply_rounding(dataset, rounding)
 
+    unsliced = dataset
+
     if apply_slice:
         had_data = not dataset.empty
         periods = dataset.index if row_slice else dataset.columns
@@ -280,7 +332,7 @@ def finalize_dataset(
             ]
             logger.warning(
                 f"The following countries are not available for {indicator_name}: "
-                f"{', '.join(suggestions)}"
+                f"{', '.join(suggestions)}{euro_area_hint(missing_countries, dataset)}"
             )
         dataset = dataset[
             [
@@ -289,6 +341,29 @@ def finalize_dataset(
                 if country not in missing_countries
             ]
         ]
+
+        # Countries that are there but without a value in the window: say where their
+        # data ends (a series that stopped years ago) rather than answer with nothing.
+        if not dataset.empty and bool(dataset.isna().all().all()):
+            available_countries = list(dataset.columns)
+            last = (
+                unsliced[available_countries].last_valid_index()
+                if row_slice and set(available_countries) <= set(unsliced.columns)
+                else None
+            )
+            logger.warning(
+                "There are no %sobservations for %s between %s and %s. %s%s",
+                f"{indicator_name} " if indicator_name else "",
+                ", ".join(map(str, available_countries)),
+                start_date,
+                end_date,
+                (
+                    f"The last one is from {last}."
+                    if last is not None
+                    else "The source has no data for them."
+                ),
+                euro_area_hint(available_countries, unsliced),
+            )
 
     # After the country selection, so a row that is empty for every selected country goes
     # too, such as a month only an unselected country has published yet.

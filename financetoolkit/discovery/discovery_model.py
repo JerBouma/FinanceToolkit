@@ -10,8 +10,10 @@ import pandas as pd
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
+from financetoolkit.economics.helpers import COUNTRY_CODES
 from financetoolkit.fmp_model import get_financial_data
 from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = logger_model.get_logger()
 
@@ -272,6 +274,31 @@ COUNTRY_CURRENCIES = {
 }
 
 
+def _to_country_code(country: str | None) -> str | None:
+    """
+    The two-letter code the screener takes for a country written as a code or a name, such
+    as "Netherlands", "netherlands" or "UK".
+
+    Args:
+        country (str | None): The country.
+
+    Returns:
+        str | None: The code, or the country as given when it is not known.
+    """
+    if country is None or len(country.strip()) == 2:  # noqa: PLR2004
+        # The ISO code of the United Kingdom is GB, which is what the screener uses.
+        code = country.strip().upper() if country else country
+        return "GB" if code == "UK" else code
+
+    name = normalize_country_name(country, COUNTRY_CODES.values())
+    # The first code of a country wins: GB rather than UK for the United Kingdom.
+    codes: dict[str, str] = {}
+    for code, value in COUNTRY_CODES.items():
+        codes.setdefault(value, code)
+
+    return codes.get(str(name), country)
+
+
 def get_stock_screener(
     api_key: str,
     market_cap_higher: int | None = None,
@@ -311,13 +338,17 @@ def get_stock_screener(
         beta_lower (int, optional): The beta lower than. Defaults to None.
         volume_higher (int, optional): The volume higher than. Defaults to None.
         volume_lower (int, optional): The volume lower than. Defaults to None.
-        dividend_higher (int, optional): The dividend higher than. Defaults to None.
-        dividend_lower (int, optional): The dividend lower than. Defaults to None.
+        dividend_higher (int, optional): The minimum last annual dividend per share, an amount
+            in the listing's currency rather than a yield. Defaults to None.
+        dividend_lower (int, optional): The maximum last annual dividend per share, an amount
+            in the listing's currency rather than a yield. Defaults to None.
         sector (str, optional): The sector to restrict the screen to, e.g. "Energy".
         industry (str, optional): The industry to restrict the screen to, e.g. "Biotechnology".
-        country (str, optional): The two-letter country code to restrict the screen to, e.g. "US".
+        country (str, optional): The country to restrict the screen to, as a two-letter code
+            ("NL") or a name ("Netherlands"). Defaults to None.
         exchange (str, optional): The exchange code to restrict the screen to, e.g. "NASDAQ".
-        is_etf (bool, optional): Whether the instrument is an ETF. Defaults to None.
+        is_etf (bool, optional): True for ETFs only. Defaults to None, which screens stocks
+            only (no ETFs or funds), as does False.
         limit (int, optional): The maximum number of results the API returns. Defaults to 1000,
             which is also the API's own default, so hitting exactly this number means the result
             was truncated.
@@ -368,9 +399,12 @@ def get_stock_screener(
         "dividendLowerThan": dividend_lower,
         "sector": sector,
         "industry": industry,
-        "country": country,
+        "country": _to_country_code(country),
         "exchange": exchange,
-        "isEtf": is_etf,
+        # Stocks unless ETFs are asked for: the endpoint otherwise mixes in ETFs and mutual
+        # funds, which have no market capitalisation of their own.
+        "isEtf": str(bool(is_etf)).lower(),
+        "isFund": "false",
         "limit": requested_limit,
     }
 

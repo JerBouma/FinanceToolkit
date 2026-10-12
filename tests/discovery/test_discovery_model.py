@@ -150,3 +150,23 @@ def test_a_company_keeps_the_market_cap_and_listing_of_its_home_exchange(monkeyp
     assert (every_listing["Market Cap (USD)"] == 400e9).all()
     assert list(primary.index) == ["AMD"]
     assert "_home_listing" not in primary.columns
+
+
+def test_the_screener_takes_country_names_and_screens_stocks_only(monkeypatch):
+    urls = []
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        urls.append(url)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    discovery_model.get_stock_screener(api_key="KEY", country="Netherlands")
+    discovery_model.get_stock_screener(api_key="KEY", country="UK", is_etf=True)
+
+    assert (
+        "country=NL" in urls[0]
+        and "isEtf=false" in urls[0]
+        and "isFund=false" in urls[0]
+    )
+    assert "country=GB" in urls[1] and "isEtf=true" in urls[1]

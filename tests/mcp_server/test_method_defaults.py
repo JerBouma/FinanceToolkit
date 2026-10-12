@@ -536,3 +536,22 @@ def test_a_number_parameter_also_takes_a_list(captured):
     )
 
     assert captured[-1]["coupon_rate"] == [0.03, 0.05]
+
+
+def test_an_assumed_bond_input_is_named(captured):
+    def call(**arguments):
+        return asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "fixed_income",
+                {
+                    "indicator": "get_present_value",
+                    "par_value": 1000,
+                    "coupon_rate": 0.04,
+                    "years_to_maturity": 5,
+                    **arguments,
+                },
+            )
+        )[0][0].text
+
+    assert "Assumed yield_to_maturity=0.08 (the default)" in call()
+    assert "Assumed" not in call(yield_to_maturity=0.045)

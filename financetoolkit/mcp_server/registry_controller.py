@@ -239,6 +239,18 @@ def _annotate_with_description(
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
 
+# The inputs of a bond or derivative calculation whose defaults are assumptions about the
+# instrument, named in the answer when the caller leaves them out.
+ASSUMED_INPUTS = (
+    "par_value",
+    "coupon_rate",
+    "yield_to_maturity",
+    "bond_price",
+    "volatility",
+    "strike_rate",
+    "notional",
+)
+
 # The yield curves the fixed income calculations take, which default to a sample curve.
 CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
 
@@ -1136,20 +1148,21 @@ class ToolRegistry:
             # Arguments the indicator does not take (another indicator of the tool does) are
             # named in the answer, so a caller does not believe they were used.
             ignored_params: list[str] = []
+            given_params: set[str] = set()
             for pname, pann, pdefault in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
-                    if pname not in accepted_params:
-                        advertised = (
-                            None
-                            if pname in disputed_params
-                            else (
-                                pdefault
-                                if pdefault is not inspect.Parameter.empty
-                                else ""
-                            )
+                    advertised = (
+                        None
+                        if pname in disputed_params
+                        else (
+                            pdefault if pdefault is not inspect.Parameter.empty else ""
                         )
-                        if val not in (None, "") and val != advertised:
+                    )
+                    if val not in (None, "") and val != advertised:
+                        given_params.add(pname)
+                    if pname not in accepted_params:
+                        if pname in given_params:
                             ignored_params.append(pname)
                         continue
                     # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
@@ -1219,6 +1232,17 @@ class ToolRegistry:
                     "sample curve was used for illustration, not market data. Pass the "
                     "current curve, e.g. from get_treasury_rates in the rates tool."
                 )
+
+            # The economic inputs of a calculation that the caller left to their defaults
+            # (a bond priced at an 8% yield) are named, as they decide the answer.
+            assumed_inputs = [
+                f"{pname}={parameter_defaults[pname][method_name]}"
+                for pname in ASSUMED_INPUTS
+                if pname in accepted_params
+                and pname not in given_params
+                and parameter_defaults.get(pname, {}).get(method_name)
+                not in (None, inspect.Parameter.empty, "")
+            ]
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
@@ -1544,6 +1568,12 @@ class ToolRegistry:
                     notes.insert(0, indicator_note)
                 if curve_note:
                     notes.append(curve_note)
+                if assumed_inputs:
+                    notes.append(
+                        f"Assumed {', '.join(assumed_inputs)} (the "
+                        f"{'default' if len(assumed_inputs) == 1 else 'defaults'}); pass "
+                        "your own values for the bond in question."
+                    )
                 # The inputs an option model used, which it only logs.
                 if method_kwargs.get("show_input_info"):
                     notes.extend(input_info)

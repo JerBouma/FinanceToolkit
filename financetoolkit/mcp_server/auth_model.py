@@ -48,6 +48,28 @@ _FRED_QUERY_NAMES: tuple[str, ...] = (
     "fred_key",
 )
 
+# The page a browser gets at the server's address; MCP clients use /mcp. It carries the
+# icons favicon lookups look for.
+ROOT_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance Toolkit MCP</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/oauth/icon">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+</head>
+<body style="font-family: sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem;">
+    <h1>Finance Toolkit MCP</h1>
+    <p>This is the address of the Finance Toolkit MCP server: add
+    <code>https://financetoolkit.jeroenbouma.com/mcp</code> to your MCP client. See
+    <a href="https://www.jeroenbouma.com/projects/financetoolkit/mcp">the documentation</a>
+    for how to connect.</p>
+</body>
+</html>
+"""
+
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -852,11 +874,33 @@ def register_auth_routes(mcp: Any) -> None:
             return Response(status_code=404)
         return Response(content=_icon_path.read_bytes(), media_type="image/png")
 
-    @mcp.custom_route("/favicon.ico", methods=["GET"])
-    async def favicon(request: Request) -> Response:
-        if not _icon_path.exists():
-            return Response(status_code=404)
-        return Response(content=_icon_path.read_bytes(), media_type="image/png")
+    # Favicon lookups (claude.ai, Google's favicon service) read the root page and the
+    # small sizes; a redirect to the website would make them pick up its icon instead.
+    _static_path = pathlib.Path(__file__).parent / "static"
+    _static_files = {
+        "/favicon.ico": ("favicon.ico", "image/x-icon"),
+        "/favicon-32.png": ("favicon-32.png", "image/png"),
+        "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    }
+
+    def _register_static(route: str, file_name: str, media_type: str) -> None:
+        @mcp.custom_route(route, methods=["GET"])
+        async def static_file(request: Request) -> Response:
+            file_path = _static_path / file_name
+            if not file_path.exists():
+                return Response(status_code=404)
+            return Response(
+                content=file_path.read_bytes(),
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+    for route, (file_name, media_type) in _static_files.items():
+        _register_static(route, file_name, media_type)
+
+    @mcp.custom_route("/", methods=["GET"])
+    async def root(request: Request) -> HTMLResponse:
+        return HTMLResponse(ROOT_PAGE)
 
     @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
     async def oauth_protected_resource(request: Request) -> JSONResponse:

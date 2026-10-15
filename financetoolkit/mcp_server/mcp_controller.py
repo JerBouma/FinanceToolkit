@@ -20,6 +20,7 @@ from fastmcp.server.dependencies import (  # noqa: PLC0415
     get_http_request,
 )
 from mcp.server.fastmcp import FastMCP
+from mcp.types import Icon
 from starlette.middleware.cors import CORSMiddleware
 
 from financetoolkit.cache import policy_model
@@ -208,6 +209,16 @@ def _build_mcp_app() -> FastMCP:
     mcp = FastMCP(
         name="Finance Toolkit Analyst",
         instructions=configuration.get("instructions"),
+        website_url="https://www.jeroenbouma.com/projects/financetoolkit/mcp",
+        # Clients show this icon next to the server; the hosted server serves it, so a
+        # local installation shows it too.
+        icons=[
+            Icon(
+                src="https://financetoolkit.jeroenbouma.com/oauth/icon",
+                mimeType="image/png",
+                sizes=["512x512"],
+            )
+        ],
         log_level="CRITICAL",
         host="0.0.0.0",  # noqa: S104
     )

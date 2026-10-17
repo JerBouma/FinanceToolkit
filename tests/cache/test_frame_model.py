@@ -146,3 +146,20 @@ def test_merge_frames_drops_a_missing_date():
     merged = frame_model.merge_frames(existing, incoming)
 
     assert merged.tolist() == [1.0, 2.0]
+
+
+def test_tidy_date_axis_drops_a_row_that_is_no_date_among_dates():
+    """Test that a row labelled 0 among daily periods is dropped and the dates ordered."""
+    data = pd.DataFrame(
+        {"Close": [2.0, 1.0, None]},
+        index=pd.Index(
+            [pd.Period("2020-01-02", "D"), pd.Period("2020-01-01", "D"), 0],
+            dtype=object,
+        ),
+    )
+
+    result = frame_model.tidy_date_axis(data)
+
+    assert isinstance(result.index, pd.PeriodIndex)
+    assert result["Close"].tolist() == [1.0, 2.0]
+    assert result.loc["2019-12-31":"2020-01-02"].shape == (2, 1)

@@ -461,7 +461,9 @@ class Cache:
 
             if payload is not None:
                 try:
-                    stored = serialization_model.decode_dataframe(payload)
+                    stored = frame_model.tidy_date_axis(
+                        serialization_model.decode_dataframe(payload), date_axis
+                    )
                     plan.cached[entity] = frame_model.slice_frame(
                         stored, start, end, date_axis
                     )

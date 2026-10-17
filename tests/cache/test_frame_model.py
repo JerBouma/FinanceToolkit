@@ -108,3 +108,41 @@ def test_slice_frame_keeps_the_non_date_labels_of_a_mixed_axis():
     result = frame_model.slice_frame(data, "2020-01-01", "2020-12-31", date_axis=1)
 
     assert list(result.columns) == [pd.Period("2020", freq="Y"), "Currency"]
+
+
+def test_tidy_date_axis_drops_missing_and_repeated_dates_and_sorts():
+    """Test that a date axis comes back ordered, without missing or repeated dates."""
+    data = pd.DataFrame(
+        {"Close": [3, 1, 9, 2, 4]},
+        index=pd.PeriodIndex(
+            ["2020-01-03", "2020-01-01", None, "2020-01-02", "2020-01-03"], freq="D"
+        ),
+    )
+
+    result = frame_model.tidy_date_axis(data)
+
+    assert result.index.is_monotonic_increasing
+    # The later of two rows for one date wins, as in merge_frames.
+    assert result["Close"].tolist() == [1, 2, 4]
+
+
+def test_tidy_date_axis_leaves_a_label_axis_alone():
+    """Test that statement line items keep their order."""
+    data = pd.DataFrame({"2020": [1, 2]}, index=["Revenue", "Cost of Goods Sold"])
+
+    assert frame_model.tidy_date_axis(data).index.tolist() == [
+        "Revenue",
+        "Cost of Goods Sold",
+    ]
+
+
+def test_merge_frames_drops_a_missing_date():
+    """Test that a row without a date is never written to the cache."""
+    existing = pd.Series([1.0], index=pd.PeriodIndex(["2020-01-01"], freq="D"))
+    incoming = pd.Series(
+        [2.0, 5.0], index=pd.PeriodIndex(["2020-01-02", None], freq="D")
+    )
+
+    merged = frame_model.merge_frames(existing, incoming)
+
+    assert merged.tolist() == [1.0, 2.0]

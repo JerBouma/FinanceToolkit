@@ -387,3 +387,71 @@ def test_bundesbank_survey_inflation_expectations_add_the_yield_back(monkeypatch
         pytest.approx(0.02226),
         pytest.approx(0.02144),
     ]
+
+
+def test_bundesbank_curve_keeps_the_cached_days_for_a_span_without_data(
+    monkeypatch, tmp_path
+):
+    """A Saturday comes back as a header without rows; the cached Friday stays."""
+    from financetoolkit.cache import cache_controller  # noqa: PLC0415
+
+    cache_controller.set_active_cache(
+        cache_controller.Cache(location=tmp_path / "cache.db")
+    )
+    friday = "BBK_SEIS_MATURITY,TIME_PERIOD,OBS_VALUE\nR10XX,2026-10-02,3.66\n"
+    monkeypatch.setattr(
+        bundesbank_model,
+        "get_request",
+        lambda url, timeout, extra_headers: FakeResponse(text=friday),
+    )
+    bundesbank_model.get_yield_curve("2026-09-28", "2026-10-02")
+
+    # What the Bundesbank returns for a span without observations.
+    header_only = "﻿DATAFLOW\r\n" + "\r\n" * 30
+    monkeypatch.setattr(
+        bundesbank_model,
+        "get_request",
+        lambda url, timeout, extra_headers: FakeResponse(text=header_only),
+    )
+
+    curve = bundesbank_model.get_yield_curve("2026-09-28", "2026-10-03")
+
+    assert list(curve.index) == [pd.Period("2026-10-02", "D")]
+    assert curve.loc[pd.Period("2026-10-02", "D"), "10Y"] == pytest.approx(0.0366)
+
+
+def test_an_unreadable_span_serves_the_cached_history(tmp_path):
+    """A response that cannot be read for the missing part leaves the cache in place."""
+    from financetoolkit.cache import cache_controller, policy_model  # noqa: PLC0415
+    from financetoolkit.economics.helpers import collect_ranged_data  # noqa: PLC0415
+
+    cache_controller.set_active_cache(
+        cache_controller.Cache(location=tmp_path / "cache.db")
+    )
+    history = pd.DataFrame(
+        {"10Y": [0.03, 0.031]},
+        index=pd.PeriodIndex(["2026-10-01", "2026-10-02"], freq="D"),
+    )
+
+    def unreadable(fetch_start, fetch_end):
+        raise ValueError("The response is missing the TIME_PERIOD column(s).")
+
+    arguments = {
+        "source": policy_model.BUNDESBANK,
+        "dataset": "series",
+        "entity": "test_series",
+        "start_date": "2026-10-01",
+        "description": "test series",
+    }
+    collect_ranged_data(
+        fetch=lambda start, end: history, end_date="2026-10-02", **arguments
+    )
+
+    served = collect_ranged_data(fetch=unreadable, end_date="2026-10-05", **arguments)
+
+    assert served["10Y"].tolist() == [0.03, 0.031]
+
+    # Without any cached history the error still surfaces.
+    cache_controller.clear_active_cache()
+    with pytest.raises(ValueError, match="TIME_PERIOD"):
+        collect_ranged_data(fetch=unreadable, end_date="2026-10-05", **arguments)

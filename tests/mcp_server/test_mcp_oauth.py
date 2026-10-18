@@ -357,3 +357,32 @@ def test_auth_middleware_protection() -> None:
     # We test with Bearer Token (should bypass middleware and proceed to FastMCP)
     resp = client.post("/messages/", headers={"Authorization": f"Bearer {jwt_token}"})
     assert resp.status_code != 401  # noqa
+
+
+def test_root_page_and_favicons_are_served_without_authorization() -> None:
+    """Favicon lookups read the root page and the small icon sizes, without a token."""
+    mcp = FastMCP("TestIconServer")
+    register_auth_routes(mcp)
+    app = mcp.streamable_http_app()
+    app.add_middleware(MCPAuthMiddleware)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+
+    root = client.get("/")
+    assert root.status_code == 200  # noqa
+    assert "text/html" in root.headers["content-type"]
+    assert 'href="/favicon-32.png"' in root.text
+    assert 'rel="apple-touch-icon"' in root.text
+
+    favicon = client.get("/favicon.ico")
+    assert favicon.status_code == 200  # noqa
+    assert favicon.headers["content-type"] == "image/x-icon"
+    # The ICO header: reserved 0, type 1 (icon), three images (16, 32 and 48 pixels).
+    assert favicon.content[:6] == b"\x00\x00\x01\x00\x03\x00"
+
+    for route in ("/favicon-32.png", "/apple-touch-icon.png", "/oauth/icon"):
+        response = client.get(route)
+        assert response.status_code == 200  # noqa
+        assert response.content.startswith(b"\x89PNG")
+
+    # The MCP endpoint itself stays protected.
+    assert client.post("/mcp").status_code == 401  # noqa

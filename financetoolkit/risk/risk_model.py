@@ -344,6 +344,9 @@ def get_rolling_variance(
     Calculates the rolling Variance of returns for a given period (weekly, monthly,
     quarterly or yearly) based on period-frequency historical returns.
 
+    The variance of returns of the given period is already the Variance per period, the
+    unit get_variance reports as well, so it is not scaled any further.
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns for the given period.
         period (str): The period the returns are given in and to scale the Variance for. Can be
@@ -359,9 +362,7 @@ def get_rolling_variance(
             "weekly, monthly, quarterly or yearly."
         )
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
-
-    return returns.rolling(window=window_size).var() * volatility_window
+    return returns.rolling(window=window_size).var()
 
 
 def get_rolling_volatility(
@@ -370,6 +371,9 @@ def get_rolling_volatility(
     """
     Calculates the rolling Volatility of returns for a given period (weekly, monthly,
     quarterly or yearly) based on period-frequency historical returns.
+
+    The standard deviation of returns of the given period is already the Volatility per
+    period, the unit get_volatility reports as well, so it is not scaled any further.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns for the given period.
@@ -386,9 +390,7 @@ def get_rolling_volatility(
             "weekly, monthly, quarterly or yearly."
         )
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
-
-    return returns.rolling(window=window_size).std() * np.sqrt(volatility_window)
+    return returns.rolling(window=window_size).std()
 
 
 def get_volatility(

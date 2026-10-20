@@ -172,11 +172,11 @@ class Toolkit:
             enforce_source (str | None): Enforce data source ('FinancialModelingPrep' or 'YahooFinance').
             Defaults to None (uses FMP if api_key provided, otherwise YahooFinance, with fallback).
             historical (pd.DataFrame): Custom historical price data. See
-            https://www.jeroenbouma.com/projects/financetoolkit/external-datasets for how to supply your own data.
+            https://www.jeroenbouma.com/projects/financetoolkit/docs/getting-started/external-datasets for how to supply your own data.
             Defaults to an empty DataFrame.
-            balance (pd.DataFrame): Custom balance sheet data. See notebook link above. Defaults to an empty DataFrame.
-            income (pd.DataFrame): Custom income statement data. See notebook link above. Defaults to an empty DataFrame.
-            cash (pd.DataFrame): Custom cash flow statement data. See notebook link above. Defaults to an empty DataFrame.
+            balance (pd.DataFrame): Custom balance sheet data. See the external datasets guide linked above. Defaults to an empty DataFrame.
+            income (pd.DataFrame): Custom income statement data. See the external datasets guide linked above. Defaults to an empty DataFrame.
+            cash (pd.DataFrame): Custom cash flow statement data. See the external datasets guide linked above. Defaults to an empty DataFrame.
             format_location (str): Path to custom normalization files. Defaults to "".
             convert_currency (bool | None): Convert financial statements currency to match historical data currency.
             Important for cross-ticker comparison and calculations involving both data types.
@@ -5543,9 +5543,8 @@ class Toolkit:
         Copies the normalization files to a folder based on path. By default, this is the path
         of the 'Downloads' folder.
 
-        This function is relevant if you want to supply your own datasets. See for a proper
-        guide the following
-        notebook: https://www.jeroenbouma.com/projects/financetoolkit/external-datasets
+        This function is relevant if you want to supply your own datasets. See the external
+        datasets guide for how: https://www.jeroenbouma.com/projects/financetoolkit/docs/getting-started/external-datasets
 
         Args:
             path (str, optional): The path where to save the files to.

@@ -172,7 +172,7 @@ class Toolkit:
             enforce_source (str | None): Enforce data source ('FinancialModelingPrep' or 'YahooFinance').
             Defaults to None (uses FMP if api_key provided, otherwise YahooFinance, with fallback).
             historical (pd.DataFrame): Custom historical price data. See
-            https://www.jeroenbouma.com/projects/financetoolkit/docs/getting-started/external-datasets for how to supply your own data.
+            https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets for how to supply your own data.
             Defaults to an empty DataFrame.
             balance (pd.DataFrame): Custom balance sheet data. See the external datasets guide linked above. Defaults to an empty DataFrame.
             income (pd.DataFrame): Custom income statement data. See the external datasets guide linked above. Defaults to an empty DataFrame.
@@ -5544,7 +5544,7 @@ class Toolkit:
         of the 'Downloads' folder.
 
         This function is relevant if you want to supply your own datasets. See the external
-        datasets guide for how: https://www.jeroenbouma.com/projects/financetoolkit/docs/getting-started/external-datasets
+        datasets guide for how: https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets
 
         Args:
             path (str, optional): The path where to save the files to.

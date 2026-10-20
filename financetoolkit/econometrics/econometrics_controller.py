@@ -773,7 +773,7 @@ class Econometrics:
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             max_lag (int, optional): The maximum number of lagged differences to consider. Defaults to
-            the Schwert (1989) rule of thumb.
+            the Schwert (1989) rule of thumb, capped at (n - 5) // 3 for short samples.
             regression (str, optional): Which deterministic terms to include, one of "n" (none), "c"
             (constant) or "ct" (constant and trend). Defaults to "c".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
@@ -1070,7 +1070,8 @@ class Econometrics:
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             max_lag (int, optional): The maximum number of lagged differences to consider when
-            selecting the (single, reused) lag length. Defaults to the Schwert (1989) rule of thumb.
+            selecting the (single, reused) lag length. Defaults to the Schwert (1989) rule of thumb,
+            capped at (n - 5) // 3 for short samples.
             regression (str, optional): Which break to allow for, one of "c" (a break in the
             level/intercept), "t" (a break in the trend slope) or "ct" (both). Defaults to "c".
             trim (float, optional): The fraction of observations excluded from the candidate break
@@ -1169,7 +1170,8 @@ class Econometrics:
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             max_lag (int, optional): The maximum number of lagged differences to consider in the
-            underlying ADF test on the residuals. Defaults to `statsmodels`' automatic selection.
+            underlying ADF test on the residuals. Defaults to the Schwert (1989) rule of thumb,
+            capped at (n - 5) // 3 for short samples.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             tickers paired up. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to

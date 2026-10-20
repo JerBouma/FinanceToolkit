@@ -119,3 +119,17 @@ def test_get_johansen_cointegration_invalid_k_ar_diff():
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass
+
+
+def test_get_engle_granger_cointegration_short_sample():
+    # With 16 observations the uncapped default lag search leaves the residual ADF regression
+    # without degrees of freedom and returns a statistic of 0 with a p-value of 0.9859.
+    rng = np.random.default_rng(0)
+    common_trend = np.cumsum(rng.standard_normal(16))
+    series_a = pd.Series(common_trend + rng.standard_normal(16) * 0.5)
+    series_b = pd.Series(common_trend * 2 + 5 + rng.standard_normal(16) * 0.5)
+
+    result = cointegration_model.get_engle_granger_cointegration(series_a, series_b)
+
+    assert result["Engle-Granger Statistic"] < -1
+    assert result["P-Value"] < 0.5  # noqa: PLR2004

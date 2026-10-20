@@ -106,8 +106,10 @@ class Economics:
             start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
             gmdb_source (bool, optional): If True, retrieves data from the GMDB source. Defaults to True.
-            quarterly (bool | None, optional): If True, returns quarterly data; otherwise, returns yearly data.
-                Defaults to None. This only works for data retrieved from the OECD source.
+            quarterly (bool | None, optional): If True, methods with a period argument return quarterly
+                data where the indicator has it. Otherwise they return the highest frequency the
+                indicator is published at: daily, then weekly, monthly, quarterly and yearly. Methods
+                without a period argument return the frequency their source publishes. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             fred_api_key (str, optional): A FRED API key used to retrieve US-specific labor market and
                 real-activity indicators (e.g. Nonfarm Payrolls, Initial Jobless Claims, Retail Sales).
@@ -418,6 +420,33 @@ class Economics:
             ],
             countries,
         )
+
+    def _default_period(
+        self, period: str | None, highest: str, quarterly_available: bool = True
+    ) -> str:
+        """
+        The period to use when none is given: quarterly when the class was created with
+        quarterly=True and the indicator has it, otherwise the highest frequency the
+        indicator is published at (daily, then weekly, monthly, quarterly and yearly).
+
+        A source that cannot be reached, for example because of a rate limit, is reported
+        rather than answered with a coarser frequency from another source.
+
+        Args:
+            period (str | None): The period passed to the method.
+            highest (str): The highest frequency the indicator is published at.
+            quarterly_available (bool): Whether the indicator is published quarterly.
+
+        Returns:
+            str: The period to retrieve.
+        """
+        if period is not None:
+            return period
+
+        if self._quarterly and quarterly_available:
+            return "quarterly"
+
+        return highest
 
     def _get_daily_long_term_interest_rate(
         self, countries: list[str] | str | None = None
@@ -3439,8 +3468,9 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                The GMDB source is always annual, so without `oecd_source=True` only "monthly" changes
-                the result, to the monthly sources described above. Defaults to None.
+                Without `oecd_source=True`, "monthly" uses the monthly sources described above and the
+                annual data comes from the GMDB. Defaults to None, which is the monthly data (quarterly
+                with `oecd_source=True` when the Economics class was initialized with quarterly=True).
             oecd_source (bool, optional): Whether to get the data from the OECD instead of the
                 Global Macro Database (GMDB). Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -3466,7 +3496,7 @@ class Economics:
 
         economics = Economics(start_date='2008-09-01', end_date='2020-03-01')
 
-        economics.get_consumer_price_index(countries=['Germany', 'France', 'Portugal'])
+        economics.get_consumer_price_index(countries=['Germany', 'France', 'Portugal'], period='yearly')
         ```
 
         Which returns:
@@ -3489,16 +3519,15 @@ class Economics:
         """
         check_period_type(period)
 
-        if not oecd_source and period is not None and period.lower() == "monthly":
+        period = self._default_period(
+            period, "monthly", quarterly_available=oecd_source
+        )
+
+        if not oecd_source and period.lower() == "monthly":
             consumer_price_index = self._get_monthly_price_data(
                 "consumer_price_index", countries
             )
         elif oecd_source:
-            period = (
-                period
-                if period is not None
-                else "quarterly" if self._quarterly else "yearly"
-            )
             consumer_price_index = oecd_model.get_consumer_price_index(
                 period=period, start_date=self._start_date, end_date=self._end_date
             )
@@ -3572,7 +3601,7 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly or the annual data.
-                Defaults to None, which is the annual data.
+                Defaults to None, which is the monthly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -3596,7 +3625,7 @@ class Economics:
 
         economics = Economics(start_date='2003-01-01', end_date='2009-03-01')
 
-        economics.get_inflation_rate(countries=['Germany', 'France', 'Portugal'])
+        economics.get_inflation_rate(countries=['Germany', 'France', 'Portugal'], period='yearly')
         ```
 
         Which returns:
@@ -3614,7 +3643,9 @@ class Economics:
         check_period_type(period)
 
         period = validate_period(
-            period or "yearly", ["monthly", "yearly"], "inflation rate"
+            self._default_period(period, "monthly", quarterly_available=False),
+            ["monthly", "yearly"],
+            "inflation rate",
         )
 
         if period == "monthly":
@@ -3678,6 +3709,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -3715,11 +3748,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
 
         producer_price_index = oecd_model.get_producer_price_index(
             period=period, start_date=self._start_date, end_date=self._end_date
@@ -4428,6 +4457,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4447,7 +4478,7 @@ class Economics:
 
         economics = Economics(start_date="2013-01-01", end_date="2025-12-31")
 
-        economics.get_share_prices(countries=['Turkey', 'Belgium', 'Australia'])
+        economics.get_share_prices(countries=['Turkey', 'Belgium', 'Australia'], period='yearly')
         ```
 
         Which returns:
@@ -4470,11 +4501,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
 
         share_prices = oecd_model.get_share_prices(
             period=period, start_date=self._start_date, end_date=self._end_date
@@ -4541,7 +4568,7 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
                 or the annual data. Defaults to None, which is quarterly when the Economics class
-                was initialized with quarterly=True and annual otherwise.
+                was initialized with quarterly=True and otherwise the highest frequency available: daily.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             end_of_period (bool, optional): Whether to return the rate at the end of each month,
                 quarter or year instead of its average. Defaults to False.
@@ -4568,7 +4595,7 @@ class Economics:
 
         economics = Economics(start_date='2000-01-01', end_date='2010-12-31')
 
-        economics.get_exchange_rates(countries=['Japan', 'Indonesia', "China"])
+        economics.get_exchange_rates(countries=['Japan', 'Indonesia', "China"], period='yearly')
         ```
 
         Which returns:
@@ -4589,11 +4616,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "daily")
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
@@ -4949,7 +4972,7 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the daily, weekly, monthly or the annual
-                data. Defaults to None, which is the annual data.
+                data. Defaults to None, which is the daily data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -4973,7 +4996,7 @@ class Economics:
 
         economics = Economics(start_date='2021-01-01', end_date='2025-12-31')
 
-        economics.get_central_bank_policy_rate(countries=['Netherlands', 'Germany', 'United States'])
+        economics.get_central_bank_policy_rate(countries=['Netherlands', 'Germany', 'United States'], period='yearly')
         ```
 
         Which returns:
@@ -4989,7 +5012,7 @@ class Economics:
         check_period_type(period)
 
         period = validate_period(
-            period or "yearly",
+            self._default_period(period, "daily", quarterly_available=False),
             ["daily", "weekly", "monthly", "yearly"],
             "central bank policy rate",
         )
@@ -5071,6 +5094,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -5120,11 +5145,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
@@ -5218,7 +5239,9 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
                 or the annual data. Defaults to None, which is quarterly when the Economics class
-                was initialized with quarterly=True and annual otherwise.
+                was initialized with quarterly=True and otherwise the highest frequency available: daily
+                for the United States, the United Kingdom, Japan and the Euro Area, monthly when
+                other countries are requested.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
                 Not used for daily and weekly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -5266,10 +5289,22 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+        # Daily 10-year yields exist for the United States, the United Kingdom, Japan and
+        # the euro area; any other country is published monthly at most.
+        requested = (
+            [country.strip() for country in countries.split(",")]
+            if isinstance(countries, str)
+            else list(countries or [])
+        )
+        period = self._default_period(
+            period,
+            (
+                "daily"
+                if requested
+                and set(requested)
+                <= {"United States", "United Kingdom", "Japan", "Euro Area"}
+                else "monthly"
+            ),
         )
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
@@ -5632,6 +5667,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -5672,11 +5709,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
@@ -5967,6 +6000,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -6014,11 +6049,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
         # The GMDB is annual, so a monthly request goes to the monthly sources unless the
         # GMDB is asked for explicitly.
         monthly = period.lower() == "monthly" and gmdb_source is not True

@@ -129,3 +129,33 @@ def test_the_stats_page_shows_totals_only(tmp_path):
     assert stats["top_tools"][0]["tool"] == "ratios"
     assert len(stats["daily_calls"]) == analytics_model.DAILY_SERIES_DAYS
     assert "calls_per_user" not in stats
+
+
+def test_a_browser_gets_a_dashboard_of_the_same_totals(tmp_path):
+    mcp = FastMCP("test")
+    analytics = make_analytics(tmp_path)
+    analytics.counted("ratios", get_ratio)("AAPL")
+    analytics.register_route(mcp)
+    client = TestClient(mcp.streamable_http_app())
+
+    page = client.get(
+        "/stats", headers={"Accept": "text/html,application/xhtml+xml,*/*;q=0.8"}
+    )
+    assert page.status_code == 200
+    assert page.headers["content-type"].startswith("text/html")
+    assert "Most used tools" in page.text and "ratios" in page.text
+
+    # Programs keep getting the JSON, now with the full daily history.
+    stats = client.get("/stats", headers={"Accept": "application/json"}).json()
+    assert stats["history"][-1]["calls"] == 1
+    assert stats["history"][-1]["users"] == 1
+    assert stats["new_users_last_7_days"] == 1
+    assert stats["median_calls_per_user"] == 1
+
+
+def test_the_dashboard_renders_without_any_calls(tmp_path):
+    from financetoolkit.mcp_server import stats_page_model  # noqa: PLC0415
+
+    page = stats_page_model.render(make_analytics(tmp_path).summary())
+
+    assert "No calls yet." in page

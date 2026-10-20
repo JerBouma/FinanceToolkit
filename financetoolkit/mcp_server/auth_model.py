@@ -48,8 +48,8 @@ _FRED_QUERY_NAMES: tuple[str, ...] = (
     "fred_key",
 )
 
-# The page a browser gets at the server's address; MCP clients use /mcp. It carries the
-# icons favicon lookups look for.
+# The page a browser gets at the server's address and at /mcp: how to connect, with a link to
+# the full documentation. MCP clients never see it; they ask for JSON or an event stream.
 ROOT_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -59,13 +59,46 @@ ROOT_PAGE = """<!DOCTYPE html>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/oauth/icon">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <style>
+        body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+               background: linear-gradient(135deg, #0f172a 0%, #020617 100%); color: #f8fafc;
+               font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+        main { max-width: 40rem; padding: 2.5rem 1.5rem; }
+        .head { display: flex; align-items: center; gap: 1rem; }
+        .head img { width: 3.5rem; height: 3.5rem; border-radius: 0.9rem; }
+        h1 { font-size: 2rem; margin: 0; }
+        h1 span { color: #38bdf8; }
+        p { color: #cbd5e1; line-height: 1.6; }
+        ol { color: #cbd5e1; line-height: 1.7; padding-left: 1.3rem; }
+        li { margin-bottom: 0.6rem; }
+        strong { color: #f8fafc; }
+        .url { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; padding: 0.7rem 0.9rem; border-radius: 0.6rem;
+               background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(56, 189, 248, 0.45);
+               font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 0.95rem; color: #f8fafc; word-break: break-all; }
+        code { font-family: ui-monospace, "JetBrains Mono", monospace; color: #e2e8f0; }
+        .button { display: inline-block; margin-top: 0.8rem; padding: 0.75rem 1.4rem; border-radius: 0.6rem; font-weight: 600;
+                  color: #fff; text-decoration: none; background: linear-gradient(135deg, #0284c7, #2563eb); }
+        .muted { color: #94a3b8; font-size: 0.9rem; }
+    </style>
 </head>
-<body style="font-family: sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem;">
-    <h1>Finance Toolkit MCP</h1>
-    <p>This is the address of the Finance Toolkit MCP server: add
-    <code>https://financetoolkit.jeroenbouma.com/mcp</code> to your MCP client. See
-    <a href="https://www.jeroenbouma.com/projects/financetoolkit/mcp">the documentation</a>
-    for how to connect.</p>
+<body>
+<main>
+    <div class="head"><img src="/oauth/icon" alt=""><h1>Finance Toolkit <span>MCP</span></h1></div>
+    <p>This address is an MCP server: it gives AI assistants such as Claude, Copilot and Cursor the
+    Finance Toolkit's 500+ transparent financial metrics. It is meant to be added to an MCP client
+    rather than opened in a browser.</p>
+    <ol>
+        <li><strong>Add the server</strong> to your MCP client as a remote (HTTP) server, with this URL:
+            <div class="url">https://financetoolkit.jeroenbouma.com/mcp</div>
+            In Claude: Settings &rarr; Connectors &rarr; Add custom connector.</li>
+        <li><strong>Sign in once.</strong> On first use, a page asks for a Financial Modeling Prep API key
+            (and optionally a FRED key); your client remembers it.</li>
+        <li><strong>Ask away,</strong> for example &ldquo;Compare Apple&rsquo;s and Microsoft&rsquo;s return on equity&rdquo;.</li>
+    </ol>
+    <p class="muted">Prefer to run it locally? <code>uvx --from "financetoolkit[mcp]" financetoolkit-mcp-setup</code>
+    sets up your client and API key.</p>
+    <a class="button" href="https://www.jeroenbouma.com/projects/financetoolkit/mcp">Setup guide and documentation</a>
+</main>
 </body>
 </html>
 """
@@ -812,6 +845,12 @@ def resolve_fred_api_key() -> str:
     return ""
 
 
+def _is_browser(request: Request) -> bool:
+    """Whether a request comes from a browser rather than an MCP client."""
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept and "text/event-stream" not in accept
+
+
 class MCPAuthMiddleware(BaseHTTPMiddleware):
     """Starlette middleware to protect MCP endpoints in hosted deployments."""
 
@@ -829,6 +868,11 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
             or path in {"/health", "/diagnostics", "/stats"}
         ):
             return await call_next(request)
+
+        # Someone who opens the server's URL in a browser gets the setup page instead of a 401.
+        # MCP clients never ask for HTML: they send JSON (POST) or ask for an event stream (GET).
+        if path == "/mcp" and request.method == "GET" and _is_browser(request):
+            return HTMLResponse(ROOT_PAGE)
 
         # Protect the MCP endpoints: SSE (/sse, /messages) and streamable-HTTP (/mcp).
         if path == "/sse" or path.startswith("/messages") or path == "/mcp":

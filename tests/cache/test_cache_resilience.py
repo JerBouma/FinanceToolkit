@@ -203,3 +203,47 @@ def test_coverage_rows_are_compacted(tmp_path):
         )
 
     assert cache.get_statistics()["coverage_entries"] < 40
+
+
+def test_a_stored_frame_with_a_missing_or_unordered_date_is_repaired_on_read(tmp_path):
+    """
+    Test that a payload holding a row without a date, out of date order, still slices:
+    pandas raises "Cannot get left slice bound for non-monotonic index" otherwise.
+    """
+    from financetoolkit.cache import serialization_model  # noqa: PLC0415
+
+    cache = cache_controller.Cache(location=tmp_path / "cache.db")
+    cache.store(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entity="VGK",
+        data=create_frame(),
+        start="2020-01-01",
+        end="2020-12-31",
+    )
+
+    damaged = pd.DataFrame(
+        {"Close": [3.0, 1.0, 9.0, 2.0]},
+        index=pd.PeriodIndex(
+            ["2020-01-03", "2020-01-01", None, "2020-01-02"], freq="D"
+        ),
+    )
+
+    with sqlite3.connect(cache.location) as connection:
+        connection.execute(
+            "UPDATE series SET payload = ?",
+            (serialization_model.encode_dataframe(damaged),),
+        )
+
+    plan = cache.plan(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entities=["VGK"],
+        start="2019-12-31",
+        end="2020-01-03",
+    )
+    cached = plan.cached_frame("VGK")
+
+    assert cached is not None
+    assert cached.index.is_monotonic_increasing
+    assert cached.loc["2019-12-31":"2020-01-03", "Close"].tolist() == [1.0, 2.0, 3.0]

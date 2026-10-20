@@ -1135,6 +1135,10 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates MMD for each
         asset in the Toolkit instance.
+        - Without `within_period`, the drawdown is measured on the returns of the chosen period, so
+        period="yearly" only compares year-end values: it is 0 when every year in the range closed at a
+        new high, even if prices fell within a year. Use period="daily" for the deepest decline, or
+        within_period=True for the deepest decline within each year.
         - If `growth` is set to True, the method calculates the growth of MMD values using the specified `lag`.
 
         As an example:

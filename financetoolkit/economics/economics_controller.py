@@ -106,8 +106,10 @@ class Economics:
             start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
             gmdb_source (bool, optional): If True, retrieves data from the GMDB source. Defaults to True.
-            quarterly (bool | None, optional): If True, returns quarterly data; otherwise, returns yearly data.
-                Defaults to None. This only works for data retrieved from the OECD source.
+            quarterly (bool | None, optional): If True, methods with a period argument return quarterly
+                data where the indicator has it. Otherwise they return the highest frequency the
+                indicator is published at: daily, then weekly, monthly, quarterly and yearly. Methods
+                without a period argument return the frequency their source publishes. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             fred_api_key (str, optional): A FRED API key used to retrieve US-specific labor market and
                 real-activity indicators (e.g. Nonfarm Payrolls, Initial Jobless Claims, Retail Sales).
@@ -418,6 +420,33 @@ class Economics:
             ],
             countries,
         )
+
+    def _default_period(
+        self, period: str | None, highest: str, quarterly_available: bool = True
+    ) -> str:
+        """
+        The period to use when none is given: quarterly when the class was created with
+        quarterly=True and the indicator has it, otherwise the highest frequency the
+        indicator is published at (daily, then weekly, monthly, quarterly and yearly).
+
+        A source that cannot be reached, for example because of a rate limit, is reported
+        rather than answered with a coarser frequency from another source.
+
+        Args:
+            period (str | None): The period passed to the method.
+            highest (str): The highest frequency the indicator is published at.
+            quarterly_available (bool): Whether the indicator is published quarterly.
+
+        Returns:
+            str: The period to retrieve.
+        """
+        if period is not None:
+            return period
+
+        if self._quarterly and quarterly_available:
+            return "quarterly"
+
+        return highest
 
     def _get_daily_long_term_interest_rate(
         self, countries: list[str] | str | None = None
@@ -1020,11 +1049,10 @@ class Economics:
         This data is only available on a yearly basis, since the OECD Economic Outlook is
         published as a set of annual projections and estimates.
 
-        Changed in v2.2.0: the result is now a decimal fraction (-0.0422) rather than the
-        percentage of potential GDP the OECD publishes (-4.2231), matching every other rate
-        and ratio in this class. Multiply by 100 to recover the published figure. Note that
-        a small gap loses resolution at the default rounding of 4 decimals -- pass a larger
-        `rounding` when the sub-basis-point detail matters.
+        The result is a decimal fraction of potential GDP (-0.0422), where the OECD publishes
+        a percentage (-4.2231), like every other rate and ratio in this class. Multiply by 100
+        to recover the published figure. A small gap loses resolution at the default rounding
+        of 4 decimals, so pass a larger `rounding` when the sub-basis-point detail matters.
 
         See definition: https://www.oecd.org/en/data/indicators/output-gaps.html
 
@@ -1231,9 +1259,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.8100 for 81.00% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: consumption share of GDP.
 
         Args:
@@ -1422,9 +1447,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.2248 for 22.48% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: investment rate.
 
         Args:
@@ -1603,9 +1625,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.2179 for 21.79% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: investment to GDP ratio.
 
@@ -1790,9 +1809,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.1016 for 10.16% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: exports to GDP ratio, trade openness.
 
@@ -1982,9 +1998,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.1213 for 12.13% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: imports to GDP ratio.
 
@@ -2273,9 +2286,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (-0.0211 for -2.11% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: current account to GDP.
 
         Args:
@@ -2462,9 +2472,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (1.3173 for 131.73% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: debt-to-GDP ratio, fiscal sustainability.
 
         Args:
@@ -2646,9 +2653,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.3104 for 31.04% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: revenue to GDP ratio.
 
@@ -2836,9 +2840,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.1022 for 10.22% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: tax burden, tax to GDP ratio.
 
         Args:
@@ -3025,9 +3026,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.3708 for 37.08% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: government spending to GDP.
 
@@ -3220,9 +3218,6 @@ class Economics:
         The series is signed as a fiscal balance rather than as a deficit, and expressed as a
         decimal fraction of GDP: -0.07068 means a deficit of 7.068% of GDP, and a positive
         value is a surplus.
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: deficit-to-GDP, fiscal balance.
 
@@ -3439,8 +3434,9 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                The GMDB source is always annual, so without `oecd_source=True` only "monthly" changes
-                the result, to the monthly sources described above. Defaults to None.
+                Without `oecd_source=True`, "monthly" uses the monthly sources described above and the
+                annual data comes from the GMDB. Defaults to None, which is the monthly data (quarterly
+                with `oecd_source=True` when the Economics class was initialized with quarterly=True).
             oecd_source (bool, optional): Whether to get the data from the OECD instead of the
                 Global Macro Database (GMDB). Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -3466,7 +3462,7 @@ class Economics:
 
         economics = Economics(start_date='2008-09-01', end_date='2020-03-01')
 
-        economics.get_consumer_price_index(countries=['Germany', 'France', 'Portugal'])
+        economics.get_consumer_price_index(countries=['Germany', 'France', 'Portugal'], period='yearly')
         ```
 
         Which returns:
@@ -3489,16 +3485,15 @@ class Economics:
         """
         check_period_type(period)
 
-        if not oecd_source and period is not None and period.lower() == "monthly":
+        period = self._default_period(
+            period, "monthly", quarterly_available=oecd_source
+        )
+
+        if not oecd_source and period.lower() == "monthly":
             consumer_price_index = self._get_monthly_price_data(
                 "consumer_price_index", countries
             )
         elif oecd_source:
-            period = (
-                period
-                if period is not None
-                else "quarterly" if self._quarterly else "yearly"
-            )
             consumer_price_index = oecd_model.get_consumer_price_index(
                 period=period, start_date=self._start_date, end_date=self._end_date
             )
@@ -3563,16 +3558,15 @@ class Economics:
         other countries, including the United States, China, India and Brazil, and the IMF
         for around a hundred more, all republishing the national consumer price indices.
 
-        Changed in v2.2.0: this used to be returned in percentage points (4.1166 for
-        4.1166%). It is now a decimal fraction, matching every other rate in the Finance
-        Toolkit.
+        The result is a decimal fraction (0.041166 for 4.1166%), like every other rate in the
+        Finance Toolkit.
 
         Also known as: CPI-based inflation, price increases, consumer prices.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly or the annual data.
-                Defaults to None, which is the annual data.
+                Defaults to None, which is the monthly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -3596,7 +3590,7 @@ class Economics:
 
         economics = Economics(start_date='2003-01-01', end_date='2009-03-01')
 
-        economics.get_inflation_rate(countries=['Germany', 'France', 'Portugal'])
+        economics.get_inflation_rate(countries=['Germany', 'France', 'Portugal'], period='yearly')
         ```
 
         Which returns:
@@ -3614,7 +3608,9 @@ class Economics:
         check_period_type(period)
 
         period = validate_period(
-            period or "yearly", ["monthly", "yearly"], "inflation rate"
+            self._default_period(period, "monthly", quarterly_available=False),
+            ["monthly", "yearly"],
+            "inflation rate",
         )
 
         if period == "monthly":
@@ -3678,6 +3674,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -3715,11 +3713,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
 
         producer_price_index = oecd_model.get_producer_price_index(
             period=period, start_date=self._start_date, end_date=self._end_date
@@ -4428,6 +4422,8 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4447,7 +4443,7 @@ class Economics:
 
         economics = Economics(start_date="2013-01-01", end_date="2025-12-31")
 
-        economics.get_share_prices(countries=['Turkey', 'Belgium', 'Australia'])
+        economics.get_share_prices(countries=['Turkey', 'Belgium', 'Australia'], period='yearly')
         ```
 
         Which returns:
@@ -4470,11 +4466,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
 
         share_prices = oecd_model.get_share_prices(
             period=period, start_date=self._start_date, end_date=self._end_date
@@ -4541,7 +4533,7 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
                 or the annual data. Defaults to None, which is quarterly when the Economics class
-                was initialized with quarterly=True and annual otherwise.
+                was initialized with quarterly=True and otherwise the highest frequency available: daily.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             end_of_period (bool, optional): Whether to return the rate at the end of each month,
                 quarter or year instead of its average. Defaults to False.
@@ -4568,7 +4560,7 @@ class Economics:
 
         economics = Economics(start_date='2000-01-01', end_date='2010-12-31')
 
-        economics.get_exchange_rates(countries=['Japan', 'Indonesia', "China"])
+        economics.get_exchange_rates(countries=['Japan', 'Indonesia', "China"], period='yearly')
         ```
 
         Which returns:
@@ -4589,11 +4581,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "daily")
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
@@ -4941,15 +4929,15 @@ class Economics:
         Japan, some back to the 1940s. Weekly and monthly take the rate on the last day of
         each period, so the current week or month shows the rate so far.
 
-        Changed in v2.2.0: this used to be returned in percentage points (5.375 for 5.375%).
-        It is now a decimal fraction, matching every other rate in the Finance Toolkit.
+        The result is a decimal fraction (0.05375 for 5.375%), like every other rate in the
+        Finance Toolkit.
 
         Also known as: policy rate, benchmark rate, base rate.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the daily, weekly, monthly or the annual
-                data. Defaults to None, which is the annual data.
+                data. Defaults to None, which is the daily data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -4973,7 +4961,7 @@ class Economics:
 
         economics = Economics(start_date='2021-01-01', end_date='2025-12-31')
 
-        economics.get_central_bank_policy_rate(countries=['Netherlands', 'Germany', 'United States'])
+        economics.get_central_bank_policy_rate(countries=['Netherlands', 'Germany', 'United States'], period='yearly')
         ```
 
         Which returns:
@@ -4989,7 +4977,7 @@ class Economics:
         check_period_type(period)
 
         period = validate_period(
-            period or "yearly",
+            self._default_period(period, "daily", quarterly_available=False),
             ["daily", "weekly", "monthly", "yearly"],
             "central bank policy rate",
         )
@@ -5062,15 +5050,13 @@ class Economics:
         quarterly frequency; the GMDB is annual only, so the period argument has no effect
         when gmdb_source is True.
 
-        Changed in v2.2.0: the GMDB source previously returned percentage points (5.13 for
-        5.13%) while the OECD source returned a decimal fraction. The GMDB series is now
-        divided by 100 so both sources agree; divide any hard-coded comparison by 100.
-
         Also known as: 3-month rate, money market rate, short-term yield.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -5120,11 +5106,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
@@ -5208,9 +5190,7 @@ class Economics:
         yield on the last trading day of each week. Other countries have no daily source
         and are not included.
 
-        Changed in v2.2.0: the GMDB source previously returned percentage points (3.57 for
-        3.57%) while the OECD source returned a decimal fraction. The GMDB series is now
-        divided by 100 so both sources agree; divide any hard-coded comparison by 100.
+        Both sources return a decimal fraction (0.0357 for 3.57%).
 
         Also known as: 10-year yield, government bond rate, long-term yield.
 
@@ -5218,7 +5198,9 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
                 or the annual data. Defaults to None, which is quarterly when the Economics class
-                was initialized with quarterly=True and annual otherwise.
+                was initialized with quarterly=True and otherwise the highest frequency available: daily
+                for the United States, the United Kingdom, Japan and the Euro Area, monthly when
+                other countries are requested.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
                 Not used for daily and weekly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -5266,10 +5248,22 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+        # Daily 10-year yields exist for the United States, the United Kingdom, Japan and
+        # the euro area; any other country is published monthly at most.
+        requested = (
+            [country.strip() for country in countries.split(",")]
+            if isinstance(countries, str)
+            else list(countries or [])
+        )
+        period = self._default_period(
+            period,
+            (
+                "daily"
+                if requested
+                and set(requested)
+                <= {"United States", "United Kingdom", "Japan", "Euro Area"}
+                else "monthly"
+            ),
         )
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
@@ -5475,11 +5469,6 @@ class Economics:
         directly for the subtraction and the result is itself a decimal fraction (-0.0016 for
         a real rate of -0.16%).
 
-        Changed in v2.2.0: this used to be returned in percentage points, because the GMDB
-        legs were percentage points and the OECD nominal rate was multiplied by 100 to match
-        them. The GMDB series are now decimal fractions and that rescaling has been removed,
-        so the result is 100x smaller than in v2.1.x.
-
         A negative real interest rate means that, after inflation, savers are effectively losing
         purchasing power and borrowers are being subsidized in real terms; this occurred in many
         countries during the 2021-2022 inflation surge.
@@ -5622,16 +5611,13 @@ class Economics:
         is itself a decimal fraction (-0.0122 for an inversion of 1.22 percentage points),
         matching the convention used by get_misery_index and get_real_interest_rate.
 
-        Changed in v2.2.0: this used to be returned in percentage points, because the GMDB
-        legs were percentage points and the OECD legs were multiplied by 100 to match them.
-        The GMDB series are now decimal fractions and that rescaling has been removed, so the
-        result is 100x smaller than in v2.1.x.
-
         Also known as: term spread, 10Y-3M spread, curve inversion.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -5672,11 +5658,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
@@ -5958,15 +5940,15 @@ class Economics:
         both agree on the months they share. None of these need an API key. The UK figure is the average of the three months ending in each month, as the
         Labour Force Survey reports it.
 
-        Changed in v2.2.0: the GMDB source previously returned percentage points (3.6 for
-        3.6%) while the OECD source returned a decimal fraction. The GMDB series is now
-        divided by 100 so both sources agree; divide any hard-coded comparison by 100.
+        Both sources return a decimal fraction (0.036 for 3.6%).
 
         Also known as: jobless rate, labor market, unemployment level.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -6014,11 +5996,7 @@ class Economics:
         """
         check_period_type(period)
 
-        period = (
-            period
-            if period is not None
-            else "quarterly" if self._quarterly else "yearly"
-        )
+        period = self._default_period(period, "monthly")
         # The GMDB is annual, so a monthly request goes to the monthly sources unless the
         # GMDB is asked for explicitly.
         monthly = period.lower() == "monthly" and gmdb_source is not True
@@ -6115,11 +6093,6 @@ class Economics:
         The Unemployment Rate and Inflation Rate are both retrieved as annual decimal fractions
         (0.05 for 5%) whichever source is used, so they line up directly for the addition and
         the result is itself a decimal fraction (0.0774 for a Misery Index of 7.74).
-
-        Changed in v2.2.0: this used to be returned in percentage points, because both GMDB
-        legs were percentage points and the OECD unemployment rate was multiplied by 100 to
-        match them. The GMDB series are now decimal fractions and that rescaling has been
-        removed, so the result is 100x smaller than in v2.1.x.
 
         A higher Misery Index indicates a more uncomfortable economic climate for the average
         household, while a lower value indicates a more comfortable one. It was originally
@@ -7617,7 +7590,7 @@ class Economics:
         area, the United States (from 1945), Japan, Denmark, Switzerland, Germany, France,
         Spain and around a dozen more. When a FRED API key is set (see the `fred_api_key`
         parameter of the `Economics` class), the United States instead comes from FRED's
-        series sourced from the IMF's Financial Soundness Indicators, as in earlier versions.
+        series sourced from the IMF's Financial Soundness Indicators.
 
         See definitions: https://data.bis.org/topics/CPP and
         https://fred.stlouisfed.org/series/COMREPUSQ159N

@@ -2096,7 +2096,8 @@ def get_executives(
     user_subscription: str = "Free",
 ) -> tuple[pd.DataFrame, list[str]]:
     """
-    Retrieves the key executives of each ticker: their title, pay, gender and year of birth.
+    Retrieves the key executives of each ticker: their title, pay, gender and year of birth,
+    the best paid first.
 
     Args:
         tickers (list[str] | str): The tickers to retrieve the executives for.
@@ -2126,6 +2127,14 @@ def get_executives(
 
         executives = executives.set_index("name").rename(columns=naming)
         executives.index.name = "Name"
+
+        # Pay is only disclosed for the named executive officers of the proxy statement,
+        # so the best paid come first and the executives without disclosed pay follow.
+        if "Pay" in executives.columns:
+            executives["Pay"] = pd.to_numeric(executives["Pay"], errors="coerce")
+            executives = executives.sort_values(
+                "Pay", ascending=False, na_position="last", kind="stable"
+            )
 
         return (
             ticker,

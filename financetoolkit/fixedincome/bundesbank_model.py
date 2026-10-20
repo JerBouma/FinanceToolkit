@@ -48,16 +48,13 @@ def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
             timeout=120,
             extra_headers={"Accept": "text/csv"},
         )
-        text = response.content.decode("utf-8-sig")
+        data = _read_bundesbank_csv(response.content)
 
-        if not text.strip():
-            return pd.DataFrame()
+        # A span without observations (a weekend, or today before the release) comes
+        # back as a header without rows rather than in another format.
+        if data.empty:
+            return data
 
-        # The separator follows the language: a comma in English, a semicolon in German.
-        header = text.splitlines()[0]
-        data = pd.read_csv(
-            io.StringIO(text), sep=";" if header.count(";") > header.count(",") else ","
-        )
         require_columns(
             data, {"BBK_SEIS_MATURITY", "TIME_PERIOD", "OBS_VALUE"}, description
         )

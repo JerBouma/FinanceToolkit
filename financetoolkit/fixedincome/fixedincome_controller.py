@@ -2418,10 +2418,8 @@ class FixedIncome:
             into `get_present_value`, `get_z_spread`, `get_par_yield` and `get_key_rate_duration`,
             each of which is documented as taking a rate in decimal form.
 
-            This changed in v2.2.0: prior versions returned percentage points from this one method
-            alone, which silently overstated a yield by a factor of 100 whenever the result was fed
-            into any of the bond-pricing methods above. Multiply by 100 to recover the published
-            Treasury figures.
+            The rates are decimal fractions, so they feed straight into the bond-pricing methods
+            above. Multiply by 100 to recover the published Treasury figures.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Treasury par yield curve rates, as decimals,

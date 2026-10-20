@@ -831,3 +831,21 @@ def test_calendar_events_match_without_spaces_or_hyphens(monkeypatch):
         "Non Farm Payrolls (Sep)",
         "Nonfarm Payrolls Private (Sep)",
     ]
+
+
+def test_a_period_defaults_to_the_highest_frequency_available():
+    from financetoolkit import Economics  # noqa: PLC0415
+
+    economics = Economics(use_cached_data=False)
+    quarterly = Economics(quarterly=True, use_cached_data=False)
+
+    # Without a period, the highest frequency the indicator is published at.
+    assert economics._default_period(None, "daily") == "daily"
+    assert economics._default_period(None, "monthly") == "monthly"
+    # quarterly=True asks for quarterly data, where the indicator has it.
+    assert quarterly._default_period(None, "monthly") == "quarterly"
+    assert (
+        quarterly._default_period(None, "daily", quarterly_available=False) == "daily"
+    )
+    # An explicit period always wins.
+    assert quarterly._default_period("yearly", "daily") == "yearly"

@@ -31,8 +31,9 @@ from pathlib import Path
 from typing import Any
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 
+from financetoolkit.mcp_server import stats_page_model
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -351,6 +352,38 @@ class UsageAnalytics:
                 self.calls_per_tool.items(), key=lambda item: item[1], reverse=True
             )[:TOP_TOOLS]
 
+            # The full history, one entry per day since the first call: the calls, the
+            # users seen for the first time and the users so far. Totals only.
+            new_per_day: dict[str, int] = {}
+            for user, day in self.first_seen.items():
+                if user != ANONYMOUS:
+                    new_per_day[day] = new_per_day.get(day, 0) + 1
+            known_days = list(self.calls_per_day) + list(new_per_day)
+            start = (
+                datetime.strptime(min(known_days), "%Y-%m-%d").date()
+                if known_days
+                else today
+            )
+            history, users_so_far = [], 0
+            for offset in range((today - start).days + 1):
+                day = (start + timedelta(days=offset)).strftime("%Y-%m-%d")
+                users_so_far += new_per_day.get(day, 0)
+                history.append(
+                    {
+                        "date": day,
+                        "calls": self.calls_per_day.get(day, 0),
+                        "new_users": new_per_day.get(day, 0),
+                        "users": users_so_far,
+                    }
+                )
+            counts = sorted(self.calls_per_user[user] for user in identified_users)
+            median_calls = (
+                (counts[(len(counts) - 1) // 2] + counts[len(counts) // 2]) / 2
+                if counts
+                else 0
+            )
+            total_seconds = sum(self.seconds_per_tool.values())
+
             return {
                 "server": self.server_name,
                 "total_calls": self.total_calls,
@@ -385,6 +418,17 @@ class UsageAnalytics:
                     for tool, calls in top_tools
                 ],
                 "uptime_seconds": int(time.time() - self._started),
+                "since": history[0]["date"] if history else None,
+                "new_users_last_7_days": sum(
+                    new_per_day.get(day, 0) for day in days[-7:]
+                ),
+                "median_calls_per_user": median_calls,
+                "average_seconds": (
+                    round(total_seconds / self.total_calls, 2)
+                    if self.total_calls
+                    else None
+                ),
+                "history": history,
             }
 
     def register_route(self, mcp: Any, path: str = "/stats") -> None:
@@ -399,7 +443,11 @@ class UsageAnalytics:
             return
 
         @mcp.custom_route(path, methods=["GET"])
-        async def stats(request: Request) -> JSONResponse:  # noqa: ARG001
+        async def stats(request: Request) -> JSONResponse | HTMLResponse:
+            # A browser gets a dashboard of the same totals; everything else the JSON.
+            accept = request.headers.get("accept", "")
+            if "text/html" in accept and "application/json" not in accept:
+                return HTMLResponse(stats_page_model.render(self.summary()))
             return JSONResponse(self.summary())
 
 

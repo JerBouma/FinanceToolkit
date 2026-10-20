@@ -19,6 +19,28 @@ ADF_CRITICAL_VALUES: dict[str, dict[float, float]] = {
 }
 
 
+def default_max_lag(observations: int) -> int:
+    """
+    The largest lag the automatic lag search of a unit root or cointegration test may try.
+
+    statsmodels' default, 12 * (n / 100) ** (1 / 4) (Schwert, 1989), leaves a short sample
+    with more lagged differences than it can estimate: 16 quarterly observations allow 8
+    lags, which leaves the test regression nearly without degrees of freedom and can return
+    a statistic of 0 with a p-value near 1. The search is therefore capped at (n - 5) // 3,
+    which leaves 16 observations 3 lags; from about 35 observations on the cap no longer
+    binds and statsmodels' default applies.
+
+    Args:
+        observations (int): The number of observations in the series.
+
+    Returns:
+        int: The maximum lag.
+    """
+    schwert = int(np.ceil(12 * (observations / 100) ** (1 / 4)))
+
+    return max(0, min(schwert, (observations - 5) // 3))
+
+
 def _newey_west_long_run_variance(residuals: np.ndarray, lags: int) -> float:
     """
     Newey-West (1987) HAC long-run variance estimator with Bartlett kernel weights.
@@ -82,7 +104,8 @@ def get_augmented_dickey_fuller(
     Args:
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
         max_lag (int, optional): The maximum number of lagged differences to consider. Defaults to the
-        Schwert (1989) rule of thumb, ceil(12 * (n / 100) ** 0.25).
+        Schwert (1989) rule of thumb, ceil(12 * (n / 100) ** 0.25), capped at (n - 5) // 3 so that
+        short samples keep enough degrees of freedom.
         regression (str, optional): Which deterministic terms to include, one of "n" (none), "c"
         (constant) or "ct" (constant and trend). Defaults to "c".
 
@@ -108,7 +131,14 @@ def get_augmented_dickey_fuller(
                 "ignore", message="adfuller currently returns", category=FutureWarning
             )
             adf_statistic, p_value, used_lag, n_observations, critical_values, _ = (
-                adfuller(values, maxlag=max_lag, regression=regression, autolag="AIC")
+                adfuller(
+                    values,
+                    maxlag=(
+                        max_lag if max_lag is not None else default_max_lag(len(values))
+                    ),
+                    regression=regression,
+                    autolag="AIC",
+                )
             )
     except (ValueError, np.linalg.LinAlgError):
         return pd.Series(
@@ -415,7 +445,7 @@ def get_zivot_andrews_test(
     Args:
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
         max_lag (int, optional): The maximum number of lagged differences to consider. Defaults
-        to `statsmodels`' Schwert (1989) rule of thumb.
+        to the Schwert (1989) rule of thumb, capped at (n - 5) // 3 for short samples.
         regression (str, optional): Which break to allow for, one of "c" (a break in the level/
         intercept), "t" (a break in the trend slope) or "ct" (both). Defaults to "c".
         trim (float, optional): The fraction of observations excluded from the candidate break
@@ -446,7 +476,11 @@ def get_zivot_andrews_test(
 
     try:
         za_statistic, p_value, critical_values, used_lag, break_index = zivot_andrews(
-            values, trim=trim, maxlag=max_lag, regression=regression, autolag="AIC"
+            values,
+            trim=trim,
+            maxlag=max_lag if max_lag is not None else default_max_lag(len(values)),
+            regression=regression,
+            autolag="AIC",
         )
     except (ValueError, IndexError, np.linalg.LinAlgError):
         return pd.Series(

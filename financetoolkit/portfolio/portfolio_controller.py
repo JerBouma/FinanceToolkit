@@ -1385,7 +1385,10 @@ class Portfolio:
         Args:
             rounding (int | None): The number of decimal places to round the output to.
                 If None, it defaults to the rounding specified in the configuration.
-            exclude_sold_positions (bool): A flag indicating whether to exclude sold positions
+            exclude_sold_positions (bool): Whether to leave out the sell transactions. Profit & loss
+                is realized when shares are sold, so it is booked on the sell transactions: with
+                True, every remaining (buy) transaction shows a PnL of 0 and the realized total is
+                in the Cumulative PnL column. Pass False to see the PnL of each sale. Defaults to True.
             pnl_method (str): The method for calculating profit & loss. Options are:
                 'FIFO' (First In, First Out), 'LIFO' (Last In, First Out), or 'AVERAGE'.
                 Defaults to 'FIFO'.

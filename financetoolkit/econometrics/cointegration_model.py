@@ -9,6 +9,8 @@ import pandas as pd
 from statsmodels.tsa.stattools import coint
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
+from financetoolkit.econometrics.unitroot_model import default_max_lag
+
 JOHANSEN_MINIMUM_NUMBER_OF_SERIES = 2
 
 # The conventional 5% significance level used for the "Cointegrated (5%)" flag.
@@ -52,7 +54,8 @@ def get_engle_granger_cointegration(
         series_a (pd.Series): The dependent series.
         series_b (pd.Series): The independent series.
         max_lag (int, optional): The maximum number of lagged differences to consider in the
-        underlying ADF test on the residuals. Defaults to `statsmodels`' automatic selection.
+        underlying ADF test on the residuals. Defaults to the Schwert (1989) rule of thumb,
+        capped at (n - 5) // 3 for short samples.
 
     Returns:
         pd.Series: The Engle-Granger statistic, its p-value, the 1%/5%/10% critical values,
@@ -64,7 +67,11 @@ def get_engle_granger_cointegration(
 
     try:
         eg_statistic, p_value, critical_values = coint(
-            dependent, independent, trend="c", maxlag=max_lag, autolag="aic"
+            dependent,
+            independent,
+            trend="c",
+            maxlag=max_lag if max_lag is not None else default_max_lag(len(dependent)),
+            autolag="aic",
         )
     except (ValueError, np.linalg.LinAlgError):
         return pd.Series(

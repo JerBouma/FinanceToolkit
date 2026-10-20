@@ -280,3 +280,20 @@ def test_get_zivot_andrews_test_invalid_type():
         raise AssertionError("Expected TypeError")
     except TypeError:
         pass
+
+
+def test_default_max_lag():
+    # Short samples are capped, long samples keep the Schwert (1989) rule of thumb.
+    assert unitroot_model.default_max_lag(16) == 3  # noqa: PLR2004
+    assert unitroot_model.default_max_lag(100) == 12  # noqa: PLR2004
+    assert unitroot_model.default_max_lag(1000) == 22  # noqa: PLR2004
+    assert unitroot_model.default_max_lag(4) == 0
+
+
+def test_get_augmented_dickey_fuller_short_sample():
+    rng = np.random.default_rng(0)
+    series = pd.Series(rng.standard_normal(16))
+
+    result = unitroot_model.get_augmented_dickey_fuller(series)
+
+    assert result["Lags Used"] <= 3  # noqa: PLR2004

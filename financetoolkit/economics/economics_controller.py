@@ -1020,11 +1020,10 @@ class Economics:
         This data is only available on a yearly basis, since the OECD Economic Outlook is
         published as a set of annual projections and estimates.
 
-        Changed in v2.2.0: the result is now a decimal fraction (-0.0422) rather than the
-        percentage of potential GDP the OECD publishes (-4.2231), matching every other rate
-        and ratio in this class. Multiply by 100 to recover the published figure. Note that
-        a small gap loses resolution at the default rounding of 4 decimals -- pass a larger
-        `rounding` when the sub-basis-point detail matters.
+        The result is a decimal fraction of potential GDP (-0.0422), where the OECD publishes
+        a percentage (-4.2231), like every other rate and ratio in this class. Multiply by 100
+        to recover the published figure. A small gap loses resolution at the default rounding
+        of 4 decimals, so pass a larger `rounding` when the sub-basis-point detail matters.
 
         See definition: https://www.oecd.org/en/data/indicators/output-gaps.html
 
@@ -1231,9 +1230,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.8100 for 81.00% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: consumption share of GDP.
 
         Args:
@@ -1422,9 +1418,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.2248 for 22.48% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: investment rate.
 
         Args:
@@ -1603,9 +1596,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.2179 for 21.79% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: investment to GDP ratio.
 
@@ -1790,9 +1780,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.1016 for 10.16% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: exports to GDP ratio, trade openness.
 
@@ -1982,9 +1969,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.1213 for 12.13% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: imports to GDP ratio.
 
@@ -2273,9 +2257,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (-0.0211 for -2.11% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: current account to GDP.
 
         Args:
@@ -2462,9 +2443,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (1.3173 for 131.73% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: debt-to-GDP ratio, fiscal sustainability.
 
         Args:
@@ -2646,9 +2624,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.3104 for 31.04% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: revenue to GDP ratio.
 
@@ -2836,9 +2811,6 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.1022 for 10.22% of GDP).
 
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
-
         Also known as: tax burden, tax to GDP ratio.
 
         Args:
@@ -3025,9 +2997,6 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.3708 for 37.08% of GDP).
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: government spending to GDP.
 
@@ -3220,9 +3189,6 @@ class Economics:
         The series is signed as a fiscal balance rather than as a deficit, and expressed as a
         decimal fraction of GDP: -0.07068 means a deficit of 7.068% of GDP, and a positive
         value is a surplus.
-
-        Changed in v2.2.0: this used to be returned in percentage points. It is now a
-        decimal fraction, matching every other ratio in the Finance Toolkit.
 
         Also known as: deficit-to-GDP, fiscal balance.
 
@@ -3563,9 +3529,8 @@ class Economics:
         other countries, including the United States, China, India and Brazil, and the IMF
         for around a hundred more, all republishing the national consumer price indices.
 
-        Changed in v2.2.0: this used to be returned in percentage points (4.1166 for
-        4.1166%). It is now a decimal fraction, matching every other rate in the Finance
-        Toolkit.
+        The result is a decimal fraction (0.041166 for 4.1166%), like every other rate in the
+        Finance Toolkit.
 
         Also known as: CPI-based inflation, price increases, consumer prices.
 
@@ -4941,8 +4906,8 @@ class Economics:
         Japan, some back to the 1940s. Weekly and monthly take the rate on the last day of
         each period, so the current week or month shows the rate so far.
 
-        Changed in v2.2.0: this used to be returned in percentage points (5.375 for 5.375%).
-        It is now a decimal fraction, matching every other rate in the Finance Toolkit.
+        The result is a decimal fraction (0.05375 for 5.375%), like every other rate in the
+        Finance Toolkit.
 
         Also known as: policy rate, benchmark rate, base rate.
 
@@ -5061,10 +5026,6 @@ class Economics:
         the two are directly interchangeable. Only the OECD source supports monthly and
         quarterly frequency; the GMDB is annual only, so the period argument has no effect
         when gmdb_source is True.
-
-        Changed in v2.2.0: the GMDB source previously returned percentage points (5.13 for
-        5.13%) while the OECD source returned a decimal fraction. The GMDB series is now
-        divided by 100 so both sources agree; divide any hard-coded comparison by 100.
 
         Also known as: 3-month rate, money market rate, short-term yield.
 
@@ -5208,9 +5169,7 @@ class Economics:
         yield on the last trading day of each week. Other countries have no daily source
         and are not included.
 
-        Changed in v2.2.0: the GMDB source previously returned percentage points (3.57 for
-        3.57%) while the OECD source returned a decimal fraction. The GMDB series is now
-        divided by 100 so both sources agree; divide any hard-coded comparison by 100.
+        Both sources return a decimal fraction (0.0357 for 3.57%).
 
         Also known as: 10-year yield, government bond rate, long-term yield.
 
@@ -5475,11 +5434,6 @@ class Economics:
         directly for the subtraction and the result is itself a decimal fraction (-0.0016 for
         a real rate of -0.16%).
 
-        Changed in v2.2.0: this used to be returned in percentage points, because the GMDB
-        legs were percentage points and the OECD nominal rate was multiplied by 100 to match
-        them. The GMDB series are now decimal fractions and that rescaling has been removed,
-        so the result is 100x smaller than in v2.1.x.
-
         A negative real interest rate means that, after inflation, savers are effectively losing
         purchasing power and borrowers are being subsidized in real terms; this occurred in many
         countries during the 2021-2022 inflation surge.
@@ -5621,11 +5575,6 @@ class Economics:
         Both legs are decimal fractions (0.05 for 5%) whichever source is used, so the result
         is itself a decimal fraction (-0.0122 for an inversion of 1.22 percentage points),
         matching the convention used by get_misery_index and get_real_interest_rate.
-
-        Changed in v2.2.0: this used to be returned in percentage points, because the GMDB
-        legs were percentage points and the OECD legs were multiplied by 100 to match them.
-        The GMDB series are now decimal fractions and that rescaling has been removed, so the
-        result is 100x smaller than in v2.1.x.
 
         Also known as: term spread, 10Y-3M spread, curve inversion.
 
@@ -5958,9 +5907,7 @@ class Economics:
         both agree on the months they share. None of these need an API key. The UK figure is the average of the three months ending in each month, as the
         Labour Force Survey reports it.
 
-        Changed in v2.2.0: the GMDB source previously returned percentage points (3.6 for
-        3.6%) while the OECD source returned a decimal fraction. The GMDB series is now
-        divided by 100 so both sources agree; divide any hard-coded comparison by 100.
+        Both sources return a decimal fraction (0.036 for 3.6%).
 
         Also known as: jobless rate, labor market, unemployment level.
 
@@ -6115,11 +6062,6 @@ class Economics:
         The Unemployment Rate and Inflation Rate are both retrieved as annual decimal fractions
         (0.05 for 5%) whichever source is used, so they line up directly for the addition and
         the result is itself a decimal fraction (0.0774 for a Misery Index of 7.74).
-
-        Changed in v2.2.0: this used to be returned in percentage points, because both GMDB
-        legs were percentage points and the OECD unemployment rate was multiplied by 100 to
-        match them. The GMDB series are now decimal fractions and that rescaling has been
-        removed, so the result is 100x smaller than in v2.1.x.
 
         A higher Misery Index indicates a more uncomfortable economic climate for the average
         household, while a lower value indicates a more comfortable one. It was originally
@@ -7617,7 +7559,7 @@ class Economics:
         area, the United States (from 1945), Japan, Denmark, Switzerland, Germany, France,
         Spain and around a dozen more. When a FRED API key is set (see the `fred_api_key`
         parameter of the `Economics` class), the United States instead comes from FRED's
-        series sourced from the IMF's Financial Soundness Indicators, as in earlier versions.
+        series sourced from the IMF's Financial Soundness Indicators.
 
         See definitions: https://data.bis.org/topics/CPP and
         https://fred.stlouisfed.org/series/COMREPUSQ159N

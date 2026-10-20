@@ -566,7 +566,7 @@ class Portfolio:
         - Returns: the returns of the benchmark over time.
         - Cumulative Return: the cumulative return of the benchmark over time.
 
-        Volatility, Excess Return and Excess Volatility are no longer included here. These are
+        Volatility, Excess Return and Excess Volatility are not included here. These are
         available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
         module (e.g. toolkit.performance.get_excess_return) instead.
 
@@ -734,7 +734,7 @@ class Portfolio:
         - Returns: the returns of each asset over time.
         - Cumulative Return: the cumulative return of each asset over time.
 
-        Volatility, Excess Return and Excess Volatility are no longer included here. These are
+        Volatility, Excess Return and Excess Volatility are not included here. These are
         available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
         module (e.g. toolkit.performance.get_excess_return) instead.
 

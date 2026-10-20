@@ -386,3 +386,25 @@ def test_root_page_and_favicons_are_served_without_authorization() -> None:
 
     # The MCP endpoint itself stays protected.
     assert client.post("/mcp").status_code == 401  # noqa
+
+
+def test_a_browser_opening_the_mcp_url_gets_the_setup_page() -> None:
+    """A browser gets setup instructions at /mcp; MCP clients still get the OAuth challenge."""
+    mcp = FastMCP("TestSetupPageServer")
+    register_auth_routes(mcp)
+    app = mcp.streamable_http_app()
+    app.add_middleware(MCPAuthMiddleware)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
+
+    page = client.get(
+        "/mcp", headers={"Accept": "text/html,application/xhtml+xml,*/*;q=0.8"}
+    )
+    assert page.status_code == 200  # noqa
+    assert "Add custom connector" in page.text
+    assert "https://www.jeroenbouma.com/projects/financetoolkit/mcp" in page.text
+
+    # An MCP client asking for an event stream, or posting JSON, is still challenged.
+    stream = client.get("/mcp", headers={"Accept": "text/event-stream"})
+    assert stream.status_code == 401  # noqa
+    assert "resource_metadata" in stream.headers["WWW-Authenticate"]
+    assert client.post("/mcp", json={}).status_code == 401  # noqa

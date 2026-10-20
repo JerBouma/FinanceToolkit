@@ -396,6 +396,42 @@ def test_etf_methods_do_not_remove_tickers_that_are_not_funds(
     assert toolkit._tickers == ["AAPL", "MSFT"]
 
 
+def test_executives_list_the_best_paid_first(responses):
+    canned, _ = responses
+    canned["key-executives"] = [
+        {"name": "Undisclosed", "title": "Vice President", "pay": None},
+        {"name": "Chief", "title": "Chief Executive Officer", "pay": 16759518},
+        {"name": "Counsel", "title": "General Counsel", "pay": 5022482},
+    ]
+
+    executives, _ = fmp_model.get_executives(["AAPL"], "key")
+
+    assert list(executives.loc["AAPL"].index) == ["Chief", "Counsel", "Undisclosed"]
+
+
+def test_a_sector_a_fund_does_not_hold_weighs_zero(cache_location, monkeypatch):
+    weightings = pd.DataFrame(
+        {"QQQ": [0.6, None], "VTI": [0.4, 0.02]},
+        index=pd.Index(["Technology", "Real Estate"], name="Sector"),
+    )
+    monkeypatch.setattr(
+        toolkit_controller,
+        "_get_etf_sector_weightings",
+        lambda tickers, **kwargs: (weightings, []),
+    )
+
+    toolkit = toolkit_controller.Toolkit(
+        ["QQQ", "VTI"],
+        api_key="test-key",
+        sleep_timer=False,
+        use_cached_data=cache_location,
+    )
+    sectors = toolkit.get_etf_sector_weightings()
+
+    assert sectors.loc["Real Estate", "QQQ"] == 0
+    assert list(sectors.index) == ["Technology", "Real Estate"]
+
+
 @pytest.fixture(name="calendar_requests")
 def fixture_calendar_requests(monkeypatch):
     """Serve a small economic calendar and record the requested urls."""

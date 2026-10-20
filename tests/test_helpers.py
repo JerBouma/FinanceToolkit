@@ -346,3 +346,16 @@ def test_handle_portfolio_weighs_the_tickers_with_a_value_by_the_result_period()
     result = Module().get_metric()
 
     assert result["Portfolio"].tolist() == [2.5, 1.0, 2.5]
+
+
+def test_enriching_a_response_without_prices_adds_no_row():
+    """
+    An empty response (a range before the listing) stays empty: it once gained a row
+    labelled 0, which was cached and merged into the dates of the real prices.
+    """
+    columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Dividends"]
+    empty = pd.DataFrame(columns=columns, index=pd.PeriodIndex([], freq="D"))
+
+    enriched = helpers.enrich_historical_data(empty, "1980-01-01", "1984-12-31")
+
+    assert enriched.empty

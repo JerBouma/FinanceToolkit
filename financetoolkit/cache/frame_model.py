@@ -174,6 +174,83 @@ def slice_frame(
     return data.loc[mask] if date_axis == 0 else data.loc[:, mask]
 
 
+def _drop_non_date_rows(data: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
+    """
+    Keep only the rows labelled with a date when dates and other labels are mixed.
+
+    Rows hold dates, so a label that is no date (a row labelled 0 that an empty
+    response once carried) makes the index unorderable and every date slice of it
+    fail. An index without any date is left as it is.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The frame whose index is checked.
+
+    Returns:
+        pd.DataFrame | pd.Series: The frame with only its dated rows, as a
+            PeriodIndex or DatetimeIndex when the dates allow it.
+    """
+    is_date = np.array(
+        [isinstance(label, (pd.Period, pd.Timestamp)) for label in data.index]
+    )
+
+    if not is_date.any() or (is_date.all() and data.index.dtype != object):
+        return data
+
+    data = data.loc[is_date]
+    labels = list(data.index)
+
+    with contextlib.suppress(TypeError, ValueError):
+        if all(isinstance(label, pd.Period) for label in labels):
+            data.index = pd.PeriodIndex(labels, name=data.index.name)
+        elif all(isinstance(label, pd.Timestamp) for label in labels):
+            data.index = pd.DatetimeIndex(labels, name=data.index.name)
+
+    return data
+
+
+def tidy_date_axis(
+    data: pd.DataFrame | pd.Series, date_axis: int = 0
+) -> pd.DataFrame | pd.Series:
+    """
+    Put a date or period axis in date order, without missing or repeated dates.
+
+    Every date slice (`.loc[start:end]`) needs an ordered axis, and a missing date
+    (NaT) makes pandas treat the axis as unordered. A stored frame is tidied both when
+    it is written and when it is read, so a copy stored in another shape (an older
+    version, or a source that returned a row without a date) is repaired on its next
+    read rather than breaking every call that reads it. Axes that hold labels rather
+    than dates, such as statement line items, are returned as they are.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The frame to tidy.
+        date_axis (int): 0 when the index holds the dates, 1 when the columns do.
+
+    Returns:
+        pd.DataFrame | pd.Series: The frame with an ordered date axis.
+    """
+    if data is None or len(data) == 0:
+        return data
+
+    axis = get_date_axis(data, date_axis)
+
+    if axis_as_dates(axis) is None and date_axis == 0:
+        data = _drop_non_date_rows(data)
+        axis = data.index
+
+    if axis_as_dates(axis) is None:
+        return data
+
+    keep = np.asarray(axis.notna() & ~axis.duplicated(keep="last"))
+
+    if not keep.all():
+        data = data.loc[keep] if date_axis == 0 else data.loc[:, keep]
+
+    if not get_date_axis(data, date_axis).is_monotonic_increasing:
+        data = data.sort_index(axis=date_axis)
+
+    return data
+
+
 def merge_frames(
     existing: pd.DataFrame | pd.Series | None,
     incoming: pd.DataFrame | pd.Series,
@@ -196,9 +273,9 @@ def merge_frames(
         pd.DataFrame | pd.Series: The merged frame.
     """
     if existing is None or len(existing) == 0:
-        return incoming
+        return tidy_date_axis(incoming, date_axis)
     if incoming is None or len(incoming) == 0:
-        return existing
+        return tidy_date_axis(existing, date_axis)
 
     if date_axis == 1:
         merged = pd.concat([existing, incoming], axis=1)
@@ -213,4 +290,4 @@ def merge_frames(
     with contextlib.suppress(TypeError):
         merged = merged.sort_index(axis=sort_axis)
 
-    return merged
+    return tidy_date_axis(merged, date_axis)

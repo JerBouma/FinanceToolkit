@@ -1287,11 +1287,9 @@ def get_output_gap(start_date: str | None = None, end_date: str | None = None):
         over time.
 
     Notes:
-        Changed in v2.2.0: the OECD publishes this as a percentage of potential GDP and
-        earlier versions passed that through unchanged (-0.1987), which made it the one
-        remaining percentage-point series in a package that otherwise returns every rate
-        and ratio as a decimal. It is now divided by 100 so it combines directly with the
-        other economics series. Multiply by 100 to recover the published figure.
+        The OECD publishes this as a percentage of potential GDP; it is returned as a decimal
+        fraction so it combines directly with the other economics series. Multiply by 100 to
+        recover the published figure.
     """
     oecd_data_string = "OECD.ECO.MAD,DSD_EO@DF_EO,1.5/.GAP.A"
 

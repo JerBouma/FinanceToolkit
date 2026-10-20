@@ -2894,7 +2894,7 @@ class Toolkit:
             pd.DataFrame: The market risk premium by country, including the continent, Country
             Risk Premium and Total Equity Risk Premium (both as decimals, 0.0446 for 4.46%).
 
-        Changed in v2.2.2: this used to be returned in percentage points (4.46 for 4.46%).
+        The premiums are decimal fractions (0.0446 for 4.46%).
 
         As an example:
 
@@ -3085,7 +3085,9 @@ class Toolkit:
             names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The executives per ticker, indexed by their name.
+            pd.DataFrame: The executives per ticker, indexed by their name. Pay is only
+            disclosed for the executives named in the proxy statement, so the best paid
+            come first and the executives without disclosed pay follow.
 
         As an example:
 
@@ -3104,13 +3106,13 @@ class Toolkit:
 
         Which returns:
 
-        | Name                 | Title                                             |           Pay | Currency   | Gender   |   Year Born |   Title Since | Active   |
-        |:---------------------|:--------------------------------------------------|--------------:|:-----------|:---------|------------:|--------------:|:---------|
-        | Jennifer G. Newstead | Senior VP of Government Affairs & General Counsel | nan           | USD        | female   |        1970 |           nan | True     |
-        | Adrian Perica        | Vice President of Corporate Development           | nan           | USD        | male     |        1974 |           nan | True     |
-        | Craig Federighi      | Senior Vice President of Software Engineering     | nan           | USD        | male     |        1969 |           nan | True     |
-        | Eduardo H. Cue       | Senior Vice President of Services and Health      |   2.80746e+06 | USD        | male     |        1964 |           nan | True     |
-        | Greg Joswiak         | Senior Vice President of Worldwide Marketing      | nan           | USD        | male     |         nan |           nan | True     |
+        | Name               | Title                                    |      Pay | Currency   | Gender   |   Year Born |   Title Since | Active   |
+        |:-------------------|:-----------------------------------------|---------:|:-----------|:---------|------------:|--------------:|:---------|
+        | John Ternus        | Chief Executive Officer & Director       | 16759518 | USD        | male     |        1976 |           nan | True     |
+        | Timothy D. Cook    | Executive Chairman of the Board          | 16759518 | USD        | male     |        1961 |           nan | True     |
+        | Deirdre O'Brien    | Senior Vice President of Retail & People |  5037867 | USD        | female   |        1967 |           nan | True     |
+        | Katherine L. Adams | Secretary                                |  5022482 | USD        | female   |        1964 |           nan | True     |
+        | Sabih Khan         | Senior VP & Chief Operating Officer      |  5021905 | USD        | male     |        1967 |           nan | True     |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3450,22 +3452,23 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["MSFT", "GOOGL"],
+            ["CVX", "XOM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="1990-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_mergers_acquisitions().loc["MSFT"].head()
+        toolkit.get_mergers_acquisitions().loc["CVX"]
         ```
 
         Which returns:
 
-        | Transaction Date    | Role     | Acquirer Symbol   | Acquirer Name   |   Target Symbol | Target Name   | Accepted Date       | Link                                                                                            |
-        |:--------------------|:---------|:------------------|:----------------|----------------:|:--------------|:--------------------|:------------------------------------------------------------------------------------------------|
-        | 1995-02-09 00:00:00 | Acquirer | MSFT              | MICROSOFT CORP  |             nan | ChipSoft      | 1995-02-09 00:00:00 | https://www.sec.gov/Archives/edgar/data/789019/0000891020-95-000018.txt                         |
-        | 1999-11-02 00:00:00 | Acquirer | MSFT              | MICROSOFT CORP  |             nan | Visio's       | 1999-11-02 00:00:00 | https://www.sec.gov/Archives/edgar/data/789019/000103221099001490/0001032210-99-001490.txt      |
-        | 2001-02-01 00:00:00 | Acquirer | MSFT              | MICROSOFT CORP  |             nan | GENTLEMEN     | 2001-02-01 00:00:00 | https://www.sec.gov/Archives/edgar/data/789019/000103221001000126/0001032210-01-000126-0001.txt |
+        | Transaction Date   | Role     | Acquirer Symbol   | Acquirer Name   | Target Symbol   | Target Name      | Accepted Date       | Link                                                                            |
+        |:-------------------|:---------|:------------------|:----------------|:----------------|:-----------------|:--------------------|:--------------------------------------------------------------------------------|
+        | 2021-03-22         | Acquirer | CVX               | CHEVRON CORP    | NBLX            | NBLX             | 2021-03-22 14:02:22 | https://www.sec.gov/Archives/edgar/data/93410/000119312521089220/d153017ds4.htm |
+        | 2023-06-20         | Acquirer | CVX               | CHEVRON CORP    | PDCE            | PDC Energy, Inc. | 2023-06-20 16:12:40 | https://www.sec.gov/Archives/edgar/data/93410/000119312523170147/d512919ds4.htm |
+        | 2023-08-03         | Acquirer | CVX               | CHEVRON CORP    | nan             | PDC              | 2023-08-03 16:06:24 | https://www.sec.gov/Archives/edgar/data/93410/000119312523202848/d528944ds4.htm |
+        | 2024-02-26         | Acquirer | CVX               | CHEVRON CORP    | nan             | Hess             | 2024-02-26 16:25:29 | https://www.sec.gov/Archives/edgar/data/93410/000119312524046223/d576159ds4.htm |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3974,7 +3977,9 @@ class Toolkit:
         if self._etf_country_weightings.empty:
             return self._etf_country_weightings
 
-        return self._etf_country_weightings.sort_values(
+        # A fund lists only the countries it holds, so a country another fund holds has no
+        # weight in it rather than an unknown one.
+        return self._etf_country_weightings.fillna(0).sort_values(
             by=self._etf_country_weightings.columns[0], ascending=False, kind="stable"
         )
 
@@ -4012,20 +4017,20 @@ class Toolkit:
 
         Which returns:
 
-        | Sector                 |          QQQ |       VTI |
-        |:-----------------------|-------------:|----------:|
-        | Technology             |   0.610092   | 0.365041  |
-        | Communication Services |   0.118947   | 0.086689  |
-        | Consumer Cyclical      |   0.0972185  | 0.0898289 |
-        | Consumer Defensive     |   0.0549628  | 0.0425139 |
-        | Utilities              |   0.0100427  | 0.0197311 |
-        | Basic Materials        |   0.00912283 | 0.0222419 |
-        | Energy                 |   0.00442936 | 0.037377  |
-        | Real Estate            | nan          | 0.0227773 |
-        | Industrials            |   0.054947   | 0.0881844 |
-        | Healthcare             |   0.0358905  | 0.0998086 |
-        | Cash & Others          |   0.00248307 | 0.001929  |
-        | Financial Services     |   0.0018637  | 0.123878  |
+        | Sector                 |      QQQ |      VTI |
+        |:-----------------------|---------:|---------:|
+        | Technology             | 0.603104 | 0.365041 |
+        | Communication Services | 0.117791 | 0.086689 |
+        | Consumer Cyclical      | 0.098732 | 0.089865 |
+        | Consumer Defensive     | 0.057355 | 0.042514 |
+        | Industrials            | 0.055378 | 0.088185 |
+        | Healthcare             | 0.036579 | 0.099808 |
+        | Utilities              | 0.010639 | 0.019731 |
+        | Basic Materials        | 0.009198 | 0.022242 |
+        | Cash & Others          | 0.004737 | 0.001929 |
+        | Energy                 | 0.004538 | 0.037377 |
+        | Financial Services     | 0.001949 | 0.123878 |
+        | Real Estate            | 0        | 0.022741 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4048,7 +4053,9 @@ class Toolkit:
         if self._etf_sector_weightings.empty:
             return self._etf_sector_weightings
 
-        return self._etf_sector_weightings.sort_values(
+        # A fund lists only the sectors it holds, so a sector another fund holds has no
+        # weight in it rather than an unknown one.
+        return self._etf_sector_weightings.fillna(0).sort_values(
             by=self._etf_sector_weightings.columns[0], ascending=False, kind="stable"
         )
 

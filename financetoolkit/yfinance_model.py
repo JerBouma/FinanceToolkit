@@ -329,7 +329,11 @@ def get_historical_data(
         # Such as a delisted ticker or one without prices in the range.
         return pd.DataFrame()
 
-    if not historical_data.empty and historical_data.loc[start:end].empty:
+    if historical_data.empty:
+        # No prices in the range, such as before the listing.
+        return pd.DataFrame()
+
+    if historical_data.loc[start:end].empty:
         logger.warning(
             "The given start and end date result in no data found for %s", ticker
         )

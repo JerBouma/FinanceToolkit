@@ -276,6 +276,22 @@ def collect_ranged_data(
             error,
         )
         return pd.DataFrame()
+    except ValueError as error:
+        # A response that cannot be read for the missing part (a format change, or an
+        # empty span a source answers in another shape) leaves the cached history intact.
+        if cached_data is None or cached_data.empty:
+            raise
+
+        logger.warning(
+            "Could not read the %s from %s between %s and %s (%s). Serving the cached "
+            "copy instead, which may not include the latest releases.",
+            description,
+            source,
+            fetch_start,
+            fetch_end,
+            error,
+        )
+        return cached_data
 
     if cache is not None and not data.empty:
         cache.store(

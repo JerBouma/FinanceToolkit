@@ -326,7 +326,7 @@ def get_stock_screener(
 
     The market capitalisations of the listings are in their own currency, so they are
     converted to US dollars, which the market cap bounds and the ranking use: a listing
-    in Canadian dollars no longer ranks above the same company's listing in euros.
+    in Canadian dollars does not rank above the same company's listing in euros.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.

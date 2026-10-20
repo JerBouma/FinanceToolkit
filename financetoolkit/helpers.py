@@ -239,7 +239,10 @@ def enrich_historical_data(
     with contextlib.suppress(IndexError):
         adjusted_return.iloc[0] = 0
 
-    historical_data["Cumulative Return"] = pd.Series(np.nan).astype(float)
+    # A scalar rather than pd.Series(np.nan): assigned to a frame without rows, a Series
+    # brings its own index along, adding a row labelled 0 to an otherwise empty response
+    # that was then cached and merged into the dates.
+    historical_data["Cumulative Return"] = np.nan
 
     historical_data.loc[start:end, "Cumulative Return"] = (
         1.0 + adjusted_return.fillna(0)

@@ -30,7 +30,7 @@ def initialize_statements_and_normalization(
     Initializes financial statements by applying normalization and date conversion.
     Also loads normalization format files.
 
-    Statements are no longer pre-loaded from cache here. Caching happens per ticker
+    Statements are not pre-loaded from cache here. Caching happens per ticker
     when the statements are actually requested, so that a different ticker list or
     period reuses what overlaps rather than being handed a previously assembled
     frame for a different set of companies.
@@ -211,8 +211,7 @@ def convert_financial_statements(
                             and columns should contain the desired name for that line item.
         adjust_financial_statements (bool): Whether to add every line item in the format that the provider did not
                             return, filled with NaN, so that every ticker has the same rows. Defaults to True.
-                            Changed in v2.2.0: these were previously filled with zero, which made an item the
-                            provider never reported indistinguishable from one it reported as genuinely zero.
+                            NaN keeps an item the provider never reported apart from one it reported as zero.
         reverse_dates (bool): Whether to reverse the order of the columns so the oldest period comes first.
                             Defaults to False.
 

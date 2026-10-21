@@ -3,38 +3,47 @@
 import importlib
 from typing import TYPE_CHECKING, Any
 
-# The classes are imported when first used (PEP 562), so that importing one of them does
-# not load every module of the Finance Toolkit and the libraries those need.
+# The classes and functions are imported when first used (PEP 562), so that importing one
+# of them does not load every module of the Finance Toolkit and the libraries those need.
 _CLASSES = {
     "Toolkit": "financetoolkit.toolkit_controller",
     "Economics": "financetoolkit.economics.economics_controller",
     "FixedIncome": "financetoolkit.fixedincome.fixedincome_controller",
     "Discovery": "financetoolkit.discovery.discovery_controller",
     "Portfolio": "financetoolkit.portfolio.portfolio_controller",
+    "get_normalization_files": "financetoolkit.normalization_model",
 }
 
-__all__ = ["Discovery", "Economics", "FixedIncome", "Portfolio", "Toolkit"]
+__all__ = [
+    "Discovery",
+    "Economics",
+    "FixedIncome",
+    "Portfolio",
+    "Toolkit",
+    "get_normalization_files",
+]
 
 if TYPE_CHECKING:
     from .discovery.discovery_controller import Discovery
     from .economics.economics_controller import Economics
     from .fixedincome.fixedincome_controller import FixedIncome
+    from .normalization_model import get_normalization_files
     from .portfolio.portfolio_controller import Portfolio
     from .toolkit_controller import Toolkit
 
 
 def __getattr__(name: str) -> Any:
     """
-    Imports a class of the Finance Toolkit when it is first used.
+    Imports a class or function of the Finance Toolkit when it is first used.
 
     Args:
-        name (str): The name of the class, e.g. "Toolkit".
+        name (str): The name of the class or function, e.g. "Toolkit".
 
     Returns:
-        Any: The class.
+        Any: The class or function.
 
     Raises:
-        AttributeError: When the Finance Toolkit has no such class.
+        AttributeError: When the Finance Toolkit has no such class or function.
     """
     if name in _CLASSES:
         value = getattr(importlib.import_module(_CLASSES[name]), name)
@@ -46,7 +55,7 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> list[str]:
     """
-    Lists the classes of the Finance Toolkit with the module's other attributes.
+    Lists the classes and functions of the Finance Toolkit with the module's other attributes.
 
     Returns:
         list[str]: The attribute names.

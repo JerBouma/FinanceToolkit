@@ -53,7 +53,7 @@ from financetoolkit.historical_model import (
     get_historical_statistics as _get_historical_statistics,
 )
 from financetoolkit.normalization_model import (
-    copy_normalization_files as _copy_normalization_files,
+    get_normalization_files as _get_normalization_files,
     initialize_statements_and_normalization as _initialize_statements_and_normalization,
 )
 from financetoolkit.utilities import logger_model, validation_model
@@ -172,7 +172,7 @@ class Toolkit:
             enforce_source (str | None): Enforce data source ('FinancialModelingPrep' or 'YahooFinance').
             Defaults to None (uses FMP if api_key provided, otherwise YahooFinance, with fallback).
             historical (pd.DataFrame): Custom historical price data. See
-            https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets for how to supply your own data.
+            https://www.jeroenbouma.com/projects/financetoolkit/docs/external-datasets for how to supply your own data.
             Defaults to an empty DataFrame.
             balance (pd.DataFrame): Custom balance sheet data. See the external datasets guide linked above. Defaults to an empty DataFrame.
             income (pd.DataFrame): Custom income statement data. See the external datasets guide linked above. Defaults to an empty DataFrame.
@@ -5551,18 +5551,20 @@ class Toolkit:
         of the 'Downloads' folder.
 
         This function is relevant if you want to supply your own datasets. See the external
-        datasets guide for how: https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets
+        datasets guide for how: https://www.jeroenbouma.com/projects/financetoolkit/docs/external-datasets
+
+        The same function is available without a Toolkit instance as
+        `from financetoolkit import get_normalization_files`.
 
         Args:
-            path (str, optional): The path where to save the files to.
+            path (str, optional): The folder to save the files to. Defaults to "", which
+                saves them to the 'Downloads' folder of your home directory.
 
         Returns:
-            Three csv files saved to the desired location.
+            None: The four csv files (balance, income, cash and statistics) are saved to
+            the chosen folder.
         """
-        if path:
-            _copy_normalization_files(path)
-        else:
-            _copy_normalization_files()
+        _get_normalization_files(path)
 
     def _align_treasury_data_to_trading_days(
         self, treasury_data: pd.DataFrame

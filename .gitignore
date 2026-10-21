@@ -8,7 +8,6 @@ debugging.py
 .planning/
 
 # Finance Toolkit Example Datasets
-!examples/*.ipynb
 !financetoolkit/portfolio/example_datasets/*.xlsx
 !financetoolkit/portfolio/example_datasets/*.csv
 

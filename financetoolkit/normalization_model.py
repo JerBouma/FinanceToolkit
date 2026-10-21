@@ -341,7 +341,7 @@ def copy_normalization_files(
     """
     logger.info(
         "Files are being saved to %s. Please see the following: "
-        "https://www.jeroenbouma.com/projects/financetoolkit/external-datasets "
+        "https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets "
         "to understand how to work with these files. In essence, all it requires is "
         "to match up the rows in your dataframe with the normalization format.",
         save_location,

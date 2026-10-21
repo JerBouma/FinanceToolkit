@@ -1,1 +1,1 @@
-These normalisation files and financial statement files are used as part of the "Finance Toolkit - Using External Datasets" notebook.
+These normalisation files and financial statement files are used in the Using External Datasets section of the documentation: https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets

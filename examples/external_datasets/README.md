@@ -1,1 +1,0 @@
-These normalisation files and financial statement files are used in the Using External Datasets section of the documentation: https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets

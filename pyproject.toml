@@ -173,8 +173,8 @@ skip_gitignore = true
 combine_as_imports = true
 
 [tool.ty.src]
-# Mirror the other linters: the package is what is checked, not the tests, the
-# examples or the environment.
+# Mirror the other linters: the package is what is checked, not the tests
+# or the environment.
 include = ["financetoolkit"]
 
 [tool.ty.environment]
@@ -189,7 +189,7 @@ no-matching-overload = "ignore"
 
 [tool.codespell]
 ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer,ois,ihs'
-skip = '*.json,./.git,pyproject.toml,poetry.lock,examples'
+skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
 [tool.pytest.ini_options]
 filterwarnings = [

@@ -88,3 +88,28 @@ def test_adjust_financial_statements_leaves_reported_values_untouched():
     reported = result.loc[("AAPL", statement_format.iloc[0])]
 
     assert list(reported) == [100.0, 110.0]
+
+
+def test_get_normalization_files_saves_to_the_given_folder(tmp_path):
+    from financetoolkit import get_normalization_files
+
+    get_normalization_files(tmp_path)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "balance.csv",
+        "cash.csv",
+        "income.csv",
+        "statistics.csv",
+    ]
+    assert not pd.read_csv(tmp_path / "balance.csv").empty
+
+
+def test_toolkit_get_normalization_files_saves_to_the_given_folder(tmp_path):
+    # The path is where the files go, not where they are read from.
+    from financetoolkit import Toolkit
+
+    Toolkit(["AAPL"], api_key="", sleep_timer=False).get_normalization_files(
+        str(tmp_path)
+    )
+
+    assert len(list(tmp_path.glob("*.csv"))) == 4

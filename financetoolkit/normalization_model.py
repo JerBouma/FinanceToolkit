@@ -341,7 +341,7 @@ def copy_normalization_files(
     """
     logger.info(
         "Files are being saved to %s. Please see the following: "
-        "https://www.jeroenbouma.com/projects/financetoolkit/docs#using-external-datasets "
+        "https://www.jeroenbouma.com/projects/financetoolkit/docs/external-datasets "
         "to understand how to work with these files. In essence, all it requires is "
         "to match up the rows in your dataframe with the normalization format.",
         save_location,
@@ -380,3 +380,50 @@ def copy_normalization_files(
                 fallback,
             )
             copy_to(fallback)
+
+
+def get_normalization_files(path: str | Path = ""):
+    """
+    Copies the normalization files to a folder of your choice, the 'Downloads' folder by
+    default. These files map the rows of your own financial statements onto the names the
+    Finance Toolkit works with, so that you can supply your own datasets.
+
+    There are four files: balance.csv, income.csv and cash.csv for the balance sheet,
+    income statement and cash flow statement, and statistics.csv for the statistics such as
+    the number of shares outstanding. Each has a column with the Finance Toolkit name of a
+    row and a column to fill in with the matching row name of your own data. Pass the folder
+    with the filled-in files to the Toolkit with `format_location`. See the external
+    datasets guide for a worked example:
+    https://www.jeroenbouma.com/projects/financetoolkit/docs/external-datasets
+
+    No Toolkit instance (and no API key) is needed to get the files.
+
+    Args:
+        path (str | Path, optional): The folder to save the files to. Defaults to "", which
+            saves them to the 'Downloads' folder of your home directory.
+
+    Returns:
+        None: The four csv files are saved to the chosen folder. When that folder cannot be
+        written to, they are saved to the current working directory instead.
+
+    As an example:
+
+    ```python
+    from financetoolkit import Toolkit, get_normalization_files
+
+    get_normalization_files("normalization")
+
+    # Fill in the files, then supply your own statements together with them.
+    companies = Toolkit(
+        tickers=["TSLA"],
+        balance=balance_statement,
+        income=income_statement,
+        cash=cash_flow_statement,
+        format_location="normalization",
+    )
+    ```
+    """
+    if path:
+        copy_normalization_files(save_location=path)
+    else:
+        copy_normalization_files()

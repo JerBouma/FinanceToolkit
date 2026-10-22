@@ -5,12 +5,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import html
 import json
 import os
 import pathlib
 import secrets
 import time
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import fastmcp.server.dependencies as deps
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -20,11 +22,22 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from financetoolkit.mcp_server.setup_model import (
     get_global_env_path,
 )
+from financetoolkit.mcp_server.token_store_model import (
+    ACCESS_TOKEN_LIFETIME,
+    TokenStore,
+    is_issued_token,
+)
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 
 _JWT_PART_COUNT = 3
+
+# A hosted server signs and encrypts with FT_MCP_SECRET_KEY; anything shorter is guessable.
+_MINIMUM_SECRET_LENGTH = 32
+
+# Schemes a client may not ask to be redirected to.
+_UNSAFE_REDIRECT_SCHEMES = {"javascript", "data", "vbscript", "file"}
 
 # Checked in order. FastMCP forwards `x-*`; `authorization` must be opted in.
 _HEADER_NAMES: tuple[str, ...] = (
@@ -620,26 +633,78 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
 
 
 def get_secret_key() -> bytes:
-    """Load or generate a stable secret key stored in the global configuration directory."""
-    # First check environment variable
+    """
+    The server secret: FT_MCP_SECRET_KEY when set, otherwise a random key generated once and
+    kept in the global configuration directory.
+
+    It derives the key that encrypts the stored API keys and pseudonymises the usage
+    statistics. There is no built-in fallback: a secret that cannot be stored stops the
+    server instead of leaving it with a value anyone could read in the source.
+
+    Returns:
+        bytes: The secret.
+
+    Raises:
+        RuntimeError: When FT_MCP_SECRET_KEY is not set and the key file cannot be written.
+    """
     env_key = os.environ.get("FT_MCP_SECRET_KEY")
     if env_key:
         return env_key.encode("utf-8")
 
-    # Fallback to a file in the global config dir
+    config_dir = get_global_env_path().parent
+    secret_file = config_dir / ".mcp_secret"
     try:
-
-        config_dir = get_global_env_path().parent
         config_dir.mkdir(parents=True, exist_ok=True)
-        secret_file = config_dir / ".mcp_secret"
         if secret_file.exists():
             return secret_file.read_bytes()
-        else:
-            key = secrets.token_bytes(32)
-            secret_file.write_bytes(key)
-            return key
-    except Exception:  # pragma: no cover  # noqa: S110
-        return b"emergency_fallback_secret_key_12345"
+        key = secrets.token_bytes(32)
+        secret_file.write_bytes(key)
+        secret_file.chmod(0o600)
+        return key
+    except OSError as error:
+        raise RuntimeError(
+            f"Cannot store the MCP server secret in {secret_file}. Set FT_MCP_SECRET_KEY "
+            "to a random value of at least 32 characters instead."
+        ) from error
+
+
+def require_hosted_secret() -> None:
+    """
+    Refuse to start a hosted server without FT_MCP_SECRET_KEY.
+
+    A hosted server needs a secret that is set deliberately and survives a rebuild of its
+    container; a generated key file would sign everyone out when it is lost.
+
+    Raises:
+        SystemExit: When FT_MCP_SECRET_KEY is missing or shorter than 32 characters.
+    """
+    if len(os.environ.get("FT_MCP_SECRET_KEY", "")) < _MINIMUM_SECRET_LENGTH:
+        raise SystemExit(
+            "A hosted MCP server (sse or streamable-http) needs FT_MCP_SECRET_KEY: a random "
+            'value of at least 32 characters, e.g. from `python -c "import secrets; '
+            'print(secrets.token_urlsafe(48))"`.'
+        )
+
+
+_token_store: TokenStore | None = None
+
+
+def get_token_store() -> TokenStore:
+    """
+    The store of OAuth grants, created on first use.
+
+    It lives in the global configuration directory as mcp_auth.db, or at FT_MCP_AUTH_DB.
+
+    Returns:
+        TokenStore: The store.
+    """
+    global _token_store  # noqa: PLW0603
+    path = os.environ.get("FT_MCP_AUTH_DB") or (
+        get_global_env_path().parent / "mcp_auth.db"
+    )
+    if _token_store is None or str(_token_store.path) != str(path):
+        _token_store = TokenStore(path, get_secret_key())
+    return _token_store
 
 
 def _base64url_encode(data: bytes) -> str:
@@ -654,7 +719,12 @@ def _base64url_decode(data: str) -> bytes:
 
 
 def sign_jwt(payload: dict[str, Any], expires_in: int = 2592000) -> str:
-    """Create a signed JWT token containing payload, expiring in expires_in seconds."""
+    """
+    Create a signed JWT containing payload, expiring in expires_in seconds.
+
+    The OAuth flow issues opaque tokens, not JWTs, because a JWT payload is readable by
+    anyone holding it. This only reads legacy JWT access tokens, see `_legacy_keys`.
+    """
     header = {"alg": "HS256", "typ": "JWT"}
 
     payload_copy = payload.copy()
@@ -698,26 +768,70 @@ def verify_jwt(token: str) -> dict[str, Any] | None:
         return None
 
 
+def _legacy_keys(token: str) -> dict[str, Any] | None:
+    """
+    The keys inside a legacy JWT access token, which carries them in its payload.
+
+    Those tokens carry the API keys in readable form, so they are only accepted while
+    FT_MCP_ACCEPT_LEGACY_TOKENS is set; otherwise their holders sign in again.
+    """
+    if os.environ.get("FT_MCP_ACCEPT_LEGACY_TOKENS", "").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        return None
+    return verify_jwt(token)
+
+
+def _looks_like_token(value: str) -> bool:
+    """Whether a value is a token (issued now or before) rather than an API key."""
+    return is_issued_token(value) or value.count(".") == _JWT_PART_COUNT - 1
+
+
+def _key_from_credential(value: str, field: str) -> str:
+    """
+    The API key behind a credential: an access token of this server, a legacy JWT or the
+    API key itself.
+
+    An access token that is invalid or expired gives "", so the request is answered with a
+    401 and the client refreshes or signs in again, instead of the token being passed on to
+    the data provider as if it were an API key.
+
+    Args:
+        value (str): The credential as sent.
+        field (str): "fmp_api_key" or "fred_api_key".
+
+    Returns:
+        str: The API key, or "" when the token is not valid.
+    """
+    value = value.strip()
+    if not value:
+        return ""
+    if is_issued_token(value):
+        keys = get_token_store().keys_for_access_token(value)
+        return str(keys.get(field) or "") if keys else ""
+    if _looks_like_token(value):
+        payload = _legacy_keys(value)
+        return str(payload.get(field) or "") if payload else ""
+    return value
+
+
 def get_api_key_from_headers(headers: Any) -> str:
     """Extract and validate the FMP API key from request headers."""
     # 1. Custom headers
     for name in _HEADER_NAMES:
         value = headers.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fmp_api_key" in payload:
-                return str(payload["fmp_api_key"])
-            return value.strip()
+            return _key_from_credential(value, "fmp_api_key")
 
     # 2. Authorization header
     auth_header = headers.get("authorization", "")
     if auth_header.lower().startswith("bearer "):
         token = auth_header[7:].strip()
         if token:
-            payload = verify_jwt(token)
-            if payload and "fmp_api_key" in payload:
-                return str(payload["fmp_api_key"])
-            return token
+            return _key_from_credential(token, "fmp_api_key")
 
     return ""
 
@@ -733,10 +847,7 @@ def get_api_key_from_request(request: Request) -> str:
     for name in _QUERY_NAMES:
         value = request.query_params.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fmp_api_key" in payload:
-                return str(payload["fmp_api_key"])
-            return value.strip()
+            return _key_from_credential(value, "fmp_api_key")
 
     return ""
 
@@ -762,10 +873,7 @@ def resolve_api_key() -> str:
         for name in _QUERY_NAMES:
             value = request.query_params.get(name)
             if value:
-                payload = verify_jwt(value.strip())
-                if payload and "fmp_api_key" in payload:
-                    return str(payload["fmp_api_key"])
-                return value.strip()
+                return _key_from_credential(value, "fmp_api_key")
     except RuntimeError:
         pass
 
@@ -777,19 +885,15 @@ def get_fred_api_key_from_headers(headers: Any) -> str:
     for name in _FRED_HEADER_NAMES:
         value = headers.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fred_api_key" in payload:
-                return str(payload["fred_api_key"])
-            return value.strip()
+            return _key_from_credential(value, "fred_api_key")
 
-    # A signed FMP bearer token carries the FRED key alongside it, if authorized.
+    # An access token refers to the FRED key alongside the FMP key, if one was entered. A raw
+    # bearer value is an FMP key and says nothing about FRED.
     auth_header = headers.get("authorization", "")
     if auth_header.lower().startswith("bearer "):
         token = auth_header[7:].strip()
-        if token:
-            payload = verify_jwt(token)
-            if payload and "fred_api_key" in payload:
-                return str(payload["fred_api_key"])
+        if token and _looks_like_token(token):
+            return _key_from_credential(token, "fred_api_key")
 
     return ""
 
@@ -803,10 +907,7 @@ def get_fred_api_key_from_request(request: Request) -> str:
     for name in _FRED_QUERY_NAMES:
         value = request.query_params.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fred_api_key" in payload:
-                return str(payload["fred_api_key"])
-            return value.strip()
+            return _key_from_credential(value, "fred_api_key")
 
     return ""
 
@@ -835,10 +936,7 @@ def resolve_fred_api_key() -> str:
         for name in _FRED_QUERY_NAMES:
             value = request.query_params.get(name)
             if value:
-                payload = verify_jwt(value.strip())
-                if payload and "fred_api_key" in payload:
-                    return str(payload["fred_api_key"])
-                return value.strip()
+                return _key_from_credential(value, "fred_api_key")
     except RuntimeError:
         pass
 
@@ -885,10 +983,13 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
                 base_url = str(request.base_url).rstrip("/")
                 metadata_url = f"{base_url}/.well-known/oauth-protected-resource"
 
-                # WWW-Authenticate header pointing to our protected resource metadata
-                headers = {
-                    "WWW-Authenticate": f'Bearer resource_metadata="{metadata_url}"'
-                }
+                # WWW-Authenticate header pointing to our protected resource metadata. A token
+                # that was sent but is not valid (expired, revoked) is reported as such, so
+                # the client uses its refresh token or signs in again (RFC 6750 section 3).
+                challenge = f'Bearer resource_metadata="{metadata_url}"'
+                if request.headers.get("authorization"):
+                    challenge += ', error="invalid_token"'
+                headers = {"WWW-Authenticate": challenge}
                 return JSONResponse(
                     {
                         "error": "unauthorized",
@@ -899,6 +1000,59 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
                 )
 
         return await call_next(request)
+
+
+def _is_safe_redirect(redirect_uri: str) -> bool:
+    """
+    Whether a client may be sent to this redirect URI: an absolute URI with an http(s) or an
+    application scheme (cursor://, vscode://), never javascript:, data: and the like.
+    """
+    parts = urlsplit(redirect_uri)
+    if not parts.scheme or parts.scheme.lower() in _UNSAFE_REDIRECT_SCHEMES:
+        return False
+    if parts.scheme.lower() in ("http", "https"):
+        return bool(parts.netloc)
+    return True
+
+
+def _with_query(url: str, params: dict[str, str]) -> str:
+    """Add query parameters to a URL, keeping the ones it already has."""
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True) + list(params.items())
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _oauth_error(error: str, description: str, status_code: int = 400) -> JSONResponse:
+    """An OAuth error response (RFC 6749 section 5.2)."""
+    return JSONResponse(
+        {"error": error, "error_description": description}, status_code=status_code
+    )
+
+
+def _token_response(grant_id: str) -> JSONResponse:
+    """A new access token and refresh token for a grant (RFC 6749 section 5.1)."""
+    access_token, refresh_token = get_token_store().issue_token_pair(grant_id)
+    return JSONResponse(
+        {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "expires_in": ACCESS_TOKEN_LIFETIME,
+            "refresh_token": refresh_token,
+            "scope": "financetoolkit",
+        },
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+def _pkce_problem(
+    redirect_uri: str, code_challenge: str, code_challenge_method: str
+) -> str:
+    """Why an authorization request cannot be served, or "" when it can."""
+    if not _is_safe_redirect(redirect_uri):
+        return "The client sent no valid redirect_uri."
+    if not code_challenge or code_challenge_method != "S256":
+        return "The client must use PKCE with the S256 method."
+    return ""
 
 
 def register_auth_routes(mcp: Any) -> None:
@@ -968,10 +1122,12 @@ def register_auth_routes(mcp: Any) -> None:
                 "authorization_endpoint": f"{base_url}/oauth/authorize",
                 "token_endpoint": f"{base_url}/oauth/token",
                 "registration_endpoint": f"{base_url}/oauth/register",
+                "revocation_endpoint": f"{base_url}/oauth/revoke",
                 "logo_uri": f"{base_url}/oauth/icon",
                 "response_types_supported": ["code"],
-                "grant_types_supported": ["authorization_code"],
+                "grant_types_supported": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_methods_supported": ["none"],
+                "revocation_endpoint_auth_methods_supported": ["none"],
                 "scopes_supported": ["financetoolkit"],
                 "code_challenge_methods_supported": ["S256"],
             }
@@ -997,7 +1153,7 @@ def register_auth_routes(mcp: Any) -> None:
                 "redirect_uris": redirect_uris,
                 "logo_uri": f"{base_url}/oauth/icon",
                 "token_endpoint_auth_method": "none",
-                "grant_types": ["authorization_code"],
+                "grant_types": ["authorization_code", "refresh_token"],
                 "response_types": ["code"],
             },
             status_code=201,
@@ -1008,20 +1164,24 @@ def register_auth_routes(mcp: Any) -> None:
         client_id = request.query_params.get("client_id", "")
         redirect_uri = request.query_params.get("redirect_uri", "")
         code_challenge = request.query_params.get("code_challenge", "")
-        code_challenge_method = request.query_params.get(
-            "code_challenge_method", "S256"
-        )
+        code_challenge_method = request.query_params.get("code_challenge_method", "")
         state = request.query_params.get("state", "")
 
-        html = HTML_TEMPLATE.format(
-            client_id=client_id,
-            client_name=client_id or "MCP Client",
-            redirect_uri=redirect_uri,
-            code_challenge=code_challenge,
-            code_challenge_method=code_challenge_method,
-            state=state,
+        problem = _pkce_problem(redirect_uri, code_challenge, code_challenge_method)
+        if problem:
+            return HTMLResponse(html.escape(problem), status_code=400)
+
+        # The badge names where the user is sent back to, which tells them who is asking.
+        destination = urlsplit(redirect_uri).netloc or urlsplit(redirect_uri).scheme
+        page = HTML_TEMPLATE.format(
+            client_id=html.escape(client_id, quote=True),
+            client_name=html.escape(destination or client_id or "MCP Client"),
+            redirect_uri=html.escape(redirect_uri, quote=True),
+            code_challenge=html.escape(code_challenge, quote=True),
+            code_challenge_method=html.escape(code_challenge_method, quote=True),
+            state=html.escape(state, quote=True),
         )
-        return HTMLResponse(content=html)
+        return HTMLResponse(content=page)
 
     @mcp.custom_route("/oauth/authorize", methods=["POST"])
     async def authorize_post(request: Request) -> HTMLResponse | RedirectResponse:
@@ -1031,29 +1191,29 @@ def register_auth_routes(mcp: Any) -> None:
         client_id = str(form.get("client_id", ""))
         redirect_uri = str(form.get("redirect_uri", ""))
         code_challenge = str(form.get("code_challenge", ""))
-        code_challenge_method = str(form.get("code_challenge_method", "S256"))
+        code_challenge_method = str(form.get("code_challenge_method", ""))
         state = str(form.get("state", ""))
 
+        problem = _pkce_problem(redirect_uri, code_challenge, code_challenge_method)
+        if problem:
+            return HTMLResponse(html.escape(problem), status_code=400)
         if not fmp_api_key:
             return HTMLResponse("FMP API Key is required", status_code=400)
 
-        # PKCE code signed by the server; fred_api_key only unlocks the FRED subset.
-        payload = {
-            "fmp_api_key": fmp_api_key,
-            "fred_api_key": fred_api_key,
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "code_challenge": code_challenge,
-            "code_challenge_method": code_challenge_method,
-        }
-        # Code lasts 5 minutes
-        auth_code = sign_jwt(payload, expires_in=300)
+        # The keys stay on the server; the code that travels through the browser is a random
+        # reference to them that works once, for this client, within five minutes.
+        auth_code = get_token_store().create_authorization_code(
+            {"fmp_api_key": fmp_api_key, "fred_api_key": fred_api_key},
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+        )
 
-        redirect_url = f"{redirect_uri}?code={auth_code}"
+        params = {"code": auth_code}
         if state:
-            redirect_url += f"&state={state}"
+            params["state"] = state
 
-        return RedirectResponse(url=redirect_url, status_code=303)
+        return RedirectResponse(url=_with_query(redirect_uri, params), status_code=303)
 
     @mcp.custom_route("/oauth/token", methods=["POST"])
     async def oauth_token(request: Request) -> JSONResponse:
@@ -1069,101 +1229,68 @@ def register_auth_routes(mcp: Any) -> None:
                 form = {}
 
         grant_type = form.get("grant_type")
+        client_id = str(form.get("client_id") or "")
+
+        if grant_type == "refresh_token":
+            refresh_token = str(form.get("refresh_token") or "")
+            grant_id = (
+                get_token_store().redeem_refresh_token(refresh_token, client_id)
+                if refresh_token
+                else None
+            )
+            if grant_id is None:
+                return _oauth_error(
+                    "invalid_grant", "Refresh token is invalid, expired or revoked"
+                )
+            return _token_response(grant_id)
+
         if grant_type != "authorization_code":
-            return JSONResponse(
-                {
-                    "error": "unsupported_grant_type",
-                    "error_description": "Only authorization_code is supported",
-                },
-                status_code=400,
+            return _oauth_error(
+                "unsupported_grant_type",
+                "Only authorization_code and refresh_token are supported",
             )
 
-        code = form.get("code")
+        code = str(form.get("code") or "")
         if not code:
-            return JSONResponse(
-                {"error": "invalid_request", "error_description": "code is required"},
-                status_code=400,
+            return _oauth_error("invalid_request", "code is required")
+
+        redeemed = get_token_store().redeem_authorization_code(code)
+        if redeemed is None:
+            return _oauth_error(
+                "invalid_grant", "Authorization code is invalid, expired or used"
             )
+        grant_id, code_client_id, code_meta = redeemed
 
-        redirect_uri = form.get("redirect_uri")
-        client_id = form.get("client_id")
-        code_verifier = form.get("code_verifier")
+        # The code belongs to the client and redirect URI it was issued for (RFC 6749 4.1.3).
+        if client_id != code_client_id:
+            get_token_store().revoke(code)
+            return _oauth_error("invalid_grant", "Client ID mismatch")
+        if str(form.get("redirect_uri") or "") != code_meta.get("redirect_uri"):
+            get_token_store().revoke(code)
+            return _oauth_error("invalid_grant", "Redirect URI mismatch")
 
-        # Decode & verify code
-        payload = verify_jwt(str(code))
-        if not payload:
-            return JSONResponse(
-                {
-                    "error": "invalid_grant",
-                    "error_description": "Authorization code is invalid or expired",
-                },
-                status_code=400,
-            )
-
-        # Check client id and redirect uri
-        if client_id and payload.get("client_id") != client_id:
-            return JSONResponse(
-                {"error": "invalid_grant", "error_description": "Client ID mismatch"},
-                status_code=400,
-            )
-        if redirect_uri and payload.get("redirect_uri") != redirect_uri:
-            return JSONResponse(
-                {
-                    "error": "invalid_grant",
-                    "error_description": "Redirect URI mismatch",
-                },
-                status_code=400,
-            )
-
-        # PKCE validation
-        code_challenge = payload.get("code_challenge")
-        code_challenge_method = payload.get("code_challenge_method", "S256")
-
-        if code_challenge:
-            if not code_verifier:
-                return JSONResponse(
-                    {
-                        "error": "invalid_grant",
-                        "error_description": "code_verifier is required",
-                    },
-                    status_code=400,
-                )
-
-            if code_challenge_method == "S256":
-                sha256 = hashlib.sha256(str(code_verifier).encode("utf-8")).digest()
-                expected_challenge = _base64url_encode(sha256)
-                if not hmac.compare_digest(expected_challenge, str(code_challenge)):
-                    return JSONResponse(
-                        {
-                            "error": "invalid_grant",
-                            "error_description": "PKCE S256 verification failed",
-                        },
-                        status_code=400,
-                    )
-            # plain
-            elif not hmac.compare_digest(str(code_verifier), str(code_challenge)):
-                return JSONResponse(
-                    {
-                        "error": "invalid_grant",
-                        "error_description": "PKCE plain verification failed",
-                    },
-                    status_code=400,
-                )
-
-        # Issue JWT Access Token
-        token_payload = {
-            "fmp_api_key": payload.get("fmp_api_key"),
-            "fred_api_key": payload.get("fred_api_key"),
-            "client_id": client_id,
-        }
-        # Access token lasts 1 year
-        access_token = sign_jwt(token_payload, expires_in=31536000)
-
-        return JSONResponse(
-            {
-                "access_token": access_token,
-                "token_type": "Bearer",
-                "expires_in": 31536000,
-                "scope": "financetoolkit",
-            }
+        # PKCE (RFC 7636): only the client that started the flow knows the verifier.
+        code_verifier = str(form.get("code_verifier") or "")
+        expected_challenge = _base64url_encode(
+            hashlib.sha256(code_verifier.encode("utf-8")).digest()
         )
+        if not code_verifier or not hmac.compare_digest(
+            expected_challenge, str(code_meta.get("code_challenge", ""))
+        ):
+            get_token_store().revoke(code)
+            return _oauth_error("invalid_grant", "PKCE S256 verification failed")
+
+        return _token_response(grant_id)
+
+    @mcp.custom_route("/oauth/revoke", methods=["POST"])
+    async def oauth_revoke(request: Request) -> Response:
+        # RFC 7009: revoking a token ends its grant, which deletes the stored keys. The
+        # answer is 200 whether or not the token was known, so it reveals nothing.
+        try:
+            form = await request.form()
+        except Exception:
+            form = {}
+        token = str(form.get("token") or "").strip()
+        if token:
+            get_token_store().revoke(token)
+        return Response(status_code=200)

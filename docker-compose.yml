@@ -14,7 +14,12 @@ services:
       MCP_TRANSPORT: streamable-http
       MCP_HOST: "0.0.0.0"
       MCP_PORT: "8000"
+      # Required: at least 32 random characters. It encrypts the stored API keys, so it must
+      # stay the same; changing it signs every user out.
       FT_MCP_SECRET_KEY: "${FT_MCP_SECRET_KEY}"
+      # 1 also accepts legacy JWT access tokens, which carry the API keys in readable form.
+      # Off by default: holders of such a token sign in again and get opaque tokens.
+      FT_MCP_ACCEPT_LEGACY_TOKENS: "${FT_MCP_ACCEPT_LEGACY_TOKENS:-0}"
       # 1 counts the tool calls and publishes the totals at /stats; the counts are kept
       # in mcp_stats.json on the volume below. Off by default.
       FT_MCP_ANALYTICS: "${FT_MCP_ANALYTICS:-0}"

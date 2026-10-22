@@ -29,6 +29,7 @@ from financetoolkit.mcp_server.auth_model import (
     MCPAuthMiddleware,
     get_secret_key,
     register_auth_routes,
+    require_hosted_secret,
     resolve_api_key,
     resolve_fred_api_key,
 )
@@ -390,6 +391,10 @@ def main() -> None:
     get_logger().info(f"Starting MCP server on transport {transport}")
 
     if transport in ("sse", "streamable-http"):
+        # A hosted server signs, encrypts and pseudonymises with its secret, so it does not
+        # start without one.
+        require_hosted_secret()
+
         # Apply command line, then environment variable overrides for host/port
         host = arguments.host or os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
         port_env = os.environ.get("MCP_PORT", "8000")

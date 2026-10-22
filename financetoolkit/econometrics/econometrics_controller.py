@@ -4272,6 +4272,15 @@ class Econometrics:
                 else list(independent_tickers)
             )
 
+            # The factor is read from the loaded data, so it has to be one of its tickers.
+            missing = [ticker for ticker in independent_tickers if ticker not in prices]
+            if missing:
+                raise ValueError(
+                    f"independent_tickers {', '.join(missing)} are not among the loaded "
+                    "tickers: add them to the tickers, or use 'Benchmark' for the "
+                    "benchmark."
+                )
+
             if dependent_tickers is None:
                 dependent_tickers = [
                     ticker

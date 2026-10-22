@@ -3,6 +3,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 
 def test_get_arch_lm_test(recorder, econometrics_module):
@@ -758,3 +759,11 @@ def test_get_event_study_default_ticker(recorder, econometrics_module):
             event_date="2021-03-11", dependent_ticker="MSFT"
         )
     )
+
+
+def test_get_fixed_effects_names_a_factor_that_is_not_loaded(
+    econometrics_module, monkeypatch
+):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="SPY are not among the loaded tickers"):
+        econometrics_module.get_fixed_effects(independent_tickers="SPY")

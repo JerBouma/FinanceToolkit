@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import html
 import json
 import os
 import pathlib
@@ -1013,15 +1014,17 @@ def register_auth_routes(mcp: Any) -> None:
         )
         state = request.query_params.get("state", "")
 
-        html = HTML_TEMPLATE.format(
-            client_id=client_id,
-            client_name=client_id or "MCP Client",
-            redirect_uri=redirect_uri,
-            code_challenge=code_challenge,
-            code_challenge_method=code_challenge_method,
-            state=state,
+        # Every value comes from the URL, so it is escaped: a crafted link must not be able
+        # to add markup or scripts to the page where users enter their API keys.
+        page = HTML_TEMPLATE.format(
+            client_id=html.escape(client_id, quote=True),
+            client_name=html.escape(client_id or "MCP Client"),
+            redirect_uri=html.escape(redirect_uri, quote=True),
+            code_challenge=html.escape(code_challenge, quote=True),
+            code_challenge_method=html.escape(code_challenge_method, quote=True),
+            state=html.escape(state, quote=True),
         )
-        return HTMLResponse(content=html)
+        return HTMLResponse(content=page)
 
     @mcp.custom_route("/oauth/authorize", methods=["POST"])
     async def authorize_post(request: Request) -> HTMLResponse | RedirectResponse:

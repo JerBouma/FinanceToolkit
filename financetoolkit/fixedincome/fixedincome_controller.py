@@ -122,7 +122,7 @@ class FixedIncome:
         self,
         start_date: str | None = None,
         end_date: str | None = None,
-        quarterly: bool = True,
+        quarterly: bool | None = None,
         rounding: int | None = 4,
         fred_api_key: str = FRED_API_KEY,
         api_key: str = "",
@@ -135,7 +135,8 @@ class FixedIncome:
         Args:
             start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
-            quarterly (bool, optional): Whether to return the data quarterly. Defaults to True.
+            quarterly (bool | None, optional): Whether to return quarterly data where a method is
+                not given a period. Defaults to None, which returns the highest frequency available.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             fred_api_key (str, optional): A FRED API key used to retrieve ICE BofA bond index data
                 (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
@@ -2042,6 +2043,8 @@ class FixedIncome:
             short_term (bool, optional): Whether to return the short-term interest rate. Defaults to False.
                 This means that the long-term interest rate will be returned.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which returns the monthly data (quarterly when the class was
+                created with quarterly=True).
             growth (bool, optional): Whether to return the growth data or the actual data.
             lag (int, optional): The number of periods to lag the data by.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -2081,7 +2084,7 @@ class FixedIncome:
         period = (
             period
             if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+            else "quarterly" if self._quarterly else "monthly"
         )
 
         if short_term:

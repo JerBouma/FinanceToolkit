@@ -29,9 +29,11 @@ def calibrate_short_rate_model(
     models the expected rate keeps φ = e^(-aΔt) of its distance to the long-run mean over a
     step of Δt, so the slope β of the regression gives the speed exactly, a = -ln(1 + β) / Δt,
     whatever the frequency of the data; the volatility follows from the variance of a step,
-    σ² (1 - φ²) / (2a) for Vasicek and r σ² φ (1 - φ) / a for CIR. Over a few decades of
-    data the speed of a slowly reverting rate is overestimated (the small-sample bias of the
-    regression near a unit root), so a short half-life of such a rate calls for caution.
+    σ² (1 - φ²) / (2a) for Vasicek and r σ² φ (1 - φ) / a + b σ² (1 - φ)² / (2a) for CIR
+    (divided by r for the regression on Δr / √r, so the second term enters with the sample
+    mean of 1 / r). Over a few decades of data the speed of a slowly reverting rate is
+    overestimated (the small-sample bias of the regression near a unit root), so a short
+    half-life of such a rate calls for caution.
 
     Args:
         rates (pd.Series): The short rate over time, as decimals.
@@ -76,7 +78,17 @@ def calibrate_short_rate_model(
         if model == "vasicek":
             volatility = deviation * np.sqrt(2 * speed / (1 - persistence**2))
         else:
-            volatility = deviation * np.sqrt(speed / (persistence * (1 - persistence)))
+            # The exact conditional variance of a CIR step is r σ² φ (1 - φ) / a
+            # + b σ² (1 - φ)² / (2a); divided by r (the regression is on Δr / √r) and averaged
+            # over the sample, the second term weighs with the mean of 1 / r. Leaving it out
+            # overstates σ, the more so the faster the rate reverts and the lower it sits.
+            volatility = deviation / np.sqrt(
+                persistence * (1 - persistence) / speed
+                + max(mean, 0.0)
+                * (1 - persistence) ** 2
+                / (2 * speed)
+                * np.mean(1 / level)
+            )
     else:
         # A rate that does not revert to a mean over the sample has no exact mapping; the
         # Euler discretization reports its (non-positive) speed.
@@ -331,8 +343,8 @@ def get_option_adjusted_spread(
     calibrated to today's zero curve at which the model price, with the issuer's call
     exercised whenever optimal, equals the market price. Unlike the Z-spread it removes the
     value of the embedded option, so it measures the credit and liquidity premium alone.
-    The effective duration and convexity follow from shifting the curve by 25 basis points
-    at an unchanged OAS.
+    The effective duration and convexity follow from shifting the curve by 100 basis points
+    up and down at an unchanged OAS.
 
     The tree has twenty steps per coupon period. A bond bought between coupon dates also pays
     the interest accrued since the last coupon, so the market (clean) price plus the accrued
@@ -383,10 +395,7 @@ def get_option_adjusted_spread(
     continuous = np.log1p(np.interp(times, maturities, zero_rates))
     first_call_step = int(np.ceil(years_to_first_call / dt - 1e-9))
 
-    def tree_for(shift: float) -> list[np.ndarray]:
-        return _ho_lee_tree(np.exp(-(continuous + shift) * times), volatility, dt)
-
-    base_tree = tree_for(0.0)
+    base_tree = _ho_lee_tree(np.exp(-continuous * times), volatility, dt)
 
     def callable_price(tree: list[np.ndarray], spread: float) -> float:
         return price_callable_bond(
@@ -419,9 +428,14 @@ def get_option_adjusted_spread(
         - accrued
     )
 
-    shift = 0.0025
-    up = callable_price(tree_for(shift), oas)
-    down = callable_price(tree_for(-shift), oas)
+    # A 100 basis point shift: at 25 basis points the convexity of a callable bond is mostly
+    # lattice noise (it can even turn positive at a 2% volatility). A parallel shift of the
+    # continuously compounded curve moves every Ho-Lee node by the same amount, which is the
+    # same as moving the spread, so the base tree priced at OAS ± shift gives the shifted prices
+    # exactly without building two more trees.
+    shift = 0.01
+    up = callable_price(base_tree, oas + shift)
+    down = callable_price(base_tree, oas - shift)
 
     return {
         "Option-Adjusted Spread": float(oas),

@@ -16,8 +16,10 @@ import pandas as pd
 # 1.5 times the first, as the two curvature factors are indistinguishable otherwise, and the
 # first decay at least a third of the shortest maturity: a shorter decay turns the curvature
 # into a dummy for the shortest yield, which fits it perfectly and sends the extrapolated
-# short end far off.
-NELSON_SIEGEL_TAUS = np.geomspace(0.1, 10.0, 200)
+# short end far off. The Nelson-Siegel grid reaches 30 years: a flat or inverted curve with a
+# hump at the long end can be fitted best by a decay of 20 years or more, which a grid ending
+# at 10 years misses by close to a basis point of fit error.
+NELSON_SIEGEL_TAUS = np.geomspace(0.1, 30.0, 240)
 SVENSSON_TAUS_1 = np.geomspace(0.1, 5.0, 50)
 SVENSSON_TAUS_2 = np.geomspace(0.5, 30.0, 50)
 TAU_RATIO = 1.5
@@ -366,26 +368,45 @@ def fit_nelson_siegel_svensson(
     return {name: float(value) for name, value in fit.items()}
 
 
+BILL_CONVENTIONS = ("bond-equivalent", "act/365", "act/360")
+
+
 def bill_yields_to_annual(
     maturities: np.ndarray,
     yields: np.ndarray,
     frequency: int = 2,
-    simple_interest: bool = False,
+    convention: str | None = None,
 ) -> np.ndarray:
     """
-    Convert the yields of zero-coupon bills to annually compounded rates. The yields are
-    compounded `frequency` times a year or, with simple_interest, bond-equivalent yields as
-    the US Treasury quotes them: simple interest up to half a year, and for a longer bill a
-    half-year compounding step followed by simple interest for the rest,
+    Convert the yields of zero-coupon bills (up to a year) to annually compounded rates. By
+    default the yields are compounded `frequency` times a year; a convention gives the way a
+    country quotes its bills instead:
 
-        1 + annual rate = [(1 + y min(m, ½)) (1 + y max(m - ½, 0))]^(1/m)
+        - "bond-equivalent": the US Treasury's bond-equivalent yield, simple interest up to
+          half a year and for a longer bill a half-year compounding step followed by simple
+          interest for the rest, 1 + annual rate = [(1 + y min(m, ½)) (1 + y max(m - ½, 0))]^(1/m)
+        - "act/365": simple interest over the actual days on a 365-day year, as the Government
+          of Canada quotes its treasury bills, 1 + annual rate = (1 + y m)^(1/m)
+        - "act/360": simple interest over the actual days on a 360-day year, as the Swedish
+          National Debt Office quotes its treasury bills (statsskuldväxlar),
+          1 + annual rate = (1 + y m 365 / 360)^(1/m)
+
+    with m the maturity in years. Longer maturities are compounded `frequency` times a year
+    whatever the convention.
+
+    For more information, see the following sources:
+
+    - Department of Finance Canada. "Determining Bond and Treasury Bill Prices and Yields."
+      Government of Canada Securities Technical Guide.
+    - Riksgälden (2023). "Räkneexempel statsskuldväxlar." Based on Svenska
+      Fondhandlareföreningen (2001), "Beräkningsprinciper för den svenska penningmarknaden."
 
     Args:
         maturities (np.ndarray): The maturities in years.
         yields (np.ndarray): The yields, as decimals.
         frequency (int, optional): The compounding periods per year. Defaults to 2.
-        simple_interest (bool, optional): Whether the yields are bond-equivalent yields
-            (simple interest up to half a year). Defaults to False.
+        convention (str | None, optional): "bond-equivalent", "act/365" or "act/360", or None
+            for yields compounded `frequency` times a year. Defaults to None.
 
     Returns:
         np.ndarray: The annually compounded rates.
@@ -393,11 +414,21 @@ def bill_yields_to_annual(
     maturities = np.asarray(maturities, dtype=float)
     yields = np.asarray(yields, dtype=float)
     compounded = (1 + yields / frequency) ** frequency - 1
-    if not simple_interest:
+    if convention is None:
         return compounded
-    growth = (1 + yields * np.minimum(maturities, 0.5)) * (
-        1 + yields * np.maximum(maturities - 0.5, 0)
-    )
+    if convention == "bond-equivalent":
+        growth = (1 + yields * np.minimum(maturities, 0.5)) * (
+            1 + yields * np.maximum(maturities - 0.5, 0)
+        )
+    elif convention in ("act/365", "act/360"):
+        # A maturity in years counts days of a 365-day year, so on a 360-day basis the same
+        # days earn 365/360 times the quoted yield.
+        basis = 365 / 360 if convention == "act/360" else 1.0
+        growth = 1 + yields * basis * maturities
+    else:
+        raise ValueError(
+            f"The convention must be one of {', '.join(BILL_CONVENTIONS)} or None."
+        )
     years = np.where(maturities > 0, maturities, 1.0)
     return np.where(
         (maturities > 0) & (maturities <= 1 + 1e-9),
@@ -410,7 +441,7 @@ def bootstrap_zero_rates(
     maturities: np.ndarray,
     par_yields: np.ndarray,
     frequency: int = 2,
-    simple_interest_bills: bool = False,
+    bill_convention: str | None = None,
 ) -> np.ndarray:
     """
     Bootstrap zero-coupon rates from par yields, quoted with `frequency` compounding periods a
@@ -426,9 +457,10 @@ def bootstrap_zero_rates(
         maturities (np.ndarray): The maturities in years, ascending.
         par_yields (np.ndarray): The par yields, as decimals.
         frequency (int, optional): The coupons per year. Defaults to 2.
-        simple_interest_bills (bool, optional): Whether the bill yields are bond-equivalent
-            yields with simple interest up to half a year (the US Treasury convention).
-            Defaults to False.
+        bill_convention (str | None, optional): How the bill yields (up to a year) are
+            quoted: "bond-equivalent" (the US Treasury), "act/365" (Canada), "act/360"
+            (Sweden) or None for yields compounded `frequency` times a year, see
+            bill_yields_to_annual. Defaults to None.
 
     Returns:
         np.ndarray: The zero rates (annually compounded) at the given maturities.
@@ -445,7 +477,13 @@ def bootstrap_zero_rates(
     discount = np.empty_like(grid)
     for n, (time, coupon) in enumerate(zip(grid, grid_yields, strict=True)):
         if time <= 1 + 1e-9:
-            discount[n] = (1 + coupon * step) ** (-time * frequency)
+            # The coupon dates up to a year discount at the bill yield, in its convention.
+            discount[n] = (
+                1
+                + bill_yields_to_annual(
+                    np.array([time]), np.array([coupon]), frequency, bill_convention
+                )[0]
+            ) ** (-time)
         else:
             discount[n] = (1 - coupon * step * discount[:n].sum()) / (1 + coupon * step)
 
@@ -455,7 +493,7 @@ def bootstrap_zero_rates(
     # yield only changes compounding.
     zero_rates = np.where(
         maturities <= 1 + 1e-9,
-        bill_yields_to_annual(maturities, par_yields, frequency, simple_interest_bills),
+        bill_yields_to_annual(maturities, par_yields, frequency, bill_convention),
         zero_rates,
     )
 

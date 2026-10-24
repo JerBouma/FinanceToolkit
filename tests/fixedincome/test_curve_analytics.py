@@ -85,11 +85,16 @@ def test_nelson_siegel_svensson(fixedincome):
     assert len(us) == len(simulated_curves())
     assert (us["Root Mean Squared Error"] < 0.0015).all()
 
-    fitted = fixedincome.get_nelson_siegel_svensson(maturities=[1, "10Y"])
+    # The Svensson fits run on the month-end curves, which keeps the test quick.
+    fitted = fixedincome.get_nelson_siegel_svensson(
+        maturities=[1, "10Y"], period="monthly"
+    )
     # The MCP server passes a list as a comma-separated string.
-    from_string = fixedincome.get_nelson_siegel_svensson(maturities="1, 10Y")
+    from_string = fixedincome.get_nelson_siegel_svensson(
+        maturities="1, 10Y", period="monthly"
+    )
     pd.testing.assert_frame_equal(fitted, from_string)
-    zero_curve = fixedincome.get_zero_coupon_curve()["United States"]
+    zero_curve = fixedincome.get_zero_coupon_curve(period="monthly")["United States"]
     assert list(fitted["United States"].columns) == ["1Y", "10Y"]
     assert fitted["United States"]["10Y"].iloc[-1] == pytest.approx(
         zero_curve["10Y"].iloc[-1], abs=0.002

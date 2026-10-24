@@ -136,9 +136,15 @@ DEFAULT_REAL_SPOT_CURVE: dict[float, float] = {
 # yields of coupon bonds, paying twice a year except in Sweden and Norway.
 ZERO_COUPON_CURVES = ("Euro Area", "Germany")
 COUPON_FREQUENCIES = {"Sweden": 1, "Norway": 1}
-# The countries whose bill yields are bond-equivalent yields, with simple interest up to half
-# a year (the US Treasury convention) rather than compounded with the coupon frequency.
-SIMPLE_INTEREST_BILLS = ("United States",)
+# How the countries quote their bill yields (up to a year), see curve_model.bill_yields_to_annual:
+# the US Treasury's bond-equivalent yields (simple interest up to half a year), simple interest
+# on ACT/365 for Government of Canada bills and on ACT/360 for Swedish statsskuldväxlar. The
+# other countries' yields are compounded with the coupon frequency.
+BILL_CONVENTIONS = {
+    "United States": "bond-equivalent",
+    "Canada": "act/365",
+    "Sweden": "act/360",
+}
 
 # The share of the dates a maturity must cover to be part of a principal component analysis.
 CURVE_COVERAGE = 0.9
@@ -1493,8 +1499,8 @@ class FixedIncome:
         - Straight Bond Price: the price of the same bond without the call.
         - Option Value: the straight bond price minus the market price, the value of the
           call to the issuer.
-        - Effective Duration and Effective Convexity: the price change for a 25 basis point
-          shift of the curve at an unchanged OAS, which account for the call (a callable
+        - Effective Duration and Effective Convexity: the price change for a 100 basis point
+          shift of the curve up and down at an unchanged OAS, which account for the call (a callable
           bond's convexity turns negative when the call is near).
 
         For more information, see the following sources:
@@ -1552,8 +1558,8 @@ class FixedIncome:
         | Option-Adjusted Spread |    0.0057 |    0.0012 |   -0.0039 |
         | Straight Bond Price    |  103.338  |  107.146  |  111.637  |
         | Option Value           |    5.3382 |    7.1458 |    9.6374 |
-        | Effective Duration     |    4.7946 |    4.2009 |    3.5915 |
-        | Effective Convexity    | -106.593  | -104.552  | -103.387  |
+        | Effective Duration     |    4.743  |    4.1973 |    3.6058 |
+        | Effective Convexity    | -102.679  | -106.054  | -100.365  |
         """
         if spot_rates is None:
             zero_rates = self._to_zero_coupon(
@@ -2782,7 +2788,7 @@ class FixedIncome:
                 maturities[available],
                 yields[available],
                 COUPON_FREQUENCIES.get(country, 2),
-                country in SIMPLE_INTEREST_BILLS,
+                BILL_CONVENTIONS.get(country),
             )
 
         return pd.DataFrame(
@@ -2805,8 +2811,9 @@ class FixedIncome:
         the curve models (Nelson-Siegel, Vasicek) are built on.
 
         Maturities up to one year are treasury bills, which pay no coupon, so their yield
-        only needs converting to annual compounding (US bill yields are bond-equivalent
-        yields, with simple interest up to half a year). Beyond that the
+        only needs converting to annual compounding: US bill yields are bond-equivalent
+        yields (simple interest up to half a year), Canadian bill yields simple interest on a
+        365-day year and Swedish bill yields simple interest on a 360-day year. Beyond that the
         par yields are interpolated linearly to every coupon date and each discount factor
         follows from the earlier ones:
 
@@ -3158,7 +3165,7 @@ class FixedIncome:
             np.full(len(rates), maturity),
             rates.to_numpy(dtype=float),
             COUPON_FREQUENCIES.get(country, 2),
-            country in SIMPLE_INTEREST_BILLS,
+            BILL_CONVENTIONS.get(country),
         )
         return pd.Series(np.log1p(annual), index=rates.index, name=rates.name)
 
@@ -3615,8 +3622,8 @@ class FixedIncome:
         of all bonds in a given maturity and rating category and a spot Treasury curve. An OAS index is constructed
         using each constituent bond's OAS, weighted by market capitalization.
 
-        The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually measured in
-        basis points (bp), that equates the theoretical present value of a series of uncertain cash flows to the
+        The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually quoted in
+        basis points, that equates the theoretical present value of a series of uncertain cash flows to the
         market price of a fixed-income investment. The spread is added to the risk-free rate to compensate for the
         uncertainty of the cash flows.
 
@@ -3627,19 +3634,20 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity option adjusted spread or the rating option adjusted spread.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Option Adjusted Spread, in basis points. The FRED
-            series are published in percent and are multiplied by 100 here, so a 0.77% spread is
-            returned as 77.
+            pd.DataFrame: A DataFrame containing the Option Adjusted Spread as decimal fractions, like
+            every other rate. The FRED series are published in percent and are divided by 100 here, so
+            a 0.77% (77 basis point) spread is returned as 0.0077.
 
         As an example:
 
@@ -3658,17 +3666,17 @@ class FixedIncome:
 
         | Date       |   1-3 Years |   3-5 Years |   5-7 Years |   7-10 Years |   10-15 Years |   15+ Years |
         |:-----------|------------:|------------:|------------:|-------------:|--------------:|------------:|
-        | 2024-01-01 |         nan |         nan |         nan |          nan |           nan |         nan |
-        | 2024-01-02 |          78 |          95 |         109 |          128 |           133 |         119 |
-        | 2024-01-03 |          80 |          98 |         113 |          133 |           136 |         122 |
-        | 2024-01-04 |          80 |          98 |         112 |          133 |           135 |         122 |
-        | 2024-01-05 |          80 |          98 |         112 |          132 |           134 |         121 |
-        | 2024-01-08 |          79 |          98 |         112 |          132 |           134 |         120 |
-        | 2024-01-09 |          78 |          96 |         110 |          130 |           131 |         117 |
-        | 2024-01-10 |          77 |          94 |         108 |          128 |           128 |         113 |
-        | 2024-01-11 |          75 |          94 |         107 |          128 |           127 |         113 |
-        | 2024-01-12 |          74 |          94 |         107 |          128 |           126 |         112 |
-        | 2024-01-15 |          74 |          94 |         107 |          128 |           125 |         111 |
+        | 2024-01-01 |    nan      |    nan      |    nan      |     nan      |      nan      |    nan      |
+        | 2024-01-02 |      0.0078 |      0.0095 |      0.0109 |       0.0128 |        0.0133 |      0.0119 |
+        | 2024-01-03 |      0.008  |      0.0098 |      0.0113 |       0.0133 |        0.0136 |      0.0122 |
+        | 2024-01-04 |      0.008  |      0.0098 |      0.0112 |       0.0133 |        0.0135 |      0.0122 |
+        | 2024-01-05 |      0.008  |      0.0098 |      0.0112 |       0.0132 |        0.0134 |      0.0121 |
+        | 2024-01-08 |      0.0079 |      0.0098 |      0.0112 |       0.0132 |        0.0134 |      0.012  |
+        | 2024-01-09 |      0.0078 |      0.0096 |      0.011  |       0.013  |        0.0131 |      0.0117 |
+        | 2024-01-10 |      0.0077 |      0.0094 |      0.0108 |       0.0128 |        0.0128 |      0.0113 |
+        | 2024-01-11 |      0.0075 |      0.0094 |      0.0107 |       0.0128 |        0.0127 |      0.0113 |
+        | 2024-01-12 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0126 |      0.0112 |
+        | 2024-01-15 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0125 |      0.0111 |
         """
         self._require_fred_api_key()
 
@@ -3693,6 +3701,7 @@ class FixedIncome:
             row_slice=True,
         )
 
+    @handle_errors
     @handle_errors
     def get_ice_bofa_effective_yield(
         self,
@@ -4661,7 +4670,7 @@ class FixedIncome:
                 raise ValueError(
                     f"FRED has no ICE BofA option-adjusted spreads in the month before {self._end_date}."
                 )
-            # The spreads are in basis points.
+            # The FRED spreads arrive as decimals (0.0077 for 77 basis points), the unit the model takes.
             spread_series = option_adjusted_spread.iloc[-1].dropna()
             spread_series.index.name = "Rating"
         elif isinstance(spreads, int | float) or (

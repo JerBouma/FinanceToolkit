@@ -169,7 +169,7 @@ def test_the_fit_is_polished_beyond_the_grid():
 
 def test_bill_yields_as_bond_equivalent_yields():
     annual = curve_model.bill_yields_to_annual(
-        np.array([0.25, 0.5, 1.0]), np.full(3, 0.04), 2, simple_interest=True
+        np.array([0.25, 0.5, 1.0]), np.full(3, 0.04), 2, "bond-equivalent"
     )
 
     assert annual[0] == pytest.approx(1.01**4 - 1)
@@ -178,3 +178,37 @@ def test_bill_yields_as_bond_equivalent_yields():
     assert curve_model.bill_yields_to_annual(
         np.array([0.25]), np.array([0.04])
     ) == pytest.approx([1.02**2 - 1])
+
+
+def test_bill_yields_with_simple_interest_on_365_and_360_days():
+    maturities = np.array([0.25, 0.5, 1.0])
+    yields = np.full(3, 0.04)
+
+    # Government of Canada bills: P = 100 / (1 + y t / 365), so the whole year is simple.
+    canada = curve_model.bill_yields_to_annual(maturities, yields, 2, "act/365")
+    assert canada == pytest.approx((1 + 0.04 * maturities) ** (1 / maturities) - 1)
+    assert canada[2] == pytest.approx(0.04)
+
+    # Swedish statsskuldväxlar on ACT/360 (Riksgälden's example settles 100 million SEK at
+    # 3.498% over 371 days for 96,520,547 SEK, 1e8 / (1 + 0.03498 * 371 / 360)): a 6-month
+    # bill earns the yield over 182.5 days of a 360-day year.
+    sweden = curve_model.bill_yields_to_annual(maturities, yields, 1, "act/360")
+    assert (1 + sweden[1]) ** 0.5 == pytest.approx(1 + 0.04 * 182.5 / 360)
+    assert sweden[2] == pytest.approx(0.04 * 365 / 360)
+
+    with pytest.raises(ValueError):
+        curve_model.bill_yields_to_annual(maturities, yields, 2, "30/360")
+
+
+def test_bootstrap_keeps_the_bill_convention_on_the_coupon_dates():
+    # A flat curve of 4% Swedish yields: the 1-year bill earns 4% on a 360-day year, so the
+    # 1-year zero rate is 4% * 365 / 360 and the 2-year bond is discounted with it.
+    maturities = np.array([0.5, 1.0, 2.0])
+    zero_rates = curve_model.bootstrap_zero_rates(
+        maturities, np.full(3, 0.04), 1, "act/360"
+    )
+    one_year = 0.04 * 365 / 360
+    discount_2 = (1 - 0.04 / (1 + one_year)) / 1.04
+
+    assert zero_rates[1] == pytest.approx(one_year)
+    assert zero_rates[2] == pytest.approx(discount_2 ** (-1 / 2) - 1)

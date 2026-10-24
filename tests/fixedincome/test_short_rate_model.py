@@ -163,8 +163,9 @@ def test_vasicek_calibration_is_exact_for_monthly_data():
 
 def test_option_adjusted_spread_matches_a_fine_tree():
     # QuantLib's TreeCallableFixedRateBondEngine (Hull-White with a near-zero speed, which is
-    # Ho-Lee, on 400 steps) gives an OAS of 0.005704 and an effective convexity of -105.2 for
-    # this bond; a coarse tree of one step per coupon gave a positive convexity.
+    # Ho-Lee, on 400 steps) gives an OAS of 0.005704 for this bond; a tree of 320 steps per
+    # coupon period gives an effective convexity of -102.5 over a 100 basis point shift. A
+    # coarse tree of one step per coupon gave a positive convexity.
     result = short_rate_model.get_option_adjusted_spread(
         price=98.0,
         coupon_rate=0.05,
@@ -176,7 +177,7 @@ def test_option_adjusted_spread_matches_a_fine_tree():
     )
 
     assert result["Option-Adjusted Spread"] == pytest.approx(0.005704, abs=2e-5)
-    assert result["Effective Convexity"] == pytest.approx(-105.2, rel=0.03)
+    assert result["Effective Convexity"] == pytest.approx(-102.5, rel=0.02)
 
 
 def test_option_adjusted_spread_between_coupon_dates():
@@ -202,3 +203,80 @@ def test_option_adjusted_spread_between_coupon_dates():
 
     assert result["Option-Adjusted Spread"] == pytest.approx(0, abs=1e-6)
     assert result["Straight Bond Price"] == pytest.approx(clean, abs=1e-6)
+
+
+def test_cir_calibration_recovers_the_volatility_of_a_fast_rate():
+    # Exact CIR transitions (a scaled noncentral chi-square) of a fast reverting rate on
+    # monthly data. The variance of a step also has a term b σ² (1 - φ)² / (2a) that does not
+    # scale with the rate; leaving it out overstates σ by about 4% here.
+    rng = np.random.default_rng(3)
+    speed, mean, volatility, dt = 2.0, 0.04, 0.05, 1 / 12
+    scale = volatility**2 * (1 - np.exp(-speed * dt)) / (4 * speed)
+    degrees = 4 * speed * mean / volatility**2
+    rates = np.empty(24_001)
+    rates[0] = mean
+    for step in range(1, len(rates)):
+        rates[step] = scale * rng.noncentral_chisquare(
+            degrees, rates[step - 1] * np.exp(-speed * dt) / scale
+        )
+    parameters = short_rate_model.calibrate_short_rate_model(
+        pd.Series(rates), "cir", periods_per_year=12
+    )
+
+    assert parameters["Volatility"] == pytest.approx(volatility, rel=0.01)
+    assert parameters["Speed of Mean Reversion"] == pytest.approx(speed, rel=0.05)
+    assert parameters["Long-Run Mean"] == pytest.approx(mean, rel=0.02)
+
+
+def test_effective_convexity_is_negative_at_a_high_volatility():
+    # Over a 25 basis point shift the convexity of this callable bond at a 2% volatility is
+    # lattice noise that can even turn positive; over 100 basis points it stays close to that
+    # of a tree of 320 steps per coupon period (-43.1).
+    result = short_rate_model.get_option_adjusted_spread(
+        price=100.0,
+        coupon_rate=0.05,
+        years_to_maturity=10,
+        maturities=np.array([1, 2, 5, 10, 20, 30.0]),
+        zero_rates=np.array([0.036, 0.035, 0.037, 0.041, 0.047, 0.047]),
+        volatility=0.02,
+        call_price=100.0,
+        years_to_first_call=2,
+    )
+
+    assert result["Effective Convexity"] == pytest.approx(-43.1, rel=0.08)
+
+
+def test_effective_duration_shifts_the_curve():
+    # A parallel shift of the continuously compounded curve moves every Ho-Lee node by the
+    # same amount, so rebuilding the tree on a shifted curve gives the price of the base tree
+    # at the spread plus the shift, which is what the effective duration and convexity use.
+    steps = short_rate_model.STEPS_PER_PERIOD
+    dt = 1 / (2 * steps)
+    times = np.arange(1, 20 * steps + 1) * dt
+    continuous = np.log1p(np.interp(times, ZERO_MATURITIES, ZERO_RATES))
+    result = short_rate_model.get_option_adjusted_spread(
+        price=101.0,
+        coupon_rate=0.05,
+        years_to_maturity=10,
+        maturities=ZERO_MATURITIES,
+        zero_rates=ZERO_RATES,
+        call_price=100.0,
+        years_to_first_call=2,
+    )
+    oas = result["Option-Adjusted Spread"]
+
+    def price(shift):
+        tree = short_rate_model._ho_lee_tree(
+            np.exp(-(continuous + shift) * times), 0.01, dt
+        )
+        return short_rate_model.price_callable_bond(
+            tree, 0.05, 2, 100.0, 100.0, int(np.ceil(2 / dt - 1e-9)), oas, steps
+        )
+
+    up, down = price(0.01), price(-0.01)
+    assert result["Effective Duration"] == pytest.approx(
+        (down - up) / (2 * 101.0 * 0.01), rel=1e-9
+    )
+    assert result["Effective Convexity"] == pytest.approx(
+        (down + up - 2 * 101.0) / (101.0 * 0.01**2), rel=1e-9
+    )

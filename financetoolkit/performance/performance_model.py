@@ -7,7 +7,7 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from scipy import linalg, stats
+from scipy import linalg, optimize, stats
 from scipy.stats import linregress
 
 from financetoolkit.cache import policy_model
@@ -224,6 +224,98 @@ FACTOR_FILE_LIFETIME_SECONDS = 3600
 _factor_files: dict[str, tuple[float, bytes]] = {}
 
 
+KEN_FRENCH_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+
+# The regions Ken French publishes daily factors for, with the prefix of their files. The
+# United States files have their own names.
+FACTOR_REGIONS = {
+    "United States": None,
+    "Developed": "Developed",
+    "Developed ex US": "Developed_ex_US",
+    "Europe": "Europe",
+    "Japan": "Japan",
+    "Asia Pacific ex Japan": "Asia_Pacific_ex_Japan",
+    "North America": "North_America",
+}
+UNITED_STATES_FACTOR_FILES = {
+    "five": "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
+    "three": "F-F_Research_Data_Factors_daily_CSV.zip",
+    "momentum": "F-F_Momentum_Factor_daily_CSV.zip",
+}
+REGIONAL_FACTOR_FILES = {
+    "five": "{prefix}_5_Factors_Daily_CSV.zip",
+    "three": "{prefix}_3_Factors_Daily_CSV.zip",
+    "momentum": "{prefix}_Mom_Factor_Daily_CSV.zip",
+}
+# Ken French marks a missing value with -99.99 (or -999 in some files).
+MISSING_FACTOR_VALUES = (-99.99, -999.0)
+
+
+def factor_url(region: str = "United States", kind: str = "five") -> str:
+    """
+    The URL of Ken French's daily factor file of a region.
+
+    Args:
+        region (str, optional): One of FACTOR_REGIONS. Defaults to "United States".
+        kind (str, optional): "five" (5 factors), "three" (3 factors) or "momentum".
+            Defaults to "five".
+
+    Returns:
+        str: The URL of the ZIP file.
+
+    Raises:
+        ValueError: When the region is not published.
+    """
+    if region not in FACTOR_REGIONS:
+        raise ValueError(
+            f"The factors of {region!r} are not published. Choose from "
+            f"{', '.join(FACTOR_REGIONS)}."
+        )
+    prefix = FACTOR_REGIONS[region]
+    file_name = (
+        UNITED_STATES_FACTOR_FILES[kind]
+        if prefix is None
+        else REGIONAL_FACTOR_FILES[kind].format(prefix=prefix)
+    )
+    return f"{KEN_FRENCH_URL}{file_name}"
+
+
+def read_factor_file(zip_data: bytes) -> pd.DataFrame:
+    """
+    Reads one of Ken French's daily factor files: the header is the first line that starts
+    with a comma (the number of description lines above it differs per file), the dates are
+    YYYYMMDD (padded with spaces in the regional files) and the values are in percent.
+
+    Args:
+        zip_data (bytes): The ZIP file.
+
+    Returns:
+        pd.DataFrame: The factors as decimals, indexed by day.
+    """
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+        text = zip_file.open(zip_file.namelist()[0]).read().decode("latin-1")
+
+    lines = text.splitlines()
+    header = next(
+        number for number, line in enumerate(lines) if line.lstrip().startswith(",")
+    )
+    dataset = pd.read_csv(
+        io.StringIO("\n".join(lines[header:])), index_col=0, skipinitialspace=True
+    )
+    dataset.index = dataset.index.astype(str).str.strip()
+    dataset = dataset[dataset.index.str.fullmatch(r"\d{8}")]
+    dataset = dataset.loc[:, ~dataset.columns.str.contains("Unnamed")]
+    dataset.columns = dataset.columns.str.strip()
+    dataset = dataset.apply(pd.to_numeric, errors="coerce")
+    dataset = dataset.mask(dataset.isin(MISSING_FACTOR_VALUES)).dropna(how="all")
+
+    # Ken French publishes the factors in percent while returns are decimals.
+    dataset = dataset / 100
+    dataset.index = pd.to_datetime(dataset.index, format="%Y%m%d").to_period(freq="D")
+    dataset.index.name = "Date"
+    return dataset
+
+
 def download_factor_file(url: str) -> bytes:
     """
     Download one of Ken French's factor files, or reuse the copy downloaded within the hour.
@@ -245,7 +337,9 @@ def download_factor_file(url: str) -> bytes:
     return content
 
 
-def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
+def obtain_fama_and_french_dataset(
+    fama_and_french_url: str | None = None, region: str = "United States"
+):
     """
     This functionality returns the Fama and French 5 Factor Model dataset. It is a dataset that contains the
     excess returns of the 5 factors that are used in the Fama and French 5 Factor Model. The factors are:
@@ -265,16 +359,17 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
 
     Args:
         fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is provided, the
-        default URL (Fama and French 5 Factor) is used.
+        5 factor file of the region is used.
+        region (str, optional): The region whose factors to use, one of FACTOR_REGIONS: "United States",
+        "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America".
+        Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Fama and French 5 Factor Model dataset.
     """
     # Define the URL of the ZIP file
     fama_and_french_url = (
-        fama_and_french_url
-        if fama_and_french_url
-        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
+        fama_and_french_url if fama_and_french_url else factor_url(region, "five")
     )
 
     cache = get_active_cache()
@@ -289,27 +384,9 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
         if cached_dataset is not None:
             return cached_dataset
 
-    zip_data = download_factor_file(fama_and_french_url)
-
-    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
-        # The dataset is packaged in a ZIP file, so it needs to be extracted first
-        zip_file_contents = zip_file.namelist()
-
-        csv_file_name = zip_file_contents[0]
-
-        with zip_file.open(csv_file_name) as csv_file:
-            # Skip the first 3 rows which are header information
-            fama_and_french_dataset = pd.read_csv(csv_file, skiprows=3, index_col=0)
-
-        fama_and_french_dataset = fama_and_french_dataset.dropna(axis="index")
-
-        # Ken French publishes the factors in percent while returns are decimals.
-        fama_and_french_dataset = fama_and_french_dataset / 100
-
-        fama_and_french_dataset.index = pd.to_datetime(
-            fama_and_french_dataset.index, format="%Y%m%d"
-        ).to_period(freq="D")
-        fama_and_french_dataset.index.name = "Date"
+    fama_and_french_dataset = read_factor_file(
+        download_factor_file(fama_and_french_url)
+    )
 
     if cache is not None and not fama_and_french_dataset.empty:
         cache.set(
@@ -323,7 +400,7 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
 
 
 def obtain_fama_and_french_three_factor_dataset(
-    fama_and_french_url: str | None = None,
+    fama_and_french_url: str | None = None, region: str = "United States"
 ) -> pd.DataFrame:
     """
     This functionality returns the Fama and French 3 Factor Model dataset:
@@ -344,20 +421,21 @@ def obtain_fama_and_french_three_factor_dataset(
 
     Args:
         fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the default URL (Fama and French 3 Factor) is used.
+        provided, the 3 factor file of the region is used.
+        region (str, optional): The region whose factors to use, see
+        `obtain_fama_and_french_dataset`. Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Fama and French 3 Factor Model dataset.
     """
     return obtain_fama_and_french_dataset(
-        fama_and_french_url
-        if fama_and_french_url
-        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
-        "F-F_Research_Data_Factors_daily_CSV.zip"
+        fama_and_french_url if fama_and_french_url else factor_url(region, "three")
     )
 
 
-def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataFrame:
+def obtain_carhart_momentum_dataset(
+    momentum_url: str | None = None, region: str = "United States"
+) -> pd.DataFrame:
     """
     This functionality returns the Carhart Momentum (MOM) factor dataset, used to extend
     the Fama and French 3 Factor Model into the Carhart 4 Factor Model:
@@ -370,16 +448,14 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
 
     Args:
         momentum_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the default Ken French Momentum Factor URL is used.
+        provided, the momentum file of the region is used.
+        region (str, optional): The region whose factor to use, see
+        `obtain_fama_and_french_dataset`. Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Carhart Momentum Factor dataset, with a single "Mom" column.
     """
-    momentum_url = (
-        momentum_url
-        if momentum_url
-        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
-    )
+    momentum_url = momentum_url if momentum_url else factor_url(region, "momentum")
 
     cache = get_active_cache()
 
@@ -393,31 +469,9 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
         if cached_dataset is not None:
             return cached_dataset
 
-    zip_data = download_factor_file(momentum_url)
-
-    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
-        zip_file_contents = zip_file.namelist()
-
-        csv_file_name = zip_file_contents[0]
-
-        with zip_file.open(csv_file_name) as csv_file:
-            # Skip the descriptive header rows; the "Mom" data starts right after
-            momentum_dataset = pd.read_csv(csv_file, skiprows=13, index_col=0)
-
-        # A trailing comma makes an all-NaN column that would drop every valid row.
-        momentum_dataset = momentum_dataset.loc[
-            :, ~momentum_dataset.columns.str.contains("Unnamed")
-        ]
-        momentum_dataset = momentum_dataset.dropna(axis="index")
-
-        # Ken French publishes the factor in percent while returns are decimals.
-        momentum_dataset = momentum_dataset / 100
-
-        momentum_dataset.index = pd.to_datetime(
-            momentum_dataset.index, format="%Y%m%d"
-        ).to_period(freq="D")
-        momentum_dataset.index.name = "Date"
-        momentum_dataset.columns = momentum_dataset.columns.str.strip()
+    momentum_dataset = read_factor_file(download_factor_file(momentum_url))
+    # The regional files name the factor WML (winners minus losers).
+    momentum_dataset = momentum_dataset.rename(columns={"WML": "Mom"})
 
     if cache is not None and not momentum_dataset.empty:
         cache.set(
@@ -2770,4 +2824,68 @@ def get_henriksson_merton_model(
         benchmark_excess_returns,
         up_market_excess_returns,
         "Up Market Beta",
+    )
+
+
+def get_style_analysis(
+    returns: pd.Series, style_returns: pd.DataFrame, periods_per_year: int = 12
+) -> pd.Series:
+    """
+    Returns-based style analysis (Sharpe, 1992): the mix of style indices whose returns track
+    a fund's returns most closely. The weights are found by minimizing the variance of the
+    difference between the fund's return and the weighted style returns, with every weight
+    between 0 and 1 and the weights adding up to 1, so they read as the fund's effective
+    asset mix. The part of the fund's return the styles do not explain is the selection
+    return, its volatility the tracking error and the share of the variance they do explain
+    the R Squared.
+
+    For more information, see the following paper:
+
+    - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance Measurement."
+      The Journal of Portfolio Management, 18(2), 7-19.
+
+    Args:
+        returns (pd.Series): The fund's returns.
+        style_returns (pd.DataFrame): The returns of the style indices, a column each.
+        periods_per_year (int, optional): The returns per year, to annualize the selection
+            return and the tracking error. Defaults to 12.
+
+    Returns:
+        pd.Series: The weight of every style, the R Squared, the (annualized) Selection Return
+        and the (annualized) Tracking Error.
+    """
+    data = pd.concat([returns, style_returns], axis=1).dropna()
+    styles = list(style_returns.columns)
+    if len(data) <= len(styles):
+        raise ValueError(
+            f"Style analysis with {len(styles)} styles needs more than {len(styles)} "
+            f"observations, not {len(data)}."
+        )
+
+    y = data.iloc[:, 0].to_numpy(dtype=float)
+    x = data[styles].to_numpy(dtype=float)
+
+    def tracking_variance(weights: np.ndarray) -> float:
+        return float(np.var(y - x @ weights, ddof=1))
+
+    start = np.full(len(styles), 1 / len(styles))
+    fit = optimize.minimize(
+        tracking_variance,
+        start,
+        method="SLSQP",
+        bounds=[(0.0, 1.0)] * len(styles),
+        constraints=[{"type": "eq", "fun": lambda weights: weights.sum() - 1}],
+        options={"ftol": 1e-14, "maxiter": 500},
+    )
+    weights = np.clip(fit.x, 0, 1)
+    weights = weights / weights.sum()
+    residual = y - x @ weights
+
+    return pd.Series(
+        {
+            **dict(zip(styles, weights, strict=True)),
+            "R Squared": 1 - np.var(residual, ddof=1) / np.var(y, ddof=1),
+            "Selection Return": residual.mean() * periods_per_year,
+            "Tracking Error": residual.std(ddof=1) * np.sqrt(periods_per_year),
+        }
     )

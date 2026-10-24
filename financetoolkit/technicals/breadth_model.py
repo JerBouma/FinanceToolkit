@@ -561,3 +561,94 @@ def get_positive_volume_index(
         raise TypeError("prices_close and volumes must be pandas Series.")
 
     return _get_volume_based_index(prices_close, volumes, "positive", start_value)
+
+
+def get_market_breadth(
+    prices_close: pd.DataFrame,
+    short_window: int = 50,
+    long_window: int = 200,
+    high_low_window: int = 252,
+) -> pd.DataFrame:
+    """
+    Calculate the breadth of a market from the prices of its constituents: how many of them
+    take part in a move. An index can rise on the strength of a few large companies while
+    most of its members fall; breadth shows that divergence, which often comes before the
+    index itself turns.
+
+    - Advancers, Decliners and Unchanged: the number of constituents whose close rose, fell or
+      stayed the same.
+    - Advance-Decline Line: the running total of advancers minus decliners.
+    - Advance-Decline Ratio: advancers divided by decliners.
+    - McClellan Oscillator: the 19-period minus the 39-period exponential moving average of
+      the net advances as a share of the constituents (times 1,000, so it does not depend on
+      the number of constituents), with its running total, the McClellan Summation Index.
+    - Percentage Above the Moving Averages: the share of constituents whose close is above its
+      short and long moving average.
+    - New Highs and New Lows: the constituents at their highest or lowest close of the
+      high-low window.
+
+    For more information, see the following book:
+
+    - McClellan, S. and McClellan, T. (1970). "Patterns for Profit: The McClellan Oscillator
+      and Summation Index." McClellan Financial Publications.
+
+    Args:
+        prices_close (pd.DataFrame): The closes of the constituents, a column each.
+        short_window (int, optional): The short moving average window. Defaults to 50.
+        long_window (int, optional): The long moving average window. Defaults to 200.
+        high_low_window (int, optional): The window of the new highs and lows. Defaults to 252.
+
+    Returns:
+        pd.DataFrame: The breadth measures per date.
+    """
+    changes = prices_close.diff()
+    observed = changes.notna()
+    advancers = (changes > 0).sum(axis=1)
+    decliners = (changes < 0).sum(axis=1)
+    unchanged = ((changes == 0) & observed).sum(axis=1)
+    issues = observed.sum(axis=1).replace(0, np.nan)
+    net_advances = advancers - decliners
+
+    ratio_adjusted = net_advances / issues * 1000
+    mcclellan = (
+        ratio_adjusted.ewm(span=19, adjust=False).mean()
+        - ratio_adjusted.ewm(span=39, adjust=False).mean()
+    )
+
+    def share_above(window: int) -> pd.Series:
+        average = prices_close.rolling(window).mean()
+        counted = average.notna() & prices_close.notna()
+        above = (prices_close > average).astype(float).where(counted)
+        return above.sum(axis=1) / counted.sum(axis=1).replace(0, np.nan)
+
+    highest = prices_close.rolling(high_low_window).max()
+    lowest = prices_close.rolling(high_low_window).min()
+
+    breadth = pd.DataFrame(
+        {
+            "Advancers": advancers,
+            "Decliners": decliners,
+            "Unchanged": unchanged,
+            "Net Advances": net_advances,
+            "Advance-Decline Line": net_advances.cumsum(),
+            "Advance-Decline Ratio": advancers / decliners.replace(0, np.nan),
+            "McClellan Oscillator": mcclellan,
+            "McClellan Summation Index": mcclellan.cumsum(),
+            f"Percentage Above {short_window}-Period Average": share_above(
+                short_window
+            ),
+            f"Percentage Above {long_window}-Period Average": share_above(long_window),
+            "New Highs": (prices_close >= highest)
+            .astype(float)
+            .where(highest.notna())
+            .sum(axis=1)
+            .astype(int),
+            "New Lows": (prices_close <= lowest)
+            .astype(float)
+            .where(lowest.notna())
+            .sum(axis=1)
+            .astype(int),
+        }
+    )
+    # The first date has no change to count.
+    return breadth.iloc[1:]

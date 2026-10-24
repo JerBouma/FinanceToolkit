@@ -843,6 +843,17 @@ class ToolkitProvider:
             if "countries" in sig.parameters:
                 kwargs["countries"] = countries
                 countries_handled = True
+            elif "country" in sig.parameters and module_name != "discovery":
+                # An analysis of one country's data, such as the principal components of
+                # its yield curve, takes the country on its own. (The stock screener's
+                # country is an exchange country code, so Discovery is left out.)
+                if len(countries) > 1:
+                    raise ValueError(
+                        f"{method_name} analyzes one country at a time, not "
+                        f"{', '.join(countries)}. Please call it once per country."
+                    )
+                kwargs["country"] = countries[0]
+                countries_handled = True
 
         result = method(**kwargs)
 

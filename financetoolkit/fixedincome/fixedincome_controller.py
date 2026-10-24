@@ -29,17 +29,20 @@ from financetoolkit.fixedincome import (
     boc_model,
     bond_model,
     bundesbank_model,
+    curve_model,
     derivative_model,
     ecb_model,
     eiopa_model,
     esma_model,
     euribor_model,
     fed_model,
+    fiscaldata_model,
     fmp_model,
     fred_model,
     norgesbank_model,
     rba_model,
     riksbank_model,
+    short_rate_model,
     yieldcurve_model,
 )
 from financetoolkit.utilities import logger_model, validation_model
@@ -66,6 +69,23 @@ TREASURY_MATURITIES = {
     "20 Yr": "20Y",
     "30 Yr": "30Y",
 }
+
+
+def _split_values(values: list | tuple | str | None) -> list | None:
+    """
+    Splits a comma-separated string, as the MCP server passes a list, into its values.
+
+    Args:
+        values (list | tuple | str | None): The values or a comma-separated string.
+
+    Returns:
+        list | None: The values, or None when none are given.
+    """
+    if values is None:
+        return None
+    if isinstance(values, str):
+        return [value.strip() for value in values.split(",") if value.strip()]
+    return list(values)
 
 
 def _maturity_in_months(label: str) -> float:
@@ -110,6 +130,41 @@ DEFAULT_REAL_SPOT_CURVE: dict[float, float] = {
     20: 0.018,
     30: 0.02,
 }
+
+
+# The Euro Area and German curves are estimated as zero-coupon curves; the others are par
+# yields of coupon bonds, paying twice a year except in Sweden and Norway.
+ZERO_COUPON_CURVES = ("Euro Area", "Germany")
+COUPON_FREQUENCIES = {"Sweden": 1, "Norway": 1}
+# The countries whose bill yields are bond-equivalent yields, with simple interest up to half
+# a year (the US Treasury convention) rather than compounded with the coupon frequency.
+SIMPLE_INTEREST_BILLS = ("United States",)
+
+# The share of the dates a maturity must cover to be part of a principal component analysis.
+CURVE_COVERAGE = 0.9
+
+# The observations per year of each period, for calibrating the short-rate models.
+PERIODS_PER_YEAR = {"daily": 252, "weekly": 52, "monthly": 12}
+SHORT_RATE_PARAMETERS = [
+    "Speed of Mean Reversion",
+    "Long-Run Mean",
+    "Volatility",
+    "Current Rate",
+    "Half-Life",
+]
+SHORT_RATE_SIMULATION_MODELS = ("hull_white", "vasicek", "cir")
+SIMULATION_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
+# The most rates a simulation may hold (paths times steps), which bounds its memory use.
+MAX_SIMULATED_VALUES = 20_000_000
+
+TREASURY_SECURITY_TYPES = (
+    "Bill",
+    "Cash Management Bill",
+    "Note",
+    "Bond",
+    "TIPS",
+    "FRN",
+)
 
 
 class FixedIncome:
@@ -1404,6 +1459,146 @@ class FixedIncome:
 
         return apply_rounding(z_spreads_df, self._rounding)
 
+    @handle_errors
+    def get_option_adjusted_spread(
+        self,
+        bond_price: float | list[float] = 100.0,
+        coupon_rate: float = 0.05,
+        years_to_maturity: float = 10.0,
+        call_price: float | None = 100.0,
+        years_to_first_call: float = 2.0,
+        volatility: float = 0.01,
+        frequency: int = 2,
+        par_value: float = 100.0,
+        spot_rates: pd.Series | dict | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the option-adjusted spread (OAS) of a callable bond: the spread over the
+        risk-free curve at which the bond's model price, with the issuer calling the bond
+        whenever that is in its interest, equals its market price. A callable bond pays a
+        higher yield because the issuer can redeem it early when rates fall, which caps its
+        price. The Z-spread lumps that option together with the credit and liquidity premium;
+        the OAS takes the value of the option out, so callable and straight bonds can be
+        compared on their credit spread alone.
+
+        The interest rate is modeled with a Ho-Lee binomial tree of twenty steps per coupon
+        period, calibrated to the zero-coupon curve (with the short rate's volatility in
+        absolute terms, 0.01 being 100 basis points a year). The bond is valued backwards
+        through the tree, capped at the call price on every coupon date from the first call
+        date, and the spread added to every rate in the tree is solved for. The bond price is
+        the clean price: between coupon dates the interest accrued since the last coupon is
+        added to it, as a buyer pays it on top. At that spread the method also returns:
+
+        - Straight Bond Price: the price of the same bond without the call.
+        - Option Value: the straight bond price minus the market price, the value of the
+          call to the issuer.
+        - Effective Duration and Effective Convexity: the price change for a 25 basis point
+          shift of the curve at an unchanged OAS, which account for the call (a callable
+          bond's convexity turns negative when the call is near).
+
+        For more information, see the following sources:
+
+        - Ho, T.S.Y. and Lee, S.-B. (1986). "Term Structure Movements and Pricing Interest
+          Rate Contingent Claims." Journal of Finance, 41(5), 1011-1029.
+        - Fabozzi, F.J. (2016). "Bond Markets, Analysis, and Strategies." Pearson, 9th
+          edition, chapter 18.
+
+        Also known as: OAS, option-adjusted spread of a callable bond, effective duration,
+        negative convexity.
+
+        Args:
+            bond_price (float | list[float], optional): The market (clean) price of the bond,
+                or several prices. Defaults to 100.
+            coupon_rate (float, optional): The annual coupon rate. Defaults to 0.05.
+            years_to_maturity (float, optional): The years to maturity. Defaults to 10.
+            call_price (float | None, optional): The price at which the issuer can call the
+                bond, None for a bond without a call. Defaults to 100.
+            years_to_first_call (float, optional): The years until the bond can first be
+                called. Defaults to 2.
+            volatility (float, optional): The volatility of the short rate in absolute terms.
+                Defaults to 0.01.
+            frequency (int, optional): The coupon payments per year. Defaults to 2.
+            par_value (float, optional): The par value of the bond. Defaults to 100.
+            spot_rates (pd.Series | dict | None, optional): The zero-coupon curve (annually
+                compounded) by maturity in years. Defaults to None, which uses the US
+                Treasury zero-coupon curve of the end date (see `get_zero_coupon_curve`).
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The Option-Adjusted Spread, Straight Bond Price, Option Value,
+            Effective Duration and Effective Convexity, with a column per bond price.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_option_adjusted_spread(
+            bond_price=[98, 100, 102],
+            coupon_rate=0.05,
+            years_to_maturity=10,
+            years_to_first_call=2,
+            spot_rates={1: 0.036, 2: 0.035, 5: 0.037, 10: 0.041, 20: 0.047, 30: 0.047},
+        )
+        ```
+
+        Which returns:
+
+        |                        |        98 |       100 |       102 |
+        |:-----------------------|----------:|----------:|----------:|
+        | Option-Adjusted Spread |    0.0057 |    0.0012 |   -0.0039 |
+        | Straight Bond Price    |  103.338  |  107.146  |  111.637  |
+        | Option Value           |    5.3382 |    7.1458 |    9.6374 |
+        | Effective Duration     |    4.7946 |    4.2009 |    3.5915 |
+        | Effective Convexity    | -106.593  | -104.552  | -103.387  |
+        """
+        if spot_rates is None:
+            zero_rates = self._to_zero_coupon(
+                self._latest_yield_curve("United States").to_frame().T, "United States"
+            ).iloc[0]
+            spot_rates_series = pd.Series(
+                zero_rates.to_numpy(),
+                index=[
+                    curve_model.maturity_in_years(label) for label in zero_rates.index
+                ],
+            )
+        else:
+            spot_rates_series = pd.Series(spot_rates, dtype=float)
+            spot_rates_series.index = [
+                curve_model.maturity_in_years(label)
+                for label in spot_rates_series.index
+            ]
+        spot_rates_series = spot_rates_series.dropna().sort_index()
+
+        prices = (
+            [bond_price] if isinstance(bond_price, int | float) else list(bond_price)
+        )
+        results = {
+            price: short_rate_model.get_option_adjusted_spread(
+                price=price,
+                coupon_rate=coupon_rate,
+                years_to_maturity=years_to_maturity,
+                maturities=spot_rates_series.index.to_numpy(dtype=float),
+                zero_rates=spot_rates_series.to_numpy(),
+                volatility=volatility,
+                call_price=call_price,
+                years_to_first_call=years_to_first_call,
+                frequency=frequency,
+                face_value=par_value,
+            )
+            for price in prices
+        }
+
+        result = pd.DataFrame(results)
+        result.columns.name = "Bond Price"
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
     def get_bond_equivalent_yield(
         self,
         discount_yield: float | list | np.ndarray | None = None,
@@ -2489,6 +2684,925 @@ class FixedIncome:
             row_slice=True,
         )
 
+    def _latest_yield_curve(self, country: str) -> pd.Series:
+        """
+        The most recent yield curve of a country up to the end date, retrieving only the last
+        weeks rather than the full history.
+
+        Args:
+            country (str): The country, see get_government_bond_yield_curve.
+
+        Returns:
+            pd.Series: The yields as decimals by maturity label, sorted by maturity.
+        """
+        start_date = (
+            datetime.strptime(self._end_date, "%Y-%m-%d") - timedelta(days=21)
+        ).strftime("%Y-%m-%d")
+        sources = self._get_country_yield_curves(start_date)
+        if country not in sources:
+            raise ValueError(
+                f"No daily yield curve is available for {country}. Choose from {', '.join(sources)}."
+            )
+        curve = sources[country]()
+        curve = curve.loc[: pd.Period(self._end_date, "D")].dropna(how="all")
+        if curve.empty:
+            raise ValueError(
+                f"The {country} yield curve has no observations in the weeks before {self._end_date}."
+            )
+        latest = curve.iloc[-1].dropna()
+        return latest[sorted(latest.index, key=_maturity_in_months)]
+
+    def _yield_curves(
+        self, countries: list[str] | str, period: str
+    ) -> dict[str, pd.DataFrame]:
+        """
+        The government bond yield curve of every requested country, by date (rows) and
+        maturity label (columns), between the start and end date.
+
+        Args:
+            countries (list[str] | str): The countries, see get_government_bond_yield_curve.
+            period (str): "daily", "weekly" or "monthly".
+
+        Returns:
+            dict[str, pd.DataFrame]: The curve per country that has one.
+        """
+        requested = [countries] if isinstance(countries, str) else list(countries)
+        # The yields are published to a basis point or finer, so the curve is not rounded
+        # before the models use it.
+        curves = self.get_government_bond_yield_curve(
+            requested, period=period, rounding=10
+        )
+        available = (
+            set(curves.columns.get_level_values(0))
+            if isinstance(curves, pd.DataFrame) and not curves.empty
+            else set()
+        )
+        result = {
+            country: curves[country].dropna(how="all")
+            for country in requested
+            if country in available
+        }
+        if not result:
+            raise ValueError(
+                f"No government bond yield curve is available for {', '.join(requested)} "
+                f"between {self._start_date} and {self._end_date}."
+            )
+        return result
+
+    @staticmethod
+    def _to_zero_coupon(curve: pd.DataFrame, country: str) -> pd.DataFrame:
+        """
+        Converts a country's par yield curve into zero-coupon rates by bootstrapping every
+        date, see curve_model.bootstrap_zero_rates. The curves of the Euro Area and Germany
+        are zero-coupon already, published continuously compounded by the ECB and the
+        Bundesbank, and are only converted to annual compounding. A date is left out when
+        the curve has no maturity of a year or less to start the bootstrap from.
+
+        Args:
+            curve (pd.DataFrame): The par yields by date (rows) and maturity label (columns).
+            country (str): The country, which sets the coupon frequency.
+
+        Returns:
+            pd.DataFrame: The zero-coupon rates (annually compounded), in the same layout.
+        """
+        if country in ZERO_COUPON_CURVES:
+            return np.expm1(curve)
+
+        maturities = np.array(
+            [curve_model.maturity_in_years(label) for label in curve.columns]
+        )
+        values = curve.to_numpy(dtype=float)
+        zero_rates = np.full_like(values, np.nan)
+
+        for row, yields in enumerate(values):
+            available = np.isfinite(yields)
+            if not available.any() or maturities[available].min() > 1:
+                continue
+            zero_rates[row, available] = curve_model.bootstrap_zero_rates(
+                maturities[available],
+                yields[available],
+                COUPON_FREQUENCIES.get(country, 2),
+                country in SIMPLE_INTEREST_BILLS,
+            )
+
+        return pd.DataFrame(
+            zero_rates, index=curve.index, columns=curve.columns
+        ).dropna(how="all")
+
+    @handle_errors
+    def get_zero_coupon_curve(
+        self,
+        countries: list[str] | str = "United States",
+        period: str = "daily",
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the zero-coupon (spot) yield curve of a country by bootstrapping its
+        government bond par yields. A par yield is the coupon at which a bond trades at par,
+        so it mixes the discount rates of every coupon date; the zero-coupon rate of a
+        maturity is the single rate that discounts a payment at that date. Zero-coupon rates
+        are what bonds and other cash flows are discounted with, and what forward rates and
+        the curve models (Nelson-Siegel, Vasicek) are built on.
+
+        Maturities up to one year are treasury bills, which pay no coupon, so their yield
+        only needs converting to annual compounding (US bill yields are bond-equivalent
+        yields, with simple interest up to half a year). Beyond that the
+        par yields are interpolated linearly to every coupon date and each discount factor
+        follows from the earlier ones:
+
+            P(t_n) = (1 - c/f Σ_{i<n} P(t_i)) / (1 + c/f)
+
+        with c the par yield of maturity t_n and f the coupons per year (two, and one for
+        Sweden and Norway). The curves of the Euro Area and Germany are estimated as
+        zero-coupon curves by the ECB and the Bundesbank, which publish them continuously
+        compounded; they are converted to annual compounding like the others. A
+        curve needs a maturity of a year or less to start from, so the United Kingdom,
+        Norway and Australia (and Canada before its bill yields start) are not covered.
+
+        Also known as: spot curve, zero curve, bootstrapped curve, discount curve.
+
+        Args:
+            countries (list[str] | str, optional): The countries, see
+                `get_government_bond_yield_curve`. Defaults to "United States".
+            period (str, optional): Whether to use the daily, weekly or monthly curves.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The zero-coupon rates as decimals (annually compounded), indexed by
+            date with a column per country and maturity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-10-19', end_date='2026-10-23')
+
+        zero_curve = fixedincome.get_zero_coupon_curve()
+
+        zero_curve['United States'][['1Y', '2Y', '5Y', '10Y', '20Y', '30Y']]
+        ```
+
+        Which returns:
+
+        |            |     1Y |     2Y |     5Y |    10Y |    20Y |    30Y |
+        |:-----------|-------:|-------:|-------:|-------:|-------:|-------:|
+        | 2026-10-19 | 0.0455 | 0.0484 | 0.0501 | 0.0526 | 0.0581 | 0.0564 |
+        | 2026-10-20 | 0.0456 | 0.0486 | 0.0501 | 0.0522 | 0.0573 | 0.0556 |
+        | 2026-10-21 | 0.0457 | 0.0488 | 0.0502 | 0.0523 | 0.0572 | 0.0556 |
+        | 2026-10-22 | 0.0446 | 0.0471 | 0.0485 | 0.0506 | 0.0557 | 0.0545 |
+        | 2026-10-23 | 0.0449 | 0.0475 | 0.0489 | 0.051  | 0.0563 | 0.0548 |
+        """
+        zero_curves = {}
+        for country, curve in self._yield_curves(countries, period).items():
+            zero_curve = self._to_zero_coupon(curve, country)
+            if zero_curve.empty:
+                logger.warning(
+                    "The %s yield curve has no maturity of a year or less to bootstrap "
+                    "zero-coupon rates from.",
+                    country,
+                )
+                continue
+            zero_curves[country] = zero_curve
+
+        if not zero_curves:
+            return pd.DataFrame()
+
+        zero_curve = pd.concat(zero_curves, axis=1).sort_index()
+        zero_curve.columns.names = ["Country", "Maturity"]
+
+        return apply_rounding(
+            zero_curve, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_nelson_siegel_svensson(
+        self,
+        countries: list[str] | str = "United States",
+        period: str = "daily",
+        svensson: bool = True,
+        maturities: list[float | str] | str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Fits the Nelson-Siegel-Svensson model to the zero-coupon yield curve of a country on
+        every date. The model describes a whole curve with a few parameters, which smooths
+        out the noise of individual maturities, gives a yield for any maturity in between
+        and turns the history of curves into a history of a handful of factors. It is the
+        model central banks such as the ECB, the Bundesbank and the Federal Reserve
+        (Gürkaynak, Sack and Wright) publish their curves with.
+
+        The Nelson-Siegel model has a level β0 (the yield at an infinite maturity), a slope
+        β1 (the short end minus the long end) and a curvature β2 (a hump that peaks at about
+        1.8 τ1 years):
+
+            y(m) = β0 + β1 (1 - e^(-m/τ1)) / (m/τ1) + β2 [(1 - e^(-m/τ1)) / (m/τ1) - e^(-m/τ1)]
+
+        Svensson adds a second curvature β3 with its own decay τ2, which fits the long end
+        better. With the dozen maturities a government curve has, the six Svensson
+        parameters are weakly identified, as the level and the second curvature can offset
+        each other; set svensson=False for the three factors to read as level, slope and
+        curvature (Diebold and Li, 2006).
+
+        Given the decays the betas follow exactly from least squares, so the decays are
+        searched on a grid and refined for every date. The second decay is kept at least 1.5
+        times the first and the first at least a third of the shortest maturity, and the
+        level at or above the lower of zero and the longest yield (as Gürkaynak, Sack and
+        Wright keep it at or above zero), so that the curve extrapolates sensibly beyond the
+        maturities it is fitted to. The curve is the zero-coupon curve of
+        `get_zero_coupon_curve`, so the countries are those it covers that have at least as
+        many maturities as the model has parameters. The model is fitted to the
+        continuously compounded rates, as the ECB, the Bundesbank and the Federal Reserve
+        fit it, so the parameters compare with theirs; the yields at `maturities` are
+        annually compounded, like those of `get_zero_coupon_curve`.
+
+        For more information, see the following papers:
+
+        - Nelson, C.R. and Siegel, A.F. (1987). "Parsimonious Modeling of Yield Curves."
+          The Journal of Business, 60(4), 473-489.
+        - Svensson, L.E.O. (1994). "Estimating and Interpreting Forward Interest Rates:
+          Sweden 1992-1994." NBER Working Paper 4871.
+        - Diebold, F.X. and Li, C. (2006). "Forecasting the Term Structure of Government
+          Bond Yields." Journal of Econometrics, 130(2), 337-364.
+        - Gürkaynak, R.S., Sack, B. and Wright, J.H. (2007). "The U.S. Treasury Yield Curve:
+          1961 to the Present." Journal of Monetary Economics, 54(8), 2291-2304.
+
+        Also known as: NSS, Svensson curve, Nelson-Siegel curve, yield curve fitting,
+        level slope curvature factors.
+
+        Args:
+            countries (list[str] | str, optional): The countries, see
+                `get_zero_coupon_curve`. Defaults to "United States".
+            period (str, optional): Whether to fit the daily, weekly or monthly curves.
+                Defaults to "daily".
+            svensson (bool, optional): Whether to fit the Svensson model (True) or the
+                Nelson-Siegel model (False). Defaults to True.
+            maturities (list[float | str] | str | None, optional): The maturities, in years or
+                as labels such as "3M" and "10Y" (a list or a comma-separated string), to
+                return the fitted zero-coupon yields at instead of the parameters. Defaults
+                to None, which returns the parameters.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: Per date, the parameters (Beta 0 to Beta 3 as continuously
+            compounded rates, Tau 1 and Tau 2 in years) and the Root Mean Squared Error of the
+            fit, or the fitted (annually compounded) yields, with a column per country and
+            parameter (or maturity).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-10-19', end_date='2026-10-23')
+
+        fixedincome.get_nelson_siegel_svensson(countries='Germany')
+        ```
+
+        Which returns:
+
+        |            |   Beta 0 |   Beta 1 |   Beta 2 |   Beta 3 |   Tau 1 |   Tau 2 |   Root Mean Squared Error |
+        |:-----------|---------:|---------:|---------:|---------:|--------:|--------:|--------------------------:|
+        | 2026-10-19 |   0.0409 |  -0.0173 |   0.0418 |  -0.051  |  1.1799 |  1.7805 |                         0 |
+        | 2026-10-20 |   0.0408 |  -0.0172 |   0.0411 |  -0.0505 |  1.1997 |  1.7996 |                         0 |
+        | 2026-10-21 |   0.0406 |  -0.0168 |   0.0308 |  -0.041  |  1.1497 |  1.8913 |                         0 |
+        | 2026-10-22 |   0.0397 |  -0.0161 |   0.0313 |  -0.0385 |  1.1471 |  1.8929 |                         0 |
+        | 2026-10-23 |   0.0395 |  -0.0154 |   0.0365 |  -0.0462 |  1.2162 |  1.8245 |                         0 |
+        """
+        # A number of years (also written as a string, "0.5") is labeled "0.5Y".
+        labels = [
+            (
+                f"{curve_model.maturity_in_years(label):g}Y"
+                if not isinstance(label, str) or label.replace(".", "", 1).isdigit()
+                else label
+            )
+            for label in _split_values(maturities) or []
+        ] or None
+
+        fits = {}
+        for country, curve in self._yield_curves(countries, period).items():
+            zero_curve = self._to_zero_coupon(curve, country)
+            if zero_curve.empty:
+                continue
+            zero_curve.columns = [
+                curve_model.maturity_in_years(label) for label in zero_curve.columns
+            ]
+            parameters = curve_model.fit_nelson_siegel_curves(
+                np.log1p(zero_curve), svensson
+            )
+            parameters = parameters.dropna(how="all")
+            if parameters.empty:
+                logger.warning(
+                    "The %s yield curve has too few maturities to fit the %s model.",
+                    country,
+                    "Svensson" if svensson else "Nelson-Siegel",
+                )
+                continue
+
+            if labels is None:
+                fits[country] = parameters
+                continue
+
+            years = np.array([curve_model.maturity_in_years(label) for label in labels])
+            fits[country] = pd.DataFrame(
+                [
+                    np.expm1(
+                        curve_model.nelson_siegel_svensson_yield(
+                            years,
+                            row["Beta 0"],
+                            row["Beta 1"],
+                            row["Beta 2"],
+                            row.get("Beta 3", 0.0),
+                            row["Tau 1"],
+                            row.get("Tau 2", 1.0),
+                        )
+                    )
+                    for _, row in parameters.iterrows()
+                ],
+                index=parameters.index,
+                columns=labels,
+            )
+
+        if not fits:
+            return pd.DataFrame()
+
+        result = pd.concat(fits, axis=1).sort_index()
+        result.columns.names = [
+            "Country",
+            "Parameter" if labels is None else "Maturity",
+        ]
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_yield_curve_principal_components(
+        self,
+        country: str = "United States",
+        period: str = "daily",
+        components: int = 3,
+        changes: bool = True,
+        scores: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the principal components of a country's government bond yield curve: the
+        few independent movements that explain nearly all of how the curve changes. Litterman
+        and Scheinkman (1991) found that three components explain over 95% of the changes of
+        Treasury yields: a parallel shift (level, PC1, loading about equally on every
+        maturity), a steepening (slope, PC2, with opposite signs at the short and long end)
+        and a bending (curvature, PC3, moving the middle against both ends). Hedging a bond
+        portfolio against the first two covers most of its interest rate risk.
+
+        The components are the eigenvectors of the covariance matrix of the yield changes
+        (or levels), sorted by the share of the variance they explain. Their sign is
+        arbitrary, so PC1 is oriented as a rise in all yields (its loadings sum to a
+        positive number), PC2 as a steepening (the longest maturity loads above the shortest)
+        and the others so that their loadings sum to a positive number.
+        Maturities that are only published for part of the period (such as the 4-month
+        Treasury bill from 2022) are left out, so that the analysis covers the full period.
+
+        For more information, see the following paper:
+
+        - Litterman, R. and Scheinkman, J. (1991). "Common Factors Affecting Bond Returns."
+          The Journal of Fixed Income, 1(1), 54-61.
+
+        Also known as: PCA of the yield curve, level slope curvature, term structure factors.
+
+        Args:
+            country (str, optional): The country, see `get_government_bond_yield_curve`.
+                Defaults to "United States".
+            period (str, optional): Whether to use the daily, weekly or monthly curves.
+                Defaults to "daily".
+            components (int, optional): The number of components. Defaults to 3.
+            changes (bool, optional): Whether to analyze the changes of the yields, the usual
+                choice as yields themselves are not stationary, or their levels. Defaults to True.
+            scores (bool, optional): Whether to return the value of every component per date
+                (the scores) instead of the loadings. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The loadings per maturity and component, with the share of the
+            variance each component explains as the last row, or the scores per date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2016-01-01', end_date='2025-12-31')
+
+        fixedincome.get_yield_curve_principal_components(period='monthly')
+        ```
+
+        Which returns:
+
+        | Maturity           |    PC1 |     PC2 |     PC3 |
+        |:-------------------|-------:|--------:|--------:|
+        | 1M                 | 0.1332 | -0.6209 |  0.3084 |
+        | 3M                 | 0.1713 | -0.4809 |  0.1636 |
+        | 6M                 | 0.225  | -0.3809 | -0.0592 |
+        | 1Y                 | 0.2789 | -0.2545 | -0.2647 |
+        | 2Y                 | 0.3538 | -0.0249 | -0.4383 |
+        | 3Y                 | 0.3676 |  0.0701 | -0.3617 |
+        | 5Y                 | 0.3733 |  0.1595 | -0.1347 |
+        | 7Y                 | 0.3636 |  0.1907 |  0.0399 |
+        | 10Y                | 0.3434 |  0.1972 |  0.2136 |
+        | 20Y                | 0.3052 |  0.1888 |  0.4277 |
+        | 30Y                | 0.2855 |  0.1773 |  0.4831 |
+        | Explained Variance | 0.732  |  0.1938 |  0.0501 |
+        """
+        curve = self._yield_curves(country, period)[country]
+
+        # A maturity published for only part of the period would cut the analysis short,
+        # as only the dates with every maturity can be used.
+        coverage = curve.notna().sum()
+        curve = curve.loc[:, coverage >= CURVE_COVERAGE * coverage.max()]
+
+        loadings, component_scores, explained = curve_model.get_principal_components(
+            curve, components=components, changes=changes
+        )
+
+        if scores:
+            result = component_scores
+        else:
+            result = pd.concat([loadings, explained.to_frame().T])
+            result.index.name = "Maturity"
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @staticmethod
+    def _continuous_short_rate(rates: pd.Series, country: str, label: str) -> pd.Series:
+        """
+        The yields of one maturity as continuously compounded rates, the short rate the
+        Vasicek, CIR and Hull-White models describe, converted the way `_to_zero_coupon`
+        converts the bills.
+
+        Args:
+            rates (pd.Series): The yields over time.
+            country (str): The country, which sets the quote convention.
+            label (str): The maturity label, such as "3M".
+
+        Returns:
+            pd.Series: The continuously compounded rates.
+        """
+        rates = rates.dropna()
+        if country in ZERO_COUPON_CURVES:
+            return rates
+        maturity = curve_model.maturity_in_years(label)
+        annual = curve_model.bill_yields_to_annual(
+            np.full(len(rates), maturity),
+            rates.to_numpy(dtype=float),
+            COUPON_FREQUENCIES.get(country, 2),
+            country in SIMPLE_INTEREST_BILLS,
+        )
+        return pd.Series(np.log1p(annual), index=rates.index, name=rates.name)
+
+    @handle_errors
+    def get_short_rate_model(
+        self,
+        country: str = "United States",
+        short_rate: str = "3M",
+        period: str = "daily",
+        rounding: int | None = None,
+    ):
+        """
+        Calibrates the Vasicek and Cox-Ingersoll-Ross (CIR) short-rate models to the history
+        of a country's short-term government bond yield and compares the zero-coupon curve
+        each model implies with today's. Short-rate models describe how the interest rate
+        moves, pulled back to a long-run mean b at a speed a with a volatility σ:
+
+            - Vasicek (1977): dr = a (b - r) dt + σ dW
+            - CIR (1985): dr = a (b - r) dt + σ √r dW
+
+        In CIR the volatility shrinks as the rate approaches zero, so the rate stays
+        positive when 2ab ≥ σ² (the Feller condition) and can otherwise touch zero; in
+        Vasicek it can turn negative. The models describe a continuously compounded short
+        rate, so the yields are converted to continuous compounding first (US bill yields
+        from their bond-equivalent quote). Both give bond prices, and so a full
+        zero-coupon curve, in closed form. The parameters are estimated by regressing the
+        change of the rate on its level over the period (CIR on the changes scaled by the
+        square root of the rate, which needs a rate above zero throughout). The half-life is
+        the time it takes to close half the gap to the long-run mean, ln(2) / a.
+
+        A model calibrated to the history does not reproduce today's curve, which is what
+        the comparison with the market shows; the Hull-White model of
+        `get_short_rate_simulation` adds a time-varying mean that does.
+
+        For more information, see the following papers:
+
+        - Vasicek, O. (1977). "An Equilibrium Characterization of the Term Structure."
+          Journal of Financial Economics, 5(2), 177-188.
+        - Cox, J.C., Ingersoll, J.E. and Ross, S.A. (1985). "A Theory of the Term Structure
+          of Interest Rates." Econometrica, 53(2), 385-407.
+
+        Also known as: short rate model, mean reversion of interest rates, Vasicek model, CIR
+        model, equilibrium term structure model.
+
+        Args:
+            country (str, optional): The country, see `get_government_bond_yield_curve`.
+                Defaults to "United States".
+            short_rate (str, optional): The maturity of the yield used as the short rate,
+                such as "1M", "3M" or "6M". Defaults to "3M".
+            period (str, optional): Whether to calibrate on daily, weekly or monthly rates.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: Per model (columns Vasicek and CIR) the Speed of Mean Reversion, the
+            Long-Run Mean, the Volatility, the Current Rate and the Half-Life in years, then
+            the zero-coupon rate per maturity (continuously compounded), with the market's
+            zero-coupon rates in the Market column.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2000-01-01', end_date='2026-10-23')
+
+        fixedincome.get_short_rate_model(short_rate='6M')
+        ```
+
+        Which returns:
+
+        | Parameter               |   Vasicek |    CIR |   Market |
+        |:------------------------|----------:|-------:|---------:|
+        | Speed of Mean Reversion |    0.0873 | 0.1481 | nan      |
+        | Long-Run Mean           |    0.0144 | 0.017  | nan      |
+        | Volatility              |    0.0059 | 0.0558 | nan      |
+        | Current Rate            |    0.0425 | 0.0425 |   0.0425 |
+        | Half-Life               |    7.9398 | 4.6816 | nan      |
+        | Zero Rate 1M            |    0.0424 | 0.0424 |   0.041  |
+        | Zero Rate 1.5M          |    0.0424 | 0.0423 |   0.041  |
+        | Zero Rate 2M            |    0.0423 | 0.0422 |   0.0415 |
+        | Zero Rate 3M            |    0.0422 | 0.0421 |   0.042  |
+        | Zero Rate 4M            |    0.0421 | 0.0419 |   0.0427 |
+        | Zero Rate 6M            |    0.0419 | 0.0416 |   0.0425 |
+        | Zero Rate 1Y            |    0.0413 | 0.0407 |   0.0439 |
+        | Zero Rate 2Y            |    0.0402 | 0.039  |   0.0464 |
+        | Zero Rate 3Y            |    0.0391 | 0.0375 |   0.047  |
+        | Zero Rate 5Y            |    0.0371 | 0.0347 |   0.0477 |
+        | Zero Rate 7Y            |    0.0353 | 0.0324 |   0.0485 |
+        | Zero Rate 10Y           |    0.0328 | 0.0297 |   0.0497 |
+        | Zero Rate 20Y           |    0.0269 | 0.0242 |   0.0548 |
+        | Zero Rate 30Y           |    0.0232 | 0.0216 |   0.0534 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "short rate model"
+        )
+        curve = self._yield_curves(country, period)[country]
+        if short_rate not in curve.columns:
+            raise ValueError(
+                f"The {country} yield curve has no {short_rate} maturity. Choose from "
+                f"{', '.join(curve.columns)}."
+            )
+
+        rates = self._continuous_short_rate(curve[short_rate], country, short_rate)
+        latest = curve.dropna(how="all").iloc[[-1]]
+        zero_rates = self._to_zero_coupon(latest, country).iloc[0].dropna()
+        years = np.array(
+            [curve_model.maturity_in_years(label) for label in zero_rates.index]
+        )
+
+        rows = [
+            *SHORT_RATE_PARAMETERS,
+            *(f"Zero Rate {label}" for label in zero_rates.index),
+        ]
+        result = pd.DataFrame(np.nan, index=rows, columns=["Vasicek", "CIR", "Market"])
+
+        for model, column in (("vasicek", "Vasicek"), ("cir", "CIR")):
+            try:
+                parameters = short_rate_model.calibrate_short_rate_model(
+                    rates, model, PERIODS_PER_YEAR[period]
+                )
+            except ValueError as error:
+                logger.warning(
+                    "The %s model could not be calibrated: %s", column, error
+                )
+                continue
+            model_yields = short_rate_model.get_model_yields(
+                years,
+                model,
+                parameters["Speed of Mean Reversion"],
+                parameters["Long-Run Mean"],
+                parameters["Volatility"],
+                parameters["Current Rate"],
+            )
+            result[column] = [*parameters.values(), *model_yields]
+
+        result.loc["Current Rate", "Market"] = rates.iloc[-1]
+        result.loc[[f"Zero Rate {label}" for label in zero_rates.index], "Market"] = (
+            np.log1p(zero_rates.to_numpy())
+        )
+        result.index.name = "Parameter"
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_short_rate_simulation(
+        self,
+        model: str = "hull_white",
+        country: str = "United States",
+        short_rate: str = "3M",
+        period: str = "daily",
+        years: float = 10,
+        steps_per_year: int = 12,
+        paths: int = 10000,
+        seed: int | None = 0,
+        rounding: int | None = None,
+    ):
+        """
+        Simulates the future path of a country's short-term interest rate with the
+        Hull-White, Vasicek or Cox-Ingersoll-Ross model and summarizes the distribution of
+        the paths per step: the mean and the 5th, 25th, 50th, 75th and 95th percentiles.
+        Simulated rate paths value interest rate derivatives and path-dependent products
+        (such as mortgages with prepayment), and stress the interest income of a balance
+        sheet.
+
+        The speed of mean reversion and the volatility are calibrated to the history of the
+        rate, see `get_short_rate_model`. In the Vasicek and CIR models the rate is pulled
+        to the long-run mean of that history. The Hull-White (1990) model replaces it with a
+        mean that varies over time and follows from today's zero-coupon curve, so that the
+        model reproduces the discount factors of that curve (its expected short rate lies
+        above the forward rate by the convexity term σ² (1 - e^(-at))² / (2a²)):
+
+            dr = [θ(t) - a r] dt + σ dW,  θ(t) = ∂f/∂t + a f(t) + σ² (1 - e^(-2at)) / (2a)
+
+        with f the instantaneous forward rate. The paths are simulated with an Euler scheme
+        starting at today's rate (CIR's are kept at or above zero).
+
+        For more information, see the following paper:
+
+        - Hull, J. and White, A. (1990). "Pricing Interest-Rate-Derivative Securities." The
+          Review of Financial Studies, 3(4), 573-592.
+
+        Also known as: interest rate simulation, Hull-White model, Monte Carlo short rate,
+        interest rate scenarios.
+
+        Args:
+            model (str, optional): "hull_white", "vasicek" or "cir". Defaults to "hull_white".
+            country (str, optional): The country, see `get_government_bond_yield_curve`.
+                Defaults to "United States".
+            short_rate (str, optional): The maturity of the yield used as the short rate,
+                such as "1M", "3M" or "6M". Defaults to "3M".
+            period (str, optional): Whether to calibrate on daily, weekly or monthly rates.
+                Defaults to "daily".
+            years (float, optional): The horizon in years. Defaults to 10.
+            steps_per_year (int, optional): The steps per year. Defaults to 12.
+            paths (int, optional): The number of simulated paths. Defaults to 10,000.
+            seed (int | None, optional): The random seed, None for a different simulation
+                every time. Defaults to 0.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The Mean and the percentiles of the simulated rate (as decimals),
+            indexed by the time in years.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2000-01-01', end_date='2026-10-23')
+
+        simulation = fixedincome.get_short_rate_simulation(
+            short_rate='6M', years=5, steps_per_year=1
+        )
+
+        simulation
+        ```
+
+        Which returns:
+
+        |   Years |   Mean |     5% |    25% |    50% |    75% |    95% |
+        |--------:|-------:|-------:|-------:|-------:|-------:|-------:|
+        |       0 | 0.0425 | 0.0425 | 0.0425 | 0.0425 | 0.0425 | 0.0425 |
+        |       1 | 0.0489 | 0.0393 | 0.0449 | 0.0489 | 0.0529 | 0.0587 |
+        |       2 | 0.0483 | 0.035  | 0.0429 | 0.0483 | 0.0537 | 0.0614 |
+        |       3 | 0.0485 | 0.0332 | 0.0421 | 0.0484 | 0.0547 | 0.0643 |
+        |       4 | 0.0493 | 0.0324 | 0.0423 | 0.0492 | 0.0563 | 0.0666 |
+        |       5 | 0.0503 | 0.0322 | 0.0427 | 0.0503 | 0.0579 | 0.0689 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "short rate simulation"
+        )
+        model = model.lower().replace("-", "_").replace(" ", "_")
+        if model not in SHORT_RATE_SIMULATION_MODELS:
+            raise ValueError(
+                f"The model must be one of {', '.join(SHORT_RATE_SIMULATION_MODELS)}, not {model!r}."
+            )
+        if paths * years * steps_per_year > MAX_SIMULATED_VALUES:
+            raise ValueError(
+                f"The simulation of {paths:,} paths over {years * steps_per_year:,.0f} steps is "
+                f"too large; keep paths times steps under {MAX_SIMULATED_VALUES:,}."
+            )
+
+        curve = self._yield_curves(country, period)[country]
+        if short_rate not in curve.columns:
+            raise ValueError(
+                f"The {country} yield curve has no {short_rate} maturity. Choose from "
+                f"{', '.join(curve.columns)}."
+            )
+
+        parameters = short_rate_model.calibrate_short_rate_model(
+            self._continuous_short_rate(curve[short_rate], country, short_rate),
+            "cir" if model == "cir" else "vasicek",
+            PERIODS_PER_YEAR[period],
+        )
+        speed = parameters["Speed of Mean Reversion"]
+        if not speed > 0:
+            raise ValueError(
+                f"The {country} {short_rate} rate shows no mean reversion between "
+                f"{self._start_date} and {self._end_date}; choose a longer period."
+            )
+
+        mean: float | np.ndarray = parameters["Long-Run Mean"]
+        if model == "hull_white":
+            latest = curve.dropna(how="all").iloc[[-1]]
+            zero_rates = self._to_zero_coupon(latest, country).iloc[0].dropna()
+            mean = short_rate_model.hull_white_mean(
+                np.array(
+                    [curve_model.maturity_in_years(label) for label in zero_rates.index]
+                ),
+                np.log1p(zero_rates.to_numpy()),
+                speed,
+                parameters["Volatility"],
+                parameters["Current Rate"],
+                years,
+                steps_per_year,
+            )
+
+        simulated = short_rate_model.simulate_short_rate(
+            model,
+            speed,
+            mean,
+            parameters["Volatility"],
+            parameters["Current Rate"],
+            years=years,
+            steps_per_year=steps_per_year,
+            paths=paths,
+            seed=seed,
+        )
+
+        summary = pd.DataFrame(
+            {
+                "Mean": simulated.mean(axis=0),
+                **{
+                    f"{quantile:.0%}": np.quantile(simulated, quantile, axis=0)
+                    for quantile in SIMULATION_QUANTILES
+                },
+            },
+            index=pd.Index(
+                np.round(np.arange(simulated.shape[1]) / steps_per_year, 4),
+                name="Years",
+            ),
+        )
+
+        return apply_rounding(
+            summary, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_treasury_auctions(
+        self,
+        security_type: list[str] | str | None = None,
+        security_term: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieves the results of the US Treasury auctions held between the start and end
+        date: every bill, note, bond, TIPS and floating rate note the Treasury sold, with the
+        yield it sold at, how many times the offering was bid (the bid-to-cover ratio) and
+        who bought it. Auction results are the most direct read of the demand for US
+        government debt: a lower bid-to-cover ratio or a smaller share for indirect bidders
+        (which include foreign central banks) at a large auction is a sign of weak demand.
+
+        The data comes from the Treasury's Fiscal Data API, from 1979 on, without an API key.
+        The Yield is the high yield of notes and bonds and the investment rate (the bond
+        equivalent yield) of bills; the High Discount Rate is the discount rate bills are
+        quoted at. The Bid-to-Cover Ratio is the Treasury's, which leaves out the Federal
+        Reserve's (SOMA) bids, while the Total Tendered and Total Accepted include them, so
+        their ratio is lower when the Federal Reserve rolls over maturing holdings. The
+        bidder shares are each class's part of the competitive awards:
+        primary dealers (who must bid at every auction), direct bidders (buying for their
+        own account) and indirect bidders (bidding through a dealer, such as foreign and
+        international monetary authorities and investment funds). Auctions that are
+        announced but not yet held, and older auctions for which the Treasury did not
+        publish a breakdown, show NaN for the missing results.
+
+        See definition: https://fiscaldata.treasury.gov/datasets/treasury-securities-auctions-data/
+
+        Also known as: Treasury auction results, bid-to-cover ratio, auction demand,
+        indirect bidders, Treasury issuance.
+
+        Args:
+            security_type (list[str] | str | None, optional): The kind of security: "Bill",
+                "Cash Management Bill", "Note", "Bond", "TIPS" or "FRN", or several (a list or
+                a comma-separated string). Defaults to None, which returns every kind.
+            security_term (str | None, optional): The term as the Treasury writes it, such as
+                "13-Week", "10-Year" or "30-Year". Defaults to None, which returns every term.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which keeps the precision the Treasury publishes.
+
+        Returns:
+            pd.DataFrame: One row per auction, indexed by the auction date, with the security,
+            its dates, the Coupon Rate, Yield and High Discount Rate as decimals, the
+            Bid-to-Cover Ratio, the amounts in dollars and the bidder shares as decimals.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2025-01-01', end_date='2026-10-23')
+
+        auctions = fixedincome.get_treasury_auctions(security_type='Note', security_term='10-Year')
+
+        auctions[['Security Term', 'Reopening', 'Yield', 'Bid-to-Cover Ratio', 'Indirect Bidder Share']].tail()
+        ```
+
+        Which returns:
+
+        | Auction Date   | Security Term   | Reopening   |   Yield |   Bid-to-Cover Ratio |   Indirect Bidder Share |
+        |:---------------|:----------------|:------------|--------:|---------------------:|------------------------:|
+        | 2025-08-06     | 10-Year         | No          | 0.04255 |                 2.35 |                  0.6423 |
+        | 2025-11-12     | 10-Year         | No          | 0.04074 |                 2.43 |                  0.67   |
+        | 2026-02-11     | 10-Year         | No          | 0.04177 |                 2.39 |                  0.6454 |
+        | 2026-05-12     | 10-Year         | No          | 0.04468 |                 2.4  |                  0.6395 |
+        | 2026-08-12     | 10-Year         | No          | 0.04683 |                 2.53 |                  0.7673 |
+        """
+        auctions = fiscaldata_model.get_treasury_auctions(
+            self._start_date, self._end_date
+        )
+
+        if security_type is not None:
+            requested = _split_values(security_type) or []
+            types = {kind.lower(): kind for kind in TREASURY_SECURITY_TYPES}
+            if unknown := [kind for kind in requested if kind.lower() not in types]:
+                raise ValueError(
+                    f"The security type {', '.join(unknown)} does not exist. Choose from "
+                    f"{', '.join(TREASURY_SECURITY_TYPES)}."
+                )
+            auctions = auctions[
+                auctions["Security Type"].isin(
+                    [types[kind.lower()] for kind in requested]
+                )
+            ]
+        if security_term is not None:
+            auctions = auctions[
+                auctions["Security Term"].str.lower() == security_term.strip().lower()
+            ]
+
+        if auctions.empty:
+            return pd.DataFrame()
+
+        auctions = auctions.copy()
+        auctions["Yield"] = auctions["High Yield"].fillna(
+            auctions["High Investment Rate"]
+        )
+        bidders = {
+            "Primary Dealer Share": "Primary Dealers Accepted",
+            "Direct Bidder Share": "Direct Bidders Accepted",
+            "Indirect Bidder Share": "Indirect Bidders Accepted",
+        }
+        competitive = auctions[list(bidders.values())].sum(axis=1, min_count=3)
+        for share, accepted in bidders.items():
+            auctions[share] = auctions[accepted] / competitive.where(competitive > 0)
+            if rounding is None and self._rounding is not None:
+                # The published figures keep their precision, the calculated shares do not
+                # need more than the module's rounding.
+                auctions[share] = auctions[share].round(self._rounding)
+
+        auctions.index = pd.PeriodIndex(auctions.pop("Auction Date"), freq="D")
+        auctions.index.name = "Auction Date"
+        auctions = auctions[
+            [
+                "Security Type",
+                "Security Term",
+                "CUSIP",
+                "Issue Date",
+                "Maturity Date",
+                "Reopening",
+                "Coupon Rate",
+                "Yield",
+                "High Discount Rate",
+                "Bid-to-Cover Ratio",
+                "Offering Amount",
+                "Total Tendered",
+                "Total Accepted",
+                *bidders,
+            ]
+        ]
+
+        return apply_rounding(auctions, rounding)
+
     @handle_errors
     def get_ice_bofa_option_adjusted_spread(
         self,
@@ -3463,6 +4577,120 @@ class FixedIncome:
             axis="rows",
             row_slice=True,
             dropna=True,
+        )
+
+    @handle_errors
+    def get_implied_default_probability(
+        self,
+        spreads: str | float | dict | pd.Series | None = None,
+        recovery_rate: float = 0.4,
+        horizons: list[float] | str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the default probabilities that credit spreads imply. Investors in a
+        corporate bond are compensated for the loss they expect from a default, so with a
+        constant default intensity (hazard rate) λ and a share R recovered on default the
+        spread s is about λ (1 - R), the "credit triangle":
+
+            λ = s / (1 - R),  P(default within t years) = 1 - e^(-λt)
+
+        By default the spreads are the latest ICE BofA option-adjusted spreads of the US
+        corporate bond indices per rating (AAA to CCC), which need a FRED API key. Spreads
+        also pay for liquidity and for the uncertainty of the losses, so these risk-neutral
+        probabilities are higher than the default rates that are observed historically (see
+        `get_default_rates`); the gap is the credit risk premium.
+
+        For more information, see the following book:
+
+        - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th
+          edition, chapter 24.
+
+        Also known as: implied default probability, hazard rate, credit triangle,
+        risk-neutral default probability.
+
+        Args:
+            spreads (str | float | dict | pd.Series | None, optional): The credit spread as a
+                decimal (0.01 for 100 basis points), or several by name as a dictionary,
+                Series or string such as "BBB:0.011, B:0.031". Defaults to None, which uses
+                the latest ICE BofA option-adjusted spread per rating.
+            recovery_rate (float, optional): The share of the face value recovered on
+                default. Defaults to 0.4.
+            horizons (list[float] | str | None, optional): The horizons in years, as a list or
+                a comma-separated string. Defaults to None, which uses 1, 3, 5 and 10 years.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The Spread, the Hazard Rate and the default probability per horizon
+            as decimals, with a row per spread.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_implied_default_probability(
+            spreads={'BBB': 0.011, 'BB': 0.021, 'B': 0.031, 'CCC': 0.087}
+        )
+        ```
+
+        Which returns:
+
+        | Name   |   Spread |   Hazard Rate |   1Y Default Probability |   3Y Default Probability |   5Y Default Probability |   10Y Default Probability |
+        |:-------|---------:|--------------:|-------------------------:|-------------------------:|-------------------------:|--------------------------:|
+        | BBB    |    0.011 |        0.0183 |                   0.0182 |                   0.0535 |                   0.0876 |                    0.1675 |
+        | BB     |    0.021 |        0.035  |                   0.0344 |                   0.0997 |                   0.1605 |                    0.2953 |
+        | B      |    0.031 |        0.0517 |                   0.0504 |                   0.1436 |                   0.2277 |                    0.4035 |
+        | CCC    |    0.087 |        0.145  |                   0.135  |                   0.3527 |                   0.5157 |                    0.7654 |
+        """
+        horizons = [
+            float(horizon) for horizon in _split_values(horizons) or [1, 3, 5, 10]
+        ]
+
+        if spreads is None:
+            self._require_fred_api_key()
+            start_date = (
+                datetime.strptime(self._end_date, "%Y-%m-%d") - timedelta(days=31)
+            ).strftime("%Y-%m-%d")
+            option_adjusted_spread = fred_model.get_rating_option_adjusted_spread(
+                start_date, self._end_date, self._fred_api_key
+            ).dropna(how="all")
+            if option_adjusted_spread.empty:
+                raise ValueError(
+                    f"FRED has no ICE BofA option-adjusted spreads in the month before {self._end_date}."
+                )
+            # The spreads are in basis points.
+            spread_series = option_adjusted_spread.iloc[-1].dropna() / 10000
+            spread_series.index.name = "Rating"
+        elif isinstance(spreads, int | float) or (
+            isinstance(spreads, str) and ":" not in spreads
+        ):
+            spread_series = pd.Series({"Spread": float(spreads)})
+        elif isinstance(spreads, str):
+            pairs = [pair.split(":", 1) for pair in _split_values(spreads) or []]
+            spread_series = pd.Series(
+                {name.strip(): float(value) for name, value in pairs}
+            )
+        else:
+            spread_series = pd.Series(spreads, dtype=float)
+
+        result = pd.DataFrame(
+            {
+                name: {
+                    "Spread": spread,
+                    **short_rate_model.get_implied_default_probability(
+                        spread, recovery_rate, tuple(horizons)
+                    ),
+                }
+                for name, spread in spread_series.items()
+            }
+        ).T
+        result.index.name = spread_series.index.name or "Name"
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors

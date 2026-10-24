@@ -200,6 +200,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{US_TREASURY}.par_yield_curve_year": CachePolicy(ttl_seconds=30 * DAY),
     f"{US_TREASURY}.par_yield_curve_real": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.par_yield_curve_real_year": CachePolicy(ttl_seconds=30 * DAY),
+    # Auctions are added several times a week; a past year's results are final.
+    f"{US_TREASURY}.auctions": CachePolicy(ttl_seconds=DAY),
+    f"{US_TREASURY}.auctions_year": CachePolicy(ttl_seconds=30 * DAY),
     f"{FREDDIE_MAC}.series": CachePolicy(ttl_seconds=DAY),
     f"{IBGE}.series": CachePolicy(ttl_seconds=DAY),
     # Daily bond yields; a rerun only asks for the last month, since yields are not revised

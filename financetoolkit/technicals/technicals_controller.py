@@ -240,7 +240,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -248,10 +248,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Breadth indicators calculated based on the specified parameters.
@@ -412,19 +412,23 @@ class Technicals:
         """
         Calculate the McClellan Oscillator for a given price series.
 
-        The McClellan Oscillator is a breadth indicator that measures the difference
-        between the exponential moving average of advancing stocks and the exponential
-        moving average of declining stocks.
+        The McClellan Oscillator is the difference between a short-term and a long-term
+        exponential moving average of the daily advance/decline signal. Traditionally it is
+        calculated from the number of advancing minus declining stocks across a market; here
+        it is applied to each ticker's own signal (+1 on a day it closed higher, -1 on a day it
+        closed lower, 0 otherwise), so it measures how persistently that ticker has been rising
+        or falling.
 
         The formula is a follows:
 
-        - McClellan Oscillator = EMA(Advancers) — EMA(Decliners)
+        - McClellan Oscillator = EMA(Advance/Decline Signal, short_ema_window) — EMA(Advance/Decline
+          Signal, long_ema_window)
 
         Also known as: McClellan oscillator, market breadth.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             short_ema_window (int, optional): The window size for the short-term EMA.
@@ -436,10 +440,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: McClellan Oscillator values.
@@ -532,21 +536,23 @@ class Technicals:
         standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Advancers/Decliners ratio for a given price series.
+        Calculate the daily advance/decline signal for a given price series.
 
-        The Advancers/Decliners ratio is a breadth indicator that measures the number
-        of advancing stocks (stocks with positive price changes) versus the number of
-        declining stocks (stocks with negative price changes).
+        Traditionally advancers versus decliners is a market-wide count of rising against
+        falling stocks; applied to a single ticker it becomes a directional signal: +1 on a
+        day the ticker closed higher than the day before, -1 on a day it closed lower and 0
+        on an unchanged day. It feeds the McClellan Oscillator; get_trin and
+        get_new_highs_new_lows measure breadth across all tickers.
 
         The formula is a follows:
 
-        - Advancers/Decliners = Advancers / Decliners
+        - Signal = +1 if Close(t) > Close(t-1), -1 if Close(t) < Close(t-1), else 0
 
         Also known as: advance decline ratio, market breadth.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -554,17 +560,17 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
-            pd.Series or pd.DataFrame: Advancers/Decliners ratio values.
+            pd.Series or pd.DataFrame: Advance/decline signal values (+1, 0 or -1).
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
-          the Advancers/Decliners ratio for each asset in the Toolkit instance.
+          the advance/decline signal for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -654,13 +660,19 @@ class Technicals:
 
         The formula is a follows:
 
-        - OBV = Previous OBV + Current Volume if Close > Previous Close
+        - OBV = Previous OBV + Volume if Close > Previous Close, Previous OBV — Volume if Close < Previous Close,
+          and Previous OBV otherwise.
+
+        The level of OBV has no meaning by itself, since it depends on the first date of the data; only its
+        direction and its divergences from price matter. A rising OBV while price moves sideways is read as
+        accumulation ahead of a breakout, a falling OBV as distribution. A single day of very high volume, such
+        as an index rebalance or an earnings day, can move the line for a long time.
 
         Also known as: OBV, volume momentum.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -668,10 +680,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the OBV.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: On-Balance Volume values.
@@ -768,24 +780,28 @@ class Technicals:
 
         The formula is a follows:
 
-        - ADL = Previous ADL + Current ADL
+        - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
+        - Money Flow Volume = Money Flow Multiplier * Volume
+        - ADL = Previous ADL + Money Flow Volume
 
         Also known as: ADL, Chaikin ADL, volume-price trend.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Accumulation/Distribution Line.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Accumulation/Distribution Line values.
@@ -899,9 +915,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             short_window (int, optional): Number of periods for the short-term moving average.
                 Defaults to 3.
             long_window (int, optional): Number of periods for the long-term moving average.
@@ -911,10 +929,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Chaikin Oscillator.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Chaikin Oscillator values.
@@ -1028,9 +1046,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range and the indicator outside its bounds.
             window (int, optional): Number of periods to sum the Money Flow Volume and
                 volume over. Defaults to 20.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1038,10 +1058,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Chaikin Money Flow.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Chaikin Money Flow values, bounded between -1 and 1.
@@ -1145,7 +1165,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods used to smooth the raw Ease of
@@ -1158,10 +1178,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Ease of Movement.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Ease of Movement values.
@@ -1261,7 +1281,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             start_value (float, optional): The index value to start the series at.
@@ -1271,10 +1291,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Negative Volume Index.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Negative Volume Index values.
@@ -1372,7 +1392,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             start_value (float, optional): The index value to start the series at.
@@ -1382,10 +1402,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Positive Volume Index.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Positive Volume Index values.
@@ -1467,7 +1487,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             window (int, optional): The window size for calculating indicators.
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
@@ -1477,10 +1497,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Momentum indicators calculated based on the specified parameters.
@@ -1728,9 +1748,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             window (int, optional): The number of periods for calculating the MFI.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1738,10 +1760,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Money Flow Index (MFI) values.
@@ -1848,9 +1870,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range and the indicator outside its bounds.
             window (int, optional): The number of periods for calculating the Williams %R.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1858,10 +1882,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Williams %R values.
@@ -1967,7 +1991,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods for calculating the Aroon Indicator.
@@ -1977,10 +2001,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -2094,9 +2118,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close".
+                the closing prices. Defaults to "Adj Close". The high and low prices are not adjusted for
+                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
+                close the close can fall outside the day's high-low range, which distorts the result.
             window (int, optional): The number of periods for calculating the CCI.
                 Defaults to 14.
             constant (float, optional): Constant multiplier used in the CCI calculation.
@@ -2106,10 +2132,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Commodity Channel Index (CCI) values.
@@ -2227,9 +2253,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close".
+                the closing prices. Defaults to "Adj Close". The open prices are not adjusted for
+                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
+                close each close is compared with an unadjusted open, which pulls the index towards 0.
             window (int, optional): The number of periods for calculating the RVI.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -2237,10 +2265,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Relative Vigor Index (RVI) values.
@@ -2345,7 +2373,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods for calculating the Force Index.
@@ -2355,10 +2383,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Force Index values.
@@ -2468,9 +2496,12 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close".
+                the closing prices. Defaults to "Adj Close". The high and low prices are not adjusted for
+                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
+                close the close can fall outside the day's high-low range and the indicator outside its
+                bounds.
             window_1 (int, optional): The number of periods for the first short-term window.
                 Defaults to 7.
             window_2 (int, optional): The number of periods for the second mid-term window.
@@ -2482,10 +2513,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Ultimate Oscillator values.
@@ -2592,13 +2623,13 @@ class Technicals:
 
         The formula is a follows:
 
-        - PPO = ((Long-term EMA — Short-term EMA) / Short—term EMA) * 100
+        - PPO = ((Short-term EMA — Long-term EMA) / Long-term EMA) * 100
 
         Also known as: PPO, price oscillator.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
             short_window (int, optional): The number of periods for the short-term moving average.
@@ -2610,10 +2641,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Percentage Price Oscillator (PPO) values.
@@ -2721,7 +2752,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the DPO calculation.
@@ -2731,10 +2762,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Detrended Price Oscillator (DPO) values.
@@ -2833,14 +2864,22 @@ class Technicals:
 
         - ADX = Wilder's Smoothed Moving Average of DX, where DX = 100 * |+DI — -DI| / (+DI + -DI)
 
+        The ADX measures trend strength, not direction: a reading above about 25 is usually taken as a
+        trending market and below 20 as a range, whether prices are rising or falling. Traders combine it
+        with the +DI and -DI lines it is built from, which this method does not return, or with the price
+        itself, to know the direction. With Wilder's smoothing it reacts slowly and needs a few times the
+        window of history before its values settle.
+
         Also known as: ADX, trend strength indicator. See `momentum_model.get_average_directional_index`
         for the full formula, which uses Wilder's smoothing (not a plain SMA) throughout.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close".
+                the closing prices. Defaults to "Adj Close". The high and low prices are not adjusted for
+                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
+                close the close can fall outside the day's high-low range, which distorts the result.
             window (int, optional): The number of periods to consider for the ADX calculation.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -2848,10 +2887,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series: Average Directional Index (ADX) values.
@@ -2957,14 +2996,14 @@ class Technicals:
 
         The formula is a follows:
 
-        - CMO = ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change)
-            + (Sum of Downward Change))
+        - CMO = 100 * ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change)
+            + (Sum of Downward Change)), bounded between -100 and 100.
 
         Also known as: CMO, Chande momentum.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the CMO calculation.
@@ -2974,10 +3013,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Chande Momentum Oscillator values.
@@ -3083,13 +3122,20 @@ class Technicals:
         - Leading Span B = (Highest High + Lowest Low) / 2 over lead_span_b_window periods,
           shifted forward base_window periods
 
+        Price above the cloud is read as an uptrend and below it as a downtrend, with the cloud itself
+        as support or resistance; a thick cloud is stronger support than a thin one. The leading spans
+        are shifted forward by the base window, so the cloud value shown on a date was calculated
+        base_window periods (26 by default) earlier from the data then available. The method returns the
+        Conversion and Base Lines and the two Leading Spans but not the Lagging Span (the close shifted
+        back), which would report a future close on each date.
+
         Also known as: Ichimoku Kinko Hyo, cloud indicator. The default windows (9, 26, 52)
         are Goichi Hosoda's original values, both leading spans are conventionally displaced
         forward by the base (Kijun-sen) period.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             conversion_window (int, optional): The number of periods to consider for the
@@ -3104,10 +3150,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -3228,9 +3274,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range and the indicator outside its bounds.
             window (int, optional): The number of periods to consider for the %K line calculation.
                 Defaults to 14.
             smooth_window (int, optional): The number of periods used to smooth the %K line
@@ -3375,18 +3423,24 @@ class Technicals:
 
         The Moving Average Convergence Divergence (MACD) is a trend-following momentum indicator
         that shows the relationship between two moving averages of a security's price. It consists
-        of the MACD line, signal line, and MACD histogram.
+        of the MACD line and its signal line; their difference is the MACD histogram.
 
         The formula is a follows:
 
-        - MACD Line = Short-term EMA — Long-term EMA
-        - Signal Line = SMA(MACD Line)
+        - MACD Line = EMA(Close, short_window) — EMA(Close, long_window)
+        - Signal Line = EMA(MACD Line, signal_window)
+
+        The MACD line crossing its signal line is the usual trigger, and the MACD crossing zero means
+        the short average has crossed the long one. Because the MACD is a price difference, its level
+        scales with the share price and cannot be compared across stocks; the Percentage Price Oscillator
+        divides by the long average for that. Both lines lag price, so crossovers come late in fast
+        reversals.
 
         Also known as: MACD, momentum indicator.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_window (int, optional): The number of periods for the shorter moving average.
@@ -3400,10 +3454,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the MACD and signal values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -3514,11 +3568,17 @@ class Technicals:
 
         - RSI = 100 — (100 / (1 + RS))
 
+        Readings above 70 are conventionally read as overbought and below 30 as oversold, but in a
+        strong trend the RSI can stay above 70 or below 30 for weeks, so a crossing is not a signal on
+        its own. Practitioners look more at divergences, a new price high with a lower RSI high, and at
+        the 50 line as a trend filter. The value depends on the window: a shorter window swings more and
+        reaches the extremes more often.
+
         Also known as: RSI, momentum oscillator, overbought, oversold.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods for RSI calculation. Defaults to 14.
@@ -3527,10 +3587,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the RSI.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -3633,18 +3693,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The open, high and low prices are not adjusted for dividends, so
+                for a dividend-paying asset use close_column="Close": with the adjusted close the close
+                can fall outside the day's high-low range and the indicator outside its bounds.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the BOP.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -3755,7 +3817,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_window (int, optional): The number of periods for the short-term SMA of the
@@ -3767,10 +3829,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the AO.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Awesome Oscillator (AO) values.
@@ -3892,9 +3954,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             window (int, optional): The number of periods to sum the directional movement and
                 true range over. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -3902,10 +3966,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the VI+ and VI- values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -4026,9 +4090,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             window (int, optional): The number of periods for the EMA used as the trend baseline.
                 Defaults to 13, as originally proposed by Elder.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -4036,10 +4102,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Bull and Bear Power.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -4162,7 +4228,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to look back for the rate of change
@@ -4172,10 +4238,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Rate of Change.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Rate of Change values, expressed as a percentage.
@@ -4268,9 +4334,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range and the indicator outside its bounds.
             window (int, optional): Number of periods to consider for the Choppiness Index
                 calculation. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -4278,10 +4346,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Choppiness Index.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Choppiness Index values, bounded between 0 and 100.
@@ -4388,7 +4456,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             roc_windows (list[int] | None, optional): The four lookback periods used for the
@@ -4406,10 +4474,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the KST and Signal Line.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -4499,7 +4567,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             window (int, optional): The window size for calculating indicators.
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
@@ -4509,10 +4577,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Overlap-based indicators calculated based on the specified parameters.
@@ -4707,20 +4775,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to consider for the moving average.
-                The number of periods (time intervals) over which to calculate the MA.
+                The number of periods (time intervals) over which to calculate the MA. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the MA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -4824,20 +4892,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for EMA calculation.
-                The number of periods (time intervals) over which to calculate the EMA.
+                The number of periods (time intervals) over which to calculate the EMA. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the EMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -4935,26 +5003,28 @@ class Technicals:
 
         The formula is a follows:
 
-        - EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
+        - EMA1 = EMA(Close, Window)
+        - EMA2 = EMA(EMA1, Window)
+        - DEMA = 2 * EMA1 — EMA2
 
         Also known as: DEMA, double EMA.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
-                The number of periods (time intervals) over which to calculate the moving average.
+                The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the DEMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5064,20 +5134,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
-                The number of periods (time intervals) over which to calculate the moving average.
+                The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Trix.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5186,15 +5256,21 @@ class Technicals:
         Bollinger himself specifies and as TA-Lib and StockCharts both implement, not
         pandas' default sample standard deviation.
 
+        The band width tracks volatility: bands that narrow sharply (a squeeze) often precede a
+        larger move, without saying in which direction. A close at or beyond a band is not a sell
+        or buy signal by itself, since prices can walk along a band in a trend. Bollinger's own
+        setting is a 20-period average with 2 standard deviations; this method defaults to a
+        window of 14, so pass window=20 to match most charting platforms.
+
         Also known as: Bollinger Bands, BB, volatility bands, price channels.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
-                The number of periods (time intervals) over which to calculate the moving average.
+                The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
             num_std_dev (int, optional): Number of standard deviations for the bands.
                 Defaults to 2.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -5202,10 +5278,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the bands.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -5321,20 +5397,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for TMA calculation.
-                The number of periods (time intervals) over which to calculate the TMA.
+                The number of periods (time intervals) over which to calculate the TMA. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the TMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Triangular Moving Average values.
@@ -5438,20 +5514,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to consider for the WMA.
-                The number of periods (time intervals) over which to calculate the WMA.
+                The number of periods (time intervals) over which to calculate the WMA. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the WMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5558,20 +5634,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to consider for the HMA.
-                The number of periods (time intervals) over which to calculate the HMA.
+                The number of periods (time intervals) over which to calculate the HMA. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the HMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5688,7 +5764,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods over which the Efficiency Ratio is
@@ -5704,10 +5780,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the KAMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: KAMA values.
@@ -5799,24 +5875,32 @@ class Technicals:
         - Typical Price = (High + Low + Close) / 3
         - VWAP = Sum(Typical Price * Volume, Window) / Sum(Volume, Window)
 
+        The VWAP that trading desks use as an execution benchmark is calculated from the trades
+        of a single session and resets every day. This method computes a rolling VWAP over several
+        periods from the high, low, close and volume of each period, which works as a
+        volume-weighted moving average, not as the intraday benchmark against which fills are
+        measured.
+
         Also known as: VWAP.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             window (int, optional): Number of periods to consider for the VWAP.
-                The number of periods (time intervals) over which to calculate the VWAP.
+                The number of periods (time intervals) over which to calculate the VWAP. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the VWAP.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5935,7 +6019,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             af_start (float, optional): Initial acceleration factor. Defaults to 0.02.
@@ -5948,10 +6032,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Parabolic SAR.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -6069,18 +6153,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Pivot Points.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -6207,7 +6293,7 @@ class Technicals:
                 and valleys. A higher sensitivity value will result in fewer support and resistance levels
                 being identified. Defaults to 0.05.
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for calculating support and resistance levels.
@@ -6353,7 +6439,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods over which the rolling swing high
@@ -6370,10 +6456,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the retracement levels.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Fibonacci Retracement Levels, one column per ratio in
@@ -6498,7 +6584,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             window (int, optional): The window size for calculating indicators.
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
@@ -6508,10 +6594,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Volatility indicators calculated based on the specified parameters.
@@ -6688,18 +6774,20 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the True Range.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: True Range values.
@@ -6807,6 +6895,12 @@ class Technicals:
         - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
         - ATR = Wilder's Smoothed Moving Average of TR over `window` periods
 
+        The ATR is in price units, which makes it the common basis for stop distances (for example
+        two ATRs below the entry) and for sizing positions to equal risk. For the same reason it
+        cannot be compared across stocks or over long periods in which the price changed a lot;
+        divide it by the price for a percentage volatility. It measures how far price moves, not in
+        which direction.
+
         Also known as: ATR, volatility indicator. See `volatility_model.get_average_true_range`
         for the full formula; Wilder's smoothing constant (1/window) is slower than a
         standard EMA's (2/(window+1)) of the same window.
@@ -6814,16 +6908,17 @@ class Technicals:
         Args:
             period (str): Period for which to calculate the ATR.
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             window (int): Number of periods for ATR calculation.
                 The number of periods (time intervals) over which to calculate the Average True Range.
             rounding (int | None): Number of decimal places to round the resulting ATR values to.
                 If None, no rounding is performed.
             growth (bool): Flag indicating whether to return the ATR growth rate.
                 If True, the ATR growth rate is calculated.
-            lag (int | list[int]): Number of periods to lag the ATR values by.
-                If an integer is provided, all ATR values are lagged by the same number of periods.
-                If a list of integers is provided, each ATR value is lagged by the corresponding number of periods.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6831,13 +6926,6 @@ class Technicals:
         Returns:
             pd.DataFrame: ATR values per ticker or ATR growth rate (if growth is True).
                 A pandas Series containing the calculated Average True Range values or growth rate for each period.
-
-        Formula:
-        The Average True Range (ATR) is calculated using the following steps:
-        1. Calculate the True Range (TR) for each period:
-            - True Range (TR) = max(high — low, abs(high — previous_close), abs(low — previous_close))
-        2. Calculate the Average True Range (ATR) over the specified window:
-            - ATR = EMA(TR, window), where EMA is the Exponential Moving Average.
 
         Notes:
         - ATR values are typically used to assess the volatility and potential price movement of an asset.
@@ -6957,9 +7045,11 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             window (int, optional): Number of periods for the underlying Average True Range
                 calculation. Defaults to 10.
             multiplier (float, optional): Multiplier applied to the Average True Range to
@@ -6969,10 +7059,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the Supertrend and
                 Trend Direction values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -7067,26 +7157,25 @@ class Technicals:
         """
         Calculate the Keltner Channels for a given price series.
 
-        The Keltner Channels consist of three lines:
-        - Upper Channel Line = Exponential Moving Average (EMA) of High Prices + ATR * ATR Multiplier
-        - Middle Channel Line = Exponential Moving Average (EMA) of Closing Prices
-        - Lower Channel Line = Exponential Moving Average (EMA) of Low Prices — ATR * ATR Multiplier
+        The Keltner Channels consist of three lines: a middle line, the Exponential Moving Average
+        (EMA) of the closing prices, and an upper and a lower line a multiple of the Average True
+        Range (ATR) above and below it.
 
         The formula is a follows:
 
-        - EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
-        - ATR = EMA(TR, ATR Window)
-        - Upper Channel Line = EMA(High, Window) + ATR * ATR Multiplier
-        - Middle Channel Line = EMA(Close, Window)
-        - Lower Channel Line = EMA(Low, Window) — ATR * ATR Multiplier
+        - Middle Line = EMA(Close, window)
+        - Upper Line = Middle Line + atr_multiplier * ATR(atr_window)
+        - Lower Line = Middle Line — atr_multiplier * ATR(atr_window), where the ATR uses Wilder's smoothing.
 
         Also known as: ATR-based bands, volatility channels.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
+                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
+                outside the day's high-low range, which distorts the result.
             window (int, optional): Number of periods for the moving average.
                 Defaults to 14.
             atr_window (int, optional): Number of periods for ATR calculation.
@@ -7098,10 +7187,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the channels.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Keltner Channels (upper, middle, lower).
@@ -7224,7 +7313,7 @@ class Technicals:
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for the Donchian Channels.
@@ -7234,10 +7323,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the channels.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: Donchian Channels (upper, middle, lower).
@@ -7342,13 +7431,25 @@ class Technicals:
         used to judge whether current (or implied) volatility is cheap or expensive
         relative to history.
 
+        Realized volatility is the standard deviation of the log returns over each rolling
+        window, annualized with the square root of 252, which assumes daily data. For each
+        window, the cone reports the minimum, the 10th, 25th, 50th, 75th and 90th percentiles,
+        the maximum and the most recent value of that realized volatility series.
+
+        Options traders compare implied volatility with the cone at the matching horizon:
+        implied volatility near the top of the historical range for that window suggests
+        options are expensive relative to history, near the bottom cheap. The percentiles
+        depend on the sample, so a period that includes a crash widens the cone for as long
+        as it stays in the data; five years of daily data or more gives a more stable picture
+        than one.
+
         Also known as: volatility cone, realized volatility term structure.
 
         Args:
             windows (list[int] | None, optional): The rolling windows (in periods) to
                 calculate realized volatility for. Defaults to [10, 20, 30, 60, 90, 120].
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -7454,11 +7555,17 @@ class Technicals:
 
         - TRIN = (Advancing Issues / Declining Issues) / (Advancing Volume / Declining Volume)
 
+        A TRIN below 1 means the volume in rising stocks outweighs their number, which is read
+        as buying pressure, and above 1 as selling pressure; readings far above 2 tend to come
+        with capitulation days. It is meant for a broad universe, such as all stocks of an
+        exchange. Calculated across a handful of tickers it jumps between extremes and is
+        undefined on days when none of them fell.
+
         Also known as: Arms Index, TRIN.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -7466,10 +7573,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: TRIN values.
@@ -7584,11 +7691,17 @@ class Technicals:
 
         - New Highs — New Lows = (Number of tickers at a window-period high) — (Number of tickers at a window-period low)
 
+        The reading counts tickers at a high or low of the lookback window, so it needs a broad
+        universe and a history of at least one window before the start of the period of interest:
+        in the first periods every ticker is compared with only a few prices, so it is often counted
+        at a high or a low, and on the first date at both. Persistently more new lows than new highs
+        while an index still rises is a classic sign of narrowing breadth.
+
         Also known as: new highs minus new lows, record high percent.
 
         Args:
             period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "quarterly", or "yearly". Defaults to "daily".
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for the new high / new low lookback.
@@ -7598,10 +7711,10 @@ class Technicals:
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-                Defaults to 1.
 
         Returns:
             pd.Series or pd.DataFrame: New Highs — New Lows values.

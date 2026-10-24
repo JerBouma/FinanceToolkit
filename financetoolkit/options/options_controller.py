@@ -178,10 +178,9 @@ class Options:
     ):
         """
         Get the Option Chains which gives information about the currently available
-        options as reported by Yahoo Finance. This returns the Contract Symbol, Strike
-        Currency, Last Price, Absolute Change, Percent Change, Volume, Open Interest,
-        Bid Pirce, Ask Price, Expiration, Last Trade Date, Implied Volatility and
-        whether the option is In The Money.
+        options as reported by Yahoo Finance. This returns the Contract Symbol, Last
+        Trade Date, Last Price, Bid, Ask, Change, Percent Change, Volume, Open Interest,
+        Implied Volatility, whether the option is In The Money and the Currency.
 
         The data comes from Yahoo Finance. When Yahoo Finance has no options for a ticker,
         Cboe's delayed quotes (15 minutes) are used, which cover every option listed on a US
@@ -194,19 +193,22 @@ class Options:
 
         Args:
             expiration_date (str | None, optional): The expiration date to use. Defaults to None which means it will
+                use the first available expiration date.
             put_option (bool, optional): Whether to show the put options instead of the call options.
                 Defaults to False.
             show_expiration_dates (bool, optional): Whether to return the available expiration dates instead of
                 the option chains. Defaults to False.
-            use the first available expiration date.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             strike_price_range (float | None, optional): Only the strikes within this fraction of the
                 current stock price, e.g. 0.05 for strikes within 5% of it. Defaults to None, which
                 keeps every strike.
 
         Returns:
-            pd.DataFrame: the option chains containing the tickers and strike prices as
-            the index and the time to expiration as the columns.
+            pd.DataFrame: the option chains with the tickers and strike prices as the index
+            and the contract details (Contract Symbol, Last Trade Date, Last Price, Bid, Ask,
+            Change, Percent Change, Volume, Open Interest, Implied Volatility, In The Money
+            and Currency) as the columns. The expiration date is stored as the DataFrame's
+            name. If show_expiration_dates is True, it returns the list of expiration dates.
 
         As an example:
 
@@ -335,9 +337,11 @@ class Options:
         - The risk—free rate and volatility of the underlying stock are known and constant.
         - The returns on the underlying stock are normally distributed.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
+        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
+        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
+        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
+        and for an earlier start date it also includes the days of that year after it.
 
         The formulas are as follows:
 
@@ -349,6 +353,13 @@ class Options:
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
         the cumulative normal distribution of d2.
+
+        The model price is only as good as its volatility input, and here that input is realised (historical)
+        volatility, while traded options are priced off implied volatility, which usually differs from it and varies
+        by strike and expiry. Practitioners therefore use the Black Scholes value as a benchmark and compare it with
+        market prices from `get_option_chains`, or back the market's volatility out with `get_implied_volatility`.
+        Deep out-of-the-money options are most sensitive to that choice, since the model's flat volatility ignores
+        the skew.
 
         Also known as: BSM, Black-Scholes-Merton, option pricing model.
 
@@ -519,9 +530,8 @@ class Options:
         fluctuate in the future. It is a key component of options pricing and can also be used to calculate the
         theoretical value of an option.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        The most recent stock price, risk free rate and dividend yield are used, and the implied volatility is the
+        volatility at which the Black Scholes price equals the option's last traded price.
 
         The formulas are as follows:
 
@@ -542,6 +552,13 @@ class Options:
         which sigma (σ) is the only unknown variable. The actual option price is then used to determine the implied
         volatility by minimizing the difference between the theoretical and actual option price.
 
+        The implied volatility is solved from each option's last traded price, which can be hours or days old for
+        illiquid strikes, while the stock price is the latest close. Deep in-the-money and far out-of-the-money
+        strikes therefore often show extreme values (above 100%) that say more about stale quotes than about the
+        market's view. Practitioners read the smile around the money, where trading is liquid, and use
+        `get_volatility_surface`, which filters outliers and fits a smooth curve, when they need values across all
+        strikes.
+
         Also known as: IV, option-implied volatility.
 
         Args:
@@ -560,8 +577,8 @@ class Options:
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
-            pd.Series | list[str]: Implied Volatility values containing the tickers as the index and the expiration
-            dates as the columns. If show_expiration_dates is True, it will return a list of expiration dates.
+            pd.Series | list[str]: Implied Volatility values indexed by ticker and strike price, with the expiration
+            date as the Series name. If show_expiration_dates is True, it returns the list of expiration dates.
 
         As an example:
 
@@ -1211,9 +1228,11 @@ class Options:
         American style options. It does so by creating a binomial tree of price paths for the underlying asset, and
         then working backwards through the tree to determine the price of the option at each node.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
+        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
+        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
+        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
+        and for an earlier start date it also includes the days of that year after it.
 
         The formulas are as follows:
 
@@ -1251,9 +1270,9 @@ class Options:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
             which means it will use the most recent date.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
             american_option (bool, optional): Whether to value an American option, which can be exercised at every
                 node, instead of a European option. Defaults to False.
-            it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -1431,21 +1450,23 @@ class Options:
         """
         Simulate the Stock Price based on the Binomial Model, a mathematical model used to estimate the price of European
         and American style options. It does so by creating a binomial tree of price paths for the underlying asset based
-        on the stock price, volatility, risk free rate, dividend yield and time to expiration. The stock price is then
-        simulated based on the up and down movements.
+        on the stock price, its volatility and the time to expiration: each step multiplies the price by
+        u = e^(σ * sqrt(Δt)) or by d = 1 / u. The stock price is then simulated based on these up and down movements.
 
-        By default the most recent risk free rate and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price is used, you can alter this by changing the start date. The volatility
+        is the annualized standard deviation of the daily returns in the calendar year of the start date (year to date
+        for the most recent date), so in the first weeks of a year it rests on only a few observations, and for an
+        earlier start date it also includes the days of that year after it.
 
         The formulas are as follows:
 
-        - up movement (u) = e^(σ * sqrt(t))
+        - up movement (u) = e^(σ * sqrt(Δt))
         - down movement (d) = 1 / u
         - stock price at each node = S * u^j * d^(n — j)
 
-        Where S is the stock price, r is the risk free rate, σ is the volatility, t is the time to
-        expiration, j is the number of up movements, n is the number of time steps.
+        Where S is the stock price, σ is the volatility, Δt is the length of a time step (the time to
+        expiration divided by the number of time steps), j is the number of up movements and n is the
+        number of time steps. The risk free rate and the dividend yield do not affect the tree.
 
         The resulting output is a DataFrame containing the tickers and movements as the index and the
         time to expiration as the columns. The movements index contains the number of up movements and the number of
@@ -1456,7 +1477,7 @@ class Options:
         **Hint:** consider plotting the resulting DataFrame for each company to visualize the binomial tree.
         For example for below's example use `stock_price_simulation.loc['AMZN'].T.plot(legend=False)`
 
-        Also known as: Monte Carlo simulation, GBM, stock price path.
+        Also known as: binomial tree, stock price tree, stock price path, lattice.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -1465,8 +1486,8 @@ class Options:
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            risk_free_rate (float, optional): The risk free rate shown with show_input_info; it does not affect the
+            simulated prices. Defaults to None which means it will use the current risk free rate.
             show_unique_combinations (bool, optional): Whether to show the unique combinations of the stock prices.
             Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -2264,9 +2285,8 @@ class Options:
         As it is a simulation, the result comes with sampling error. Set
         ``show_standard_error=True`` to additionally return the standard error of each
         estimate — as a rule of thumb, the true price lies within plus or minus 2 times
-        the standard error roughly 95% of the time. A fixed ``seed`` is used by default
-        for reproducibility of documentation examples; set it explicitly (or leave it as
-        None) to control this behavior.
+        the standard error roughly 95% of the time. Pass a ``seed`` (as the example does)
+        to make the results reproducible; without one every call draws new paths.
 
         Also known as: Monte Carlo option pricing, simulation-based option pricing.
 
@@ -2890,7 +2910,8 @@ class Options:
         the passage of time. Veta is the second derivative of the value function; once to volatility and once to time.
         - Vera: also referred to as rhova, measures the rate of change in rho with respect to volatility. Vera is the
         second derivative of the value function; once to volatility and once to interest rate.
-        - Partial Derivative: measures the rate of change in the option price with respect to the strike price.
+        - Partial Derivative: the second derivative of the option price with respect to the strike price, the rate
+        at which the dual delta changes with the strike.
 
         **Third Order Greeks:**
 
@@ -2903,9 +2924,11 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
+        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
+        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
+        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
+        and for an earlier start date it also includes the days of that year after it.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -3056,9 +3079,11 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
+        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
+        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
+        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
+        and for an earlier start date it also includes the days of that year after it.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -3257,6 +3282,13 @@ class Options:
         is always between —e^(—q * t) and 0. Without a dividend yield those bounds collapse to the familiar
         0 to 1 and —1 to 0.
 
+        Delta is read as the hedge ratio: a call with a delta of 0.6 moves about $0.60 for a $1 move in the stock,
+        so a market maker that is short calls on 100 shares buys 60 shares to stay neutral. It is often used as a
+        quick gauge of how far in or out of the money an option is (traders talk of "25-delta" puts), and loosely
+        as the chance of finishing in the money, although that (risk-neutral) probability is N(d2), which
+        `get_dual_delta` gives up to discounting and sign. Delta changes with the stock price and with time (see
+        gamma and charm), so a delta hedge has to be rebalanced.
+
         Also known as: option price sensitivity to underlying, hedge ratio.
 
         Args:
@@ -3269,9 +3301,9 @@ class Options:
             expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-                means it will use the current dividend yield.
             means it will use the current risk free rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
+            means it will use the dividend yield as obtained through annual historical data.
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3408,8 +3440,8 @@ class Options:
         """
         Calculate the dual delta of an option based on the Black Scholes Model. The Black Scholes Model
         is a mathematical model used to estimate the price of European—style options. The dual delta is
-        the actual probability of an option finishing in the money which is the first derivative
-        of option price with respect to strike.
+        the first derivative of the option price with respect to the strike price; up to the discount
+        factor and its sign it is the risk-neutral probability of the option finishing in the money.
 
         The dual delta calculation is the theoretical value of the dual delta. The actual dual delta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3431,7 +3463,7 @@ class Options:
         a call Dual Delta of —0.5 corresponds to a roughly 50% chance of finishing in the money. It is negative for a
         call, since raising the strike lowers the call's value, and positive for a put.
 
-        Also known as: cash delta, binary option delta.
+        Also known as: strike delta, binary option delta.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -3608,6 +3640,12 @@ class Options:
         and vice versa.
 
         Note that the vega of a call option and put option are equal to each other.
+
+        Vega is quoted per volatility point: a vega of 0.25 means the option gains about $0.25 when volatility rises
+        from 20% to 21%. It is largest for at-the-money options and grows with the square root of the time to
+        expiry, so long-dated options are mostly a bet on volatility while short-dated ones are mostly a bet on
+        gamma. Desks sum vega across positions per expiry, since short- and long-dated implied volatilities rarely
+        move by the same amount.
 
         Also known as: option sensitivity to volatility changes.
 
@@ -3786,6 +3824,11 @@ class Options:
         case for a long option, whose time value erodes towards expiration.
         - If Theta is positive, the option gains value with each day that passes. This happens for instance on a deep
         in-the-money European put, where the discounting of the strike dominates.
+
+        Theta is the cost of holding an option for one more calendar day, all else equal, and is the other side of
+        gamma: a long at-the-money option close to expiry has the most gamma and pays for it with the most negative
+        theta. Because it is per calendar day, a weekend counts as two days of decay; desks that use a trading-day
+        convention divide the yearly figure by 252 instead, which gives a larger daily number.
 
         Also known as: time decay, option time value erosion.
 
@@ -4293,8 +4336,9 @@ class Options:
     ):
         """
         Calculate the lambda of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The lambda is
-        the rate of change of the option price with respect to the underlying price.
+        is a mathematical model used to estimate the price of European—style options. The lambda, or
+        elasticity, is the percentage change in the option price for a 1% change in the price of the
+        underlying asset, i.e. the leverage the option gives.
 
         The lambda calculation is the theoretical value of the lambda. The actual lambda can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -4486,14 +4530,17 @@ class Options:
         the passage of time. Veta is the second derivative of the value function; once to volatility and once to time.
         - Vera: also referred to as rhova, measures the rate of change in rho with respect to volatility. Vera is the
         second derivative of the value function; once to volatility and once to interest rate.
-        - Partial Derivative: measures the rate of change in the option price with respect to the strike price.
+        - Partial Derivative: the second derivative of the option price with respect to the strike price, the rate
+        at which the dual delta changes with the strike.
 
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
+        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
+        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
+        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
+        and for an earlier start date it also includes the days of that year after it.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -4695,6 +4742,12 @@ class Options:
 
         Note that the gamma of a call option and put option are equal to each other.
 
+        Gamma is largest for at-the-money options close to expiry, which is where a delta hedge needs the most
+        frequent rebalancing and where a short option position can lose money fastest on a sharp move. Because it
+        is per $1 move in the underlying, it is not comparable across stocks with different prices; risk reports
+        therefore use dollar gamma (Gamma x S^2 / 100, the change in the dollar delta for a 1% move) when they add
+        up gamma across underlyings.
+
         Also known as: rate of change of delta, option convexity.
 
         Args:
@@ -4863,7 +4916,7 @@ class Options:
 
         Note that the dual gamma of a call option and put option are equal to each other.
 
-        Also known as: cash gamma, binary option gamma.
+        Also known as: strike gamma, binary option gamma.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -5884,7 +5937,8 @@ class Options:
         """
         Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
         is a mathematical model used to estimate the price of European—style options. The partial derivative is
-        the rate of change of the option price with respect to the strike price.
+        the second derivative of the option price with respect to the strike price, the rate at which the dual
+        delta changes with the strike.
 
         Note that this uses a single, flat assumed volatility (the same value at every strike price) rather than
         the market's actual implied volatility smile. This means it is NOT the Breeden-Litzenberger risk-neutral
@@ -5904,7 +5958,7 @@ class Options:
         e^(—r * t) * N'(d2) / (K * σ * sqrt(t)), i.e. to the Dual Gamma, since both are the second derivative of the
         option price with respect to the strike price.
 
-        Also known as: numerical derivative, option sensitivity.
+        Also known as: second strike derivative, lognormal risk-neutral density.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -6061,9 +6115,11 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
+        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
+        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
+        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
+        and for an earlier start date it also includes the days of that year after it.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None

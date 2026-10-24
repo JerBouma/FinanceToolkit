@@ -422,6 +422,13 @@ class Risk:
         The VaR is calculated as the quantile of the return distribution, representing the loss threshold
         that is not expected to be exceeded with a given confidence level (e.g., 5% for alpha=0.05).
 
+        Value at Risk is a quantile: it says how bad a period gets at the chosen confidence level, not how
+        bad the periods beyond it are, so two assets with the same VaR can have very different tails (see
+        the Conditional Value at Risk for that). Historical VaR depends heavily on the window: one calm year
+        gives a much smaller figure than a window that includes a crisis, so compare assets over the same
+        period and confidence level. Scaling a daily VaR to a longer horizon with the square root of time
+        assumes independent returns, which tends to understate risk when volatility clusters.
+
         Also known as: VaR, maximum expected loss, portfolio loss risk.
 
         Args:
@@ -582,6 +589,13 @@ class Risk:
         The CVaR is calculated as the expected loss given that the loss threshold (VaR) with a given confidence
         level (e.g., 5% for alpha=0.05) is exceeded.
 
+        The Conditional Value at Risk (expected shortfall) is the measure banks report for market risk under
+        the Basel framework, at 97.5% rather than 95% confidence, because unlike VaR it accounts for the size
+        of the losses in the tail and never penalises diversification (it is subadditive). With daily data
+        the estimate rests on few observations (one year at 95% leaves about 12 days in the tail), so a
+        single extreme day can move it a lot; a longer window or a parametric distribution gives a steadier
+        figure.
+
         Also known as: CVaR, expected shortfall, ES, tail risk.
 
         Args:
@@ -741,8 +755,12 @@ class Risk:
         level. EVaR is obtained from the Chernoff inequality. It provides insights into the downside risk
         associated with an investment and helps investors make informed decisions about risk tolerance.
 
-        The EVaR is calculated as the upper bound of VaR and CVaR with a given confidence level (e.g., 5% for
-        alpha=0.05).
+        The EVaR is calculated under the assumption that returns are normally distributed, for which the
+        Chernoff bound has the closed form Mean - Standard Deviation * SQRT(-2 * ln(alpha)), with a given
+        confidence level (e.g., 5% for alpha=0.05). It is an upper bound of the gaussian VaR and CVaR at the
+        same confidence level. Since it only uses the mean and the standard deviation of the returns, it does
+        not reflect their skewness or fat tails, and at high confidence levels it can be less severe than the
+        historical CVaR of an asset with heavy tails.
 
         Also known as: EVaR.
 
@@ -1111,6 +1129,13 @@ class Risk:
         the downside risk associated with an investment and helps investors make informed decisions about
         risk tolerance.
 
+        The Maximum Drawdown is a single-path statistic: it depends entirely on the window chosen, so a
+        figure over a window that includes a market crash and one over a window that starts after it are
+        not comparable. It says how deep the worst fall was, not how long it lasted, which is why it is
+        usually read together with the drawdown duration and recovery time (see
+        `get_maximum_drawdown_duration` and `get_maximum_drawdown_recovery_time`), and it underlies
+        return-to-risk ratios such as the Calmar ratio.
+
         Also known as: max drawdown, peak-to-trough decline.
 
         Args:
@@ -1459,6 +1484,12 @@ class Risk:
 
         Ulcer Index = SQRT(SUM[((Pn - Highest High) / Highest High)^2] / n)
 
+        The Ulcer Index punishes both the depth and the length of drawdowns, so an asset that falls 10% and
+        stays there for months scores worse than one that drops 10% and recovers within a week, which a
+        volatility figure would not show. It is the risk measure behind the Martin ratio (excess return
+        divided by the Ulcer Index) and is read best relative to peers over the same window, since the
+        default 14-period lookback gives lower values than a since-inception high-water mark.
+
         Also known as: UI, drawdown risk.
 
         Args:
@@ -1556,7 +1587,9 @@ class Risk:
         standardize: bool = False,
     ):
         """
-        Calculates volatility forecasts based on the GARCH model.
+        Calculates the conditional variance (sigma_t^2) of the returns with a GARCH(1, 1) model fitted to
+        them. Take the square root for the conditional volatility, and see `get_garch_forecast` for the
+        variance forecast beyond the last observation.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
@@ -1822,11 +1855,17 @@ class Risk:
         - sigma_t^2 = Omega + Alpha * u_(t-1)^2 + Beta * sigma_(t-1)^2
 
         With the constraints Omega, Alpha, Beta > 0 and Alpha + Beta < 1. The parameters are
-        estimated via simulated annealing, maximizing the GARCH log-likelihood function.
+        estimated by maximizing the GARCH log-likelihood with L-BFGS-B, started from a
+        domain-informed initial guess and from 32 points of a Sobol sequence, keeping the best fit.
 
-        Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) volatility path,
-        this method returns the fitted parameters themselves. This is useful when the parameters
+        Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) conditional variance
+        path, this method returns the fitted parameters themselves. This is useful when the parameters
         are needed directly, for example to seed a separate volatility simulation.
+
+        For daily equity returns, Alpha is typically between 0.05 and 0.15 and Alpha + Beta (the
+        persistence) between 0.95 and 0.99, meaning a volatility shock fades over weeks rather than
+        days. The long-run variance the model reverts to is Omega / (1 - Alpha - Beta). A fit far
+        outside these ranges is a reason to check the data and the window before using the parameters.
 
         For more information about the method, see the following book:
 
@@ -1908,7 +1947,9 @@ class Risk:
         standardize: bool = False,
     ):
         """
-        Calculates volatility forecasts based on the GJR-GARCH model.
+        Calculates the conditional variance (sigma_t^2) of the returns with a GJR-GARCH(1, 1, 1) model
+        fitted to them. Take the square root for the conditional volatility, and see
+        `get_gjr_garch_forecast` for the variance forecast.
 
         GJR-GARCH extends GARCH with a leverage term that lets negative shocks (bad
         news) raise volatility by more than positive shocks of the same size, a well
@@ -2257,7 +2298,9 @@ class Risk:
         standardize: bool = False,
     ):
         """
-        Calculates volatility forecasts based on the EGARCH model.
+        Calculates the conditional variance (sigma_t^2) of the returns with an EGARCH(1, 1) model fitted
+        to them. Take the square root for the conditional volatility, and see `get_egarch_forecast` for
+        the variance forecast.
 
         EGARCH models the log of the conditional variance, which avoids having to
         constrain the parameters to keep the variance positive and, like GJR-GARCH,
@@ -2542,8 +2585,8 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and fits an
         EGARCH(1, 1) model for each asset in the Toolkit instance.
         - EGARCH's log-variance parameterization is less constrained than plain GARCH, which makes it
-        more prone to unstable, boundary-hugging fits on very short return histories (e.g. yearly data).
-        Prefer `period="quarterly"` or a higher frequency where possible.
+        prone to unstable, boundary-hugging fits on short return histories, which include quarterly
+        data over a few years. Prefer daily or weekly returns.
 
         As an example:
 
@@ -2642,6 +2685,12 @@ class Risk:
         equivalent gaussian relationship would imply. The Tail Dependence Coefficient
         answers that specific question directly: the probability that one asset is in
         extreme distress, given that the other one already is.
+
+        The empirical estimate at q = 0.95 rests on the few days on which both assets are
+        in their worst (or best) 5% at the same time, so it needs several years of daily
+        data to be stable. A gaussian dependence of any correlation below 1 implies zero
+        tail dependence, so a Lower Tail Dependence Coefficient well above zero means that
+        diversification between the two assets is weakest exactly when it is needed.
 
         For more information about the method, see the following papers:
 
@@ -3193,6 +3242,13 @@ class Risk:
         isolates the marginal, distress-specific contribution by subtracting the same
         construction evaluated in the "normal" (median) state instead.
 
+        CoVaR was introduced to measure systemic risk: in its original application `ticker`
+        is a financial-system index (or a bank's peers) and `conditioning_ticker` a single
+        institution, so the Delta-CoVaR reads as that institution's contribution to
+        system-wide tail risk. Because the quantile regression is fitted at the `alpha`
+        quantile, it needs several years of daily data, and the result is a statement about
+        co-movement in the tails, not about causality.
+
         For more information about the method, see the following paper:
 
         - Adrian, T., & Brunnermeier, M.K. (2016). "CoVaR." American Economic Review,
@@ -3406,6 +3462,13 @@ class Risk:
         it directly usable to identify which holdings account for the largest share of
         portfolio risk.
 
+        Component VaR is the basis of risk budgeting: a holding with a 20% weight that
+        accounts for 45% of the portfolio VaR stands out immediately, and a component with
+        the opposite sign of the portfolio VaR marks a holding that hedges the rest. The
+        components always add up to the portfolio VaR, but the beta-based allocation is
+        exact only for normally (elliptically) distributed returns and an approximation for
+        the historical distribution used by default.
+
         For more information about the method, see the following sources:
 
         - Garman, M.B. (1997). "Taking VaR to Pieces." Risk, 10(10), 70-71.
@@ -3501,6 +3564,13 @@ class Risk:
         Failures test (is the overall breach rate consistent with `alpha`?) and/or
         Christoffersen's independence test (are breaches spread out over time, or do
         they cluster together?).
+
+        Regulators backtest VaR on the number of exceptions over the last 250 trading days
+        (the Basel traffic-light approach at 99% confidence), and Kupiec's test formalises
+        the same question. With few exceptions the test has little power, so a model that
+        passes is not necessarily well calibrated. Clustered exceptions, which
+        Christoffersen's test detects, are the usual failure of historical VaR when
+        volatility rises.
 
         For more information about the methods, see the following papers:
 
@@ -3901,6 +3971,12 @@ class Risk:
         tool for comprehending the distribution characteristics of returns, offering insights
         into the potential for rare but significant events in the financial markets.
 
+        By default this is Pearson's kurtosis, which is 3 for a normal distribution; with `fisher=True`
+        it is the excess kurtosis, which is 0. Daily stock returns typically show an excess kurtosis of
+        several points, and within a single year one exceptional day (an earnings shock, a market-wide
+        gap) can push it above 10, so a high value often reflects one event rather than a persistently
+        fat-tailed distribution.
+
         Also known as: tail heaviness, fat tails, leptokurtosis.
 
         Args:
@@ -4023,6 +4099,12 @@ class Risk:
         outliers are likely) -- as a rule of thumb, a tail index below 4 implies the
         Kurtosis is theoretically infinite, and below 2 implies the Variance itself is
         theoretically infinite.
+
+        For daily stock returns the tail index typically lies between about 2 and 5, while
+        a normal distribution has an infinite tail index. The estimate depends on `k`:
+        practitioners plot it against a range of `k` (a Hill plot) and read it where it is
+        stable, since a small `k` is noisy and a large `k` pulls in the center of the
+        distribution.
 
         For more information about the method, see the following paper:
 
@@ -4483,7 +4565,7 @@ class Risk:
         | 2025-12-30 |   0.0003 |   0.0011 |      0.0001 |
         | 2025-12-31 | nan      | nan      |    nan      |
 
-        The last row is NaN since there is no `2022-12-31` return yet to forecast against.
+        The last row is NaN since there is no return after 2025-12-31 yet to forecast against.
         """
         if estimator not in (
             "squared_return",
@@ -4557,6 +4639,12 @@ class Risk:
         amount of trading moves the price a lot (the asset is illiquid), while a low
         value means the asset can absorb a large amount of trading with little price
         impact (the asset is liquid).
+
+        The Amihud ratio is mainly a cross-sectional measure: it ranks stocks by how much a
+        given dollar volume moves the price and is used as a liquidity factor in asset
+        pricing. Its level depends on the scale, the frequency and the price level of the
+        market, so compare stocks within the same market and period, and expect the ratio
+        of large caps to be several orders of magnitude below that of small caps.
 
         For more information about the method, see the following paper:
 
@@ -4686,6 +4774,12 @@ class Risk:
         backed out purely from the serial covariance of consecutive price changes,
         without needing any actual quote data. If the estimated covariance is zero or
         positive, no valid estimate can be backed out and NaN is returned instead.
+
+        The Roll measure is used when no quote data is available, typically for less liquid
+        stocks or historical studies. On daily closes of liquid large caps it mostly picks
+        up price noise rather than the bid-ask bounce, and in trending periods the
+        autocovariance is positive and no estimate exists, so treat it as a rough, relative
+        measure.
 
         For more information about the method, see the following paper:
 
@@ -5106,6 +5200,11 @@ class Risk:
         useful for comparing the relative volatility of assets with different average returns,
         which a raw standard deviation cannot do.
 
+        The Coefficient of Variation is only meaningful when the mean return is clearly positive. In a
+        period with an average daily return close to zero it explodes, and in a down period it turns
+        negative, so for returns it is best read over periods with a positive mean, or replaced by a
+        Sharpe ratio, which is its inverse with the risk-free rate subtracted.
+
         Also known as: relative standard deviation.
 
         Args:
@@ -5202,6 +5301,11 @@ class Risk:
         The formula is as follows:
 
         - EWMA Variance(t) = lambda * EWMA Variance(t-1) + (1 - lambda) * Return(t-1) ** 2
+
+        With the RiskMetrics decay factor of 0.94, about 70% of the weight sits on the last 20 trading
+        days, so EWMA Volatility reacts within days to a market shock and falls back almost as quickly.
+        The values are daily; multiply them by the square root of 252 for an annualized figure comparable
+        with `get_volatility(period="yearly")`.
 
         Also known as: RiskMetrics volatility, exponentially weighted volatility.
 
@@ -5347,15 +5451,19 @@ class Risk:
         rounding: int | None = None,
     ):
         """
-        Calculate the Hurst Exponent of each asset's daily returns, a measure of
-        long-term memory that indicates whether a series is mean-reverting, trending,
-        or a random walk.
+        Calculate the Hurst Exponent of each asset's daily (adjusted close) price series, a
+        measure of long-term memory that indicates whether the price is mean-reverting,
+        trending, or a random walk.
 
         The Hurst Exponent (H) is interpreted as follows:
 
         - H < 0.5: the series is mean-reverting (anti-persistent).
         - H = 0.5: the series is a random walk (no memory).
         - H > 0.5: the series is trending (persistent).
+
+        For liquid stocks the estimate is usually close to 0.5, and with lags of at most
+        `max_lag` days it describes short-term behaviour only; a value of 0.45 or 0.55 over a
+        few years is within estimation noise rather than evidence of a tradable pattern.
 
         Args:
             max_lag (int, optional): The maximum lag to use when estimating the exponent.

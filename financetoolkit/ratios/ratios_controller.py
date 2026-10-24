@@ -882,6 +882,14 @@ class Ratios:
 
         - Inventory Turnover Ratio = Cost of Goods Sold / Average Inventory
 
+        Inventory turnover is only comparable within an industry: a grocer turns its
+        stock many times a year, a maker of aircraft or luxury goods a few times at
+        most. Analysts watch the trend and the gap with peers, since a falling ratio
+        often comes before markdowns or write-downs. Because the ratio divides cost of
+        goods sold by inventory, the inventory valuation method (LIFO or FIFO) and
+        year-end stock building for a peak season both move it; quarterly data with
+        trailing=4 smooths the seasonal effect.
+
         Also known as: stock turnover ratio.
 
         Args:
@@ -1081,15 +1089,23 @@ class Ratios:
         the average number of days it takes a company to collect payment on its
         credit sales.
 
-        The days of sales outstanding (DSO) ratio is calculated by dividing the accounts
-        receivable by the total credit sales and then multiplying by the number of days
-        in the period. It represents the average number of days it takes for a company
-        to collect payment on its credit sales. A lower DSO indicates that the company
-        is collecting payments more quickly.
+        The days of sales outstanding (DSO) ratio is calculated by dividing the average
+        accounts receivable by revenue and then multiplying by the number of days in the
+        period. It represents the average number of days it takes for a company to
+        collect payment on its sales. A lower DSO indicates that the company is
+        collecting payments more quickly. Revenue stands in for credit sales, which
+        companies rarely disclose, so for a business that also sells for cash the DSO
+        understates how long its credit customers take to pay.
 
         The formula is as follows:
 
-        - Days of Sales Outstanding Ratio = (Average Accounts Receivable / Total Credit Sales) * Days
+        - Days of Sales Outstanding Ratio = (Average Accounts Receivable / Revenue) * Days
+
+        DSO is read against the payment terms a company offers and against its own
+        history: a rising DSO, with receivables growing faster than revenue, often
+        points to looser credit terms, slower-paying customers or revenue booked ahead
+        of collection. Compare it within an industry, since terms differ widely between
+        retailers, who collect within days, and industrial or software suppliers.
 
         Also known as: DSO, days sales outstanding, receivable days.
 
@@ -1192,7 +1208,7 @@ class Ratios:
 
         - Operating Cycle Ratio = Days of Sales in Inventory + Days of Sales Outstanding
 
-        Also known as: business cycle, cash-to-cash cycle.
+        Also known as: inventory-to-cash cycle.
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -1308,9 +1324,11 @@ class Ratios:
         quickly a company pays its suppliers.
 
         The accounts payable turnover ratio indicates how many times, on average, a company
-        pays off its accounts payable during a specific period. A higher turnover ratio is
-        generally favorable, as it suggests that the company is efficiently managing its
-        payments to suppliers.
+        pays off its accounts payable during a specific period. A higher turnover ratio
+        means the company pays its suppliers more quickly, which can reflect short payment
+        terms or ample cash but ties up working capital. A lower ratio means it takes
+        longer to pay and finances part of its working capital with supplier credit; a
+        ratio that keeps falling can also signal payment difficulties.
 
         The formula is as follows:
 
@@ -1529,6 +1547,12 @@ class Ratios:
         - Cash Conversion Cycle = Days of Sales in Inventory + Days of Sales Outstanding — Days of Accounts Payable
             Outstanding
 
+        A negative cash conversion cycle means suppliers are paid after customers have paid, so growth releases cash
+        instead of absorbing it; large retailers and platforms with strong buying power are the usual examples. Read
+        the cycle through its three parts (`get_days_of_inventory_outstanding`, `get_days_of_sales_outstanding` and
+        `get_days_of_accounts_payable_outstanding`), because a shorter cycle bought by stretching suppliers is less
+        durable than one from faster-moving inventory.
+
         Also known as: CCC.
 
         Args:
@@ -1693,8 +1717,9 @@ class Ratios:
             pd.DataFrame: Cash conversion efficiency ratio values.
 
         Notes:
-        - The method retrieves historical data and calculates the operating ratio for each
-        asset in the Toolkit instance.
+        - The method retrieves historical data and calculates the cash conversion
+        efficiency for each asset in the Toolkit instance. It is the same calculation as
+        `get_operating_cash_flow_sales_ratio`.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
 
@@ -1771,10 +1796,11 @@ class Ratios:
         accounts receivable. It indicates how quickly a company collects payments from its customers.
         A higher turnover ratio is generally favorable as it suggests that the company is collecting
         payments more quickly, which improves its cash flow and working capital management.
+        Revenue is used in place of net credit sales, which companies rarely disclose.
 
         The formula is as follows:
 
-        - Receivables Turnover Ratio = Net Credit Sales / Average Accounts Receivable
+        - Receivables Turnover Ratio = Revenue / Average Accounts Receivable
 
         Also known as: receivables efficiency, accounts receivable turnover.
 
@@ -1860,9 +1886,9 @@ class Ratios:
         which measures the SG&A expenses relative to the revenue of the company.
 
         The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the
-        company's revenue and then multiplying by 100 to express it as a percentage. It
-        provides insight into the efficiency of a company's cost management and its ability
-        to control its overhead costs.
+        company's revenue, as a fraction (0.06 is 6%). It provides insight into the
+        efficiency of a company's cost management and its ability to control its overhead
+        costs.
 
         The formula is as follows:
 
@@ -1954,16 +1980,19 @@ class Ratios:
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
         measures how efficiently a company uses its fixed assets to generate sales.
 
-        The Fixed Asset Turnover ratio is calculated by dividing the company's net sales
-        by the average fixed assets. It indicates how well a company is utilizing its fixed
-        assets to generate revenue. A higher ratio suggests more efficient utilization of
-        fixed assets.
+        The Fixed Asset Turnover ratio is calculated by dividing the company's revenue by
+        its average non-current assets: property, plant and equipment, but also goodwill,
+        intangible assets and long-term investments. It indicates how well a company is
+        utilizing its long-term assets to generate revenue. A higher ratio suggests more
+        efficient utilization of these assets. Because goodwill and intangible assets are
+        included, the ratio is far lower than a turnover of property, plant and equipment
+        alone for a company that has made large acquisitions.
 
         The formula is as follows:
 
-        - Fixed Asset Turnover Ratio = Net Sales / Average Fixed Assets
+        - Fixed Asset Turnover Ratio = Revenue / Average Non-Current Assets
 
-        Also known as: fixed asset efficiency, PP&E turnover.
+        Also known as: non-current asset turnover.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2059,6 +2088,14 @@ class Ratios:
 
         - Working Capital Turnover Ratio = Revenue / Average Working Capital
 
+        The ratio only reads well when working capital is clearly positive. When current
+        assets and current liabilities are close, a small change in either swings the
+        ratio to very large or negative values, which says little about efficiency, so
+        check `get_working_capital` alongside it. Companies that run on negative working
+        capital, such as retailers paid by their customers before they pay their
+        suppliers, show a negative ratio that reflects their business model rather than
+        weak efficiency.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2136,13 +2173,22 @@ class Ratios:
         Calculate the operating ratio, a financial metric that measures the efficiency
         of a company's operations by comparing its operating expenses to its revenue.
 
-        The operating ratio is calculated by dividing the company's operating expenses by
-        its net sales and multiplying by 100 to express it as a percentage. It provides
-        insight into how efficiently a company is managing its operations.
+        The operating ratio is calculated by dividing the sum of the cost of goods sold
+        and the operating expenses by revenue. It shows how much of each dollar of
+        revenue is absorbed by the costs of running the business; one minus the operating
+        ratio is roughly the operating margin. It provides insight into how efficiently a
+        company is managing its operations.
 
         The formula is as follows:
 
         - Operating Ratio = (Operating Expenses + Cost of Goods Sold) / Revenue
+
+        Railroads and trucking companies report the operating ratio as their headline
+        efficiency measure, and lower is better. Because cost of goods sold and operating
+        expenses are added together, the ratio does not depend on how a company splits
+        its costs between those two lines, which makes it easier to compare than the
+        expense lines on their own. It leaves out interest and taxes, so it says nothing
+        about leverage.
 
         Also known as: operating efficiency ratio, operating expense ratio.
 
@@ -2239,6 +2285,13 @@ class Ratios:
         The formula is as follows:
 
         - R&D Intensity Ratio = Research and Development Expenses / Revenue
+
+        R&D intensity is compared within an industry and over time: a falling ratio
+        can mean revenue is growing faster than the research budget, not that
+        research is being cut. Accounting matters across borders, since IFRS requires
+        development costs to be capitalized once a project meets certain criteria
+        while US GAAP expenses nearly all of them, so a company reporting under IFRS
+        can show a lower ratio for the same spending.
 
         Also known as: R&D intensity, R&D to sales ratio.
 
@@ -2351,8 +2404,10 @@ class Ratios:
         each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
-        - Not every company reports Selling and Marketing Expenses separately from General
-        and Administrative Expenses, in which case this ratio will be unavailable.
+        - Not every company reports Selling and Marketing Expenses separately from
+        General and Administrative Expenses. For those companies the ratio shows 0,
+        which means the split is not reported, not that nothing was spent; use
+        `get_sga_to_revenue_ratio` instead.
 
         As an example:
 
@@ -2444,8 +2499,11 @@ class Ratios:
         each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
-        - Not every company reports General and Administrative Expenses separately from
-        Selling and Marketing Expenses, in which case this ratio will be unavailable.
+        - Not every company reports General and Administrative Expenses separately
+        from Selling and Marketing Expenses. For those companies the ratio shows 0,
+        or, when the whole SG&A line is reported as general and administrative, the
+        full SG&A ratio; compare with `get_sga_to_revenue_ratio` before reading it as
+        overhead alone.
 
         As an example:
 
@@ -2843,6 +2901,14 @@ class Ratios:
 
         - Current Ratio = Current Assets / Current Liabilities
 
+        A current ratio above 1 is the textbook comfort level, but the right level
+        depends on the business: companies that collect from customers before paying
+        suppliers, such as large retailers and restaurant chains, run below 1 without
+        strain, while manufacturers with long production cycles need more. Lenders read
+        it together with the quick ratio (`get_quick_ratio`), since inventory can be hard
+        to sell at book value, and with the trend, since the year-end balance sheet can
+        be managed to look better than the average day.
+
         Also known as: short-term liquidity, working capital ratio.
 
         Args:
@@ -2930,10 +2996,12 @@ class Ratios:
 
         This ratio is also referred to as the Acid Test Ratio.
 
-        The quick ratio is calculated by subtracting inventory from current assets and
-        then dividing the result by current liabilities. It provides insight into a
-        company's ability to cover its short-term liabilities using its most liquid
-        assets without relying on inventory.
+        The quick ratio is calculated by adding cash and cash equivalents, short-term
+        investments and accounts receivable, and dividing the sum by current liabilities.
+        It leaves out inventory, prepaid expenses and other current assets, which cannot
+        quickly be turned into cash. It provides insight into a company's ability to
+        cover its short-term liabilities using its most liquid assets without relying on
+        inventory.
 
         The formula is as follows:
 
@@ -3033,9 +3101,10 @@ class Ratios:
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
         to pay off its short-term liabilities with its cash and cash equivalents.
 
-        The cash ratio is calculated by dividing the sum of cash and cash equivalents
-        by current liabilities. It provides insight into a company's immediate ability
-        to cover its short-term obligations using its most liquid assets.
+        The cash ratio is calculated by dividing the sum of cash and cash equivalents and
+        short-term investments by current liabilities. It provides insight into a
+        company's immediate ability to cover its short-term obligations using its most
+        liquid assets.
 
         The formula is as follows:
 
@@ -3512,8 +3581,12 @@ class Ratios:
           Accounts Receivable) / Daily Operating Expenses
 
         Where Daily Operating Expenses = (Operating Expenses - Depreciation and
-        Amortization) / Days, i.e. the average cash operating expenses incurred per
-        day, net of the largest non-cash charge (depreciation and amortization).
+        Amortization) / Days. Operating Expenses here excludes the cost of goods sold,
+        while the depreciation and amortization from the cash flow statement also
+        includes the part charged to the cost of goods sold. The ratio therefore counts
+        the days that liquid assets would cover selling, general, administrative and
+        research costs, not all cash costs, and for a capital-intensive company with
+        small overheads the denominator can approach zero or turn negative.
 
         Also known as: defensive interval period, basic defense interval.
 
@@ -3831,6 +3904,13 @@ class Ratios:
 
         - Gross Margin Ratio = (Revenue — Cost of Goods Sold) / Revenue
 
+        Gross margin shows pricing power and production cost before overheads, and is best
+        compared within an industry and over time. What sits in cost of goods sold differs
+        between companies (some include depreciation, freight or warehousing, others report
+        them lower down), so small gaps between peers can be accounting rather than
+        economics. The trend matters most: a steady decline points to rising input costs
+        that cannot be passed on, or to a shift in the sales mix.
+
         Also known as: gross profit margin, gross profit percentage.
 
         Args:
@@ -3927,13 +4007,19 @@ class Ratios:
         Calculate the operating margin, a profitability ratio that measures the percentage of
         revenue that remains after deducting operating expenses.
 
-        The operating margin ratio is calculated by subtracting the operating expenses from the
-        total revenue and then dividing the result by the total revenue. It indicates how efficiently
+        The operating margin ratio is calculated by dividing operating income (revenue minus the
+        cost of goods sold and the operating expenses) by revenue. It indicates how efficiently
         a company is managing its operating expenses in relation to its revenue.
 
         The formula is as follows:
 
         - Operating Margin Ratio = Operating Income / Revenue
+
+        Operating margin is the usual yardstick for the profitability of the core business,
+        before financing and taxes. Companies with high fixed costs show operating leverage:
+        their margin rises quickly when revenue grows and falls quickly when it shrinks.
+        Restructuring charges and impairments are included, so a single weak year should be
+        checked for one-off items before comparing with peers.
 
         Also known as: EBIT margin, operating income margin.
 
@@ -4203,9 +4289,11 @@ class Ratios:
         interest load. Values slightly above 1 occur when non-operating income (e.g.
         interest income) exceeds interest expense.
 
-        Note that this is the reciprocal of, and should not be confused with, the
-        Interest Coverage Ratio (`get_interest_coverage_ratio`), which divides
-        operating profit by interest expense and is therefore unbounded above.
+        Note that this is related to, but not the same as, the Interest Coverage Ratio
+        (`get_interest_coverage_ratio`), which divides EBITDA by interest expense and is
+        unbounded above. When income before tax is roughly operating income minus
+        interest expense, the interest burden is about 1 minus interest expense divided
+        by operating income.
 
         The formula is as follows:
 
@@ -4398,7 +4486,15 @@ class Ratios:
 
         - Effective Tax Rate = Income Tax Expense / Income Before Tax
 
-        Also known as: tax burden, actual tax rate.
+        Analysts compare the effective tax rate with the statutory rates of the
+        countries a company earns its profits in; a rate well below them usually comes
+        from profits booked in lower-tax countries, research credits or one-off
+        benefits. Single years can be far from the trend because of settlements, law
+        changes or the release of a valuation allowance (the negative rate for TSLA in
+        2023 in the example below is such a case), so forecasts usually start from a
+        normalized rate. `get_cash_tax_rate` shows what was actually paid.
+
+        Also known as: ETR, actual tax rate.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4490,6 +4586,13 @@ class Ratios:
         The formula is as follows:
 
         - Return on Assets = Net Income / Average Total Assets
+
+        Return on assets is the natural measure for banks and insurers, whose assets are mostly loans
+        and investments, and where a return of about 1% is the usual benchmark for a bank. Outside
+        finance it is best compared within an industry, since asset-light businesses such as software
+        and services earn far higher returns on assets than utilities or manufacturers. Because net
+        income is after interest, two companies with the same operations but different leverage show
+        different returns on assets.
 
         Also known as: ROA, asset profitability.
 
@@ -4669,8 +4772,9 @@ class Ratios:
 
         The return on equity is calculated by dividing the net income by the average shareholders' equity.
         Shareholders' equity represents the residual interest in the assets of a company after deducting liabilities.
-        Note that it is false to take the total assets at the end of the period given that income statements report
-        over the period whereas a balance sheet reports on the period.
+        Note that it is false to take the total equity at the end of the period, given that an income statement
+        reports over the period whereas a balance sheet reports at a point in time; the average equity over the
+        period is used instead.
 
         ROE provides insight into the company's ability to generate profits from the investments made by
         its shareholders. A higher ROE indicates that the company is using its equity effectively to generate
@@ -4679,6 +4783,13 @@ class Ratios:
         The formula is as follows:
 
         - Return on Equity = Net Income / Average Shareholders' Equity (or Total Equity)
+
+        ROE is usually read through the DuPont analysis (`Toolkit.models.get_dupont_analysis`), which splits it into
+        net margin, asset turnover and the equity multiplier, because the same ROE can come from high margins or from
+        a thin equity base. Large buybacks and accumulated losses shrink equity and can push ROE to extreme or negative
+        values (AAPL above 1.4 in the example below), in which case ROIC or ROA says more. For banks and insurers ROE
+        is set against the cost of equity, and together with the price-to-book ratio it explains much of their
+        valuation.
 
         Also known as: ROE, shareholders equity return, equity profitability.
 
@@ -4768,19 +4879,28 @@ class Ratios:
         Calculate the return on invested capital (ROIC), a financial ratio that measures
         the company's return on the capital invested in it, including both equity and debt.
 
-        The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT)
-        by the average invested capital. Invested capital includes both equity and debt, making this ratio
-        a valuable measure of how efficiently a company generates returns for all of its investors.
+        The return on invested capital is calculated by dividing net income, less the dividends paid when
+        dividend_adjusted is True (the default), by the average invested capital: total equity plus total debt.
+        Invested capital includes both equity and debt, making this ratio a valuable measure of how efficiently a
+        company generates returns for all of its investors. Net income is used as a proxy for net operating profit
+        after taxes (NOPAT); it is after interest, so for companies with much debt it gives a lower return than a
+        NOPAT-based ROIC. Set dividend_adjusted=False for the more common definition without the dividend deduction.
 
         The formula is as follows:
 
         - Return on Invested Capital = (Net Income — Paid Dividends) / Average Invested Capital
 
+        ROIC is compared with the weighted average cost of capital
+        (`Toolkit.models.get_weighted_average_cost_of_capital`): a company that earns more than its cost of capital
+        creates value as it invests and grows, one that earns less destroys it. It is less distorted by buybacks and
+        leverage than ROE. With the default dividend adjustment a company with a high payout shows a much lower ROIC
+        than one that retains its earnings, so compare companies with the same setting.
+
         Also known as: ROIC.
 
         Args:
-            dividend_adjusted (bool, optional): Whether to adjust the net operating profit after taxes
-            with the dividends paid. Defaults to True.
+            dividend_adjusted (bool, optional): Whether to deduct the dividends paid from net income.
+            Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4896,7 +5016,13 @@ class Ratios:
 
         - Income Quality Ratio = Cash Flow from Operations / Net Income
 
-        Also known as: earnings quality, accrual ratio.
+        A ratio above 1 means reported earnings are backed by at least as much operating cash flow,
+        which is typical for companies with large depreciation charges. A ratio that stays below 1 for
+        several years, for example because receivables or capitalized costs keep growing, is a common
+        warning sign in earnings-quality screens. The ratio loses meaning, and can flip sign, when net
+        income is close to zero or negative.
+
+        Also known as: earnings quality ratio, cash flow to net income ratio.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4981,11 +5107,12 @@ class Ratios:
         generated by a company's tangible assets.
 
         The return on tangible assets (ROTA) provides insights into the efficiency with which a company
-        utilizes its tangible assets to generate profits. Tangible assets include physical assets such as
-        buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from
-        its core operational assets. The tangible base is net of liabilities as well as intangible
-        assets (tangible book value), so for a company with few intangibles and much debt, such as
-        Apple, it is small and the ratio well above 1.
+        utilizes its tangible assets to generate profits. It is calculated by dividing net income by the
+        average tangible book value: total assets minus intangible assets and total liabilities (goodwill
+        is not deducted). Because liabilities are deducted, the ratio behaves like a return on tangible
+        equity: for a company with few intangibles and much debt, such as Apple, the base is small and the
+        ratio well above 1, and it turns negative when liabilities and intangible assets exceed total
+        assets.
 
         The formula is as follows:
 
@@ -5105,6 +5232,13 @@ class Ratios:
         The formula is as follows:
 
         - Return on Capital Employed = EBIT / (Total Assets — Current Liabilities)
+
+        ROCE is widely used for capital-intensive industries such as oil and gas, mining, utilities and telecoms,
+        because it measures the operating return on all long-term funding, equity and debt, regardless of the
+        capital structure. It is compared with the cost of capital and with peers over a full cycle, since commodity
+        producers show very high ROCE at the top of a price cycle. The capital employed is taken at the end of the
+        period (averaged over the window when trailing is set), so a large acquisition late in the year lowers the
+        ratio before the acquired earnings come in.
 
         Also known as: ROCE.
 
@@ -5484,11 +5618,12 @@ class Ratios:
         net income to its income before tax, indicating how much of a
         company's income is retained after taxes.
 
-        The tax burden ratio measures the portion of a company's earnings that
-        is paid as taxes. A higher ratio indicates that a larger portion of the
-        income is being retained by the company after taxes. This ratio provides
-        insights into the tax efficiency of the company and its ability to manage
-        its tax liabilities.
+        The tax burden ratio measures the portion of a company's pretax earnings
+        that it keeps after taxes; one minus the ratio is roughly the effective
+        tax rate. A higher ratio means a lower tax charge. It is one of the
+        components of the extended (five-step) DuPont analysis. This ratio
+        provides insights into the tax efficiency of the company and its ability
+        to manage its tax liabilities.
 
         The formula is as follows:
 
@@ -5574,15 +5709,14 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its
-        earnings before interest and taxes, indicating how much of a company's earnings are
-        generated before paying interest on debt.
+        Calculate the EBT to EBIT ratio, which shows how much of a company's earnings before
+        interest and taxes (EBIT) is left after interest expense.
 
-        The EBT to EBIT ratio measures the proportion of a company's earnings that is generated
-        before paying interest and taxes. It provides insights into how a company's operating
-        performance is impacted by interest expenses and tax obligations. A higher ratio indicates
-        that a larger portion of the company's earnings is generated from its core operations
-        before considering interest payments and taxes.
+        A ratio close to 1 means interest takes little of the operating profit; a lower ratio
+        means a heavier interest load. Taxes play no part in the ratio. Unlike
+        `get_interest_burden_ratio`, which uses the reported income before tax and operating
+        income, both figures here are rebuilt from net income, income tax expense and interest
+        expense.
 
         The formula is as follows:
 
@@ -5794,6 +5928,14 @@ class Ratios:
 
         - Cash Tax Rate = Income Taxes Paid / Income Before Tax
 
+        The cash tax rate shows the taxes a company actually paid, which can differ
+        for years from the tax expense in the income statement because of deferred
+        taxes, prepayments and settlements of earlier years. Analysts compare it
+        with the effective tax rate to see whether reported earnings rely on taxes
+        that are deferred rather than saved. When the data has no income taxes paid
+        for a year, the rate shows as 0 (TSLA in 2025 in the example below), which
+        should be read as missing, not as a company that paid no tax.
+
         Also known as: cash effective tax rate.
 
         Args:
@@ -5888,6 +6030,13 @@ class Ratios:
         The formula is as follows:
 
         - Tax Rate Divergence = Cash Tax Rate - Effective Tax Rate
+
+        Because the divergence is the cash tax rate minus the effective tax rate, a
+        year without reported income taxes paid shows a divergence equal to minus the
+        effective tax rate (TSLA in 2025 in the example below: -0.2696 against an
+        effective rate of 0.2696), so check `get_cash_tax_rate` for zeros before
+        reading a large negative value as aggressive tax deferral. The measure is also
+        unstable when income before tax is small or negative.
 
         Also known as: cash-accrual tax gap.
 
@@ -6335,6 +6484,14 @@ class Ratios:
 
         - Debt to Equity Ratio = Total Debt / Total Equity
 
+        The debt to equity ratio is compared within an industry, since utilities, real
+        estate and companies with a financing arm (car makers, machinery makers) carry far
+        more debt than software companies. Equity is a book value, so large buybacks or
+        accumulated losses can make it small or negative, and the ratio then becomes
+        extreme or negative without saying anything about the debt load; the debt to
+        capital ratio (`get_debt_to_capital_ratio`) and net debt to EBITDA
+        (`get_net_debt_to_ebitda_ratio`) are more robust in those cases.
+
         Also known as: D/E ratio, leverage ratio, gearing ratio.
 
         Args:
@@ -6419,16 +6576,27 @@ class Ratios:
         ability to pay its interest expenses on outstanding debt.
 
         The interest coverage ratio evaluates a company's ability to meet its interest
-        obligations from its operating income. A higher ratio indicates a company's stronger
-        ability to cover its interest payments using its earnings, implying lower financial risk.
-        Conversely, a lower ratio suggests a company may have difficulty meeting its interest
-        obligations and could be at higher risk of default.
+        obligations from its earnings before interest, taxes, depreciation and amortization
+        (EBITDA). A higher ratio indicates a company's stronger ability to cover its interest
+        payments using its earnings, implying lower financial risk. Conversely, a lower ratio
+        suggests a company may have difficulty meeting its interest obligations and could be
+        at higher risk of default.
 
         The formula is as follows:
 
         - Interest Coverage Ratio = (Operating Income + Depreciation and Amortization) / Interest Expense
 
-        Also known as: TIE, times interest earned.
+        Lenders and rating agencies use interest coverage to judge how much room a company has
+        before its earnings no longer cover its interest bill, and loan covenants often set a
+        minimum. EBITDA coverage is higher than EBIT coverage, and the gap is largest for
+        capital-intensive companies, where depreciation stands for real reinvestment. The ratio
+        shows as infinite when no interest expense is reported (AAPL in 2024 and 2025 in the
+        example below), which is often a gap in the reported data rather than an absence of
+        debt.
+
+        Also known as: EBITDA interest coverage. Note that times interest earned (TIE) uses
+        operating income without adding back depreciation and amortization, and is therefore
+        lower.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6526,6 +6694,12 @@ class Ratios:
 
         - Equity Multiplier = Average Total Assets / Average Total Equity
 
+        The equity multiplier is the leverage component of the DuPont analysis: return on
+        equity equals return on assets times the equity multiplier. Banks run multipliers of
+        around 10 or more, which is why their small returns on assets translate into returns
+        on equity in the teens. For other companies a rising multiplier can come from new
+        debt but also from buybacks that shrink equity.
+
         Also known as: financial leverage multiplier.
 
         Args:
@@ -6612,13 +6786,17 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the debt service coverage ratio, a solvency ratio that measures a company's
-        ability to service its debt with its net operating income.
+        Calculate the debt service coverage ratio, a solvency ratio that measures how well a
+        company's operating income covers what it owes within a year.
 
-        The debt service coverage ratio provides insights into a company's ability to meet its
-        debt obligations from its operating income. It is especially important for companies
-        with significant debt obligations, as a lower ratio indicates higher financial risk and
-        potential difficulties in servicing debt payments.
+        The debt service coverage ratio, as calculated here, compares operating income with all
+        current liabilities, not only the debt due within a year, so it measures how well one
+        year of operating income covers everything the company owes within a year. Current
+        liabilities also include accounts payable, accrued expenses and deferred revenue, so a
+        company with little debt but large deferred revenue shows a low ratio, while a company
+        with heavy long-term debt but small payables can show a high one. A lower ratio
+        indicates higher financial risk and potential difficulties in meeting short-term
+        obligations.
 
         The formula is as follows:
 
@@ -6722,6 +6900,13 @@ class Ratios:
         The formula is as follows:
 
         - Free Cash Flow Yield Ratio = Free Cash Flow / Market Capitalization
+
+        The free cash flow yield is the cash a company generates for its shareholders as a
+        share of what the market pays for them, and is often set against bond yields or
+        the dividend yield to judge how much room there is for dividends and buybacks.
+        Free cash flow swings with capital expenditure and working capital, so a single
+        year can mislead, and a high yield can also mean the market expects free cash flow
+        to fall.
 
         Also known as: FCF yield.
 
@@ -6857,6 +7042,13 @@ class Ratios:
         The formula is as follows:
 
         - Net Debt to EBITDA Ratio = Net Debt / EBITDA
+
+        Net debt to EBITDA is the leverage measure lenders, rating agencies and loan
+        covenants use most: it reads as the number of years of EBITDA needed to repay the
+        debt net of cash. What counts as high depends on how stable the earnings are, so
+        utilities and telecoms carry more than cyclical companies. A negative value means
+        the company holds more cash than debt, and the ratio becomes meaningless when
+        EBITDA is close to zero or negative.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -7433,8 +7625,10 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-        - This ratio is only meaningful for companies that have preferred stock outstanding;
-        it will be zero-division/NaN for companies without preferred dividends.
+        - This ratio is only meaningful for companies that have preferred stock
+        outstanding. It has no value (NaN, or infinite after a division by zero) when
+        no preferred dividends are reported separately in the cash flow statement,
+        which also happens for some companies that do pay them.
 
         As an example:
 
@@ -7513,6 +7707,13 @@ class Ratios:
         The formula is as follows:
 
         - Interest Paid to Expense Ratio = Interest Paid / Interest Expense
+
+        A common reason for interest paid to exceed the interest expense is
+        capitalized interest: companies building plants, fabs or networks add part of
+        their interest to the cost of the asset, so the income statement shows less
+        interest than was paid. When the data has no interest paid for a year, the
+        ratio shows as 0 (TSLA in 2025 in the example below), which means the figure
+        is missing, not that no interest was paid.
 
         Also known as: cash interest coverage, interest cash conversion.
 
@@ -7831,12 +8032,16 @@ class Ratios:
 
         The formula is as follows:
 
-        - Earnings per Share (EPS) = (Net Income — |Preferred Dividends Paid|) / Weighted Average Shares
+        - Earnings per Share (EPS) = (Net Income — |Preferred Dividends Paid|) / Weighted Average (Diluted) Shares
+
+        The preferred dividends are only deducted when include_dividends is True; with the
+        default, EPS is net income divided by the weighted average (diluted) shares.
 
         Also known as: EPS, net income per share.
 
         Args:
-            include_dividends (bool, optional): Whether to include dividends in the EPS calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct the preferred dividends paid from net income.
+                Defaults to False.
             diluted (bool, optional): Whether to use diluted earnings per share. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -8046,6 +8251,13 @@ class Ratios:
 
         - Price to Earnings Ratio (P/E) = Share Price / Earnings per Share (EPS)
 
+        The P/E is compared with the company's own history, its peers and the market,
+        and is read together with growth: a high P/E is the market paying for expected
+        growth. For cyclical companies it is misleading at the extremes, lowest at peak
+        earnings and highest in a downturn, so analysts often use normalized or forward
+        earnings (`get_forward_price_earnings_ratio`). A negative or tiny EPS gives a
+        negative or extreme P/E that should be left out of averages.
+
         Also known as: PE ratio, P/E ratio, price-earnings ratio, earnings multiple.
 
         Args:
@@ -8155,7 +8367,18 @@ class Ratios:
 
         The formula is as follows:
 
-        - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / Growth Rate
+        - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / (EPS Growth Rate * 100)
+
+        The growth rate is the growth of the (diluted) earnings per share on the previous
+        period, or of EBITDA when use_ebitda_growth_rate is True, multiplied by 100 so that it
+        enters in percent.
+
+        A PEG around 1 is the traditional rule of thumb for a growth stock priced in line with
+        its growth. This historical PEG uses a single period of earnings growth, so it swings
+        widely and turns negative when earnings fall (AAPL at 91.2 and -49.8 in the example
+        below), which is why practitioners prefer forward or multi-year growth
+        (`get_forward_price_earnings_growth_ratio`) and leave negative values out of
+        comparisons.
 
         Also known as: PEG ratio, price earnings growth.
 
@@ -8302,6 +8525,13 @@ class Ratios:
 
             Forward P/E = Stock Price / Estimated EPS Average
 
+        The forward P/E is the standard valuation multiple in equity research because prices
+        look ahead, but it rests on consensus estimates, which tend to be revised as results
+        come in. Consensus EPS is usually on the adjusted basis companies guide on, while the
+        trailing P/E (`get_price_to_earnings_ratio`) uses reported diluted EPS, so for
+        companies with large amortization or restructuring charges the forward P/E looks much
+        lower than the trailing one without any change in earnings power.
+
         Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
         subscription. Analyst estimates are fetched once per Toolkit instance and cached
         across calls to this (or the other forward-looking ratio) method — never on
@@ -8318,7 +8548,10 @@ class Ratios:
                 values. Defaults to False.
 
         Returns:
-            pd.DataFrame: Forward P/E ratio for each period covered by the analyst estimates.
+            pd.DataFrame: The current share price divided by the consensus EPS estimate of each
+                period in the analyst estimates. Only the periods after the latest reported fiscal
+                year are forward P/E ratios; earlier columns divide today's price by the estimates
+                made for years that have already been reported.
 
         As an example:
 
@@ -8397,6 +8630,14 @@ class Ratios:
 
             - Estimated EPS Growth Rate = (Estimated EPS - Trailing EPS) / |Trailing EPS|
             - Forward PEG = Forward P/E / (Estimated EPS Growth Rate * 100)
+
+        The growth rate is the total growth from the most recently reported EPS to the
+        estimate of each period, so only the next fiscal year gives a PEG on annual growth;
+        later periods show the growth over several years and a correspondingly lower PEG.
+        For periods up to the latest reported fiscal year the estimate is compared with a
+        later EPS, so the PEG there has no meaning. The trailing EPS is the reported diluted
+        EPS, while consensus estimates are usually on an adjusted basis, which inflates the
+        implied growth for companies with large non-cash charges.
 
         Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
         subscription. Analyst estimates are fetched once per Toolkit instance and cached
@@ -8621,6 +8862,14 @@ class Ratios:
 
         - Price to Book Ratio = Share Price / Book Value per Share
 
+        The price to book ratio matters most for banks and insurers, whose balance
+        sheets consist mostly of financial assets and liabilities, so that book value
+        is a fair measure of what shareholders own. It is read together with return on
+        equity: a bank that earns more than its cost of equity can justify trading
+        above book value, one that earns less trades below it. For companies whose
+        value lies in brands, software or people, book value says little, and buybacks
+        can shrink it until the ratio becomes extreme.
+
         Also known as: P/B ratio.
 
         Args:
@@ -8716,12 +8965,12 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the interest debt per share, a valuation ratio that measures the
-        amount of interest expense incurred per outstanding share of a company's stock.
+        Calculate the interest debt per share, a valuation ratio that measures a company's
+        total debt plus one year of interest expense per outstanding share.
 
-        The interest debt per share ratio provides insight into how much interest a company
-        pays on its debt relative to its shareholder base. It can help investors assess
-        the financial burden of interest expenses on the company's profitability.
+        The interest debt per share ratio shows how much debt, with its interest, ranks
+        ahead of each share, and is often compared with the share price. Because the total
+        debt is added to the interest expense, the value is mostly debt per share.
 
         The formula is as follows:
 
@@ -8827,6 +9076,12 @@ class Ratios:
         The formula is as follows:
 
         - CAPEX per Share = Capital Expenditure / Weighted Average (Diluted) Shares
+
+        The values are negative because capital expenditure is reported as a cash outflow
+        in the cash flow statement; take the magnitude when comparing with sources that
+        quote capex per share as a positive amount. Capex per share is usually compared
+        with operating cash flow or depreciation per share: capex well above depreciation
+        for years points to expansion, capex below it to an ageing asset base.
 
         Also known as: capital expenditure per share.
 
@@ -9481,8 +9736,9 @@ class Ratios:
         Calculates the market capitalization of the company.
 
         Market capitalization, often referred to as "market cap," is the total value of a company's
-        outstanding shares of stock in the stock market. It is calculated by multiplying the current
-        market price per share by the total number of outstanding shares.
+        outstanding shares of stock in the stock market. It is calculated by multiplying the share
+        price at the end of each period by the weighted average (diluted) number of shares
+        outstanding in that period.
 
         The formula is as follows:
 
@@ -9598,6 +9854,13 @@ class Ratios:
 
         - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
             — Cash and Cash Equivalents
+
+        Enterprise value is the price of the whole business, equity and debt together,
+        which makes it the right numerator for multiples of operating results such as EV
+        to EBITDA or EV to sales, and comparable across companies with different capital
+        structures. Only cash and cash equivalents are deducted, not short-term
+        investments, so for companies that hold much of their cash in marketable
+        securities the enterprise value is higher than a figure net of all cash.
 
         Also known as: EV, total enterprise value.
 
@@ -9847,6 +10110,13 @@ class Ratios:
         The formula is as follows:
 
         - Enterprise Value to EBITDA Ratio = Enterprise Value / EBITDA
+
+        EV to EBITDA is the most common multiple in sector comparisons and takeover pricing
+        because it is not affected by capital structure, tax rates or depreciation policy.
+        That is also its limit: it ignores the capital expenditure needed to sustain EBITDA,
+        so capital-intensive companies look cheaper than they are, and EV to EBIT
+        (`get_ev_to_ebit`) or EV to free cash flow (`get_ev_to_free_cash_flow_ratio`) is a
+        useful cross-check.
 
         Also known as: EV/EBITDA.
 
@@ -10177,6 +10447,12 @@ class Ratios:
 
         - Dividend Payout Ratio = Dividends Paid / Net Income
 
+        The payout ratio shows how much room a company has to keep or raise its dividend. A
+        ratio above 1 means the dividend is paid partly from reserves or borrowing, which
+        cannot last unless profits were depressed by one-off charges. Because it uses net
+        income, it is often checked against free cash flow, and for real estate investment
+        trusts, whose net income is reduced by depreciation, it is not a useful measure.
+
         Also known as: payout ratio.
 
         Args:
@@ -10336,15 +10612,16 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the tangible asset value, a financial metric that represents the total value
-        of a company's assets that can be used to generate revenue. Tangible assets are those
-        physical assets that have a finite monetary value and can be sold, used, or consumed.
+        Calculate the tangible asset value, a financial metric that represents the book value
+        of a company's equity after deducting goodwill: what remains of its assets, without
+        goodwill, once all liabilities are paid. Other intangible assets such as patents,
+        brands and customer relationships are not deducted.
 
         The formula is as follows:
 
         - Tangible Asset Value = Total Assets — Total Liabilities — Goodwill
 
-        Also known as: tangible assets, net tangible assets.
+        Also known as: net tangible assets.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -10731,6 +11008,13 @@ class Ratios:
         The formula is as follows:
 
         - Buyback Yield = -(Common Stock Purchased + Common Stock Issued) / Market Capitalization
+
+        The buyback yield is net of shares issued, which matters for companies that
+        pay much of their staff in shares: their gross buybacks can be large while
+        the net yield is small, because the buybacks mainly offset the dilution from
+        stock-based compensation. Buybacks are more flexible than dividends and vary
+        with the share price and the cash available, so the yield is best read over
+        several years and added to the dividend yield (`get_shareholder_yield`).
 
         Also known as: net repurchase yield.
 

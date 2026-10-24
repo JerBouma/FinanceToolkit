@@ -148,15 +148,21 @@ class Models:
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
 
         The Dupont analysis is a method used to dissect and understand the factors that drive a company's
-        return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset
-        Turnover, and Financial Leverage.
+        return on equity (ROE). It breaks down the ROE into three key components: Net Profit Margin, Asset
+        Turnover, and Equity Multiplier.
 
         The formula is as follows:
 
-            - Profit Margin = Net Income / Revenue
+            - Net Profit Margin = Net Income / Revenue
             - Asset Turnover = Revenue / Average Total Assets
-            - Financial Leverage = Average Total Assets / Average Total Equity
-            - ROE = Profit Margin * Asset Turnover * Financial Leverage
+            - Equity Multiplier = Average Total Assets / Average Total Equity
+            - ROE = Net Profit Margin * Asset Turnover * Equity Multiplier
+
+        The value of the decomposition is in comparing the three factors with peers and over time: a
+        retailer earns its return on equity through asset turnover, a software company through its margin
+        and a bank through leverage. A rising return on equity driven only by the Equity Multiplier, for
+        example through share buybacks that shrink equity, is of lower quality than one driven by margin or
+        turnover, and with negative equity the decomposition stops being meaningful.
 
         Also known as: DuPont, ROE decomposition, three-factor DuPont.
 
@@ -172,16 +178,16 @@ class Models:
                 which shows all columns.
 
         Returns:
-            pd.DataFrame: DataFrame containing Dupont analysis results, including Profit Margin, Asset
-                          Turnover, Financial Leverage, and the calculated ROE values.
+            pd.DataFrame: DataFrame containing Dupont analysis results, including Net Profit Margin, Asset
+                          Turnover, Equity Multiplier, and the calculated ROE values.
 
         Notes:
-            - The Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage of
-            revenue that translates into profit.
+            - The Net Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage
+            of revenue that translates into profit.
             - Asset Turnover measures the efficiency of a company's use of its assets to generate sales
             revenue.
-            - Financial Leverage represents the use of debt to finance a company's operations, which can
-            amplify returns as well as risks.
+            - The Equity Multiplier measures financial leverage, the use of debt to finance a company's
+            operations, which can amplify returns as well as risks.
 
         As an example:
 
@@ -664,6 +670,12 @@ class Models:
             cost of replacing its assets, which can reflect undervaluation or declining growth
             prospects.
 
+        Because the book value of assets leaves out most intangibles (brands, software, research),
+        companies built on them show a Q far above 1 without being overvalued in Tobin's sense, so the
+        ratio is most informative within an industry and over time. In macroeconomics the aggregate Q of
+        the corporate sector is read as a signal for investment: a Q above 1 makes new capital worth more
+        than it costs.
+
         Also known as: Tobin's Q, Q ratio.
 
         Args:
@@ -842,6 +854,12 @@ class Models:
         equity and the market value of debt (V = E + D). It represents the total value of the company's financing,
         both through equity and debt.
 
+        The WACC is the discount rate for the free cash flow to the firm and the hurdle rate for new
+        investments, so analysts usually build it from forward-looking inputs: a long-term government bond
+        yield, an equity risk premium of a few percent, a beta measured over several years and the yield on
+        the company's debt. Small changes matter: in a DCF with 2.5% perpetual growth, moving the WACC from
+        8% to 9% lowers the terminal value by about 15%.
+
         Also known as: WACC, blended cost of capital, discount rate.
 
         Args:
@@ -862,7 +880,12 @@ class Models:
             pd.DataFrame: DataFrame containing the WACC values.
 
         Notes:
-        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM).
+        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM), using the
+        benchmark's realized return over the same period as the market return and a Beta estimated from
+        that period's daily returns. It therefore moves with the market: in a year the benchmark falls, the
+        Cost of Equity (and often the WACC) can be negative, and in a strong year it lies far above a
+        long-run required return. Treat it as a realized rather than an expected cost of capital; a
+        valuation usually needs an expected market return or equity risk premium instead.
         - The Market Value of Debt is approximated as the Total Debt.
 
         As an example:
@@ -1063,6 +1086,11 @@ class Models:
             - Invested Capital = Total Equity + Total Debt
             - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital)
 
+        EVA is mostly used to compare value creation across business units or companies and over time, and
+        as a basis for management compensation. It is equivalent to (Return on Invested Capital - WACC) *
+        Invested Capital, so a company with a high return on capital but a small capital base can create
+        less EVA than a larger, less profitable one.
+
         Also known as: EVA, economic profit.
 
         Args:
@@ -1089,6 +1117,11 @@ class Models:
         average of Total Debt, i.e. the capital employed over the course of the period rather than
         its closing balance, consistent with the Return on Invested Capital calculation in the
         Ratios module.
+        - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
+        which uses the benchmark's realized return in the Cost of Equity. In a year the benchmark
+        falls it can be negative, and the EVA then exceeds the NOPAT; average the WACC over several
+        years, or compare EVA across companies within the same year, rather than reading single
+        years literally.
 
         As an example:
 
@@ -1427,9 +1460,15 @@ class Models:
             - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
             - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
             (Weighted Average Cost of Capital — Perpetual Growth Rate)
-            - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
+            - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value /
+            (1 + Weighted Average Cost of Capital)^Periods
             - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents
             - Intrinsic Value = Equity Value / Total Shares Outstanding
+
+        In a five-year DCF the discounted terminal value is often 60% to 80% of the enterprise value, so the
+        result is driven mostly by the gap between the WACC and the perpetual growth rate. Practitioners
+        therefore show the intrinsic value as a range over several WACC and growth assumptions rather than a
+        single number, and keep the perpetual growth rate at or below long-run nominal GDP growth.
 
         Also known as: DCF, discounted cash flow, fair value, intrinsic value.
 
@@ -1439,9 +1478,9 @@ class Models:
             perpetual_growth_rate (float, list or dict): The perpetual growth rate to use for the terminal value.
             Can be one number to use for all tickers, or a list or dict that contains a perpetual growth rate for
             each ticker.
-            weighted_average_cost_of_capital (float, list or dict): The weighted average cost of capital to use for
-            the terminal value. Can be one number to use for all tickers, or a list or dict that contains a
-            weighted average cost of capital for each ticker.
+            weighted_average_cost_of_capital (float, list or dict): The weighted average cost of capital used to
+            discount the projected cash flows and to calculate the terminal value. Can be one number to use for
+            all tickers, or a list or dict that contains a weighted average cost of capital for each ticker.
             periods (int, optional): The number of periods to use for the cash flow projections. Defaults to 5.
             cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections.
             Defaults to "Free Cash Flow". Other options are "Operating Cash Flow", "Change in Working Capital",
@@ -2254,9 +2293,11 @@ class Models:
         equity holders required given the capital they have invested. A negative Residual
         Income indicates the company failed to earn its equity holders' required return, even
         if it still reported a positive Net Income.
-        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM),
-        consistent with the Weighted Average Cost of Capital calculation elsewhere in this
-        module.
+        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM), using
+        the benchmark's realized return over the same period as the market return, as in the
+        Weighted Average Cost of Capital calculation elsewhere in this module. In a year the
+        benchmark falls it can be negative and the Residual Income then exceeds the Net Income;
+        in a strong year it is far above a long-run required return.
         - The Book Value of Equity is approximated as the average of Total Shareholder Equity
         minus Preferred Stock over the current and prior period, excluding preferred equity
         since Residual Income (like Net Income) belongs to common equity holders only.
@@ -2410,6 +2451,12 @@ class Models:
             - A Z-Score of less than 1.81 indicates a high likelihood of bankruptcy.
             - A Z-Score between 1.81 and 2.99 indicates a gray area.
             - A Z-Score of greater than 2.99 indicates a low likelihood of bankruptcy.
+
+        The original Z-Score was estimated on US listed manufacturers, and its thresholds are not meant for
+        banks, insurers or most service companies; Altman's later Z'' variant drops the sales term for
+        non-manufacturers. Share buybacks charged to retained earnings and accumulated losses both lower the
+        retained earnings term, so a company that returns most of its earnings scores lower without being
+        closer to distress, which is why the score is best read as a trend and next to the market-based term.
 
         Also known as: Altman Z-score, bankruptcy prediction, financial distress score.
 
@@ -2685,6 +2732,12 @@ class Models:
         Note that the Piostroski Score has been developed many decades ago and that it is important to
         always compare the same sectors. E.g. it could be that it is quite normal that a firm issues shares
         each year which nets a lower score even though it is a normal practice in that sector.
+
+        Piotroski designed the F-Score to separate winners from losers among value stocks (high
+        book-to-market), where scores of 8 or 9 marked the strongest companies and scores of 0 or 1 the
+        weakest. Because most criteria compare this year with last year, the score measures the direction
+        of change rather than the level of financial strength, and a single strong year after a weak one can
+        score highly.
 
         Please see Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement
         Information to Separate Winners from Losers." Journal of Accounting Research, Vol. 38,
@@ -2978,6 +3031,11 @@ class Models:
             - TATA: Total Accruals to Total Assets
             - LVGI: Leverage Index
 
+        The -1.78 threshold belongs to this eight-variable model; the five-variable version uses -2.22.
+        Fast-growing companies are flagged more often because sales growth itself raises the score, and the
+        model was estimated without financial companies and is not suited to banks and insurers, so a score
+        above the threshold is a prompt to read the accounts, not a finding.
+
         Also known as: Beneish M-Score, earnings manipulation score.
 
         Args:
@@ -3262,7 +3320,9 @@ class Models:
             threshold that minimized the sum of Type I and Type II misclassification errors on his
             sample. It is deliberately far below the naive 0.50 midpoint because bankruptcy is a
             rare event. Equivalently, in raw O-Score terms the cutoff sits at ln(0.038 / 0.962),
-            i.e. approximately -3.23.
+            i.e. approximately -3.23. Since this implementation omits Ohlson's price-level
+            deflator, its scores sit about 2.6 below Ohlson's scale and this cutoff flags far too few
+            companies (see the Notes).
             - A higher probability indicates a higher likelihood of bankruptcy.
 
         Also known as: Ohlson O-Score, bankruptcy prediction, financial distress score.
@@ -3285,12 +3345,13 @@ class Models:
         Notes:
             - Ohlson's (1980) original SIZE term deflates Total Assets by the US GNP price-level index
             (rebased to 1968), a US-specific 1970s macro series that isn't available in this toolkit and
-            isn't meaningful outside the original US sample. This implementation simplifies/omits that
-            deflator and uses ln(Total Assets) in nominal terms instead. This shifts the O-Score (and
-            resulting probability) by roughly a constant amount across all observations in a given
-            currency/period — it does not change the *ranking* of companies relative to one another, but
-            the absolute probability estimate should not be compared directly to studies that apply the
-            deflator.
+            isn't meaningful outside the original US sample. This implementation omits that deflator and
+            uses ln(Total Assets) in nominal terms instead. This lowers every O-Score by roughly 0.407 *
+            ln(price index); with the US price level of the 2020s at roughly six times its 1968 level (an
+            index of about 600 to 650), that is about 2.6. The resulting probabilities are therefore much
+            lower than in Ohlson's study and the 0.038 cutoff (-3.23) flags far too few companies; it
+            corresponds to roughly -5.8 on this scale. The *ranking* of companies relative to one another
+            within a given currency and period is unaffected.
             - Ohlson's original FUTL term uses "Funds from Operations", an accounting-flow concept that
             predates standardized cash flow statements. This implementation approximates Funds from
             Operations with Operating Cash Flow, the standard simplification used in modern
@@ -4425,7 +4486,8 @@ class Models:
         """
         The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
         present value of a company's future growth opportunities. It is calculated as the difference
-        between the company's current stock price and the discounted value of its future cash flows.
+        between the share price and the value of the company's current earnings as a perpetuity without
+        growth, i.e. Earnings per Share divided by the Weighted Average Cost of Capital.
 
         The formula is as follows:
 
@@ -4458,6 +4520,9 @@ class Models:
         instead, which blends in the (typically lower, tax-shielded) cost of debt and therefore
         generally understates PVGO. Prefer comparing PVGO across companies, or over time for the same
         company, over reading absolute levels literally.
+        - When the Earnings per Share or the Weighted Average Cost of Capital is negative (the latter
+        in a year the benchmark falls, see `get_weighted_average_cost_of_capital`), the no-growth value
+        is negative and the PVGO exceeds the share price, which has no meaningful interpretation.
 
         As an example:
 
@@ -4583,6 +4648,11 @@ class Models:
 
             - Retention Ratio = 1 - Dividend Payout Ratio
             - SGR = Return on Equity * Retention Ratio
+
+        The SGR assumes the company keeps its leverage and pays out only through dividends. Companies that
+        return cash mainly through share buybacks have a low payout ratio on paper and a return on equity
+        inflated by a shrinking equity base, so their SGR overstates what they can fund internally (Apple's
+        exceeds 100% in every year of the example below).
 
         Also known as: SGR, self-sustainable growth rate.
 
@@ -4815,6 +4885,12 @@ class Models:
         The formula is as follows:
 
         - Graham Number = √(22.5 x Earnings per Share x Book Value per Share)
+
+        The constant 22.5 is Graham's limit of a price-to-earnings ratio of 15 times a
+        price-to-book ratio of 1.5, so the Graham Number is the price at which the product of
+        the two ratios reaches that limit. For companies whose value lies mostly in
+        intangibles, or that buy back many shares, book value is small and the Graham Number
+        sits far below the market price.
 
         Also known as: Graham fair value.
 

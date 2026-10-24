@@ -250,9 +250,9 @@ class Discovery:
         Also known as: filter stocks, financial criteria screener.
 
         Args:
-            market_cap_higher (int): The minimum market capitalization of the stock, in the
-                currency of the listing rather than in millions.
-            market_cap_lower (int): The maximum market capitalization of the stock.
+            market_cap_higher (int): The minimum market capitalization of the stock in US dollars
+                (not in millions), e.g. 1_000_000_000 for $1 billion.
+            market_cap_lower (int): The maximum market capitalization of the stock in US dollars.
             price_higher (int): The minimum price of the stock.
             price_lower (int): The maximum price of the stock.
             beta_higher (int): The minimum beta of the stock.
@@ -847,7 +847,7 @@ class Discovery:
 
     def get_index_list(self) -> pd.DataFrame:
         """
-        The index list function returns a complete list of all etf symbols that can be
+        The index list function returns a complete list of all index symbols that can be
         used in the Finance Toolkit.
 
         Returns:
@@ -1612,9 +1612,10 @@ class Discovery:
         end_date: str | None = None,
     ) -> pd.DataFrame:
         """
-        Returns sector performance — the average price change per sector. Provide
-        exactly one of `date` (a snapshot across all sectors on that date) or
-        `sector` (the historical time series for one sector).
+        Returns sector performance — the average price change, in percent (1.25 means
+        +1.25%), of the NASDAQ-listed companies in each sector. Provide exactly one of
+        `date` (a snapshot across all sectors on that date) or `sector` (the historical
+        time series for one sector).
 
         Also known as: sector performance snapshot, sector performance history, sector trend.
 
@@ -1676,9 +1677,10 @@ class Discovery:
         end_date: str | None = None,
     ) -> pd.DataFrame:
         """
-        Returns industry performance — the average price change per industry. Provide
-        exactly one of `date` (a snapshot across all industries on that date) or
-        `industry` (the historical time series for one industry).
+        Returns industry performance — the average price change, in percent (1.25 means
+        +1.25%), of the NASDAQ-listed companies in each industry. Provide exactly one of
+        `date` (a snapshot across all industries on that date) or `industry` (the
+        historical time series for one industry).
 
         Also known as: industry performance snapshot, industry performance history, industry trend.
 
@@ -1740,9 +1742,9 @@ class Discovery:
         end_date: str | None = None,
     ) -> pd.DataFrame:
         """
-        Returns sector price-to-earnings (P/E) ratios. Provide exactly one of `date`
-        (a snapshot across all sectors on that date) or `sector` (the historical
-        time series for one sector).
+        Returns sector price-to-earnings (P/E) ratios of the NASDAQ-listed companies in
+        each sector. Provide exactly one of `date` (a snapshot across all sectors on that
+        date) or `sector` (the historical time series for one sector).
 
         Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
 
@@ -1804,9 +1806,9 @@ class Discovery:
         end_date: str | None = None,
     ) -> pd.DataFrame:
         """
-        Returns industry price-to-earnings (P/E) ratios. Provide exactly one of
-        `date` (a snapshot across all industries on that date) or `industry` (the
-        historical time series for one industry).
+        Returns industry price-to-earnings (P/E) ratios of the NASDAQ-listed companies
+        in each industry. Provide exactly one of `date` (a snapshot across all industries
+        on that date) or `industry` (the historical time series for one industry).
 
         Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
 

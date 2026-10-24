@@ -1454,12 +1454,10 @@ class Toolkit:
 
     def get_quote(self):
         """
-        Get the quote of the specified tickers. These include important metrics
-        such as the price, changes, day low, day high, year low, year high, market
-        capitalization, volume, average volume, open, previous close, earnings per
-        share (EPS), price to earnings ratio (PE), earnings announcement, shares
-        outstanding and timestamp that give an overall understanding about the
-        company.
+        Get the quote of the specified tickers: the price and its change, the day's
+        open, low and high, the previous close, the year low and high, the 50 and 200
+        day average prices, the volume, the market capitalization, the exchange and the
+        time of the quote.
 
         Also known as: real-time price, current stock price, live quote.
 
@@ -1536,10 +1534,10 @@ class Toolkit:
 
     def get_rating(self):
         """
-        Get the rating of the specified tickers. These scores and recommendations are categorized
-        as follows:
+        Get the rating of the specified tickers: a letter rating and an overall score based on
+        six scores from 1 (weak) to 5 (strong). These scores are categorized as follows:
 
-        - An overall rating
+        - An overall rating (the letter rating and the Rating Score)
         - Discounted Cash Flow (DCF)
         - Return on Equity (ROE)
         - Return on Assets (ROA)
@@ -1547,12 +1545,9 @@ class Toolkit:
         - Price Earnings (PE)
         - Price to Book (PB)
 
-        Also known as: analyst consensus, buy sell hold recommendation.
+        Also known as: stock rating, fundamental score, quantitative rating.
 
         Args:
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The stock rating information for the specified tickers.
@@ -1752,6 +1747,11 @@ class Toolkit:
         obtain the actual dates or to convert to the corresponding quarters.
 
         Note that this information requires a Premium FMP subscription.
+
+        The surprise is the reported EPS against the estimate, usually as a percentage of the
+        estimate. Most companies report above the consensus, so a small beat is the norm, and
+        the share price tends to react to the size of the surprise, to revenue against its
+        estimate and to the guidance given on the call rather than to a beat as such.
 
         Also known as: earnings dates, earnings schedule, reporting date.
 
@@ -2643,6 +2643,8 @@ class Toolkit:
             - Date: The date of the dividend.
             - Adj Dividend: The adjusted dividend amount.
             - Dividend: The dividend amount.
+            - Yield: The annualized dividend yield at the time of the dividend, in percent
+            (0.54 is 0.54%).
             - Record Date: The record date of the dividend.
             - Payment Date: The payment date of the dividend.
             - Declaration Date: The declaration date of the dividend.
@@ -2659,7 +2661,7 @@ class Toolkit:
             names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The earnings calendar for the specified tickers.
+            pd.DataFrame: The dividend calendar for the specified tickers.
 
         As an example:
 
@@ -2877,18 +2879,21 @@ class Toolkit:
 
     def get_market_risk_premium(self, overwrite: bool = False):
         """
-        Obtains the equity market risk premium by country -- the country default spread plus the
-        equity risk premium, following the approach popularized by Aswath Damodaran -- which is
-        widely used to calibrate country-specific costs of equity and discount rates in a
+        Obtains the equity risk premium by country -- the equity risk premium of a mature market
+        plus a country risk premium, the country's default spread scaled by the volatility of its
+        equities relative to its bonds, following the approach popularized by Aswath Damodaran --
+        which is widely used to calibrate country-specific costs of equity and discount rates in a
         multi-country setting.
+
+        In a cost of equity the premium is applied in one of two common ways: beta times the Total
+        Equity Risk Premium, or beta times the mature market premium with the Country Risk Premium
+        added on top. For a company that earns its revenue in several countries the premium is
+        often weighted by where the revenue comes from rather than by where the company is listed.
 
         Also known as: country risk premium, Damodaran equity risk premium.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The market risk premium by country, including the continent, Country
@@ -2970,13 +2975,16 @@ class Toolkit:
         Note that this data is only available for CFTC-tracked futures markets. Tickers without a
         corresponding futures contract (e.g. most individual equities) return no data.
 
+        Positioning is usually read from the net position of the non-commercial traders (long
+        minus short), often as a share of open interest and against its own history: an extreme
+        reading means a crowded trade. Commercial traders are mostly hedgers whose positions mirror
+        their physical business, so a large commercial net short in a commodity is normal rather
+        than a bearish view. The report shows the positions of Tuesday and is published on Friday.
+
         Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The Commitment of Traders report for the specified tickers.
@@ -3222,10 +3230,12 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: list[str] | None = None
     ):
         """
-        Obtain the notes each company has listed: the debt securities it issued, with
-        their coupon and maturity in the title (e.g. "1.625% Notes due 2026") and the
-        exchange they are listed on. This gives a quick view of a company's listed debt
-        and when it matures.
+        Obtain the securities other than common stock that each company has registered
+        for listing, mostly notes with their coupon and maturity in the title (e.g.
+        "1.625% Notes due 2026") and the exchange they are listed on. The list can
+        include notes that have since matured or been redeemed and other securities such
+        as depositary shares of preferred stock, so it shows which debt a company has
+        listed rather than what is outstanding today.
 
         Also known as: listed debt, bonds issued, debt securities.
 
@@ -4174,7 +4184,7 @@ class Toolkit:
             - Timezone: The timezone the instrument is traded in.
             - Exchange Timezone Name: The name of the timezone the instrument is traded in.
 
-        Also known as: key statistics over time, historical key metrics.
+        Also known as: listing details, instrument information, exchange and currency.
 
         Returns:
             pd.DataFrame: A DataFrame containing the statistics for each ticker.
@@ -4230,9 +4240,9 @@ class Toolkit:
         show_errors: bool = False,
     ):
         """
-        Retrieve daily, weekly, monthly, quarterly or yearly treasury data. This can be from FinancialModelingPrep
-        or from YahooFinance. FinancialModelingPrep is by far a more extensive dataset containing daily data from
-        1 month to 30 years. YahooFinance only contains daily data for 5, 10 and 30 years but is a free alternative.
+        Retrieve daily, weekly, monthly, quarterly or yearly US Treasury yields for four maturities, 13 weeks,
+        5 years, 10 years and 30 years, from FinancialModelingPrep or, as a free alternative, YahooFinance. With
+        the default divide_ohlc_by of 100 the yields are returned as decimals (0.042 is 4.2%).
 
         Also known as: US Treasury yields, yield curve, treasury rates.
 
@@ -4782,7 +4792,7 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | list[int]): Defines the number of periods to lag the growth data by.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            E.g. 4 with quarterly data gives the growth against the same quarter a year earlier.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -5429,12 +5439,15 @@ class Toolkit:
         show_columns: list[str] | None = None,
     ):
         """
-        Retrieves the balance, cash and income statistics for the company(s) from the specified source.
+        Retrieves the filing details of each financial statement period: the reported currency, the CIK,
+        the filing and acceptance dates, the fiscal period and the links to the filing. With convert_currency,
+        the Toolkit uses the reported currency to convert the financial statements to the currency of the
+        historical data.
 
         Note that this also obtains the balance sheet statement at the same time given that it's the same
         API call. This is done to reduce the number of API calls to FinancialModelingPrep.
 
-        Also known as: key stats, shares outstanding, float data.
+        Also known as: filing details, reporting metadata, reported currency.
 
         Args:
             enforce_source (str | None, optional): Forces this specific call to use a given

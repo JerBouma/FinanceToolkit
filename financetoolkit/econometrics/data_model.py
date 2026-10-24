@@ -167,7 +167,10 @@ def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
         levels (pd.DataFrame): The series.
         changes (str): "percentage" (the relative change, like a return), "log" (the log
             change), "difference" (the first difference, for rates and ratios that can be
-            zero or negative) or "none" (the series are changes already).
+            zero or negative) or "none" (the series are changes already). The percentage
+            change divides by the absolute previous value, as the growth rates of the
+            package do, so a rise from -10 to -5 is +50% rather than -50%; a change from
+            zero is NaN.
 
     Returns:
         pd.DataFrame: The changes at the dates of the levels; the first observation of each
@@ -185,7 +188,11 @@ def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
         # monthly series among daily ones would have no changes at all.
         observed = column.dropna()
         if changes == "percentage":
-            return observed.pct_change().replace([np.inf, -np.inf], np.nan)
+            # Dividing by the absolute previous value keeps the sign of the change when
+            # the base is negative (a loss shrinking from -10 to -5 is an increase).
+            return (observed.diff() / observed.shift().abs()).replace(
+                [np.inf, -np.inf], np.nan
+            )
         if changes == "log":
             return np.log(observed.where(observed > 0)).diff()
         return observed.diff()

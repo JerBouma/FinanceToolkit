@@ -416,3 +416,68 @@ def test_get_hausman_test_degrees_of_freedom_is_the_rank_of_the_variance_differe
     assert result["Degrees of Freedom"] == 1
     # pinv([[0.01, 0.01], [0.01, 0.01]]) = 25 * ones, and the difference is (0.2, 0).
     np.testing.assert_allclose(result["Hausman Statistic"], 25 * 0.2**2)
+
+
+@pytest.mark.parametrize(
+    ("absorbed_by", "entity_effects", "time_effects"),
+    [("time", True, True), ("time", False, True), ("entity", True, False)],
+)
+def test_get_fixed_effects_single_absorbed_regressor_raises(
+    absorbed_by, entity_effects, time_effects
+):
+    # A single absorbed regressor does not make PanelOLS raise: it is demeaned to rounding
+    # noise and fitted with a coefficient of 0 and a standard error of order 1e15.
+    rng = np.random.default_rng(3)
+    n_entities, n_times = 6, 40
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(n_entities)], range(n_times)],
+        names=["entity", "time"],
+    )
+    if absorbed_by == "time":
+        values = np.tile(rng.standard_normal(n_times), n_entities)
+    else:
+        values = np.repeat(rng.standard_normal(n_entities), n_times)
+    x = pd.DataFrame({"m": values}, index=index)
+    y = pd.Series(rng.standard_normal(len(index)), index=index)
+
+    with pytest.raises(ValueError, match=r"absorb one or more regressors \(m\)"):
+        panel_data_model.get_fixed_effects(
+            y, x, entity_effects=entity_effects, time_effects=time_effects
+        )
+
+    # Next to a regressor that varies, only the absorbed one is named.
+    x["z"] = rng.standard_normal(len(index))
+    with pytest.raises(ValueError, match=r"\(m\)"):
+        panel_data_model.get_fixed_effects(
+            y, x, entity_effects=entity_effects, time_effects=time_effects
+        )
+
+
+def test_get_hausman_test_numerically_singular_difference_uses_the_pseudo_inverse(
+    monkeypatch,
+):
+    # A variance difference that is singular up to rounding: np.linalg.inv succeeds on it
+    # and returns an inverse of order 1e16, whereas the pseudo-inverse of the same rank as
+    # the degrees of freedom gives the rank-1 statistic.
+    variance_difference = np.array([[0.01, 0.01], [0.01, 0.01 + 1e-18]])
+    fe = {
+        "feature_names": ["a", "b"],
+        "coefficients": np.array([1.2, 0.5]),
+        "covariance_matrix": variance_difference + 0.01 * np.eye(2),
+    }
+    re = {
+        "feature_names": ["Intercept", "a", "b"],
+        "coefficients": np.array([0.0, 1.0, 0.5]),
+        "covariance_matrix": np.array(
+            [[1.0, 0.0, 0.0], [0.0, 0.01, 0.0], [0.0, 0.0, 0.01]]
+        ),
+    }
+    monkeypatch.setattr(
+        panel_data_model, "get_fixed_effects", lambda *_, **__: {"regression": fe}
+    )
+    monkeypatch.setattr(panel_data_model, "get_random_effects", lambda *_, **__: re)
+
+    result = panel_data_model.get_hausman_test(None, None)
+
+    assert result["Degrees of Freedom"] == 1
+    np.testing.assert_allclose(result["Hausman Statistic"], 25 * 0.2**2, rtol=1e-6)

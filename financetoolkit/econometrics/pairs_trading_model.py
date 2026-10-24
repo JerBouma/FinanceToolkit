@@ -112,7 +112,8 @@ def get_pairs_trading(
         window (int | None, optional): The rolling window of the z-score. Defaults to None,
             which uses the full sample.
         entry (float, optional): The z-score at which a position is opened. Defaults to 2.0.
-        exit_ (float, optional): The z-score at which it is closed. Defaults to 0.5.
+        exit_ (float, optional): The z-score whose crossing on the way back closes a
+            position (0 closes when the spread is back at its mean). Defaults to 0.5.
         log_prices (bool, optional): Whether to use log prices, so the hedge ratio is an
             elasticity. Defaults to True.
 

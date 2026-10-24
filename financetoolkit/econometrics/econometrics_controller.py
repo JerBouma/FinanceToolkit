@@ -104,7 +104,9 @@ class Econometrics:
             changes (str, optional): How the changes ("Return") of the data are calculated:
                 "percentage" (relative changes, as returns), "log", "difference" (first
                 differences, for rates and ratios that can be zero or negative) or "none"
-                (the data are changes already). Defaults to "percentage".
+                (the data are changes already). The percentage change divides by the
+                absolute previous value, so a negative series that rises has a positive
+                change. Defaults to "percentage".
 
         As an example:
 
@@ -4814,7 +4816,9 @@ class Econometrics:
         |      5 | 285.232 | 547.694 |
         """
         period = period if period else "daily"
-        prices = self._get_price_column(period, column)
+        # Each ARIMA fit drops the missing values of its own series, so a series observed
+        # at other dates does not cut the others down to the shared rows.
+        prices = self._get_series_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
 
@@ -5489,7 +5493,9 @@ class Econometrics:
         | Holdout Observations | 53      | 53      |
         """
         period = period if period else "daily"
-        prices = self._get_price_column(period, column)
+        # Every series at its own observations: the ARIMA validation drops the missing
+        # values per series and the VAR branch aligns its own system with dropna below.
+        prices = self._get_series_column(period, column)
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
 

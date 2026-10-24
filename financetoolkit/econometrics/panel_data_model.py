@@ -337,6 +337,31 @@ def get_fixed_effects(
             f"{absorbed} absorbed fixed-effect parameter(s)."
         )
 
+    # PanelOLS only raises AbsorbingEffectError when the absorbed regressors leave the
+    # demeaned design rank deficient as a whole; a single absorbed regressor is demeaned to
+    # floating-point noise instead and fitted with a coefficient of 0 and a standard error
+    # of order 1e15. Checking the within-group variation first catches both cases.  # noqa: E501
+    absorbed_columns = []
+    for level, active in (("time", time_effects), ("entity", entity_effects)):
+        if not active:
+            continue
+        grouped = x_panel.groupby(level=level)
+        within_range = (grouped.max() - grouped.min()).abs().max()
+        scale = x_panel.abs().max().clip(lower=1.0)
+        absorbed_columns += [
+            str(column)
+            for column in x_panel.columns
+            if within_range[column] <= 1e-12 * scale[column]
+            and str(column) not in absorbed_columns
+        ]
+    if absorbed_columns:
+        raise ValueError(
+            "The fixed effects fully absorb one or more regressors "
+            f"({', '.join(absorbed_columns)}): a regressor that is "
+            "the same for every entity at each date cannot be combined with time_effects, "
+            "and one that is constant per entity cannot be combined with entity_effects."
+        )
+
     try:
         sm_result = PanelOLS(
             y_panel, x_panel, entity_effects=entity_effects, time_effects=time_effects
@@ -620,14 +645,6 @@ def get_hausman_test(
     difference = b_fe - b_re
     variance_difference = var_fe - var_re
 
-    try:
-        inverse_variance_difference = np.linalg.inv(variance_difference)
-    except np.linalg.LinAlgError:
-        # A singular Var(b_FE) - Var(b_RE) falls back to the pseudo-inverse, as Stata does.
-        inverse_variance_difference = np.linalg.pinv(variance_difference)
-
-    statistic = float(difference @ inverse_variance_difference @ difference)
-    statistic = max(statistic, 0.0)
     # The chi-squared degrees of freedom are the rank of Var(b_FE) - Var(b_RE), which equals
     # the number of compared coefficients unless the difference is singular (Hausman, 1978).  # noqa: E501
     degrees_of_freedom = int(np.linalg.matrix_rank(variance_difference))
@@ -635,6 +652,22 @@ def get_hausman_test(
         raise ValueError(
             "Var(b_FE) - Var(b_RE) has rank 0, so the Hausman statistic is undefined."
         )
+
+    # A rank-deficient difference uses the pseudo-inverse with the same rank as the degrees
+    # of freedom, as Stata does: np.linalg.inv often succeeds on a numerically singular
+    # matrix and returns an inverse dominated by rounding noise.  # noqa: E501
+    if degrees_of_freedom < len(common_names):
+        # The cut-off matches np.linalg.matrix_rank, so pinv keeps exactly
+        # `degrees_of_freedom` singular values.
+        tolerance = max(variance_difference.shape) * np.finfo(float).eps
+        inverse_variance_difference = np.linalg.pinv(
+            variance_difference, rcond=tolerance
+        )
+    else:
+        inverse_variance_difference = np.linalg.inv(variance_difference)
+
+    statistic = float(difference @ inverse_variance_difference @ difference)
+    statistic = max(statistic, 0.0)
     p_value = float(stats.chi2.sf(statistic, degrees_of_freedom))
 
     return pd.Series(

@@ -111,3 +111,31 @@ def test_standalone_mixed_monthly_and_daily_series():
     regimes = econometrics.get_markov_regime_switching(probabilities=True)
     assert regimes["Daily"].dropna().shape[0] == len(days) - 1
     assert regimes["Monthly"].dropna().shape[0] == 71  # noqa: PLR2004
+
+
+def test_standalone_arima_uses_every_series_at_its_own_observations():
+    rng = np.random.default_rng(0)
+    days = pd.bdate_range("2021-01-01", periods=750)
+    daily = pd.Series(
+        100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(days)))), days, name="Price"
+    )
+    monthly = pd.Series(
+        np.linspace(2, 4, 36),
+        pd.date_range("2021-01-31", periods=36, freq="ME"),
+        name="CPI",
+    )
+    econometrics = Econometrics(data={"Price": daily, "CPI": monthly})
+
+    forecast = econometrics.get_arima_forecast(p=1, d=1, q=0, forecast_steps=2)
+    # On only the month ends both share, the daily price would forecast from its last
+    # month-end value; on its own observations it starts from its last daily value.
+    assert forecast["Price"].iloc[0] == pytest.approx(daily.iloc[-1], rel=0.01)
+    assert forecast["CPI"].notna().all()
+
+    validation = econometrics.get_out_of_sample_validation(
+        model="arima", p=1, d=1, q=0, train_fraction=0.8
+    )
+    assert validation.loc["Holdout Observations", "Price"] == len(days) - int(
+        len(days) * 0.8
+    )
+    assert validation.loc["Holdout Observations", "CPI"] == 36 - int(36 * 0.8)

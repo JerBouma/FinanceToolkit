@@ -178,3 +178,15 @@ def test_changes_per_series_with_mixed_frequencies_and_calendars():
         historical_data["daily"]["Level"], "difference"
     )
     assert differences["Monthly"].dropna().iloc[0] == pytest.approx(1.0)
+
+
+def test_percentage_changes_divide_by_the_absolute_previous_value():
+    # A negative series that rises has a positive change, as in the package's growth rates.
+    levels = pd.DataFrame({"A": [-10.0, -5.0, 5.0, 0.0, 2.0]})
+    changes = data_model.get_changes(levels, "percentage")["A"]
+
+    assert changes.iloc[1] == pytest.approx(0.5)
+    assert changes.iloc[2] == pytest.approx(2.0)
+    assert changes.iloc[3] == pytest.approx(-1.0)
+    # A change from zero has no relative size.
+    assert np.isnan(changes.iloc[4])

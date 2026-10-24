@@ -560,6 +560,12 @@ class FixedIncome:
         all expressed as a currency amount instead. The dollar duration is available through this method via `duration_type='dollar'`
         and the DV01 is calculated separately, see `collect_bond_statistics`.
 
+        Modified duration is the first estimate of interest rate risk: a modified duration of 7 means the price falls by
+        about 7% if the yield rises by one percentage point. The estimate worsens for larger moves, which convexity corrects
+        (see `get_taylor_price_change`), and it assumes the cash flows are fixed. For callable bonds and mortgage-backed
+        securities the relevant measure is an effective duration from a model that values the embedded option, which this
+        method does not include.
+
         Also known as: Macaulay duration, modified duration, bond price sensitivity.
 
         Args:
@@ -722,10 +728,15 @@ class FixedIncome:
         The goal is to find the yield to maturity that satisfies the equation above. This is done using the secant method
         which is an iterative method that converges to the root of a function.
 
+        The yield to maturity is the return of a bond bought at this price and held to maturity, if every coupon is reinvested
+        at the same yield and the issuer pays in full. It is the standard way to quote and compare bonds, but it is one average
+        rate for all cash flows: bonds with the same maturity but different coupons have different yields even when both are
+        priced in line with the same spot curve, and for callable bonds the yield to worst is quoted instead.
+
         Also known as: YTM, bond return to maturity.
 
         Args:
-            par_value (float): The par value (face value) of the bond. This is the original price when it was issued by the issuer.
+            par_value (float): The par value (face value) of the bond, the amount repaid at maturity. Defaults to 100.
             coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
             bond_price (float, optional): The price of the bond. Defaults to None.
@@ -1182,6 +1193,13 @@ class FixedIncome:
 
         - Breakeven Inflation Rate = Nominal Yield - Real Yield
 
+        The breakeven rate is often read as the market's expected inflation, but it also
+        contains an inflation risk premium, which raises it, and a liquidity premium on
+        inflation-linked bonds, which lowers it, so it rises and falls in market stress for
+        reasons other than inflation expectations. For the United States the comparison is
+        with CPI-U, the index TIPS pay on. Survey expectations (`get_inflation_expectations`
+        in the Economics module) are the usual cross-check.
+
         Also known as: TIPS breakeven spread, inflation breakeven.
 
         Args:
@@ -1299,6 +1317,13 @@ class FixedIncome:
 
         The Z-spread is found iteratively using the secant method, in the same way that
         `get_yield_to_maturity` solves for the yield to maturity.
+
+        The Z-spread depends on the benchmark curve: against the government curve it measures
+        credit and liquidity risk together, against the swap curve mostly the credit risk
+        relative to banks. It should be calculated with a zero-coupon (spot) curve; a par
+        yield curve such as the Treasury's is close but not the same. For a bond with an
+        embedded option the Z-spread includes the option's value, which the option-adjusted
+        spread removes.
 
         Also known as: zero-volatility spread, static spread.
 
@@ -1538,6 +1563,13 @@ class FixedIncome:
         duration additionally reveals which segment of the curve the bond's price is
         most exposed to — information that is essential for constructing curve-neutral
         hedges or identifying "twist" risk.
+
+        A barbell and a bullet with the same duration have very different key rate
+        profiles and react differently when the curve steepens or flattens, which is why
+        key rate durations are hedged with instruments at each key maturity. Because a
+        shock at one maturity tapers off to its neighbours, the profile also depends on
+        which maturities the curve contains: the same bond shows different key rate
+        durations on a curve with more or fewer points.
 
         Also known as: partial duration, rate-specific duration.
 
@@ -1788,8 +1820,7 @@ class FixedIncome:
 
         It is possible to alter all parameters within the models, e.g. strike rate, volatility, years to maturity,
         risk-free rate, notional amount, and whether the holder is the receiver or payer of the derivative. Next to that, you can
-        provide lists of values for the fixed rate, strike rate, volatility, and years to maturity to calculate the derivative price
-        for multiple scenarios outside of the standard sample.
+        provide lists of strike rates and years to maturity to calculate the derivative price for several scenarios at once.
 
         Exercising a swaption is not a single payment at expiration — it is the right to enter a swap that exchanges
         cash flows at every payment date over the underlying swap's tenor. The price therefore discounts the option
@@ -1825,9 +1856,10 @@ class FixedIncome:
             volatility (float, optional): The volatility of the underlying swap rate, quoted on the
                 basis given by `volatility_type`. Defaults to 0.01, read as a 1% lognormal volatility
                 by the Black model and as 100 basis points of normal volatility by the Bachelier model.
-            years_to_maturity (float | list, optional): The years to maturity of the derivative in years. Defaults to None which means it plots
-                the derivative price for the next 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
-            risk_free_rate (float, optional): The risk-free interest rate. Defaults to None which means it is equal to the fixed rate.
+            years_to_maturity (float | list, optional): The years to maturity of the derivative. Defaults to None, which
+                returns the price for 1 to 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
+            risk_free_rate (float, optional): The risk-free interest rate used for discounting. Defaults to None, which uses
+                the forward rate.
             notional (float, optional): The notional amount of the derivative. Defaults to 10_000_000.
             tenor (float | None, optional): The tenor (length in years) of the underlying swap. Defaults to None,
                 which means it is equal to years_to_maturity for each scenario.
@@ -2391,6 +2423,12 @@ class FixedIncome:
         No API key is needed: with a FinancialModelingPrep API key the rates come from
         FinancialModelingPrep, and without one, or when the key's plan does not include them,
         from the U.S. Department of the Treasury directly, which gives the same figures.
+
+        These are par yields: the coupons at which a new Treasury of each maturity would price at
+        par, interpolated by the Treasury from the most recently auctioned securities. Discounting
+        individual cash flows needs zero-coupon (spot) rates bootstrapped from them; on a steep
+        curve the two differ by several basis points at long maturities. The 10-year minus 2-year
+        and 10-year minus 3-month spreads from this curve are the most watched recession indicators.
 
         Also known as: the Treasury yield curve, the risk-free curve.
 
@@ -3231,6 +3269,12 @@ class FixedIncome:
         default within the period and is the measure to calibrate default rates on. With include_withdrawals=True they are a separate "Withdrawals" column, and
         with probabilities=False the counts are returned instead.
 
+        A single year's matrix rests on few observations in the top and bottom rows: an AAA
+        row with few issuers is often 100% stable one year and shows a downgrade the next.
+        Credit models therefore use the average over many years, or a longer horizon, and
+        check how far the latest year deviates from it, which also shows where in the credit
+        cycle the year stands.
+
         See definition: https://registers.esma.europa.eu/cerep-publication/
 
         Also known as: rating migration matrix, credit migration matrix, transition
@@ -3354,6 +3398,12 @@ class FixedIncome:
         a few minutes the first time; each year is cached afterwards. The years before an
         agency reported to CEREP read as zero defaults and are left out, so the history
         starts at the first year with a default.
+
+        Default rates rise steeply down the rating scale, from close to zero for investment
+        grade to tens of percent a year for CCC, and because they cluster in recessions a
+        probability of default calibrated on calm years understates the risk. Practitioners
+        average over a full cycle, often decades, for through-the-cycle estimates and use the
+        worst years for stress scenarios. Rates for the top ratings rest on very few defaults.
 
         See definition: https://registers.esma.europa.eu/cerep-publication/
 
@@ -3674,6 +3724,13 @@ class FixedIncome:
         separate file, so only the months between the start and end date are downloaded, and
         a release is cached for a year since it does not change.
 
+        Up to the last liquid point the curve follows market rates (for the euro, swap rates
+        minus a credit risk adjustment); beyond it the curve is extrapolated towards the
+        ultimate forward rate, so long maturities reflect the regulatory assumption more than
+        market prices. Insurers that are allowed to apply the volatility adjustment discount
+        with that curve, and the shocked curves give the interest rate risk capital
+        requirement of the standard formula.
+
         See definition: https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en
 
         Also known as: Solvency II discount curve, EIOPA RFR, risk-free rate term structure,
@@ -3692,7 +3749,7 @@ class FixedIncome:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             maturity_years (list[int] | None, optional): The maturities in years to keep, e.g.
-                [1, 2, 5, 10, 20, 30] for the key points of the curve. Defaults to None, which
+                [1, 2, 5, 10, 20, 30] (or "1,2,5,10,20,30") for the key points of the curve. Defaults to None, which
                 keeps every maturity from 1 to 150 years.
 
         Returns:
@@ -3748,6 +3805,12 @@ class FixedIncome:
                 :, term_structures.columns.get_level_values(0).isin(requested)
             ]
 
+        if isinstance(maturity_years, str):
+            maturity_years = [
+                int(float(maturity))
+                for maturity in maturity_years.split(",")
+                if maturity.strip()
+            ]
         if maturity_years is not None:
             # 150 maturities per country and month are rarely all needed.
             term_structures = term_structures.loc[
@@ -4149,22 +4212,23 @@ class FixedIncome:
     ):
         """
         Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
-        of European banks lend funds to one another in the interbank market. These rates are published
+        of European banks lend funds to one another in the interbank market. These rates are fixed
         daily by the European Money Markets Institute (EMMI) and serve as a benchmark for various
         financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
 
-        The Euribor rates are determined for different maturities, typically ranging from overnight to 12 months.
-        The most common maturities are 1 month, 3 months, 6 months, and 12 months. Each maturity represents
-        the time period for which the funds are borrowed, with longer maturities generally implying higher
-        interest rates due to increased uncertainty and risk over longer time horizons.
+        Euribor is fixed for maturities of one week to 12 months; this method returns the 1, 3, 6 and 12-month
+        rates as monthly averages of the daily fixings, from the European Central Bank, as decimals. Longer
+        maturities carry a term premium but also reflect where markets expect short rates to go, so the curve
+        inverts when cuts are expected.
 
         For more information, see for example: https://data.ecb.europa.eu/data/datasets/FM/FM.M.U2.EUR.RT.MM.EURIBOR6MD_.HSTA
 
         Also known as: euro interbank offered rate, eurozone money market.
 
         Args:
-            maturities (str | list | None, optional): Maturities for which to retrieve rates. Defaults to None.
-                When set to None, it will retrieve rates for 1 month, 3 months, 6 months, and 12 months.
+            maturities (str | list | None, optional): The maturities to retrieve, from "1M", "3M", "6M" and "1Y",
+                as a list or a comma-separated string ("1M,3M").
+                Defaults to None, which retrieves all four.
             nominal (bool, optional): Whether to retrieve the nominal Euribor fixings or their real
                 (inflation-adjusted) counterpart. The ECB only publishes a real Euribor for the 3-month
                 maturity, so nominal=False returns that maturity alone and warns about any others that
@@ -4216,7 +4280,11 @@ class FixedIncome:
         | 2025-12 |    0.0192 |    0.0205 |    0.0214 |     0.0227 |
         """
         if isinstance(maturities, str):
-            maturities = [maturities]
+            maturities = [
+                maturity.strip()
+                for maturity in maturities.split(",")
+                if maturity.strip()
+            ]
 
         maturity_names = {
             "1M": "1-Month",
@@ -4295,6 +4363,12 @@ class FixedIncome:
         The deposit facility rate is one of the three interest rates the ECB sets every
         six weeks as part of its monetary policy. The rate defines the interest banks
         receive for depositing money with the central bank overnight.
+
+        With ample excess liquidity in the banking system the deposit facility rate is the
+        rate that steers money markets: the euro short-term rate (€STR) trades just below it.
+        The marginal lending rate forms the top of the corridor and the deposit facility rate
+        the bottom, with the main refinancing rate in between; the main refinancing rate
+        matters more when banks rely on the ECB's weekly operations for funding.
 
         See source: https://data.ecb.europa.eu/main-figures/
 
@@ -4409,6 +4483,12 @@ class FixedIncome:
 
         The New York Fed publishes the rates for the prior business day on the New
         York Fed's website between 8:00 and 9:00 a.m.
+
+        SOFR is the US dollar reference rate that replaced dollar LIBOR in loans and derivatives.
+        Being secured by Treasuries, it usually trades a few basis points from the effective federal
+        funds rate but jumps at month and quarter ends and when reserves get scarce, so the spread
+        between its 1st and 99th percentiles, or between SOFR and the EFFR, is watched as a sign of
+        strain in the repo market.
 
         See source: https://www.newyorkfed.org/markets/reference-rates/
 

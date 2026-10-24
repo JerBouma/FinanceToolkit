@@ -714,11 +714,20 @@ def test_get_fixed_effects_both_regressor_args(econometrics_module):
 
 
 def test_get_random_effects(recorder, econometrics_module):
+    # The Benchmark is a third entity next to AAPL and MSFT, which Random Effects needs.
     recorder.capture(
         econometrics_module.get_random_effects(
-            independent_column="Volume", period="weekly"
+            independent_column="Volume", period="weekly", include_benchmark=True
         )
     )
+
+
+def test_get_random_effects_excludes_the_benchmark_by_default(econometrics_module):
+    # Without the Benchmark only AAPL and MSFT remain, too few entities to fit.
+    result = econometrics_module.get_random_effects(
+        independent_column="Volume", period="weekly"
+    )
+    assert result.empty
 
 
 def test_get_random_effects_not_enough_entities(econometrics_module):
@@ -732,11 +741,20 @@ def test_get_random_effects_not_enough_entities(econometrics_module):
 
 
 def test_get_hausman_test(recorder, econometrics_module):
+    # The Benchmark is a third entity next to AAPL and MSFT, which Random Effects needs.
     recorder.capture(
         econometrics_module.get_hausman_test(
-            independent_column="Volume", period="weekly"
+            independent_column="Volume", period="weekly", include_benchmark=True
         )
     )
+
+
+def test_get_hausman_test_excludes_the_benchmark_by_default(econometrics_module):
+    # Without the Benchmark only AAPL and MSFT remain, too few entities to fit.
+    result = econometrics_module.get_hausman_test(
+        independent_column="Volume", period="weekly"
+    )
+    assert result.empty
 
 
 def test_get_hausman_test_not_enough_entities(econometrics_module):

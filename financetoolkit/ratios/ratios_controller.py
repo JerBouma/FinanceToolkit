@@ -193,8 +193,8 @@ class Ratios:
         Calculates and collects all ratios based on the provided data.
 
         Args:
-            include_dividends (bool, optional): Whether to include dividends in the calculations.
-                Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income in the
+                earnings-based ratios. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for the calculation.
                 Defaults to True.
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -882,6 +882,14 @@ class Ratios:
 
         - Inventory Turnover Ratio = Cost of Goods Sold / Average Inventory
 
+        Inventory turnover is only comparable within an industry: a grocer turns its
+        stock many times a year, a maker of aircraft or luxury goods a few times at
+        most. Analysts watch the trend and the gap with peers, since a falling ratio
+        often comes before markdowns or write-downs. Because the ratio divides cost of
+        goods sold by inventory, the inventory valuation method (LIFO or FIFO) and
+        year-end stock building for a peak season both move it; quarterly data with
+        trailing=4 smooths the seasonal effect.
+
         Also known as: stock turnover ratio.
 
         Args:
@@ -1081,15 +1089,23 @@ class Ratios:
         the average number of days it takes a company to collect payment on its
         credit sales.
 
-        The days of sales outstanding (DSO) ratio is calculated by dividing the accounts
-        receivable by the total credit sales and then multiplying by the number of days
-        in the period. It represents the average number of days it takes for a company
-        to collect payment on its credit sales. A lower DSO indicates that the company
-        is collecting payments more quickly.
+        The days of sales outstanding (DSO) ratio is calculated by dividing the average
+        accounts receivable by revenue and then multiplying by the number of days in the
+        period. It represents the average number of days it takes for a company to
+        collect payment on its sales. A lower DSO indicates that the company is
+        collecting payments more quickly. Revenue stands in for credit sales, which
+        companies rarely disclose, so for a business that also sells for cash the DSO
+        understates how long its credit customers take to pay.
 
         The formula is as follows:
 
-        - Days of Sales Outstanding Ratio = (Average Accounts Receivable / Total Credit Sales) * Days
+        - Days of Sales Outstanding Ratio = (Average Accounts Receivable / Revenue) * Days
+
+        DSO is read against the payment terms a company offers and against its own
+        history: a rising DSO, with receivables growing faster than revenue, often
+        points to looser credit terms, slower-paying customers or revenue booked ahead
+        of collection. Compare it within an industry, since terms differ widely between
+        retailers, who collect within days, and industrial or software suppliers.
 
         Also known as: DSO, days sales outstanding, receivable days.
 
@@ -1192,7 +1208,7 @@ class Ratios:
 
         - Operating Cycle Ratio = Days of Sales in Inventory + Days of Sales Outstanding
 
-        Also known as: business cycle, cash-to-cash cycle.
+        Also known as: inventory-to-cash cycle.
 
         Args:
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -1308,9 +1324,11 @@ class Ratios:
         quickly a company pays its suppliers.
 
         The accounts payable turnover ratio indicates how many times, on average, a company
-        pays off its accounts payable during a specific period. A higher turnover ratio is
-        generally favorable, as it suggests that the company is efficiently managing its
-        payments to suppliers.
+        pays off its accounts payable during a specific period. A higher turnover ratio
+        means the company pays its suppliers more quickly, which can reflect short payment
+        terms or ample cash but ties up working capital. A lower ratio means it takes
+        longer to pay and finances part of its working capital with supplier credit; a
+        ratio that keeps falling can also signal payment difficulties.
 
         The formula is as follows:
 
@@ -1529,6 +1547,12 @@ class Ratios:
         - Cash Conversion Cycle = Days of Sales in Inventory + Days of Sales Outstanding — Days of Accounts Payable
             Outstanding
 
+        A negative cash conversion cycle means suppliers are paid after customers have paid, so growth releases cash
+        instead of absorbing it; large retailers and platforms with strong buying power are the usual examples. Read
+        the cycle through its three parts (`get_days_of_inventory_outstanding`, `get_days_of_sales_outstanding` and
+        `get_days_of_accounts_payable_outstanding`), because a shorter cycle bought by stretching suppliers is less
+        durable than one from faster-moving inventory.
+
         Also known as: CCC.
 
         Args:
@@ -1693,8 +1717,9 @@ class Ratios:
             pd.DataFrame: Cash conversion efficiency ratio values.
 
         Notes:
-        - The method retrieves historical data and calculates the operating ratio for each
-        asset in the Toolkit instance.
+        - The method retrieves historical data and calculates the cash conversion
+        efficiency for each asset in the Toolkit instance. It is the same calculation as
+        `get_operating_cash_flow_sales_ratio`.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
 
@@ -1771,10 +1796,11 @@ class Ratios:
         accounts receivable. It indicates how quickly a company collects payments from its customers.
         A higher turnover ratio is generally favorable as it suggests that the company is collecting
         payments more quickly, which improves its cash flow and working capital management.
+        Revenue is used in place of net credit sales, which companies rarely disclose.
 
         The formula is as follows:
 
-        - Receivables Turnover Ratio = Net Credit Sales / Average Accounts Receivable
+        - Receivables Turnover Ratio = Revenue / Average Accounts Receivable
 
         Also known as: receivables efficiency, accounts receivable turnover.
 
@@ -1860,9 +1886,9 @@ class Ratios:
         which measures the SG&A expenses relative to the revenue of the company.
 
         The SG&A to revenue ratio is calculated by dividing the total SG&A expenses by the
-        company's revenue and then multiplying by 100 to express it as a percentage. It
-        provides insight into the efficiency of a company's cost management and its ability
-        to control its overhead costs.
+        company's revenue, as a fraction (0.06 is 6%). It provides insight into the
+        efficiency of a company's cost management and its ability to control its overhead
+        costs.
 
         The formula is as follows:
 
@@ -1954,16 +1980,19 @@ class Ratios:
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
         measures how efficiently a company uses its fixed assets to generate sales.
 
-        The Fixed Asset Turnover ratio is calculated by dividing the company's net sales
-        by the average fixed assets. It indicates how well a company is utilizing its fixed
-        assets to generate revenue. A higher ratio suggests more efficient utilization of
-        fixed assets.
+        The Fixed Asset Turnover ratio is calculated by dividing the company's revenue by
+        its average non-current assets: property, plant and equipment, but also goodwill,
+        intangible assets and long-term investments. It indicates how well a company is
+        utilizing its long-term assets to generate revenue. A higher ratio suggests more
+        efficient utilization of these assets. Because goodwill and intangible assets are
+        included, the ratio is far lower than a turnover of property, plant and equipment
+        alone for a company that has made large acquisitions.
 
         The formula is as follows:
 
-        - Fixed Asset Turnover Ratio = Net Sales / Average Fixed Assets
+        - Fixed Asset Turnover Ratio = Revenue / Average Non-Current Assets
 
-        Also known as: fixed asset efficiency, PP&E turnover.
+        Also known as: non-current asset turnover.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2059,6 +2088,14 @@ class Ratios:
 
         - Working Capital Turnover Ratio = Revenue / Average Working Capital
 
+        The ratio only reads well when working capital is clearly positive. When current
+        assets and current liabilities are close, a small change in either swings the
+        ratio to very large or negative values, which says little about efficiency, so
+        check `get_working_capital` alongside it. Companies that run on negative working
+        capital, such as retailers paid by their customers before they pay their
+        suppliers, show a negative ratio that reflects their business model rather than
+        weak efficiency.
+
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2136,13 +2173,22 @@ class Ratios:
         Calculate the operating ratio, a financial metric that measures the efficiency
         of a company's operations by comparing its operating expenses to its revenue.
 
-        The operating ratio is calculated by dividing the company's operating expenses by
-        its net sales and multiplying by 100 to express it as a percentage. It provides
-        insight into how efficiently a company is managing its operations.
+        The operating ratio is calculated by dividing the sum of the cost of goods sold
+        and the operating expenses by revenue. It shows how much of each dollar of
+        revenue is absorbed by the costs of running the business; one minus the operating
+        ratio is roughly the operating margin. It provides insight into how efficiently a
+        company is managing its operations.
 
         The formula is as follows:
 
         - Operating Ratio = (Operating Expenses + Cost of Goods Sold) / Revenue
+
+        Railroads and trucking companies report the operating ratio as their headline
+        efficiency measure, and lower is better. Because cost of goods sold and operating
+        expenses are added together, the ratio does not depend on how a company splits
+        its costs between those two lines, which makes it easier to compare than the
+        expense lines on their own. It leaves out interest and taxes, so it says nothing
+        about leverage.
 
         Also known as: operating efficiency ratio, operating expense ratio.
 
@@ -2239,6 +2285,13 @@ class Ratios:
         The formula is as follows:
 
         - R&D Intensity Ratio = Research and Development Expenses / Revenue
+
+        R&D intensity is compared within an industry and over time: a falling ratio
+        can mean revenue is growing faster than the research budget, not that
+        research is being cut. Accounting matters across borders, since IFRS requires
+        development costs to be capitalized once a project meets certain criteria
+        while US GAAP expenses nearly all of them, so a company reporting under IFRS
+        can show a lower ratio for the same spending.
 
         Also known as: R&D intensity, R&D to sales ratio.
 
@@ -2351,8 +2404,10 @@ class Ratios:
         each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
-        - Not every company reports Selling and Marketing Expenses separately from General
-        and Administrative Expenses, in which case this ratio will be unavailable.
+        - Not every company reports Selling and Marketing Expenses separately from
+        General and Administrative Expenses. For those companies the ratio shows 0,
+        which means the split is not reported, not that nothing was spent; use
+        `get_sga_to_revenue_ratio` instead.
 
         As an example:
 
@@ -2444,8 +2499,11 @@ class Ratios:
         each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
-        - Not every company reports General and Administrative Expenses separately from
-        Selling and Marketing Expenses, in which case this ratio will be unavailable.
+        - Not every company reports General and Administrative Expenses separately
+        from Selling and Marketing Expenses. For those companies the ratio shows 0,
+        or, when the whole SG&A line is reported as general and administrative, the
+        full SG&A ratio; compare with `get_sga_to_revenue_ratio` before reading it as
+        overhead alone.
 
         As an example:
 
@@ -2843,6 +2901,14 @@ class Ratios:
 
         - Current Ratio = Current Assets / Current Liabilities
 
+        A current ratio above 1 is the textbook comfort level, but the right level
+        depends on the business: companies that collect from customers before paying
+        suppliers, such as large retailers and restaurant chains, run below 1 without
+        strain, while manufacturers with long production cycles need more. Lenders read
+        it together with the quick ratio (`get_quick_ratio`), since inventory can be hard
+        to sell at book value, and with the trend, since the year-end balance sheet can
+        be managed to look better than the average day.
+
         Also known as: short-term liquidity, working capital ratio.
 
         Args:
@@ -2930,10 +2996,12 @@ class Ratios:
 
         This ratio is also referred to as the Acid Test Ratio.
 
-        The quick ratio is calculated by subtracting inventory from current assets and
-        then dividing the result by current liabilities. It provides insight into a
-        company's ability to cover its short-term liabilities using its most liquid
-        assets without relying on inventory.
+        The quick ratio is calculated by adding cash and cash equivalents, short-term
+        investments and accounts receivable, and dividing the sum by current liabilities.
+        It leaves out inventory, prepaid expenses and other current assets, which cannot
+        quickly be turned into cash. It provides insight into a company's ability to
+        cover its short-term liabilities using its most liquid assets without relying on
+        inventory.
 
         The formula is as follows:
 
@@ -3033,9 +3101,10 @@ class Ratios:
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
         to pay off its short-term liabilities with its cash and cash equivalents.
 
-        The cash ratio is calculated by dividing the sum of cash and cash equivalents
-        by current liabilities. It provides insight into a company's immediate ability
-        to cover its short-term obligations using its most liquid assets.
+        The cash ratio is calculated by dividing the sum of cash and cash equivalents and
+        short-term investments by current liabilities. It provides insight into a
+        company's immediate ability to cover its short-term obligations using its most
+        liquid assets.
 
         The formula is as follows:
 
@@ -3512,8 +3581,12 @@ class Ratios:
           Accounts Receivable) / Daily Operating Expenses
 
         Where Daily Operating Expenses = (Operating Expenses - Depreciation and
-        Amortization) / Days, i.e. the average cash operating expenses incurred per
-        day, net of the largest non-cash charge (depreciation and amortization).
+        Amortization) / Days. Operating Expenses here excludes the cost of goods sold,
+        while the depreciation and amortization from the cash flow statement also
+        includes the part charged to the cost of goods sold. The ratio therefore counts
+        the days that liquid assets would cover selling, general, administrative and
+        research costs, not all cash costs, and for a capital-intensive company with
+        small overheads the denominator can approach zero or turn negative.
 
         Also known as: defensive interval period, basic defense interval.
 
@@ -3831,6 +3904,13 @@ class Ratios:
 
         - Gross Margin Ratio = (Revenue — Cost of Goods Sold) / Revenue
 
+        Gross margin shows pricing power and production cost before overheads, and is best
+        compared within an industry and over time. What sits in cost of goods sold differs
+        between companies (some include depreciation, freight or warehousing, others report
+        them lower down), so small gaps between peers can be accounting rather than
+        economics. The trend matters most: a steady decline points to rising input costs
+        that cannot be passed on, or to a shift in the sales mix.
+
         Also known as: gross profit margin, gross profit percentage.
 
         Args:
@@ -3927,13 +4007,19 @@ class Ratios:
         Calculate the operating margin, a profitability ratio that measures the percentage of
         revenue that remains after deducting operating expenses.
 
-        The operating margin ratio is calculated by subtracting the operating expenses from the
-        total revenue and then dividing the result by the total revenue. It indicates how efficiently
+        The operating margin ratio is calculated by dividing operating income (revenue minus the
+        cost of goods sold and the operating expenses) by revenue. It indicates how efficiently
         a company is managing its operating expenses in relation to its revenue.
 
         The formula is as follows:
 
         - Operating Margin Ratio = Operating Income / Revenue
+
+        Operating margin is the usual yardstick for the profitability of the core business,
+        before financing and taxes. Companies with high fixed costs show operating leverage:
+        their margin rises quickly when revenue grows and falls quickly when it shrinks.
+        Restructuring charges and impairments are included, so a single weak year should be
+        checked for one-off items before comparing with peers.
 
         Also known as: EBIT margin, operating income margin.
 
@@ -4203,9 +4289,11 @@ class Ratios:
         interest load. Values slightly above 1 occur when non-operating income (e.g.
         interest income) exceeds interest expense.
 
-        Note that this is the reciprocal of, and should not be confused with, the
-        Interest Coverage Ratio (`get_interest_coverage_ratio`), which divides
-        operating profit by interest expense and is therefore unbounded above.
+        Note that this is related to, but not the same as, the Interest Coverage Ratio
+        (`get_interest_coverage_ratio`), which divides EBITDA by interest expense and is
+        unbounded above. When income before tax is roughly operating income minus
+        interest expense, the interest burden is about 1 minus interest expense divided
+        by operating income.
 
         The formula is as follows:
 
@@ -4398,7 +4486,15 @@ class Ratios:
 
         - Effective Tax Rate = Income Tax Expense / Income Before Tax
 
-        Also known as: tax burden, actual tax rate.
+        Analysts compare the effective tax rate with the statutory rates of the
+        countries a company earns its profits in; a rate well below them usually comes
+        from profits booked in lower-tax countries, research credits or one-off
+        benefits. Single years can be far from the trend because of settlements, law
+        changes or the release of a valuation allowance (the negative rate for TSLA in
+        2023 in the example below is such a case), so forecasts usually start from a
+        normalized rate. `get_cash_tax_rate` shows what was actually paid.
+
+        Also known as: ETR, actual tax rate.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4490,6 +4586,13 @@ class Ratios:
         The formula is as follows:
 
         - Return on Assets = Net Income / Average Total Assets
+
+        Return on assets is the natural measure for banks and insurers, whose assets are mostly loans
+        and investments, and where a return of about 1% is the usual benchmark for a bank. Outside
+        finance it is best compared within an industry, since asset-light businesses such as software
+        and services earn far higher returns on assets than utilities or manufacturers. Because net
+        income is after interest, two companies with the same operations but different leverage show
+        different returns on assets.
 
         Also known as: ROA, asset profitability.
 
@@ -4669,8 +4772,9 @@ class Ratios:
 
         The return on equity is calculated by dividing the net income by the average shareholders' equity.
         Shareholders' equity represents the residual interest in the assets of a company after deducting liabilities.
-        Note that it is false to take the total assets at the end of the period given that income statements report
-        over the period whereas a balance sheet reports on the period.
+        Note that it is false to take the total equity at the end of the period, given that an income statement
+        reports over the period whereas a balance sheet reports at a point in time; the average equity over the
+        period is used instead.
 
         ROE provides insight into the company's ability to generate profits from the investments made by
         its shareholders. A higher ROE indicates that the company is using its equity effectively to generate
@@ -4679,6 +4783,13 @@ class Ratios:
         The formula is as follows:
 
         - Return on Equity = Net Income / Average Shareholders' Equity (or Total Equity)
+
+        ROE is usually read through the DuPont analysis (`Toolkit.models.get_dupont_analysis`), which splits it into
+        net margin, asset turnover and the equity multiplier, because the same ROE can come from high margins or from
+        a thin equity base. Large buybacks and accumulated losses shrink equity and can push ROE to extreme or negative
+        values (AAPL above 1.4 in the example below), in which case ROIC or ROA says more. For banks and insurers ROE
+        is set against the cost of equity, and together with the price-to-book ratio it explains much of their
+        valuation.
 
         Also known as: ROE, shareholders equity return, equity profitability.
 
@@ -4768,19 +4879,28 @@ class Ratios:
         Calculate the return on invested capital (ROIC), a financial ratio that measures
         the company's return on the capital invested in it, including both equity and debt.
 
-        The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT)
-        by the average invested capital. Invested capital includes both equity and debt, making this ratio
-        a valuable measure of how efficiently a company generates returns for all of its investors.
+        The return on invested capital is calculated by dividing net income, less the dividends paid when
+        dividend_adjusted is True (the default), by the average invested capital: total equity plus total debt.
+        Invested capital includes both equity and debt, making this ratio a valuable measure of how efficiently a
+        company generates returns for all of its investors. Net income is used as a proxy for net operating profit
+        after taxes (NOPAT); it is after interest, so for companies with much debt it gives a lower return than a
+        NOPAT-based ROIC. Set dividend_adjusted=False for the more common definition without the dividend deduction.
 
         The formula is as follows:
 
         - Return on Invested Capital = (Net Income — Paid Dividends) / Average Invested Capital
 
+        ROIC is compared with the weighted average cost of capital
+        (`Toolkit.models.get_weighted_average_cost_of_capital`): a company that earns more than its cost of capital
+        creates value as it invests and grows, one that earns less destroys it. It is less distorted by buybacks and
+        leverage than ROE. With the default dividend adjustment a company with a high payout shows a much lower ROIC
+        than one that retains its earnings, so compare companies with the same setting.
+
         Also known as: ROIC.
 
         Args:
-            dividend_adjusted (bool, optional): Whether to adjust the net operating profit after taxes
-            with the dividends paid. Defaults to True.
+            dividend_adjusted (bool, optional): Whether to deduct the dividends paid from net income.
+            Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4896,7 +5016,13 @@ class Ratios:
 
         - Income Quality Ratio = Cash Flow from Operations / Net Income
 
-        Also known as: earnings quality, accrual ratio.
+        A ratio above 1 means reported earnings are backed by at least as much operating cash flow,
+        which is typical for companies with large depreciation charges. A ratio that stays below 1 for
+        several years, for example because receivables or capitalized costs keep growing, is a common
+        warning sign in earnings-quality screens. The ratio loses meaning, and can flip sign, when net
+        income is close to zero or negative.
+
+        Also known as: earnings quality ratio, cash flow to net income ratio.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -4981,11 +5107,12 @@ class Ratios:
         generated by a company's tangible assets.
 
         The return on tangible assets (ROTA) provides insights into the efficiency with which a company
-        utilizes its tangible assets to generate profits. Tangible assets include physical assets such as
-        buildings, machinery, and equipment. ROTA indicates how well a company can generate profits from
-        its core operational assets. The tangible base is net of liabilities as well as intangible
-        assets (tangible book value), so for a company with few intangibles and much debt, such as
-        Apple, it is small and the ratio well above 1.
+        utilizes its tangible assets to generate profits. It is calculated by dividing net income by the
+        average tangible book value: total assets minus intangible assets and total liabilities (goodwill
+        is not deducted). Because liabilities are deducted, the ratio behaves like a return on tangible
+        equity: for a company with few intangibles and much debt, such as Apple, the base is small and the
+        ratio well above 1, and it turns negative when liabilities and intangible assets exceed total
+        assets.
 
         The formula is as follows:
 
@@ -5105,6 +5232,13 @@ class Ratios:
         The formula is as follows:
 
         - Return on Capital Employed = EBIT / (Total Assets — Current Liabilities)
+
+        ROCE is widely used for capital-intensive industries such as oil and gas, mining, utilities and telecoms,
+        because it measures the operating return on all long-term funding, equity and debt, regardless of the
+        capital structure. It is compared with the cost of capital and with peers over a full cycle, since commodity
+        producers show very high ROCE at the top of a price cycle. The capital employed is taken at the end of the
+        period (averaged over the window when trailing is set), so a large acquisition late in the year lowers the
+        ratio before the acquired earnings come in.
 
         Also known as: ROCE.
 
@@ -5484,11 +5618,12 @@ class Ratios:
         net income to its income before tax, indicating how much of a
         company's income is retained after taxes.
 
-        The tax burden ratio measures the portion of a company's earnings that
-        is paid as taxes. A higher ratio indicates that a larger portion of the
-        income is being retained by the company after taxes. This ratio provides
-        insights into the tax efficiency of the company and its ability to manage
-        its tax liabilities.
+        The tax burden ratio measures the portion of a company's pretax earnings
+        that it keeps after taxes; one minus the ratio is roughly the effective
+        tax rate. A higher ratio means a lower tax charge. It is one of the
+        components of the extended (five-step) DuPont analysis. This ratio
+        provides insights into the tax efficiency of the company and its ability
+        to manage its tax liabilities.
 
         The formula is as follows:
 
@@ -5574,15 +5709,14 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its
-        earnings before interest and taxes, indicating how much of a company's earnings are
-        generated before paying interest on debt.
+        Calculate the EBT to EBIT ratio, which shows how much of a company's earnings before
+        interest and taxes (EBIT) is left after interest expense.
 
-        The EBT to EBIT ratio measures the proportion of a company's earnings that is generated
-        before paying interest and taxes. It provides insights into how a company's operating
-        performance is impacted by interest expenses and tax obligations. A higher ratio indicates
-        that a larger portion of the company's earnings is generated from its core operations
-        before considering interest payments and taxes.
+        A ratio close to 1 means interest takes little of the operating profit; a lower ratio
+        means a heavier interest load. Taxes play no part in the ratio. Unlike
+        `get_interest_burden_ratio`, which uses the reported income before tax and operating
+        income, both figures here are rebuilt from net income, income tax expense and interest
+        expense.
 
         The formula is as follows:
 
@@ -5794,6 +5928,14 @@ class Ratios:
 
         - Cash Tax Rate = Income Taxes Paid / Income Before Tax
 
+        The cash tax rate shows the taxes a company actually paid, which can differ
+        for years from the tax expense in the income statement because of deferred
+        taxes, prepayments and settlements of earlier years. Analysts compare it
+        with the effective tax rate to see whether reported earnings rely on taxes
+        that are deferred rather than saved. When the data has no income taxes paid
+        for a year, the rate shows as 0 (TSLA in 2025 in the example below), which
+        should be read as missing, not as a company that paid no tax.
+
         Also known as: cash effective tax rate.
 
         Args:
@@ -5888,6 +6030,13 @@ class Ratios:
         The formula is as follows:
 
         - Tax Rate Divergence = Cash Tax Rate - Effective Tax Rate
+
+        Because the divergence is the cash tax rate minus the effective tax rate, a
+        year without reported income taxes paid shows a divergence equal to minus the
+        effective tax rate (TSLA in 2025 in the example below: -0.2696 against an
+        effective rate of 0.2696), so check `get_cash_tax_rate` for zeros before
+        reading a large negative value as aggressive tax deferral. The measure is also
+        unstable when income before tax is small or negative.
 
         Also known as: cash-accrual tax gap.
 
@@ -6335,6 +6484,14 @@ class Ratios:
 
         - Debt to Equity Ratio = Total Debt / Total Equity
 
+        The debt to equity ratio is compared within an industry, since utilities, real
+        estate and companies with a financing arm (car makers, machinery makers) carry far
+        more debt than software companies. Equity is a book value, so large buybacks or
+        accumulated losses can make it small or negative, and the ratio then becomes
+        extreme or negative without saying anything about the debt load; the debt to
+        capital ratio (`get_debt_to_capital_ratio`) and net debt to EBITDA
+        (`get_net_debt_to_ebitda_ratio`) are more robust in those cases.
+
         Also known as: D/E ratio, leverage ratio, gearing ratio.
 
         Args:
@@ -6419,16 +6576,27 @@ class Ratios:
         ability to pay its interest expenses on outstanding debt.
 
         The interest coverage ratio evaluates a company's ability to meet its interest
-        obligations from its operating income. A higher ratio indicates a company's stronger
-        ability to cover its interest payments using its earnings, implying lower financial risk.
-        Conversely, a lower ratio suggests a company may have difficulty meeting its interest
-        obligations and could be at higher risk of default.
+        obligations from its earnings before interest, taxes, depreciation and amortization
+        (EBITDA). A higher ratio indicates a company's stronger ability to cover its interest
+        payments using its earnings, implying lower financial risk. Conversely, a lower ratio
+        suggests a company may have difficulty meeting its interest obligations and could be
+        at higher risk of default.
 
         The formula is as follows:
 
         - Interest Coverage Ratio = (Operating Income + Depreciation and Amortization) / Interest Expense
 
-        Also known as: TIE, times interest earned.
+        Lenders and rating agencies use interest coverage to judge how much room a company has
+        before its earnings no longer cover its interest bill, and loan covenants often set a
+        minimum. EBITDA coverage is higher than EBIT coverage, and the gap is largest for
+        capital-intensive companies, where depreciation stands for real reinvestment. The ratio
+        shows as infinite when no interest expense is reported (AAPL in 2024 and 2025 in the
+        example below), which is often a gap in the reported data rather than an absence of
+        debt.
+
+        Also known as: EBITDA interest coverage. Note that times interest earned (TIE) uses
+        operating income without adding back depreciation and amortization, and is therefore
+        lower.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6526,6 +6694,12 @@ class Ratios:
 
         - Equity Multiplier = Average Total Assets / Average Total Equity
 
+        The equity multiplier is the leverage component of the DuPont analysis: return on
+        equity equals return on assets times the equity multiplier. Banks run multipliers of
+        around 10 or more, which is why their small returns on assets translate into returns
+        on equity in the teens. For other companies a rising multiplier can come from new
+        debt but also from buybacks that shrink equity.
+
         Also known as: financial leverage multiplier.
 
         Args:
@@ -6612,13 +6786,17 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the debt service coverage ratio, a solvency ratio that measures a company's
-        ability to service its debt with its net operating income.
+        Calculate the debt service coverage ratio, a solvency ratio that measures how well a
+        company's operating income covers what it owes within a year.
 
-        The debt service coverage ratio provides insights into a company's ability to meet its
-        debt obligations from its operating income. It is especially important for companies
-        with significant debt obligations, as a lower ratio indicates higher financial risk and
-        potential difficulties in servicing debt payments.
+        The debt service coverage ratio, as calculated here, compares operating income with all
+        current liabilities, not only the debt due within a year, so it measures how well one
+        year of operating income covers everything the company owes within a year. Current
+        liabilities also include accounts payable, accrued expenses and deferred revenue, so a
+        company with little debt but large deferred revenue shows a low ratio, while a company
+        with heavy long-term debt but small payables can show a high one. A lower ratio
+        indicates higher financial risk and potential difficulties in meeting short-term
+        obligations.
 
         The formula is as follows:
 
@@ -6723,6 +6901,13 @@ class Ratios:
 
         - Free Cash Flow Yield Ratio = Free Cash Flow / Market Capitalization
 
+        The free cash flow yield is the cash a company generates for its shareholders as a
+        share of what the market pays for them, and is often set against bond yields or
+        the dividend yield to judge how much room there is for dividends and buybacks.
+        Free cash flow swings with capital expenditure and working capital, so a single
+        year can mislead, and a high yield can also mean the market expects free cash flow
+        to fall.
+
         Also known as: FCF yield.
 
         Args:
@@ -6763,7 +6948,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0318 | 0.0535 | 0.0331 | 0.0284 | 0.0243 |
+        | AAPL | 0.031  | 0.0525 | 0.0327 | 0.0282 | 0.0242 |
         | TSLA | 0.0029 | 0.0176 | 0.005  | 0.0025 | 0.0039 |
         """
         average_shares = (
@@ -6778,7 +6963,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -6794,7 +6979,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -6857,6 +7042,13 @@ class Ratios:
         The formula is as follows:
 
         - Net Debt to EBITDA Ratio = Net Debt / EBITDA
+
+        Net debt to EBITDA is the leverage measure lenders, rating agencies and loan
+        covenants use most: it reads as the number of years of EBITDA needed to repay the
+        debt net of cash. What counts as high depends on how stable the earnings are, so
+        utilities and telecoms carry more than cyclical companies. A negative value means
+        the company holds more cash than debt, and the ratio becomes meaningless when
+        EBITDA is close to zero or negative.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -7433,8 +7625,10 @@ class Ratios:
         Notes:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-        - This ratio is only meaningful for companies that have preferred stock outstanding;
-        it will be zero-division/NaN for companies without preferred dividends.
+        - This ratio is only meaningful for companies that have preferred stock
+        outstanding. It has no value (NaN, or infinite after a division by zero) when
+        no preferred dividends are reported separately in the cash flow statement,
+        which also happens for some companies that do pay them.
 
         As an example:
 
@@ -7513,6 +7707,13 @@ class Ratios:
         The formula is as follows:
 
         - Interest Paid to Expense Ratio = Interest Paid / Interest Expense
+
+        A common reason for interest paid to exceed the interest expense is
+        capitalized interest: companies building plants, fabs or networks add part of
+        their interest to the cost of the asset, so the income statement shows less
+        interest than was paid. When the data has no interest paid for a year, the
+        ratio shows as 0 (TSLA in 2025 in the example below), which means the figure
+        is missing, not that no interest was paid.
 
         Also known as: cash interest coverage, interest cash conversion.
 
@@ -7602,7 +7803,8 @@ class Ratios:
         Calculates and collects all Valuation Ratios based on the provided data.
 
         Args:
-            include_dividends (bool, optional): Whether to include dividends in the calculations. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income in the
+                earnings-based ratios. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -7642,15 +7844,15 @@ class Ratios:
 
         |                             |         2021 |         2022 |         2023 |         2024 |         2025 |
         |:----------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | EV-to-Sales                 |  8.2741      |  5.5609      |  8.0923      | 10.0244      |  9.9589      |
-        | EV-to-EBIT                  | 27.0608      | 17.969       | 26.3593      | 31.7437      | 31.2254      |
-        | EV-to-EBITDA                | 25.1745      | 16.798       | 24.6516      | 29.1092      | 28.6326      |
-        | EV-to-Operating-Cash-Flow   | 29.0932      | 17.9518      | 28.0585      | 33.1479      | 37.1766      |
+        | EV-to-Sales                 |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
+        | EV-to-EBIT                  | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
+        | EV-to-EBITDA                | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
+        | EV-to-Operating-Cash-Flow   | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
         | Tangible Asset Value        |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
         | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
-        | EV-to-Free-Cash-Flow        | 32.5627      | 19.6766      | 31.1463      | 36.026       | 41.9626      |
-        | Buyback Yield               |  0.029       |  0.0429      |  0.0258      |  0.0248      |  0.0223      |
-        | Shareholder Yield           |  0.034       |  0.05        |  0.0308      |  0.0288      |  0.0261      |
+        | EV-to-Free-Cash-Flow        | 33.3102      | 20.0107      | 31.5146      | 36.2809      | 42.075       |
+        | Buyback Yield               |  0.0283      |  0.0421      |  0.0255      |  0.0246      |  0.0222      |
+        | Shareholder Yield           |  0.0332      |  0.0491      |  0.0304      |  0.0286      |  0.026       |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
         valuation_ratios_dict: dict = {}
@@ -7831,12 +8033,16 @@ class Ratios:
 
         The formula is as follows:
 
-        - Earnings per Share (EPS) = (Net Income — |Preferred Dividends Paid|) / Weighted Average Shares
+        - Earnings per Share (EPS) = (Net Income — |Preferred Dividends Paid|) / Weighted Average (Diluted) Shares
+
+        The preferred dividends are only deducted when include_dividends is True; with the
+        default, EPS is net income divided by the weighted average (diluted) shares.
 
         Also known as: EPS, net income per share.
 
         Args:
-            include_dividends (bool, optional): Whether to include dividends in the EPS calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct the preferred dividends paid from net income.
+                Defaults to False.
             diluted (bool, optional): Whether to use diluted earnings per share. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -8046,11 +8252,19 @@ class Ratios:
 
         - Price to Earnings Ratio (P/E) = Share Price / Earnings per Share (EPS)
 
+        The P/E is compared with the company's own history, its peers and the market,
+        and is read together with growth: a high P/E is the market paying for expected
+        growth. For cyclical companies it is misleading at the extremes, lowest at peak
+        earnings and highest in a downturn, so analysts often use normalized or forward
+        earnings (`get_forward_price_earnings_ratio`). A negative or tiny EPS gives a
+        negative or extreme P/E that should be left out of averages.
+
         Also known as: PE ratio, P/E ratio, price-earnings ratio, earnings multiple.
 
         Args:
             show_daily (bool, optional): Whether to show daily data. Defaults to False.
-            include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
+                Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -8085,10 +8299,10 @@ class Ratios:
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
-        |:-----|--------:|--------:|--------:|---------:|---------:|
-        | AAPL |  30.896 | 20.881  | 31.0086 |  40.8672 |  36.3188 |
-        | TSLA | 215.568 | 34.0154 | 57.6961 | 198.126  | 418.189  |
+        |      |     2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|--------:|---------:|--------:|
+        | AAPL |  31.6299 | 21.254  | 31.3868 |  41.1631 |  36.418 |
+        | TSLA | 215.568  | 34.0154 | 57.6961 | 198.126  | 418.189 |
         """
         eps = self.get_earnings_per_share(
             include_dividends,
@@ -8102,7 +8316,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -8112,7 +8326,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -8155,14 +8369,26 @@ class Ratios:
 
         The formula is as follows:
 
-        - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / Growth Rate
+        - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / (EPS Growth Rate * 100)
+
+        The growth rate is the growth of the (diluted) earnings per share on the previous
+        period, or of EBITDA when use_ebitda_growth_rate is True, multiplied by 100 so that it
+        enters in percent.
+
+        A PEG around 1 is the traditional rule of thumb for a growth stock priced in line with
+        its growth. This historical PEG uses a single period of earnings growth, so it swings
+        widely and turns negative when earnings fall (AAPL at 91.2 and -49.8 in the example
+        below), which is why practitioners prefer forward or multi-year growth
+        (`get_forward_price_earnings_growth_ratio`) and leave negative values out of
+        comparisons.
 
         Also known as: PEG ratio, price earnings growth.
 
         Args:
             use_ebitda_growth_rate (bool, optional): Whether to use EBITDA growth rate for the calculation.
                 Defaults to False.
-            include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income, in both
+                the P/E and the EPS growth (not in the EBITDA growth). Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -8220,7 +8446,7 @@ class Ratios:
             )
 
         price_earnings = self.get_price_to_earnings_ratio(
-            include_dividends, diluted=diluted
+            include_dividends=include_dividends, diluted=diluted
         )
 
         price_to_earnings_growth_ratio = (
@@ -8302,6 +8528,13 @@ class Ratios:
 
             Forward P/E = Stock Price / Estimated EPS Average
 
+        The forward P/E is the standard valuation multiple in equity research because prices
+        look ahead, but it rests on consensus estimates, which tend to be revised as results
+        come in. Consensus EPS is usually on the adjusted basis companies guide on, while the
+        trailing P/E (`get_price_to_earnings_ratio`) uses reported diluted EPS, so for
+        companies with large amortization or restructuring charges the forward P/E looks much
+        lower than the trailing one without any change in earnings power.
+
         Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
         subscription. Analyst estimates are fetched once per Toolkit instance and cached
         across calls to this (or the other forward-looking ratio) method — never on
@@ -8318,7 +8551,10 @@ class Ratios:
                 values. Defaults to False.
 
         Returns:
-            pd.DataFrame: Forward P/E ratio for each period covered by the analyst estimates.
+            pd.DataFrame: The current share price divided by the consensus EPS estimate of each
+                period in the analyst estimates. Only the periods after the latest reported fiscal
+                year are forward P/E ratios; earlier columns divide today's price by the estimates
+                made for years that have already been reported.
 
         As an example:
 
@@ -8337,10 +8573,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |    2023 |    2024 |    2025 |    2026 |    2027 |    2028 |    2029 |    2030 |     2031 |
-        |:-----|---------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|---------:|
-        | AAPL |  48.3461 | 44.4576 | 44.757  | 42.1721 | 36.7282 | 30.685  | 28.2179 | 25.3703 | 22.1507 | 21.0089 | nan      |
-        | MSFT | nan      | 51.8302 | 49.9693 | 39.4599 | 35.8137 | 28.2617 | 24.3404 | 20.4472 | 16.6952 | 13.6994 |  10.7151 |
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |    2026 |    2027 |    2028 |    2029 |    2030 |     2031 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|---------:|
+        | AAPL |  48.478 | 44.5789 | 44.8792 | 42.2872 | 36.8284 | 30.7711 | 28.3317 | 25.5411 | 22.4681 | 21.7575 | nan      |
+        | MSFT | nan     | 52.1592 | 50.2865 | 39.7103 | 36.041  | 28.441  | 24.4886 | 20.5492 | 16.7779 | 13.7448 |  10.7807 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8354,7 +8590,7 @@ class Ratios:
         estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
 
         stock_price = (
-            self._daily_historical_data["Adj Close"]
+            self._daily_historical_data["Close"]
             .ffill()
             .iloc[-1][self._tickers_without_portfolio]
             .reindex(estimated_eps.index)
@@ -8398,6 +8634,14 @@ class Ratios:
             - Estimated EPS Growth Rate = (Estimated EPS - Trailing EPS) / |Trailing EPS|
             - Forward PEG = Forward P/E / (Estimated EPS Growth Rate * 100)
 
+        The growth rate is the total growth from the most recently reported EPS to the
+        estimate of each period, so only the next fiscal year gives a PEG on annual growth;
+        later periods show the growth over several years and a correspondingly lower PEG.
+        For periods up to the latest reported fiscal year the estimate is compared with a
+        later EPS, so the PEG there has no meaning. The trailing EPS is the reported diluted
+        EPS, while consensus estimates are usually on an adjusted basis, which inflates the
+        implied growth for companies with large non-cash charges.
+
         Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
         subscription. Analyst estimates are fetched once per Toolkit instance and cached
         across calls to this (or the other forward-looking ratio) method — never on
@@ -8435,8 +8679,8 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |   2026 |   2027 |   2028 |   2029 |   2030 |     2031 |
         |:-----|---------:|--------:|--------:|--------:|---------:|-------:|-------:|-------:|-------:|-------:|---------:|
-        | AAPL |  -1.9473 | -2.4358 | -2.3808 | -3.0511 | -35.0374 | 1.6641 | 0.98   | 0.5866 | 0.3457 | 0.2878 | nan      |
-        | MSFT | nan      | -1.6185 | -1.6943 | -3.6832 | -22.0641 | 1.1458 | 0.5439 | 0.2828 | 0.1504 | 0.0872 |   0.0468 |
+        | AAPL |  -1.9526 | -2.4424 | -2.3873 | -3.0595 | -35.133  | 1.6696 | 0.9897 | 0.5984 | 0.3612 | 0.3224 | nan      |
+        | MSFT | nan      | -1.6288 | -1.7051 | -3.7066 | -22.2041 | 1.1531 | 0.5468 | 0.2833 | 0.1507 | 0.087  |   0.0471 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8465,7 +8709,7 @@ class Ratios:
         )
 
         stock_price = (
-            self._daily_historical_data["Adj Close"]
+            self._daily_historical_data["Close"]
             .ffill()
             .iloc[-1][self._tickers_without_portfolio]
             .reindex(estimated_eps.index)
@@ -8621,6 +8865,14 @@ class Ratios:
 
         - Price to Book Ratio = Share Price / Book Value per Share
 
+        The price to book ratio matters most for banks and insurers, whose balance
+        sheets consist mostly of financial assets and liabilities, so that book value
+        is a fair measure of what shareholders own. It is read together with return on
+        equity: a bank that earns more than its cost of equity can justify trading
+        above book value, one that earns less trades below it. For companies whose
+        value lies in brands, software or people, book value says little, and buybacks
+        can shrink it until the ratio becomes extreme.
+
         Also known as: P/B ratio.
 
         Args:
@@ -8663,7 +8915,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL | 46.3658 | 41.127  | 48.397  | 67.2655 | 55.173  |
+        | AAPL | 47.4672 | 41.8616 | 48.9873 | 67.7525 | 55.3236 |
         | TSLA | 39.5096 |  9.5752 | 13.8166 | 19.3742 | 19.3166 |
         """
         book_value_per_share = self.get_book_value_per_share(
@@ -8674,7 +8926,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -8684,7 +8936,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -8716,12 +8968,12 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the interest debt per share, a valuation ratio that measures the
-        amount of interest expense incurred per outstanding share of a company's stock.
+        Calculate the interest debt per share, a valuation ratio that measures a company's
+        total debt plus one year of interest expense per outstanding share.
 
-        The interest debt per share ratio provides insight into how much interest a company
-        pays on its debt relative to its shareholder base. It can help investors assess
-        the financial burden of interest expenses on the company's profitability.
+        The interest debt per share ratio shows how much debt, with its interest, ranks
+        ahead of each share, and is often compared with the share price. Because the total
+        debt is added to the interest expense, the value is mostly debt per share.
 
         The formula is as follows:
 
@@ -8827,6 +9079,12 @@ class Ratios:
         The formula is as follows:
 
         - CAPEX per Share = Capital Expenditure / Weighted Average (Diluted) Shares
+
+        The values are negative because capital expenditure is reported as a cash outflow
+        in the cash flow statement; take the magnitude when comparing with sources that
+        quote capex per share as a positive amount. Capex per share is usually compared
+        with operating cash flow or depreciation per share: capex well above depreciation
+        for years points to expansion, capex below it to an ageing asset base.
 
         Also known as: capital expenditure per share.
 
@@ -8967,18 +9225,18 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL |  0.005 | 0.0071 |  0.005 |  0.004 | 0.0038 |
-        | TSLA |  0     | 0      |  0     |  0     | 0      |
+        | AAPL | 0.0049 |  0.007 | 0.0049 |  0.004 | 0.0038 |
+        | TSLA | 0      |  0     | 0      |  0     | 0      |
         """
         if show_daily:
-            share_prices = self._daily_historical_data.loc[:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[:, "Close"][
                 self._tickers_without_portfolio
             ]
             dividends = self._daily_historical_data.loc[:, "Dividends"][
                 self._tickers_without_portfolio
             ]
         else:
-            share_prices = self._historical_data.loc[:, "Adj Close"][
+            share_prices = self._historical_data.loc[:, "Close"][
                 self._tickers_without_portfolio
             ].T
             dividends = self._historical_data.loc[:, "Dividends"][
@@ -9076,8 +9334,8 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0049 | 0.0071 |  0.005 |  0.004 | 0.0038 |
-        | TSLA | 0      | 0      |  0     |  0     | 0      |
+        | AAPL | 0.0048 |  0.007 | 0.0049 | 0.0039 | 0.0038 |
+        | TSLA | 0      |  0     | 0      | 0      | 0      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -9091,7 +9349,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -9107,7 +9365,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -9206,7 +9464,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |
         |:-----|---------:|--------:|--------:|--------:|---------:|
-        | AAPL |  28.1168 | 17.0608 | 27.2085 | 32.3943 |  36.4909 |
+        | AAPL |  28.7847 | 17.3655 | 27.5403 | 32.6289 |  36.5905 |
         | TSLA | 103.745  | 29.0716 | 65.2832 | 94.6614 | 107.589  |
         """
         market_cap = self.get_market_cap(
@@ -9314,10 +9572,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |     2023 |     2024 |     2025 |
-        |:-----|---------:|--------:|---------:|---------:|---------:|
-        | AAPL |  31.4699 | 18.7001 |  30.2027 |  35.2069 |  41.1886 |
-        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082  |
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  32.2174 | 19.0341 |  30.5711 |  35.4618 |  41.301 |
+        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082 |
         """
         market_cap = self.get_market_cap(
             diluted=diluted,
@@ -9481,8 +9739,11 @@ class Ratios:
         Calculates the market capitalization of the company.
 
         Market capitalization, often referred to as "market cap," is the total value of a company's
-        outstanding shares of stock in the stock market. It is calculated by multiplying the current
-        market price per share by the total number of outstanding shares.
+        outstanding shares of stock in the stock market. It is calculated by multiplying the share
+        price at the end of each period by the weighted average (diluted) number of shares
+        outstanding in that period. The share price is the close as traded, adjusted for splits
+        but not for dividends, as are the prices of every price-based ratio (P/E, P/B, the
+        enterprise value multiples and the dividend, earnings and free cash flow yields).
 
         The formula is as follows:
 
@@ -9524,7 +9785,7 @@ class Ratios:
 
         |      |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 2.92522e+12 | 2.08399e+12 | 3.0077e+12  | 3.83076e+12 | 4.06807e+12 |
+        | AAPL | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
         | TSLA | 1.19275e+12 | 4.2805e+11  | 8.65394e+11 | 1.41263e+12 | 1.58661e+12 |
         """
         average_shares = (
@@ -9537,7 +9798,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -9547,7 +9808,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -9599,6 +9860,13 @@ class Ratios:
         - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
             — Cash and Cash Equivalents
 
+        Enterprise value is the price of the whole business, equity and debt together,
+        which makes it the right numerator for multiples of operating results such as EV
+        to EBITDA or EV to sales, and comparable across companies with different capital
+        structures. Only cash and cash equivalents are deducted, not short-term
+        investments, so for companies that hold much of their cash in marketable
+        securities the enterprise value is higher than a figure net of all cash.
+
         Also known as: EV, total enterprise value.
 
         Args:
@@ -9635,7 +9903,7 @@ class Ratios:
 
         |      |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 3.0268e+12  | 2.19282e+12 | 3.10167e+12 | 3.91988e+12 | 4.14452e+12 |
+        | AAPL | 3.09629e+12 | 2.23005e+12 | 3.13835e+12 | 3.94761e+12 | 4.15562e+12 |
         | TSLA | 1.18544e+12 | 4.1874e+11  | 8.59544e+11 | 1.41088e+12 | 1.5792e+12  |
         """
         total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
@@ -9781,7 +10049,7 @@ class Ratios:
 
         |      |    2021 |   2022 |   2023 |    2024 |    2025 |
         |:-----|--------:|-------:|-------:|--------:|--------:|
-        | AAPL |  8.2741 | 5.5609 | 8.0923 | 10.0244 |  9.9589 |
+        | AAPL |  8.464  | 5.6553 | 8.188  | 10.0953 |  9.9856 |
         | TSLA | 22.0248 | 5.1403 | 8.8821 | 14.4425 | 16.6535 |
         """
         enterprise_value = self.get_enterprise_value(
@@ -9848,6 +10116,13 @@ class Ratios:
 
         - Enterprise Value to EBITDA Ratio = Enterprise Value / EBITDA
 
+        EV to EBITDA is the most common multiple in sector comparisons and takeover pricing
+        because it is not affected by capital structure, tax rates or depreciation policy.
+        That is also its limit: it ignores the capital expenditure needed to sustain EBITDA,
+        so capital-intensive companies look cheaper than they are, and EV to EBIT
+        (`get_ev_to_ebit`) or EV to free cash flow (`get_ev_to_free_cash_flow_ratio`) is a
+        useful cross-check.
+
         Also known as: EV/EBITDA.
 
         Args:
@@ -9884,7 +10159,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |     2024 |     2025 |
         |:-----|---------:|--------:|--------:|---------:|---------:|
-        | AAPL |  25.1745 | 16.798  | 24.6516 |  29.1092 |  28.6326 |
+        | AAPL |  25.7524 | 17.0831 | 24.9432 |  29.3152 |  28.7093 |
         | TSLA | 125.656  | 24.3467 | 63.3975 | 113.379  | 150.357  |
         """
         enterprise_value = self.get_enterprise_value(
@@ -10001,7 +10276,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |
         |:-----|---------:|--------:|--------:|--------:|---------:|
-        | AAPL |  29.0932 | 17.9518 | 28.0585 | 33.1479 |  37.1766 |
+        | AAPL |  29.7611 | 18.2565 | 28.3904 | 33.3825 |  37.2762 |
         | TSLA | 103.109  | 28.4392 | 64.8419 | 94.5442 | 107.086  |
         """
         enterprise_value = self.get_enterprise_value(
@@ -10081,7 +10356,8 @@ class Ratios:
 
         Args:
             show_daily (bool, optional): Whether to show daily data. Defaults to False.
-            include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
+                Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10114,7 +10390,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0324 | 0.0479 | 0.0322 | 0.0245 | 0.0275 |
+        | AAPL | 0.0316 | 0.047  | 0.0319 | 0.0243 | 0.0275 |
         | TSLA | 0.0046 | 0.0294 | 0.0173 | 0.005  | 0.0024 |
         """
         eps = self.get_earnings_per_share(
@@ -10125,7 +10401,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -10135,7 +10411,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -10176,6 +10452,12 @@ class Ratios:
         The formula is as follows:
 
         - Dividend Payout Ratio = Dividends Paid / Net Income
+
+        The payout ratio shows how much room a company has to keep or raise its dividend. A
+        ratio above 1 means the dividend is paid partly from reserves or borrowing, which
+        cannot last unless profits were depressed by one-off charges. Because it uses net
+        income, it is often checked against free cash flow, and for real estate investment
+        trusts, whose net income is reduced by depreciation, it is not a useful measure.
 
         Also known as: payout ratio.
 
@@ -10336,15 +10618,16 @@ class Ratios:
         trailing: int | None = None,
     ):
         """
-        Calculate the tangible asset value, a financial metric that represents the total value
-        of a company's assets that can be used to generate revenue. Tangible assets are those
-        physical assets that have a finite monetary value and can be sold, used, or consumed.
+        Calculate the tangible asset value, a financial metric that represents the book value
+        of a company's equity after deducting goodwill: what remains of its assets, without
+        goodwill, once all liabilities are paid. Other intangible assets such as patents,
+        brands and customer relationships are not deducted.
 
         The formula is as follows:
 
         - Tangible Asset Value = Total Assets — Total Liabilities — Goodwill
 
-        Also known as: tangible assets, net tangible assets.
+        Also known as: net tangible assets.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -10556,10 +10839,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |   2022 |    2023 |     2024 |     2025 |
-        |:-----|---------:|-------:|--------:|---------:|---------:|
-        | AAPL |  27.0608 | 17.969 | 26.3593 |  31.7437 |  31.2254 |
-        | TSLA | 179.531  | 30.11  | 84.6508 | 151.431  | 284.285  |
+        |      |    2021 |   2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|-------:|--------:|---------:|---------:|
+        | AAPL |  27.682 | 18.274 | 26.671  |  31.9683 |  31.3091 |
+        | TSLA | 179.531 | 30.11  | 84.6508 | 151.431  | 284.285  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -10662,10 +10945,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |     2023 |    2024 |     2025 |
-        |:-----|---------:|--------:|---------:|--------:|---------:|
-        | AAPL |  32.5627 | 19.6766 |  31.1463 |  36.026 |  41.9626 |
-        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991 | 253.891  |
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  33.3102 | 20.0107 |  31.5146 |  36.2809 |  42.075 |
+        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991  | 253.891 |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -10732,6 +11015,13 @@ class Ratios:
 
         - Buyback Yield = -(Common Stock Purchased + Common Stock Issued) / Market Capitalization
 
+        The buyback yield is net of shares issued, which matters for companies that
+        pay much of their staff in shares: their gross buybacks can be large while
+        the net yield is small, because the buybacks mainly offset the dilution from
+        stock-based compensation. Buybacks are more flexible than dividends and vary
+        with the share price and the cash available, so the yield is best read over
+        several years and added to the dividend yield (`get_shareholder_yield`).
+
         Also known as: net repurchase yield.
 
         Args:
@@ -10773,7 +11063,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL |  0.029  |  0.0429 |  0.0258 |  0.0248 |  0.0223 |
+        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0222 |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
         market_cap = self.get_market_cap(diluted=diluted, trailing=trailing)
@@ -10869,7 +11159,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL |  0.034  |  0.05   |  0.0308 |  0.0288 |  0.0261 |
+        | AAPL |  0.0332 |  0.0491 |  0.0304 |  0.0286 |  0.026  |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
         dividend_yield = self.get_dividend_yield(trailing=trailing)

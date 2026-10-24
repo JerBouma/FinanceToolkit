@@ -170,3 +170,50 @@ def test_the_screener_takes_country_names_and_screens_stocks_only(monkeypatch):
         and "isFund=false" in urls[0]
     )
     assert "country=GB" in urls[1] and "isEtf=true" in urls[1]
+
+
+def test_insider_trades_of_a_date_are_filtered_locally(monkeypatch):
+    pages = {
+        0: [("2026-10-23", "A"), ("2026-10-22", "B")],
+        1: [("2026-10-21", "C"), ("2026-10-20", "D")],
+    }
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        page = int(url.split("page=")[1].split("&")[0])
+        rows = pages.get(page, [])
+        return pd.DataFrame(
+            {"symbol": [row[1] for row in rows], "filingDate": [row[0] for row in rows]}
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    trades = discovery_model.get_insider_trading_latest(
+        api_key="KEY", date="2026-10-21"
+    )
+
+    # The endpoint ignores a date, so pages are read until it has passed.
+    assert list(trades.index) == ["C"]
+    assert len(requested) == 2  # noqa: PLR2004
+
+
+def test_sector_changes_are_decimals(monkeypatch):
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        assert "exchange=NYSE" in url
+        return pd.DataFrame(
+            {
+                "date": ["2026-10-23"],
+                "sector": ["Energy"],
+                "exchange": ["NYSE"],
+                "averageChange": [1.25],
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    snapshot = discovery_model.get_sector_performance(
+        api_key="KEY", date="2026-10-23", exchange="NYSE"
+    )
+
+    assert snapshot.loc["Energy", "Average Change"] == pytest.approx(0.0125)

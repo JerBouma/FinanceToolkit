@@ -148,15 +148,21 @@ class Models:
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
 
         The Dupont analysis is a method used to dissect and understand the factors that drive a company's
-        return on equity (ROE). It breaks down the ROE into three key components: Profit Margin, Asset
-        Turnover, and Financial Leverage.
+        return on equity (ROE). It breaks down the ROE into three key components: Net Profit Margin, Asset
+        Turnover, and Equity Multiplier.
 
         The formula is as follows:
 
-            - Profit Margin = Net Income / Revenue
+            - Net Profit Margin = Net Income / Revenue
             - Asset Turnover = Revenue / Average Total Assets
-            - Financial Leverage = Average Total Assets / Average Total Equity
-            - ROE = Profit Margin * Asset Turnover * Financial Leverage
+            - Equity Multiplier = Average Total Assets / Average Total Equity
+            - ROE = Net Profit Margin * Asset Turnover * Equity Multiplier
+
+        The value of the decomposition is in comparing the three factors with peers and over time: a
+        retailer earns its return on equity through asset turnover, a software company through its margin
+        and a bank through leverage. A rising return on equity driven only by the Equity Multiplier, for
+        example through share buybacks that shrink equity, is of lower quality than one driven by margin or
+        turnover, and with negative equity the decomposition stops being meaningful.
 
         Also known as: DuPont, ROE decomposition, three-factor DuPont.
 
@@ -172,16 +178,16 @@ class Models:
                 which shows all columns.
 
         Returns:
-            pd.DataFrame: DataFrame containing Dupont analysis results, including Profit Margin, Asset
-                          Turnover, Financial Leverage, and the calculated ROE values.
+            pd.DataFrame: DataFrame containing Dupont analysis results, including Net Profit Margin, Asset
+                          Turnover, Equity Multiplier, and the calculated ROE values.
 
         Notes:
-            - The Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage of
-            revenue that translates into profit.
+            - The Net Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage
+            of revenue that translates into profit.
             - Asset Turnover measures the efficiency of a company's use of its assets to generate sales
             revenue.
-            - Financial Leverage represents the use of debt to finance a company's operations, which can
-            amplify returns as well as risks.
+            - The Equity Multiplier measures financial leverage, the use of debt to finance a company's
+            operations, which can amplify returns as well as risks.
 
         As an example:
 
@@ -550,13 +556,13 @@ class Models:
 
         |                           |          2021 |          2022 |          2023 |          2024 |          2025 |
         |:--------------------------|--------------:|--------------:|--------------:|--------------:|--------------:|
-        | Share Price               | 173.45        | 127.65        | 190.21        | 248.62        | 271.12        |
-        | Market Capitalization     |   2.92522e+12 |   2.08399e+12 |   3.0077e+12  |   3.83076e+12 |   4.06807e+12 |
+        | Share Price               | 177.57        | 129.93        | 192.53        | 250.42        | 271.86        |
+        | Market Capitalization     |   2.9947e+12  |   2.12121e+12 |   3.04439e+12 |   3.8585e+12  |   4.07918e+12 |
         | Total Debt                |   1.36522e+11 |   1.3248e+11  |   1.2393e+11  |   1.19059e+11 |   1.12377e+11 |
         | Minority Interest         |   0           |   0           |   0           |   0           |   0           |
         | Preferred Equity          |   0           |   0           |   0           |   0           |   0           |
         | Cash and Cash Equivalents |   3.494e+10   |   2.3646e+10  |   2.9965e+10  |   2.9943e+10  |   3.5934e+10  |
-        | Enterprise Value          |   3.0268e+12  |   2.19282e+12 |   3.10167e+12 |   3.91988e+12 |   4.14452e+12 |
+        | Enterprise Value          |   3.09629e+12 |   2.23005e+12 |   3.13835e+12 |   3.94761e+12 |   4.15562e+12 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -568,7 +574,7 @@ class Models:
         begin, end = str(years[0]), str(years[-1])
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -664,6 +670,12 @@ class Models:
             cost of replacing its assets, which can reflect undervaluation or declining growth
             prospects.
 
+        Because the book value of assets leaves out most intangibles (brands, software, research),
+        companies built on them show a Q far above 1 without being overvalued in Tobin's sense, so the
+        ratio is most informative within an industry and over time. In macroeconomics the aggregate Q of
+        the corporate sector is read as a signal for investment: a Q above 1 makes new capital worth more
+        than it costs.
+
         Also known as: Tobin's Q, Q ratio.
 
         Args:
@@ -709,12 +721,12 @@ class Models:
 
         Which returns:
 
-        |                        |        2021 |        2022 |        2023 |         2024 |         2025 |
-        |:-----------------------|------------:|------------:|------------:|-------------:|-------------:|
-        | Market Value of Equity | 2.92522e+12 | 2.08399e+12 | 3.0077e+12  |  3.83076e+12 |  4.06807e+12 |
-        | Total Liabilities      | 2.87912e+11 | 3.02083e+11 | 2.90437e+11 |  3.0803e+11  |  2.85508e+11 |
-        | Total Assets           | 3.51002e+11 | 3.52755e+11 | 3.52583e+11 |  3.6498e+11  |  3.59241e+11 |
-        | Tobin's Q Ratio        | 9.1542      | 6.7641      | 9.3542      | 11.3398      | 12.1188      |
+        |                        |        2021 |        2022 |        2023 |        2024 |         2025 |
+        |:-----------------------|------------:|------------:|------------:|------------:|-------------:|
+        | Market Value of Equity | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 |  3.8585e+12 |  4.07918e+12 |
+        | Total Liabilities      | 2.87912e+11 | 3.02083e+11 | 2.90437e+11 |  3.0803e+11 |  2.85508e+11 |
+        | Total Assets           | 3.51002e+11 | 3.52755e+11 | 3.52583e+11 |  3.6498e+11 |  3.59241e+11 |
+        | Tobin's Q Ratio        | 9.3521      | 6.8696      | 9.4583      | 11.4158     | 12.1497      |
         """
         tobins_q_ratio = {}
 
@@ -729,7 +741,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -790,6 +802,52 @@ class Models:
         return filter_columns(tobins_q_results, show_columns)
 
     @handle_errors
+    def _capital_asset_pricing_inputs(
+        self,
+        risk_free_rate: pd.Series,
+        benchmark_returns: pd.Series,
+        market_risk_premium: float | None,
+        trailing: int | None = None,
+    ) -> tuple[pd.Series, pd.Series]:
+        """
+        The risk-free rate and the expected market return for the Cost of Equity, over the
+        span of the flows it is compared with. The market return is the risk-free rate plus
+        the market risk premium, by default the benchmark's average return above the
+        risk-free rate over every period of the data, so that the Cost of Equity does not
+        follow the market up and down from year to year.
+
+        With quarterly data the annual yield and premium are divided by four, matching the
+        quarterly returns and costs of debt. With `trailing` set, the flows (Net Income,
+        Interest Expense, NOPAT) are sums over that many periods, so the rates are the
+        per-period rates times `trailing`: with quarterly data and a trailing 4 quarters,
+        the annual rates that belong to trailing twelve month flows.
+
+        Args:
+            risk_free_rate (pd.Series): The annual risk-free yield per period.
+            benchmark_returns (pd.Series): The benchmark's return per period.
+            market_risk_premium (float | None): An annual premium to use instead.
+            trailing (int | None, optional): The number of periods the flows are summed
+                over. Defaults to None, which is a single period.
+
+        Returns:
+            tuple[pd.Series, pd.Series]: The risk-free rate and the expected market return,
+            both over the span of the flows.
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        span = trailing if trailing else 1
+
+        risk_free_rate = risk_free_rate / periods_per_year
+        premium = (
+            (benchmark_returns - risk_free_rate).mean()
+            if market_risk_premium is None
+            else market_risk_premium / periods_per_year
+        )
+
+        # Scaled after the premium is averaged, which compares per-period benchmark returns with the per-period rate.  # noqa: E501
+        risk_free_rate = risk_free_rate * span
+
+        return risk_free_rate, risk_free_rate + premium * span
+
     def get_weighted_average_cost_of_capital(
         self,
         show_full_results: bool = True,
@@ -799,6 +857,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -812,7 +871,7 @@ class Models:
             - Market Value of Equity = Share Price * Total Shares Outstanding
             - Market Value of Debt = Total Debt
             - Total Market Value = Market Value of Equity + Market Value of Debt
-            - Cost of Equity = Risk Free Rate + Beta * (Benchmark Return — Risk Free Rate)
+            - Cost of Equity = Risk Free Rate + Beta * Market Risk Premium
             - Cost of Debt = Interest Expense / Total Debt
             - WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
             (Market Value of Debt / Total Market Value) * Cost of Debt * (1 — Corporate Tax Rate)
@@ -842,6 +901,12 @@ class Models:
         equity and the market value of debt (V = E + D). It represents the total value of the company's financing,
         both through equity and debt.
 
+        The WACC is the discount rate for the free cash flow to the firm and the hurdle rate for new
+        investments, so analysts usually build it from forward-looking inputs: a long-term government bond
+        yield, an equity risk premium of a few percent, a beta measured over several years and the yield on
+        the company's debt. Small changes matter: in a DCF with 2.5% perpetual growth, moving the WACC from
+        8% to 9% lowers the terminal value by about 15%.
+
         Also known as: WACC, blended cost of capital, discount rate.
 
         Args:
@@ -855,6 +920,9 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
                 which shows all columns.
 
@@ -862,7 +930,14 @@ class Models:
             pd.DataFrame: DataFrame containing the WACC values.
 
         Notes:
-        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM).
+        - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM): the risk-free rate of
+        the period plus Beta times the market risk premium, which defaults to the benchmark's average
+        return above the risk-free rate over every period of the data (set `market_risk_premium` to use
+        another premium, e.g. an implied equity risk premium). Beta is estimated from the period's daily
+        returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
+        - With `trailing` set, the Interest Expense is summed over the trailing periods, so the Cost of
+        Debt covers that span, and the risk-free rate and premium of the Cost of Equity are the per-period
+        rates times `trailing`. With quarterly data and trailing=4, every rate is an annual rate.
         - The Market Value of Debt is approximated as the Total Debt.
 
         As an example:
@@ -882,14 +957,14 @@ class Models:
 
         Which returns:
 
-        |                                  |          2021 |         2022 |       2023 |        2024 |        2025 |
-        |:---------------------------------|--------------:|-------------:|-----------:|------------:|------------:|
-        | Market Value Equity              |   2.92522e+12 |  2.08399e+12 | 3.0077e+12 | 3.83076e+12 | 4.06807e+12 |
-        | Market Value Debt                |   1.36522e+11 |  1.3248e+11  | 1.2393e+11 | 1.19059e+11 | 1.12377e+11 |
-        | Cost of Equity                   | nan           | -0.2485      | 0.2874     | 0.2425      | 0.2117      |
-        | Cost of Debt                     |   0.0194      |  0.0221      | 0.0317     | 0           | 0           |
-        | Corporate Tax Rate               |   0.133       |  0.162       | 0.1472     | 0.2409      | 0.1561      |
-        | Weighted Average Cost of Capital | nan           | -0.2326      | 0.2771     | 0.2351      | 0.206       |
+        |                                  |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:---------------------------------|------------:|------------:|------------:|------------:|------------:|
+        | Market Value Equity              | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | Market Value Debt                | 1.36522e+11 | 1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
+        | Cost of Equity                   | 0.1277      | 0.1499      | 0.1338      | 0.1283      | 0.1486      |
+        | Cost of Debt                     | 0.0194      | 0.0221      | 0.0317      | 0           | 0           |
+        | Corporate Tax Rate               | 0.133       | 0.162       | 0.1472      | 0.2409      | 0.1561      |
+        | Weighted Average Cost of Capital | 0.1229      | 0.1422      | 0.1296      | 0.1245      | 0.1446      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -902,7 +977,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -922,6 +997,10 @@ class Models:
         benchmark_returns = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
         ].loc[begin:end, "Return"][self._benchmark_name]
+        # The Cost of Equity covers the span of the flows: a trailing sum of Interest Expense is the cost of debt over that span.  # noqa: E501
+        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
+            risk_free_rate, benchmark_returns, market_risk_premium, trailing
+        )
 
         if trailing:
             self._weighted_average_cost_of_capital = (
@@ -1049,6 +1128,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1063,6 +1143,11 @@ class Models:
             - Invested Capital = Total Equity + Total Debt
             - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital)
 
+        EVA is mostly used to compare value creation across business units or companies and over time, and
+        as a basis for management compensation. It is equivalent to (Return on Invested Capital - WACC) *
+        Invested Capital, so a company with a high return on capital but a small capital base can create
+        less EVA than a larger, less profitable one.
+
         Also known as: EVA, economic profit.
 
         Args:
@@ -1073,6 +1158,9 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -1089,6 +1177,10 @@ class Models:
         average of Total Debt, i.e. the capital employed over the course of the period rather than
         its closing balance, consistent with the Return on Invested Capital calculation in the
         Ratios module.
+        - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
+        with the market risk premium given by `market_risk_premium` (by default the benchmark's
+        average return above the risk-free rate over the data) and the same `trailing`, so that it
+        covers the span of the NOPAT (an annual rate for trailing=4 with quarterly data).
 
         As an example:
 
@@ -1107,12 +1199,12 @@ class Models:
 
         Which returns:
 
-        |                                  |          2021 |         2022 |        2023 |        2024 |        2025 |
-        |:---------------------------------|--------------:|-------------:|------------:|------------:|------------:|
-        | Net Operating Profit After Taxes |   9.69732e+10 |  1.02259e+11 | 1.00349e+11 | 9.3736e+10  | 1.1201e+11  |
-        | Invested Capital                 |   1.93614e+11 |  1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
-        | Weighted Average Cost of Capital | nan           | -0.2326      | 0.2771      | 0.2351      | 0.206       |
-        | Economic Value Added             | nan           |  1.46775e+11 | 4.91926e+10 | 5.11729e+10 | 7.47117e+10 |
+        |                                  |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:---------------------------------|------------:|------------:|------------:|------------:|------------:|
+        | Net Operating Profit After Taxes | 9.69732e+10 | 1.02259e+11 | 1.00349e+11 | 9.3736e+10  | 1.1201e+11  |
+        | Invested Capital                 | 1.93614e+11 | 1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
+        | Weighted Average Cost of Capital | 0.1229      | 0.1422      | 0.1296      | 0.1245      | 0.1446      |
+        | Economic Value Added             | 7.31779e+10 | 7.50445e+10 | 7.64231e+10 | 7.11962e+10 | 8.58288e+10 |
         """
         eva = {}
 
@@ -1188,7 +1280,9 @@ class Models:
 
         eva["Weighted Average Cost of Capital"] = (
             self.get_weighted_average_cost_of_capital(
-                show_full_results=False, trailing=trailing
+                show_full_results=False,
+                trailing=trailing,
+                market_risk_premium=market_risk_premium,
             )
         )
 
@@ -1298,10 +1392,10 @@ class Models:
 
         |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----------------------|------------:|------------:|------------:|------------:|------------:|
-        | Market Value of Equity | 2.92522e+12 | 2.08399e+12 | 3.0077e+12  | 3.83076e+12 | 4.06807e+12 |
+        | Market Value of Equity | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
         | Market Value of Debt   | 1.36522e+11 | 1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
         | Invested Capital       | 1.93614e+11 | 1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
-        | Market Value Added     | 2.86813e+12 | 2.02509e+12 | 2.94702e+12 | 3.76878e+12 | 3.99939e+12 |
+        | Market Value Added     | 2.93761e+12 | 2.06231e+12 | 2.98371e+12 | 3.79651e+12 | 4.01049e+12 |
         """
         mva = {}
 
@@ -1310,7 +1404,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -1427,9 +1521,15 @@ class Models:
             - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Growth Rate)
             - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
             (Weighted Average Cost of Capital — Perpetual Growth Rate)
-            - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
+            - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value /
+            (1 + Weighted Average Cost of Capital)^Periods
             - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents
             - Intrinsic Value = Equity Value / Total Shares Outstanding
+
+        In a five-year DCF the discounted terminal value is often 60% to 80% of the enterprise value, so the
+        result is driven mostly by the gap between the WACC and the perpetual growth rate. Practitioners
+        therefore show the intrinsic value as a range over several WACC and growth assumptions rather than a
+        single number, and keep the perpetual growth rate at or below long-run nominal GDP growth.
 
         Also known as: DCF, discounted cash flow, fair value, intrinsic value.
 
@@ -1439,9 +1539,9 @@ class Models:
             perpetual_growth_rate (float, list or dict): The perpetual growth rate to use for the terminal value.
             Can be one number to use for all tickers, or a list or dict that contains a perpetual growth rate for
             each ticker.
-            weighted_average_cost_of_capital (float, list or dict): The weighted average cost of capital to use for
-            the terminal value. Can be one number to use for all tickers, or a list or dict that contains a
-            weighted average cost of capital for each ticker.
+            weighted_average_cost_of_capital (float, list or dict): The weighted average cost of capital used to
+            discount the projected cash flows and to calculate the terminal value. Can be one number to use for
+            all tickers, or a list or dict that contains a weighted average cost of capital for each ticker.
             periods (int, optional): The number of periods to use for the cash flow projections. Defaults to 5.
             cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections.
             Defaults to "Free Cash Flow". Other options are "Operating Cash Flow", "Change in Working Capital",
@@ -2219,6 +2319,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2243,6 +2344,9 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -2254,9 +2358,12 @@ class Models:
         equity holders required given the capital they have invested. A negative Residual
         Income indicates the company failed to earn its equity holders' required return, even
         if it still reported a positive Net Income.
-        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM),
-        consistent with the Weighted Average Cost of Capital calculation elsewhere in this
-        module.
+        - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM), as in
+        `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta times
+        the market risk premium, by default the benchmark's average return above the risk-free
+        rate over the data (see `market_risk_premium`). It covers the span of the Net Income: a
+        quarter with quarterly data, and the per-period rate times `trailing` when the Net Income
+        is a trailing sum (an annual rate for trailing twelve months, trailing=4 with quarterly data).
         - The Book Value of Equity is approximated as the average of Total Shareholder Equity
         minus Preferred Stock over the current and prior period, excluding preferred equity
         since Residual Income (like Net Income) belongs to common equity holders only.
@@ -2282,12 +2389,12 @@ class Models:
 
         Which returns:
 
-        |                      |          2021 |        2022 |        2023 |        2024 |        2025 |
-        |:---------------------|--------------:|------------:|------------:|------------:|------------:|
-        | Net Income           |   9.468e+10   |  9.9803e+10 | 9.6995e+10  | 9.3736e+10  | 1.1201e+11  |
-        | Cost of Equity       | nan           | -0.2485     | 0.2874      | 0.2425      | 0.2117      |
-        | Book Value of Equity |   6.42145e+10 |  5.6881e+10 | 5.6409e+10  | 5.9548e+10  | 6.53415e+10 |
-        | Residual Income      | nan           |  1.1394e+11 | 8.07818e+10 | 7.92984e+10 | 9.81755e+10 |
+        |                      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:---------------------|------------:|------------:|------------:|------------:|------------:|
+        | Net Income           | 9.468e+10   | 9.9803e+10  | 9.6995e+10  | 9.3736e+10  | 1.1201e+11  |
+        | Cost of Equity       | 0.1277      | 0.1499      | 0.1338      | 0.1283      | 0.1486      |
+        | Book Value of Equity | 6.42145e+10 | 5.6881e+10  | 5.6409e+10  | 5.9548e+10  | 6.53415e+10 |
+        | Residual Income      | 8.64785e+10 | 9.12761e+10 | 8.94477e+10 | 8.60939e+10 | 1.02299e+11 |
         """
         residual_income = {}
 
@@ -2338,6 +2445,10 @@ class Models:
         benchmark_returns = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
         ].loc[begin:end, "Return"][self._benchmark_name]
+        # The Cost of Equity covers the span of the trailing Net Income it is charged against.
+        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
+            risk_free_rate, benchmark_returns, market_risk_premium, trailing
+        )
 
         cost_of_equity = wacc_model.get_cost_of_equity(
             risk_free_rate=risk_free_rate,
@@ -2411,6 +2522,12 @@ class Models:
             - A Z-Score between 1.81 and 2.99 indicates a gray area.
             - A Z-Score of greater than 2.99 indicates a low likelihood of bankruptcy.
 
+        The original Z-Score was estimated on US listed manufacturers, and its thresholds are not meant for
+        banks, insurers or most service companies; Altman's later Z'' variant drops the sales term for
+        non-manufacturers. Share buybacks charged to retained earnings and accumulated losses both lower the
+        retained earnings term, so a company that returns most of its earnings scores lower without being
+        closer to distress, which is why the score is best read as a trend and next to the market-based term.
+
         Also known as: Altman Z-score, bankruptcy prediction, financial distress score.
 
         Args:
@@ -2462,9 +2579,9 @@ class Models:
         | Working Capital to Total Assets   |  0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
         | Retained Earnings to Total Assets |  0.0158 | -0.0087 | -0.0006 | -0.0525 | -0.0397 |
         | EBIT to Total Assets              |  0.3187 |  0.3459 |  0.3337 |  0.3383 |  0.3695 |
-        | Market Value to Total Liabilities | 10.1601 |  6.8987 | 10.3558 | 12.4363 | 14.2485 |
+        | Market Value to Total Liabilities | 10.4015 |  7.022  | 10.4821 | 12.5264 | 14.2874 |
         | Sales to Total Assets             |  1.0422 |  1.1179 |  1.0871 |  1.0714 |  1.1584 |
-        | Altman Z-Score                    |  8.244  |  6.3233 |  8.3951 |  9.4993 | 10.8122 |
+        | Altman Z-Score                    |  8.3888 |  6.3973 |  8.4709 |  9.5533 | 10.8355 |
         """
         altman_z_score = {}
 
@@ -2566,7 +2683,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -2685,6 +2802,12 @@ class Models:
         Note that the Piostroski Score has been developed many decades ago and that it is important to
         always compare the same sectors. E.g. it could be that it is quite normal that a firm issues shares
         each year which nets a lower score even though it is a normal practice in that sector.
+
+        Piotroski designed the F-Score to separate winners from losers among value stocks (high
+        book-to-market), where scores of 8 or 9 marked the strongest companies and scores of 0 or 1 the
+        weakest. Because most criteria compare this year with last year, the score measures the direction
+        of change rather than the level of financial strength, and a single strong year after a weak one can
+        score highly.
 
         Please see Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement
         Information to Separate Winners from Losers." Journal of Accounting Research, Vol. 38,
@@ -2978,6 +3101,11 @@ class Models:
             - TATA: Total Accruals to Total Assets
             - LVGI: Leverage Index
 
+        The -1.78 threshold belongs to this eight-variable model; the five-variable version uses -2.22.
+        Fast-growing companies are flagged more often because sales growth itself raises the score, and the
+        model was estimated without financial companies and is not suited to banks and insurers, so a score
+        above the threshold is a prompt to read the accounts, not a finding.
+
         Also known as: Beneish M-Score, earnings manipulation score.
 
         Args:
@@ -3262,7 +3390,9 @@ class Models:
             threshold that minimized the sum of Type I and Type II misclassification errors on his
             sample. It is deliberately far below the naive 0.50 midpoint because bankruptcy is a
             rare event. Equivalently, in raw O-Score terms the cutoff sits at ln(0.038 / 0.962),
-            i.e. approximately -3.23.
+            i.e. approximately -3.23. Since this implementation omits Ohlson's price-level
+            deflator, its scores sit about 2.6 below Ohlson's scale and this cutoff flags far too few
+            companies (see the Notes).
             - A higher probability indicates a higher likelihood of bankruptcy.
 
         Also known as: Ohlson O-Score, bankruptcy prediction, financial distress score.
@@ -3285,12 +3415,13 @@ class Models:
         Notes:
             - Ohlson's (1980) original SIZE term deflates Total Assets by the US GNP price-level index
             (rebased to 1968), a US-specific 1970s macro series that isn't available in this toolkit and
-            isn't meaningful outside the original US sample. This implementation simplifies/omits that
-            deflator and uses ln(Total Assets) in nominal terms instead. This shifts the O-Score (and
-            resulting probability) by roughly a constant amount across all observations in a given
-            currency/period — it does not change the *ranking* of companies relative to one another, but
-            the absolute probability estimate should not be compared directly to studies that apply the
-            deflator.
+            isn't meaningful outside the original US sample. This implementation omits that deflator and
+            uses ln(Total Assets) in nominal terms instead. This lowers every O-Score by roughly 0.407 *
+            ln(price index); with the US price level of the 2020s at roughly six times its 1968 level (an
+            index of about 600 to 650), that is about 2.6. The resulting probabilities are therefore much
+            lower than in Ohlson's study and the 0.038 cutoff (-3.23) flags far too few companies; it
+            corresponds to roughly -5.8 on this scale. The *ranking* of companies relative to one another
+            within a given currency and period is unaffected.
             - Ohlson's original FUTL term uses "Funds from Operations", an accounting-flow concept that
             predates standardized cash flow statements. This implementation approximates Funds from
             Operations with Operating Cash Flow, the standard simplification used in modern
@@ -4417,6 +4548,7 @@ class Models:
         diluted: bool = True,
         include_dividends: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -4425,7 +4557,8 @@ class Models:
         """
         The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
         present value of a company's future growth opportunities. It is calculated as the difference
-        between the company's current stock price and the discounted value of its future cash flows.
+        between the share price and the value of the company's current earnings as a perpetuity without
+        growth, i.e. Earnings per Share divided by the Weighted Average Cost of Capital.
 
         The formula is as follows:
 
@@ -4441,6 +4574,9 @@ class Models:
             Income when calculating the Earnings per Share, so that the earnings figure reflects what is
             attributable to common shareholders only. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4458,6 +4594,11 @@ class Models:
         instead, which blends in the (typically lower, tax-shielded) cost of debt and therefore
         generally understates PVGO. Prefer comparing PVGO across companies, or over time for the same
         company, over reading absolute levels literally.
+        - The Weighted Average Cost of Capital uses the same `trailing` as the Earnings per Share, so
+        both cover the same span (with quarterly data, a quarter without `trailing` and a year with
+        trailing=4).
+        - When the Earnings per Share is negative, the no-growth value is negative and the PVGO
+        exceeds the share price, which has no meaningful interpretation.
 
         As an example:
 
@@ -4476,15 +4617,17 @@ class Models:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | 153.932 | 133.831 |
-        | 2023   | 168.073 | 240.426 |
-        | 2024   | 222.744 | 399.952 |
-        | 2025   | 234.882 | 446.584 |
+        | Date   |     AAPL |    TSLA |
+        |:-------|---------:|--------:|
+        | 2022   |  86.9398 | 103.616 |
+        | 2023   | 145.199  | 229.608 |
+        | 2024   | 201.556  | 395.574 |
+        | 2025   | 220.235  | 445.067 |
         """
         wacc = self.get_weighted_average_cost_of_capital(
-            show_full_results=False, trailing=trailing
+            show_full_results=False,
+            trailing=trailing,
+            market_risk_premium=market_risk_premium,
         )
 
         average_shares = (
@@ -4520,10 +4663,10 @@ class Models:
         )
 
         historical_prices = (
-            self._historical_data["daily"]["Adj Close"]
+            self._historical_data["daily"]["Close"]
             if calculate_daily
             else self._historical_data["quarterly" if self._quarterly else "yearly"][
-                "Adj Close"
+                "Close"
             ]
         )
 
@@ -4583,6 +4726,11 @@ class Models:
 
             - Retention Ratio = 1 - Dividend Payout Ratio
             - SGR = Return on Equity * Retention Ratio
+
+        The SGR assumes the company keeps its leverage and pays out only through dividends. Companies that
+        return cash mainly through share buybacks have a low payout ratio on paper and a return on equity
+        inflated by a shrinking equity base, so their SGR overstates what they can fund internally (Apple's
+        exceeds 100% in every year of the example below).
 
         Also known as: SGR, self-sustainable growth rate.
 
@@ -4815,6 +4963,12 @@ class Models:
         The formula is as follows:
 
         - Graham Number = √(22.5 x Earnings per Share x Book Value per Share)
+
+        The constant 22.5 is Graham's limit of a price-to-earnings ratio of 15 times a
+        price-to-book ratio of 1.5, so the Graham Number is the price at which the product of
+        the two ratios reaches that limit. For companies whose value lies mostly in
+        intangibles, or that buy back many shares, book value is small and the Graham Number
+        sits far below the market price.
 
         Also known as: Graham fair value.
 

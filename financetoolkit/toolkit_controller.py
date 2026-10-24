@@ -1454,12 +1454,10 @@ class Toolkit:
 
     def get_quote(self):
         """
-        Get the quote of the specified tickers. These include important metrics
-        such as the price, changes, day low, day high, year low, year high, market
-        capitalization, volume, average volume, open, previous close, earnings per
-        share (EPS), price to earnings ratio (PE), earnings announcement, shares
-        outstanding and timestamp that give an overall understanding about the
-        company.
+        Get the quote of the specified tickers: the price and its change, the day's
+        open, low and high, the previous close, the year low and high, the 50 and 200
+        day average prices, the volume, the market capitalization, the exchange and the
+        time of the quote.
 
         Also known as: real-time price, current stock price, live quote.
 
@@ -1536,10 +1534,10 @@ class Toolkit:
 
     def get_rating(self):
         """
-        Get the rating of the specified tickers. These scores and recommendations are categorized
-        as follows:
+        Get the rating of the specified tickers: a letter rating and an overall score based on
+        six scores from 1 (weak) to 5 (strong). These scores are categorized as follows:
 
-        - An overall rating
+        - An overall rating (the letter rating and the Rating Score)
         - Discounted Cash Flow (DCF)
         - Return on Equity (ROE)
         - Return on Assets (ROA)
@@ -1547,12 +1545,9 @@ class Toolkit:
         - Price Earnings (PE)
         - Price to Book (PB)
 
-        Also known as: analyst consensus, buy sell hold recommendation.
+        Also known as: stock rating, fundamental score, quantitative rating.
 
         Args:
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The stock rating information for the specified tickers.
@@ -1578,11 +1573,11 @@ class Toolkit:
 
         | date                | Rating   |   Rating Score |   DCF Score |   ROE Score |   ROA Score |   DE Score |   PE Score |   PB Score |
         |:--------------------|:---------|---------------:|------------:|------------:|------------:|-----------:|-----------:|-----------:|
-        | 2026-10-01 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-02 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-05 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-06 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-07 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
+        | 2025-12-24 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-26 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-29 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-30 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-31 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
         """
         if not self._api_key:
             logger.error(
@@ -1615,7 +1610,14 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        return self._rating
+        # The full history is kept, and the ratings between the start and end date returned.
+        rating = self._rating
+        if isinstance(rating, pd.DataFrame) and not rating.empty:
+            dates = pd.Series(rating.index.get_level_values(-1).astype(str).str[:10])
+            keep = dates.ge(self._start_date or "") & dates.le(self._end_date or "9999")
+            rating = rating[keep.to_numpy()]
+
+        return rating
 
     def get_analyst_estimates(
         self,
@@ -1752,6 +1754,11 @@ class Toolkit:
         obtain the actual dates or to convert to the corresponding quarters.
 
         Note that this information requires a Premium FMP subscription.
+
+        The surprise is the reported EPS against the estimate, usually as a percentage of the
+        estimate. Most companies report above the consensus, so a small beat is the norm, and
+        the share price tends to react to the size of the surprise, to revenue against its
+        estimate and to the guidance given on the call rather than to a beat as such.
 
         Also known as: earnings dates, earnings schedule, reporting date.
 
@@ -2643,6 +2650,8 @@ class Toolkit:
             - Date: The date of the dividend.
             - Adj Dividend: The adjusted dividend amount.
             - Dividend: The dividend amount.
+            - Yield: The annualized dividend yield at the time of the dividend, as a decimal
+            (0.0054 is 0.54%).
             - Record Date: The record date of the dividend.
             - Payment Date: The payment date of the dividend.
             - Declaration Date: The declaration date of the dividend.
@@ -2659,7 +2668,7 @@ class Toolkit:
             names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The earnings calendar for the specified tickers.
+            pd.DataFrame: The dividend calendar for the specified tickers.
 
         As an example:
 
@@ -2680,20 +2689,20 @@ class Toolkit:
 
         | date       |   Adj Dividend |   Dividend |   Yield | Record Date   | Payment Date   | Declaration Date   |
         |:-----------|---------------:|-----------:|--------:|:--------------|:---------------|:-------------------|
-        | 2022-08-05 |           0.23 |       0.23 |  0.5443 | 2022-08-08    | 2022-08-11     | 2022-07-28         |
-        | 2022-11-04 |           0.23 |       0.23 |  0.6576 | 2022-11-07    | 2022-11-10     | 2022-10-27         |
-        | 2023-02-10 |           0.23 |       0.23 |  0.6092 | 2023-02-13    | 2023-02-16     | 2023-02-02         |
-        | 2023-05-12 |           0.24 |       0.24 |  0.5389 | 2023-05-15    | 2023-05-18     | 2023-05-04         |
-        | 2023-08-11 |           0.24 |       0.24 |  0.5287 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
-        | 2023-11-10 |           0.24 |       0.24 |  0.5097 | 2023-11-13    | 2023-11-16     | 2023-11-02         |
-        | 2024-02-09 |           0.24 |       0.24 |  0.5083 | 2024-02-12    | 2024-02-15     | 2024-02-01         |
-        | 2024-05-10 |           0.25 |       0.25 |  0.5299 | 2024-05-13    | 2024-05-16     | 2024-05-02         |
-        | 2024-08-12 |           0.25 |       0.25 |  0.4505 | 2024-08-12    | 2024-08-15     | 2024-08-01         |
-        | 2024-11-08 |           0.25 |       0.25 |  0.4362 | 2024-11-11    | 2024-11-14     | 2024-10-31         |
-        | 2025-02-10 |           0.25 |       0.25 |  0.4393 | 2025-02-10    | 2025-02-13     | 2025-01-30         |
-        | 2025-05-12 |           0.26 |       0.26 |  0.4791 | 2025-05-12    | 2025-05-15     | 2025-05-01         |
-        | 2025-08-11 |           0.26 |       0.26 |  0.449  | 2025-08-11    | 2025-08-14     | 2025-07-31         |
-        | 2025-11-10 |           0.26 |       0.26 |  0.3823 | 2025-11-10    | 2025-11-13     | 2025-10-30         |
+        | 2022-08-05 |           0.23 |       0.23 |  0.0054 | 2022-08-08    | 2022-08-11     | 2022-07-28         |
+        | 2022-11-04 |           0.23 |       0.23 |  0.0066 | 2022-11-07    | 2022-11-10     | 2022-10-27         |
+        | 2023-02-10 |           0.23 |       0.23 |  0.0061 | 2023-02-13    | 2023-02-16     | 2023-02-02         |
+        | 2023-05-12 |           0.24 |       0.24 |  0.0054 | 2023-05-15    | 2023-05-18     | 2023-05-04         |
+        | 2023-08-11 |           0.24 |       0.24 |  0.0053 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
+        | 2023-11-10 |           0.24 |       0.24 |  0.0051 | 2023-11-13    | 2023-11-16     | 2023-11-02         |
+        | 2024-02-09 |           0.24 |       0.24 |  0.0051 | 2024-02-12    | 2024-02-15     | 2024-02-01         |
+        | 2024-05-10 |           0.25 |       0.25 |  0.0053 | 2024-05-13    | 2024-05-16     | 2024-05-02         |
+        | 2024-08-12 |           0.25 |       0.25 |  0.0045 | 2024-08-12    | 2024-08-15     | 2024-08-01         |
+        | 2024-11-08 |           0.25 |       0.25 |  0.0044 | 2024-11-11    | 2024-11-14     | 2024-10-31         |
+        | 2025-02-10 |           0.25 |       0.25 |  0.0044 | 2025-02-10    | 2025-02-13     | 2025-01-30         |
+        | 2025-05-12 |           0.26 |       0.26 |  0.0048 | 2025-05-12    | 2025-05-15     | 2025-05-01         |
+        | 2025-08-11 |           0.26 |       0.26 |  0.0045 | 2025-08-11    | 2025-08-14     | 2025-07-31         |
+        | 2025-11-10 |           0.26 |       0.26 |  0.0038 | 2025-11-10    | 2025-11-13     | 2025-10-30         |
         """
         if not self._api_key:
             logger.error(
@@ -2877,18 +2886,21 @@ class Toolkit:
 
     def get_market_risk_premium(self, overwrite: bool = False):
         """
-        Obtains the equity market risk premium by country -- the country default spread plus the
-        equity risk premium, following the approach popularized by Aswath Damodaran -- which is
-        widely used to calibrate country-specific costs of equity and discount rates in a
+        Obtains the equity risk premium by country -- the equity risk premium of a mature market
+        plus a country risk premium, the country's default spread scaled by the volatility of its
+        equities relative to its bonds, following the approach popularized by Aswath Damodaran --
+        which is widely used to calibrate country-specific costs of equity and discount rates in a
         multi-country setting.
+
+        In a cost of equity the premium is applied in one of two common ways: beta times the Total
+        Equity Risk Premium, or beta times the mature market premium with the Country Risk Premium
+        added on top. For a company that earns its revenue in several countries the premium is
+        often weighted by where the revenue comes from rather than by where the company is listed.
 
         Also known as: country risk premium, Damodaran equity risk premium.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The market risk premium by country, including the continent, Country
@@ -2970,13 +2982,16 @@ class Toolkit:
         Note that this data is only available for CFTC-tracked futures markets. Tickers without a
         corresponding futures contract (e.g. most individual equities) return no data.
 
+        Positioning is usually read from the net position of the non-commercial traders (long
+        minus short), often as a share of open interest and against its own history: an extreme
+        reading means a crowded trade. Commercial traders are mostly hedgers whose positions mirror
+        their physical business, so a large commercial net short in a commodity is normal rather
+        than a bearish view. The report shows the positions of Tuesday and is published on Friday.
+
         Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The Commitment of Traders report for the specified tickers.
@@ -3222,10 +3237,12 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: list[str] | None = None
     ):
         """
-        Obtain the notes each company has listed: the debt securities it issued, with
-        their coupon and maturity in the title (e.g. "1.625% Notes due 2026") and the
-        exchange they are listed on. This gives a quick view of a company's listed debt
-        and when it matures.
+        Obtain the securities other than common stock that each company has registered
+        for listing, mostly notes with their coupon and maturity in the title (e.g.
+        "1.625% Notes due 2026") and the exchange they are listed on. The list can
+        include notes that have since matured or been redeemed and other securities such
+        as depositary shares of preferred stock, so it shows which debt a company has
+        listed rather than what is outstanding today.
 
         Also known as: listed debt, bonds issued, debt securities.
 
@@ -4174,7 +4191,7 @@ class Toolkit:
             - Timezone: The timezone the instrument is traded in.
             - Exchange Timezone Name: The name of the timezone the instrument is traded in.
 
-        Also known as: key statistics over time, historical key metrics.
+        Also known as: listing details, instrument information, exchange and currency.
 
         Returns:
             pd.DataFrame: A DataFrame containing the statistics for each ticker.
@@ -4230,9 +4247,9 @@ class Toolkit:
         show_errors: bool = False,
     ):
         """
-        Retrieve daily, weekly, monthly, quarterly or yearly treasury data. This can be from FinancialModelingPrep
-        or from YahooFinance. FinancialModelingPrep is by far a more extensive dataset containing daily data from
-        1 month to 30 years. YahooFinance only contains daily data for 5, 10 and 30 years but is a free alternative.
+        Retrieve daily, weekly, monthly, quarterly or yearly US Treasury yields for four maturities, 13 weeks,
+        5 years, 10 years and 30 years, from FinancialModelingPrep or, as a free alternative, YahooFinance. With
+        the default divide_ohlc_by of 100 the yields are returned as decimals (0.042 is 4.2%).
 
         Also known as: US Treasury yields, yield curve, treasury rates.
 
@@ -4241,9 +4258,9 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            risk_free_rate (str | None, optional): The maturity to return as the risk free rate
-                ('13w', '5y', '10y' or '30y'). Defaults to None, which uses the maturity set on
-                the Toolkit.
+            risk_free_rate (str | None, optional): One maturity to return ('13w', '5y', '10y' or
+                '30y'). Defaults to None, which returns all four. The Toolkit's own risk free rate
+                stays the maturity set on the Toolkit either way.
             divide_ohlc_by (int | float | None, optional): A value to divide the yields by. Treasury
                 yields are published in percent, so this defaults to 100 to return decimals.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -4296,27 +4313,25 @@ class Toolkit:
             "^TYX": "30 Year",
         }
 
-        if risk_free_rate:
-            if risk_free_rate not in ["13w", "5y", "10y", "30y"]:
-                raise ValueError(
-                    "Please choose from 13w, 5y, 10y or 30y as risk_free_rate."
-                )
-
-            risk_free_rate = (
-                "^IRX"
-                if risk_free_rate == "13w"
-                else (
-                    "^FVX"
-                    if risk_free_rate == "5y"
-                    else ("^TNX" if risk_free_rate == "10y" else "^TYX")
-                )
+        if risk_free_rate and risk_free_rate not in risk_free_names:
+            raise ValueError(
+                "Please choose from 13w, 5y, 10y or 30y as risk_free_rate."
             )
 
-        risk_free_rate_tickers = (
-            ["^IRX", "^FVX", "^TNX", "^TYX"] if not risk_free_rate else [risk_free_rate]
-        )
-
+        # Every maturity is retrieved and kept, so the Toolkit's own risk free rate stays
+        # available; risk_free_rate only narrows what is returned.
+        requested_maturity = risk_free_names[risk_free_rate] if risk_free_rate else None
+        risk_free_rate_tickers = list(treasury_names)
         risk_free_rate = risk_free_names[self._risk_free_rate]
+
+        def select(treasury_data: pd.DataFrame) -> pd.DataFrame:
+            treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
+            if requested_maturity is None:
+                return treasury_data
+            return treasury_data.loc[
+                :,
+                treasury_data.columns.get_level_values(1) == requested_maturity,
+            ]
 
         specific_rates = (
             [
@@ -4382,7 +4397,7 @@ class Toolkit:
                 return pd.DataFrame()
 
         if period == "daily":
-            return self._daily_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._daily_treasury_data)
         if period == "weekly":
             self._weekly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4396,7 +4411,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._weekly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._weekly_treasury_data)
         if period == "monthly":
             self._monthly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4410,7 +4425,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._monthly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._monthly_treasury_data)
         if period == "quarterly":
             self._quarterly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4424,9 +4439,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._quarterly_treasury_data.loc[
-                self._start_date : self._end_date, :
-            ]
+            return select(self._quarterly_treasury_data)
         if period == "yearly":
             self._yearly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4440,7 +4453,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._yearly_treasury_data)
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
@@ -4782,7 +4795,7 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | list[int]): Defines the number of periods to lag the growth data by.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            E.g. 4 with quarterly data gives the growth against the same quarter a year earlier.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -5429,12 +5442,15 @@ class Toolkit:
         show_columns: list[str] | None = None,
     ):
         """
-        Retrieves the balance, cash and income statistics for the company(s) from the specified source.
+        Retrieves the filing details of each financial statement period: the reported currency, the CIK,
+        the filing and acceptance dates, the fiscal period and the links to the filing. With convert_currency,
+        the Toolkit uses the reported currency to convert the financial statements to the currency of the
+        historical data.
 
         Note that this also obtains the balance sheet statement at the same time given that it's the same
         API call. This is done to reduce the number of API calls to FinancialModelingPrep.
 
-        Also known as: key stats, shares outstanding, float data.
+        Also known as: filing details, reporting metadata, reported currency.
 
         Args:
             enforce_source (str | None, optional): Forces this specific call to use a given
@@ -5773,7 +5789,7 @@ class Toolkit:
         toolkit.clear_cache(source="YahooFinance", ticker="AAPL")
 
         # Remove everything retrieved from the OECD
-        toolkit.clear_cache(source=policy_model.OECD)
+        toolkit.clear_cache(source="OECD")
 
         # Remove the entire cache
         toolkit.clear_cache(confirm=True)

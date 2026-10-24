@@ -531,3 +531,91 @@ def test_get_strategy_payoff_invalid_legs(options_module):
 
     with pytest.raises(TypeError):
         options_module.get_strategy_payoff(legs=[{"put_option": False}])
+
+
+def test_stock_price_on_a_past_date_is_the_traded_close(options_module):
+    simulation = options_module.get_stock_price_simulation(
+        start_date="2021-06-01", timesteps=1, rounding=6
+    )
+    historical = options_module._daily_historical.loc["2021-06-01"]
+
+    # The Adj Close of a past date is lowered by the dividends paid after it.
+    assert simulation.loc[("AAPL", "U"), "2021-06-01"] == pytest.approx(
+        historical.loc[("Close", "AAPL")]
+    )
+    assert historical.loc[("Close", "AAPL")] > historical.loc[("Adj Close", "AAPL")]
+
+
+def _prices_with_dividends(dividends, split_date="2021-06-01"):
+    import numpy as np
+
+    dates = pd.bdate_range("2020-01-01", "2022-12-30")
+    rng = np.random.default_rng(3)
+    close = pd.Series(
+        100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(dates)))), index=dates
+    )
+
+    # A 2-for-1 split: the history before it is divided by two in both price series, and
+    # the dividends per share before it by two as well.
+    split = dates < pd.Timestamp(split_date)
+    close[split] /= 2
+    close = close.round(2)
+
+    # The adjusted close scales every close before an ex-date by (1 - Dividend / Close
+    # before the ex-date), as the data providers do.
+    factor = pd.Series(1.0, index=dates)
+    for ex_date, dividend in dividends.items():
+        position = dates.get_loc(pd.Timestamp(ex_date))
+        adjusted_dividend = dividend / 2 if split[position] else dividend
+        factor.iloc[:position] *= 1 - adjusted_dividend / close.iloc[position - 1]
+    adjusted_close = (close * factor).round(2)
+
+    index = dates.to_period("D")
+    return (
+        close.to_frame("ABC").set_axis(index),
+        adjusted_close.to_frame("ABC").set_axis(index),
+    )
+
+
+def test_trailing_dividend_yield_is_the_dividends_of_the_year_over_the_close():
+    from financetoolkit.options import options_model
+
+    dividends = {
+        date: 1.0
+        for date in pd.date_range("2020-02-03", "2022-12-01", freq="QS-FEB")
+        + pd.offsets.BDay(2)
+    }
+    close, adjusted_close = _prices_with_dividends(dividends)
+
+    dividend_yield = options_model.get_trailing_dividend_yield(close, adjusted_close)
+
+    # The dividends per share in today's shares: 0.50 before the split, 1.00 after it.
+    paid = pd.Series(
+        [
+            value / 2 if pd.Timestamp(date) < pd.Timestamp("2021-06-01") else value
+            for date, value in dividends.items()
+        ],
+        index=pd.DatetimeIndex(list(dividends)).to_period("D"),
+    )
+    for date in ["2021-03-01", "2021-08-02", "2022-06-15", "2022-12-30"]:
+        moment = pd.Period(date, "D")
+        window = paid[(paid.index > moment - 365) & (paid.index <= moment)]
+        expected = window.sum() / close.loc[moment, "ABC"]
+        assert dividend_yield.loc[moment, "ABC"] == pytest.approx(expected, abs=2e-4)
+
+    # A dividend only enters the yield from its ex-date on: removing the last dividend
+    # leaves every earlier yield as it was.
+    last = list(dividends)[-1]
+    close_without, adjusted_without = _prices_with_dividends(
+        {date: value for date, value in dividends.items() if date != last}
+    )
+    without = options_model.get_trailing_dividend_yield(close_without, adjusted_without)
+    before = dividend_yield.index < pd.Timestamp(last).to_period("D")
+    # Up to the rounding of the adjusted close to the cent, which the dividend rescales.
+    pd.testing.assert_frame_equal(
+        dividend_yield[before], without[before], check_exact=False, atol=5e-4, rtol=0
+    )
+    assert (
+        dividend_yield.loc[pd.Timestamp(last).to_period("D"), "ABC"]
+        > without.loc[pd.Timestamp(last).to_period("D"), "ABC"] + 0.004
+    )

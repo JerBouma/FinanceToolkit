@@ -426,7 +426,9 @@ def get_donchian_channels(
 
 
 def get_volatility_cone(
-    prices_close: pd.Series, windows: list[int] | None = None
+    prices_close: pd.Series,
+    windows: list[int] | None = None,
+    periods_per_year: float = TRADING_DAYS_PER_YEAR,
 ) -> pd.DataFrame:
     """
     Calculate the Volatility Cone of a given price series.
@@ -440,7 +442,7 @@ def get_volatility_cone(
     The formula is a follows:
 
     - Log Return(t) = ln(Close(t) / Close(t-1))
-    - Realized Volatility(window) = StdDev(Log Return, window) * sqrt(252)
+    - Realized Volatility(window) = StdDev(Log Return, window) * sqrt(Periods per Year)
     - For each window, the cone reports the minimum, the 10th, 25th, 50th, 75th and 90th
       percentiles, the maximum and the most recent value of that realized volatility series
 
@@ -455,6 +457,8 @@ def get_volatility_cone(
         prices_close (pd.Series): Series of closing prices.
         windows (list[int] | None): The rolling windows (in periods) to calculate
             realized volatility for. Defaults to [10, 20, 30, 60, 90, 120].
+        periods_per_year (float): The observations per year the volatility is annualized
+            with, e.g. 252 for daily and 52 for weekly prices. Defaults to 252.
 
     Returns:
         pd.DataFrame: Volatility Cone with, for each window, the historical minimum,
@@ -469,7 +473,7 @@ def get_volatility_cone(
     volatility_cone = {}
     for window in windows:
         realized_volatility = log_returns.rolling(window=window).std() * np.sqrt(
-            TRADING_DAYS_PER_YEAR
+            periods_per_year
         )
 
         volatility_cone[window] = {

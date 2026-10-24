@@ -678,13 +678,13 @@ def get_sectors_performance(
     start_date: str | None = None,
     end_date: str | None = None,
     user_subscription: str = "Free",
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get the historical performance of every sector, one column per sector.
 
     The wide layout is assembled from the per-sector historical endpoint, which is queried once
-    for each of the sectors Financial Modeling Prep classifies companies into. The single
-    combined endpoint this function used to call was retired and returns an empty response.
+    for each of the sectors Financial Modeling Prep classifies companies into.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -693,11 +693,13 @@ def get_sectors_performance(
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
             Defaults to today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance indexed by date, with one column per sector
-            holding the average percentage change of that sector on that date. The values are
-            percentages, i.e. 1.25 means +1.25%.
+            holding the average change of that sector on that date, as a decimal (0.0125 is
+            +1.25%).
     """
     sector_changes = {}
 
@@ -705,7 +707,8 @@ def get_sectors_performance(
         # A year up to today unless a range is given (see _history_range).
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
         sector_performance = get_cached_financial_data(
@@ -723,7 +726,10 @@ def get_sectors_performance(
     if not sector_changes:
         return pd.DataFrame()
 
-    sectors_performance = pd.concat(sector_changes, axis=1)
+    # The changes are published in percent and returned as decimals, like every return.
+    sectors_performance = (
+        pd.concat(sector_changes, axis=1).apply(pd.to_numeric, errors="coerce") / 100
+    )
 
     sectors_performance.index = pd.PeriodIndex(sectors_performance.index, freq="D")
 
@@ -1712,6 +1718,7 @@ def get_sector_performance(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get sector performance. Provide exactly one of `date` (a snapshot across all
@@ -1724,6 +1731,8 @@ def get_sector_performance(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance, indexed by Sector (snapshot)
@@ -1735,12 +1744,13 @@ def get_sector_performance(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/sector-performance-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     sector_performance = get_cached_financial_data(
@@ -1757,6 +1767,10 @@ def get_sector_performance(
             "exchange": "Exchange",
             "averageChange": "Average Change",
         }
+    )
+    # The change is published in percent and returned as a decimal, like every return.
+    sector_performance["Average Change"] = (
+        pd.to_numeric(sector_performance["Average Change"], errors="coerce") / 100
     )
 
     if date:
@@ -1775,6 +1789,7 @@ def get_industry_performance(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get industry performance. Provide exactly one of `date` (a snapshot across all
@@ -1788,6 +1803,8 @@ def get_industry_performance(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry performance, indexed by Industry (snapshot)
@@ -1799,12 +1816,13 @@ def get_industry_performance(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/industry-performance-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-performance"
-            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     industry_performance = get_cached_financial_data(
@@ -1821,6 +1839,10 @@ def get_industry_performance(
             "exchange": "Exchange",
             "averageChange": "Average Change",
         }
+    )
+    # The change is published in percent and returned as a decimal, like every return.
+    industry_performance["Average Change"] = (
+        pd.to_numeric(industry_performance["Average Change"], errors="coerce") / 100
     )
 
     if date:
@@ -1839,6 +1861,7 @@ def get_sector_pe(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1852,6 +1875,8 @@ def get_sector_pe(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector P/E ratios, indexed by Sector (snapshot)
@@ -1863,12 +1888,13 @@ def get_sector_pe(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/sector-pe-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-pe"
-            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     sector_pe = get_cached_financial_data(url=url, user_subscription=user_subscription)
@@ -1901,6 +1927,7 @@ def get_industry_pe(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1914,6 +1941,8 @@ def get_industry_pe(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry P/E ratios, indexed by Industry (snapshot)
@@ -1925,12 +1954,13 @@ def get_industry_pe(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/industry-pe-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-pe"
-            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     industry_pe = get_cached_financial_data(
@@ -2123,6 +2153,10 @@ def get_sec_filings_8k(
     return filings.set_index("Symbol")
 
 
+# The most pages of the latest insider trades read to find the filings of one date.
+INSIDER_TRADING_MAXIMUM_PAGES = 20
+
+
 def get_insider_trading_latest(
     api_key: str,
     date: str | None = None,
@@ -2144,17 +2178,33 @@ def get_insider_trading_latest(
     Returns:
         pd.DataFrame: DataFrame of the latest insider trades, indexed by symbol.
     """
-    url = (
-        "https://financialmodelingprep.com/stable/insider-trading/latest"
-        f"?page={page}&limit={limit}&apikey={api_key}"
-    )
 
-    if date:
-        url += f"&date={date}"
+    def fetch(number: int) -> pd.DataFrame:
+        return get_cached_financial_data(
+            url=(
+                "https://financialmodelingprep.com/stable/insider-trading/latest"
+                f"?page={number}&limit={limit}&apikey={api_key}"
+            ),
+            user_subscription=user_subscription,
+        )
 
-    insider_trading = get_cached_financial_data(
-        url=url, user_subscription=user_subscription
-    )
+    if not date:
+        insider_trading = fetch(page)
+    else:
+        # The endpoint ignores a date, so the latest filings are paged through until
+        # that date has passed and only its filings are kept.
+        pages = []
+        for number in range(page, page + INSIDER_TRADING_MAXIMUM_PAGES):
+            batch = fetch(number)
+            if batch.empty or "filingDate" not in batch:
+                break
+            filed = batch["filingDate"].astype(str).str[:10]
+            pages.append(batch[filed == date])
+            if (filed < date).any():
+                break
+        insider_trading = (
+            pd.concat(pages, ignore_index=True).head(limit) if pages else pd.DataFrame()
+        )
 
     if insider_trading.empty:
         return insider_trading

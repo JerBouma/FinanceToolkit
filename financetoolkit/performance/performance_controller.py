@@ -506,6 +506,13 @@ class Performance:
             - Beta = Monthly Covariance of Asset Returns and Benchmark Returns
             / Monthly Variance of Benchmark Returns
 
+        Beta is read against 1, the benchmark's own beta: above 1 the asset tends to amplify market moves,
+        below 1 to dampen them. Each period's Beta comes from the daily returns within that period, so a yearly
+        figure rests on about 250 observations and can swing with a single turbulent month; a rolling window
+        (for example period='monthly' with rolling=36) gives a steadier estimate for cost of capital work. A Beta
+        close to zero can come from a low correlation with the market rather than from low volatility, so it is
+        worth checking both before calling a stock defensive.
+
         See definition: https://en.wikipedia.org/wiki/Beta_(finance)
 
         Also known as: market sensitivity, systematic risk.
@@ -513,8 +520,8 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
-            rolling (int, optional): The rolling period to use for the calculation. If you select
-            period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
+            rolling (int, optional): The rolling window size to use for the calculation. If you select
+                period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Beta. Defaults to None.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -529,7 +536,6 @@ class Performance:
         - Daily Beta is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
         not give any useful insights.
         - The method retrieves historical data and calculates the Beta for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -622,6 +628,13 @@ class Performance:
         The formula is as follows:
 
         - Capital Asset Pricing Model = Risk Free Rate + Beta * (Benchmark Returns — Risk Free Rate)
+
+        The CAPM here uses the benchmark's realised return of each period, so the result is the return the asset
+        should have earned given what the market actually did. That makes it a yardstick for Jensen's Alpha rather
+        than a forward-looking expected return. For a cost of equity, practitioners use an expected market risk
+        premium instead of the realised one (see the Toolkit's `get_market_risk_premium`) together with a longer-run
+        Beta. In periods in which the benchmark returns less than the risk-free rate, a high-Beta asset gets a lower
+        required return than a low-Beta one.
 
         See definition: https://en.wikipedia.org/wiki/Capital_asset_pricing_model
 
@@ -1046,6 +1059,13 @@ class Performance:
         (Mkt-RF) factor as this is the main factor that explains the stock return (as also prevalent in the CAPM).
         The other factors can fluctuate greatly between stocks depending on which stocks you look at.
 
+        The slopes are read as tilts: a positive HML slope is a value tilt and a negative one a growth tilt, a
+        negative SMB slope marks a large-cap profile, and RMW and CMA show exposure to profitable and conservatively
+        investing firms. With about 250 daily observations per year the slopes of the smaller factors are noisy, so
+        only loadings that are large and persist across periods say much about a stock or fund. The R Squared shows
+        how much of the daily excess return the factors explain; a low value leaves most of the return to
+        stock-specific news.
+
         Also known as: Fama-French model, three-factor model, five-factor model, FF3, FF5.
 
         Args:
@@ -1095,7 +1115,7 @@ class Performance:
         toolkit.performance.get_fama_and_french_model()["AAPL"]
         ```
 
-        Which returns (the MSE column is omitted here for brevity):
+        Which returns:
 
         |      |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   RMW Slope |   CMA Slope |   Mean Squared Error (MSE) |   R Squared |
         |:-----|------------:|---------------:|------------:|------------:|------------:|------------:|---------------------------:|------------:|
@@ -1774,7 +1794,7 @@ class Performance:
         standardize: bool = False,
     ):
         """
-        The Treynor Ratio, also known as Treynor's Measure or the Reward-to-Variability Ratio, is a
+        The Treynor Ratio, also known as Treynor's Measure or the Reward-to-Volatility Ratio, is a
         financial metric used to assess the risk-adjusted performance of an investment portfolio or
         asset. It measures the excess return generated by the portfolio per unit of systematic or market
         risk, often represented by Beta. The Treynor Ratio is a valuable tool for evaluating the
@@ -2305,9 +2325,15 @@ class Performance:
         Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk-adjusted
         return that evaluates the excess return of an investment portfolio or asset per unit of risk taken.
 
-        It can be used to compare volatilities in different stocks or show stocks go into Ulcer territory.
-        Similar to the Sharpe Ratio, a higher UPI is better than a lower one (since investors prefer more return
-        for less risk).
+        The formula is as follows:
+
+        - Ulcer Performance Index = (Period Return — Risk-Free Rate) / Ulcer Index
+        - Ulcer Index = SQRT(MEAN(Drawdown^2)), with each day's drawdown measured from the highest value of the
+        trailing `rolling` days within the period
+
+        It measures the excess return earned per unit of drawdown pain: the depth and the duration of the declines
+        both weigh in, where the Sharpe Ratio treats upward and downward swings alike. Similar to the Sharpe Ratio,
+        a higher UPI is better than a lower one (since investors prefer more return for less risk).
 
         Also known as: UPI, Martin ratio.
 
@@ -2401,9 +2427,10 @@ class Performance:
         """
         Calculate the Calmar Ratio of an investment portfolio or asset's returns.
 
-        The Calmar Ratio is a risk-adjusted return metric that divides the (annualized) return
-        of an investment portfolio or asset by its Maximum Drawdown, providing insight into the
-        return achieved per unit of the worst historical loss of value.
+        The Calmar Ratio is a risk-adjusted return metric that divides the return of an investment
+        portfolio or asset over each period (a calendar-year return for period='yearly', a quarterly
+        return for period='quarterly') by its Maximum Drawdown, providing insight into the return
+        achieved per unit of the worst historical loss of value.
 
         The formula is as follows:
 
@@ -2501,14 +2528,19 @@ class Performance:
         """
         Calculate the Sterling Ratio of an investment portfolio or asset's returns.
 
-        The Sterling Ratio is a risk-adjusted return metric that divides the (annualized) return
-        of an investment portfolio or asset by its Average Drawdown plus a fixed adjustment
+        The Sterling Ratio is a risk-adjusted return metric that divides the return of an investment
+        portfolio or asset over each period (a calendar-year return for period='yearly', a quarterly
+        return for period='quarterly') by its Average Drawdown plus a fixed adjustment
         (conventionally 10%), providing insight into the return achieved relative to the typical
         depth of its drawdowns rather than only the single worst one (as with the Calmar Ratio).
 
         The formula is as follows:
 
         - Sterling Ratio = Return / (|Average Drawdown| + Adjustment)
+
+        Where the Average Drawdown is the mean drawdown from the running peak over all observations
+        on which the asset is below that peak (by default every such day within the period), not the
+        average of the largest drawdowns.
 
         Also known as: Sterling-Calmar ratio.
 
@@ -2608,7 +2640,12 @@ class Performance:
 
         The formula is as follows:
 
-        - Burke Ratio = (Return — Risk-Free Rate) / SQRT(SUM(Drawdowns^2))
+        - Burke Ratio = (Return — Risk-Free Rate) / SQRT(SUM(Drawdown_d^2))
+
+        Where Drawdown_d is the drawdown from the running peak at every observation d on which the
+        asset is below that peak, which by default is every such day within the period. This weighs
+        the time spent under water as well as the depth, so the ratio differs from the version that
+        sums one drawdown per episode.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
@@ -2834,6 +2871,10 @@ class Performance:
 
             - Tracking Error (TE) = Standard Deviation of (Portfolio Returns — Benchmark Returns)
 
+        By default one Tracking Error is reported per `period`, computed from the daily returns within that
+        period, so it is a daily figure: multiply by SQRT(252) to compare it with the annualized tracking error
+        funds report. With `rolling`, the returns of `period` itself are used instead.
+
         See definition: https://en.wikipedia.org/wiki/Tracking_error
 
         Also known as: active risk, benchmark deviation.
@@ -2933,10 +2974,10 @@ class Performance:
         standardize: bool = False,
     ):
         """
-        The Information Ratio (IR), also known as the Information Coefficient, is a financial
-        metric that assesses the risk-adjusted performance of a portfolio or investment
-        strategy relative to a benchmark index. It quantifies how much excess return the
-        portfolio generates for each unit of tracking error (volatility of tracking error).
+        The Information Ratio (IR) is a financial metric that assesses the risk-adjusted
+        performance of a portfolio or investment strategy relative to a benchmark index. It
+        quantifies how much active return (the return above the benchmark) the portfolio
+        generates per unit of tracking error, the volatility of that active return.
         The Information Ratio is commonly used by portfolio managers, financial analysts, and
         investors to evaluate the skill of a portfolio manager in generating returns beyond
         what would be expected based on the risk taken.
@@ -2951,7 +2992,11 @@ class Performance:
 
         The formula is as follows:
 
-            - Information Ratio (IR) = (Portfolio's Excess Return — Benchmark's Excess Return) / Tracking Error
+            - Information Ratio (IR) = Mean(Portfolio Return — Benchmark Return) / Tracking Error
+
+        By default it is computed from the daily returns within each period and is not annualized: multiply by
+        SQRT(252) to compare it with the annualized figures in the literature, where an IR of 0.5 is considered
+        good. With `rolling`, the returns of `period` itself are used instead.
 
         See definition: https://en.wikipedia.org/wiki/Information_ratio
 
@@ -3060,6 +3105,12 @@ class Performance:
         The formula is as follows:
 
         - Upside Capture Ratio = Average Return in Up Periods / Average Benchmark Return in Up Periods
+
+        Upside and downside capture (see `get_downside_capture_ratio`) are read together: an upside capture
+        above the downside capture means the asset kept more of the benchmark's gains than of its losses, which
+        is what defensive and low-volatility strategies aim for even with both ratios below 1. Both are computed
+        from the daily returns within each period, while fund factsheets usually use monthly returns over three
+        to five years, so the figures are not directly comparable with published ones.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
@@ -3600,7 +3651,19 @@ class Performance:
 
         The formula is as follows:
 
-            - CGR = (Final Value / Initial Value) ^ (1 / Number of Periods) — 1
+            - Years = (Last Date - First Date) / 365.25 days
+            - CAGR = (Final Value / Initial Value) ^ (1 / Years) - 1
+            - Period Rate = (1 + CAGR) ^ (1 / Periods per Year) - 1
+
+        The CAGR is measured on calendar time: each asset from its own first to its own last
+        close between the start and end date, with the years in between counted in calendar
+        days. The rate thereby does not depend on how often an asset trades, so a stock (which
+        trades on weekdays) and a cryptocurrency (which trades every day) in the same Toolkit
+        are measured over the same years, and an asset without a close on the first or last
+        date of the range is measured over the dates it has. The quarterly, monthly, weekly and
+        daily rates follow from the CAGR with 4 quarters, 12 months, 52 weeks and 252 trading
+        days to a year, so the rates are consistent with each other: (1 + CDGR) ^ 252 equals
+        1 + CAGR.
 
         Also known as: CAGR, compound annual growth rate, annualized return.
 
@@ -3636,14 +3699,26 @@ class Performance:
 
         |                                       |   AAPL |   TSLA |   Benchmark |
         |:--------------------------------------|-------:|-------:|------------:|
-        | Compound Annual Growth Rate (CAGR)    | 0.1181 | 0.063  |      0.1099 |
-        | Compound Quarterly Growth Rate (CQGR) | 0.0444 | 0.0377 |      0.0325 |
-        | Compound Monthly Growth Rate (CMGR)   | 0.0128 | 0.009  |      0.0116 |
-        | Compound Weekly Growth Rate (CWGR)    | 0.0029 | 0.0016 |      0.0025 |
+        | Compound Annual Growth Rate (CAGR)    | 0.1667 | 0.1311 |      0.1469 |
+        | Compound Quarterly Growth Rate (CQGR) | 0.0393 | 0.0313 |      0.0348 |
+        | Compound Monthly Growth Rate (CMGR)   | 0.0129 | 0.0103 |      0.0115 |
+        | Compound Weekly Growth Rate (CWGR)    | 0.003  | 0.0024 |      0.0026 |
         | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0005 |
         """
         compound_growth_rates = {}
 
+        prices = (
+            self._historical_data["daily"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
+
+        # On calendar time and per asset: the rows of the daily data are the union of every ticker's trading days, so counting rows would stretch the years of a stock by the weekends a cryptocurrency in the same Toolkit trades on, and a ticker without a close on the first or last row would get no rate at all.  # noqa: E501
+        compound_annual_growth_rate = performance_model.get_compound_annual_growth_rate(
+            prices
+        )
+
+        # The shorter periods are the CAGR converted geometrically, so that (1 + CDGR) ^ 252 equals 1 + CAGR.  # noqa: E501
         for period, label in [
             ("yearly", "Compound Annual Growth Rate (CAGR)"),
             ("quarterly", "Compound Quarterly Growth Rate (CQGR)"),
@@ -3651,17 +3726,8 @@ class Performance:
             ("weekly", "Compound Weekly Growth Rate (CWGR)"),
             ("daily", "Compound Daily Growth Rate (CDGR)"),
         ]:
-            prices = (
-                self._historical_data[period]
-                .loc[:, "Adj Close"]
-                .loc[self._start_date : self._end_date]
-            )
-
-            # N observations span N - 1 compounding intervals, not N.
-            compound_growth_rates[label] = (
-                performance_model.get_compound_growth_rate(prices, len(prices) - 1)
-                if len(prices) > 1
-                else pd.Series(float("nan"), index=prices.columns)
+            compound_growth_rates[label] = convert_annualized_rate_to_period(
+                compound_annual_growth_rate, period
             )
 
         compound_growth_rate = pd.DataFrame(compound_growth_rates).T
@@ -3886,6 +3952,12 @@ class Performance:
         Unlike `get_beta`, which relates a single asset to the benchmark, this computes
         the correlation between every pair of assets at once. This is a prerequisite for
         portfolio variance calculations and any mean-variance optimization work.
+
+        The `period` sets the return frequency, and with it the number of observations: yearly returns over
+        five years give only a handful of points per pair, which makes the correlations close to meaningless,
+        so monthly or weekly returns over the same span are the usual choice for diversification and portfolio
+        work. Correlations between risky assets tend to rise in sell-offs, so a matrix estimated over a calm
+        stretch understates how much assets fall together when it matters.
 
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults

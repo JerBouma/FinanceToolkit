@@ -421,12 +421,17 @@ class Econometrics:
         """
         Calculate the Lo-MacKinlay Variance Ratio test for the random walk hypothesis.
 
-        The test compares the Variance of `q`-period (overlapping) compounded returns to `q`
-        times the Variance of single-period returns. Under the random walk hypothesis these
-        should be equal, giving a Variance Ratio of 1. A Variance Ratio above 1 with a
-        significant (low) p-value indicates positive autocorrelation (momentum/trending
-        behavior), while a Variance Ratio below 1 with a significant p-value indicates negative
-        autocorrelation (mean-reversion).
+        The test compares the Variance of `q`-period (overlapping) returns, the sum of `q`
+        consecutive returns, to `q` times the Variance of single-period returns. Under the
+        random walk hypothesis these should be equal, giving a Variance Ratio of 1. A Variance
+        Ratio above 1 with a significant (low) p-value indicates positive autocorrelation
+        (momentum/trending behavior), while a Variance Ratio below 1 with a significant p-value
+        indicates negative autocorrelation (mean-reversion).
+
+        The statistic is the homoskedastic one. Daily returns cluster in volatility, and under
+        such heteroskedasticity this statistic rejects the random walk too often, which is why
+        Lo and MacKinlay's heteroskedasticity-robust statistic is the usual choice for daily
+        data. `get_arch_lm_test` shows whether a series has that volatility clustering.
 
         For more information about the method, see the following paper:
 
@@ -443,7 +448,7 @@ class Econometrics:
             the entire period. Thus whether to look at the test within a specific year (if period = 'yearly')
             or look at the entirety of all years. Defaults to False. Note that this requires intraday data
             when period = 'daily', since a single day only nests observations when intraday data was fetched.
-            q (int, optional): The number of periods to compound returns over. Defaults to 2.
+            q (int, optional): The number of periods to sum returns over. Defaults to 2.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1158,6 +1163,13 @@ class Econometrics:
         pairs-trading: if two assets are cointegrated, deviations of the spread from its
         equilibrium level tend to revert, making the spread itself tradeable.
 
+        In pairs trading the slope of the regression of the dependent on the independent
+        ticker is the hedge ratio, and its residual is the spread that is traded.
+        Cointegration found in one window often breaks down in the next, so the relationship
+        is usually tested again on a later sample before it is relied on. The result depends
+        on which ticker is the dependent one, so the two orderings can disagree;
+        `get_johansen_cointegration` tests the pair without that choice.
+
         For more information about the method, see the following paper:
 
         - Engle, R.F. and Granger, C.W.J. (1987). "Co-integration and Error Correction:
@@ -1203,6 +1215,10 @@ class Econometrics:
         ```
 
         Which returns: (the 1%/10% critical value columns follow the same pattern as
+        |                  |   Engle-Granger Statistic |   P-Value |   Critical Value 1% |   Critical Value 5% |   Critical Value 10% | Cointegrated (5%)   |
+        |:-----------------|--------------------------:|----------:|--------------------:|--------------------:|---------------------:|:--------------------|
+        | ('AAPL', 'MSFT') |                  -3.26596 | 0.0595728 |            -4.56573 |            -3.67661 |             -3.27521 | False               |
+        | ('MSFT', 'AAPL') |                  -2.56708 | 0.250313  |            -4.56573 |            -3.67661 |             -3.27521 | False               |
         5%, omitted here for width)
 
         |                  |   Engle-Granger Statistic |   P-Value |   Critical Value 1% |   Critical Value 5% |   Critical Value 10% | Cointegrated (5%)   |
@@ -1342,6 +1358,12 @@ class Econometrics:
         combined with past values of the second itself, predict the second
         significantly better than past values of the second alone.
 
+        On daily data a significant result can reflect trading hours rather than
+        information: of two markets that close at different times, the one that closes
+        later already contains news the other only prices the next day, so it appears to
+        predict it. The result also depends on `max_lag`, so it is usually checked at a few
+        lag lengths, and across many pairs some significant results arise by chance alone.
+
         For more information about the method, see the following paper:
 
         - Granger, C.W.J. (1969). "Investigating Causal Relations by Econometric Models
@@ -1438,15 +1460,22 @@ class Econometrics:
         plain rolling-window Standard Deviation -- to determine whether one is
         significantly more accurate than the other for a given asset.
 
-        For more information about the method, see the following paper:
+        The squared return is a noisy stand-in for the true Variance. Patton (2011) shows
+        that the squared-error loss still ranks two volatility forecasts correctly with such
+        a proxy, while the absolute-error loss can rank them the wrong way round, so
+        `loss="squared"` is the safer choice. A negative statistic favors `method_a`.
+
+        For more information about the method, see the following papers:
 
         - Diebold, F.X., & Mariano, R.S. (1995). "Comparing Predictive Accuracy."
         Journal of Business & Economic Statistics, 13(3), 253-263.
+        - Patton, A.J. (2011). "Volatility Forecast Comparison Using Imperfect Volatility
+        Proxies." Journal of Econometrics, 160(1), 246-256.
 
         Also known as: DM test, forecast comparison test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
             Defaults to "daily", since `window_size` is expressed in return observations of this
             frequency.
             method_a (str, optional): The first volatility forecasting method, one of "ewma" or "rolling".
@@ -1934,6 +1963,13 @@ class Econometrics:
         estimates. `get_probit_regression` is the closely related alternative with a normal
         instead of a logistic link.
 
+        The coefficients are per unit of the independent ticker's return, and a unit is a
+        return of 100%: a coefficient of 90 on the benchmark means the log-odds of an up
+        period rise by about 0.9 for every 1% the benchmark moves. With returns of the same
+        period as regressors the model describes co-movement and predicts nothing; a
+        forecast needs regressors known in advance, such as the returns of the previous
+        period.
+
         For more information about the method, see the following paper:
 
         - Berkson, J. (1944). "Application of the Logistic Function to Bio-Assay." Journal of
@@ -2152,6 +2188,11 @@ class Econometrics:
         whether an asset's sensitivity to the market is larger in sell-offs (low quantiles)
         than in normal periods, which is directly relevant for downside risk.
 
+        Comparing the coefficients at a low `tau` with those at `tau=0.5`, or with the
+        betas from `get_ols`, shows whether the sensitivity to the market rises in
+        sell-offs. The table has no p-values: a coefficient more than about two standard
+        errors from zero is significant at the 5% level.
+
         For more information about the method, see the following paper:
 
         - Koenker, R., & Bassett, G. (1978). "Regression Quantiles." Econometrica, 46(1),
@@ -2265,10 +2306,17 @@ class Econometrics:
         for exposure to the factor. This uses a single full-sample set of betas (the
         textbook variant), not the original rolling-window betas.
 
+        The first-pass betas are estimates, which makes the second-pass standard errors too
+        small; the Shanken (1992) correction, not applied here, widens them. The returns are
+        not in excess of the risk-free rate, so the intercept is the return of a zero-beta
+        asset, which should be close to the risk-free rate if the factors price the assets.
+
         For more information about the method, see the following papers:
 
         - Fama, E.F. & MacBeth, J.D. (1973). "Risk, Return, and Equilibrium: Empirical Tests."
         Journal of Political Economy, 81(3), 607-636.
+        - Shanken, J. (1992). "On the Estimation of Beta-Pricing Models." Review of Financial
+        Studies, 5(1), 1-33.
         - Cochrane, J.H. (2005). "Asset Pricing." Princeton University Press, Chapter 12.
 
         Also known as: two-pass regression, Fama-MacBeth procedure.
@@ -3747,6 +3795,14 @@ class Econometrics:
         affecting only some tickers, an earnings surprise) that hits `treated_tickers`
         but not `control_tickers`, at a known date.
 
+        With returns as the outcome, the `Treated x Post` coefficient is the change in the
+        average return per period after the event, not the price impact around it, which
+        is what `get_event_study` measures. The panel stacks tickers observed on the same
+        dates, whose returns are correlated, while the standard errors treat every
+        observation as independent, so the p-value tends to be too low for closely related
+        tickers. The estimate rests on parallel trends, so the first check is whether both
+        groups moved alike before the event.
+
         Args:
             treated_tickers (str | list[str]): The asset(s) subject to the event/treatment.
             treatment_date (str): The date the event/treatment occurs, in the same format
@@ -4200,6 +4256,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None,
         period: str | None,
         column: str,
+        include_benchmark: bool = False,
     ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
         """
         Shared input-shaping step for `get_fixed_effects`/`get_random_effects`/
@@ -4209,9 +4266,9 @@ class Econometrics:
         that a handful of single ticker return series don't have on their own.
 
         This module treats `dependent_tickers` (defaulting to every ticker in the
-        `Toolkit` instance, minus `independent_tickers` if given) as the panel of
-        ENTITIES -- e.g. a panel of stocks -- and supports two, mutually exclusive
-        ways of building the regressor `x`:
+        `Toolkit` instance, without "Benchmark" unless `include_benchmark` is True, minus
+        `independent_tickers` if given) as the panel of ENTITIES -- e.g. a panel of stocks -- and supports
+        two, mutually exclusive ways of building the regressor `x`:
 
         - `independent_tickers`: a COMMON, time-varying factor (or factors),
         broadcast identically to every entity at each point in time -- e.g. a
@@ -4277,6 +4334,7 @@ class Econometrics:
                     ticker
                     for ticker in prices.columns
                     if ticker not in independent_tickers
+                    and (include_benchmark or ticker != BENCHMARK_TICKER)
                 ]
             else:
                 dependent_tickers = (
@@ -4299,7 +4357,11 @@ class Econometrics:
             )
         else:
             if dependent_tickers is None:
-                dependent_tickers = list(prices.columns)
+                dependent_tickers = [
+                    ticker
+                    for ticker in prices.columns
+                    if include_benchmark or ticker != BENCHMARK_TICKER
+                ]
             else:
                 dependent_tickers = (
                     [dependent_tickers]
@@ -4330,6 +4392,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None = None,
         period: str | None = None,
         column: str = "Return",
+        include_benchmark: bool = False,
         entity_effects: bool = True,
         time_effects: bool = False,
         rounding: int | None = None,
@@ -4376,6 +4439,8 @@ class Econometrics:
             quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            entities. Defaults to False.
             entity_effects (bool, optional): Whether to control for time-invariant
             entity-specific characteristics. Defaults to True.
             time_effects (bool, optional): Whether to control for entity-invariant,
@@ -4421,7 +4486,12 @@ class Econometrics:
         | Entity Effect: MSFT |        0.0006 |     nan      |      nan      |       nan |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
-            independent_tickers, independent_column, dependent_tickers, period, column
+            independent_tickers,
+            independent_column,
+            dependent_tickers,
+            period,
+            column,
+            include_benchmark=include_benchmark,
         )
 
         result = panel_data_model.get_fixed_effects(
@@ -4453,6 +4523,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None = None,
         period: str | None = None,
         column: str = "Return",
+        include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -4491,6 +4562,8 @@ class Econometrics:
             quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            entities. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
 
@@ -4524,11 +4597,16 @@ class Econometrics:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |         0.007 |       0.0024 |        2.8772 |    0.0041 |
-        | Volume    |        -0     |       0      |       -1.7774 |    0.0758 |
+        | Intercept |         0.006 |       0.0029 |        2.0339 |    0.0423 |
+        | Volume    |        -0     |       0      |       -1.0495 |    0.2943 |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
-            independent_tickers, independent_column, dependent_tickers, period, column
+            independent_tickers,
+            independent_column,
+            dependent_tickers,
+            period,
+            column,
+            include_benchmark=include_benchmark,
         )
 
         result = panel_data_model.get_random_effects(y_panel, x_panel)
@@ -4546,6 +4624,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None = None,
         period: str | None = None,
         column: str = "Return",
+        include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.Series:
         """
@@ -4553,7 +4632,7 @@ class Econometrics:
         Random Effects fit of `dependent_tickers` (the panel of entities) on a
         regressor `x`.
 
-        Also known as: Hausman specification test, Hausman-Wu test.
+        Also known as: Hausman specification test, fixed versus random effects test.
 
         Random Effects is more efficient than Fixed Effects but relies on entity
         effects being uncorrelated with the regressor(s) -- if that assumption is
@@ -4578,6 +4657,8 @@ class Econometrics:
             quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            entities. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
 
@@ -4610,15 +4691,20 @@ class Econometrics:
 
         Which returns:
 
-        |                           |      0 |
-        |:--------------------------|-------:|
-        | Hausman Statistic         | 1.6066 |
-        | Degrees of Freedom        | 1      |
-        | P-Value                   | 0.205  |
-        | Prefer Fixed Effects (5%) | 0      |
+        |                           |   Value |
+        |:--------------------------|--------:|
+        | Hausman Statistic         |  0.5873 |
+        | Degrees of Freedom        |  1      |
+        | P-Value                   |  0.4435 |
+        | Prefer Fixed Effects (5%) |  0      |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
-            independent_tickers, independent_column, dependent_tickers, period, column
+            independent_tickers,
+            independent_column,
+            dependent_tickers,
+            period,
+            column,
+            include_benchmark=include_benchmark,
         )
 
         result = panel_data_model.get_hausman_test(y_panel, x_panel)
@@ -5082,21 +5168,25 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["GOOGL", "GOOG"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL/MSFT alone aren't cointegrated in this sample -- add Benchmark to the
-        # system to get one that is.
-        toolkit.econometrics.get_vecm_forecast(period="quarterly", include_benchmark=True)
+        # The two share classes of Alphabet are cointegrated: their prices cannot drift apart.
+        toolkit.econometrics.get_vecm_forecast(period="daily")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |   Step |   GOOGL |    GOOG |
+        |-------:|--------:|--------:|
+        |      1 | 312.565 | 313.351 |
+        |      2 | 312.747 | 313.551 |
+        |      3 | 312.926 | 313.745 |
+        |      4 | 313.105 | 313.94  |
+        |      5 | 313.285 | 314.133 |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)
@@ -5136,6 +5226,12 @@ class Econometrics:
         a similar one). For evaluating an actual FORECASTING MODEL (ARIMA/VAR)
         rather than one asset as a naive proxy for another, use
         `get_out_of_sample_validation` instead.
+
+        For a fund against its index the RMSE comes close to the tracking error but is not
+        the same: the tracking error (`Performance.get_tracking_error`) is the Standard
+        Deviation of the return differences, which leaves out their average, while the RMSE
+        includes it. The RMSE is per period, so a daily figure is usually multiplied by the
+        square root of 252 to annualize it.
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -5476,6 +5572,14 @@ class Econometrics:
         impact attributable to the event, after stripping out what would have been
         expected from general market movements alone -- along with a t-test of
         whether CAR is significantly different from zero.
+
+        The `event_date` is the first trading day on which the news can be priced, so for
+        results released after the close it is the next trading day. The CAR runs from
+        `pre_event_days` before to `post_event_days` after it (21 trading days by default),
+        which also captures any leak ahead of the announcement. The t-test treats the
+        abnormal returns as independent and uses the residual Variance of the estimation
+        window, so a single event is weak evidence; studies average the CARs of many events
+        of the same kind.
 
         Also known as: CAR analysis, abnormal returns analysis, market model event
         study.

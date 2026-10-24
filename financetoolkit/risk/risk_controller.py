@@ -422,6 +422,13 @@ class Risk:
         The VaR is calculated as the quantile of the return distribution, representing the loss threshold
         that is not expected to be exceeded with a given confidence level (e.g., 5% for alpha=0.05).
 
+        Value at Risk is a quantile: it says how bad a period gets at the chosen confidence level, not how
+        bad the periods beyond it are, so two assets with the same VaR can have very different tails (see
+        the Conditional Value at Risk for that). Historical VaR depends heavily on the window: one calm year
+        gives a much smaller figure than a window that includes a crisis, so compare assets over the same
+        period and confidence level. Scaling a daily VaR to a longer horizon with the square root of time
+        assumes independent returns, which tends to understate risk when volatility clusters.
+
         Also known as: VaR, maximum expected loss, portfolio loss risk.
 
         Args:
@@ -582,6 +589,13 @@ class Risk:
         The CVaR is calculated as the expected loss given that the loss threshold (VaR) with a given confidence
         level (e.g., 5% for alpha=0.05) is exceeded.
 
+        The Conditional Value at Risk (expected shortfall) is the measure banks report for market risk under
+        the Basel framework, at 97.5% rather than 95% confidence, because unlike VaR it accounts for the size
+        of the losses in the tail and never penalises diversification (it is subadditive). With daily data
+        the estimate rests on few observations (one year at 95% leaves about 12 days in the tail), so a
+        single extreme day can move it a lot; a longer window or a parametric distribution gives a steadier
+        figure.
+
         Also known as: CVaR, expected shortfall, ES, tail risk.
 
         Args:
@@ -741,8 +755,12 @@ class Risk:
         level. EVaR is obtained from the Chernoff inequality. It provides insights into the downside risk
         associated with an investment and helps investors make informed decisions about risk tolerance.
 
-        The EVaR is calculated as the upper bound of VaR and CVaR with a given confidence level (e.g., 5% for
-        alpha=0.05).
+        The EVaR is calculated under the assumption that returns are normally distributed, for which the
+        Chernoff bound has the closed form Mean - Standard Deviation * SQRT(-2 * ln(alpha)), with a given
+        confidence level (e.g., 5% for alpha=0.05). It is an upper bound of the gaussian VaR and CVaR at the
+        same confidence level. Since it only uses the mean and the standard deviation of the returns, it does
+        not reflect their skewness or fat tails, and at high confidence levels it can be less severe than the
+        historical CVaR of an asset with heavy tails.
 
         Also known as: EVaR.
 
@@ -1111,6 +1129,13 @@ class Risk:
         the downside risk associated with an investment and helps investors make informed decisions about
         risk tolerance.
 
+        The Maximum Drawdown is a single-path statistic: it depends entirely on the window chosen, so a
+        figure over a window that includes a market crash and one over a window that starts after it are
+        not comparable. It says how deep the worst fall was, not how long it lasted, which is why it is
+        usually read together with the drawdown duration and recovery time (see
+        `get_maximum_drawdown_duration` and `get_maximum_drawdown_recovery_time`), and it underlies
+        return-to-risk ratios such as the Calmar ratio.
+
         Also known as: max drawdown, peak-to-trough decline.
 
         Args:
@@ -1459,6 +1484,12 @@ class Risk:
 
         Ulcer Index = SQRT(SUM[((Pn - Highest High) / Highest High)^2] / n)
 
+        The Ulcer Index punishes both the depth and the length of drawdowns, so an asset that falls 10% and
+        stays there for months scores worse than one that drops 10% and recovers within a week, which a
+        volatility figure would not show. It is the risk measure behind the Martin ratio (excess return
+        divided by the Ulcer Index) and is read best relative to peers over the same window, since the
+        default 14-period lookback gives lower values than a since-inception high-water mark.
+
         Also known as: UI, drawdown risk.
 
         Args:
@@ -1556,7 +1587,9 @@ class Risk:
         standardize: bool = False,
     ):
         """
-        Calculates volatility forecasts based on the GARCH model.
+        Calculates the conditional variance (sigma_t^2) of the returns with a GARCH(1, 1) model fitted to
+        them. Take the square root for the conditional volatility, and see `get_garch_forecast` for the
+        variance forecast beyond the last observation.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
@@ -1606,25 +1639,25 @@ class Risk:
 
         | Date   |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2021Q2 | 0.0125 | 0.0003 |      0.007  |
-        | 2021Q3 | 0.0186 | 0.0462 |      0.0068 |
-        | 2021Q4 | 0.0222 | 0.0745 |      0.0065 |
-        | 2022Q1 | 0.0244 | 0.092  |      0.0063 |
-        | 2022Q2 | 0.0257 | 0.1029 |      0.0061 |
-        | 2022Q3 | 0.0264 | 0.1096 |      0.006  |
-        | 2022Q4 | 0.0269 | 0.1137 |      0.0058 |
-        | 2023Q1 | 0.0271 | 0.1163 |      0.0056 |
-        | 2023Q2 | 0.0273 | 0.1179 |      0.0055 |
-        | 2023Q3 | 0.0274 | 0.1189 |      0.0054 |
-        | 2023Q4 | 0.0274 | 0.1195 |      0.0053 |
-        | 2024Q1 | 0.0275 | 0.1199 |      0.0051 |
-        | 2024Q2 | 0.0275 | 0.1201 |      0.005  |
-        | 2024Q3 | 0.0275 | 0.1202 |      0.0049 |
-        | 2024Q4 | 0.0275 | 0.1203 |      0.0049 |
-        | 2025Q1 | 0.0275 | 0.1204 |      0.0048 |
-        | 2025Q2 | 0.0275 | 0.1204 |      0.0047 |
-        | 2025Q3 | 0.0275 | 0.1204 |      0.0046 |
-        | 2025Q4 | 0.0275 | 0.1204 |      0.0046 |
+        | 2021Q2 | 0.0254 | 0.103  |      0.0066 |
+        | 2021Q3 | 0.0254 | 0.0854 |      0.0065 |
+        | 2021Q4 | 0.0254 | 0.0888 |      0.0064 |
+        | 2022Q1 | 0.0254 | 0.1084 |      0.0063 |
+        | 2022Q2 | 0.0254 | 0.0854 |      0.0063 |
+        | 2022Q3 | 0.0254 | 0.11   |      0.0062 |
+        | 2022Q4 | 0.0254 | 0.0911 |      0.0061 |
+        | 2023Q1 | 0.0254 | 0.1356 |      0.006  |
+        | 2023Q2 | 0.0254 | 0.1675 |      0.0059 |
+        | 2023Q3 | 0.0254 | 0.0973 |      0.0058 |
+        | 2023Q4 | 0.0254 | 0.0856 |      0.0058 |
+        | 2024Q1 | 0.0254 | 0.0853 |      0.0057 |
+        | 2024Q2 | 0.0254 | 0.1003 |      0.0056 |
+        | 2024Q3 | 0.0254 | 0.0881 |      0.0055 |
+        | 2024Q4 | 0.0254 | 0.1035 |      0.0054 |
+        | 2025Q1 | 0.0254 | 0.1372 |      0.0054 |
+        | 2025Q2 | 0.0254 | 0.1078 |      0.0053 |
+        | 2025Q3 | 0.0254 | 0.0942 |      0.0052 |
+        | 2025Q4 | 0.0254 | 0.1134 |      0.0051 |
         """
         period = period if period else "daily"
 
@@ -1738,16 +1771,16 @@ class Risk:
 
         |        |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0275 | 0.1205 |      0.0045 |
-        | 2026Q2 | 0.0275 | 0.1205 |      0.0044 |
-        | 2026Q3 | 0.0275 | 0.1205 |      0.0044 |
-        | 2026Q4 | 0.0275 | 0.1205 |      0.0043 |
-        | 2027Q1 | 0.0275 | 0.1205 |      0.0043 |
-        | 2027Q2 | 0.0275 | 0.1205 |      0.0042 |
-        | 2027Q3 | 0.0275 | 0.1205 |      0.0042 |
-        | 2027Q4 | 0.0275 | 0.1205 |      0.0042 |
-        | 2028Q1 | 0.0275 | 0.1205 |      0.0041 |
-        | 2028Q2 | 0.0275 | 0.1205 |      0.0041 |
+        | 2026Q1 | 0.0254 | 0.0853 |      0.0051 |
+        | 2026Q2 | 0.0254 | 0.1003 |      0.005  |
+        | 2026Q3 | 0.0254 | 0.1029 |      0.0049 |
+        | 2026Q4 | 0.0254 | 0.1034 |      0.0049 |
+        | 2027Q1 | 0.0254 | 0.1034 |      0.0048 |
+        | 2027Q2 | 0.0254 | 0.1035 |      0.0047 |
+        | 2027Q3 | 0.0254 | 0.1035 |      0.0047 |
+        | 2027Q4 | 0.0254 | 0.1035 |      0.0046 |
+        | 2028Q1 | 0.0254 | 0.1035 |      0.0045 |
+        | 2028Q2 | 0.0254 | 0.1035 |      0.0045 |
         """
         period = period if period else "daily"
 
@@ -1822,11 +1855,24 @@ class Risk:
         - sigma_t^2 = Omega + Alpha * u_(t-1)^2 + Beta * sigma_(t-1)^2
 
         With the constraints Omega, Alpha, Beta > 0 and Alpha + Beta < 1. The parameters are
-        estimated via simulated annealing, maximizing the GARCH log-likelihood function.
+        estimated by maximizing the GARCH log-likelihood with L-BFGS-B, started from a
+        domain-informed initial guess and from 32 points of a Sobol sequence, and the best fit is
+        finished with Nelder-Mead. The search runs on the parameters scaled to their bounds, as
+        Omega (of the order of a daily variance) and Alpha and Beta differ by orders of magnitude.
 
-        Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) volatility path,
-        this method returns the fitted parameters themselves. This is useful when the parameters
+        The variance recursion starts from a backcast, an exponentially weighted average
+        (decay 0.94) of the first 75 squared returns, which stands in for both the squared
+        return and the variance before the first observation, and every observation enters the
+        likelihood. This is the start the arch package uses, so the estimates agree with it.
+
+        Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) conditional variance
+        path, this method returns the fitted parameters themselves. This is useful when the parameters
         are needed directly, for example to seed a separate volatility simulation.
+
+        For daily equity returns, Alpha is typically between 0.05 and 0.15 and Alpha + Beta (the
+        persistence) between 0.95 and 0.99, meaning a volatility shock fades over weeks rather than
+        days. The long-run variance the model reverts to is Omega / (1 - Alpha - Beta). A fit far
+        outside these ranges is a reason to check the data and the window before using the parameters.
 
         For more information about the method, see the following book:
 
@@ -1860,16 +1906,16 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_garch_parameters(period="quarterly")
+        toolkit.risk.get_garch_parameters(period="daily", rounding=6)
         ```
 
         Which returns:
 
-        |       |   AMZN |   TSLA |   Benchmark |
-        |:------|-------:|-------:|------------:|
-        | Omega | 0.0112 | 0.046  |      0.0003 |
-        | Alpha | 0      | 0      |      0      |
-        | Beta  | 0.5947 | 0.6184 |      0.9274 |
+        |       |     AMZN |     TSLA |   Benchmark |
+        |:------|---------:|---------:|------------:|
+        | Omega | 5.9e-05  | 3.3e-05  |    4e-06    |
+        | Alpha | 0.199892 | 0.034278 |    0.10995  |
+        | Beta  | 0.69455  | 0.943306 |    0.857926 |
         """
         period = period if period else "daily"
 
@@ -1908,7 +1954,9 @@ class Risk:
         standardize: bool = False,
     ):
         """
-        Calculates volatility forecasts based on the GJR-GARCH model.
+        Calculates the conditional variance (sigma_t^2) of the returns with a GJR-GARCH(1, 1, 1) model
+        fitted to them. Take the square root for the conditional volatility, and see
+        `get_gjr_garch_forecast` for the variance forecast.
 
         GJR-GARCH extends GARCH with a leverage term that lets negative shocks (bad
         news) raise volatility by more than positive shocks of the same size, a well
@@ -1966,25 +2014,25 @@ class Risk:
 
         | Date   |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2021Q2 | 0.0125 | 0.0003 |      0.007  |
-        | 2021Q3 | 0.0208 | 0.0523 |      0.0065 |
-        | 2021Q4 | 0.0219 | 0.0735 |      0.0057 |
-        | 2022Q1 | 0.0219 | 0.0821 |      0.0057 |
-        | 2022Q2 | 0.0219 | 0.0856 |      0.0054 |
-        | 2022Q3 | 0.0319 | 0.1403 |      0.0088 |
-        | 2022Q4 | 0.0233 | 0.1093 |      0.0079 |
-        | 2023Q1 | 0.0275 | 0.2052 |      0.0072 |
-        | 2023Q2 | 0.0235 | 0.1357 |      0.0066 |
-        | 2023Q3 | 0.0232 | 0.1074 |      0.0062 |
-        | 2023Q4 | 0.0221 | 0.0966 |      0.0056 |
-        | 2024Q1 | 0.0225 | 0.0915 |      0.0057 |
-        | 2024Q2 | 0.0225 | 0.1218 |      0.0056 |
-        | 2024Q3 | 0.022  | 0.1018 |      0.0052 |
-        | 2024Q4 | 0.022  | 0.0936 |      0.0048 |
-        | 2025Q1 | 0.0224 | 0.0903 |      0.0044 |
-        | 2025Q2 | 0.0234 | 0.1375 |      0.0044 |
-        | 2025Q3 | 0.0225 | 0.1081 |      0.0046 |
-        | 2025Q4 | 0.0219 | 0.0962 |      0.0046 |
+        | 2021Q2 | 0.0263 | 0.1079 |      0.0066 |
+        | 2021Q3 | 0.0242 | 0.0913 |      0.0065 |
+        | 2021Q4 | 0.0229 | 0.0867 |      0.0064 |
+        | 2022Q1 | 0.0216 | 0.0853 |      0.0063 |
+        | 2022Q2 | 0.0208 | 0.085  |      0.0063 |
+        | 2022Q3 | 0.0386 | 0.1369 |      0.0062 |
+        | 2022Q4 | 0.0332 | 0.0994 |      0.0061 |
+        | 2023Q1 | 0.0393 | 0.1951 |      0.006  |
+        | 2023Q2 | 0.0338 | 0.1157 |      0.006  |
+        | 2023Q3 | 0.0297 | 0.0935 |      0.0059 |
+        | 2023Q4 | 0.0267 | 0.088  |      0.0059 |
+        | 2024Q1 | 0.0245 | 0.0857 |      0.0058 |
+        | 2024Q2 | 0.0228 | 0.1167 |      0.0058 |
+        | 2024Q3 | 0.0216 | 0.0938 |      0.0057 |
+        | 2024Q4 | 0.0209 | 0.0873 |      0.0057 |
+        | 2025Q1 | 0.0201 | 0.0855 |      0.0056 |
+        | 2025Q2 | 0.0223 | 0.1325 |      0.0056 |
+        | 2025Q3 | 0.0212 | 0.0982 |      0.0056 |
+        | 2025Q4 | 0.0204 | 0.0886 |      0.0055 |
         """
         period = period if period else "daily"
 
@@ -2092,16 +2140,16 @@ class Risk:
 
         |        |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0219 | 0.0913 |      0.0042 |
-        | 2026Q2 | 0.023  | 0.1066 |      0.0043 |
-        | 2026Q3 | 0.0232 | 0.1158 |      0.0044 |
-        | 2026Q4 | 0.0232 | 0.1212 |      0.0045 |
-        | 2027Q1 | 0.0232 | 0.1244 |      0.0046 |
-        | 2027Q2 | 0.0232 | 0.1264 |      0.0047 |
-        | 2027Q3 | 0.0232 | 0.1275 |      0.0048 |
-        | 2027Q4 | 0.0232 | 0.1282 |      0.0048 |
-        | 2028Q1 | 0.0232 | 0.1286 |      0.0049 |
-        | 2028Q2 | 0.0232 | 0.1288 |      0.0049 |
+        | 2026Q1 | 0.0198 | 0.0859 |      0.0055 |
+        | 2026Q2 | 0.0209 | 0.101  |      0.0055 |
+        | 2026Q3 | 0.0217 | 0.1081 |      0.0055 |
+        | 2026Q4 | 0.0224 | 0.1113 |      0.0054 |
+        | 2027Q1 | 0.023  | 0.1129 |      0.0054 |
+        | 2027Q2 | 0.0235 | 0.1136 |      0.0054 |
+        | 2027Q3 | 0.0239 | 0.1139 |      0.0054 |
+        | 2027Q4 | 0.0242 | 0.114  |      0.0053 |
+        | 2028Q1 | 0.0244 | 0.1141 |      0.0053 |
+        | 2028Q2 | 0.0246 | 0.1142 |      0.0053 |
         """
         period = period if period else "daily"
 
@@ -2173,6 +2221,11 @@ class Risk:
         raise volatility by more than positive ones of the same size), which symmetric
         GARCH cannot represent.
 
+        The variance recursion starts from a backcast, an exponentially weighted average
+        (decay 0.94) of the first 75 squared returns, with the leverage term at its expectation
+        (Gamma / 2) for the period before the first observation, and every observation enters
+        the likelihood. This is the start the arch package uses, so the estimates agree with it.
+
         For more information about the method, see the following paper:
 
         - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
@@ -2208,17 +2261,17 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_gjr_garch_parameters(period="quarterly")
+        toolkit.risk.get_gjr_garch_parameters(period="daily", rounding=6)
         ```
 
         Which returns:
 
-        |       |   AMZN |   TSLA |   Benchmark |
-        |:------|-------:|-------:|------------:|
-        | Omega | 0.0189 | 0.0522 |      0.0005 |
-        | Alpha | 0.0169 | 0      |      0.05   |
-        | Gamma | 0.0656 | 0.3783 |      0.1    |
-        | Beta  | 0.1363 | 0.4067 |      0.8    |
+        |       |     AMZN |     TSLA |   Benchmark |
+        |:------|---------:|---------:|------------:|
+        | Omega | 2.9e-05  | 3.8e-05  |    3e-06    |
+        | Alpha | 0.032278 | 0.016799 |    0        |
+        | Gamma | 0.141638 | 0.042582 |    0.200974 |
+        | Beta  | 0.843795 | 0.937679 |    0.874133 |
         """
         period = period if period else "daily"
 
@@ -2257,7 +2310,9 @@ class Risk:
         standardize: bool = False,
     ):
         """
-        Calculates volatility forecasts based on the EGARCH model.
+        Calculates the conditional variance (sigma_t^2) of the returns with an EGARCH(1, 1) model fitted
+        to them. Take the square root for the conditional volatility, and see `get_egarch_forecast` for
+        the variance forecast.
 
         EGARCH models the log of the conditional variance, which avoids having to
         constrain the parameters to keep the variance positive and, like GJR-GARCH,
@@ -2315,25 +2370,25 @@ class Risk:
 
         | Date   |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2021Q2 | 0.0125 | 0.0003 |      0.007  |
-        | 2021Q3 | 0.0064 | 0.016  |      0.0041 |
-        | 2021Q4 | 0.011  | 0.0375 |      0.0125 |
-        | 2022Q1 | 0.0204 | 0.016  |      0.0054 |
-        | 2022Q2 | 0.043  | 0.1453 |      0.0118 |
-        | 2022Q3 | 0.0416 | 0.1801 |      0.0109 |
-        | 2022Q4 | 0.0595 | 0.1849 |      0.0175 |
-        | 2023Q1 | 0.0793 | 0.1644 |      0.0118 |
-        | 2023Q2 | 0.0536 | 0.0304 |      0.0082 |
-        | 2023Q3 | 0.0226 | 0.0257 |      0.0047 |
-        | 2023Q4 | 0.0474 | 0.1743 |      0.012  |
-        | 2024Q1 | 0.0284 | 0.3327 |      0.0047 |
-        | 2024Q2 | 0.0123 | 0.2949 |      0.0016 |
-        | 2024Q3 | 0.0108 | 0.2774 |      0.0018 |
-        | 2024Q4 | 0.0207 | 0.1595 |      0.0013 |
-        | 2025Q1 | 0.0075 | 0.0479 |      0.003  |
-        | 2025Q2 | 0.0079 | 0.0922 |      0.0084 |
-        | 2025Q3 | 0.0014 | 0.0997 |      0.0034 |
-        | 2025Q4 | 0.0031 | 0.0485 |      0.0016 |
+        | 2021Q2 | 0.0229 | 0.0923 |      0.0077 |
+        | 2021Q3 | 0.0158 | 0.1671 |      0.0049 |
+        | 2021Q4 | 0.0244 | 0.1704 |      0.0131 |
+        | 2022Q1 | 0.0411 | 0.0597 |      0.0062 |
+        | 2022Q2 | 0.0737 | 0.1035 |      0.0116 |
+        | 2022Q3 | 0.0642 | 0.2104 |      0.009  |
+        | 2022Q4 | 0.0868 | 0.1936 |      0.0145 |
+        | 2023Q1 | 0.0975 | 0.3935 |      0.0105 |
+        | 2023Q2 | 0.0675 | 0.0902 |      0.0078 |
+        | 2023Q3 | 0.0321 | 0.0321 |      0.0048 |
+        | 2023Q4 | 0.0565 | 0.0654 |      0.0108 |
+        | 2024Q1 | 0.0348 | 0.133  |      0.0046 |
+        | 2024Q2 | 0.0167 | 0.2705 |      0.0017 |
+        | 2024Q3 | 0.0149 | 0.3389 |      0.002  |
+        | 2024Q4 | 0.0239 | 0.2276 |      0.0015 |
+        | 2025Q1 | 0.0094 | 0.0473 |      0.0033 |
+        | 2025Q2 | 0.0077 | 0.0964 |      0.0076 |
+        | 2025Q3 | 0.0013 | 0.0458 |      0.0033 |
+        | 2025Q4 | 0.0025 | 0.0022 |      0.0017 |
         """
         period = period if period else "daily"
 
@@ -2440,16 +2495,16 @@ class Risk:
 
         |        |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0018 | 0.2247 |      0.0035 |
-        | 2026Q2 | 0.0018 | 0.1615 |      0.006  |
-        | 2026Q3 | 0.0019 | 0.1483 |      0.0076 |
-        | 2026Q4 | 0.0019 | 0.1451 |      0.0085 |
-        | 2027Q1 | 0.002  | 0.1443 |      0.009  |
-        | 2027Q2 | 0.0021 | 0.1441 |      0.0092 |
-        | 2027Q3 | 0.0021 | 0.144  |      0.0093 |
-        | 2027Q4 | 0.0022 | 0.144  |      0.0093 |
-        | 2028Q1 | 0.0022 | 0.144  |      0.0093 |
-        | 2028Q2 | 0.0023 | 0.144  |      0.0093 |
+        | 2026Q1 | 0.0012 | 0.0028 |      0.0034 |
+        | 2026Q2 | 0.001  | 0.0026 |      0.0055 |
+        | 2026Q3 | 0.0009 | 0.0024 |      0.007  |
+        | 2026Q4 | 0.0008 | 0.0022 |      0.0079 |
+        | 2027Q1 | 0.0007 | 0.002  |      0.0084 |
+        | 2027Q2 | 0.0006 | 0.0018 |      0.0086 |
+        | 2027Q3 | 0.0005 | 0.0017 |      0.0087 |
+        | 2027Q4 | 0.0004 | 0.0016 |      0.0088 |
+        | 2028Q1 | 0.0004 | 0.0014 |      0.0089 |
+        | 2028Q2 | 0.0003 | 0.0013 |      0.0089 |
         """
         period = period if period else "daily"
 
@@ -2542,8 +2597,8 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and fits an
         EGARCH(1, 1) model for each asset in the Toolkit instance.
         - EGARCH's log-variance parameterization is less constrained than plain GARCH, which makes it
-        more prone to unstable, boundary-hugging fits on very short return histories (e.g. yearly data).
-        Prefer `period="quarterly"` or a higher frequency where possible.
+        prone to unstable, boundary-hugging fits on short return histories, which include quarterly
+        data over a few years. Prefer daily or weekly returns.
 
         As an example:
 
@@ -2557,17 +2612,17 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_egarch_parameters(period="quarterly")
+        toolkit.risk.get_egarch_parameters(period="daily", rounding=6)
         ```
 
         Which returns:
 
-        |       |    AMZN |    TSLA |   Benchmark |
-        |:------|--------:|--------:|------------:|
-        | Omega |  0.0232 | -1.4376 |     -2.5535 |
-        | Alpha | -1      | -1      |     -1      |
-        | Gamma | -0.4903 | -0.414  |     -0.4958 |
-        | Beta  |  0.999  |  0.2582 |      0.4535 |
+        |       |      AMZN |      TSLA |   Benchmark |
+        |:------|----------:|----------:|------------:|
+        | Omega | -0.382664 | -0.225452 |   -0.309737 |
+        | Alpha |  0.193573 |  0.081906 |    0.059855 |
+        | Gamma | -0.080739 | -0.03535  |   -0.181222 |
+        | Beta  |  0.949074 |  0.964858 |    0.96578  |
         """
         period = period if period else "daily"
 
@@ -2643,6 +2698,12 @@ class Risk:
         answers that specific question directly: the probability that one asset is in
         extreme distress, given that the other one already is.
 
+        The empirical estimate at q = 0.95 rests on the few days on which both assets are
+        in their worst (or best) 5% at the same time, so it needs several years of daily
+        data to be stable. A gaussian dependence of any correlation below 1 implies zero
+        tail dependence, so a Lower Tail Dependence Coefficient well above zero means that
+        diversification between the two assets is weakest exactly when it is needed.
+
         For more information about the method, see the following papers:
 
         - Embrechts, P., McNeil, A., & Straumann, D. (1999). "Correlation: Pitfalls
@@ -2691,13 +2752,17 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_tail_dependence_coefficient("AAPL", "MSFT", period="weekly")
+        toolkit.risk.get_tail_dependence_coefficient("AMZN", "TSLA", period="weekly")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |                       |    Value |
+        |:----------------------|---------:|
+        | Lower Tail Dependence |   0.0769 |
+        | Upper Tail Dependence |   0.1538 |
+        | Correlation           |   0.4393 |
+        | Observations          | 260      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2801,13 +2866,19 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_copula_parameters("AAPL", "MSFT", copula="clayton", period="weekly")
+        toolkit.risk.get_copula_parameters("AMZN", "TSLA", copula="clayton", period="weekly")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |                       |    Value |
+        |:----------------------|---------:|
+        | Theta                 |   0.6154 |
+        | Lower Tail Dependence |   0.3242 |
+        | Upper Tail Dependence |   0      |
+        | Log-Likelihood        |  21.6826 |
+        | AIC                   | -41.3651 |
+        | Observations          | 260      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2924,18 +2995,22 @@ class Risk:
         )
 
         toolkit.risk.get_copula_simulation(
-            "AAPL", "MSFT", copula="clayton", period="weekly", n_simulations=5000
+            "AMZN", "TSLA", copula="clayton", period="weekly", n_simulations=5000
         ).describe()
         ```
 
         Which returns:
 
-        |        |   0 |
-        |:-------|----:|
-        | count  |   0 |
-        | unique |   0 |
-        | top    | nan |
-        | freq   | nan |
+        |       |          AMZN |          TSLA |
+        |:------|--------------:|--------------:|
+        | count | 5000          | 5000          |
+        | mean  |    0.00206638 |    0.00380068 |
+        | std   |    0.0435261  |    0.0792416  |
+        | min   |   -0.1382     |   -0.1796     |
+        | 25%   |   -0.022325   |   -0.049125   |
+        | 50%   |    0.0004     |   -0.0001     |
+        | 75%   |    0.0297     |    0.052725   |
+        | max   |    0.1385     |    0.3331     |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3096,13 +3171,20 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_best_fitting_copula("AAPL", "MSFT", period="weekly")
+        copulas = toolkit.risk.get_best_fitting_copula("AMZN", "TSLA", period="weekly")
+
+        copulas[["Lower Tail Dependence", "Upper Tail Dependence", "Log-Likelihood", "AIC"]]
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        | Copula    |   Lower Tail Dependence |   Upper Tail Dependence |   Log-Likelihood |      AIC |
+        |:----------|------------------------:|------------------------:|-----------------:|---------:|
+        | Frank     |                  0      |                  0      |          32.402  | -62.8039 |
+        | Gaussian  |                  0      |                  0      |          30.2955 | -58.5909 |
+        | Student-T |                  0.0094 |                  0.0094 |          30.5604 | -57.1208 |
+        | Gumbel    |                  0      |                  0.3659 |          27.8789 | -53.7579 |
+        | Clayton   |                  0.3242 |                  0      |          21.6826 | -41.3651 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3193,6 +3275,13 @@ class Risk:
         isolates the marginal, distress-specific contribution by subtracting the same
         construction evaluated in the "normal" (median) state instead.
 
+        CoVaR was introduced to measure systemic risk: in its original application `ticker`
+        is a financial-system index (or a bank's peers) and `conditioning_ticker` a single
+        institution, so the Delta-CoVaR reads as that institution's contribution to
+        system-wide tail risk. Because the quantile regression is fitted at the `alpha`
+        quantile, it needs several years of daily data, and the result is a statement about
+        co-movement in the tails, not about causality.
+
         For more information about the method, see the following paper:
 
         - Adrian, T., & Brunnermeier, M.K. (2016). "CoVaR." American Economic Review,
@@ -3234,13 +3323,18 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_covar("AAPL", "MSFT", period="weekly")
+        toolkit.risk.get_covar("AMZN", "TSLA", period="weekly")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |                               |    Value |
+        |:------------------------------|---------:|
+        | CoVaR                         |  -0.1041 |
+        | Delta-CoVaR                   |  -0.0423 |
+        | Quantile Regression Slope     |   0.3252 |
+        | Quantile Regression Intercept |  -0.062  |
+        | Observations                  | 260      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3406,6 +3500,13 @@ class Risk:
         it directly usable to identify which holdings account for the largest share of
         portfolio risk.
 
+        Component VaR is the basis of risk budgeting: a holding with a 20% weight that
+        accounts for 45% of the portfolio VaR stands out immediately, and a component with
+        the opposite sign of the portfolio VaR marks a holding that hedges the rest. The
+        components always add up to the portfolio VaR, but the beta-based allocation is
+        exact only for normally (elliptically) distributed returns and an approximation for
+        the historical distribution used by default.
+
         For more information about the method, see the following sources:
 
         - Garman, M.B. (1997). "Taking VaR to Pieces." Risk, 10(10), 70-71.
@@ -3501,6 +3602,13 @@ class Risk:
         Failures test (is the overall breach rate consistent with `alpha`?) and/or
         Christoffersen's independence test (are breaches spread out over time, or do
         they cluster together?).
+
+        Regulators backtest VaR on the number of exceptions over the last 250 trading days
+        (the Basel traffic-light approach at 99% confidence), and Kupiec's test formalises
+        the same question. With few exceptions the test has little power, so a model that
+        passes is not necessarily well calibrated. Clustered exceptions, which
+        Christoffersen's test detects, are the usual failure of historical VaR when
+        volatility rises.
 
         For more information about the methods, see the following papers:
 
@@ -3901,6 +4009,12 @@ class Risk:
         tool for comprehending the distribution characteristics of returns, offering insights
         into the potential for rare but significant events in the financial markets.
 
+        By default this is Pearson's kurtosis, which is 3 for a normal distribution; with `fisher=True`
+        it is the excess kurtosis, which is 0. Daily stock returns typically show an excess kurtosis of
+        several points, and within a single year one exceptional day (an earnings shock, a market-wide
+        gap) can push it above 10, so a high value often reflects one event rather than a persistently
+        fat-tailed distribution.
+
         Also known as: tail heaviness, fat tails, leptokurtosis.
 
         Args:
@@ -4023,6 +4137,12 @@ class Risk:
         outliers are likely) -- as a rule of thumb, a tail index below 4 implies the
         Kurtosis is theoretically infinite, and below 2 implies the Variance itself is
         theoretically infinite.
+
+        For daily stock returns the tail index typically lies between about 2 and 5, while
+        a normal distribution has an infinite tail index. The estimate depends on `k`:
+        practitioners plot it against a range of `k` (a Hill plot) and read it where it is
+        stable, since a small `k` is noisy and a large `k` pulls in the center of the
+        distribution.
 
         For more information about the method, see the following paper:
 
@@ -4475,15 +4595,16 @@ class Risk:
 
         Which returns:
 
-        | Date       |     AMZN |     TSLA |   Benchmark |
-        |:-----------|---------:|---------:|------------:|
-        | 2025-12-24 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-26 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-29 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-30 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-31 | nan      | nan      |    nan      |
+        | Date       |   AMZN |   TSLA |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-24 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-26 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-29 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-30 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-31 | 0.0003 | 0.0011 |      0.0001 |
 
-        The last row is NaN since there is no `2022-12-31` return yet to forecast against.
+        The last row is the forecast for the first trading day after 2025-12-31, which has not
+        been observed yet.
         """
         if estimator not in (
             "squared_return",
@@ -4557,6 +4678,12 @@ class Risk:
         amount of trading moves the price a lot (the asset is illiquid), while a low
         value means the asset can absorb a large amount of trading with little price
         impact (the asset is liquid).
+
+        The Amihud ratio is mainly a cross-sectional measure: it ranks stocks by how much a
+        given dollar volume moves the price and is used as a liquidity factor in asset
+        pricing. Its level depends on the scale, the frequency and the price level of the
+        market, so compare stocks within the same market and period, and expect the ratio
+        of large caps to be several orders of magnitude below that of small caps.
 
         For more information about the method, see the following paper:
 
@@ -4686,6 +4813,12 @@ class Risk:
         backed out purely from the serial covariance of consecutive price changes,
         without needing any actual quote data. If the estimated covariance is zero or
         positive, no valid estimate can be backed out and NaN is returned instead.
+
+        The Roll measure is used when no quote data is available, typically for less liquid
+        stocks or historical studies. On daily closes of liquid large caps it mostly picks
+        up price noise rather than the bid-ask bounce, and in trending periods the
+        autocovariance is positive and no estimate exists, so treat it as a rough, relative
+        measure.
 
         For more information about the method, see the following paper:
 
@@ -5106,6 +5239,11 @@ class Risk:
         useful for comparing the relative volatility of assets with different average returns,
         which a raw standard deviation cannot do.
 
+        The Coefficient of Variation is only meaningful when the mean return is clearly positive. In a
+        period with an average daily return close to zero it explodes, and in a down period it turns
+        negative, so for returns it is best read over periods with a positive mean, or replaced by a
+        Sharpe ratio, which is its inverse with the risk-free rate subtracted.
+
         Also known as: relative standard deviation.
 
         Args:
@@ -5202,6 +5340,11 @@ class Risk:
         The formula is as follows:
 
         - EWMA Variance(t) = lambda * EWMA Variance(t-1) + (1 - lambda) * Return(t-1) ** 2
+
+        With the RiskMetrics decay factor of 0.94, about 70% of the weight sits on the last 20 trading
+        days, so EWMA Volatility reacts within days to a market shock and falls back almost as quickly.
+        The values are daily; multiply them by the square root of 252 for an annualized figure comparable
+        with `get_volatility(period="yearly")`.
 
         Also known as: RiskMetrics volatility, exponentially weighted volatility.
 
@@ -5347,15 +5490,19 @@ class Risk:
         rounding: int | None = None,
     ):
         """
-        Calculate the Hurst Exponent of each asset's daily returns, a measure of
-        long-term memory that indicates whether a series is mean-reverting, trending,
-        or a random walk.
+        Calculate the Hurst Exponent of each asset's daily (adjusted close) price series, a
+        measure of long-term memory that indicates whether the price is mean-reverting,
+        trending, or a random walk.
 
         The Hurst Exponent (H) is interpreted as follows:
 
         - H < 0.5: the series is mean-reverting (anti-persistent).
         - H = 0.5: the series is a random walk (no memory).
         - H > 0.5: the series is trending (persistent).
+
+        For liquid stocks the estimate is usually close to 0.5, and with lags of at most
+        `max_lag` days it describes short-term behaviour only; a value of 0.45 or 0.55 over a
+        few years is within estimation noise rather than evidence of a tradable pattern.
 
         Args:
             max_lag (int, optional): The maximum lag to use when estimating the exponent.

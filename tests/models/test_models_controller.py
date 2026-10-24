@@ -165,3 +165,71 @@ def test_get_grover_score(recorder, models_module):
 def test_get_fulmer_h_score(recorder, models_module):
     recorder.capture(models_module.get_fulmer_h_score())
     recorder.capture(models_module.get_fulmer_h_score(growth=True))
+
+
+def test_capital_asset_pricing_inputs_cover_the_trailing_span():
+    from types import SimpleNamespace
+
+    import pandas as pd
+    import pytest
+
+    from financetoolkit.models import intrinsic_model, wacc_model
+    from financetoolkit.models.models_controller import Models
+
+    quarters = pd.period_range("2023Q1", "2024Q4", freq="Q")
+    risk_free_rate = pd.Series(0.04, index=quarters)
+    benchmark_returns = pd.Series(0.0225, index=quarters)
+
+    # Quarterly data with a trailing 4 quarters: the flows are trailing twelve months, so
+    # the rates are annual (4% and 4% + 5%), not the quarterly 1% and 2.25%.
+    risk_free, market_return = Models._capital_asset_pricing_inputs(
+        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, 0.05, 4
+    )
+    assert risk_free.iloc[-1] == pytest.approx(0.04)
+    assert market_return.iloc[-1] == pytest.approx(0.09)
+
+    # Net Income of 100 over the year on a Book Value of 1000, with a Beta of 1.2, earns
+    # exactly the annual Cost of Equity of 4% + 1.2 * 5% = 10%.
+    beta = pd.DataFrame({"AAPL": 1.2}, index=quarters)
+    cost_of_equity = wacc_model.get_cost_of_equity(risk_free, beta, market_return)
+    assert cost_of_equity["AAPL"].iloc[-1] == pytest.approx(0.10)
+    residual_income = intrinsic_model.get_residual_income(
+        net_income=100,
+        cost_of_equity=cost_of_equity["AAPL"].iloc[-1],
+        book_value_of_equity=1000,
+    )
+    assert residual_income == pytest.approx(0)
+
+    # Without trailing the rates stay per quarter, and the default premium (the average
+    # benchmark return above the per-quarter rate, 1.25%) scales the same way.
+    risk_free, market_return = Models._capital_asset_pricing_inputs(
+        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, None
+    )
+    assert risk_free.iloc[-1] == pytest.approx(0.01)
+    assert market_return.iloc[-1] == pytest.approx(0.0225)
+    risk_free, market_return = Models._capital_asset_pricing_inputs(
+        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, None, 4
+    )
+    assert market_return.iloc[-1] == pytest.approx(0.09)
+
+
+def test_cost_of_equity_follows_trailing(models_module):
+    import pandas as pd
+
+    # A trailing sum of two years of Net Income or Interest Expense is charged the Cost of
+    # Equity of two years, in residual income and in the WACC (and so EVA and PVGO).
+    single = models_module.get_residual_income(rounding=10).xs(
+        "Cost of Equity", level=1
+    )
+    double = models_module.get_residual_income(rounding=10, trailing=2).xs(
+        "Cost of Equity", level=1
+    )
+    pd.testing.assert_frame_equal(double, 2 * single, rtol=1e-6)
+
+    wacc_single = models_module.get_weighted_average_cost_of_capital(rounding=10).xs(
+        "Cost of Equity", level=1
+    )
+    wacc_double = models_module.get_weighted_average_cost_of_capital(
+        rounding=10, trailing=2
+    ).xs("Cost of Equity", level=1)
+    pd.testing.assert_frame_equal(wacc_double, 2 * wacc_single, rtol=1e-6)

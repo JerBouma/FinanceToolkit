@@ -461,7 +461,7 @@ def test_quarterly_scores_default_to_a_trailing_year():
         )
 
 
-def test_default_wacc_uses_the_trailing_periods():
+def test_default_wacc_covers_a_year():
     import pandas as pd  # noqa: PLC0415
 
     models = synthetic_models(growing_company())
@@ -477,9 +477,14 @@ def test_default_wacc_uses_the_trailing_periods():
     models.get_reverse_discounted_cash_flow()
     models.get_monte_carlo_intrinsic_valuation(growth_rate=0.05, simulations=10)
     models.get_earnings_power_value(trailing=2)
+    models.get_reverse_discounted_cash_flow(trailing=2)
+    models.get_monte_carlo_intrinsic_valuation(
+        growth_rate=0.05, simulations=10, trailing=8
+    )
 
-    # A year of interest expense on quarterly data, the same trailing as the cash flows.
-    assert requested == [4, 4, 4, 2]
+    # The WACC is a yearly rate: a year of interest expense on quarterly data, whatever
+    # the trailing of the cash flows.
+    assert requested == [4, 4, 4, 4, 4, 4]
 
 
 def test_quality_scores_use_gross_debt_issuance_and_fixed_assets():
@@ -533,7 +538,7 @@ def test_quarterly_valuations_use_a_year_of_cash_flow_and_revenue():
     )
 
     reverse = models.get_reverse_discounted_cash_flow(
-        weighted_average_cost_of_capital=0.09
+        weighted_average_cost_of_capital=0.09, cash_flow_type="Free Cash Flow"
     )
     assert reverse.loc["A", "Cash Flow"] == pytest.approx(20 * last_year)
     # Trailing sums that grow 3% a quarter grow 12.55% a year.
@@ -547,6 +552,7 @@ def test_quarterly_valuations_use_a_year_of_cash_flow_and_revenue():
         weighted_average_cost_of_capital=0.09,
         weighted_average_cost_of_capital_volatility=0,
         simulations=10,
+        cash_flow_type="Free Cash Flow",
     )
     expected = float(
         intrinsic_model.get_intrinsic_value(
@@ -600,3 +606,163 @@ def test_synthetic_credit_rating_without_interest_expense(models_module, monkeyp
     rating = models.get_synthetic_credit_rating(firm_type="large")
     assert rating.loc[("AAPL", "Rating"), period] == "AAA"
     assert pd.isna(rating.loc[("MSFT", "Rating"), period])
+
+
+def test_valuations_default_to_the_free_cash_flow_to_firm():
+    import numpy as np  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    from financetoolkit.models import intrinsic_model  # noqa: PLC0415
+
+    items = growing_company()
+    # A use of cash of 5 for working capital: an increase in net working capital.
+    items["Change in Working Capital"] = {"A": growing(-5)}
+    models = synthetic_models(items)
+    g = GROWTH ** np.arange(QUARTERS)
+    last_year = g[-4:].sum()
+    # NOPAT (Operating Income 50 taxed at 8 / 40) + D&A 10 - capex 10 - ΔNWC 5, before
+    # the interest that the reported Free Cash Flow of 20 is after.
+    fcff = (50 * 0.8 + 10 - 10 - 5) * last_year
+
+    reverse = models.get_reverse_discounted_cash_flow(
+        weighted_average_cost_of_capital=0.09
+    )
+    assert reverse.loc["A", "Cash Flow"] == pytest.approx(fcff)
+
+    simulated = models.get_monte_carlo_intrinsic_valuation(
+        growth_rate=0.05,
+        growth_rate_volatility=0,
+        perpetual_growth_rate=0.02,
+        perpetual_growth_rate_volatility=0,
+        weighted_average_cost_of_capital=0.09,
+        weighted_average_cost_of_capital_volatility=0,
+        simulations=10,
+    )
+    expected = float(
+        intrinsic_model.get_intrinsic_value(
+            fcff, 0.05, 0.02, 0.09, 80 * g[-1], 180 * g[-1], 10, 5
+        )
+        .loc["Intrinsic Value"]
+        .iloc[0]
+    )
+    assert simulated.loc["A", "Mean"] == pytest.approx(expected)
+
+    # Data errors give an empty result, which an unknown cash flow type is as well.
+    assert models.get_reverse_discounted_cash_flow(cash_flow_type="Net Income").empty
+
+
+def test_short_quarterly_scores_warn_how_many_quarters_they_need(monkeypatch):
+    from financetoolkit.models import models_controller  # noqa: PLC0415
+
+    items = {
+        row: {ticker: values[:6] for ticker, values in tickers.items()}
+        for row, tickers in growing_company().items()
+    }
+    models = synthetic_models(items)
+    warnings = []
+    monkeypatch.setattr(
+        models_controller.logger,
+        "warning",
+        lambda message, *args: warnings.append(message % args),
+    )
+
+    for method, quarters in (
+        ("get_dechow_f_score", 9),
+        ("get_montier_c_score", 8),
+        ("get_mohanram_g_score", 16),
+    ):
+        warnings.clear()
+        assert getattr(models, method)().empty
+        assert len(warnings) == 1
+        assert f"at least {quarters} quarters" in warnings[0]
+        assert "start_date" in warnings[0]
+
+    # With enough quarters there is nothing to warn about.
+    warnings.clear()
+    synthetic_models(growing_company()).get_mohanram_g_score()
+    assert warnings == []
+
+
+def test_quarterly_valuations_skip_trailing_sums_with_a_missing_quarter():
+    import numpy as np  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    g = GROWTH ** np.arange(QUARTERS)
+
+    # The latest quarter but two is missing: the trailing sums that include it are not
+    # stretched over five quarters, so the latest complete one is that up to quarter 16.
+    items = growing_company()
+    items["Free Cash Flow"]["A"][17] = np.nan
+    reverse = synthetic_models(items).get_reverse_discounted_cash_flow(
+        weighted_average_cost_of_capital=0.09, cash_flow_type="Free Cash Flow"
+    )
+    assert reverse.loc["A", "Cash Flow"] == pytest.approx(20 * g[13:17].sum())
+
+    # A quarter missing in between: the years run from the first to the latest trailing
+    # sum on the calendar (four), not over the number of sums that remain.
+    items = growing_company()
+    items["Free Cash Flow"]["A"][8] = np.nan
+    reverse = synthetic_models(items).get_reverse_discounted_cash_flow(
+        weighted_average_cost_of_capital=0.09, cash_flow_type="Free Cash Flow"
+    )
+    assert reverse.loc["A", "Cash Flow"] == pytest.approx(20 * g[-4:].sum())
+    assert reverse.loc["A", "Historical Growth Rate"] == pytest.approx(GROWTH**4 - 1)
+
+    # The margins a year apart are taken at calendar positions counted back from the
+    # latest quarter; the year that includes the missing revenue is left out instead of
+    # shifting the steps onto overlapping windows.
+    items = growing_company()
+    margins = 0.1 + 0.01 * np.arange(QUARTERS)
+    items["Operating Income"]["A"] = list(np.array(items["Revenue"]["A"]) * margins)
+    items["Revenue"]["A"][9] = np.nan
+    epv = synthetic_models(items).get_earnings_power_value(
+        weighted_average_cost_of_capital=0.1
+    )
+    revenue = 250 * g
+    operating_income = revenue * margins
+
+    def trailing_margin(end):
+        window = slice(end - 3, end + 1)
+        return operating_income[window].sum() / revenue[window].sum()
+
+    expected = np.mean([trailing_margin(end) for end in (3, 7, 15, 19)])
+    assert epv.loc["A", "Average Operating Margin"] == pytest.approx(expected)
+
+
+def test_magic_formula_on_a_short_quarterly_window(monkeypatch):
+    import pandas as pd  # noqa: PLC0415
+
+    from financetoolkit.models import models_controller  # noqa: PLC0415
+
+    warnings = []
+    monkeypatch.setattr(
+        models_controller.logger,
+        "warning",
+        lambda message, *args: warnings.append(message % args),
+    )
+
+    def models_with(quarters):
+        items = {
+            row: {ticker: values[:quarters] for ticker, values in tickers.items()}
+            for row, tickers in growing_company().items()
+        }
+        models = synthetic_models(items)
+        models._historical_data["quarterly"] = pd.DataFrame(
+            {("Close", "A"): [100.0] * quarters},
+            index=models._balance_sheet_statement.columns,
+        )
+        return models
+
+    # Three quarters hold no trailing twelve months: an empty frame and a warning.
+    result = models_with(3).get_magic_formula()
+    assert isinstance(result, pd.DataFrame)
+    assert result.empty
+    assert len(warnings) == 1
+    assert "at least 4 quarters" in warnings[0]
+
+    # From the fourth quarter on, a frame with a rank per period and no warning.
+    warnings.clear()
+    result = models_with(6).get_magic_formula()
+    assert list(result.columns.astype(str)) == ["2019Q4", "2020Q1", "2020Q2"]
+    assert result.loc[("A", "Magic Formula Rank")].notna().all()
+    assert warnings == []

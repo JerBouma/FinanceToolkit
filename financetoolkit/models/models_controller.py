@@ -5011,13 +5011,75 @@ class Models:
         )
         return combined.reindex(self._tickers, level=0)
 
+    def _calendar(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """
+        A ticker by period frame on every period from the first to the last, so that a
+        period no statement reports is a NaN column and positions and rolling windows count
+        calendar periods rather than reported ones.
+        """
+        columns = frame.columns
+        if not isinstance(columns, pd.PeriodIndex) or columns.empty:
+            return frame
+        return frame.reindex(
+            columns=pd.period_range(columns.min(), columns.max(), freq=columns.freq)
+        )
+
+    def _valuation_cash_flows(
+        self, cash_flow_type: str, trailing: int | None
+    ) -> pd.DataFrame:
+        """
+        The cash flow a valuation projects, per ticker (rows) and calendar period
+        (columns), summed over `trailing` periods where set. A missing period leaves the
+        sums that include it NaN instead of letting them span more periods.
+
+        The Free Cash Flow to Firm is built as in `get_free_cash_flow_to_firm` of the
+        Intrinsic module, NOPAT + Depreciation and Amortization - Capital Expenditure -
+        Change in Net Working Capital, with the Operating Income as EBIT: the cash flow to
+        all providers of capital, which the WACC discounts into an enterprise value. The
+        reported Free Cash Flow and Operating Cash Flow are after interest.
+        """
+        valid = ["Free Cash Flow to Firm", "Free Cash Flow", "Operating Cash Flow"]
+        if cash_flow_type not in valid:
+            raise ValueError(f"The cash flow type must be one of: {', '.join(valid)}.")
+
+        def summed(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            frame = self._calendar(self._rows(statement, row))
+            # Without min_periods every window must be complete, so a gap gives NaN.
+            return frame.T.rolling(trailing).sum().T if trailing else frame
+
+        if cash_flow_type != "Free Cash Flow to Firm":
+            return summed(self._cash_flow_statement, cash_flow_type)
+
+        effective_tax_rate = profitability_model.get_effective_tax_rate(
+            income_tax_expense=summed(self._income_statement, "Income Tax Expense"),
+            income_before_tax=summed(self._income_statement, "Income Before Tax"),
+        )
+        nopat = eva_model.get_net_operating_profit_after_taxes(
+            ebit=summed(self._income_statement, "Operating Income"),
+            effective_tax_rate=effective_tax_rate,
+        )
+        # The cash flow statement shows a use of cash as negative; the FCFF formula takes
+        # the capital expenditure and the increase in working capital as positive amounts.
+        return intrinsic_model.get_free_cash_flow_to_firm(
+            net_operating_profit_after_taxes=nopat,
+            depreciation_and_amortization=summed(
+                self._income_statement, "Depreciation and Amortization"
+            ),
+            capital_expenditure=-summed(
+                self._cash_flow_statement, "Capital Expenditure"
+            ),
+            change_in_net_working_capital=-summed(
+                self._cash_flow_statement, "Change in Working Capital"
+            ),
+        )  # type: ignore[return-value]
+
     @handle_errors
     def get_reverse_discounted_cash_flow(
         self,
         perpetual_growth_rate: float | dict[str, float] = 0.025,
         weighted_average_cost_of_capital: float | dict[str, float] | None = None,
         periods: int = 5,
-        cash_flow_type: str = "Free Cash Flow",
+        cash_flow_type: str = "Free Cash Flow to Firm",
         trailing: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -5029,7 +5091,8 @@ class Models:
         market's expectation, which can then be compared with the company's history: an
         implied growth far above what the company has achieved signals optimism.
 
-        The DCF is the same as in `get_intrinsic_valuation`:
+        The DCF is the same as in `get_intrinsic_valuation`, by default on the Free Cash
+        Flow to the Firm:
 
             - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Implied Growth Rate)
             - Terminal Value = Last Projection * (1 + Perpetual Growth Rate) / (WACC - Perpetual Growth Rate)
@@ -5049,10 +5112,15 @@ class Models:
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The discount rate, one number or a number per ticker. Defaults to None,
                 which uses the latest Weighted Average Cost of Capital of each company,
-                calculated over the same `trailing` periods.
+                calculated over a year (the last 4 quarters with quarterly data) whatever
+                `trailing` the cash flows use, as the rate is a yearly one.
             periods (int, optional): The number of projection periods. Defaults to 5.
-            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow" or
-                "Operating Cash Flow". Defaults to "Free Cash Flow".
+            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow to
+                Firm" (see `get_free_cash_flow_to_firm`), the cash flow to debt and equity
+                holders that the WACC discounts into an enterprise value; or "Free Cash Flow"
+                or "Operating Cash Flow" as reported, which are after interest (cash flows
+                to equity), so that discounting them at the WACC and subtracting the debt
+                counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
                 4 quarters) instead of taking the latest one. Defaults to None, which sums
                 the last 4 quarters (a trailing twelve months) for quarterly data and takes
@@ -5071,7 +5139,9 @@ class Models:
         - A negative cash flow, or a discount rate at or below the perpetual growth rate,
           has no implied growth rate and gives NaN.
         - The Historical Growth Rate counts four quarters as a year with quarterly data and
-          is NaN when the first or latest cash flow is not positive.
+          is NaN when the first or latest cash flow is not positive. The years are those
+          between the first and the latest cash flow on the calendar, and a trailing sum
+          that includes a missing period is NaN rather than one over more periods.
 
         As an example:
 
@@ -5092,15 +5162,10 @@ class Models:
 
         |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate |
         |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|
-        | AAPL |        271.86 |  9.8767e+10 |                               0.09 |                   0.025 |                0.2708 |                   0.0613 |
-        | MSFT |        483.62 |  7.1611e+10 |                               0.09 |                   0.025 |                0.3271 |                   0.0962 |
-        | NVDA |        186.5  |  9.6676e+10 |                               0.09 |                   0.025 |                0.3029 |                   0.8313 |
+        | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.308  |                   0.0545 |
+        | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.333  |                   0.1183 |
+        | NVDA |        186.5  | 9.15284e+10 |                               0.09 |                   0.025 |                0.3182 |                   0.8976 |
         """
-        if cash_flow_type not in ["Free Cash Flow", "Operating Cash Flow"]:
-            raise ValueError(
-                "The cash flow type must be 'Free Cash Flow' or 'Operating Cash Flow'."
-            )
-
         perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
         # The projection periods and the growth rates are yearly, so a quarterly cash flow is
         # summed into a year rather than projected as if it were one.
@@ -5108,14 +5173,18 @@ class Models:
             trailing if trailing is not None else (4 if self._quarterly else None)
         )
         periods_per_year = 4 if self._quarterly else 1
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital, trailing)
-        cash_flows = self._rows(self._cash_flow_statement, cash_flow_type)
+        # The WACC is a yearly rate, so it is built from a year of flows whatever the
+        # trailing of the cash flows.
+        wacc = self._resolve_wacc(
+            weighted_average_cost_of_capital, 4 if self._quarterly else None
+        )
+        cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
         for ticker in self._tickers:
+            # Summed on the calendar periods before the NaNs are dropped, so that a missing
+            # period does not stretch a trailing sum over more periods than `trailing`.
             history = cash_flows.loc[ticker].dropna()
-            if trailing:
-                history = history.rolling(trailing).sum().dropna()
             if history.empty:
                 continue
             cash_flow = float(history.iloc[-1])
@@ -5136,7 +5205,13 @@ class Models:
                 ),
                 periods=periods,
             )
-            years = (len(history) - 1) / periods_per_year
+            # The years between the first and the latest cash flow, counted on the calendar so
+            # that a missing period in between does not shorten them.
+            years = (
+                (history.index[-1] - history.index[0]).n / periods_per_year
+                if isinstance(history.index, pd.PeriodIndex)
+                else (len(history) - 1) / periods_per_year
+            )
             first, last = float(history.iloc[0]), float(history.iloc[-1])
             historical = (
                 (last / first) ** (1 / years) - 1
@@ -5190,10 +5265,13 @@ class Models:
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The discount rate, one number or a number per ticker. Defaults to None,
                 which uses the latest Weighted Average Cost of Capital of each company,
-                calculated over the same `trailing` periods.
+                calculated over a year (the last 4 quarters with quarterly data) whatever
+                `trailing` the cash flows use, as the rate is a yearly one.
             periods (int, optional): The number of periods the operating margin and tax rate
                 are averaged over; with `trailing`, the number of trailing sums, `trailing`
-                periods apart so that they do not overlap. Defaults to 5.
+                calendar periods apart so that they do not overlap, counted back from the
+                latest reported one. A sum that includes a missing period is left out of
+                the average. Defaults to 5.
             trailing (int | None, optional): Sum the revenue, operating income, taxes and
                 income before tax over this many periods (e.g. 4 quarters), so that the
                 margin is applied to a year of revenue. Defaults to None, which uses 4 (a
@@ -5242,10 +5320,16 @@ class Models:
         trailing = (
             trailing if trailing is not None else (4 if self._quarterly else None)
         )
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital, trailing)
+        # The WACC is a yearly rate, so it is built from a year of flows whatever the
+        # trailing of the earnings.
+        wacc = self._resolve_wacc(
+            weighted_average_cost_of_capital, 4 if self._quarterly else None
+        )
 
         def summed(row: str) -> pd.DataFrame:
-            frame = self._rows(self._income_statement, row)
+            # On the calendar periods, so that a missing period leaves the sums that include
+            # it NaN and the steps below count calendar periods.
+            frame = self._calendar(self._rows(self._income_statement, row))
             return frame.T.rolling(trailing).sum().T if trailing else frame
 
         revenue = summed("Revenue")
@@ -5258,9 +5342,15 @@ class Models:
             reported = (
                 revenue.loc[ticker].notna() & operating_income.loc[ticker].notna()
             )
-            # Every `trailing`-th sum counted back from the latest, so that the averaged
-            # margins cover separate years instead of overlapping twelve-month windows.
-            columns = revenue.columns[reported][::-1][:: trailing or 1][:periods][::-1]
+            if not reported.any():
+                continue
+            # Every `trailing`-th calendar period counted back from the latest reported one,
+            # so that the averaged margins cover separate years instead of overlapping
+            # twelve-month windows, keeping those reported: a missing period drops its year
+            # rather than shifting the steps onto overlapping windows.
+            latest = int(reported.to_numpy().nonzero()[0][-1])
+            positions = list(range(latest, -1, -(trailing or 1)))[:periods][::-1]
+            columns = revenue.columns[positions][reported.iloc[positions].to_numpy()]
             if columns.empty:
                 continue
             result = intrinsic_model.get_earnings_power_value(
@@ -5311,7 +5401,7 @@ class Models:
         weighted_average_cost_of_capital_volatility: float = 0.01,
         periods: int = 5,
         simulations: int = 10000,
-        cash_flow_type: str = "Free Cash Flow",
+        cash_flow_type: str = "Free Cash Flow to Firm",
         trailing: int | None = None,
         seed: int | None = 0,
         rounding: int | None = None,
@@ -5346,14 +5436,19 @@ class Models:
                 Defaults to 0.005.
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The expected discount rate. Defaults to None, which uses the latest Weighted
-                Average Cost of Capital of each company, calculated over the same `trailing`
-                periods.
+                Average Cost of Capital of each company, calculated over a year (the last 4
+                quarters with quarterly data) whatever `trailing` the cash flows use, as the
+                rate is a yearly one.
             weighted_average_cost_of_capital_volatility (float, optional): Its standard
                 deviation. Defaults to 0.01.
             periods (int, optional): The number of projection periods. Defaults to 5.
             simulations (int, optional): The number of simulations. Defaults to 10,000.
-            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow" or
-                "Operating Cash Flow". Defaults to "Free Cash Flow".
+            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow to
+                Firm" (see `get_free_cash_flow_to_firm`), the cash flow to debt and equity
+                holders that the WACC discounts into an enterprise value; or "Free Cash Flow"
+                or "Operating Cash Flow" as reported, which are after interest (cash flows
+                to equity), so that discounting them at the WACC and subtracting the debt
+                counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
                 4 quarters) instead of taking the latest one. Defaults to None, which sums
                 the last 4 quarters (a trailing twelve months) for quarterly data and takes
@@ -5389,28 +5484,27 @@ class Models:
 
         |      |    Mean |   Standard Deviation |   5th Percentile |   25th Percentile |   50th Percentile |   75th Percentile |   95th Percentile |   Share Price |   Probability Undervalued |
         |:-----|--------:|---------------------:|-----------------:|------------------:|------------------:|------------------:|------------------:|--------------:|--------------------------:|
-        | AAPL | 130.65  |              28.0739 |          94.6441 |           111.402 |           126.183 |           144.853 |           181.963 |        271.86 |                    0.0018 |
-        | MSFT | 186.851 |              40.9136 |         134.378  |           158.799 |           180.342 |           207.549 |           261.633 |        483.62 |                    0.0003 |
+        | AAPL | 113.466 |              24.52   |          82.0179 |           96.6542 |           109.564 |           125.871 |           158.283 |        271.86 |                    0.0004 |
+        | MSFT | 182.735 |              40.0623 |         131.353  |          155.267  |           176.361 |           203.002 |           255.96  |        483.62 |                    0.0002 |
         """
-        if cash_flow_type not in ["Free Cash Flow", "Operating Cash Flow"]:
-            raise ValueError(
-                "The cash flow type must be 'Free Cash Flow' or 'Operating Cash Flow'."
-            )
-
         growth = self._per_ticker(growth_rate, "growth rate")
         perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
         # The growth rates are yearly, so a quarterly cash flow is summed into a year.
         trailing = (
             trailing if trailing is not None else (4 if self._quarterly else None)
         )
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital, trailing)
-        cash_flows = self._rows(self._cash_flow_statement, cash_flow_type)
+        # The WACC is a yearly rate, so it is built from a year of flows whatever the
+        # trailing of the cash flows.
+        wacc = self._resolve_wacc(
+            weighted_average_cost_of_capital, 4 if self._quarterly else None
+        )
+        cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
         for ticker in self._tickers:
+            # Summed on the calendar periods before the NaNs are dropped, so that a missing
+            # period does not stretch a trailing sum over more periods than `trailing`.
             history = cash_flows.loc[ticker].dropna()
-            if trailing:
-                history = history.rolling(trailing).sum().dropna()
             if history.empty:
                 continue
             values = intrinsic_model.get_monte_carlo_intrinsic_value(
@@ -5551,7 +5645,8 @@ class Models:
             0
         )
 
-        # The volatility of the year (or quarter) up to every period end, annualized.
+        # The volatility of the daily returns over the 252 trading days (at least 60) up to
+        # every period end, annualized, whether the statements are yearly or quarterly.
         daily_returns = self._historical_data["daily"]["Return"].reindex(
             columns=self._tickers
         )
@@ -5949,9 +6044,23 @@ class Models:
         rounding: int | None,
         show_columns: list[str] | None,
         first_columns: int = 1,
+        name: str | None = None,
     ) -> pd.DataFrame:
-        """Combine score components, drop the periods without a comparison and round."""
+        """
+        Combine score components, drop the periods without a comparison and round. When the
+        statements hold no more periods than the comparison needs, the result is empty, and
+        a warning says how many periods `start_date` must cover.
+        """
         combined = self._combine(results)
+        if name and len(combined.columns) <= first_columns:
+            logger.warning(
+                "%s needs at least %s %s of statements and %s were available, so it could "
+                "not be calculated. Set an earlier start_date to obtain it.",
+                name,
+                first_columns + 1,
+                "quarters" if self._quarterly else "years",
+                len(combined.columns),
+            )
         combined = combined[combined.columns[first_columns:]].dropna(axis=1, how="all")
         combined = apply_rounding(
             combined, rounding if rounding is not None else self._rounding
@@ -6002,6 +6111,12 @@ class Models:
         Returns:
             pd.DataFrame: Per ticker and period the Earnings Yield, Return on Capital, their
             ranks and the Magic Formula Rank (1 is the most attractive).
+
+        Notes:
+        - With quarterly data and the default trailing twelve months, the first ranks are in
+          the fourth quarter of statements. When the statements cover fewer periods, the
+          result is empty and a warning names the number of periods needed; set an earlier
+          `start_date` to obtain the ranks.
 
         As an example:
 
@@ -6056,7 +6171,15 @@ class Models:
             net_working_capital=net_working_capital,
             net_fixed_assets=inputs["Property, Plant and Equipment"],
         )
-        return self._finish_score(results, rounding, show_columns, first_columns=0)
+        # The ranks need the operating income of a full trailing sum, so the periods before
+        # the first one are left out (and the result is empty, with a warning, without one).
+        return self._finish_score(
+            results,
+            rounding,
+            show_columns,
+            first_columns=(trailing - 1) if trailing else 0,
+            name="The Magic Formula",
+        )
 
     @handle_errors
     def get_mohanram_g_score(
@@ -6121,7 +6244,11 @@ class Models:
         - The variances need three yearly values and revenue growth needs the year before
           the first, so the first G-Score is in the fourth year of statements (with
           quarterly data, the sixteenth quarter). A company with a shorter history than its
-          peers scores 0 on G4 and G5.
+          peers scores 0 on G4 and G5. When the statements cover fewer periods than that,
+          the result is empty and a warning names the number of periods needed; set an
+          earlier `start_date` to obtain the score.
+        - Net Income stands in for the net income before extraordinary items of the paper, as
+          the statements do not report extraordinary items separately.
 
         As an example:
 
@@ -6174,7 +6301,11 @@ class Models:
             quality_model.MOHANRAM_MINIMUM_VARIANCE_PERIODS, variance_periods
         )
         return self._finish_score(
-            results, rounding, show_columns, first_columns=first_columns
+            results,
+            rounding,
+            show_columns,
+            first_columns=first_columns,
+            name="The Mohanram G-Score",
         )
 
     @handle_errors
@@ -6233,6 +6364,11 @@ class Models:
           do, a company that issued debt but repaid more counts as not issuing.
         - The model was estimated on yearly statements, so with quarterly data the flows
           are summed over the trailing twelve months by default.
+        - The changes compare with the year before and the change in return on assets with
+          the return a year back, so the first F-Score is in the third year of statements
+          (with quarterly data and the default trailing twelve months, the ninth quarter).
+          When the statements cover fewer periods, the result is empty and a warning names
+          the number of periods needed; set an earlier `start_date` to obtain the score.
 
         As an example:
 
@@ -6292,7 +6428,11 @@ class Models:
         # the assets of the year before that, so the first full score is two years in.
         first_columns = 2 * lag
         return self._finish_score(
-            results, rounding, show_columns, first_columns=first_columns
+            results,
+            rounding,
+            show_columns,
+            first_columns=first_columns,
+            name="The Dechow F-Score",
         )
 
     @handle_errors
@@ -6342,6 +6482,11 @@ class Models:
         - Gross property, plant and equipment is reported by Yahoo Finance but not by
           Financial Modeling Prep; for a company without it, depreciation is compared with
           the net amount, whose ratio also rises as the assets age and so can hide a decline.
+        - The signs compare with the year before, so the first C-Score is in the second year
+          of statements (with quarterly data and the default trailing twelve months, the
+          eighth quarter). When the statements cover fewer periods, the result is empty and a
+          warning names the number of periods needed; set an earlier `start_date` to obtain
+          the score.
 
         As an example:
 
@@ -6396,7 +6541,11 @@ class Models:
         # The signs compare a full trailing sum with the one a year back.
         first_columns = (lag - 1 if trailing else 0) + lag
         return self._finish_score(
-            results, rounding, show_columns, first_columns=first_columns
+            results,
+            rounding,
+            show_columns,
+            first_columns=first_columns,
+            name="The Montier C-Score",
         )
 
     @handle_errors

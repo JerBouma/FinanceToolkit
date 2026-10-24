@@ -77,15 +77,10 @@ def get_markov_regime_switching(
     names = fit.model.param_names
     parameters = dict(zip(names, np.asarray(fit.params), strict=True))
     means = np.array([parameters[f"const[{regime}]"] for regime in range(regimes)])
-    variances = np.array(
-        [
-            (
-                parameters[f"sigma2[{regime}]"]
-                if switching_variance
-                else parameters["sigma2"]
-            )
-            for regime in range(regimes)
-        ]
+    variances = (
+        np.array([parameters[f"sigma2[{regime}]"] for regime in range(regimes)])
+        if switching_variance
+        else np.full(regimes, parameters["sigma2"])
     )
     transition = np.asarray(fit.regime_transition)[:, :, 0]
     probabilities = np.asarray(fit.smoothed_marginal_probabilities)
@@ -117,7 +112,10 @@ def get_markov_regime_switching(
 
 
 def _segment_costs(
-    cumulative: np.ndarray, squares: np.ndarray, start: int, ends: np.ndarray
+    cumulative: np.ndarray,
+    squares: np.ndarray,
+    start: int | np.ndarray,
+    ends: int | np.ndarray,
 ) -> np.ndarray:
     """The sum of squared deviations from the mean of the segments start..end (exclusive)."""
     length = ends - start
@@ -190,10 +188,8 @@ def get_structural_breaks(
     for m in range(1, most + 1):
         for j in range((m + 1) * h, n + 1):
             starts = np.arange(m * h, j - h + 1)
-            candidates = cost[m - 1, starts] + (
-                squares[j]
-                - squares[starts]
-                - (cumulative[j] - cumulative[starts]) ** 2 / (j - starts)
+            candidates = cost[m - 1, starts] + _segment_costs(
+                cumulative, squares, starts, j
             )
             best = int(np.argmin(candidates))
             cost[m, j] = candidates[best]

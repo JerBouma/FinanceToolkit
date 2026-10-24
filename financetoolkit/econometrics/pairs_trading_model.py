@@ -27,8 +27,10 @@ def get_half_life(spread: pd.Series) -> float:
     design = np.column_stack([np.ones_like(lagged), lagged])
     (_, slope), *_ = np.linalg.lstsq(design, change, rcond=None)
     # A slope of (nearly) zero or above means the spread does not revert.
-    if slope > -NO_REVERSION or slope <= -1:
-        return np.inf if slope > -NO_REVERSION else 0.0
+    if slope > -NO_REVERSION:
+        return np.inf
+    if slope <= -1:
+        return 0.0
     return float(-np.log(2) / np.log(1 + slope))
 
 

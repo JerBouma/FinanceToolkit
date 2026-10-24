@@ -103,7 +103,7 @@ def to_series_columns(result: object, reference: SeriesReference) -> pd.DataFram
         ValueError: When the answer has no dates or no matching column.
     """
     if isinstance(result, pd.Series):
-        name = result.name if result.name is not None else None
+        name = result.name
         if name is None:
             name = reference.entities[0] if len(reference.entities) == 1 else "Value"
         frame = result.to_frame(str(name))
@@ -153,10 +153,10 @@ def to_series_columns(result: object, reference: SeriesReference) -> pd.DataFram
 
     selected = frame.loc[:, keep]
     names = []
-    for label in [label for label, kept in zip(labels, keep, strict=True) if kept]:
-        levels = [str(level) for level in label if str(level) != ""]
-        names.append(" ".join(levels) if levels else reference.entities[0])
-    selected = selected.copy()
+    for label, kept in zip(labels, keep, strict=True):
+        if kept:
+            levels = [str(level) for level in label if str(level) != ""]
+            names.append(" ".join(levels) if levels else reference.entities[0])
     selected.columns = names
     return selected
 

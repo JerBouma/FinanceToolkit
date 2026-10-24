@@ -23,6 +23,13 @@ SIGNIFICANCE_LEVEL = 0.05
 TWO_WAY_MAX_ITERATIONS = 1000
 TWO_WAY_TOLERANCE = 1e-12
 
+# Why a regressor cannot be estimated next to the fixed effects that absorb it.
+ABSORBED_REGRESSOR_EXPLANATION = (
+    "a regressor that is the same for every entity at each date cannot be combined with "
+    "time_effects, and one that is constant per entity cannot be combined with "
+    "entity_effects."
+)
+
 
 def _normalize_time_level(index: pd.MultiIndex) -> pd.MultiIndex:
     """
@@ -342,12 +349,12 @@ def get_fixed_effects(
     # floating-point noise instead and fitted with a coefficient of 0 and a standard error
     # of order 1e15. Checking the within-group variation first catches both cases.  # noqa: E501
     absorbed_columns = []
+    scale = x_panel.abs().max().clip(lower=1.0)
     for level, active in (("time", time_effects), ("entity", entity_effects)):
         if not active:
             continue
         grouped = x_panel.groupby(level=level)
         within_range = (grouped.max() - grouped.min()).abs().max()
-        scale = x_panel.abs().max().clip(lower=1.0)
         absorbed_columns += [
             str(column)
             for column in x_panel.columns
@@ -357,9 +364,7 @@ def get_fixed_effects(
     if absorbed_columns:
         raise ValueError(
             "The fixed effects fully absorb one or more regressors "
-            f"({', '.join(absorbed_columns)}): a regressor that is "
-            "the same for every entity at each date cannot be combined with time_effects, "
-            "and one that is constant per entity cannot be combined with entity_effects."
+            f"({', '.join(absorbed_columns)}): {ABSORBED_REGRESSOR_EXPLANATION}"
         )
 
     try:
@@ -371,9 +376,8 @@ def get_fixed_effects(
         # such as a market benchmark) is fully explained by the time effects, and one
         # that is constant per entity by the entity effects, so its slope is not identified.  # noqa: E501
         raise ValueError(
-            "The fixed effects fully absorb one or more regressors: a regressor that is "
-            "the same for every entity at each date cannot be combined with time_effects, "
-            "and one that is constant per entity cannot be combined with entity_effects."
+            "The fixed effects fully absorb one or more regressors: "
+            f"{ABSORBED_REGRESSOR_EXPLANATION}"
         ) from error
     except (ValueError, ZeroDivisionError, np.linalg.LinAlgError) as error:
         raise ValueError(

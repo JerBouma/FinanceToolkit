@@ -965,14 +965,8 @@ class ToolRegistry:
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
             )
-            frames.append(
-                (
-                    reference._replace(entities=entities),
-                    series_model.to_series_columns(
-                        result, reference._replace(entities=entities)
-                    ),
-                )
-            )
+            resolved = reference._replace(entities=entities)
+            frames.append((resolved, series_model.to_series_columns(result, resolved)))
         return series_model.combine_series(frames)
 
     def _build_router_wrapper(

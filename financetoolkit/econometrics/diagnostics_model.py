@@ -363,8 +363,8 @@ def get_variance_ratio_test(
         # n - 1 and the overlapping q-period sums, centred on q times the mean, divide by
         # m = q(n - q + 1)(1 - q/n). The plain sample variances are biased towards a ratio below 1 in finite samples.  # noqa: E501
         mean_return = values.mean()
-        single_period_deviations = values - mean_return
-        single_period_variance = np.sum(single_period_deviations**2) / (n - 1)
+        squared_deviations = (values - mean_return) ** 2
+        single_period_variance = np.sum(squared_deviations) / (n - 1)
 
         # q-period overlapping compounded returns, as the Lo-MacKinlay test defines them.
         q_period_returns = pd.Series(values).rolling(window=q).sum().dropna().to_numpy()
@@ -380,7 +380,6 @@ def get_variance_ratio_test(
         # Heteroskedasticity-robust z*(q): the asymptotic variance theta(q) weights the
         # autocorrelation estimators delta(k) of the squared deviations, so volatility
         # clustering does not inflate the rejection rate (Lo & MacKinlay, 1988, eq. 19-20).
-        squared_deviations = single_period_deviations**2
         squared_sum = np.sum(squared_deviations) ** 2
         theta_q = 0.0
         for k in range(1, q):
@@ -393,11 +392,7 @@ def get_variance_ratio_test(
             if theta_q > 0
             else np.nan
         )
-        robust_p_value = (
-            2 * stats.norm.sf(abs(robust_statistic))
-            if np.isfinite(robust_statistic)
-            else np.nan
-        )
+        robust_p_value = 2 * stats.norm.sf(abs(robust_statistic))
 
         return pd.Series(
             {

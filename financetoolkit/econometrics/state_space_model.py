@@ -144,7 +144,7 @@ def _dcc_correlations(
     driver = (1 - a - b) * unconditional + a * np.concatenate(
         [unconditional[None], outer[:-1]]
     )
-    q = signal.lfilter([1.0], [1.0, -b], driver.reshape(t, -1), axis=0, zi=None)
+    q = signal.lfilter([1.0], [1.0, -b], driver.reshape(t, -1), axis=0)
     # The recursion starts from Q̄: the first term carries b Q̄ as well.
     q = q.reshape(t, n, n) + (b ** np.arange(1, t + 1))[:, None, None] * unconditional
     scale = 1 / np.sqrt(np.einsum("tii->ti", q))

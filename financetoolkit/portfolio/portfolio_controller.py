@@ -465,6 +465,26 @@ class Portfolio:
 
         return pd.Series(values, index=self._portfolio_dataset.index, dtype=float)
 
+    def _ticker_historical_data(self, period: str) -> pd.DataFrame:
+        """
+        The historical data of the portfolio's tickers for a period, with the ticker as the second
+        column level under the portfolio's own ticker names. A Toolkit of a single ticker returns
+        flat columns, so the ticker level is added for it.
+        """
+        data = self._toolkit.get_historical_data(period=period)  # type: ignore[union-attr]
+
+        if data.empty:
+            return data
+
+        # One ticker comes back without the ticker level, which every position metric selects on.
+        if data.columns.nlevels == 1:
+            data = data.copy()
+            data.columns = pd.MultiIndex.from_product(
+                [data.columns, [self._toolkit._tickers[0]]]  # type: ignore[union-attr]
+            )
+
+        return data.rename(columns=self._ticker_combinations, level=1)
+
     def _cumulative_dividends(self) -> pd.DataFrame:
         """The cumulative cash dividends per unit of every ticker on the dates of the historical data."""
         if "Dividends" not in self._daily_historical_data.columns.get_level_values(0):
@@ -626,7 +646,9 @@ class Portfolio:
     ) -> pd.DataFrame | str | list:
         """
         Fill in the price of transactions that leave it out: the closing price of the day,
-        in the currency the ticker trades in. Files and folders that have a price column
+        in the currency the ticker trades in. A transaction on a day without a price, such as a
+        weekend or a holiday, takes the closing price of the first following trading day, the day
+        its position, benchmark and dividends start on. Files and folders that have a price column
         are passed on as they are.
         """
         if isinstance(dataset, list) or (
@@ -664,13 +686,17 @@ class Portfolio:
             closes = closes.to_frame(tickers[0])
         closes = closes.copy()
         closes.index = closes.index.to_timestamp()
-        closes = closes.sort_index().ffill()
+        closes = closes.sort_index()
+
+        def first_close(symbol: str, day: pd.Timestamp) -> float:
+            # The first close on or after the date, as the positions, the benchmark and the dividends use: the previous close would price a weekend purchase on Friday while its position starts on Monday.  # noqa: E501
+            if symbol not in closes.columns or pd.isna(day):
+                return float("nan")
+            following = closes[symbol].loc[day.normalize() :].dropna()
+            return float(following.iloc[0]) if not following.empty else float("nan")
+
         frame["Price"] = [
-            (
-                float(closes[str(symbol)].asof(day))
-                if str(symbol) in closes.columns and pd.notna(day)
-                else float("nan")
-            )
+            first_close(str(symbol), day)
             for symbol, day in zip(frame[ticker], dates, strict=True)
         ]
 
@@ -1442,7 +1468,7 @@ class Portfolio:
             zip(self._tickers, self._original_tickers)
         )
 
-        self._daily_historical_data = self._toolkit.get_historical_data(period="daily")
+        self._daily_historical_data = self._ticker_historical_data("daily")
 
         if self._daily_historical_data.empty and not self._api_key:
             logger.error(
@@ -1453,10 +1479,6 @@ class Portfolio:
                 "affiliate link which also supports the project."
             )
             return pd.DataFrame()
-
-        self._daily_historical_data = self._daily_historical_data.rename(
-            columns=self._ticker_combinations, level=1
-        )
 
         # Per ticker the currency its historical data is quoted in and the currency of its
         # transactions, when the two differ.
@@ -1528,29 +1550,15 @@ class Portfolio:
             rounding if rounding is not None else self._rounding,
         )
 
-        self._weekly_historical_data = convert(
-            self._toolkit.get_historical_data(period="weekly").rename(
-                columns=self._ticker_combinations, level=1
-            )
-        )
+        self._weekly_historical_data = convert(self._ticker_historical_data("weekly"))
 
-        self._monthly_historical_data = convert(
-            self._toolkit.get_historical_data(period="monthly").rename(
-                columns=self._ticker_combinations, level=1
-            )
-        )
+        self._monthly_historical_data = convert(self._ticker_historical_data("monthly"))
 
         self._quarterly_historical_data = convert(
-            self._toolkit.get_historical_data(period="quarterly").rename(
-                columns=self._ticker_combinations, level=1
-            )
+            self._ticker_historical_data("quarterly")
         )
 
-        self._yearly_historical_data = convert(
-            self._toolkit.get_historical_data(period="yearly").rename(
-                columns=self._ticker_combinations, level=1
-            )
-        )
+        self._yearly_historical_data = convert(self._ticker_historical_data("yearly"))
 
         # Positions are valued at the traded close, the basis of the transaction prices; a ticker whose exchange is closed on the last date keeps its previous close.  # noqa: E501
         self._latest_price = self._daily_historical_data["Close"].ffill().iloc[-1]
@@ -1725,14 +1733,20 @@ class Portfolio:
         - Dividends: The cash dividends received on the units held on every ex-dividend date.
         - Return: The total return on the capital deployed, i.e. Return Value divided by Invested.
         This covers realized and unrealized results and the dividends together and is NaN when nothing
-        was invested.
+        was invested. The "Portfolio" row divides by the capital contributed to the portfolio instead:
+        the peak of the cumulative net contribution, i.e. every buy plus the costs minus the sale
+        proceeds and the dividends received, summed over the assets per date. The buys of a rebalancing
+        are paid for by the sells and dividends of the portfolio itself, so a portfolio that invests
+        10,000 once has 10,000 of capital however often it is rebalanced, while its "Invested" adds up
+        every rebalancing buy. A portfolio that never sells has its "Invested" as its capital.
         - Return Value: The absolute profit or loss, i.e. Latest Value plus all sale proceeds plus
         Dividends minus Invested. This equals realized PnL plus unrealized PnL plus dividends minus the
         transaction costs, where the realized PnL is the figure reported by get_transactions_overview.
         - Benchmark Return: The return the identical cash flows would have produced in the benchmark.
         Every transaction buys or sells benchmark units at the benchmark's closing price for the exact
         cash amount of that transaction on that date, so the comparison is matched in money rather than
-        in share count, and the benchmark's dividends are received as cash as well.
+        in share count, and the benchmark's dividends are received as cash as well. The "Portfolio"
+        row divides by the same capital as its Return, so its Alpha compares like with like.
         - Volatility: The annualized volatility of the asset's daily returns over the most recent 252
         trading days. For the aggregated "Portfolio" row, this is derived from the full covariance matrix
         of the underlying asset returns over the same days (Var_p = w^T * Cov * w, Markowitz, 1952)
@@ -1812,7 +1826,7 @@ class Portfolio:
         | VOO          |       77 |     -12 | 256.027  |  20238.2   |        698.58  |       53790.7  |    3863.3   |   1.867  |       37784.6  |             1.6782 |       0.1268 |                 0.1274 |  0.1888 |  0.9928 |   0.0555 |
         | VSS          |       98 |     -21 |  94.9125 |  10366.5   |        149.35  |       14636.3  |    3122.51  |   0.8093 |        8390.01 |             2.4396 |       0.1664 |                 0.1274 | -1.6303 |  1.0607 |   0.0151 |
         | WMT          |       92 |     -18 |  22.2477 |   2265.02  |        119.89  |       11029.9  |     965.758 |   4.37   |        9898.01 |             3.409  |       0.2626 |                 0.1274 |  0.9609 | -0.0971 |   0.0114 |
-        | Portfolio    |     2142 |    -532 |  55.8595 | 134818     |        452.235 |      968688    |   35730.9   |   6.5145 |      878276    |             1.8581 |       0.2752 |                 0.1274 |  4.6564 |  1.7913 |   1      |
+        | Portfolio    |     2142 |    -532 |  55.8595 | 134818     |        452.235 |      968688    |   35730.9   |   8.8928 |      878276    |             2.5365 |       0.2752 |                 0.1274 |  6.3563 |  1.7913 |   1      |
         """
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
@@ -1850,6 +1864,15 @@ class Portfolio:
 
         cumulative_dividends = self._cumulative_dividends()
 
+        # The Portfolio row measures its return against the capital put into the portfolio, which needs the dates of every buy, sale and dividend that the positions overview holds.  # noqa: E501
+        contributed_capital = None
+        if include_portfolio:
+            if self._positions_overview.empty:
+                self.get_positions_overview()
+            contributed_capital = overview_model.calculate_contributed_capital(
+                self._positions_overview
+            )
+
         try:
             self._portfolio_overview = overview_model.create_portfolio_overview(
                 portfolio_name=self._portfolio_dataset[self._name_column],
@@ -1868,6 +1891,7 @@ class Portfolio:
                 benchmark_dividends=self._dividends_since_transactions(
                     self._benchmark_dividends_per_ticker
                 ),
+                contributed_capital=contributed_capital,
             )
         except ValueError as error:
             raise ValueError(f"Failed to create portfolio overview: {error}") from error

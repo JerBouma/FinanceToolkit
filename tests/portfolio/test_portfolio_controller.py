@@ -298,3 +298,119 @@ def test_the_portfolio_overview_adds_up_with_dividends():
     )
     # Return Value also holds the sale proceeds, which are never negative.
     assert (overview["Return Value"] >= return_value - 1e-6).all()
+
+
+def _self_benchmarked_portfolio(monkeypatch, transactions):
+    """A portfolio of transactions whose benchmark is AAPL for every ticker."""
+    prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    # The dataset's own benchmark column is left out, so it does not pose as a holding.
+    holdings = prices.drop(columns="Benchmark", level=1)
+
+    def price_toolkit(self, tickers, start_date):  # noqa: ARG001
+        self._toolkit = Toolkit(
+            tickers=tickers,
+            historical=holdings,
+            benchmark_ticker=None,
+            start_date="2019-12-31",
+            sleep_timer=False,
+        )
+        return self._toolkit
+
+    monkeypatch.setattr(Portfolio, "_price_toolkit", price_toolkit)
+    monkeypatch.setattr(Portfolio, "_ticker_currencies", lambda self, toolkit: {})
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.DataFrame(),
+    )
+
+    self_benchmarked = Portfolio(transactions=transactions)
+    self_benchmarked._benchmark_tickers = dict.fromkeys(
+        self_benchmarked._original_tickers, "AAPL"
+    )
+    self_benchmarked._benchmark_toolkit = Toolkit(
+        tickers=["AAPL"],
+        historical=prices.xs("AAPL", level=1, axis=1, drop_level=False),
+        benchmark_ticker=None,
+        start_date="2019-12-31",
+        sleep_timer=False,
+    )
+
+    return self_benchmarked, prices
+
+
+def test_a_weekend_transaction_is_priced_at_the_next_close(monkeypatch):
+    # 2021-01-09 is a Saturday, so the position, benchmark and dividends start on Monday 2021-01-11.  # noqa: E501
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-09", "2021-01-11"],
+            "Ticker": ["AAPL", "MSFT"],
+            "Volume": [10, 5],
+            "Costs": [0.0, 0.0],
+        }
+    )
+    self_benchmarked, prices = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    close = prices[("Close", "AAPL")]
+    close.index = close.index.to_timestamp()
+    assert float(self_benchmarked._portfolio_dataset["Price"].iloc[0]) == pytest.approx(
+        float(close.loc["2021-01-11"])
+    )
+
+    overview = self_benchmarked.get_portfolio_overview(rounding=12)
+
+    # An asset measured against itself over the same days has no alpha.
+    assert overview.loc["AAPL", "Alpha"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_the_portfolio_return_of_buys_alone_is_on_the_amount_invested(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-06-01", "2021-06-01"],
+            "Ticker": ["AAPL", "AAPL", "MSFT"],
+            "Volume": [10, 5, 3],
+            "Costs": [-1.0, -1.0, -1.0],
+        }
+    )
+    self_benchmarked, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    overview = self_benchmarked.get_portfolio_overview(rounding=12)
+
+    assert overview.loc["Portfolio", "Return"] == pytest.approx(
+        overview.loc["Portfolio", "Return Value"]
+        / overview.loc["Portfolio", "Invested"]
+    )
+    assert self_benchmarked._positions_overview["Dividends"].iloc[-1].sum() > 0
+
+
+def test_a_portfolio_of_one_ticker(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-06-01", "2022-02-01"],
+            "Ticker": ["AAPL", "AAPL", "AAPL"],
+            "Volume": [10, 5, -4],
+            "Costs": [-1.0, -1.0, -1.0],
+        }
+    )
+    single, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    overview = single.get_portfolio_overview(rounding=12)
+
+    assert list(overview.index) == ["AAPL", "Portfolio"]
+    assert overview.loc["AAPL", "Volume"] == pytest.approx(11.0)
+    # The asset is its own benchmark, so it has no alpha.
+    assert overview.loc["AAPL", "Alpha"] == pytest.approx(0.0, abs=1e-9)
+
+    positions = single.get_positions_overview()
+    assert positions["Volume"].columns.tolist() == ["AAPL"]
+    assert positions[("Volume", "AAPL")].iloc[-1] == pytest.approx(11.0)
+
+    performance = single.get_portfolio_performance(period="yearly")
+    assert not performance.empty
+
+    transactions = single.get_transactions_overview(exclude_sold_positions=False)
+    assert len(transactions) == 3
+
+    money_weighted = single.get_money_weighted_return()
+    assert {"AAPL", "Portfolio"} <= set(money_weighted.index)
+    assert money_weighted["Money-Weighted Return"].notna().all()

@@ -8,7 +8,9 @@ import pandas as pd
 import pytest
 
 from financetoolkit.portfolio.overview_model import (
+    calculate_contributed_capital,
     create_portfolio_overview,
+    create_positions_overview,
     create_profit_and_loss_overview,
 )
 
@@ -333,3 +335,135 @@ def test_trailing_volatility_and_beta_use_the_last_252_trading_days():
 
     assert volatility["X"] == pytest.approx(expected)
     assert calculate_trailing_beta(asset, benchmark)["X"] == pytest.approx(0.5)
+
+
+def _rebalanced_sixty_forty():
+    """A 60/40 portfolio of 10,000 rebalanced quarterly, with dividends on the second asset."""
+    from financetoolkit.portfolio import definition_model  # noqa: PLC0415
+
+    rng = np.random.default_rng(0)
+    dates = pd.period_range("2020-01-01", "2024-12-31", freq="D")
+    dates = dates[dates.dayofweek < 5]
+    prices = pd.DataFrame(
+        {
+            "A": 100 * np.exp(np.cumsum(rng.normal(0.0006, 0.02, len(dates)))),
+            "B": 50 * np.exp(np.cumsum(rng.normal(0.0001, 0.005, len(dates)))),
+        },
+        index=dates,
+    )
+    dividends = pd.DataFrame(0.0, index=dates, columns=["A", "B"])
+    dividends.iloc[60::63, 1] = 0.5
+
+    transactions = definition_model.build_transactions(
+        definition_model.PortfolioDefinition.from_weights(
+            {"A": 0.6, "B": 0.4}, rebalancing="quarterly"
+        ),
+        prices,
+        currencies={"A": "USD", "B": "USD"},
+        initial_value=10000,
+        dividends=dividends,
+    )
+    transactions["Date"] = pd.PeriodIndex(transactions["Date"], freq="D")
+    dataset = transactions.set_index(["Date", "Identifier"])[
+        ["Volume", "Price", "Costs"]
+    ]
+
+    return dates, prices, dividends, dataset
+
+
+def test_the_contributed_capital_of_a_rebalanced_portfolio_is_its_initial_value():
+    dates, prices, dividends, dataset = _rebalanced_sixty_forty()
+    positions = create_positions_overview(
+        ["A", "B"],
+        dates,
+        dataset,
+        pd.concat({"Close": prices, "Dividends": dividends}, axis=1),
+    )
+
+    capital = calculate_contributed_capital(positions)
+
+    assert capital == pytest.approx(10000)
+    # The rebalancing buys add up to far more than the capital that was put in.
+    assert positions["Invested Amount"].iloc[-1].sum() > 1.5 * capital
+
+    # The backtest's own value: the shares held plus the dividends paid since the last trade.
+    shares = dataset.groupby(level=1)["Volume"].sum()
+    last_trade = dataset.index.get_level_values(0).max()
+    final_value = (shares * prices.iloc[-1]).sum() + sum(
+        shares[ticker] * dividends.loc[dividends.index > last_trade, ticker].sum()
+        for ticker in ["A", "B"]
+    )
+
+    cumulative = dividends.cumsum()
+    locations = dates.get_indexer(dataset.index.get_level_values(0))
+    tickers = dataset.index.get_level_values(1)
+    since = pd.Series(
+        [
+            cumulative[ticker].iloc[-1] - cumulative[ticker].iloc[location]
+            for location, ticker in zip(locations, tickers, strict=True)
+        ],
+        index=dataset.index,
+    )
+    # The first asset is its own benchmark.
+    benchmark_prices = pd.Series(prices["A"].to_numpy()[locations], index=dataset.index)
+    benchmark_since = pd.Series(
+        [
+            cumulative["A"].iloc[-1] - cumulative["A"].iloc[location]
+            for location in locations
+        ],
+        index=dataset.index,
+    )
+
+    overview = create_portfolio_overview(
+        portfolio_name=pd.Series(tickers, index=dataset.index),
+        portfolio_volume=dataset["Volume"],
+        portfolio_price=dataset["Price"],
+        portfolio_costs=dataset["Costs"],
+        latest_returns=prices.iloc[-1],
+        benchmark_prices=benchmark_prices,
+        benchmark_latest_prices=prices["A"].iloc[-1],
+        volatilities=pd.Series({"A": 0.3, "B": 0.1, "Benchmark": 0.3}),
+        betas=pd.Series({"A": 1.0, "B": 0.1}),
+        dividends=since,
+        benchmark_dividends=benchmark_since,
+        contributed_capital=capital,
+    )
+
+    assert overview.loc["Portfolio", "Return"] == pytest.approx(final_value / 10000 - 1)
+    # The benchmark receives the same cash flows and is measured against the same capital.
+    value = dataset["Volume"] * dataset["Price"]
+    benchmark_units = value / benchmark_prices
+    benchmark_gain = (
+        benchmark_units.sum() * prices["A"].iloc[-1]
+        + (benchmark_units * benchmark_since).sum()
+        - value.sum()
+        - dataset["Costs"].abs().sum()
+    )
+    assert overview.loc["Portfolio", "Benchmark Return"] == pytest.approx(
+        benchmark_gain / capital
+    )
+    # Every asset keeps the return on its own invested amount.
+    assert overview.loc["A", "Return"] == pytest.approx(
+        overview.loc["A", "Return Value"] / overview.loc["A", "Invested"]
+    )
+
+
+def test_the_contributed_capital_of_buys_alone_is_the_amount_invested():
+    dates = pd.period_range("2023-01-02", periods=6, freq="D")
+    prices = pd.DataFrame({"A": [10.0, 11, 12, 13, 14, 15]}, index=dates)
+    dividends = pd.DataFrame({"A": [0.0, 0, 1, 0, 0, 0]}, index=dates)
+    dataset = pd.DataFrame(
+        {"Volume": [10.0, 10.0], "Price": [10.0, 13.0], "Costs": [-1.0, -1.0]},
+        index=pd.MultiIndex.from_tuples(
+            [(dates[0], "A"), (dates[3], "A")], names=["Date", "Identifier"]
+        ),
+    )
+    positions = create_positions_overview(
+        ["A"],
+        dates,
+        dataset,
+        pd.concat({"Close": prices, "Dividends": dividends}, axis=1),
+    )
+
+    # A dividend is received before the second buy, yet without a sale every buy is new capital.
+    assert calculate_contributed_capital(positions) == pytest.approx(232.0)

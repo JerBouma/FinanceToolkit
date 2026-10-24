@@ -265,6 +265,7 @@ def create_portfolio_overview(
     asset_returns: pd.DataFrame | None = None,
     dividends: pd.Series | None = None,
     benchmark_dividends: pd.Series | None = None,
+    contributed_capital: float | None = None,
 ):
     """
     Generate a comprehensive overview of portfolio positions and related performance metrics.
@@ -300,6 +301,10 @@ def create_portfolio_overview(
         benchmark_dividends (pd.Series | None, optional): The cash dividends per unit of the benchmark paid
             between the date of every transaction and the latest date, aligned with `portfolio_volume`.
             Defaults to None, which means no dividends.
+        contributed_capital (float | None, optional): The capital the portfolio as a whole received from
+            outside, as returned by `calculate_contributed_capital`. It is the denominator of the
+            "Portfolio" row's "Return" and "Benchmark Return". Defaults to None, which means the
+            portfolio's "Invested" is used.
 
     Returns:
         pd.DataFrame: A DataFrame containing the following metrics for each asset:
@@ -327,7 +332,8 @@ def create_portfolio_overview(
               current market value of the portfolio.
 
         If `include_portfolio` is True, the DataFrame includes a "Portfolio" row with aggregated metrics
-        for the entire portfolio.
+        for the entire portfolio. Its "Return" and "Benchmark Return" divide by `contributed_capital`, the
+        capital actually put into the portfolio, rather than by its "Invested".
 
     Notes:
         - The cost basis convention is total capital deployed rather than an inventory method: neither
@@ -350,8 +356,14 @@ def create_portfolio_overview(
           flows of the position on exactly the same dates, which makes "Alpha" a like-for-like
           comparison. Matching share counts instead would weight the benchmark by the number of units
           traded, which has no meaning across assets at different price levels.
-        - The portfolio "Return" is computed from aggregated totals, which is identical to an
-          invested-amount weighted average of the individual asset returns.
+        - The portfolio "Return" is the portfolio's "Return Value" divided by the capital contributed to
+          it. Within a portfolio, sale proceeds and dividends fund later purchases, so the buys of a
+          rebalancing are largely paid for by the sells of the same date: dividing by "Invested", the sum
+          of every buy, would count that recycled money as new capital and understate the return of a
+          rebalanced portfolio more with every rebalancing. Without `contributed_capital` the
+          portfolio "Return" is computed from aggregated totals, which is identical to an
+          invested-amount weighted average of the individual asset returns. The "Benchmark Return"
+          uses the same denominator, so the portfolio "Alpha" compares like with like.
         - The portfolio "Beta" is a weighted average of individual betas, which is mathematically exact
           because beta is linear in portfolio weights: Cov(sum_i w_i * R_i, R_m) / Var(R_m)
           = sum_i w_i * Beta_i.
@@ -498,6 +510,12 @@ def create_portfolio_overview(
         )
 
         return_value = latest_value + proceeds + dividends_received - invested
+        # The portfolio's own capital, not the sum of its buys: the buys of a rebalancing are funded by the sells and dividends of the portfolio itself, so counting them again as capital understates its return.  # noqa: E501
+        capital = (
+            contributed_capital
+            if contributed_capital is not None and contributed_capital > 0
+            else invested
+        )
 
         portfolio_summary = {
             "Volume": vol,
@@ -513,10 +531,10 @@ def create_portfolio_overview(
             "Dividends": dividends_received,
             "Benchmark Dividends": totals["Benchmark Dividends"],
             "Return Value": return_value,
-            "Return": return_value / invested if invested > 0 else np.nan,
+            "Return": return_value / capital if capital > 0 else np.nan,
             "Benchmark Return": (
-                (benchmark_latest_value_sum + proceeds - invested) / invested
-                if invested > 0
+                (benchmark_latest_value_sum + proceeds - invested) / capital
+                if capital > 0
                 else np.nan
             ),
             "Volatility": portfolio_volatility,
@@ -554,6 +572,50 @@ def create_portfolio_overview(
     ]
 
     return portfolio_overview_grouped
+
+
+def calculate_contributed_capital(positions_overview: pd.DataFrame) -> float:
+    """
+    Calculate the capital contributed to a portfolio from outside, the denominator of its total return.
+
+    Within a portfolio, sale proceeds and dividends are cash that can fund later purchases. The net
+    contribution on every date is the cumulative value of every buy plus the transaction costs, minus
+    the sale proceeds and the dividends received, summed over all assets. Its peak is the most money
+    that ever had to be put in: for a portfolio that invests 10,000 once and rebalances quarterly, it
+    stays 10,000 however many rebalancing buys follow, since each is paid for by the sells and the
+    dividends of the portfolio itself.
+
+    Args:
+        positions_overview (pd.DataFrame): The positions overview of `create_positions_overview`, with the
+            cumulative "Invested Amount", "Realized Proceeds" and "Dividends" of every asset per date.
+
+    Returns:
+        float: The peak of the cumulative net contribution. A portfolio without a single sale returns its
+            total "Invested Amount", every buy plus the costs.
+
+    Notes:
+        - A portfolio that never sells is a record of purchases whose dividends are reported as cash
+          received, so every buy is new capital and the contributed capital equals the amount invested.
+          Only a portfolio that sells, such as one that is rebalanced, recycles its own cash.
+        - The peak rather than the latest value is used, because money taken out later does not undo
+          the capital that was at work before it.
+    """
+    if positions_overview.empty:
+        return float("nan")
+
+    invested = positions_overview["Invested Amount"].sum(axis=1)
+    proceeds = positions_overview["Realized Proceeds"].sum(axis=1)
+
+    if proceeds.iloc[-1] <= 0:
+        return float(invested.iloc[-1])
+
+    dividends = (
+        positions_overview["Dividends"].sum(axis=1)
+        if "Dividends" in positions_overview.columns.get_level_values(0)
+        else 0.0
+    )
+
+    return float((invested - proceeds - dividends).cummax().iloc[-1])
 
 
 def _lookup_period_values(

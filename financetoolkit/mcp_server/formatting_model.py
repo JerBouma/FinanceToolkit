@@ -211,13 +211,16 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
             else:
                 level_names.append(f"level_{i}")
 
+        named_last_level = bool(dataframe.index.names[-1])
         dataframe = dataframe.copy()
         dataframe.index.names = level_names
         flat = dataframe.reset_index()
 
-        # One metric means the last column level repeats, so drop it to stay concise.
+        # One metric means the last column level repeats, so drop it to stay concise. A
+        # level the result names itself (such as an option's expiration) is information,
+        # even when it has one value, and is kept.
         last_level = level_names[-1] if level_names else None
-        if last_level and len(flat[last_level].unique()) == 1:
+        if last_level and not named_last_level and len(flat[last_level].unique()) == 1:
             flat = flat.drop(columns=[last_level])
 
         return [

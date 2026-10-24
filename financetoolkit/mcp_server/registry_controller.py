@@ -68,6 +68,9 @@ _OPAQUE_TYPES = {
 }
 
 # Injected into each tool's Args docstring so FastMCP can surface them.
+# The indicators that read the returns of the period itself rather than results within each
+# period, so a blocked period (e.g. daily performance) does not apply to them.
+PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis"})
 # The indicators whose own limit also takes a negative number, for the last rows.
 NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
 
@@ -1311,6 +1314,7 @@ class ToolRegistry:
                 blocked_periods_for_tool
                 and "period" in method_kwargs
                 and not method_kwargs.get("rolling")
+                and method_name not in PERIOD_BLOCK_EXEMPT
             ):
                 requested_period = str(method_kwargs["period"]).lower()
                 if requested_period in blocked_periods_for_tool:

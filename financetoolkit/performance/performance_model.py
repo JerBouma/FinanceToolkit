@@ -2949,7 +2949,11 @@ def get_style_analysis(
     return pd.Series(
         [
             *weights,
-            1 - np.var(residual, ddof=1) / np.var(y, ddof=1),
+            (
+                1 - np.var(residual, ddof=1) / np.var(y, ddof=1)
+                if np.var(y, ddof=1) > 0
+                else np.nan
+            ),
             residual.mean() * periods_per_year,
             residual.std(ddof=1) * np.sqrt(periods_per_year),
         ],

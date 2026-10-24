@@ -38,7 +38,10 @@ def get_seasonality(
             monthly return is measured from one month's last close to the next, so with an
             end date before the last business day of its month the final return covers only
             part of that month; it is then left out rather than averaged as a full month.
-            Defaults to None, which takes every return as complete.
+            The last business day ignores exchange holidays, so an end date on the last
+            trading day before a month-end holiday (such as Good Friday) also leaves that
+            month out; pass the calendar month end to keep it. Defaults to None, which takes
+            every return as complete.
 
     Returns:
         pd.DataFrame: The Average Return, Median Return, Hit Rate, t-Statistic and
@@ -125,7 +128,7 @@ def get_relative_strength(
 def get_relative_strength_rating(prices: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate the relative strength rating of every asset: its performance over the last
-    year, with the latest quarter counting twice (the 3, 6, 9 and 12-month returns weighted
+    year, the latest quarter weighing most (the 3, 6, 9 and 12-month returns weighted
     0.4, 0.2, 0.2 and 0.2), ranked against the other assets from 1 (weakest) to 99
     (strongest). The rating is only meaningful across many assets, such as the constituents
     of an index.

@@ -245,3 +245,15 @@ def test_rolling_style_analysis_on_the_toolkit_starts_with_a_full_window(
     assert ("AAPL", "Out-of-Sample Selection Return") in rolling.columns
     assert np.isnan(rolling[("AAPL", "Out-of-Sample Selection Return")].iloc[0])
     assert rolling[("AAPL", "Out-of-Sample Selection Return")].iloc[1:].notna().all()
+
+
+def test_a_constant_fund_has_no_r_squared():
+    from financetoolkit.performance import performance_model
+
+    rng = np.random.default_rng(3)
+    styles = pd.DataFrame(rng.normal(0, 0.01, (40, 2)), columns=["A", "B"])
+    result = performance_model.get_style_analysis(
+        pd.Series(0.01, index=styles.index), styles
+    )
+
+    assert np.isnan(result["R Squared"])

@@ -7943,8 +7943,8 @@ class Technicals:
         - Mansfield Relative Strength: the relative strength against its own moving average
           (of `window` periods, a year by default) minus 1. Above zero the ticker is gaining on
           the Benchmark.
-        - Relative Strength Rating: the ticker's performance over the last year, with the last
-          quarter counting twice (the 3, 6, 9 and 12-month returns weighted 0.4, 0.2, 0.2 and
+        - Relative Strength Rating: the ticker's performance over the last year, the last quarter
+          weighing most (the 3, 6, 9 and 12-month returns weighted 0.4, 0.2, 0.2 and
           0.2), ranked against the other tickers from 1 (weakest) to 99 (strongest), from daily
           prices. Investor's Business Daily publishes the original rating with a proprietary
           formula; this weighting is its common public approximation. Tickers with the same

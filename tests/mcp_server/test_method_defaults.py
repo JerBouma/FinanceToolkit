@@ -555,3 +555,19 @@ def test_an_assumed_bond_input_is_named(captured):
 
     assert "Assumed yield_to_maturity=0.08 (the default)" in call()
     assert "Assumed" not in call(yield_to_maturity=0.045)
+
+
+def test_daily_style_analysis_is_not_blocked(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {
+                "indicator": "get_style_analysis",
+                "tickers": "ARKK",
+                "style_tickers": "IWF,AGG",
+                "period": "daily",
+            },
+        )
+    )
+
+    assert captured[-1]["period"] == "daily"

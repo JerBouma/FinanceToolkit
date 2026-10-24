@@ -67,7 +67,6 @@ _OPAQUE_TYPES = {
     "DataFrame",
 }
 
-# Injected into each tool's Args docstring so FastMCP can surface them.
 # The indicators that read the returns of the period itself rather than results within each
 # period, so a blocked period (e.g. daily performance) does not apply to them.
 PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis"})
@@ -75,6 +74,7 @@ PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis"})
 NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
 
 
+# Injected into each tool's Args docstring so FastMCP can surface them.
 _PARAM_DESCRIPTIONS: dict[str, str] = {
     "indicator": (
         "Name of the specific metric to calculate, one of the listed values. Required — "

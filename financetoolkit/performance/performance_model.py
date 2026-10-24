@@ -384,9 +384,7 @@ def obtain_fama_and_french_dataset(
         pd.DataFrame: the Fama and French 5 Factor Model dataset.
     """
     # Define the URL of the ZIP file
-    fama_and_french_url = (
-        fama_and_french_url if fama_and_french_url else factor_url(region, "five")
-    )
+    fama_and_french_url = fama_and_french_url or factor_url(region, "five")
 
     cache = get_active_cache()
 
@@ -445,7 +443,7 @@ def obtain_fama_and_french_three_factor_dataset(
         pd.DataFrame: the Fama and French 3 Factor Model dataset.
     """
     return obtain_fama_and_french_dataset(
-        fama_and_french_url if fama_and_french_url else factor_url(region, "three")
+        fama_and_french_url or factor_url(region, "three")
     )
 
 
@@ -471,7 +469,7 @@ def obtain_carhart_momentum_dataset(
     Returns:
         pd.DataFrame: the Carhart Momentum Factor dataset, with a single "Mom" column.
     """
-    momentum_url = momentum_url if momentum_url else factor_url(region, "momentum")
+    momentum_url = momentum_url or factor_url(region, "momentum")
 
     cache = get_active_cache()
 
@@ -2945,13 +2943,14 @@ def get_style_analysis(
     weights = get_style_weights(data.iloc[:, 0], data.iloc[:, 1:]).to_numpy()
     y = data.iloc[:, 0].to_numpy(dtype=float)
     residual = y - data.iloc[:, 1:].to_numpy(dtype=float) @ weights
+    fund_variance = np.var(y, ddof=1)
 
     return pd.Series(
         [
             *weights,
             (
-                1 - np.var(residual, ddof=1) / np.var(y, ddof=1)
-                if np.var(y, ddof=1) > 0
+                1 - np.var(residual, ddof=1) / fund_variance
+                if fund_variance > 0
                 else np.nan
             ),
             residual.mean() * periods_per_year,

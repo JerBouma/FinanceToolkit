@@ -55,13 +55,12 @@ def get_seasonality(
         else pd.DatetimeIndex(index)
     )
 
-    if frequency == "month" and end_date is not None and len(values):
-        month_start = pd.Period(dates[-1], freq="M").start_time
-        last_business_day = pd.offsets.BMonthEnd().rollforward(month_start)
-        if pd.Timestamp(end_date).normalize() < last_business_day:
-            values, dates = values.iloc[:-1], dates[:-1]
-
     if frequency == "month":
+        if end_date is not None and len(values):
+            month_start = pd.Period(dates[-1], freq="M").start_time
+            last_business_day = pd.offsets.BMonthEnd().rollforward(month_start)
+            if pd.Timestamp(end_date).normalize() < last_business_day:
+                values, dates = values.iloc[:-1], dates[:-1]
         groups = dates.month
         labels = {month: calendar.month_name[month] for month in range(1, 13)}
     elif frequency == "weekday":
@@ -72,7 +71,8 @@ def get_seasonality(
             f"The frequency must be 'month' or 'weekday', not {frequency!r}."
         )
 
-    grouped = values.groupby(np.asarray(groups))
+    groups = np.asarray(groups)
+    grouped = values.groupby(groups)
     count = grouped.count()
     mean = grouped.mean()
     deviation = grouped.std(ddof=1)
@@ -80,7 +80,7 @@ def get_seasonality(
         {
             "Average Return": mean,
             "Median Return": grouped.median(),
-            "Hit Rate": grouped.apply(lambda group: float((group > 0).mean())),
+            "Hit Rate": (values > 0).groupby(groups).mean(),
             "t-Statistic": mean / (deviation / np.sqrt(count)),
             "Observations": count,
         }

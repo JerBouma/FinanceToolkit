@@ -665,6 +665,10 @@ def get_market_breadth(
         previous_high = previous_low = prices_close * np.nan
     counted = previous_high.notna() & prices_close.notna()
 
+    def count_new(extremes: pd.DataFrame) -> pd.Series:
+        # NaN rather than zero while no constituent has a full window yet.
+        return extremes.astype(float).where(counted).sum(axis=1, min_count=1)
+
     breadth = pd.DataFrame(
         {
             "Advancers": advancers,
@@ -679,15 +683,8 @@ def get_market_breadth(
                 short_window
             ),
             f"Percentage Above {long_window}-Period Average": share_above(long_window),
-            # NaN rather than zero while no constituent has a full window yet.
-            "New Highs": (prices_close > previous_high)
-            .astype(float)
-            .where(counted)
-            .sum(axis=1, min_count=1),
-            "New Lows": (prices_close < previous_low)
-            .astype(float)
-            .where(counted)
-            .sum(axis=1, min_count=1),
+            "New Highs": count_new(prices_close > previous_high),
+            "New Lows": count_new(prices_close < previous_low),
         }
     )
     # The first date has no change to count.

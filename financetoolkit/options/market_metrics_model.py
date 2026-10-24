@@ -39,6 +39,12 @@ def get_mid_prices(chain: pd.DataFrame) -> pd.Series:
     return ((bid + ask) / 2).where(quoted, last)
 
 
+def _positive_volatility(chain: pd.DataFrame) -> pd.Series:
+    """The quoted implied volatilities above zero, averaged per strike."""
+    volatility = pd.to_numeric(chain["Implied Volatility"], errors="coerce")
+    return volatility[volatility > 0].groupby(level=0).mean()
+
+
 def get_put_call_ratio(calls: pd.DataFrame, puts: pd.DataFrame) -> pd.Series:
     """
     The put-call ratio by volume and by open interest. A ratio above one means more puts
@@ -52,10 +58,13 @@ def get_put_call_ratio(calls: pd.DataFrame, puts: pd.DataFrame) -> pd.Series:
         pd.Series: The Call Volume, Put Volume, Volume Put-Call Ratio, Call Open Interest,
         Put Open Interest and Open Interest Put-Call Ratio.
     """
-    call_volume = float(pd.to_numeric(calls["Volume"], errors="coerce").sum())
-    put_volume = float(pd.to_numeric(puts["Volume"], errors="coerce").sum())
-    call_interest = float(pd.to_numeric(calls["Open Interest"], errors="coerce").sum())
-    put_interest = float(pd.to_numeric(puts["Open Interest"], errors="coerce").sum())
+
+    def total(chain: pd.DataFrame, column: str) -> float:
+        return float(pd.to_numeric(chain[column], errors="coerce").sum())
+
+    call_volume, put_volume = total(calls, "Volume"), total(puts, "Volume")
+    call_interest = total(calls, "Open Interest")
+    put_interest = total(puts, "Open Interest")
 
     return pd.Series(
         {
@@ -91,7 +100,7 @@ def get_max_pain(calls: pd.DataFrame, puts: pd.DataFrame) -> float:
     put_interest = pd.to_numeric(puts["Open Interest"], errors="coerce").fillna(0)
     strikes = np.unique(np.concatenate([call_interest.index, put_interest.index]))
 
-    if call_interest.sum() + put_interest.sum() == 0 or len(strikes) == 0:
+    if call_interest.sum() + put_interest.sum() == 0:
         return np.nan
 
     call_strikes = call_interest.index.to_numpy(dtype=float)
@@ -253,8 +262,7 @@ def get_at_the_money_volatility(
     """
     values = []
     for chain in (calls, puts):
-        volatility = pd.to_numeric(chain["Implied Volatility"], errors="coerce")
-        volatility = volatility[volatility > 0].groupby(level=0).mean().sort_index()
+        volatility = _positive_volatility(chain).sort_index()
         if len(volatility) >= 2:  # noqa: PLR2004
             values.append(
                 float(
@@ -301,8 +309,7 @@ def get_volatility_skew(
     """
 
     def wing(chain: pd.DataFrame, put_option: bool) -> float:
-        volatility = pd.to_numeric(chain["Implied Volatility"], errors="coerce")
-        volatility = volatility[volatility > 0].groupby(level=0).mean()
+        volatility = _positive_volatility(chain)
         if len(volatility) < 2:  # noqa: PLR2004
             return np.nan
         delta = np.abs(
@@ -454,46 +461,29 @@ def get_model_free_variance(
                     break
         return chosen
 
-    puts_used = selected(strikes[strikes < k0][::-1], put_bids)
+    puts_used = selected(strikes[strikes < k0][::-1], put_bids)[::-1]
     calls_used = selected(strikes[strikes > k0], call_bids)
     # Without a strip of bid options on both sides there is no variance to measure: K0
     # alone gives only the (negative) correction term.
     if not puts_used or not calls_used:
         return np.nan, float(forward)
-    used = sorted(puts_used + [k0] + calls_used)
 
-    prices = {
-        strike: (
-            float(put_prices.get(strike, np.nan))
-            if strike < k0
-            else (
-                float(call_prices.get(strike, np.nan))
-                if strike > k0
-                else float(
-                    np.nanmean(
-                        [
-                            put_prices.get(strike, np.nan),
-                            call_prices.get(strike, np.nan),
-                        ]
-                    )
-                )
-            )
-        )
-        for strike in used
-    }
-
-    strikes_used = np.array(used)
-    spacing = np.empty_like(strikes_used)
-    if len(strikes_used) == 1:
-        spacing[:] = 0
-    else:
-        spacing[1:-1] = (strikes_used[2:] - strikes_used[:-2]) / 2
-        spacing[0] = strikes_used[1] - strikes_used[0]
-        spacing[-1] = strikes_used[-1] - strikes_used[-2]
-
-    contributions = (
-        spacing / strikes_used**2 * growth * np.array([prices[k] for k in used])
+    # Puts below K0, calls above and the average of both at K0.
+    prices = np.array(
+        [put_prices.get(strike, np.nan) for strike in puts_used]
+        + [np.nanmean([put_prices.get(k0, np.nan), call_prices.get(k0, np.nan)])]
+        + [call_prices.get(strike, np.nan) for strike in calls_used],
+        dtype=float,
     )
+
+    # Both sides hold at least one strike, so there are always three or more.
+    strikes_used = np.array(puts_used + [k0] + calls_used)
+    spacing = np.empty_like(strikes_used)
+    spacing[1:-1] = (strikes_used[2:] - strikes_used[:-2]) / 2
+    spacing[0] = strikes_used[1] - strikes_used[0]
+    spacing[-1] = strikes_used[-1] - strikes_used[-2]
+
+    contributions = spacing / strikes_used**2 * growth * prices
     variance = (2 / time_to_expiration) * float(np.nansum(contributions)) - (
         1 / time_to_expiration
     ) * (forward / k0 - 1) ** 2

@@ -37,6 +37,12 @@ logger = logger_model.get_logger()
 MINIMUM_OBSERVATIONS_FOR_SVI_FIT = 5
 MINIMUM_EXPIRATIONS_FOR_CALENDAR_CHECK = 2
 
+# What the market metrics take from the historical data while the option chains are live.
+_CHAIN_INPUTS_FROM_HISTORY = (
+    "the risk free rate, the dividend yield and, when a chain quotes no price of "
+    "the underlying, the stock price come from that date"
+)
+
 
 def _days_to_expiration(expiration_date: str) -> int:
     """
@@ -7008,10 +7014,7 @@ class Options:
         rounding: int | None,
     ) -> pd.DataFrame:
         """Run a calculation on every expiry of every ticker, rows (ticker, expiration)."""
-        self._warn_if_history_is_stale(
-            "the risk free rate, the dividend yield and, when a chain quotes no price of "
-            "the underlying, the stock price come from that date"
-        )
+        self._warn_if_history_is_stale(_CHAIN_INPUTS_FROM_HISTORY)
         rows = {}
         for ticker in self._tickers:
             for expiration_date in self._expiries(
@@ -7098,36 +7101,25 @@ class Options:
             number_of_expirations,
             None,
         )
-        totals = {}
+        # Each ticker's expiries are followed by an "All" row with the summed volume and
+        # open interest and the ratios of those sums.
+        parts = []
         for ticker in table.index.get_level_values(0).unique():
-            sums = table.loc[ticker].sum()
-            totals[(ticker, "All")] = pd.Series(
-                {
-                    "Days to Expiration": np.nan,
-                    "Call Volume": sums["Call Volume"],
-                    "Put Volume": sums["Put Volume"],
-                    "Volume Put-Call Ratio": (
-                        sums["Put Volume"] / sums["Call Volume"]
-                        if sums["Call Volume"]
-                        else np.nan
-                    ),
-                    "Call Open Interest": sums["Call Open Interest"],
-                    "Put Open Interest": sums["Put Open Interest"],
-                    "Open Interest Put-Call Ratio": (
-                        sums["Put Open Interest"] / sums["Call Open Interest"]
-                        if sums["Call Open Interest"]
-                        else np.nan
-                    ),
-                }
-            )
-        combined = pd.concat([table, pd.DataFrame(totals).T])
-        combined = combined.reindex(
-            [
-                key
-                for ticker in table.index.get_level_values(0).unique()
-                for key in list(table.loc[[ticker]].index) + [(ticker, "All")]
+            total = table.loc[ticker].sum()
+            total["Days to Expiration"] = np.nan
+            for ratio, side in (
+                ("Volume Put-Call Ratio", "Volume"),
+                ("Open Interest Put-Call Ratio", "Open Interest"),
+            ):
+                calls = total[f"Call {side}"]
+                total[ratio] = total[f"Put {side}"] / calls if calls else np.nan
+            parts += [
+                table.loc[[ticker]],
+                pd.DataFrame(
+                    [total], index=pd.MultiIndex.from_tuples([(ticker, "All")])
+                ),
             ]
-        )
+        combined = pd.concat(parts)
         combined.index.names = ["Ticker", "Expiration"]
         return apply_rounding(
             combined, rounding if rounding is not None else self._rounding
@@ -7267,10 +7259,7 @@ class Options:
         | QQQ  |        704.4  |           1.83881e+09 |         -6.41458e+09 |         -4.57577e+09 |            727.993 |
         | AAPL |        347.73 |           7.48337e+08 |         -4.80606e+08 |          2.67731e+08 |            342.412 |
         """
-        self._warn_if_history_is_stale(
-            "the risk free rate, the dividend yield and, when a chain quotes no price of "
-            "the underlying, the stock price come from that date"
-        )
+        self._warn_if_history_is_stale(_CHAIN_INPUTS_FROM_HISTORY)
         summary, strikes = {}, {}
         for ticker in self._tickers:
             expiries = []
@@ -7307,9 +7296,7 @@ class Options:
             summary[ticker] = pd.Series(
                 {
                     "Stock Price": stock_price,
-                    "Call Gamma Exposure": combined["Call Gamma Exposure"].sum(),
-                    "Put Gamma Exposure": combined["Put Gamma Exposure"].sum(),
-                    "Net Gamma Exposure": combined["Net Gamma Exposure"].sum(),
+                    **combined.sum(),
                     "Gamma Flip Point": market_metrics_model.get_gamma_flip(
                         expiries, stock_price, risk_free_rate, dividend_yield
                     ),

@@ -1,0 +1,959 @@
+"""ETF Module"""
+
+__docformat__ = "google"
+
+from collections.abc import Callable
+
+import pandas as pd
+
+from financetoolkit.etf import etf_model, sec_model
+from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
+
+# pylint: disable=too-many-instance-attributes,too-many-arguments
+# The examples' output tables are wider than the line length.
+# ruff: noqa: E501
+
+logger = get_logger()
+
+BENCHMARK_TICKER = "Benchmark"
+# The trading days the liquidity is measured over: the last year.
+TRADING_DAYS = 252
+# The most days the close compared with the NAV may lie before the NAV's date (a weekend).
+NAV_PRICE_DAYS = 3
+# Symbols are short; a longer identifier is an ISIN or a name.
+MAXIMUM_SYMBOL_LENGTH = 10
+
+
+class ETF:
+    """
+    The ETF module analyzes exchange traded funds (and other funds): what they hold, what they
+    cost, how they track their index, how concentrated and how much alike they are, what their holdings are
+    valued at and how liquid they are.
+    """
+
+    def __init__(
+        self,
+        tickers: str | list[str],
+        historical_function: Callable[[], pd.DataFrame],
+        fund_data_function: Callable[..., pd.DataFrame | None],
+        ratios_function: Callable[[list[str]], pd.DataFrame],
+        start_date: str | None = None,
+        end_date: str | None = None,
+        rounding: int | None = 4,
+    ):
+        """
+        Initializes the ETF Controller Class, which the Toolkit creates as `toolkit.etf`.
+
+        Args:
+            tickers (str | list[str]): The tickers of the funds.
+            historical_function (Callable[[], pd.DataFrame]): Retrieves the daily historical
+                data of the tickers and the Benchmark, when an analysis first needs it.
+            fund_data_function (Callable[..., pd.DataFrame | None]): Retrieves a fund dataset
+                of the tickers (holdings, information, country_weightings or
+                sector_weightings), with overwrite= to retrieve it again.
+            ratios_function (Callable[[list[str]], pd.DataFrame]): Retrieves the trailing twelve
+                month ratios of a list of tickers, the holdings.
+            start_date (str | None, optional): The start date. Defaults to None.
+            end_date (str | None, optional): The end date. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to 4.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["SPY", "VOO", "IVV"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_profile()
+        ```
+        """
+        self._tickers = [tickers] if isinstance(tickers, str) else list(tickers)
+        self._historical_function = historical_function
+        self._daily_historical: pd.DataFrame | None = None
+        self._fund_data_function = fund_data_function
+        self._ratios_function = ratios_function
+        self._start_date = start_date
+        self._end_date = end_date
+        self._rounding = rounding
+
+    def _funds(self) -> list[str]:
+        """The tickers other than the Benchmark and a Portfolio."""
+        return [
+            ticker
+            for ticker in self._tickers
+            if ticker not in (BENCHMARK_TICKER, "Portfolio")
+        ]
+
+    def _historical(self) -> pd.DataFrame:
+        """The daily historical data of the tickers and the Benchmark."""
+        if self._daily_historical is None:
+            self._daily_historical = self._historical_function()
+        return self._daily_historical
+
+    def _weights(self) -> dict[str, pd.Series]:
+        """The weight of every holding per fund, from the holdings."""
+        holdings = self._fund_data_function("holdings")
+        if holdings is None or holdings.empty:
+            raise ValueError(
+                "No holdings are available for these tickers; only ETFs and funds have them."
+            )
+        weights = {}
+        for fund in holdings.index.get_level_values(0).unique():
+            if fund not in self._funds():
+                continue
+            fund_holdings = holdings.loc[fund]
+            # A holding without a symbol (a bond, cash) is identified by its ISIN or name.
+            keys = pd.Series(fund_holdings.index.astype(str), index=fund_holdings.index)
+            for fallback in ("ISIN", "Name"):
+                if fallback in fund_holdings:
+                    missing = keys.str.strip().isin(["", "nan", "None"])
+                    keys = keys.where(~missing, fund_holdings[fallback].astype(str))
+            fund_weights = pd.to_numeric(fund_holdings["Weight"], errors="coerce")
+            fund_weights.index = keys.to_numpy()
+            fund_weights = fund_weights.groupby(level=0).sum().dropna()
+            # Short positions and derivatives with a negative weight do not add to exposure.
+            weights[fund] = fund_weights[fund_weights > 0]
+        return weights
+
+    @staticmethod
+    def _sorted_weightings(weightings: pd.DataFrame | None) -> pd.DataFrame | None:
+        """The weightings with the largest weights of the first fund first."""
+        if weightings is None or weightings.empty:
+            return weightings
+        # A fund lists only the sectors or countries it holds, so one another fund holds has
+        # no weight in it rather than an unknown one.
+        return weightings.fillna(0).sort_values(
+            by=weightings.columns[0], ascending=False, kind="stable"
+        )
+
+    def _round(self, data: pd.DataFrame, rounding: int | None) -> pd.DataFrame:
+        return apply_rounding(
+            data, rounding if rounding is not None else self._rounding
+        )
+
+    def get_holdings(
+        self,
+        overwrite: bool = False,
+        show_columns: list[str] | None = None,
+        limit: int | None = None,
+    ) -> pd.DataFrame | None:
+        """
+        Get the holdings of every fund: each asset it holds with the number of shares, the
+        market value and the weight in the fund (as a decimal). This shows what the fund is
+        actually exposed to and how concentrated it is; get_concentration and get_overlap
+        summarize the weights.
+
+        Tickers that are not an ETF or fund have no holdings and return no data. They are not
+        removed from the Toolkit instance.
+
+        Also known as: fund holdings, ETF constituents, fund portfolio.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the holdings again. Defaults to False.
+            show_columns (list[str] | None, optional): A list of column names to keep in the
+                result. Invalid names are reported and ignored. Defaults to None, which keeps
+                every column.
+            limit (int | None, optional): The number of largest holdings (by weight) to keep per
+                fund, e.g. 10 for the top 10, or of the smallest for a negative number, e.g.
+                -10. Defaults to None, which keeps every holding. The holdings carry no sector or
+                country; get_sector_weightings and get_country_weightings break the fund down by
+                those.
+
+        Returns:
+            pd.DataFrame | None: The holdings per fund, indexed by asset (only by asset for a
+            single fund). None without an API key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_holdings().loc["QQQ"].head()
+        ```
+
+        Which returns:
+
+        | Asset   | Name                       | ISIN         | CUSIP     |      Shares |    Weight |   Market Value | Updated At          |
+        |:--------|:---------------------------|:-------------|:----------|------------:|----------:|---------------:|:--------------------|
+        | NVDA    | NVIDIA Corp                | US67066G1040 | 67066G104 | 1.80964e+08 | 0.0850518 |    4.32937e+10 | 2026-10-07 14:14:58 |
+        | AAPL    | Apple Inc                  | US0378331005 | 037833100 | 1.09586e+08 | 0.0718253 |    3.65611e+10 | 2026-10-07 14:14:58 |
+        | MSFT    | Microsoft Corp             | US5949181045 | 594918104 | 5.57574e+07 | 0.057978  |    2.95124e+10 | 2026-10-07 14:14:58 |
+        | MU      | Micron Technology Inc      | US5951121038 | 595112103 | 2.34119e+07 | 0.0480888 |    2.44785e+10 | 2026-10-07 14:14:58 |
+        | AMD     | Advanced Micro Devices Inc | US0079031078 | 007903107 | 3.38406e+07 | 0.043174  |    2.19767e+10 | 2026-10-07 14:14:58 |
+        """
+        holdings = self._fund_data_function("holdings", overwrite=overwrite)
+        if holdings is None:
+            return None
+
+        if limit is not None and not holdings.empty and "Weight" in holdings:
+            # The largest holdings of each fund (or, for a negative limit, the smallest), as
+            # a full fund can hold thousands.
+            holdings = (
+                holdings.assign(
+                    _weight=pd.to_numeric(holdings["Weight"], errors="coerce")
+                )
+                .sort_values("_weight", ascending=limit < 0, kind="stable")
+                .groupby(level=0, sort=False)
+                .head(abs(limit))
+                .drop(columns="_weight")
+                .reindex(holdings.index.get_level_values(0).unique(), level=0)
+            )
+
+        if len(self._tickers) == 1 and not holdings.empty:
+            return filter_columns(holdings.loc[self._tickers[0]], show_columns)
+
+        return filter_columns(holdings, show_columns)
+
+    def get_information(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """
+        Get everything Financial Modeling Prep publishes about every fund: its name,
+        identifiers, issuer, asset class, domicile, inception date, expense ratio (as a
+        decimal), assets under management, net asset value, number of holdings, description
+        and website. The expense ratio in particular determines how much of the return is lost
+        to costs every year. get_profile adds the latest price, the premium or discount to the
+        NAV and the dollar volume to the key figures.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: fund profile, ETF profile, fund information.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the information again. Defaults to
+                False.
+
+        Returns:
+            pd.DataFrame | None: The information (rows) per fund (columns). None without an API
+            key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_information().drop(["Description", "Website"])
+        ```
+
+        Which returns:
+
+        |                         | QQQ                         | VTI                                         |
+        |:------------------------|:----------------------------|:--------------------------------------------|
+        | Name                    | Invesco QQQ Trust, Series 1 | Vanguard Morningstar Total Stock Market ETF |
+        | ISIN                    | US46090E1038                | US9229087690                                |
+        | CUSIP                   | 46090E103                   | 922908769                                   |
+        | Asset Class             | Equity                      | Large Cap Equity                            |
+        | Domicile                | US                          | US                                          |
+        | ETF Company             | Invesco                     | Vanguard                                    |
+        | Inception Date          | 1999-03-10                  | 2001-05-24                                  |
+        | Expense Ratio           | 0.0018                      | 0.0003                                      |
+        | Assets Under Management | 508484484641                | 2300000000000                               |
+        | Average Volume          | 39278732                    | 3259438                                     |
+        | NAV                     | 759.5                       | 381.13                                      |
+        | NAV Currency            | USD                         | USD                                         |
+        | Holdings Count          | 102                         | 3598                                        |
+        | Actively Trading        | True                        | True                                        |
+        | Updated At              | 2026-10-08T01:48:10.006Z    | 2026-10-08T02:22:30.046Z                    |
+        """
+        return self._fund_data_function("information", overwrite=overwrite)
+
+    def get_country_weightings(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """
+        Get how every fund is allocated across countries, as decimals, the largest weights of
+        the first fund first. Two funds tracking similar markets can differ considerably here,
+        which matters for the currency and political risk the fund carries.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: country allocation, geographic exposure, country exposure.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the weightings again. Defaults to
+                False.
+
+        Returns:
+            pd.DataFrame | None: The weight per country (rows) and fund (columns). None without
+            an API key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_country_weightings().head()
+        ```
+
+        Which returns:
+
+        | Country        |    QQQ |    VTI |
+        |:---------------|-------:|-------:|
+        | United States  | 0.9445 | 0.9733 |
+        | United Kingdom | 0.0164 | 0.0048 |
+        | Netherlands    | 0.0135 | 0.0003 |
+        | Canada         | 0.0096 | 0.0007 |
+        | Singapore      | 0.0074 | 0.0025 |
+        """
+        return self._sorted_weightings(
+            self._fund_data_function("country_weightings", overwrite=overwrite)
+        )
+
+    def get_sector_weightings(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """
+        Get how every fund is allocated across sectors, as decimals, the largest weights of the
+        first fund first. This shows whether a fund that looks broad is in fact concentrated
+        in a few sectors, such as technology in many large-cap indices.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: sector allocation, sector exposure, sector breakdown.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the weightings again. Defaults to
+                False.
+
+        Returns:
+            pd.DataFrame | None: The weight per sector (rows) and fund (columns). None without an
+            API key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_sector_weightings()
+        ```
+
+        Which returns:
+
+        | Sector                 |      QQQ |      VTI |
+        |:-----------------------|---------:|---------:|
+        | Technology             | 0.603104 | 0.365041 |
+        | Communication Services | 0.117791 | 0.086689 |
+        | Consumer Cyclical      | 0.098732 | 0.089865 |
+        | Consumer Defensive     | 0.057355 | 0.042514 |
+        | Industrials            | 0.055378 | 0.088185 |
+        | Healthcare             | 0.036579 | 0.099808 |
+        | Utilities              | 0.010639 | 0.019731 |
+        | Basic Materials        | 0.009198 | 0.022242 |
+        | Cash & Others          | 0.004737 | 0.001929 |
+        | Energy                 | 0.004538 | 0.037377 |
+        | Financial Services     | 0.001949 | 0.123878 |
+        | Real Estate            | 0        | 0.022741 |
+        """
+        return self._sorted_weightings(
+            self._fund_data_function("sector_weightings", overwrite=overwrite)
+        )
+
+    @handle_errors
+    def get_profile(self, rounding: int | None = None) -> pd.DataFrame:
+        """
+        Get the profile of every fund: its name, issuer, asset class, domicile, inception date,
+        expense ratio, assets under management, net asset value (NAV), latest price and the
+        premium or discount of that price to the NAV, the number of holdings and the average
+        daily volume and dollar volume. The expense ratio is what holding the fund costs every
+        year; a premium means buying it costs more than the holdings are worth, which happens in
+        stress for funds of less liquid assets such as bonds. The NAV is the latest Financial
+        Modeling Prep publishes, so the premium is only given when the latest close is of about
+        the same date (an end date in the past leaves it empty).
+
+        Also known as: ETF profile, expense ratio, assets under management, premium discount.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The profile fields (rows) per fund (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VOO", "QQQ", "AGG"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-10-01",
+        )
+
+        toolkit.etf.get_profile()
+        ```
+
+        Which returns:
+
+        |                         | VOO                  | QQQ                         | AGG                                  |
+        |:------------------------|:---------------------|:----------------------------|:-------------------------------------|
+        | Name                    | Vanguard S&P 500 ETF | Invesco QQQ Trust, Series 1 | iShares Core U.S. Aggregate Bond ETF |
+        | ETF Company             | Vanguard             | Invesco                     | IShares                              |
+        | Asset Class             | Large Cap Equity     | Equity                      | Fixed Income                         |
+        | Domicile                | US                   | US                          | US                                   |
+        | Inception Date          | 2010-09-07           | 1999-03-10                  | 2003-09-22                           |
+        | Expense Ratio           | 0.0003               | 0.0018                      | 0.0003                               |
+        | Assets Under Management | 1700000000000        | 475210352597                | 139388224538                         |
+        | NAV                     | 698.45               | 704.38                      | 96.07                                |
+        | NAV Date                | 2026-10-23           | 2026-10-23                  | 2026-10-23                           |
+        | Price                   | 698.58               | 704.4                       | 95.96                                |
+        | Premium/Discount        | 0.0002               | 0.0                         | -0.0011                              |
+        | Holdings Count          | 505                  | 102                         | 13445                                |
+        | Average Volume          | 8676842.9444         | 49390737.9087               | 9471894.381                          |
+        | Average Dollar Volume   | 5668940453.2057      | 32197925675.0503            | 933890010.5428                       |
+        """
+        information = self._fund_data_function("information")
+        if information is None or information.empty:
+            raise ValueError("No fund information is available for these tickers.")
+
+        funds = [fund for fund in self._funds() if fund in information.columns]
+        close = self._historical()["Close"]
+        volume = self._historical()["Volume"]
+        last_year = close.index[-min(len(close), TRADING_DAYS) :]
+
+        rows = {}
+        for fund in funds:
+            info = information[fund]
+            price = close[fund].dropna()
+            latest = float(price.iloc[-1]) if not price.empty else float("nan")
+            nav = pd.to_numeric(info.get("NAV"), errors="coerce")
+            # The NAV is struck after the New York close and published in UTC, often after
+            # midnight, so its date is the New York date of the update; the premium compares
+            # it with the close of that date (SEC Rule 6c-11), not with a later close.
+            raw = str(info.get("Updated At") or "").strip()
+            updated = pd.to_datetime(raw, utc=True, errors="coerce")
+            nav_date = (
+                pd.NaT
+                if pd.isna(updated)
+                else (
+                    # A date without a time is the NAV date itself.
+                    updated.tz_localize(None).normalize()
+                    if len(raw) <= 10  # noqa: PLR2004
+                    else updated.tz_convert("America/New_York")
+                    .tz_localize(None)
+                    .normalize()
+                )
+            )
+            dates = (
+                price.index.to_timestamp() if not price.empty else pd.DatetimeIndex([])
+            )
+            before = price[dates <= nav_date] if pd.notna(nav_date) else price.iloc[:0]
+            close_at_nav = (
+                float(before.iloc[-1])
+                if not before.empty
+                and (nav_date - before.index[-1].to_timestamp()).days <= NAV_PRICE_DAYS
+                else float("nan")
+            )
+            rows[fund] = {
+                "Name": info.get("Name"),
+                "ETF Company": info.get("ETF Company"),
+                "Asset Class": info.get("Asset Class"),
+                "Domicile": info.get("Domicile"),
+                "Inception Date": info.get("Inception Date"),
+                "Expense Ratio": pd.to_numeric(
+                    info.get("Expense Ratio"), errors="coerce"
+                ),
+                "Assets Under Management": pd.to_numeric(
+                    info.get("Assets Under Management"), errors="coerce"
+                ),
+                "NAV": nav,
+                "NAV Date": (
+                    nav_date.strftime("%Y-%m-%d") if pd.notna(nav_date) else None
+                ),
+                "Price": latest,
+                "Premium/Discount": close_at_nav / nav - 1 if nav else float("nan"),
+                "Holdings Count": pd.to_numeric(
+                    info.get("Holdings Count"), errors="coerce"
+                ),
+                "Average Volume": float(volume.loc[last_year, fund].mean()),
+                "Average Dollar Volume": float(
+                    (close.loc[last_year, fund] * volume.loc[last_year, fund]).mean()
+                ),
+            }
+
+        rounding = rounding if rounding is not None else self._rounding
+        profile = pd.DataFrame(rows)
+        if rounding is not None:
+            profile = profile.map(
+                lambda value: (
+                    round(value, rounding)
+                    if isinstance(value, float) and not isinstance(value, bool)
+                    else value
+                )
+            )
+        return profile
+
+    @handle_errors
+    def get_fee_breakdown(
+        self, sec_user_agent: str | None = None, rounding: int | None = None
+    ) -> pd.DataFrame:
+        """
+        Get the fee table of the prospectus of every US fund from the SEC: the management fee,
+        the distribution and service (12b-1) fee, the other expenses, the fees of the funds it
+        invests in (acquired fund fees), the gross expense ratio, the fee waiver (negative, a
+        reduction), the net expense ratio (what investors pay) and the portfolio turnover (the share of the portfolio traded
+        in a year, which costs a fund trading costs on top of its expense ratio), as decimals.
+
+        The data comes from the risk/return summaries the SEC publishes each quarter from the
+        prospectuses (Form N-1A) of US funds, read back up to five quarters until every fund is
+        found; of the filings of a quarter (the annual prospectus and supplements that change
+        the fees) the latest is used. A unit investment trust such as SPY files no such prospectus and is not covered.
+        The first call downloads the quarterly files (about 80 MB each); the fees are cached
+        for 90 days afterwards. The SEC asks every automated request to identify itself with a
+        name and an email address, given as `sec_user_agent` or in the
+        FINANCETOOLKIT_SEC_USER_AGENT environment variable.
+
+        See definition: https://www.sec.gov/data-research/sec-markets-data/mutual-fund-prospectus-riskreturn-summary-data-sets
+
+        Also known as: fee table, expense ratio breakdown, 12b-1 fee, management fee, portfolio
+        turnover.
+
+        Args:
+            sec_user_agent (str | None, optional): Your name and email address, e.g.
+                "Jane Doe jane.doe@example.com". Defaults to None, which reads the
+                FINANCETOOLKIT_SEC_USER_AGENT environment variable.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The fees, turnover, the fiscal year end the fee table covers, the
+            filing date, series and class (rows) per fund (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["VTI", "VOO", "AGG", "BND"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_fee_breakdown(sec_user_agent="Jane Doe jane.doe@example.com")
+        ```
+
+        Which returns:
+
+        |                                      | VTI        | VOO        | AGG        | BND        |
+        |:-------------------------------------|:-----------|:-----------|:-----------|:-----------|
+        | Management Fee                       | 0.0003     | 0.0002     | 0.0003     | 0.0002     |
+        | Distribution and Service (12b-1) Fee | 0.0        | 0.0        | nan        | 0.0        |
+        | Other Expenses                       | 0.0        | 0.0001     | 0.0        | 0.0001     |
+        | Acquired Fund Fees                   | nan        | nan        | 0.0        | nan        |
+        | Gross Expense Ratio                  | 0.0003     | 0.0003     | 0.0003     | 0.0003     |
+        | Fee Waiver                           | nan        | nan        | 0.0        | nan        |
+        | Net Expense Ratio                    | 0.0003     | 0.0003     | 0.0003     | 0.0003     |
+        | Portfolio Turnover                   | 0.03       | 0.02       | 0.62       | 0.38       |
+        | Fiscal Year End                      | 2025-12-31 | 2025-12-31 | 2026-02-28 | 2025-12-31 |
+        | Filing Date                          | 2026-04-28 | 2026-04-28 | 2026-06-18 | 2026-04-28 |
+        | Series                               | S000002848 | S000002839 | S000004362 | S000002564 |
+        | Class                                | C000007808 | C000092055 | C000012092 | C000046844 |
+        """
+        user_agent = sec_model.resolve_user_agent(sec_user_agent)
+        breakdown = sec_model.get_fee_breakdown(self._funds(), user_agent)
+        if breakdown.empty:
+            raise ValueError(
+                "None of these tickers has a prospectus fee table at the SEC; it covers US "
+                "funds registered under Form N-1A."
+            )
+        if missing := [fund for fund in self._funds() if fund not in breakdown.index]:
+            logger.warning(
+                "No SEC fee table was found for %s (a unit investment trust such as SPY, or a "
+                "fund outside the US, files none).",
+                ", ".join(missing),
+            )
+        labels = ["Fiscal Year End", "Filing Date", "Series", "Class"]
+        numeric = breakdown.drop(columns=labels).apply(pd.to_numeric, errors="coerce")
+        numeric = self._round(numeric, rounding)
+        return pd.concat([numeric, breakdown[labels]], axis=1).T
+
+    @handle_errors
+    def get_tracking(
+        self,
+        period: str = "daily",
+        yearly: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Measure how closely every fund tracks the Benchmark of the Toolkit, which for an index
+        fund should be the index it follows (set benchmark_ticker to a total return index or to
+        another fund of the same index). Per fund:
+
+        - Tracking Difference: the annualized return of the fund minus that of the Benchmark
+          over the period, as issuers report it. An index fund trails its index by roughly its
+          expense ratio; less points to securities lending income, more to a costly or loose
+          replication.
+        - Tracking Error: the annualized volatility of that difference, how far the fund strays
+          from the index from day to day.
+        - Correlation, Beta and R Squared of the fund's returns with the Benchmark's.
+
+        With yearly=True the tracking difference is given per calendar year instead, the return
+        of the fund minus that of the Benchmark. The daily closes of two funds can differ by the
+        timing of their last trade, which adds noise to a daily tracking error; fund reports
+        usually measure it from monthly returns.
+
+        Also known as: tracking difference, tracking error, index tracking.
+
+        Args:
+            period (str, optional): The return frequency (daily, weekly, monthly, quarterly or
+                yearly). Defaults to "daily".
+            yearly (bool, optional): Whether to return the tracking difference per year.
+                Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The tracking measures (rows) per fund (columns), or the tracking
+            difference per year (rows).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VOO", "IVV", "SPLG"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            benchmark_ticker="SPY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_tracking(period="monthly")
+        ```
+
+        Which returns:
+
+        |                     |    VOO |    IVV |    SPLG |
+        |:--------------------|-------:|-------:|--------:|
+        | Tracking Difference | 0.0008 | 0.0007 | -0      |
+        | Tracking Error      | 0.0011 | 0.0018 |  0.0021 |
+        | Correlation         | 1      | 0.9999 |  0.9999 |
+        | Beta                | 0.9994 | 1.0014 |  0.9986 |
+        | R Squared           | 0.9999 | 0.9999 |  0.9998 |
+        """
+        if period not in PERIODS_PER_YEAR:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly or yearly."
+            )
+        prices = self._historical()["Adj Close"]
+        if BENCHMARK_TICKER not in prices:
+            raise ValueError(
+                "Tracking is measured against the Benchmark of the Toolkit."
+            )
+        prices = prices.loc[self._start_date : self._end_date]
+
+        # The first return starts from the last close before the range (the history holds
+        # a year before the start date), so the first day, or period, is not lost.
+        full = self._historical()["Adj Close"]
+        base = full[full.index < prices.index[0]].iloc[-1:]
+
+        if yearly:
+            yearly_prices = prices.groupby(prices.index.asfreq("Y")).last()
+            first = (base if not base.empty else prices.iloc[[0]]).set_axis(
+                [yearly_prices.index[0] - 1]
+            )
+            returns = (
+                pd.concat([first, yearly_prices]).pct_change(fill_method=None).iloc[1:]
+            )
+            difference = returns[self._funds()].sub(returns[BENCHMARK_TICKER], axis=0)
+            return self._round(difference, rounding)
+
+        if period != "daily":
+            frequency = {
+                "weekly": "W",
+                "monthly": "M",
+                "quarterly": "Q",
+                "yearly": "Y",
+            }[period]
+            prices = prices.groupby(prices.index.asfreq(frequency)).last()
+            base = base.set_axis(base.index.asfreq(frequency))
+        returns = (
+            pd.concat([base, prices]).pct_change(fill_method=None).iloc[len(base) :]
+        )
+
+        tracking = pd.DataFrame(
+            {
+                fund: etf_model.get_tracking(
+                    returns[fund], returns[BENCHMARK_TICKER], PERIODS_PER_YEAR[period]
+                )
+                for fund in self._funds()
+            }
+        )
+        return self._round(tracking, rounding)
+
+    @handle_errors
+    def get_concentration(self, rounding: int | None = None) -> pd.DataFrame:
+        """
+        Measure how concentrated every fund is from its holdings: the number of holdings, the
+        largest holding and its weight, the weight of the ten largest, the
+        Herfindahl-Hirschman index (the sum of the squared weights) and the effective number of
+        holdings (one over that index). A fund of 500 holdings whose ten largest make up a third
+        of it behaves like a fund of far fewer stocks; the effective number says how many
+        equally weighted holdings would give the same concentration.
+
+        Also known as: fund concentration, top 10 weight, Herfindahl index, effective number of
+        holdings.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The concentration measures (rows) per fund (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["VOO", "QQQ", "RSP"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_concentration()
+        ```
+
+        Which returns:
+
+        |                              | VOO     | QQQ     | RSP      |
+        |:-----------------------------|:--------|:--------|:---------|
+        | Number of Holdings           | 507.0   | 105.0   | 507.0    |
+        | Largest Holding              | NVDA    | NVDA    | PTC      |
+        | Largest Weight               | 0.084   | 0.0814  | 0.003    |
+        | Top 10 Weight                | 0.3913  | 0.4665  | 0.0266   |
+        | Herfindahl-Hirschman Index   | 0.023   | 0.0316  | 0.002    |
+        | Effective Number of Holdings | 43.4661 | 31.6935 | 497.7398 |
+        """
+        concentration = pd.DataFrame(
+            {
+                fund: etf_model.get_concentration(weights)
+                for fund, weights in self._weights().items()
+            }
+        )
+        numeric = concentration.drop(index="Largest Holding").apply(
+            pd.to_numeric, errors="coerce"
+        )
+        numeric = self._round(numeric.astype(float), rounding)
+        return pd.concat([numeric, concentration.loc[["Largest Holding"]]]).reindex(
+            concentration.index
+        )
+
+    @handle_errors
+    def get_overlap(self, rounding: int | None = None) -> pd.DataFrame:
+        """
+        Measure how much the funds hold of the same: for every pair of funds the sum, over the
+        holdings they share, of the smaller of the two weights. An overlap of 0.8 means 80% of
+        the two portfolios is the same, so holding both adds little diversification.
+
+        Also known as: ETF overlap, portfolio overlap, holdings overlap.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The overlap of every pair of funds, as decimals.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["VOO", "QQQ", "VTI", "SCHD"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_overlap()
+        ```
+
+        Which returns:
+
+        |      |    VOO |    QQQ |    VTI |   SCHD |
+        |:-----|-------:|-------:|-------:|-------:|
+        | VOO  | 1.0017 | 0.556  | 0.8911 | 0.0764 |
+        | QQQ  | 0.556  | 1.0014 | 0.4994 | 0.0516 |
+        | VTI  | 0.8911 | 0.4994 | 1.0005 | 0.071  |
+        | SCHD | 0.0764 | 0.0516 | 0.071  | 1      |
+        """
+        return self._round(etf_model.get_overlap(self._weights()), rounding)
+
+    @handle_errors
+    def get_look_through_valuation(
+        self, holdings: int = 25, rounding: int | None = None
+    ) -> pd.DataFrame:
+        """
+        Value every fund through its holdings: the price-to-earnings, price-to-book,
+        price-to-sales and price-to-free-cash-flow ratio, the dividend yield and the net profit
+        margin of its largest holdings, weighted by their weight in the fund. The multiples are
+        weighted harmonic means, the multiple of the fund as a whole, so one holding with a very
+        high multiple does not dominate. The coverage is the share of the fund the valued
+        holdings make up; more holdings raise it at the cost of more requests.
+
+        The ratios are the trailing twelve month ratios Financial Modeling Prep calculates for
+        every holding.
+
+        Also known as: look-through valuation, fund P/E, weighted average P/E, portfolio
+        valuation.
+
+        Args:
+            holdings (int, optional): The number of largest holdings to value per fund.
+                Defaults to 25.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The valuation measures and the coverage (rows) per fund (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["VOO", "QQQ", "SCHD"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_look_through_valuation()
+        ```
+
+        Which returns:
+
+        |                         |     VOO |     QQQ |    SCHD |
+        |:------------------------|--------:|--------:|--------:|
+        | Price-to-Earnings       | 26.616  | 31.6436 | 20.7484 |
+        | Price-to-Book           |  8.3525 | 10.2411 |  4.7307 |
+        | Price-to-Sales          |  7.5579 |  7.0579 |  2.2584 |
+        | Price-to-Free-Cash-Flow | 59.957  | 53.445  | 17.0266 |
+        | Dividend Yield          |  0.0047 |  0.0038 |  0.0308 |
+        | Net Profit Margin       |  0.3673 |  0.3113 |  0.1583 |
+        | Coverage                |  0.5324 |  0.7154 |  0.8077 |
+        """
+        weights = {
+            fund: fund_weights.sort_values(ascending=False).iloc[:holdings]
+            for fund, fund_weights in self._weights().items()
+        }
+        # Only holdings with a symbol (not bonds identified by their ISIN) have ratios.
+        assets = sorted(
+            {
+                asset
+                for fund_weights in weights.values()
+                for asset in fund_weights.index
+                if asset and len(asset) <= MAXIMUM_SYMBOL_LENGTH and " " not in asset
+            }
+        )
+        if not assets:
+            raise ValueError("The holdings of these funds have no symbols to value.")
+        ratios = self._ratios_function(assets)
+        if ratios is None or ratios.empty:
+            raise ValueError("No ratios are available for the holdings of these funds.")
+        ratios = ratios.T if set(assets) & set(ratios.columns) else ratios
+
+        valuation = pd.DataFrame(
+            {
+                fund: etf_model.get_look_through_valuation(fund_weights, ratios)
+                for fund, fund_weights in weights.items()
+            }
+        )
+        return self._round(valuation, rounding)
+
+    @handle_errors
+    def get_liquidity(self, rounding: int | None = None) -> pd.DataFrame:
+        """
+        Measure how liquid every fund is to trade over the last year of the period: its average
+        daily volume and dollar volume, that dollar volume relative to the fund's assets under
+        management, and the price impact of trading 100 million dollars in a day (the Amihud,
+        2002, illiquidity: the average absolute daily return per dollar traded, scaled to 100
+        million). An ETF can also be traded through its holdings, so a thinly traded fund of
+        liquid holdings is easier to trade than its own volume suggests; a fund whose holdings
+        are themselves illiquid (small companies, high yield bonds) is not.
+
+        For more information, see the following paper:
+
+        - Amihud, Y. (2002). "Illiquidity and Stock Returns: Cross-Section and Time-Series
+          Effects." Journal of Financial Markets, 5(1), 31-56.
+
+        Also known as: ETF liquidity, dollar volume, Amihud illiquidity, price impact.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which keeps the full precision (the price impact of the largest
+                funds is a fraction of a basis point).
+
+        Returns:
+            pd.DataFrame: The liquidity measures (rows) per fund (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VOO", "QQQ", "ARKK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_liquidity(rounding=6)
+        ```
+
+        Which returns:
+
+        |                               |               VOO |                QQQ |             ARKK |
+        |:------------------------------|------------------:|-------------------:|-----------------:|
+        | Average Volume                |    7734399.056000 |    48666218.588000 |  10799597.760000 |
+        | Average Dollar Volume         | 4400329488.944520 | 26740006060.354679 | 719035298.234000 |
+        | Dollar Volume to Assets       |          0.002588 |           0.056270 |         0.090822 |
+        | Price Impact per $100 Million |          0.000179 |           0.000036 |         0.002990 |
+        """
+        data = self._historical().loc[self._start_date : self._end_date]
+        data = data.iloc[-min(len(data), TRADING_DAYS) :]
+        information = self._fund_data_function("information")
+
+        liquidity = {}
+        for fund in self._funds():
+            close, volume = data["Close"][fund], data["Volume"][fund]
+            dollar_volume = close * volume
+            assets = (
+                pd.to_numeric(
+                    information[fund].get("Assets Under Management"), errors="coerce"
+                )
+                if information is not None and fund in information
+                else float("nan")
+            )
+            liquidity[fund] = {
+                "Average Volume": float(volume.mean()),
+                "Average Dollar Volume": float(dollar_volume.mean()),
+                "Dollar Volume to Assets": (
+                    float(dollar_volume.mean()) / assets if assets else float("nan")
+                ),
+                # Total returns, so a distribution on its ex-date is not counted as a
+                # price move.
+                "Price Impact per $100 Million": etf_model.get_price_impact(
+                    data["Adj Close"][fund].pct_change(fill_method=None), dollar_volume
+                ),
+            }
+        # A price impact of a fraction of a basis point matters here, so the result is only
+        # rounded when asked for.
+        return apply_rounding(pd.DataFrame(liquidity), rounding)

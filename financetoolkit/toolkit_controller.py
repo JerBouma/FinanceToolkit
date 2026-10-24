@@ -41,6 +41,7 @@ from financetoolkit.fmp_model import (
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
+    get_ratios_ttm as _get_ratios_ttm,
     get_revenue_segmentation as _get_revenue_segmentation,
     get_shares_float as _get_shares_float,
     get_stock_grades as _get_stock_grades,
@@ -65,6 +66,7 @@ if TYPE_CHECKING:
     # importing the Finance Toolkit does not load every module and its dependencies.
     from financetoolkit.econometrics.econometrics_controller import Econometrics
     from financetoolkit.economics.economics_controller import Economics
+    from financetoolkit.etf.etf_controller import ETF
     from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
@@ -1245,6 +1247,57 @@ class Toolkit:
             econometrics._portfolio_weights = self._portfolio_weights
 
         return econometrics
+
+    @property
+    def etf(self) -> "ETF":
+        """
+        The ETF module analyzes the Toolkit's exchange traded funds (and other funds): their
+        holdings, sector and country weightings, profile and premium or discount to NAV, the fee table of their prospectus, how closely
+        they track the Benchmark, how concentrated and how much alike they are, what their
+        holdings are valued at and how liquid they are.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/etf
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["VOO", "QQQ", "AGG"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_profile()
+        ```
+        """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.etf.etf_controller import ETF  # noqa: PLC0415
+
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        def historical() -> pd.DataFrame:
+            # Only the analyses of prices need them, not the holdings and weightings.
+            self.get_historical_data(period="daily")
+            return self._daily_historical_data
+
+        def ratios(tickers: list[str]) -> pd.DataFrame:
+            ratios_ttm, _ = _get_ratios_ttm(
+                tickers, api_key=self._api_key, user_subscription=self._fmp_plan
+            )
+            return ratios_ttm
+
+        return ETF(
+            tickers=self._tickers,
+            historical_function=historical,
+            fund_data_function=self._collect_fund_data,
+            ratios_function=ratios,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            rounding=self._rounding,
+        )
 
     @property
     def fixedincome(self) -> "FixedIncome":
@@ -3750,314 +3803,57 @@ class Toolkit:
 
         return filter_columns(self._stock_grades, show_columns)
 
-    def get_etf_holdings(
-        self,
-        overwrite: bool = False,
-        show_columns: list[str] | None = None,
-        limit: int | None = None,
-    ):
+    def _collect_fund_data(
+        self, dataset: str, overwrite: bool = False
+    ) -> pd.DataFrame | None:
         """
-        Obtain the holdings of each ETF or fund: every asset it holds with the number of
-        shares, the market value and the weight in the fund (as a decimal). This shows
-        what the fund is actually exposed to and how concentrated it is.
-
-        Tickers that are not an ETF or fund have no holdings and return no data. They are
-        not removed from the Toolkit instance.
-
-        Also known as: fund holdings, ETF constituents, fund portfolio.
+        Collect a fund dataset of the tickers from Financial Modeling Prep, once per instance.
+        `toolkit.etf` presents them (get_holdings, get_information, get_country_weightings and
+        get_sector_weightings) and builds its analyses on them.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
-            limit (int | None): The number of largest holdings (by weight) to keep per fund, e.g.
-                10 for the top 10, or of the smallest for a negative number, e.g. -10. Defaults to
-                None, which keeps every holding. The holdings carry
-                no sector or country; get_etf_sector_weightings and get_etf_country_weightings
-                break the fund down by those.
+            dataset (str): The dataset: holdings, information, country_weightings or
+                sector_weightings.
+            overwrite (bool, optional): Whether to collect the dataset again. Defaults to False.
 
         Returns:
-            pd.DataFrame: The holdings per ticker, indexed by asset.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["QQQ", "VTI"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.get_etf_holdings().loc["QQQ"].head()
-        ```
-
-        Which returns:
-
-        | Asset   | Name                       | ISIN         | CUSIP     |      Shares |    Weight |   Market Value | Updated At          |
-        |:--------|:---------------------------|:-------------|:----------|------------:|----------:|---------------:|:--------------------|
-        | NVDA    | NVIDIA Corp                | US67066G1040 | 67066G104 | 1.80964e+08 | 0.0850518 |    4.32937e+10 | 2026-10-07 14:14:58 |
-        | AAPL    | Apple Inc                  | US0378331005 | 037833100 | 1.09586e+08 | 0.0718253 |    3.65611e+10 | 2026-10-07 14:14:58 |
-        | MSFT    | Microsoft Corp             | US5949181045 | 594918104 | 5.57574e+07 | 0.057978  |    2.95124e+10 | 2026-10-07 14:14:58 |
-        | MU      | Micron Technology Inc      | US5951121038 | 595112103 | 2.34119e+07 | 0.0480888 |    2.44785e+10 | 2026-10-07 14:14:58 |
-        | AMD     | Advanced Micro Devices Inc | US0079031078 | 007903107 | 3.38406e+07 | 0.043174  |    2.19767e+10 | 2026-10-07 14:14:58 |
+            pd.DataFrame | None: The holdings per fund and asset, or the other datasets with a
+            column per fund. None without an API key.
         """
         if not self._api_key:
             self._missing_api_key_message()
             return None
 
-        if self._etf_holdings.empty or overwrite:
-            # Not every ticker is a fund, so a ticker without holdings is not invalid.
-            self._etf_holdings, _ = self._collect_per_ticker(
-                dataset="etf_holdings",
+        # The holdings have a row per asset of every fund, the other datasets a column per fund.
+        collector, ticker_axis = {
+            "holdings": (_get_etf_holdings, ticker_model.TICKER_ON_INDEX),
+            "information": (_get_etf_information, ticker_model.TICKER_ON_COLUMNS),
+            "country_weightings": (
+                _get_etf_country_weightings,
+                ticker_model.TICKER_ON_COLUMNS,
+            ),
+            "sector_weightings": (
+                _get_etf_sector_weightings,
+                ticker_model.TICKER_ON_COLUMNS,
+            ),
+        }[dataset]
+        attribute = f"_etf_{dataset}"
+
+        if getattr(self, attribute).empty or overwrite:
+            # Not every ticker is a fund, so a ticker without fund data is not invalid.
+            data, _ = self._collect_per_ticker(
+                dataset=f"etf_{dataset}",
                 tickers=self._tickers,
-                ticker_axis=ticker_model.TICKER_ON_INDEX,
-                collector=lambda tickers: _get_etf_holdings(
+                ticker_axis=ticker_axis,
+                collector=lambda tickers: collector(
                     tickers=tickers,
                     api_key=self._api_key,
                     user_subscription=self._fmp_plan,
                 ),
             )
+            setattr(self, attribute, data)
 
-        etf_holdings = self._etf_holdings
-
-        if limit is not None and not etf_holdings.empty and "Weight" in etf_holdings:
-            # The largest holdings of each fund (or, for a negative limit, the smallest), as
-            # a full fund can hold thousands.
-            etf_holdings = (
-                etf_holdings.assign(
-                    _weight=pd.to_numeric(etf_holdings["Weight"], errors="coerce")
-                )
-                .sort_values("_weight", ascending=limit < 0, kind="stable")
-                .groupby(level=0, sort=False)
-                .head(abs(limit))
-                .drop(columns="_weight")
-                .reindex(etf_holdings.index.get_level_values(0).unique(), level=0)
-            )
-
-        if len(self._tickers) == 1 and not etf_holdings.empty:
-            return filter_columns(etf_holdings.loc[self._tickers[0]], show_columns)
-
-        return filter_columns(etf_holdings, show_columns)
-
-    def get_etf_information(self, overwrite: bool = False):
-        """
-        Obtain the profile of each ETF or fund: its issuer, asset class, domicile,
-        inception date, expense ratio (as a decimal), assets under management, net asset
-        value and number of holdings. The expense ratio in particular determines how much
-        of the return is lost to costs every year.
-
-        Tickers that are not an ETF or fund return no data. They are not removed from the
-        Toolkit instance.
-
-        Also known as: fund profile, ETF profile, fund information.
-
-        Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-
-        Returns:
-            pd.DataFrame: The information (rows) per ticker (columns).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["QQQ", "VTI"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.get_etf_information().drop(["Description", "Website"])
-        ```
-
-        Which returns:
-
-        |                         | QQQ                         | VTI                                         |
-        |:------------------------|:----------------------------|:--------------------------------------------|
-        | Name                    | Invesco QQQ Trust, Series 1 | Vanguard Morningstar Total Stock Market ETF |
-        | ISIN                    | US46090E1038                | US9229087690                                |
-        | CUSIP                   | 46090E103                   | 922908769                                   |
-        | Asset Class             | Equity                      | Large Cap Equity                            |
-        | Domicile                | US                          | US                                          |
-        | ETF Company             | Invesco                     | Vanguard                                    |
-        | Inception Date          | 1999-03-10                  | 2001-05-24                                  |
-        | Expense Ratio           | 0.0018                      | 0.0003                                      |
-        | Assets Under Management | 508484484641                | 2300000000000                               |
-        | Average Volume          | 39278732                    | 3259438                                     |
-        | NAV                     | 759.5                       | 381.13                                      |
-        | NAV Currency            | USD                         | USD                                         |
-        | Holdings Count          | 102                         | 3598                                        |
-        | Actively Trading        | True                        | True                                        |
-        | Updated At              | 2026-10-08T01:48:10.006Z    | 2026-10-08T02:22:30.046Z                    |
-        """
-        if not self._api_key:
-            self._missing_api_key_message()
-            return None
-
-        if self._etf_information.empty or overwrite:
-            # Not every ticker is a fund, so a ticker without information is not invalid.
-            self._etf_information, _ = self._collect_per_ticker(
-                dataset="etf_information",
-                tickers=self._tickers,
-                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
-                collector=lambda tickers: _get_etf_information(
-                    tickers=tickers,
-                    api_key=self._api_key,
-                    user_subscription=self._fmp_plan,
-                ),
-            )
-
-        return self._etf_information
-
-    def get_etf_country_weightings(self, overwrite: bool = False):
-        """
-        Obtain how each ETF or fund is allocated across countries, as decimals. Two funds
-        tracking similar markets can differ considerably here, which matters for the
-        currency and political risk the fund carries.
-
-        Tickers that are not an ETF or fund return no data. They are not removed from the
-        Toolkit instance.
-
-        Also known as: country allocation, geographic exposure, country exposure.
-
-        Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-
-        Returns:
-            pd.DataFrame: The weight per country (rows) and ticker (columns).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["QQQ", "VTI"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.get_etf_country_weightings().head()
-        ```
-
-        Which returns:
-
-        | Country        |    QQQ |    VTI |
-        |:---------------|-------:|-------:|
-        | United States  | 0.9445 | 0.9733 |
-        | United Kingdom | 0.0164 | 0.0048 |
-        | Netherlands    | 0.0135 | 0.0003 |
-        | Canada         | 0.0096 | 0.0007 |
-        | Singapore      | 0.0074 | 0.0025 |
-        """
-        if not self._api_key:
-            self._missing_api_key_message()
-            return None
-
-        if self._etf_country_weightings.empty or overwrite:
-            # Not every ticker is a fund, so a ticker without weightings is not invalid.
-            self._etf_country_weightings, _ = self._collect_per_ticker(
-                dataset="etf_country_weightings",
-                tickers=self._tickers,
-                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
-                collector=lambda tickers: _get_etf_country_weightings(
-                    tickers=tickers,
-                    api_key=self._api_key,
-                    user_subscription=self._fmp_plan,
-                ),
-            )
-
-        # The largest weights first, so the head of the table is what a fund is made of.
-        if self._etf_country_weightings.empty:
-            return self._etf_country_weightings
-
-        # A fund lists only the countries it holds, so a country another fund holds has no
-        # weight in it rather than an unknown one.
-        return self._etf_country_weightings.fillna(0).sort_values(
-            by=self._etf_country_weightings.columns[0], ascending=False, kind="stable"
-        )
-
-    def get_etf_sector_weightings(self, overwrite: bool = False):
-        """
-        Obtain how each ETF or fund is allocated across sectors, as decimals. This shows
-        whether a fund that looks broad is in fact concentrated in a few sectors, such as
-        technology in many large-cap indices.
-
-        Tickers that are not an ETF or fund return no data. They are not removed from the
-        Toolkit instance.
-
-        Also known as: sector allocation, sector exposure, sector breakdown.
-
-        Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-
-        Returns:
-            pd.DataFrame: The weight per sector (rows) and ticker (columns).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["QQQ", "VTI"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.get_etf_sector_weightings()
-        ```
-
-        Which returns:
-
-        | Sector                 |      QQQ |      VTI |
-        |:-----------------------|---------:|---------:|
-        | Technology             | 0.603104 | 0.365041 |
-        | Communication Services | 0.117791 | 0.086689 |
-        | Consumer Cyclical      | 0.098732 | 0.089865 |
-        | Consumer Defensive     | 0.057355 | 0.042514 |
-        | Industrials            | 0.055378 | 0.088185 |
-        | Healthcare             | 0.036579 | 0.099808 |
-        | Utilities              | 0.010639 | 0.019731 |
-        | Basic Materials        | 0.009198 | 0.022242 |
-        | Cash & Others          | 0.004737 | 0.001929 |
-        | Energy                 | 0.004538 | 0.037377 |
-        | Financial Services     | 0.001949 | 0.123878 |
-        | Real Estate            | 0        | 0.022741 |
-        """
-        if not self._api_key:
-            self._missing_api_key_message()
-            return None
-
-        if self._etf_sector_weightings.empty or overwrite:
-            # Not every ticker is a fund, so a ticker without weightings is not invalid.
-            self._etf_sector_weightings, _ = self._collect_per_ticker(
-                dataset="etf_sector_weightings",
-                tickers=self._tickers,
-                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
-                collector=lambda tickers: _get_etf_sector_weightings(
-                    tickers=tickers,
-                    api_key=self._api_key,
-                    user_subscription=self._fmp_plan,
-                ),
-            )
-
-        # The largest weights first, so the head of the table is what a fund is made of.
-        if self._etf_sector_weightings.empty:
-            return self._etf_sector_weightings
-
-        # A fund lists only the sectors it holds, so a sector another fund holds has no
-        # weight in it rather than an unknown one.
-        return self._etf_sector_weightings.fillna(0).sort_values(
-            by=self._etf_sector_weightings.columns[0], ascending=False, kind="stable"
-        )
+        return getattr(self, attribute)
 
     def get_earnings_call_transcripts(
         self,

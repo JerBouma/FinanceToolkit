@@ -2820,6 +2820,65 @@ def get_etf_information(
     )
 
 
+def get_ratios_ttm(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the trailing twelve month valuation ratios of each ticker as Financial Modeling
+    Prep calculates them: the price-to-earnings, price-to-book, price-to-sales and
+    price-to-free-cash-flow ratios, the dividend yield and the net profit margin. They value
+    the holdings of a fund without retrieving every holding's financial statements.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the ratios for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The ratios (rows) per ticker (columns), and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "priceToEarningsRatioTTM": "Price-to-Earnings",
+        "priceToBookRatioTTM": "Price-to-Book",
+        "priceToSalesRatioTTM": "Price-to-Sales",
+        "priceToFreeCashFlowRatioTTM": "Price-to-Free-Cash-Flow",
+        "dividendYieldTTM": "Dividend Yield",
+        "netProfitMarginTTM": "Net Profit Margin",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/ratios-ttm?symbol={ticker}&apikey={api_key}"
+        ratios = _get_records(url=url, user_subscription=user_subscription)
+
+        if "priceToEarningsRatioTTM" not in ratios.columns:
+            return ticker, ratios, False
+
+        ratios = ratios.iloc[0].rename(index=naming)
+
+        return (
+            ticker,
+            pd.to_numeric(
+                ratios[[name for name in naming.values() if name in ratios.index]],
+                errors="coerce",
+            ),
+            True,
+        )
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker,
+        ticker_list,
+        "trailing twelve month ratios",
+        user_subscription,
+        unstack=True,
+    )
+
+
 def get_etf_country_weightings(
     tickers: list[str] | str,
     api_key: str,

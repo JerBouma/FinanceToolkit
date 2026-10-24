@@ -1,13 +1,26 @@
 name: Live Sources
 
-# Checks weekly that the keyless Economics sources (Eurostat, ONS, BIS, ECB, Bank of
-# England, Bank of Japan, Japan's Ministry of Finance and Statistics Bureau, the U.S.
-# Treasury and the New York Fed) still answer with current, plausible data, and opens
-# an issue when one does not, so a changed format is fixed before users run into it.
+# Checks every Sunday that each data source the Finance Toolkit reads without an API key
+# still answers with current, plausible data: the keyless Economics sources (Eurostat,
+# ONS, BLS, IBGE, the Statistics Bureau of Japan, the OECD, the IMF, BIS, ECB, Bank of
+# England, Bank of Japan, Japan's Ministry of Finance, the U.S. Treasury, the Federal
+# Reserve Board, Freddie Mac, the NBER, Shiller, Cboe, STOXX, EEX, the Global Macro
+# Database, the JST Macrohistory Database, the ESRB, the NGFS and the DNB scenario set),
+# the keyless Fixed Income sources (ECB policy rates and Euribor, Bundesbank, Bank of
+# Canada, Riksbank, Norges Bank, the Reserve Bank of Australia, the New York Fed, EIOPA
+# and ESMA), Kenneth French's factor library and Yahoo Finance (prices, statements,
+# statistics, option chains, asset class proxies and commodity futures curves). Datasets
+# published once a year or less are checked for being reachable and readable rather than
+# for their age. Sources that need a key (FinancialModelingPrep, FRED) are not checked.
+#
+# Every source that fails gets its own issue, labelled data-source and titled after the
+# source ("Data source check failed: <source>"), so a changed format is fixed before
+# users run into it. When an open issue for that source exists, the run adds a comment to
+# it instead.
 
 on:
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 6 * * 0"
   workflow_dispatch:
 
 permissions:
@@ -18,6 +31,7 @@ jobs:
   live-sources:
     name: Live Source Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -35,36 +49,72 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # Each check has five minutes (the DNB scenario set, a large workbook, fifteen);
+      # a failing or hanging source does not stop the others.
       - name: Check every source
         id: check
         env:
           FINANCETOOLKIT_LIVE_SOURCES: "1"
+          FINANCE_TOOLKIT_CACHE_DB: ${{ runner.temp }}/live-sources-cache.db
         run: |
           set -o pipefail
-          uv run pytest tests/live_sources -v --timeout=300 -p no:cacheprovider 2>&1 | tee live_sources.log
+          uv run pytest tests/live_sources -v -rf --timeout=300 -p no:cacheprovider \
+            --junitxml=live_sources.xml 2>&1 | tee live_sources.log
 
-      - name: Report a broken source
+      - name: Report each broken source
         if: failure() && steps.check.outcome == 'failure'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const log = fs.readFileSync('live_sources.log', 'utf8');
-            const failures = log.split('\n').filter(line => line.startsWith('FAILED')).join('\n');
-            const title = 'Live source check failed';
-            const body = `The weekly check of the Economics sources failed on ${new Date().toISOString().slice(0, 10)}.\n\n` +
-              '```\n' + (failures || log.slice(-3000)) + '\n```\n\n' +
-              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'data-source',
+            const { owner, repo } = context.repo;
+            const date = new Date().toISOString().slice(0, 10);
+            const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const decode = (text) => text
+              .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+              .replace(/&apos;/g, "'").replace(/&#10;/g, '\n').replace(/&#13;/g, '')
+              .replace(/&amp;/g, '&');
+
+            // Every check is parametrized by the name of its source, e.g.
+            // test_source_is_current_and_plausible[Eurostat inflation rate].
+            const failures = [];
+            if (fs.existsSync('live_sources.xml')) {
+              const xml = fs.readFileSync('live_sources.xml', 'utf8');
+              const testcases = xml.match(/<testcase\b[\s\S]*?(?:\/>|<\/testcase>)/g) || [];
+              for (const testcase of testcases) {
+                const failure = testcase.match(/<(failure|error)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/);
+                if (!failure) continue;
+                const name = decode((testcase.match(/\bname="([^"]*)"/) || [, 'unknown check'])[1]);
+                const source = (name.match(/\[(.*)\]$/) || [, name])[1];
+                const message = decode((failure[2].match(/\bmessage="([^"]*)"/) || [, ''])[1]);
+                const details = decode(failure[3] || '');
+                failures.push({ source, message, details: details.slice(-3000) });
+              }
+            }
+
+            // The run failed without a failing check, e.g. because the tests did not start.
+            if (failures.length === 0) {
+              const log = fs.existsSync('live_sources.log') ? fs.readFileSync('live_sources.log', 'utf8') : '';
+              failures.push({ source: 'test run', message: 'The checks did not complete.', details: log.slice(-3000) });
+            }
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'data-source', per_page: 100,
             });
-            const existing = issues.find(issue => issue.title === title);
-            if (existing) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number: existing.number, body,
-              });
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['data-source'],
-              });
+
+            for (const { source, message, details } of failures) {
+              const title = `Data source check failed: ${source}`;
+              const body = `The weekly check of ${source} failed on ${date}.\n\n` +
+                (message ? `> ${message.split('\n')[0]}\n\n` : '') +
+                '```\n' + details + '\n```\n\n' +
+                `Run: ${run}`;
+              const existing = issues.find(issue => issue.title === title);
+              if (existing) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+                core.info(`Commented on #${existing.number}: ${title}`);
+              } else {
+                const { data: issue } = await github.rest.issues.create({ owner, repo, title, body, labels: ['data-source'] });
+                core.info(`Opened #${issue.number}: ${title}`);
+              }
             }

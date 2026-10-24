@@ -278,16 +278,30 @@ def get_variance_ratio_test(
 
     - VR(q) = Var(r_t(q)) / (q * Var(r_t))
 
-    Where `r_t(q)` is the sum of `q` consecutive single-period returns. The (homoskedastic)
-    test statistic is:
+    Where `r_t(q)` is the sum of `q` consecutive single-period returns. Both variances use the
+    unbiased estimators of Lo & MacKinlay (1988), with `mu` the mean single-period return and
+    `n` the number of returns, so that VR(q) = sigma_c^2(q) / sigma_a^2 with:
 
-    - z = (VR(q) - 1) / SQRT(phi(q))
+    - sigma_a^2 = SUM((r_t - mu)^2) / (n - 1)
+    - sigma_c^2(q) = SUM((r_t(q) - q * mu)^2) / m, with m = q * (n - q + 1) * (1 - q / n)
+
+    The homoskedastic test statistic is:
+
+    - z(q) = (VR(q) - 1) / SQRT(phi(q))
     - phi(q) = 2 * (2q - 1) * (q - 1) / (3 * q * n)
 
-    Which is asymptotically standard normal under the null hypothesis, allowing for a two-sided
-    p-value. A Variance Ratio above 1 with a significant (low) p-value indicates positive
+    And the heteroskedasticity-robust test statistic, which stays valid under volatility
+    clustering, is:
+
+    - z*(q) = SQRT(n) * (VR(q) - 1) / SQRT(theta(q))
+    - theta(q) = SUM over k = 1..q-1 of 4 * (1 - k / q)^2 * delta(k)
+    - delta(k) = n * SUM((r_t - mu)^2 * (r_t-k - mu)^2) / SUM((r_t - mu)^2)^2
+
+    Both are asymptotically standard normal under the null hypothesis, allowing for two-sided
+    p-values. A Variance Ratio above 1 with a significant (low) p-value indicates positive
     autocorrelation (momentum/trending behavior), while a Variance Ratio below 1 with a
-    significant p-value indicates negative autocorrelation (mean-reversion).
+    significant p-value indicates negative autocorrelation (mean-reversion). For financial
+    returns, whose variance is rarely constant, the robust p-value is the safer reading.
 
     Neither `statsmodels` nor `linearmodels` ships a Variance Ratio test -- this is one of two
     tests in this module (along with `unitroot_model.get_phillips_perron_test`) that remain
@@ -305,8 +319,8 @@ def get_variance_ratio_test(
         q (int): The number of periods to compound returns over. Defaults to 2.
 
     Returns:
-        pd.Series | pd.DataFrame: The Variance Ratio, the (homoskedastic) test statistic and
-        its p-value.
+        pd.Series | pd.DataFrame: The Variance Ratio, the homoskedastic test statistic and its
+        p-value, and the heteroskedasticity-robust test statistic and its p-value.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -340,26 +354,58 @@ def get_variance_ratio_test(
                     "Variance Ratio": np.nan,
                     "Variance Ratio Statistic": np.nan,
                     "P-Value": np.nan,
+                    "Robust Variance Ratio Statistic": np.nan,
+                    "Robust P-Value": np.nan,
                 }
             )
 
-        single_period_variance = values.var(ddof=1)
+        # Lo & MacKinlay (1988) unbiased estimators: the single-period variance divides by
+        # n - 1 and the overlapping q-period sums, centred on q times the mean, divide by
+        # m = q(n - q + 1)(1 - q/n). The plain sample variances are biased towards a ratio below 1 in finite samples.  # noqa: E501
+        mean_return = values.mean()
+        single_period_deviations = values - mean_return
+        single_period_variance = np.sum(single_period_deviations**2) / (n - 1)
 
         # q-period overlapping compounded returns, as the Lo-MacKinlay test defines them.
         q_period_returns = pd.Series(values).rolling(window=q).sum().dropna().to_numpy()
-        q_period_variance = q_period_returns.var(ddof=1)
+        m = q * (n - q + 1) * (1 - q / n)
+        q_period_variance = np.sum((q_period_returns - q * mean_return) ** 2) / m
 
-        variance_ratio = q_period_variance / (q * single_period_variance)
+        variance_ratio = q_period_variance / single_period_variance
 
         phi_q = 2 * (2 * q - 1) * (q - 1) / (3 * q * n)
         variance_ratio_statistic = (variance_ratio - 1) / np.sqrt(phi_q)
         p_value = 2 * stats.norm.sf(abs(variance_ratio_statistic))
+
+        # Heteroskedasticity-robust z*(q): the asymptotic variance theta(q) weights the
+        # autocorrelation estimators delta(k) of the squared deviations, so volatility
+        # clustering does not inflate the rejection rate (Lo & MacKinlay, 1988, eq. 19-20).
+        squared_deviations = single_period_deviations**2
+        squared_sum = np.sum(squared_deviations) ** 2
+        theta_q = 0.0
+        for k in range(1, q):
+            delta_k = (
+                n * (squared_deviations[k:] @ squared_deviations[:-k]) / squared_sum
+            )
+            theta_q += 4 * (1 - k / q) ** 2 * delta_k
+        robust_statistic = (
+            np.sqrt(n) * (variance_ratio - 1) / np.sqrt(theta_q)
+            if theta_q > 0
+            else np.nan
+        )
+        robust_p_value = (
+            2 * stats.norm.sf(abs(robust_statistic))
+            if np.isfinite(robust_statistic)
+            else np.nan
+        )
 
         return pd.Series(
             {
                 "Variance Ratio": variance_ratio,
                 "Variance Ratio Statistic": variance_ratio_statistic,
                 "P-Value": p_value,
+                "Robust Variance Ratio Statistic": robust_statistic,
+                "Robust P-Value": robust_p_value,
             }
         )
 

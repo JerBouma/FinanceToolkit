@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.econometrics import panel_data_model, regression_model
 
@@ -318,3 +319,100 @@ def test_get_hausman_test_degrees_of_freedom_matches_common_regressors():
     result = panel_data_model.get_hausman_test(y, x)
 
     assert result["Degrees of Freedom"] == 1
+
+
+def test_get_fixed_effects_two_way_effects_count_the_level_once():
+    # The entity plus time effects must equal linearmodels' combined estimated effects,
+    # balanced or not, so the grand mean of y - X @ beta is not counted twice.
+    from linearmodels.panel import PanelOLS
+
+    rng = np.random.default_rng(3)
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(5)], range(30)], names=["entity", "time"]
+    )
+    x = pd.Series(rng.standard_normal(len(index)), index=index, name="X")
+    y = pd.Series(rng.standard_normal(len(index)), index=index) + 2 * x + 3
+
+    for keep in (np.ones(len(index), dtype=bool), rng.random(len(index)) > 0.2):
+        y_kept, x_kept = y[keep], x[keep]
+        result = panel_data_model.get_fixed_effects(
+            y_kept, x_kept, entity_effects=True, time_effects=True
+        )
+        reference = PanelOLS(
+            y_kept, x_kept.to_frame(), entity_effects=True, time_effects=True
+        ).fit()
+
+        combined = (
+            result["entity_effects"]
+            .reindex(y_kept.index.get_level_values("entity"))
+            .to_numpy()
+            + result["time_effects"]
+            .reindex(y_kept.index.get_level_values("time"))
+            .to_numpy()
+        )
+        np.testing.assert_allclose(
+            combined, reference.estimated_effects.to_numpy().ravel(), atol=1e-9
+        )
+        time_effect_per_observation = result["time_effects"].reindex(
+            y_kept.index.get_level_values("time")
+        )
+        assert abs(time_effect_per_observation.mean()) < 1e-9
+
+
+def test_get_fixed_effects_time_effects_absorbing_a_common_factor_raises():
+    rng = np.random.default_rng(3)
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(4)], range(30)], names=["entity", "time"]
+    )
+    common_factor = pd.Series(
+        np.tile(rng.standard_normal(30), 4), index=index, name="X"
+    )
+    y = pd.Series(rng.standard_normal(len(index)), index=index) + common_factor
+
+    with pytest.raises(ValueError, match="absorb"):
+        panel_data_model.get_fixed_effects(
+            y, common_factor, entity_effects=True, time_effects=True
+        )
+
+
+def test_get_random_effects_and_hausman_need_more_entities_than_parameters():
+    rng = np.random.default_rng(3)
+    index = pd.MultiIndex.from_product(
+        [["A", "B"], range(50)], names=["entity", "time"]
+    )
+    x = pd.DataFrame(rng.standard_normal((100, 2)), index=index, columns=["a", "b"])
+    y = pd.Series(rng.standard_normal(100), index=index)
+
+    with pytest.raises(ValueError, match="more entities"):
+        panel_data_model.get_random_effects(y, x)
+    with pytest.raises(ValueError, match="more entities"):
+        panel_data_model.get_hausman_test(y, x)
+
+
+def test_get_hausman_test_degrees_of_freedom_is_the_rank_of_the_variance_difference(
+    monkeypatch,
+):
+    # Two compared slopes whose variance difference has rank 1, so the statistic is
+    # chi-squared with 1 degree of freedom rather than 2.
+    fe = {
+        "feature_names": ["a", "b"],
+        "coefficients": np.array([1.2, 0.5]),
+        "covariance_matrix": np.array([[0.02, 0.01], [0.01, 0.02]]),
+    }
+    re = {
+        "feature_names": ["Intercept", "a", "b"],
+        "coefficients": np.array([0.0, 1.0, 0.5]),
+        "covariance_matrix": np.array(
+            [[1.0, 0.0, 0.0], [0.0, 0.01, 0.0], [0.0, 0.0, 0.01]]
+        ),
+    }
+    monkeypatch.setattr(
+        panel_data_model, "get_fixed_effects", lambda *_, **__: {"regression": fe}
+    )
+    monkeypatch.setattr(panel_data_model, "get_random_effects", lambda *_, **__: re)
+
+    result = panel_data_model.get_hausman_test(None, None)
+
+    assert result["Degrees of Freedom"] == 1
+    # pinv([[0.01, 0.01], [0.01, 0.01]]) = 25 * ones, and the difference is (0.2, 0).
+    np.testing.assert_allclose(result["Hausman Statistic"], 25 * 0.2**2)

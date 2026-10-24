@@ -490,6 +490,10 @@ class Econometrics:
         behavior), while a Variance Ratio below 1 with a significant p-value indicates negative
         autocorrelation (mean-reversion).
 
+        Both variances use the unbiased estimators of Lo & MacKinlay (1988). Next to the
+        homoskedastic statistic z(q), the result holds the heteroskedasticity-robust z*(q),
+        which stays valid when volatility clusters and is the safer reading for returns.
+
         For more information about the method, see the following paper:
 
         - Lo, A.W., & MacKinlay, A.C. (1988). "Stock Market Prices Do Not Follow Random
@@ -511,8 +515,8 @@ class Econometrics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: The Variance Ratio, the (homoskedastic) test statistic and its p-value
-            per asset.
+            pd.DataFrame: The Variance Ratio, the homoskedastic test statistic and its p-value,
+            and the heteroskedasticity-robust test statistic and its p-value per asset.
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and runs the
@@ -535,11 +539,13 @@ class Econometrics:
 
         Which returns:
 
-        |                          |    AMZN |    TSLA |
-        |:-------------------------|--------:|--------:|
-        | Variance Ratio           |  0.8952 |  0.7879 |
-        | Variance Ratio Statistic | -0.4568 | -0.9247 |
-        | P-Value                  |  0.6478 |  0.3551 |
+        |                                 |    AMZN |    TSLA |
+        |:--------------------------------|--------:|--------:|
+        | Variance Ratio                  |  0.9455 |  0.832  |
+        | Variance Ratio Statistic        | -0.2374 | -0.7323 |
+        | P-Value                         |  0.8124 |  0.464  |
+        | Robust Variance Ratio Statistic | -0.2821 | -0.6647 |
+        | Robust P-Value                  |  0.7779 |  0.5062 |
         """
         period = period if period else "daily"
 
@@ -1057,15 +1063,17 @@ class Econometrics:
             "ct" (constant and trend). Defaults to "c". Note "n" (no constant) is not supported, see
             `econometrics.unitroot_model.get_phillips_perron_test` for why.
             lags (int, optional): The truncation lag for the Newey-West long-run variance estimate.
-            Defaults to the Schwert (1989) rule of thumb.
+            Defaults to None, meaning the Schwert (1989) rule ceil(12 * (n / 100) ** 0.25), capped
+            for short samples as the ADF lag search is.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
         Returns:
-            pd.DataFrame: The Phillips-Perron Z_t statistic, truncation lag used, observations used,
-            1%/5%/10% critical values, and whether the unit root is rejected at the 5% level, per asset.
+            pd.DataFrame: The Phillips-Perron Z_t statistic, its MacKinnon (1994) p-value, truncation
+            lag used, observations used, the finite-sample MacKinnon (2010) 1%/5%/10% critical values,
+            and whether the unit root is rejected at the 5% level, per asset.
 
         Notes:
         - The method retrieves historical price data based on the specified `period` and runs the
@@ -1088,15 +1096,16 @@ class Econometrics:
 
         Which returns:
 
-        |                           |      AMZN |     TSLA |
-        |:--------------------------|----------:|---------:|
-        | Phillips-Perron Statistic | -0.773263 | -1.92247 |
-        | Lags Used                 |  7        |  7       |
-        | Observations              | 19        | 19       |
-        | Critical Value 1%         | -3.43     | -3.43    |
-        | Critical Value 5%         | -2.86     | -2.86    |
-        | Critical Value 10%        | -2.57     | -2.57    |
-        | Reject Unit Root (5%)     |  0        |  0       |
+        |                           |      AMZN |      TSLA |
+        |:--------------------------|----------:|----------:|
+        | Phillips-Perron Statistic | -0.826972 | -1.88751  |
+        | P-Value                   |  0.81107  |  0.337961 |
+        | Lags Used                 |  5        |  5        |
+        | Observations              | 19        | 19        |
+        | Critical Value 1%         | -3.8326   | -3.8326   |
+        | Critical Value 5%         | -3.03123  | -3.03123  |
+        | Critical Value 10%        | -2.65552  | -2.65552  |
+        | Reject Unit Root (5%)     |  0        |  0        |
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
@@ -1348,6 +1357,9 @@ class Econometrics:
         Economic Dynamics and Control, 12(2-3), 231-254.
         - Johansen, S. (1991). "Estimation and Hypothesis Testing of Cointegration Vectors in
         Gaussian Vector Autoregressive Models." Econometrica, 59(6), 1551-1580.
+        - MacKinnon, J.G., Haug, A.A., & Michelis, L. (1999). "Numerical Distribution
+        Functions of Likelihood Ratio Tests for Cointegration." Journal of Applied
+        Econometrics, 14(5), 563-577.
 
         Also known as: Johansen test, Johansen procedure, VECM rank test.
 
@@ -1355,10 +1367,10 @@ class Econometrics:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            det_order (int, optional): Which deterministic term to include: -1 (none), 0 (a
-            constant, restricted to lie in the cointegrating relation) or 1 (a linear trend
-            restricted to the cointegrating relation, alongside an unrestricted constant in
-            the short-run dynamics). Defaults to 0.
+            det_order (int, optional): Which deterministic term to include: -1 (none,
+            Johansen's case 1), 0 (an unrestricted constant, case 3) or 1 (a linear trend,
+            evaluated against the case 5 critical values). The critical values are those of
+            MacKinnon, Haug & Michelis (1999). Defaults to 0.
             k_ar_diff (int, optional): The number of lagged first differences to include as
             short-run dynamics. Defaults to 1.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
@@ -1677,7 +1689,7 @@ class Econometrics:
             cov_type (str, optional): Which covariance estimator to use for the standard errors --
             one of "nonrobust" (classical, assumes homoskedastic errors), "HC0"/"HC1"/"HC2"/"HC3"
             (heteroskedasticity-robust), "cluster" (cluster-robust, requires `clusters`) or "HAC"
-            (Newey-West, heteroskedasticity-and-autocorrelation-consistent, requires `maxlags`).
+            (Newey-West, heteroskedasticity-and-autocorrelation-consistent, uses `maxlags`).
             Use `get_breusch_pagan_test`/`get_white_test` to check for heteroskedasticity and
             `get_ljung_box_test` to check for autocorrelation first. Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation
@@ -1687,9 +1699,9 @@ class Econometrics:
             index even though the regression drops periods with missing data. Defaults
             to None.
             maxlags (int | None, optional): The maximum lag to include when estimating the
-            HAC (Newey-West) covariance matrix, required when `cov_type="HAC"`. A common
-            rule of thumb is `floor(4 * (n / 100)^(2/9))` (Newey & West, 1994). Defaults to
-            None.
+            HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults to
+            None, meaning the Newey & West (1994) rule of thumb `floor(4 * (n / 100)^(2/9))`
+            with `n` the number of observations.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
@@ -1818,8 +1830,8 @@ class Econometrics:
             clusters (pd.Series | None, optional): The cluster label for each observation,
             required when `cov_type="cluster"`. Defaults to None.
             maxlags (int | None, optional): The maximum lag to include when estimating the
-            HAC (Newey-West) covariance matrix, required when `cov_type="HAC"`. See
-            `get_ols`'s `maxlags` for the rule-of-thumb formula. Defaults to None.
+            HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults to
+            None, meaning the Newey & West (1994) rule of thumb (see `get_ols`).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
@@ -3087,8 +3099,9 @@ class Econometrics:
 
         - LM = n * R^2_auxiliary
 
-        Which is asymptotically chi-squared distributed with `k - 1` degrees of freedom under
-        the null hypothesis of homoskedasticity, where `k` is the number of parameters of the
+        This is the studentized statistic of Koenker (1981), which does not assume normally
+        distributed errors. It is asymptotically chi-squared distributed with `k - 1` degrees
+        of freedom under the null hypothesis of homoskedasticity, where `k` is the number of parameters of the
         auxiliary regression. A low p-value means the residual variance moves with the
         independent tickers (for example, errors grow when the market moves more), so the
         regression's standard errors, t-statistics and p-values are unreliable even though
@@ -3100,6 +3113,8 @@ class Econometrics:
 
         - Breusch, T.S., & Pagan, A.R. (1979). "A Simple Test for Heteroscedasticity and
         Random Coefficient Variation." Econometrica, 47(5), 1287-1294.
+        - Koenker, R. (1981). "A Note on Studentizing a Test for Heteroscedasticity."
+        Journal of Econometrics, 17(1), 107-112.
 
         Also known as: BP test, Breusch-Pagan-Godfrey test.
 
@@ -4481,7 +4496,9 @@ class Econometrics:
             ValueError: If both or neither of `independent_tickers`/
             `independent_column` are given, or (see `panel_data_model.
             get_fixed_effects`) if there are not enough observations for the
-            requested fixed effects.
+            requested fixed effects, or the fixed effects absorb the regressor: the
+            common factor of `independent_tickers` is identical for every entity at
+            each date, so it cannot be combined with `time_effects=True`.
 
         As an example:
 
@@ -4677,8 +4694,9 @@ class Econometrics:
         Raises:
             ValueError: If both or neither of `independent_tickers`/
             `independent_column` are given, or (see `panel_data_model.
-            get_hausman_test`) if there are not enough observations to fit either
-            model, or the two estimators share no common regressors to compare.
+            get_hausman_test`) if there are not enough observations or entities to
+            fit either model, or the two estimators share no common regressors to
+            compare.
 
         As an example:
 
@@ -4751,9 +4769,9 @@ class Econometrics:
             q (int, optional): The moving-average order. Defaults to 1.
             forecast_steps (int, optional): The number of periods ahead to forecast.
             Defaults to 5.
-            include_constant (bool, optional): Whether to estimate a free intercept.
-            Defaults to True -- see `time_series_model.get_arima_forecast` for when
-            to set this to False.
+            include_constant (bool, optional): Whether to estimate the mean of the
+            differenced series (its drift for `d >= 1`). Defaults to True -- see
+            `time_series_model.get_arima_forecast` for when to set this to False.
             include_benchmark (bool, optional): Whether to include "Benchmark" among
             the tickers forecast. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the

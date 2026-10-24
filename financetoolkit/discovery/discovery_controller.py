@@ -894,6 +894,11 @@ class Discovery:
         to measure market breadth from every constituent (`toolkit.technicals.get_market_breadth`)
         or to rank them by relative strength.
 
+        These are today's members only. Breadth, relative strength or returns of past dates
+        computed from them leave out the companies that were removed from the index since,
+        often after falling behind, so the history is biased towards the survivors
+        (survivorship bias), the more so the further back it goes.
+
         Also known as: index members, index constituents, S&P 500 components.
 
         Args:
@@ -917,7 +922,7 @@ class Discovery:
 
         Which returns:
 
-                | Symbol   | Name                       | Sector             | Date Added   |
+        | Symbol   | Name                       | Sector             | Date Added   |
         |:---------|:---------------------------|:-------------------|:-------------|
         | AAPL     | Apple Inc.                 | Technology         | 2015-03-19   |
         | AMGN     | Amgen Inc.                 | Healthcare         | 2020-08-31   |

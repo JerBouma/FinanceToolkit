@@ -766,7 +766,11 @@ class Performance:
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             region (str, optional): The region whose factors to use: "United States", "Developed",
                 "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
-                factors of Ken French's library for that region's stocks). Defaults to "United States".
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF),
+                so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
+                otherwise the exchange rate's moves end up in the factor loadings, mostly the market
+                beta. Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             show_columns (list of str, optional): Restrict the result to these top level columns.
                 Defaults to None, which returns every column.
@@ -906,7 +910,9 @@ class Performance:
             exclude_risk_free (bool, optional): Whether to exclude the risk-free rate from the results. Defaults to True.
             region (str, optional): The region whose factors to use: "United States", "Developed",
                 "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
-                factors of Ken French's library for that region's stocks). Defaults to "United States".
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF).
+                Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
@@ -1078,7 +1084,11 @@ class Performance:
                 regression residuals as a second DataFrame. Defaults to False.
             region (str, optional): The region whose factors to use: "United States", "Developed",
                 "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
-                factors of Ken French's library for that region's stocks). Defaults to "United States".
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF),
+                so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
+                otherwise the exchange rate's moves end up in the factor loadings, mostly the market
+                beta. Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
             lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1394,7 +1404,11 @@ class Performance:
                 Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             region (str, optional): The region whose factors to use: "United States", "Developed",
                 "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
-                factors of Ken French's library for that region's stocks). Defaults to "United States".
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF),
+                so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
+                otherwise the exchange rate's moves end up in the factor loadings, mostly the market
+                beta. Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
             lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1571,8 +1585,18 @@ class Performance:
 
         The R Squared is the share of the ticker's variance the styles explain; what they do
         not explain is the Selection Return (the return of the manager's own choices, annualized)
-        with its volatility, the Tracking Error. A window estimates the weights over a rolling
-        number of periods instead, which shows how a fund's style drifts over time.
+        with its volatility, the Tracking Error. These three are in-sample: they are measured
+        over the same returns the weights are fitted to, which flatters the fit, as the weights
+        are chosen to explain exactly those returns.
+
+        A window estimates the weights over a rolling number of periods instead, which shows how
+        a fund's style drifts over time, and adds Sharpe's out-of-sample measure of selection:
+        the Out-of-Sample Selection Return of a date is the ticker's return of that period minus
+        the return of that period of the style mix estimated over the window that ends one
+        period earlier (Sharpe uses the previous 60 months). It is a return per period, not
+        annualized, and NaN for the first window, which has no earlier estimate. Its average
+        shows whether the manager added value beyond a passive mix of the styles the fund was
+        known to follow.
 
         The style indices are tickers of the Toolkit as well (an ETF per style works well, for
         example IWF, IWD, IWO and IWN for US large and small cap growth and value and AGG for
@@ -1583,7 +1607,8 @@ class Performance:
         - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance
           Measurement." The Journal of Portfolio Management, 18(2), 7-19.
 
-        Also known as: returns-based style analysis, RBSA, style regression, effective asset mix.
+        Also known as: returns-based style analysis, RBSA, style regression, effective asset mix,
+        selection return.
 
         Args:
             style_tickers (str | list[str]): The tickers of the style indices, as a list or a
@@ -1591,13 +1616,16 @@ class Performance:
             period (str, optional): The return frequency (daily, weekly, monthly, quarterly or
                 yearly). Defaults to "monthly".
             window (int | None, optional): The number of periods to estimate the weights over on a
-                rolling basis. Defaults to None, which uses every period.
+                rolling basis, which adds the Out-of-Sample Selection Return. Defaults to None,
+                which uses every period.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
 
         Returns:
             pd.DataFrame: Per ticker the weight of every style, the R Squared, the Selection Return
-            and the Tracking Error, or with a window the same per date and ticker.
+            and the Tracking Error, or with a window the same and the Out-of-Sample Selection
+            Return per date (the last date of every window) and ticker. A ticker with no more
+            returns than there are styles (in a window) is NaN.
 
         As an example:
 
@@ -1616,7 +1644,7 @@ class Performance:
 
         Which returns:
 
-                |      |    IWF |   IWD |    IWO |   IWN |   AGG |   R Squared |   Selection Return |   Tracking Error |
+        |      |    IWF |   IWD |    IWO |   IWN |   AGG |   R Squared |   Selection Return |   Tracking Error |
         |:-----|-------:|------:|-------:|------:|------:|------------:|-------------------:|-----------------:|
         | ARKK | 0.0091 |     0 | 0.9909 |     0 |     0 |      0.6123 |             0.0638 |           0.2632 |
         """
@@ -1646,9 +1674,15 @@ class Performance:
                 "Every ticker is a style ticker, so there is nothing to analyze."
             )
 
-        returns = returns.loc[self._start_date : self._end_date]
+        returns = returns.loc[
+            self._start_date : self._end_date, [*funds, *style_tickers]
+        ]
+        # When the prices start within the range, their first period has no prior close and so no return for any ticker; leaving it in would give the first window one observation fewer than `window`.  # noqa: E501
+        if (first_return := returns.first_valid_index()) is not None:
+            returns = returns.loc[first_return:]
         periods_per_year = PERIODS_PER_YEAR[period]
 
+        # A fund with too few returns (a recent listing, say) comes back as NaN in the model, so it does not empty the result of every other fund.  # noqa: E501
         if window is None:
             result = pd.DataFrame(
                 {
@@ -1659,18 +1693,15 @@ class Performance:
                 }
             ).T
         else:
-            rolling = {}
-            for end in range(window, len(returns) + 1):
-                sample = returns.iloc[end - window : end]
-                rolling[returns.index[end - 1]] = pd.concat(
-                    {
-                        fund: performance_model.get_style_analysis(
-                            sample[fund], sample[style_tickers], periods_per_year
-                        )
-                        for fund in funds
-                    }
-                )
-            result = pd.DataFrame(rolling).T
+            result = pd.concat(
+                {
+                    fund: performance_model.get_rolling_style_analysis(
+                        returns[fund], returns[style_tickers], window, periods_per_year
+                    )
+                    for fund in funds
+                },
+                axis=1,
+            )
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

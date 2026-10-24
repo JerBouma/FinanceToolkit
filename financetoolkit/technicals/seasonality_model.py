@@ -8,11 +8,16 @@ import numpy as np
 import pandas as pd
 
 # The weights of the quarters in the relative strength rating: the latest quarter counts
-# twice, as in the rating Investor's Business Daily publishes.
+# twice. Investor's Business Daily keeps its own rating's formula to itself; this weighting
+# is the common public approximation of it.
 RATING_QUARTERS = {63: 0.4, 126: 0.2, 189: 0.2, 252: 0.2}
 
 
-def get_seasonality(returns: pd.Series, frequency: str = "month") -> pd.DataFrame:
+def get_seasonality(
+    returns: pd.Series,
+    frequency: str = "month",
+    end_date: str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
     """
     Calculate the seasonality of returns: their average per calendar month (from monthly
     returns) or per day of the week (from daily returns), with the median, the share of
@@ -29,6 +34,11 @@ def get_seasonality(returns: pd.Series, frequency: str = "month") -> pd.DataFram
         returns (pd.Series): Monthly returns for frequency="month", daily returns for
             frequency="weekday", indexed by date.
         frequency (str, optional): "month" or "weekday". Defaults to "month".
+        end_date (str | pd.Timestamp | None, optional): The date the returns run up to. A
+            monthly return is measured from one month's last close to the next, so with an
+            end date before the last business day of its month the final return covers only
+            part of that month; it is then left out rather than averaged as a full month.
+            Defaults to None, which takes every return as complete.
 
     Returns:
         pd.DataFrame: The Average Return, Median Return, Hit Rate, t-Statistic and
@@ -41,6 +51,12 @@ def get_seasonality(returns: pd.Series, frequency: str = "month") -> pd.DataFram
         if isinstance(index, pd.PeriodIndex)
         else pd.DatetimeIndex(index)
     )
+
+    if frequency == "month" and end_date is not None and len(values):
+        month_start = pd.Period(dates[-1], freq="M").start_time
+        last_business_day = pd.offsets.BMonthEnd().rollforward(month_start)
+        if pd.Timestamp(end_date).normalize() < last_business_day:
+            values, dates = values.iloc[:-1], dates[:-1]
 
     if frequency == "month":
         groups = dates.month
@@ -81,13 +97,18 @@ def get_relative_strength(
     price divided by the benchmark's, set to 1 on the first date), which rises when the
     asset outperforms, and the Mansfield relative strength, the price relative against its
     own moving average minus 1, which is positive while the asset is gaining on the
-    benchmark.
+    benchmark. Weinstein reads it from weekly charts against a 52-week average, a year.
+
+    For more information, see the following book:
+
+    - Weinstein, S. (1988). "Stan Weinstein's Secrets for Profiting in Bull and Bear
+      Markets." McGraw-Hill.
 
     Args:
         prices (pd.DataFrame): The prices, a column each.
         benchmark_prices (pd.Series): The benchmark's prices.
-        window (int, optional): The moving average window of the Mansfield relative strength.
-            Defaults to 252.
+        window (int, optional): The moving average window of the Mansfield relative strength,
+            in periods of the prices. Defaults to 252 (a year of daily prices).
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: The price relative and the Mansfield relative
@@ -109,6 +130,15 @@ def get_relative_strength_rating(prices: pd.DataFrame) -> pd.DataFrame:
     (strongest). The rating is only meaningful across many assets, such as the constituents
     of an index.
 
+    The rating follows the one Investor's Business Daily publishes, whose exact formula is
+    proprietary; the 0.4, 0.2, 0.2 and 0.2 weighting is its common public approximation.
+    Assets with the same score share the highest rank among them, so a rating reads as the
+    share of the other assets it outperformed or matched, and tied leaders both rate 99.
+
+    For more information, see the following book:
+
+    - O'Neil, W.J. (1988). "How to Make Money in Stocks." McGraw-Hill.
+
     Args:
         prices (pd.DataFrame): The daily prices, a column each.
 
@@ -119,7 +149,7 @@ def get_relative_strength_rating(prices: pd.DataFrame) -> pd.DataFrame:
         weight * (prices / prices.shift(days) - 1)
         for days, weight in RATING_QUARTERS.items()
     )
-    ranks = score.rank(axis=1)
+    ranks = score.rank(axis=1, method="max")
     count = score.notna().sum(axis=1)
     # The weakest asset of a date rates 1 and the strongest 99.
     rating = 1 + (ranks - 1).div((count - 1).replace(0, np.nan), axis=0) * 98

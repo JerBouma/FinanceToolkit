@@ -16,6 +16,7 @@ from financetoolkit.technicals import (
 )
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    PERIODS_PER_YEAR,
     apply_rounding,
     calculate_growth,
     calculate_standardization,
@@ -7717,7 +7718,7 @@ class Technicals:
         close_column: str = "Adj Close",
         short_window: int = 50,
         long_window: int = 200,
-        high_low_window: int = 252,
+        high_low_window: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -7726,7 +7727,9 @@ class Technicals:
         of its members fall; breadth shows that divergence, which often comes before the index
         itself turns. Breadth is most meaningful across many tickers, such as the constituents
         of an index, which `Discovery.get_index_constituents` lists (e.g. the 500 tickers of the
-        S&P 500).
+        S&P 500). Those are today's members: breadth of past dates computed from them leaves out
+        the companies that were removed from the index since (often after falling behind), so
+        it is biased towards the survivors, the further back the more.
 
         Per date it returns:
 
@@ -7735,20 +7738,25 @@ class Technicals:
         - Advance-Decline Line: the running total of the net advances. A rising index with a
           falling line is the classic negative divergence.
         - Advance-Decline Ratio: the advancers divided by the decliners.
-        - McClellan Oscillator: the 19-period minus the 39-period exponential moving average
-          of the net advances as a share of the tickers (times 1,000), and its running total,
-          the McClellan Summation Index.
+        - McClellan Oscillator: the ratio-adjusted version, the 19-period minus the 39-period
+          exponential moving average (smoothing constants of 0.10 and 0.05) of the net advances
+          divided by advancers plus decliners (times 1,000); unchanged issues are left out.
+          Each average starts from the simple average of its first 19 or 39 values, so the
+          oscillator starts once the 39-period average exists (NaN before), as does its running
+          total, the McClellan Summation Index.
         - Percentage Above the short and long moving average: the share of tickers trading
           above their 50 and 200-period average, a gauge of how broad a trend is.
-        - New Highs and New Lows: the tickers at their highest or lowest close of the last
-          year.
+        - New Highs and New Lows: the tickers whose close is above the highest (below the
+          lowest) close of the previous `high_low_window` - 1 periods, so the highest or
+          lowest of the last `high_low_window` periods; a close that only equals the previous
+          high is no new high. NaN until at least one ticker has a full window.
 
         The Benchmark (and a Portfolio) are left out.
 
         For more information, see the following book:
 
-        - McClellan, S. and McClellan, T. (1970). "Patterns for Profit: The McClellan
-          Oscillator and Summation Index." McClellan Financial Publications.
+        - McClellan, S. and McClellan, M. (1970). "Patterns for Profit: The McClellan
+          Oscillator and Summation Index." Trade Levels Inc.
 
         Also known as: market breadth, advance-decline line, McClellan oscillator, percentage
         above 200-day moving average, new highs new lows.
@@ -7760,8 +7768,10 @@ class Technicals:
                 Defaults to "Adj Close".
             short_window (int, optional): The short moving average window. Defaults to 50.
             long_window (int, optional): The long moving average window. Defaults to 200.
-            high_low_window (int, optional): The window of the new highs and lows. Defaults to
-                252.
+            high_low_window (int | None, optional): The number of periods, including the current
+                one, of the new highs and lows. Defaults to None, which uses a year of periods:
+                252 daily, 52 weekly, 12 monthly, 4 quarterly and 1 yearly (too short for a new
+                high or low, so those stay NaN), and 252 for intraday data.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
 
@@ -7791,11 +7801,11 @@ class Technicals:
 
         | Date       |   Advancers |   Decliners |   Unchanged |   Net Advances |   Advance-Decline Line |   Advance-Decline Ratio |   McClellan Oscillator |   McClellan Summation Index |   Percentage Above 50-Period Average |   Percentage Above 200-Period Average |   New Highs |   New Lows |
         |:-----------|------------:|------------:|------------:|---------------:|-----------------------:|------------------------:|-----------------------:|----------------------------:|-------------------------------------:|--------------------------------------:|------------:|-----------:|
-        | 2025-12-24 |          26 |           3 |           1 |             23 |                    976 |                  8.6667 |                64.356  |                     4227.55 |                               0.7333 |                                   0.8 |           3 |          0 |
-        | 2025-12-26 |          14 |          16 |           0 |             -2 |                    974 |                  0.875  |                48.8866 |                     4276.44 |                               0.7    |                                   0.8 |           1 |          0 |
-        | 2025-12-29 |          10 |          20 |           0 |            -10 |                    964 |                  0.5    |                22.0825 |                     4298.52 |                               0.7333 |                                   0.8 |           0 |          0 |
-        | 2025-12-30 |           9 |          21 |           0 |            -12 |                    952 |                  0.4286 |                -4.2787 |                     4294.24 |                               0.7    |                                   0.8 |           0 |          0 |
-        | 2025-12-31 |           3 |          27 |           0 |            -24 |                    928 |                  0.1111 |               -46.7962 |                     4247.45 |                               0.5667 |                                   0.8 |           0 |          0 |
+        | 2025-12-24 |          26 |           3 |           1 |             23 |                    978 |                  8.6667 |                65.5048 |                    -814.088 |                               0.7333 |                                   0.8 |           3 |          0 |
+        | 2025-12-26 |          14 |          16 |           0 |             -2 |                    976 |                  0.875  |                49.8424 |                    -764.246 |                               0.7    |                                   0.8 |           1 |          0 |
+        | 2025-12-29 |          10 |          20 |           0 |            -10 |                    966 |                  0.5    |                22.8684 |                    -741.377 |                               0.7333 |                                   0.8 |           0 |          0 |
+        | 2025-12-30 |           9 |          21 |           0 |            -12 |                    954 |                  0.4286 |                -3.642  |                    -745.019 |                               0.7    |                                   0.8 |           0 |          0 |
+        | 2025-12-31 |           3 |          27 |           0 |            -24 |                    930 |                  0.1111 |               -46.2902 |                    -791.309 |                               0.5667 |                                   0.8 |           0 |          0 |
         """
         prices = self._close_prices(period, close_column)
         constituents = [
@@ -7803,6 +7813,9 @@ class Technicals:
             for ticker in prices.columns
             if ticker not in ("Portfolio", "Benchmark")
         ]
+        # A year of periods, so weekly data looks for 52-week highs rather than 252-week ones. Intraday bars have no fixed number per year and keep the daily count.  # noqa: E501
+        if high_low_window is None:
+            high_low_window = PERIODS_PER_YEAR.get(period, PERIODS_PER_YEAR["daily"])
         breadth = breadth_model.get_market_breadth(
             prices[constituents], short_window, long_window, high_low_window
         ).loc[self._start_date : self._end_date]
@@ -7825,6 +7838,12 @@ class Technicals:
         and the number of observations. Well-known examples are the January effect and the
         "sell in May" pattern. A pattern needs many years and a t-statistic well above 2 before
         it says much, and even then it can fade once it is widely traded on.
+
+        A monthly return runs from one month's last close to the next, so a final month that is
+        not complete yet (an end date before that month's last business day, as with the
+        default end date of today) is left out rather than averaged as a full month. The
+        Benchmark is included as a ticker, so its seasonality is there to compare with; a
+        Portfolio is left out.
 
         For more information, see the following paper:
 
@@ -7893,7 +7912,9 @@ class Technicals:
 
         seasonality = pd.concat(
             {
-                ticker: seasonality_model.get_seasonality(returns[ticker], frequency)
+                ticker: seasonality_model.get_seasonality(
+                    returns[ticker], frequency, end_date=self._end_date
+                )
                 for ticker in returns.columns
                 if ticker != "Portfolio"
             },
@@ -7909,7 +7930,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        window: int = 252,
+        window: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -7920,17 +7941,26 @@ class Technicals:
         - Relative Strength: the price divided by the Benchmark's, set to 1 on the first date.
           It rises while the ticker outperforms the Benchmark.
         - Mansfield Relative Strength: the relative strength against its own moving average
-          (of `window` periods) minus 1. Above zero the ticker is gaining on the Benchmark.
+          (of `window` periods, a year by default) minus 1. Above zero the ticker is gaining on
+          the Benchmark.
         - Relative Strength Rating: the ticker's performance over the last year, with the last
           quarter counting twice (the 3, 6, 9 and 12-month returns weighted 0.4, 0.2, 0.2 and
           0.2), ranked against the other tickers from 1 (weakest) to 99 (strongest), from daily
-          prices. It needs many tickers to be meaningful, such as the constituents of an index
-          (see `Discovery.get_index_constituents`).
+          prices. Investor's Business Daily publishes the original rating with a proprietary
+          formula; this weighting is its common public approximation. Tickers with the same
+          score share the highest rank among them, so the rating reads as the share of the
+          other tickers outperformed or matched and tied leaders both rate 99. It needs many
+          tickers to be meaningful, such as the constituents of an index (see
+          `Discovery.get_index_constituents`, whose current members leave out the companies
+          removed from the index since).
 
-        For more information, see the following paper:
+        For more information, see the following papers and books:
 
         - Jegadeesh, N. and Titman, S. (1993). "Returns to Buying Winners and Selling Losers:
           Implications for Stock Market Efficiency." The Journal of Finance, 48(1), 65-91.
+        - Weinstein, S. (1988). "Stan Weinstein's Secrets for Profiting in Bull and Bear
+          Markets." McGraw-Hill.
+        - O'Neil, W.J. (1988). "How to Make Money in Stocks." McGraw-Hill.
 
         Also known as: relative strength, price relative, Mansfield relative strength, RS
         rating, relative performance.
@@ -7940,8 +7970,10 @@ class Technicals:
                 Can be "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
-            window (int, optional): The moving average window of the Mansfield relative strength,
-                in periods. Defaults to 252 (a year of trading days).
+            window (int | None, optional): The moving average window of the Mansfield relative
+                strength, in periods. Defaults to None, which uses a year of periods: 252 daily,
+                52 weekly, 12 monthly, 4 quarterly and 1 yearly (a single period, which makes the
+                measure zero, so pass a longer window for yearly data).
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
 
@@ -7968,7 +8000,7 @@ class Technicals:
 
         Which returns:
 
-                | Date       |   AAPL |   MSFT |   NVDA |   AMZN |   GOOGL |
+        | Date       |   AAPL |   MSFT |   NVDA |   AMZN |   GOOGL |
         |:-----------|-------:|-------:|-------:|-------:|--------:|
         | 2025-12-24 |     50 |      1 |     74 |     26 |      99 |
         | 2025-12-26 |     50 |      1 |     74 |     26 |      99 |
@@ -7988,8 +8020,11 @@ class Technicals:
             for ticker in prices.columns
             if ticker not in ("Portfolio", "Benchmark")
         ]
+        # A year of periods whatever the period: 252 periods would be almost five years of weekly and 21 years of monthly prices, leaving most histories without a value.  # noqa: E501
         relative, mansfield = seasonality_model.get_relative_strength(
-            prices[tickers], prices["Benchmark"], window
+            prices[tickers],
+            prices["Benchmark"],
+            window if window is not None else PERIODS_PER_YEAR[period],
         )
 
         rating = seasonality_model.get_relative_strength_rating(

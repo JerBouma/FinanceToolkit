@@ -226,27 +226,48 @@ _factor_files: dict[str, tuple[float, bytes]] = {}
 
 KEN_FRENCH_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 
-# The regions Ken French publishes daily factors for, with the prefix of their files. The
-# United States files have their own names.
+# The regions Ken French publishes daily factors for, with their files spelled as the data
+# library lists them. The server matches the names regardless of case, but the published
+# spelling differs per region (only Asia Pacific ex Japan spells its momentum file "MOM").
+# Every region's factors are U.S. dollar returns with the U.S. one-month T-bill as RF.
 FACTOR_REGIONS = {
-    "United States": None,
-    "Developed": "Developed",
-    "Developed ex US": "Developed_ex_US",
-    "Europe": "Europe",
-    "Japan": "Japan",
-    "Asia Pacific ex Japan": "Asia_Pacific_ex_Japan",
-    "North America": "North_America",
+    "United States": {
+        "five": "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
+        "three": "F-F_Research_Data_Factors_daily_CSV.zip",
+        "momentum": "F-F_Momentum_Factor_daily_CSV.zip",
+    },
+    "Developed": {
+        "five": "Developed_5_Factors_Daily_CSV.zip",
+        "three": "Developed_3_Factors_Daily_CSV.zip",
+        "momentum": "Developed_Mom_Factor_Daily_CSV.zip",
+    },
+    "Developed ex US": {
+        "five": "Developed_ex_US_5_Factors_Daily_CSV.zip",
+        "three": "Developed_ex_US_3_Factors_Daily_CSV.zip",
+        "momentum": "Developed_ex_US_Mom_Factor_Daily_CSV.zip",
+    },
+    "Europe": {
+        "five": "Europe_5_Factors_Daily_CSV.zip",
+        "three": "Europe_3_Factors_Daily_CSV.zip",
+        "momentum": "Europe_Mom_Factor_Daily_CSV.zip",
+    },
+    "Japan": {
+        "five": "Japan_5_Factors_Daily_CSV.zip",
+        "three": "Japan_3_Factors_Daily_CSV.zip",
+        "momentum": "Japan_Mom_Factor_Daily_CSV.zip",
+    },
+    "Asia Pacific ex Japan": {
+        "five": "Asia_Pacific_ex_Japan_5_Factors_Daily_CSV.zip",
+        "three": "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip",
+        "momentum": "Asia_Pacific_ex_Japan_MOM_Factor_Daily_CSV.zip",
+    },
+    "North America": {
+        "five": "North_America_5_Factors_Daily_CSV.zip",
+        "three": "North_America_3_Factors_Daily_CSV.zip",
+        "momentum": "North_America_Mom_Factor_Daily_CSV.zip",
+    },
 }
-UNITED_STATES_FACTOR_FILES = {
-    "five": "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
-    "three": "F-F_Research_Data_Factors_daily_CSV.zip",
-    "momentum": "F-F_Momentum_Factor_daily_CSV.zip",
-}
-REGIONAL_FACTOR_FILES = {
-    "five": "{prefix}_5_Factors_Daily_CSV.zip",
-    "three": "{prefix}_3_Factors_Daily_CSV.zip",
-    "momentum": "{prefix}_Mom_Factor_Daily_CSV.zip",
-}
+
 # Ken French marks a missing value with -99.99 (or -999 in some files).
 MISSING_FACTOR_VALUES = (-99.99, -999.0)
 
@@ -271,13 +292,7 @@ def factor_url(region: str = "United States", kind: str = "five") -> str:
             f"The factors of {region!r} are not published. Choose from "
             f"{', '.join(FACTOR_REGIONS)}."
         )
-    prefix = FACTOR_REGIONS[region]
-    file_name = (
-        UNITED_STATES_FACTOR_FILES[kind]
-        if prefix is None
-        else REGIONAL_FACTOR_FILES[kind].format(prefix=prefix)
-    )
-    return f"{KEN_FRENCH_URL}{file_name}"
+    return f"{KEN_FRENCH_URL}{FACTOR_REGIONS[region][kind]}"
 
 
 def read_factor_file(zip_data: bytes) -> pd.DataFrame:
@@ -362,7 +377,8 @@ def obtain_fama_and_french_dataset(
         5 factor file of the region is used.
         region (str, optional): The region whose factors to use, one of FACTOR_REGIONS: "United States",
         "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America".
-        Defaults to "United States".
+        Every region's factors are U.S. dollar returns with the U.S. one-month Treasury bill as the
+        risk-free rate (RF). Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Fama and French 5 Factor Model dataset.
@@ -2827,6 +2843,63 @@ def get_henriksson_merton_model(
     )
 
 
+def get_style_weights(returns: pd.Series, style_returns: pd.DataFrame) -> pd.Series:
+    """
+    The weights of returns-based style analysis (Sharpe, 1992): the mix of style indices,
+    every weight between 0 and 1 and the weights adding up to 1, that minimizes the variance
+    of the difference between the fund's return and the weighted style returns. As
+
+        - Var(Fund - Styles @ w) = Var(Fund) - 2 * w' Cov(Styles, Fund) + w' Cov(Styles) w
+
+    the weights solve a quadratic programme in the covariances. It is scaled by the fund's
+    variance and solved with its exact gradients: on daily returns the tracking variance is
+    around 1e-6, so small that the optimizer's tolerance would otherwise stop it before the
+    weights settle in the fourth decimal.
+
+    For more information, see the following paper:
+
+    - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance Measurement."
+      The Journal of Portfolio Management, 18(2), 7-19.
+
+    Args:
+        returns (pd.Series): The fund's returns.
+        style_returns (pd.DataFrame): The returns of the style indices, a column each, on the
+            same dates as `returns` without missing values.
+
+    Returns:
+        pd.Series: The weight of every style.
+    """
+    y = returns.to_numpy(dtype=float)
+    x = style_returns.to_numpy(dtype=float)
+    styles = x.shape[1]
+
+    covariance = np.cov(np.column_stack([y, x]), rowvar=False, ddof=1)
+    scale = covariance[0, 0] if covariance[0, 0] > 0 else 1.0
+    style_covariance = covariance[1:, 1:] / scale
+    fund_covariance = covariance[1:, 0] / scale
+
+    fit = optimize.minimize(
+        lambda weights: weights @ style_covariance @ weights
+        - 2 * weights @ fund_covariance,
+        np.full(styles, 1 / styles),
+        jac=lambda weights: 2 * (style_covariance @ weights - fund_covariance),
+        method="SLSQP",
+        bounds=[(0.0, 1.0)] * styles,
+        constraints=[
+            {
+                "type": "eq",
+                "fun": lambda weights: weights.sum() - 1,
+                "jac": np.ones_like,
+            }
+        ],
+        options={"ftol": 1e-15, "maxiter": 1000},
+    )
+    # SLSQP can end a hair outside the bounds, which would let a weight read as -0.0000.
+    weights = np.clip(fit.x, 0, 1)
+
+    return pd.Series(weights / weights.sum(), index=style_returns.columns)
+
+
 def get_style_analysis(
     returns: pd.Series, style_returns: pd.DataFrame, periods_per_year: int = 12
 ) -> pd.Series:
@@ -2835,9 +2908,14 @@ def get_style_analysis(
     a fund's returns most closely. The weights are found by minimizing the variance of the
     difference between the fund's return and the weighted style returns, with every weight
     between 0 and 1 and the weights adding up to 1, so they read as the fund's effective
-    asset mix. The part of the fund's return the styles do not explain is the selection
-    return, its volatility the tracking error and the share of the variance they do explain
-    the R Squared.
+    asset mix (see `get_style_weights`).
+
+    The other figures are in-sample, measured over the same returns the weights are fitted
+    to: the part of the fund's return the styles do not explain is the Selection Return, its
+    volatility the Tracking Error and the share of the fund's variance the styles explain the
+    R Squared. Sharpe measures selection out of sample instead, against the style estimated
+    over the periods before (see `get_rolling_style_analysis`); the in-sample figures flatter
+    the fit, as the weights are chosen to explain these very returns.
 
     For more information, see the following paper:
 
@@ -2852,40 +2930,109 @@ def get_style_analysis(
 
     Returns:
         pd.Series: The weight of every style, the R Squared, the (annualized) Selection Return
-        and the (annualized) Tracking Error.
+        and the (annualized) Tracking Error. Dates on which the fund or a style has no return
+        are left out; with no more complete dates than styles the weights are undetermined and
+        every value is NaN.
     """
-    data = pd.concat([returns, style_returns], axis=1).dropna()
     styles = list(style_returns.columns)
+    columns = [*styles, "R Squared", "Selection Return", "Tracking Error"]
+    data = pd.concat([returns, style_returns], axis=1).dropna()
+
     if len(data) <= len(styles):
-        raise ValueError(
-            f"Style analysis with {len(styles)} styles needs more than {len(styles)} "
-            f"observations, not {len(data)}."
-        )
+        return pd.Series(np.nan, index=columns)
 
+    # By position, so a fund that carries the name of a style does not clash with it.
+    weights = get_style_weights(data.iloc[:, 0], data.iloc[:, 1:]).to_numpy()
     y = data.iloc[:, 0].to_numpy(dtype=float)
-    x = data[styles].to_numpy(dtype=float)
-
-    def tracking_variance(weights: np.ndarray) -> float:
-        return float(np.var(y - x @ weights, ddof=1))
-
-    start = np.full(len(styles), 1 / len(styles))
-    fit = optimize.minimize(
-        tracking_variance,
-        start,
-        method="SLSQP",
-        bounds=[(0.0, 1.0)] * len(styles),
-        constraints=[{"type": "eq", "fun": lambda weights: weights.sum() - 1}],
-        options={"ftol": 1e-14, "maxiter": 500},
-    )
-    weights = np.clip(fit.x, 0, 1)
-    weights = weights / weights.sum()
-    residual = y - x @ weights
+    residual = y - data.iloc[:, 1:].to_numpy(dtype=float) @ weights
 
     return pd.Series(
-        {
-            **dict(zip(styles, weights, strict=True)),
-            "R Squared": 1 - np.var(residual, ddof=1) / np.var(y, ddof=1),
-            "Selection Return": residual.mean() * periods_per_year,
-            "Tracking Error": residual.std(ddof=1) * np.sqrt(periods_per_year),
-        }
+        [
+            *weights,
+            1 - np.var(residual, ddof=1) / np.var(y, ddof=1),
+            residual.mean() * periods_per_year,
+            residual.std(ddof=1) * np.sqrt(periods_per_year),
+        ],
+        index=columns,
     )
+
+
+def get_rolling_style_analysis(
+    returns: pd.Series,
+    style_returns: pd.DataFrame,
+    window: int,
+    periods_per_year: int = 12,
+) -> pd.DataFrame:
+    """
+    Returns-based style analysis (Sharpe, 1992) over a rolling window: per date the style
+    weights, R Squared, Selection Return and Tracking Error of the `window` periods up to and
+    including that date (see `get_style_analysis`, the figures are in-sample within each
+    window), which shows how a fund's style drifts over time.
+
+    Next to them is Sharpe's out-of-sample measure of selection. The Out-of-Sample Selection
+    Return of a date is the fund's return of that period minus the return of that period of
+    the style mix estimated over the window that ends one period earlier: the return the
+    manager added beyond a passive mix of the styles the manager was known to follow. Sharpe
+    estimates the style over the previous 60 months. It is a return per period (not
+    annualized), so its average and cumulative sum show whether the selection paid off.
+
+    For more information, see the following paper:
+
+    - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance Measurement."
+      The Journal of Portfolio Management, 18(2), 7-19.
+
+    Args:
+        returns (pd.Series): The fund's returns.
+        style_returns (pd.DataFrame): The returns of the style indices, a column each, on the
+            same dates as `returns`.
+        window (int): The number of periods every estimate uses.
+        periods_per_year (int, optional): The returns per year, to annualize the in-sample
+            selection return and tracking error. Defaults to 12.
+
+    Returns:
+        pd.DataFrame: Per date (the last date of a window) the weight of every style, the R
+        Squared, the (annualized) Selection Return, the (annualized) Tracking Error and the
+        Out-of-Sample Selection Return. A window with no more complete dates than styles is
+        NaN, as is the Out-of-Sample Selection Return of the first window, which has no
+        earlier estimate.
+    """
+    styles = list(style_returns.columns)
+    columns = [
+        *styles,
+        "R Squared",
+        "Selection Return",
+        "Tracking Error",
+        "Out-of-Sample Selection Return",
+    ]
+    # By position from here on, so a fund that carries the name of a style does not clash.
+    data = pd.concat([returns, style_returns], axis=1)
+    fund_returns, style_data = data.iloc[:, 0], data.iloc[:, 1:]
+
+    if len(data) < window:
+        return pd.DataFrame(columns=columns, dtype=float)
+
+    result = pd.DataFrame(
+        [
+            get_style_analysis(
+                fund_returns.iloc[end - window : end],
+                style_data.iloc[end - window : end],
+                periods_per_year,
+            ).to_numpy()
+            for end in range(window, len(data) + 1)
+        ],
+        index=data.index[window - 1 :],
+        columns=columns[:-1],
+        dtype=float,
+    )
+
+    # The weights of the previous window applied to this period's style returns. A style
+    # without a return leaves the period's figure unknown rather than treating it as zero.
+    previous_weights = result.iloc[:, : len(styles)].shift(1).to_numpy()
+    style_mix_return = np.sum(
+        style_data.iloc[window - 1 :].to_numpy(dtype=float) * previous_weights, axis=1
+    )
+    result["Out-of-Sample Selection Return"] = (
+        fund_returns.iloc[window - 1 :].to_numpy(dtype=float) - style_mix_return
+    )
+
+    return result

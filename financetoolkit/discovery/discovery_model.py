@@ -1046,7 +1046,8 @@ def get_index_constituents(
     api_key: str, index: str = "S&P 500", user_subscription: str = "Free"
 ) -> pd.DataFrame:
     """
-    Get the current constituents of an index.
+    Get the current constituents of an index. Past figures computed from today's members
+    leave out the companies removed from the index since (survivorship bias).
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.

@@ -3602,6 +3602,11 @@ class Performance:
 
             - CGR = (Final Value / Initial Value) ^ (1 / Number of Periods) — 1
 
+        Every rate covers the same span, from the first to the last close between the start and
+        end date. The number of periods follows from the trading days in between, with 252
+        trading days, 52 weeks, 12 months and 4 quarters to a year, so the rates are consistent
+        with each other: compounding the daily rate over 252 days gives the annual rate.
+
         Also known as: CAGR, compound annual growth rate, annualized return.
 
         Args:
@@ -3644,6 +3649,15 @@ class Performance:
         """
         compound_growth_rates = {}
 
+        # Every rate covers the same span, from the first to the last close of the range,
+        # measured in trading days, so that (1 + CDGR) ^ 252 equals 1 + CAGR.
+        prices = (
+            self._historical_data["daily"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
+        trading_days = len(prices) - 1
+
         for period, label in [
             ("yearly", "Compound Annual Growth Rate (CAGR)"),
             ("quarterly", "Compound Quarterly Growth Rate (CQGR)"),
@@ -3651,16 +3665,12 @@ class Performance:
             ("weekly", "Compound Weekly Growth Rate (CWGR)"),
             ("daily", "Compound Daily Growth Rate (CDGR)"),
         ]:
-            prices = (
-                self._historical_data[period]
-                .loc[:, "Adj Close"]
-                .loc[self._start_date : self._end_date]
-            )
-
-            # N observations span N - 1 compounding intervals, not N.
             compound_growth_rates[label] = (
-                performance_model.get_compound_growth_rate(prices, len(prices) - 1)
-                if len(prices) > 1
+                performance_model.get_compound_growth_rate(
+                    prices,
+                    trading_days * PERIODS_PER_YEAR[period] / PERIODS_PER_YEAR["daily"],
+                )
+                if trading_days > 0
                 else pd.Series(float("nan"), index=prices.columns)
             )
 

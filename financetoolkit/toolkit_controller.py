@@ -1615,7 +1615,18 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        return self._rating
+        # The full history is kept, and the ratings between the start and end date returned.
+        rating = self._rating
+        if isinstance(rating, pd.DataFrame) and not rating.empty:
+            dates = rating.index.get_level_values(-1).astype(str).str[:10]
+            keep = pd.Series(True, index=range(len(rating))).to_numpy()
+            if self._start_date:
+                keep &= dates >= self._start_date
+            if self._end_date:
+                keep &= dates <= self._end_date
+            rating = rating[keep]
+
+        return rating
 
     def get_analyst_estimates(
         self,
@@ -4296,27 +4307,25 @@ class Toolkit:
             "^TYX": "30 Year",
         }
 
-        if risk_free_rate:
-            if risk_free_rate not in ["13w", "5y", "10y", "30y"]:
-                raise ValueError(
-                    "Please choose from 13w, 5y, 10y or 30y as risk_free_rate."
-                )
-
-            risk_free_rate = (
-                "^IRX"
-                if risk_free_rate == "13w"
-                else (
-                    "^FVX"
-                    if risk_free_rate == "5y"
-                    else ("^TNX" if risk_free_rate == "10y" else "^TYX")
-                )
+        if risk_free_rate and risk_free_rate not in risk_free_names:
+            raise ValueError(
+                "Please choose from 13w, 5y, 10y or 30y as risk_free_rate."
             )
 
-        risk_free_rate_tickers = (
-            ["^IRX", "^FVX", "^TNX", "^TYX"] if not risk_free_rate else [risk_free_rate]
-        )
-
+        # Every maturity is retrieved and kept, so the Toolkit's own risk free rate stays
+        # available; risk_free_rate only narrows what is returned.
+        requested_maturity = risk_free_names[risk_free_rate] if risk_free_rate else None
+        risk_free_rate_tickers = list(treasury_names)
         risk_free_rate = risk_free_names[self._risk_free_rate]
+
+        def select(treasury_data: pd.DataFrame) -> pd.DataFrame:
+            treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
+            if requested_maturity is None:
+                return treasury_data
+            return treasury_data.loc[
+                :,
+                treasury_data.columns.get_level_values(1) == requested_maturity,
+            ]
 
         specific_rates = (
             [
@@ -4382,7 +4391,7 @@ class Toolkit:
                 return pd.DataFrame()
 
         if period == "daily":
-            return self._daily_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._daily_treasury_data)
         if period == "weekly":
             self._weekly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4396,7 +4405,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._weekly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._weekly_treasury_data)
         if period == "monthly":
             self._monthly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4410,7 +4419,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._monthly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._monthly_treasury_data)
         if period == "quarterly":
             self._quarterly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4424,9 +4433,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._quarterly_treasury_data.loc[
-                self._start_date : self._end_date, :
-            ]
+            return select(self._quarterly_treasury_data)
         if period == "yearly":
             self._yearly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4440,7 +4447,7 @@ class Toolkit:
                 risk_free_rate, level=1, axis=1
             )
 
-            return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._yearly_treasury_data)
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."

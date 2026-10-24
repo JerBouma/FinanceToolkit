@@ -3488,6 +3488,12 @@ class Economics:
         period = self._default_period(
             period, "monthly", quarterly_available=oecd_source
         )
+        if not oecd_source:
+            period = validate_period(
+                period,
+                ["monthly", "yearly"],
+                "consumer price index (quarterly data needs oecd_source=True)",
+            )
 
         if not oecd_source and period.lower() == "monthly":
             consumer_price_index = self._get_monthly_price_data(
@@ -4068,7 +4074,19 @@ class Economics:
         | 2023 | 119.632 |       145.341 |   141.362 |
         """
         quarterly = quarterly if quarterly is not None else self._quarterly
+        source_chosen = gmdb_source is not None
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+        # The GMDB is yearly, so quarterly data comes from the OECD unless the GMDB was
+        # asked for by name.
+        if gmdb_source and quarterly:
+            if source_chosen:
+                logger.warning(
+                    "The Global Macro Database publishes house prices yearly; set "
+                    "gmdb_source=False for the quarterly OECD data."
+                )
+            else:
+                gmdb_source = False
 
         if gmdb_source:
             # The real index is the nominal one deflated by consumer prices.

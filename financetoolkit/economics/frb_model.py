@@ -140,6 +140,13 @@ def get_excess_bond_premium() -> pd.DataFrame:
 # February of the year of the test, each as a CSV file for US ("Domestic") and foreign
 # ("International") variables, with the history of the same variables from 1976.
 SUPERVISORY_SCENARIO_URL = "https://www.federalreserve.gov/supervisionreg/files/{year}_Final_{scenario}_{region}.csv"
+# The files of some years are named after the table of the scenario instead, e.g.
+# 2025-Table_3A_Supervisory_Severely_Adverse_Domestic.csv (A domestic, B international).
+SUPERVISORY_SCENARIO_TABLE_URL = (
+    "https://www.federalreserve.gov/supervisionreg/files/"
+    "{year}-Table_{table}{part}_{scenario}_{region}.csv"
+)
+SUPERVISORY_SCENARIO_TABLES = {"historic": 1, "baseline": 2, "adverse": 3}
 # The status of a scenario file that is not published (yet).
 NOT_PUBLISHED = 404
 
@@ -238,23 +245,35 @@ def get_supervisory_scenario(scenario: str, year: int | None = None) -> pd.DataF
         def fetch(candidate: int = candidate) -> pd.DataFrame:
             frames = []
             for region in ("Domestic", "International"):
-                try:
-                    response = get_request(
-                        SUPERVISORY_SCENARIO_URL.format(
-                            year=candidate,
-                            scenario=SUPERVISORY_SCENARIOS[scenario],
-                            region=region,
-                        ),
-                        timeout=60,
-                    )
-                except requests.exceptions.HTTPError as error:
-                    # The scenarios of a year are published in February.
-                    if (
-                        error.response is not None
-                        and error.response.status_code == NOT_PUBLISHED
-                    ):
-                        return pd.DataFrame()
-                    raise
+                urls = [
+                    SUPERVISORY_SCENARIO_URL.format(
+                        year=candidate,
+                        scenario=SUPERVISORY_SCENARIOS[scenario],
+                        region=region,
+                    ),
+                    SUPERVISORY_SCENARIO_TABLE_URL.format(
+                        year=candidate,
+                        table=SUPERVISORY_SCENARIO_TABLES[scenario],
+                        part="A" if region == "Domestic" else "B",
+                        scenario=SUPERVISORY_SCENARIOS[scenario],
+                        region=region,
+                    ),
+                ]
+                response = None
+                for url in urls:
+                    try:
+                        response = get_request(url, timeout=60)
+                        break
+                    except requests.exceptions.HTTPError as error:
+                        # The scenarios of a year are published in February, under
+                        # one of the two names.
+                        if (
+                            error.response is None
+                            or error.response.status_code != NOT_PUBLISHED
+                        ):
+                            raise
+                if response is None:
+                    return pd.DataFrame()
                 frames.append(
                     _parse_supervisory_scenario(
                         response.text, region == "Domestic", description

@@ -452,9 +452,8 @@ class Discovery:
         """
         Returns the historical performance of every sector, one column per sector.
 
-        The values are the average percentage change of the companies in that sector on that
-        date, so 1.25 means +1.25% and not +125%. One API call is made per sector because the
-        combined endpoint this used to read was retired and now answers with an empty response.
+        The values are the average change of the companies in that sector on that date, as a
+        decimal (0.0125 is +1.25%). One API call is made per sector.
 
         Without a date range the API hands back only the earliest days it holds, so the
         last year up to today is retrieved unless `start_date` and `end_date` say otherwise.

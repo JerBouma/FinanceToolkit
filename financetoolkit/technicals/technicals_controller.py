@@ -15,6 +15,7 @@ from financetoolkit.technicals import (
 )
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    PERIODS_PER_YEAR,
     apply_rounding,
     calculate_growth,
     calculate_standardization,
@@ -7414,9 +7415,26 @@ class Technicals:
 
         volatility_cone = {}
 
+        # The volatility is annualized with the observations per year of the period;
+        # intraday that is the trading days times the bars per day.
+        if period == "intraday":
+            index = historical_data.index
+            days = (
+                index.to_timestamp() if isinstance(index, pd.PeriodIndex) else index
+            ).normalize()
+            periods_per_year = (
+                volatility_model.TRADING_DAYS_PER_YEAR
+                * len(index)
+                / max(days.nunique(), 1)
+            )
+        else:
+            periods_per_year = PERIODS_PER_YEAR[period]
+
         for ticker in historical_data[close_column].columns:
             volatility_cone[ticker] = volatility_model.get_volatility_cone(
-                historical_data[close_column][ticker], windows=windows
+                historical_data[close_column][ticker],
+                windows=windows,
+                periods_per_year=periods_per_year,
             )
 
         volatility_cone_df = (

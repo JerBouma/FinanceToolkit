@@ -29,10 +29,7 @@ def get_latest_values(frame: pd.DataFrame | pd.Series) -> pd.Series:
     """
     if isinstance(frame, pd.Series):
         frame = frame.to_frame().T
-    return frame.apply(
-        lambda row: row.dropna().iloc[-1] if row.notna().any() else float("nan"),
-        axis=1,
-    )
+    return frame.ffill(axis=1).iloc[:, -1]
 
 
 def get_harmonic_mean(values: pd.Series) -> float:
@@ -100,20 +97,15 @@ def get_peer_comparison(
     for metric in metrics.columns:
         values = pd.to_numeric(peer_values[metric], errors="coerce").dropna()
         value = pd.to_numeric(company_values[metric], errors="coerce")
-        if values.empty:
-            mean = float("nan")
-        elif metric in multiples:
-            mean = get_harmonic_mean(values)
-        else:
-            mean = values.mean()
+        # The median and means of no values are NaN, as is the percentile of no company value.
         rows[metric] = {
             "Company": value,
-            "Peer Median": values.median() if not values.empty else float("nan"),
-            "Peer Mean": mean,
+            "Peer Median": values.median(),
+            "Peer Mean": (
+                get_harmonic_mean(values) if metric in multiples else values.mean()
+            ),
             "Percentile": (
-                float((values < value).mean())
-                if not values.empty and pd.notna(value)
-                else float("nan")
+                float((values < value).mean()) if pd.notna(value) else float("nan")
             ),
             "Peers": float(len(values)),
         }

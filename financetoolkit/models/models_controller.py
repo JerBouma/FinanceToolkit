@@ -4974,21 +4974,19 @@ class Models:
         return dict.fromkeys(self._tickers, None if value is None else float(value))
 
     def _resolve_wacc(
-        self,
-        weighted_average_cost_of_capital: float | dict[str, float] | None,
-        trailing: int | None = None,
+        self, weighted_average_cost_of_capital: float | dict[str, float] | None
     ) -> dict[str, float]:
         """
-        The discount rate per ticker: as given, otherwise the latest calculated WACC, with
-        its flows (such as the interest expense) summed over `trailing` periods so that on
-        quarterly data it is built from a year of them.
+        The discount rate per ticker: as given, otherwise the latest calculated WACC. The WACC
+        is a yearly rate, so on quarterly data its flows (such as the interest expense) are
+        summed over four quarters, whatever the trailing of the valued cash flows.
         """
         rates = self._per_ticker(
             weighted_average_cost_of_capital, "weighted average cost of capital"
         )
         if any(rate is None for rate in rates.values()):
             calculated = self.get_weighted_average_cost_of_capital(
-                show_full_results=False, trailing=trailing
+                show_full_results=False, trailing=4 if self._quarterly else None
             )
             for ticker in self._tickers:
                 if rates[ticker] is None:
@@ -5000,7 +4998,7 @@ class Models:
                     rates[ticker] = (
                         float(history.iloc[-1]) if not history.empty else float("nan")
                     )
-        return {ticker: float(rate) for ticker, rate in rates.items()}  # type: ignore[arg-type]
+        return rates  # type: ignore[return-value]
 
     def _combine(self, results: dict[str, pd.DataFrame]) -> pd.DataFrame:
         """Per-period results as ticker and metric (rows) by period (columns)."""
@@ -5024,6 +5022,41 @@ class Models:
             columns=pd.period_range(columns.min(), columns.max(), freq=columns.freq)
         )
 
+    def _calendar_sum(
+        self, statement: pd.DataFrame, row: str, trailing: int | None
+    ) -> pd.DataFrame:
+        """
+        A statement row on the calendar periods, summed over `trailing` periods where set.
+        Without min_periods every window must be complete, so a missing period leaves the
+        sums that include it NaN instead of letting them span more periods.
+        """
+        frame = self._calendar(self._rows(statement, row))
+        return frame.T.rolling(trailing).sum().T if trailing else frame
+
+    def _latest_capital(self, ticker: str) -> dict[str, float]:
+        """The latest cash, total debt and diluted shares of a ticker, as a DCF takes them."""
+        return {
+            "cash_and_cash_equivalents": self._latest_value(
+                self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
+            ),
+            "total_debt": self._latest_value(
+                self._balance_sheet_statement, ticker, "Total Debt"
+            ),
+            "shares_outstanding": self._latest_value(
+                self._income_statement, ticker, "Weighted Average Shares Diluted"
+            ),
+        }
+
+    def _period_risk_free_rate(self, columns: pd.PeriodIndex) -> pd.Series:
+        """The risk free rate of every statement period."""
+        risk_free = self._risk_free_rate_data[
+            "quarterly" if self._quarterly else "yearly"
+        ]["Adj Close"]
+        risk_free.index = risk_free.index.asfreq(
+            self._balance_sheet_statement.columns.freq
+        )
+        return risk_free.reindex(columns)
+
     def _valuation_cash_flows(
         self, cash_flow_type: str, trailing: int | None
     ) -> pd.DataFrame:
@@ -5043,9 +5076,7 @@ class Models:
             raise ValueError(f"The cash flow type must be one of: {', '.join(valid)}.")
 
         def summed(statement: pd.DataFrame, row: str) -> pd.DataFrame:
-            frame = self._calendar(self._rows(statement, row))
-            # Without min_periods every window must be complete, so a gap gives NaN.
-            return frame.T.rolling(trailing).sum().T if trailing else frame
+            return self._calendar_sum(statement, row, trailing)
 
         if cash_flow_type != "Free Cash Flow to Firm":
             return summed(self._cash_flow_statement, cash_flow_type)
@@ -5169,15 +5200,10 @@ class Models:
         perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
         # The projection periods and the growth rates are yearly, so a quarterly cash flow is
         # summed into a year rather than projected as if it were one.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         periods_per_year = 4 if self._quarterly else 1
-        # The WACC is a yearly rate, so it is built from a year of flows whatever the
-        # trailing of the cash flows.
-        wacc = self._resolve_wacc(
-            weighted_average_cost_of_capital, 4 if self._quarterly else None
-        )
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
         cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
@@ -5194,15 +5220,7 @@ class Models:
                 cash_flow=cash_flow,
                 perpetual_growth_rate=perpetual[ticker],  # type: ignore[arg-type]
                 weighted_average_cost_of_capital=wacc[ticker],
-                cash_and_cash_equivalents=self._latest_value(
-                    self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
-                ),
-                total_debt=self._latest_value(
-                    self._balance_sheet_statement, ticker, "Total Debt"
-                ),
-                shares_outstanding=self._latest_value(
-                    self._income_statement, ticker, "Weighted Average Shares Diluted"
-                ),
+                **self._latest_capital(ticker),
                 periods=periods,
             )
             # The years between the first and the latest cash flow, counted on the calendar so
@@ -5212,10 +5230,10 @@ class Models:
                 if isinstance(history.index, pd.PeriodIndex)
                 else (len(history) - 1) / periods_per_year
             )
-            first, last = float(history.iloc[0]), float(history.iloc[-1])
+            first = float(history.iloc[0])
             historical = (
-                (last / first) ** (1 / years) - 1
-                if years > 0 and first > 0 and last > 0
+                (cash_flow / first) ** (1 / years) - 1
+                if years > 0 and first > 0 and cash_flow > 0
                 else float("nan")
             )
             rows[ticker] = {
@@ -5317,25 +5335,20 @@ class Models:
         """
         # The NOPAT is capitalized as a yearly amount, so quarterly figures are summed into a
         # year (a trailing twelve months) before the margin is applied to the revenue.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
-        # The WACC is a yearly rate, so it is built from a year of flows whatever the
-        # trailing of the earnings.
-        wacc = self._resolve_wacc(
-            weighted_average_cost_of_capital, 4 if self._quarterly else None
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
 
-        def summed(row: str) -> pd.DataFrame:
-            # On the calendar periods, so that a missing period leaves the sums that include
-            # it NaN and the steps below count calendar periods.
-            frame = self._calendar(self._rows(self._income_statement, row))
-            return frame.T.rolling(trailing).sum().T if trailing else frame
-
-        revenue = summed("Revenue")
-        operating_income = summed("Operating Income")
-        taxes = summed("Income Tax Expense")
-        income_before_tax = summed("Income Before Tax")
+        # On the calendar periods, so that the steps below count calendar periods.
+        revenue, operating_income, taxes, income_before_tax = (
+            self._calendar_sum(self._income_statement, row, trailing)
+            for row in (
+                "Revenue",
+                "Operating Income",
+                "Income Tax Expense",
+                "Income Before Tax",
+            )
+        )
 
         rows = {}
         for ticker in self._tickers:
@@ -5359,15 +5372,7 @@ class Models:
                 income_tax_expense=taxes.loc[ticker, columns],
                 income_before_tax=income_before_tax.loc[ticker, columns],
                 weighted_average_cost_of_capital=wacc[ticker],
-                cash_and_cash_equivalents=self._latest_value(
-                    self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
-                ),
-                total_debt=self._latest_value(
-                    self._balance_sheet_statement, ticker, "Total Debt"
-                ),
-                shares_outstanding=self._latest_value(
-                    self._income_statement, ticker, "Weighted Average Shares Diluted"
-                ),
+                **self._latest_capital(ticker),
             )
             share_price = self._latest_price(ticker)
             result = pd.concat(
@@ -5490,14 +5495,9 @@ class Models:
         growth = self._per_ticker(growth_rate, "growth rate")
         perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
         # The growth rates are yearly, so a quarterly cash flow is summed into a year.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
-        # The WACC is a yearly rate, so it is built from a year of flows whatever the
-        # trailing of the cash flows.
-        wacc = self._resolve_wacc(
-            weighted_average_cost_of_capital, 4 if self._quarterly else None
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
         cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
@@ -5515,15 +5515,7 @@ class Models:
                 perpetual_growth_rate_volatility=perpetual_growth_rate_volatility,
                 weighted_average_cost_of_capital=wacc[ticker],
                 weighted_average_cost_of_capital_volatility=weighted_average_cost_of_capital_volatility,
-                cash_and_cash_equivalents=self._latest_value(
-                    self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
-                ),
-                total_debt=self._latest_value(
-                    self._balance_sheet_statement, ticker, "Total Debt"
-                ),
-                shares_outstanding=self._latest_value(
-                    self._income_statement, ticker, "Weighted Average Shares Diluted"
-                ),
+                **self._latest_capital(ticker),
                 periods=periods,
                 simulations=simulations,
                 seed=seed,
@@ -5634,16 +5626,14 @@ class Models:
         | Distance to Default    | 3.1592      | 2.3878      | 3.3814      | 3.2062      | 3.5969      |
         | Probability of Default | 0.0008      | 0.0085      | 0.0004      | 0.0007      | 0.0002      |
         """
-        prices = self._period_prices()
+        balance = self._balance_sheet_statement
         shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
-        equity_value = prices * shares
-        default_point = self._rows(
-            self._balance_sheet_statement, "Short Term Debt"
-        ).fillna(0) + 0.5 * self._rows(
-            self._balance_sheet_statement, "Long Term Debt"
-        ).fillna(
-            0
+        equity_value = (self._period_prices() * shares).reindex(
+            index=self._tickers, columns=balance.columns
         )
+        default_point = self._rows(balance, "Short Term Debt").fillna(
+            0
+        ) + 0.5 * self._rows(balance, "Long Term Debt").fillna(0)
 
         # The volatility of the daily returns over the 252 trading days (at least 60) up to
         # every period end, annualized, whether the statements are yearly or quarterly.
@@ -5652,26 +5642,18 @@ class Models:
         )
         daily_returns.index = daily_returns.index.to_timestamp()
         volatility = daily_returns.rolling(252, min_periods=60).std() * (252**0.5)
-        period_end = self._balance_sheet_statement.columns.to_timestamp(how="end")
+        period_end = balance.columns.to_timestamp(how="end")
         equity_volatility = (
             volatility.reindex(volatility.index.union(period_end))
             .ffill()
             .reindex(period_end)
         )
-        equity_volatility.index = self._balance_sheet_statement.columns
+        equity_volatility.index = balance.columns
         equity_volatility = equity_volatility.T
 
-        risk_free = self._risk_free_rate_data[
-            "quarterly" if self._quarterly else "yearly"
-        ]["Adj Close"]
-        risk_free.index = risk_free.index.asfreq(
-            self._balance_sheet_statement.columns.freq
-        )
-        risk_free = risk_free.reindex(self._balance_sheet_statement.columns)
+        risk_free = self._period_risk_free_rate(balance.columns)
 
-        metrics = [
-            "Equity Value",
-            "Equity Volatility",
+        model_metrics = [
             "Default Point",
             "Asset Value",
             "Asset Volatility",
@@ -5679,16 +5661,18 @@ class Models:
             "Probability of Default",
         ]
         results = {
-            metric: pd.DataFrame(
-                index=self._tickers,
-                columns=self._balance_sheet_statement.columns,
-                dtype=float,
-            )
-            for metric in metrics
+            "Equity Value": equity_value,
+            "Equity Volatility": equity_volatility,
+            **{
+                metric: pd.DataFrame(
+                    index=self._tickers, columns=balance.columns, dtype=float
+                )
+                for metric in model_metrics
+            },
         }
 
         for ticker in self._tickers:
-            for period in self._balance_sheet_statement.columns:
+            for period in balance.columns:
                 model = credit_model.get_merton_model(
                     equity_value=float(equity_value.loc[ticker, period]),
                     equity_volatility=float(equity_volatility.loc[ticker, period]),
@@ -5696,13 +5680,7 @@ class Models:
                     risk_free_rate=float(risk_free.get(period, float("nan"))),
                     time_horizon=time_horizon,
                 )
-                results["Equity Value"].loc[ticker, period] = equity_value.loc[
-                    ticker, period
-                ]
-                results["Equity Volatility"].loc[ticker, period] = (
-                    equity_volatility.loc[ticker, period]
-                )
-                for metric in metrics[2:]:
+                for metric in model_metrics:
                     results[metric].loc[ticker, period] = model[metric]
 
         merton = self._combine(results).dropna(axis=1, how="all")
@@ -5828,13 +5806,7 @@ class Models:
             self._income_statement, "Weighted Average Shares Diluted"
         )
 
-        risk_free = self._risk_free_rate_data[
-            "quarterly" if self._quarterly else "yearly"
-        ]["Adj Close"]
-        risk_free.index = risk_free.index.asfreq(
-            self._balance_sheet_statement.columns.freq
-        )
-        risk_free = risk_free.reindex(coverage.columns)
+        risk_free = self._period_risk_free_rate(coverage.columns)
 
         rows = {}
         for ticker in self._tickers:
@@ -6145,9 +6117,8 @@ class Models:
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         inputs = self._score_inputs(trailing)
         shares = self._rows(
             self._income_statement,
@@ -6278,9 +6249,8 @@ class Models:
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         inputs = self._score_inputs(trailing)
         lag = trailing or 1
         results = quality_model.get_mohanram_g_score(
@@ -6395,9 +6365,8 @@ class Models:
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         inputs = self._score_inputs(trailing)
         lag = trailing or 1
         results = quality_model.get_dechow_f_score(
@@ -6513,9 +6482,8 @@ class Models:
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         inputs = self._score_inputs(trailing)
         lag = trailing or 1
         # Montier measures depreciation against gross fixed assets. A company whose
@@ -6631,9 +6599,8 @@ class Models:
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         inputs = self._score_inputs(trailing)
         results = quality_model.get_accruals_ratios(
             current_assets=inputs["Total Current Assets"],

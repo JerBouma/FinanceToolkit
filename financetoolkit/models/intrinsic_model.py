@@ -488,15 +488,12 @@ def _equity_value_per_share(
     """
     years = np.arange(1, periods + 1)
     growth = np.asarray(growth_rate, dtype=float)[..., None]
-    wacc = np.asarray(weighted_average_cost_of_capital, dtype=float)[..., None]
+    perpetual = np.asarray(perpetual_growth_rate, dtype=float)
+    wacc = np.asarray(weighted_average_cost_of_capital, dtype=float)
     projections = cash_flow * (1 + growth) ** years
-    present_value = (projections / (1 + wacc) ** years).sum(axis=-1)
-    terminal = (
-        projections[..., -1]
-        * (1 + np.asarray(perpetual_growth_rate, dtype=float))
-        / (wacc[..., 0] - np.asarray(perpetual_growth_rate, dtype=float))
-    )
-    enterprise_value = present_value + terminal / (1 + wacc[..., 0]) ** periods
+    present_value = (projections / (1 + wacc[..., None]) ** years).sum(axis=-1)
+    terminal = projections[..., -1] * (1 + perpetual) / (wacc - perpetual)
+    enterprise_value = present_value + terminal / (1 + wacc) ** periods
     return (enterprise_value + net_cash) / shares_outstanding
 
 

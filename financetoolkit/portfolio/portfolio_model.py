@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from financetoolkit import currencies_model
 from financetoolkit.portfolio import helpers
 from financetoolkit.utilities import logger_model
 
@@ -385,10 +386,10 @@ def format_portfolio_dataset(
                     "Currency column must contain 3-letter currency codes only (e.g. EUR, USD or JPY)."
                 )
 
-            dataset[currency_column_first] = dataset[currency_column_first].astype(
-                "category"
+            # Capitals, except for GBp, ZAc and ILA: GBp is pence and GBP is pounds, so writing pence in capitals would make every price a hundred times too large.  # noqa: E501
+            dataset[currency_column_first] = (
+                dataset[currency_column_first].astype(str).map(normalize_currency)
             )
-            dataset[currency_column_first] = dataset[currency_column_first].str.upper()
 
             # Prevents the currency column being dropped with DEGIRO's Unnamed columns.
             dataset = dataset.rename(columns={currency_column_first: "currency"})
@@ -401,7 +402,7 @@ def format_portfolio_dataset(
             )
         # A single currency code applies to every transaction, so it becomes a column of its own; using the code itself as the column name looked up a column that does not exist and made the rename below drop the currency entirely.  # noqa: E501
         currency_column_first = "TEMP Currency"
-        dataset[currency_column_first] = currency_columns.upper()
+        dataset[currency_column_first] = normalize_currency(currency_columns)
     else:
         currency_column_first = None
 
@@ -431,3 +432,239 @@ def format_portfolio_dataset(
         column_mapping["currency"],
         column_mapping["costs"],
     )
+
+
+# Exchanges that quote in a fractional unit: London in pence (GBp, which brokers also write
+# as GBX), Johannesburg in cents (ZAc) and Tel Aviv in agorot (ILA). Exchange rates are only
+# published between major units, so these are converted through the pound, rand and shekel.
+MINOR_CURRENCY_UNITS: dict[str, tuple[str, int]] = {
+    **currencies_model.MINOR_CURRENCY_UNITS,
+    "GBX": ("GBP", 100),
+    "ZAC": ("ZAR", 100),  # codespell:ignore zar
+}
+
+
+def normalize_currency(currency: str) -> str:
+    """
+    A currency code written in capitals, except for the fractional units (GBp, ZAc, ILA)
+    whose case tells them apart from the major currency: GBp is pence, GBP is pounds.
+
+    Args:
+        currency (str): The currency code, e.g. "usd", "GBp" or "GBX".
+
+    Returns:
+        str: The normalized currency code, e.g. "USD", "GBp" or "GBX".
+    """
+    currency = str(currency).strip()
+    return (
+        currency
+        if currency in currencies_model.MINOR_CURRENCY_UNITS
+        else currency.upper()
+    )
+
+
+def get_price_unit(currency: str) -> tuple[str, int]:
+    """
+    The major currency a price quoted in a currency belongs to and how many of the quoted
+    units make up one of it: ("GBP", 100) for a price in pence (GBp or GBX), ("ZAR", 100)
+    for South African cents, ("ILS", 100) for agorot and (currency, 1) otherwise.
+
+    Args:
+        currency (str): The currency the price is quoted in, e.g. "USD" or "GBp".
+
+    Returns:
+        tuple[str, int]: The major currency and the number of quoted units in one of it.
+    """
+    currency = str(currency).strip()
+    if currency in MINOR_CURRENCY_UNITS:
+        return MINOR_CURRENCY_UNITS[currency]
+    return MINOR_CURRENCY_UNITS.get(currency.upper(), (currency.upper(), 1))
+
+
+def get_exchange_rate_ticker(base_currency: str, currency: str) -> str | None:
+    """
+    The exchange rate that converts a price quoted in a currency into the base currency,
+    as the Yahoo Finance symbol BASE + QUOTE + "=X" between the major currencies: USDGBP=X,
+    the pounds per dollar, for a price in pounds or pence that is converted to dollars.
+
+    Args:
+        base_currency (str): The currency to convert to, e.g. "USD".
+        currency (str): The currency the price is quoted in, e.g. "GBp".
+
+    Returns:
+        str | None: The exchange rate ticker, or None when both are the same currency (a
+        price in pence and one in pounds differ by a factor of 100 but need no exchange
+        rate).
+    """
+    base, _ = get_price_unit(base_currency)
+    quote, _ = get_price_unit(currency)
+    return None if base == quote else f"{base}{quote}=X"
+
+
+def get_exchange_rate_tickers(
+    currencies: dict[str, str], base_currency: str
+) -> list[str]:
+    """
+    The exchange rates needed to convert prices quoted in the currencies to the base
+    currency, see `get_exchange_rate_ticker`.
+
+    Args:
+        currencies (dict[str, str]): The currency each ticker is quoted in.
+        base_currency (str): The currency to convert to, e.g. "USD".
+
+    Returns:
+        list[str]: The exchange rate tickers, e.g. ["USDEUR=X", "USDGBP=X"].
+    """
+    return sorted(
+        {
+            rate_ticker
+            for currency in currencies.values()
+            if (rate_ticker := get_exchange_rate_ticker(base_currency, currency))
+        }
+    )
+
+
+def get_base_currency(currencies: dict[str, str], weights: dict[str, float]) -> str:
+    """
+    The currency most of a portfolio trades in: the major currency with the largest sum of
+    weights, the first one listed when two are equal.
+
+    Args:
+        currencies (dict[str, str]): The currency each ticker is quoted in.
+        weights (dict[str, float]): The weight per ticker.
+
+    Returns:
+        str: The major currency, e.g. "USD". USD when no currency is known.
+    """
+    totals: dict[str, float] = {}
+    for ticker, weight in weights.items():
+        currency = currencies.get(ticker)
+        if currency:
+            major, _ = get_price_unit(currency)
+            totals[major] = totals.get(major, 0.0) + abs(float(weight))
+    return max(totals, key=lambda currency: totals[currency]) if totals else "USD"
+
+
+def _align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
+    """
+    A daily exchange rate on the dates of a price series: the rate of the same day, or the
+    last one before it when the rate has no quote that day (exchanges and the currency
+    market close on different holidays). For weekly to yearly prices, which hold the last
+    price of each period, it is the last rate of each period.
+    """
+    rate = rate.dropna()
+    if (
+        isinstance(index, pd.PeriodIndex)
+        and isinstance(rate.index, pd.PeriodIndex)
+        and rate.index.freq != index.freq
+    ):
+        rate = rate.groupby(rate.index.asfreq(index.freq)).last()
+    return rate.reindex(rate.index.union(index)).sort_index().ffill().reindex(index)
+
+
+def convert_prices(
+    prices: pd.DataFrame,
+    currencies: dict[str, str],
+    base_currency: str,
+    exchange_rates: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """
+    Prices in the currency each ticker is quoted in, converted to one base currency. A price
+    is divided by the number of quoted units in its major currency (100 for pence) and by
+    the exchange rate BASE/QUOTE of the same day (e.g. USDGBP=X, the pounds per dollar),
+    and multiplied by the units of the base currency. Values in money, such as dividends,
+    convert the same way.
+
+    Args:
+        prices (pd.DataFrame): The prices, one column per ticker, on a daily (or weekly to
+            yearly) date index.
+        currencies (dict[str, str]): The currency each ticker is quoted in. A ticker without
+            one is taken to be quoted in the base currency.
+        base_currency (str): The currency to convert to, e.g. "USD".
+        exchange_rates (pd.DataFrame | None, optional): The daily exchange rates, one column
+            per ticker of `get_exchange_rate_ticker` (e.g. USDGBP=X). Defaults to None, for
+            prices that need no exchange rate.
+
+    Returns:
+        pd.DataFrame: The prices in the base currency.
+
+    Raises:
+        ValueError: When a ticker needs an exchange rate that is not available.
+    """
+    _, base_units = get_price_unit(base_currency)
+    converted = prices.astype(float)
+
+    for ticker in prices.columns:
+        currency = currencies.get(ticker) or base_currency
+        _, units = get_price_unit(currency)
+        rate_ticker = get_exchange_rate_ticker(base_currency, currency)
+
+        rate: pd.Series | float = 1.0
+        if rate_ticker is not None:
+            if (
+                exchange_rates is None
+                or rate_ticker not in exchange_rates.columns
+                or exchange_rates[rate_ticker].isna().all()
+            ):
+                raise ValueError(
+                    f"{ticker} is quoted in {currency} and cannot be converted to "
+                    f"{base_currency} without the exchange rate {rate_ticker}."
+                )
+            rate = _align_exchange_rate(exchange_rates[rate_ticker], prices.index)
+
+        if units != base_units or rate_ticker is not None:
+            converted[ticker] = converted[ticker] / units * base_units / rate
+
+    return converted
+
+
+def convert_historical_data(
+    historical_data: pd.DataFrame,
+    conversions: dict[str, tuple[str, str]],
+    exchange_rates: pd.DataFrame | None,
+    columns: list[str],
+) -> pd.DataFrame:
+    """
+    Historical data (columns such as Open and Adj Close, each with one column per ticker)
+    with the money columns of some tickers converted to another currency, after which
+    their Return and Cumulative Return are calculated again from the converted Adj Close,
+    so they are the returns in that currency.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data, with the column names on the
+            first level of the columns and the tickers on the second.
+        conversions (dict[str, tuple[str, str]]): Per ticker the currency its data is
+            quoted in and the currency to convert it to, e.g. {"VOD.L": ("GBp", "USD")}.
+        exchange_rates (pd.DataFrame | None): The daily exchange rates, see
+            `convert_prices`.
+        columns (list[str]): The columns to convert, e.g. Open, High, Low, Close, Adj Close
+            and Dividends.
+
+    Returns:
+        pd.DataFrame: The converted historical data.
+    """
+    historical_data = historical_data.copy()
+    available = historical_data.columns.get_level_values(0).unique()
+
+    for ticker, (currency, target) in conversions.items():
+        if ("Adj Close", ticker) not in historical_data.columns:
+            continue
+        for column in columns:
+            if column in available and (column, ticker) in historical_data.columns:
+                historical_data[(column, ticker)] = convert_prices(
+                    historical_data[column][[ticker]],
+                    {ticker: currency},
+                    target,
+                    exchange_rates,
+                )[ticker]
+
+        adjusted_close = historical_data[("Adj Close", ticker)]
+        if "Return" in available:
+            historical_data[("Return", ticker)] = adjusted_close.pct_change()
+        first = adjusted_close.first_valid_index()
+        if "Cumulative Return" in available and first is not None:
+            historical_data[("Cumulative Return", ticker)] = (
+                adjusted_close / adjusted_close.loc[first]
+            )
+
+    return historical_data

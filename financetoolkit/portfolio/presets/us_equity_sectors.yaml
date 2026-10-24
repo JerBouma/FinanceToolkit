@@ -1,0 +1,18 @@
+# ENGINEERING: equal weights by construction (1/9 each, the last rounded so the sum is exactly 1).
+name: US Equity Sectors
+aliases: ["Sectors", "Sector Rotation", "Equal Sector"]
+description: "All stocks, split evenly across nine US sectors with the Select Sector SPDR funds."
+source:
+  text: "Equal weights across the nine original Select Sector SPDR funds, by construction."
+  link: ""
+rebalancing: quarterly
+holdings:
+  - {ticker: XLK, name: Technology Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLF, name: Financial Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLE, name: Energy Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLV, name: Health Care Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLI, name: Industrial Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLY, name: Consumer Discretionary Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLP, name: Consumer Staples Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLU, name: Utilities Select Sector SPDR Fund, weight: 0.1111, asset_class: Equity, currency: USD}
+  - {ticker: XLB, name: Materials Select Sector SPDR Fund, weight: 0.1112, asset_class: Equity, currency: USD}

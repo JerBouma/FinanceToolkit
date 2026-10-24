@@ -6,7 +6,13 @@ from importlib import resources
 
 import pandas as pd
 
-from financetoolkit.portfolio import helpers, overview_model, portfolio_model
+from financetoolkit.portfolio import (
+    definition_model,
+    helpers,
+    overview_model,
+    portfolio_model,
+)
+from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, validation_model
@@ -46,9 +52,18 @@ class Portfolio:
         configuration_file: str | None = None,
         rounding: int = 4,
         use_cached_data: bool | str | None = None,
+        weights: dict[str, float] | pd.Series | str | None = None,
+        holdings: dict[str, float] | None = None,
+        transactions: pd.DataFrame | str | None = None,
+        definition: PortfolioDefinition | None = None,
+        start_date: str | None = None,
+        initial_value: float = 10000.0,
+        rebalancing: str | None = None,
+        currency: str | None = None,
     ):
         """
-        Initialize the Portfolio class with the provided configuration file and portfolio dataset.
+        Initialize the Portfolio class from weights, holdings, a classic portfolio
+        (`Portfolio.from_preset`) or your own transactions.
 
         This constructor sets up a portfolio management instance, configuring it with a dataset (either as a
         pandas DataFrame or a file path to an Excel/CSV file), a benchmark ticker for performance comparison,
@@ -56,10 +71,29 @@ class Portfolio:
         key columns for cash flow analysis, such as date columns, asset tickers, price, volume, and transaction costs.
         It also allows for the use of quarterly data and fetching of historical financial data via an API.
 
+        A portfolio can be given in four ways:
+
+        - weights, e.g. {"VTI": 0.6, "BND": 0.4} or "VTI:0.6, BND:0.4": a model portfolio that
+          invests `initial_value` on `start_date` and is rebalanced to these weights. It trades
+          at the dividend-adjusted closing prices, the prices the positions are valued at, so
+          it is a total return backtest with every dividend reinvested and its weights equal
+          the targets on every rebalancing date;
+        - holdings, e.g. {"AAPL": 10, "MSFT": 5}: the number of shares, bought at the closing
+          price of `start_date`;
+        - transactions: a DataFrame, CSV or Excel file with one row per trade and the columns
+          Date, Ticker (or Symbol, Identifier, ISIN), Volume (or Quantity, Shares; negative
+          for a sale) and optionally Price, Costs (negative) and Currency. A missing Price is
+          filled with the closing price of the day;
+        - a definition (`PortfolioDefinition`), as the classic portfolios of
+          `Portfolio.from_preset` are.
+
+        Weights, holdings and definitions are valued in one currency, `currency`: the price of
+        every ticker that trades in another currency is converted with the exchange rate of
+        each day (pence to pounds included), so the weights and values add up.
+
         Args:
-            portfolio_dataset (pd.DataFrame | str | None): A pandas DataFrame containing the portfolio dataset,
-                or a file path to an Excel/CSV file containing the portfolio data. If None, the dataset must
-                be loaded later using the `read_portfolio_dataset` method.
+            portfolio_dataset (pd.DataFrame | str | None): The transactions, as a DataFrame or the path to an
+                Excel or CSV file (or a folder of them). Equivalent to `transactions`. Defaults to None.
             benchmark_ticker (str | None): The ticker symbol for the benchmark asset used for performance comparison.
                 If None, the benchmark ticker specified in the configuration file will be used.
             api_key (str): The API key for accessing financial data and historical metrics. If not provided, only
@@ -75,6 +109,23 @@ class Portfolio:
                 in the Toolkit. None or True uses the shared cache, False retrieves everything every time and a
                 string is the path to a dedicated cache folder or database file. Defaults to None, which caches
                 unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is set to 0.
+            weights (dict[str, float] | pd.Series | str | None): The target weight per ticker, e.g.
+                {"VTI": 0.6, "BND": 0.4}, "VTI:0.6, BND:0.4" or the table an optimizer of
+                `toolkit.portfolio` returns. Defaults to None.
+            holdings (dict[str, float] | None): The number of shares per ticker, bought on `start_date`.
+                Defaults to None.
+            transactions (pd.DataFrame | str | None): The transactions, as a DataFrame or the path to a CSV or
+                Excel file. Defaults to None.
+            definition (PortfolioDefinition | None): A portfolio definition with weights, rebalancing and
+                optionally a schedule. Defaults to None.
+            start_date (str | None): When weights or holdings are invested. Defaults to None, ten years ago
+                for weights and five years ago for holdings, or the first day all tickers have a price.
+            initial_value (float): The amount invested in a weights portfolio. Defaults to 10,000.
+            rebalancing (str | None): How often a weights portfolio returns to its weights: "none",
+                "monthly", "quarterly" or "yearly". Defaults to None, the definition's frequency or quarterly.
+            currency (str | None): The currency weights, holdings and definitions are valued in, e.g. "USD" or
+                "EUR". Defaults to None, the currency most of the portfolio trades in: the currency with the
+                largest share of the weights, or for holdings the currency of most tickers.
 
         Raises:
             ValueError: If the provided configuration file is not in YAML format.
@@ -85,19 +136,23 @@ class Portfolio:
         ```python
         from financetoolkit import Portfolio
 
-        # Download porfolio files
-        portfolio = Portfolio()
-
-        # Load the portfolio dataset
-        portfolio = Portfolio(portfolio_dataset="portfolio_template.xlsx")
-
-        # Load an example portfolio instead
-        portfolio = Portfolio(example=True)
-
-        # Use an API key to access all features
+        # A model portfolio from weights, rebalanced every quarter
         portfolio = Portfolio(
-            portfolio_dataset="portfolio_template.xlsx",
-            api_key="FINANCIAL_MODELING_PREP_KEY")
+            weights={"VTI": 0.6, "BND": 0.4},
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+        )
+
+        # A classic portfolio
+        portfolio = Portfolio.from_preset("All Weather", api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        # The shares you hold
+        portfolio = Portfolio(holdings={"AAPL": 10, "MSFT": 5}, start_date="2022-01-03")
+
+        # Your own trades, from a CSV or Excel file or a DataFrame
+        portfolio = Portfolio(transactions="my_trades.csv")
+
+        # The example portfolio
+        portfolio = Portfolio(example=True)
         ```
         """
         example_xlsx_path = str(
@@ -111,8 +166,15 @@ class Portfolio:
             )
         )
 
+        if transactions is not None:
+            portfolio_dataset = transactions
+        self._definition: PortfolioDefinition | None = None
+        built_portfolio = (
+            weights is not None or holdings is not None or definition is not None
+        )
+
         # An explicit None check is required because the truth value of a DataFrame is ambiguous, which made passing a DataFrame raise a ValueError here.
-        if portfolio_dataset is None and not example:
+        if portfolio_dataset is None and not example and not built_portfolio:
             example = True
             logger.info(
                 "No portfolio dataset provided thus loading the example portfolio for demonstration purposes.\n"
@@ -128,9 +190,16 @@ class Portfolio:
 
         portfolio_dataset = (
             example_xlsx_path
-            if example or portfolio_dataset is None
+            if example or (portfolio_dataset is None and not built_portfolio)
             else portfolio_dataset
         )
+
+        self._currency: str | None = (
+            portfolio_model.get_price_unit(currency)[0] if currency else None
+        )
+        # The currency the prices of each ticker of a built portfolio are quoted in, so the
+        # historical data is converted with the same currencies as its transactions.
+        self._price_currencies: dict[str, str] = {}
 
         self._configuration_file = (
             configuration_file
@@ -213,6 +282,20 @@ class Portfolio:
         self._volume_column: str = self._cfg["general"]["volume_columns"]
         self._costs_column: str = self._cfg["general"]["costs_columns"]
 
+        # Weights, holdings and definitions are turned into the transactions that invest them,
+        # so every analysis of the transactions applies to them as well.
+        if built_portfolio:
+            portfolio_dataset = self._build_portfolio(
+                weights=weights,
+                holdings=holdings,
+                definition=definition,
+                start_date=start_date,
+                initial_value=initial_value,
+                rebalancing=rebalancing,
+            )
+        elif portfolio_dataset is not None and not example:
+            portfolio_dataset = self._complete_transactions(portfolio_dataset)
+
         # Portfolio Dataset
         self._portfolio_dataset_path: str | list = (
             portfolio_dataset if isinstance(portfolio_dataset, str) else []
@@ -225,6 +308,380 @@ class Portfolio:
         )
 
         self.read_portfolio_dataset()
+
+    def _price_toolkit(self, tickers: list[str], start_date: str) -> Toolkit:
+        """A Toolkit for the tickers, reused later for the historical data."""
+        self._toolkit = Toolkit(
+            api_key=self._api_key,
+            tickers=tickers,
+            benchmark_ticker=None,
+            start_date=start_date,
+            use_cached_data=self._use_cached_data,
+            progress_bar=False,
+        )
+        return self._toolkit
+
+    def _ticker_currencies(self, toolkit: Toolkit) -> dict[str, str]:
+        """The currency every ticker is quoted in, according to its historical statistics."""
+        try:
+            statistics = toolkit.get_historical_statistics()
+        except Exception:  # noqa: BLE001 - the statistics are optional
+            return {}
+        if statistics is None or statistics.empty or "Currency" not in statistics.index:
+            return {}
+        return {
+            str(ticker): str(currency)
+            for ticker, currency in statistics.loc["Currency"].items()
+            if isinstance(currency, str) and len(currency) == 3  # noqa: PLR2004
+        }
+
+    def _get_exchange_rates(
+        self, rate_tickers: list[str], start_date: str
+    ) -> pd.DataFrame:
+        """
+        The daily exchange rates, one column per rate such as USDGBP=X, or an empty
+        DataFrame when none is needed. They are retrieved once and kept, so the prices of
+        a built portfolio's transactions and its historical data are converted with the
+        same rates and a transaction's price equals the converted price of its day.
+        """
+        rate_tickers = sorted(set(rate_tickers))
+        if not rate_tickers:
+            return pd.DataFrame()
+
+        missing = [
+            rate_ticker
+            for rate_ticker in rate_tickers
+            if self._daily_currency_data.empty
+            or ("Adj Close", rate_ticker) not in self._daily_currency_data.columns
+        ]
+        if missing:
+            # The rates retrieved before are retrieved again with the new ones, so one
+            # Toolkit holds every rate the portfolio uses.
+            collect = sorted(
+                set(rate_tickers)
+                | (
+                    set(self._daily_currency_data["Adj Close"].columns)
+                    if not self._daily_currency_data.empty
+                    else set()
+                )
+            )
+            self._currency_toolkit = Toolkit(
+                api_key=self._api_key,
+                tickers=collect,
+                benchmark_ticker=None,
+                start_date=start_date,
+                use_cached_data=self._use_cached_data,
+                progress_bar=False,
+            )
+            self._daily_currency_data = self._currency_toolkit.get_historical_data(
+                period="daily"
+            )
+            # A single ticker comes back without the ticker level.
+            if self._daily_currency_data.columns.nlevels == 1 and len(collect) == 1:
+                self._daily_currency_data.columns = pd.MultiIndex.from_product(
+                    [self._daily_currency_data.columns, collect]
+                )
+
+        # A rate that could not be retrieved is an empty column, which the conversion
+        # reports by name.
+        if self._daily_currency_data.empty:
+            return pd.DataFrame(columns=rate_tickers, dtype=float)
+        return self._daily_currency_data["Adj Close"].reindex(columns=rate_tickers)
+
+    def _quoted_currencies(
+        self, toolkit: Toolkit, tickers: list[str], fallback: dict[str, str]
+    ) -> dict[str, str]:
+        """
+        The currency the prices of every ticker are quoted in: the one of the historical
+        statistics, otherwise the one given (e.g. by a portfolio definition).
+        """
+        statistics = self._ticker_currencies(toolkit)
+        currencies = {
+            ticker: statistics.get(ticker) or fallback.get(ticker) for ticker in tickers
+        }
+        return {ticker: currency for ticker, currency in currencies.items() if currency}
+
+    def _build_portfolio(
+        self,
+        weights: dict[str, float] | pd.Series | str | None,
+        holdings: dict[str, float] | None,
+        definition: PortfolioDefinition | None,
+        start_date: str | None,
+        initial_value: float,
+        rebalancing: str | None,
+    ) -> pd.DataFrame:
+        """
+        The transactions that invest weights, holdings or a definition, in the portfolio's
+        currency: every price is converted to it, so the weights and values add up.
+        """
+        today = pd.Timestamp.today()
+
+        if holdings is not None:
+            start = start_date or (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
+            tickers = list(holdings)
+            toolkit = self._price_toolkit(tickers, start)
+            # Shares are bought at the price that was paid for them, the traded close, as
+            # transactions without a price are; the dividend-adjusted close of the past is
+            # lower than what anyone paid.
+            prices = toolkit.get_historical_data(period="daily")["Close"]
+            prices = (
+                prices.to_frame(tickers[0]) if isinstance(prices, pd.Series) else prices
+            )
+            prices = prices.reindex(columns=tickers)
+            currencies = self._quoted_currencies(toolkit, tickers, {})
+            base_currency = self._currency or portfolio_model.get_base_currency(
+                currencies, dict.fromkeys(tickers, 1.0)
+            )
+            self._price_currencies = currencies
+            first = portfolio_model.convert_prices(
+                prices,
+                currencies,
+                base_currency,
+                self._get_exchange_rates(
+                    portfolio_model.get_exchange_rate_tickers(
+                        currencies, base_currency
+                    ),
+                    start,
+                ),
+            ).dropna(how="any")
+            if first.empty:
+                raise ValueError(
+                    "The holdings have no day on which all of them have a price."
+                )
+            day = first.index[0]
+            self._definition = PortfolioDefinition.from_weights(
+                {
+                    ticker: shares * float(first.loc[day, ticker])
+                    for ticker, shares in holdings.items()
+                },
+                name="Holdings",
+                rebalancing="none",
+            )
+            return pd.DataFrame(
+                [
+                    {
+                        "Date": day.strftime("%Y-%m-%d"),
+                        "Identifier": ticker,
+                        "Name": ticker,
+                        "Price": float(first.loc[day, ticker]),
+                        "Volume": float(shares),
+                        "Costs": 0.0,
+                        "Currency": base_currency,
+                    }
+                    for ticker, shares in holdings.items()
+                ]
+            )
+
+        if definition is None:
+            definition = PortfolioDefinition.from_weights(
+                weights,  # type: ignore[arg-type]
+                rebalancing=rebalancing or "quarterly",
+            )
+        elif rebalancing is not None:
+            definition = PortfolioDefinition.from_dict(
+                {**definition.to_dict(), "rebalancing": rebalancing}
+            )
+        self._definition = definition
+
+        start = start_date or (today - pd.DateOffset(years=10)).strftime("%Y-%m-%d")
+        toolkit = self._price_toolkit(definition.tickers, start)
+        prices = toolkit.get_historical_data(period="daily")["Adj Close"]
+        if isinstance(prices, pd.Series):
+            prices = prices.to_frame(definition.tickers[0])
+
+        currencies = self._quoted_currencies(
+            toolkit,
+            definition.tickers,
+            {
+                holding.ticker: holding.currency
+                for holding in definition.holdings
+                if holding.currency
+            },
+        )
+        base_currency = self._currency or portfolio_model.get_base_currency(
+            currencies, definition.weights
+        )
+        self._price_currencies = currencies
+
+        return definition_model.build_transactions(
+            definition=definition,
+            prices=prices,
+            currencies=currencies,
+            initial_value=initial_value,
+            currency=base_currency,
+            exchange_rates=self._get_exchange_rates(
+                portfolio_model.get_exchange_rate_tickers(currencies, base_currency),
+                start,
+            ),
+        )
+
+    def _complete_transactions(
+        self, dataset: pd.DataFrame | str | list
+    ) -> pd.DataFrame | str | list:
+        """
+        Fill in the price of transactions that leave it out: the closing price of the day,
+        in the currency the ticker trades in. Files and folders that have a price column
+        are passed on as they are.
+        """
+        if isinstance(dataset, list) or (
+            isinstance(dataset, str) and not dataset.endswith(("csv", "xlsx", "xls"))
+        ):
+            return dataset
+
+        frame = (
+            dataset
+            if isinstance(dataset, pd.DataFrame)
+            else helpers.read_excel(dataset)
+        )
+        columns = {str(column).strip().lower(): column for column in frame.columns}
+        general = self._cfg["general"]
+
+        def find(names: list[str]):
+            return next(
+                (columns[name.lower()] for name in names if name.lower() in columns),
+                None,
+            )
+
+        date = find(general["date_columns"])
+        ticker = find(general["ticker_columns"])
+        if find(general["price_columns"]) is not None or date is None or ticker is None:
+            return dataset
+
+        frame = frame.copy()
+        dates = pd.to_datetime(frame[date], errors="coerce")
+        tickers = list(frame[ticker].astype(str).unique())
+        toolkit = self._price_toolkit(
+            tickers, (dates.min() - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
+        )
+        closes = toolkit.get_historical_data(period="daily")["Close"]
+        if isinstance(closes, pd.Series):
+            closes = closes.to_frame(tickers[0])
+        closes = closes.copy()
+        closes.index = closes.index.to_timestamp()
+        closes = closes.sort_index().ffill()
+        frame["Price"] = [
+            (
+                float(closes[str(symbol)].asof(day))
+                if str(symbol) in closes.columns and pd.notna(day)
+                else float("nan")
+            )
+            for symbol, day in zip(frame[ticker], dates, strict=True)
+        ]
+
+        # The prices are in the currency each ticker trades in, so the transactions are too.
+        if find(general["currency_columns"]) is None:
+            currencies = self._ticker_currencies(toolkit)
+            frame["Currency"] = [
+                currencies.get(str(symbol), "USD") for symbol in frame[ticker]
+            ]
+
+        return frame
+
+    @staticmethod
+    def get_presets() -> pd.DataFrame:
+        """
+        List the classic portfolios that ship with the Finance Toolkit, to use with
+        `Portfolio.from_preset`. Each is defined with real funds and the source of its
+        allocation: the 60/40, Ray Dalio's All Weather, Harry Browne's Permanent Portfolio,
+        the Golden Butterfly, the Bogleheads three-fund portfolio, Warren Buffett's 90/10,
+        Nassim Taleb's barbell, a target-date glide path and more.
+
+        Returns:
+            pd.DataFrame: Per preset (by identifier) its Name, Description, Holdings,
+            Rebalancing and Aliases.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        Portfolio.get_presets()[["Name", "Holdings", "Rebalancing"]]
+        ```
+
+        Which returns:
+
+        |                       | Name                             | Holdings                                                                                          | Rebalancing   |
+        |:----------------------|:---------------------------------|:--------------------------------------------------------------------------------------------------|:--------------|
+        | all_weather           | All Weather                      | VTI 30.0%, TLT 40.0%, GOVT 15.0%, GLD 7.5%, DBC 7.5%                                              | quarterly     |
+        | balanced_60_40        | 60/40 Balanced                   | VTI 60.0%, BND 40.0%                                                                              | quarterly     |
+        | barbell               | Barbell                          | BIL 85.0%, VB 7.5%, VUG 7.5%                                                                      | yearly        |
+        | bogleheads_three_fund | Bogleheads Three-Fund            | VTI 42.0%, VXUS 18.0%, BND 40.0%                                                                  | yearly        |
+        | buffett_90_10         | Buffett's 90/10                  | VOO 90.0%, BIL 10.0%                                                                              | yearly        |
+        | conservative_income   | Conservative Multi-Country Bonds | VTI 10.0%, GOVT 40.0%, IEGA.AS 30.0%, IGLT.L 20.0%                                                | quarterly     |
+        | global_60_40          | Global 60/40                     | VTI 30.0%, VGK 15.0%, VWO 15.0%, GOVT 20.0%, IEGA.AS 10.0%, IGLT.L 10.0%                          | quarterly     |
+        | global_equity_growth  | Global Equity Growth             | VTI 30.0%, VGK 15.0%, EWJ 10.0%, VWO 15.0%, MCHI 10.0%, VUG 20.0%                                 | yearly        |
+        | golden_butterfly      | Golden Butterfly                 | VTI 20.0%, VBR 20.0%, TLT 20.0%, SHY 20.0%, GLD 20.0%                                             | yearly        |
+        | permanent_portfolio   | Permanent Portfolio              | VTI 25.0%, TLT 25.0%, BIL 25.0%, GLD 25.0%                                                        | yearly        |
+        | small_cap_value_tilt  | Small-Cap Value Tilt             | VB 40.0%, VTV 40.0%, GOVT 20.0%                                                                   | yearly        |
+        | target_date_glidepath | Target-Date Glidepath            | VTI 90.0%, BND 10.0%                                                                              | quarterly     |
+        | us_equity_sectors     | US Equity Sectors                | XLK 11.1%, XLF 11.1%, XLE 11.1%, XLV 11.1%, XLI 11.1%, XLY 11.1%, XLP 11.1%, XLU 11.1%, XLB 11.1% | quarterly     |
+        """
+        rows = {
+            identifier: {
+                "Name": definition.name,
+                "Description": definition.description,
+                "Holdings": ", ".join(
+                    f"{holding.ticker} {holding.weight:.1%}"
+                    for holding in definition.holdings
+                ),
+                "Rebalancing": definition.rebalancing,
+                "Aliases": ", ".join(definition.aliases),
+            }
+            for identifier, definition in definition_model.load_presets().items()
+        }
+        return pd.DataFrame(rows).T
+
+    @classmethod
+    def from_preset(cls, name: str, **kwargs) -> "Portfolio":
+        """
+        Create a Portfolio from one of the classic portfolios, by its identifier, name or
+        alias (see `Portfolio.get_presets`), e.g. "60/40", "All Weather", "Permanent",
+        "Golden Butterfly" or "Three Fund". It invests `initial_value` on `start_date` and
+        rebalances as the definition says, after which every Portfolio and Toolkit analysis
+        applies.
+
+        Args:
+            name (str): The identifier, name or alias of the preset.
+            **kwargs: The other arguments of Portfolio, such as api_key, start_date,
+                initial_value, rebalancing and benchmark_ticker.
+
+        Returns:
+            Portfolio: The portfolio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio.from_preset(
+            "Permanent Portfolio",
+            start_date="2016-01-01",
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+        )
+
+        portfolio.get_portfolio_overview()
+        ```
+        """
+        return cls(definition=definition_model.find_preset(name), **kwargs)
+
+    @property
+    def definition(self) -> PortfolioDefinition:
+        """
+        The portfolio as a `PortfolioDefinition`: the definition it was built from (a preset
+        or weights), or, for holdings and transactions, the current weight of every position.
+        It can be stored with `to_yaml` and read by other tools.
+
+        Returns:
+            PortfolioDefinition: The definition.
+        """
+        if self._definition is not None and self._definition.name != "Holdings":
+            return self._definition
+
+        overview = self.get_portfolio_overview()
+        weights = overview["Weight"].drop("Portfolio", errors="ignore")
+        return PortfolioDefinition.from_weights(
+            weights[weights > 0], name="Portfolio", rebalancing="none"
+        )
 
     @property
     def toolkit(self) -> Toolkit | pd.DataFrame:
@@ -825,91 +1282,114 @@ class Portfolio:
             columns=self._ticker_combinations, level=1
         )
 
-        currency_conversions = {}
+        # Per ticker the currency its historical data is quoted in and the currency of its
+        # transactions, when the two differ.
+        currency_conversions: dict[str, tuple[str, str]] = {}
         if self._currency_column:
             self._historical_statistics = self._toolkit.get_historical_statistics()
             self._historical_statistics = self._historical_statistics.rename(
                 columns=self._ticker_combinations, level=0
             )
 
-            if not self._historical_statistics.empty:
-                for (_, ticker), currency in self._portfolio_dataset[
-                    self._currency_column
-                ].items():
-                    data_currency = self._historical_statistics.loc["Currency", ticker]
+            for (_, ticker), currency in self._portfolio_dataset[
+                self._currency_column
+            ].items():
+                # A built portfolio converted its prices with these currencies, so its
+                # historical data is converted with the same ones.
+                data_currency = self._price_currencies.get(ticker) or (
+                    self._historical_statistics.loc["Currency", ticker]
+                    if not self._historical_statistics.empty
+                    and "Currency" in self._historical_statistics.index
+                    and ticker in self._historical_statistics.columns
+                    else None
+                )
 
-                    # A missing or NaN currency code would send a bogus 'NAN=X' and 404.
-                    if (
-                        not currency
-                        or not data_currency
-                        or pd.isna(currency)
-                        or pd.isna(data_currency)
-                    ):
-                        continue
+                # A missing or NaN currency code would send a bogus 'NAN=X' and 404.
+                if (
+                    not currency
+                    or not data_currency
+                    or pd.isna(currency)
+                    or pd.isna(data_currency)
+                ):
+                    continue
 
-                    if data_currency != currency:
-                        currency_conversions[ticker] = (
-                            f"{currency}{data_currency}=X".upper()
-                        )
+                # GBp and GBP are one currency in different units, so they are compared
+                # by unit as well: a price in pence is a hundred times one in pounds.
+                if portfolio_model.get_price_unit(
+                    str(data_currency)
+                ) != portfolio_model.get_price_unit(str(currency)):
+                    currency_conversions[ticker] = (str(data_currency), str(currency))
 
-        if currency_conversions:
-            self._currency_toolkit = Toolkit(
-                tickers=list(set(currency_conversions.values())),
-                benchmark_ticker=None,
-                start_date=self._start_date,
-                use_cached_data=self._use_cached_data,
-            )
-
-            self._daily_currency_data = self._currency_toolkit.get_historical_data(
-                period="daily"
-            )
-
-            for ticker, currency in currency_conversions.items():
-                for column in self._cfg["adjustments"]["currency_adjustment_columns"]:
-                    self._daily_historical_data.loc[
-                        :, (column, ticker)
-                    ] = self._daily_historical_data.loc[:, (column, ticker)] / (
-                        self._daily_currency_data.loc[:, (column, currency)]
-                        if self._daily_currency_data.columns.nlevels > 1
-                        else self._daily_currency_data[column]
+        exchange_rates = self._get_exchange_rates(
+            [
+                rate_ticker
+                for data_currency, currency in currency_conversions.values()
+                if (
+                    rate_ticker := portfolio_model.get_exchange_rate_ticker(
+                        currency, data_currency
                     )
+                )
+            ],
+            self._start_date,
+        )
+
+        def convert(historical_data: pd.DataFrame) -> pd.DataFrame:
+            # Every price, dividend and return of the historical data is expressed in the
+            # currency of the transactions, so the two can be compared and added up.
+            if not currency_conversions or historical_data.empty:
+                return historical_data
+            return portfolio_model.convert_historical_data(
+                historical_data,
+                currency_conversions,
+                exchange_rates,
+                self._cfg["adjustments"]["currency_adjustment_columns"],
+            )
+
+        self._daily_historical_data = convert(self._daily_historical_data)
 
         self._daily_historical_data = apply_rounding(
             self._daily_historical_data,
             rounding if rounding is not None else self._rounding,
         )
 
-        self._weekly_historical_data = self._toolkit.get_historical_data(
-            period="weekly"
-        )
-        self._weekly_historical_data = self._weekly_historical_data.rename(
-            columns=self._ticker_combinations, level=1
-        )
-
-        self._monthly_historical_data = self._toolkit.get_historical_data(
-            period="monthly"
-        )
-        self._monthly_historical_data = self._monthly_historical_data.rename(
-            columns=self._ticker_combinations, level=1
+        self._weekly_historical_data = convert(
+            self._toolkit.get_historical_data(period="weekly").rename(
+                columns=self._ticker_combinations, level=1
+            )
         )
 
-        self._quarterly_historical_data = self._toolkit.get_historical_data(
-            period="quarterly"
-        )
-        self._quarterly_historical_data = self._quarterly_historical_data.rename(
-            columns=self._ticker_combinations, level=1
+        self._monthly_historical_data = convert(
+            self._toolkit.get_historical_data(period="monthly").rename(
+                columns=self._ticker_combinations, level=1
+            )
         )
 
-        self._yearly_historical_data = self._toolkit.get_historical_data(
-            period="yearly"
+        self._quarterly_historical_data = convert(
+            self._toolkit.get_historical_data(period="quarterly").rename(
+                columns=self._ticker_combinations, level=1
+            )
         )
-        self._yearly_historical_data = self._yearly_historical_data.rename(
-            columns=self._ticker_combinations, level=1
+
+        self._yearly_historical_data = convert(
+            self._toolkit.get_historical_data(period="yearly").rename(
+                columns=self._ticker_combinations, level=1
+            )
         )
 
         self._latest_price = self._daily_historical_data["Adj Close"].iloc[-1]
 
-        if currency_conversions:
+        if currency_conversions and self._definition is not None:
+            logger.info(
+                "Converted the prices of %s to the portfolio's currency.",
+                ", ".join(
+                    f"{ticker} ({data_currency} to {currency})"
+                    for ticker, (
+                        data_currency,
+                        currency,
+                    ) in currency_conversions.items()
+                ),
+            )
+        elif currency_conversions:
             logger.warning(
                 "Found a mismatch between the currency of the transaction and the currency of the historical data. "
                 "This is usually due to working with ISIN codes.\nCorrect this by finding the correct ticker "
@@ -1662,3 +2142,153 @@ class Portfolio:
         )
 
         return self._transactions_performance
+
+    def get_money_weighted_return(self, rounding: int | None = None) -> pd.DataFrame:
+        """
+        Calculate the money-weighted return of every position and of the whole portfolio:
+        the annual rate at which the money put in grew into the money taken out plus the
+        value still held (the internal rate of return, or XIRR, of the transactions).
+
+        Unlike the time-weighted return, it depends on when money was added: buying more
+        just before a rally raises it and buying at a peak lowers it. It therefore
+        measures the investor's own result, including the timing of every purchase and
+        sale, rather than the result of the assets alone.
+
+        The cash flows are every purchase (money in, including costs), every sale (money
+        out, after costs) and the latest value of the positions still held, on the last
+        date of the historical data.
+
+        For more information, see the following book:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+          Wiley, 2nd edition, chapter 2.
+
+        Also known as: internal rate of return, IRR, XIRR, dollar-weighted return.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+
+        Returns:
+            pd.DataFrame: Per position and for the Portfolio, the money Invested, the money
+            Received from sales, the Latest Value, the First Transaction date and the
+            annualized Money-Weighted Return.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_money_weighted_return()
+        ```
+
+        Which returns:
+
+        |           |   Invested |   Received |   Latest Value | First Transaction   |   Money-Weighted Return |
+        |:----------|-----------:|-----------:|---------------:|:--------------------|------------------------:|
+        | ASML      |   4978.04  |   654.97   |      202762    | 2000-01-07          |                  0.2222 |
+        | SKY       |   2493.75  |   191.613  |        9943.92 | 2000-01-10          |                  0.0672 |
+        | AMZN      |   5040.91  |   193.453  |       28768    | 2000-01-28          |                  0.2056 |
+        | FIX       |   1756.57  |    13.9346 |      141625    | 2000-02-23          |                  0.2589 |
+        | MSFT      |   4384.18  |   105.59   |       55073.6  | 2000-02-28          |                  0.1467 |
+        | AMD       |   2395.23  |  1436.45   |       40309.6  | 2000-04-27          |                  0.146  |
+        | AAPL      |   5623.11  |   256.328  |       47639    | 2000-05-08          |                  0.2752 |
+        | FICO      |   4833.33  |   567.728  |       94576    | 2000-06-01          |                  0.1665 |
+        | BAC       |   1844.25  |   207.442  |        4044.8  | 2000-11-16          |                  0.0635 |
+        | ALGN      |   9863.99  |   323.464  |       12515.3  | 2001-09-18          |                  0.0341 |
+        | CWST      |   1368.73  |    92.2423 |        6149.43 | 2001-10-15          |                  0.1342 |
+        | OXY       |   1432.45  |   344.587  |        1732.59 | 2001-11-16          |                  0.0299 |
+        | WMT       |   1775.63  |   114.103  |       11029.9  | 2001-12-28          |                  0.1336 |
+        | CAMT      |    540.11  |   100.214  |        5088.72 | 2002-08-07          |                  0.2836 |
+        | NVDA      |    198.199 |    29.3991 |       14556.2  | 2002-09-20          |                  0.3254 |
+        | NFLX      |  16441.9   |  2109.39   |        7506.9  | 2002-11-18          |                 -0.0903 |
+        | GOOGL     |   4648.02  |   359.815  |       46750.7  | 2004-08-24          |                  0.2192 |
+        | MPWR      |  30125.9   |   416.755  |      132254    | 2005-09-16          |                  0.2752 |
+        | BLDR      |   1685.06  |   122.395  |        2728.8  | 2006-12-22          |                  0.0993 |
+        | VSS       |   8431.99  |   795.842  |       14636.3  | 2009-06-05          |                  0.0727 |
+        | AVGO      |   1562.27  |   135.036  |       21230.9  | 2009-11-02          |                  0.351  |
+        | MCHI      |   2681.91  |   114.678  |        2646    | 2011-04-26          |                  0.005  |
+        | VOO       |  18684.8   |   308.375  |       53790.7  | 2011-12-20          |                  0.1494 |
+        | META      |   4796.75  |     0      |        9639.3  | 2012-06-20          |                  0.1913 |
+        | KHC       |    572.97  |   207.675  |         223.2  | 2017-03-07          |                 -0.0607 |
+        | EMXC      |   1270     |   454.169  |        1467.36 | 2019-05-03          |                  0.0886 |
+        | Portfolio | 139430     |  9655.65   |      968688    | 2000-01-07          |                  0.1772 |
+        """
+        # Imported here: the attribution model is only needed for this calculation.
+        from financetoolkit.portfolio import attribution_model  # noqa: PLC0415
+
+        overview = self.get_portfolio_overview()
+        # Every transaction, sales included; the transactions overview leaves sold
+        # positions out by default.
+        transactions = self._portfolio_dataset.rename(
+            columns={
+                self._price_column: "Price",
+                self._volume_column: "Volume",
+                self._costs_column: "Costs",
+            }
+        )
+        transactions.index = transactions.index.set_names(["Date", "Identifier"])
+
+        if transactions.empty:
+            raise ValueError("The portfolio has no transactions.")
+
+        # From the investor's point of view: a purchase is money in (negative), a sale
+        # money out (positive). Costs are always paid, whichever sign they are recorded
+        # with, as the portfolio overview treats them.
+        flows = (
+            -transactions["Price"] * transactions["Volume"]
+            - transactions["Costs"].abs()
+        )
+        last_date = pd.Timestamp(
+            str(self._daily_historical_data.index.get_level_values(0).max())
+        )
+
+        rows = {}
+        latest_values: dict[str, float] = {}
+        identifiers = transactions.index.get_level_values("Identifier")
+        for identifier in list(dict.fromkeys(identifiers)) + ["Portfolio"]:
+            selected = (
+                flows if identifier == "Portfolio" else flows[identifiers == identifier]
+            )
+            dates = pd.to_datetime(selected.index.get_level_values("Date").astype(str))
+            cash_flows = pd.Series(selected.to_numpy(), index=dates)
+            # The value still held follows from the same transactions: their net volume
+            # at the latest price.
+            if identifier == "Portfolio":
+                latest_value = float(sum(latest_values.values()))
+            else:
+                net_volume = float(
+                    transactions["Volume"][identifiers == identifier].sum()
+                )
+                latest_price = (
+                    float(overview.loc[identifier, "Latest Price"])
+                    if identifier in overview.index
+                    else 0.0
+                )
+                latest_value = net_volume * latest_price
+                latest_values[identifier] = latest_value
+            all_flows = pd.concat(
+                [cash_flows, pd.Series([latest_value], index=[last_date])]
+            )
+            try:
+                money_weighted = attribution_model.get_money_weighted_return(all_flows)
+            except ValueError:
+                money_weighted = float("nan")
+
+            rows[identifier] = {
+                "Invested": float(-cash_flows[cash_flows < 0].sum()),
+                "Received": float(cash_flows[cash_flows > 0].sum()),
+                "Latest Value": latest_value,
+                "First Transaction": dates.min().strftime("%Y-%m-%d"),
+                "Money-Weighted Return": money_weighted,
+            }
+
+        result = pd.DataFrame(rows).T
+        numeric = ["Invested", "Received", "Latest Value", "Money-Weighted Return"]
+        result[numeric] = result[numeric].astype(float)
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )

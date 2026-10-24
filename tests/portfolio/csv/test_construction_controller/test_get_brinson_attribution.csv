@@ -1,0 +1,4 @@
+Sector,Portfolio Weight,Benchmark Weight,Portfolio Return,Benchmark Return,Allocation Effect,Selection Effect,Interaction Effect,Total Effect
+Healthcare,0.0,0.6,,-0.1138,-0.0284,0.0,-0.0,-0.0284
+Technology,1.0,0.4,0.6855,-0.2323,-0.0427,0.3671,0.5507,0.8752
+Total,1.0,1.0,0.6855,-0.1612,-0.0711,0.3671,0.5507,0.8467

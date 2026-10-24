@@ -4662,7 +4662,7 @@ class FixedIncome:
                     f"FRED has no ICE BofA option-adjusted spreads in the month before {self._end_date}."
                 )
             # The spreads are in basis points.
-            spread_series = option_adjusted_spread.iloc[-1].dropna() / 10000
+            spread_series = option_adjusted_spread.iloc[-1].dropna()
             spread_series.index.name = "Rating"
         elif isinstance(spreads, int | float) or (
             isinstance(spreads, str) and ":" not in spreads

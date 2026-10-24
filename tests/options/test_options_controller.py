@@ -531,3 +531,119 @@ def test_get_strategy_payoff_invalid_legs(options_module):
 
     with pytest.raises(TypeError):
         options_module.get_strategy_payoff(legs=[{"put_option": False}])
+
+
+@pytest.fixture
+def option_market(monkeypatch, options_module):
+    """Option chains priced with Black-Scholes around each ticker's last price."""
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.options import (  # noqa: PLC0415
+        black_scholes_model,
+        options_model,
+    )
+
+    today = pd.Timestamp.today().normalize()
+    expiries = [
+        (today + pd.Timedelta(days=days)).strftime("%Y-%m-%d") for days in (10, 24, 45)
+    ]
+
+    def chains(tickers, expiration_date, put_option=False):
+        frames = {}
+        days = (pd.Timestamp(expiration_date) - today).days
+        for ticker in tickers:
+            price = float(options_module._prices[ticker].dropna().iloc[-1])
+            strikes = np.round(np.linspace(price * 0.6, price * 1.4, 81), 1)
+            # A skew: lower strikes carry a higher volatility.
+            volatility = 0.25 + 0.15 * (price - strikes) / price
+            values = np.array(
+                [
+                    black_scholes_model.get_black_scholes(
+                        stock_price=price,
+                        strike_price=float(strike),
+                        risk_free_rate=0.03,
+                        volatility=float(vol),
+                        time_to_expiration=days / 365,
+                        put_option=put_option,
+                    )
+                    for strike, vol in zip(strikes, volatility, strict=True)
+                ]
+            )
+            frames[ticker] = pd.DataFrame(
+                {
+                    "Bid": np.maximum(values - 0.02, 0.0),
+                    "Ask": values + 0.02,
+                    "Last Price": values,
+                    "Volume": 50.0 + strikes % 7,
+                    "Open Interest": (300.0 if put_option else 200.0)
+                    * np.exp(-(((strikes - price) / (0.1 * price)) ** 2)),
+                    "Implied Volatility": volatility,
+                },
+                index=pd.Index(strikes, name="Strike Price"),
+            )
+        result = pd.concat(frames)
+        result.index.names = ["Ticker", "Strike Price"]
+        return result
+
+    monkeypatch.setattr(
+        options_model, "get_option_expiry_dates", lambda ticker: expiries
+    )
+    monkeypatch.setattr(options_model, "get_option_chains", chains)
+    labels = {date: f"Expiry {number}" for number, date in enumerate(expiries, 1)}
+    return options_module, labels
+
+
+def stable(table: pd.DataFrame, labels: dict[str, str]) -> pd.DataFrame:
+    """The result with the expiry dates, which depend on today, replaced by labels."""
+    table = table.drop(columns="Days to Expiration", errors="ignore")
+    if isinstance(table.index, pd.MultiIndex):
+        table = table.rename(index=labels, level=1)
+    return table.replace(labels)
+
+
+def test_get_put_call_ratio(recorder, option_market):
+    module, labels = option_market
+    recorder.capture(stable(module.get_put_call_ratio(), labels))
+
+
+def test_get_max_pain(recorder, option_market):
+    module, labels = option_market
+    recorder.capture(stable(module.get_max_pain(number_of_expirations=2), labels))
+
+
+def test_get_gamma_exposure(recorder, option_market):
+    module, _ = option_market
+    recorder.capture(module.get_gamma_exposure(number_of_expirations=2))
+    recorder.capture(
+        module.get_gamma_exposure(number_of_expirations=1, by_strike=True)
+        .groupby(level=0)
+        .sum()
+    )
+
+
+def test_get_implied_volatility_term_structure(recorder, option_market):
+    module, labels = option_market
+    recorder.capture(stable(module.get_implied_volatility_term_structure(), labels))
+
+
+def test_get_volatility_skew(recorder, option_market):
+    module, labels = option_market
+    skew = module.get_volatility_skew()
+    recorder.capture(stable(skew, labels))
+    # Puts carry the higher volatility in the simulated skew.
+    assert (skew["25-Delta Risk Reversal"] < 0).all()
+
+
+def test_get_implied_move(recorder, option_market):
+    module, labels = option_market
+    recorder.capture(stable(module.get_implied_move(), labels))
+
+
+def test_get_model_free_implied_volatility(recorder, option_market):
+    module, labels = option_market
+    recorder.capture(stable(module.get_model_free_implied_volatility(), labels))
+
+
+def test_get_volatility_risk_premium(recorder, option_market):
+    module, _ = option_market
+    recorder.capture(module.get_volatility_risk_premium())

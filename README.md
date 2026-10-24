@@ -391,7 +391,7 @@ The 40+ indicators are divided into four categories: [**Breadth**](https://www.j
 
 ### Analyzing ETFs
 
-The `etf` module analyzes exchange traded funds and other funds: their profile and premium or discount to NAV, the fee table of their prospectus (from the SEC), how closely they track their index, how concentrated and how much alike they are, what their holdings are valued at and how liquid they are.
+The `etf` module analyzes exchange traded funds and other funds: their holdings, sector and country weightings, profile and premium or discount to NAV, the fee table of their prospectus (from the SEC), how closely they track their index, how concentrated and how much alike they are, what their holdings are valued at and how liquid they are.
 
 ```python
 # How concentrated are an S&P 500, a NASDAQ 100 and an equal weight S&P 500 fund?
@@ -411,7 +411,7 @@ Which returns:
 | Herfindahl-Hirschman Index   | 0.023   | 0.0316  | 0.002    |
 | Effective Number of Holdings | 43.4661 | 31.6935 | 497.7398 |
 
-The S&P 500 of VOO behaves like a portfolio of about 43 equally weighted stocks, while the equal weight RSP spreads it over nearly all 500. Next to `get_concentration`, the module has `get_profile`, `get_fee_breakdown`, `get_tracking`, `get_overlap`, `get_look_through_valuation` and `get_liquidity`.
+The S&P 500 of VOO behaves like a portfolio of about 43 equally weighted stocks, while the equal weight RSP spreads it over nearly all 500. Next to `get_concentration`, the module has `get_holdings`, `get_information`, `get_sector_weightings`, `get_country_weightings`, `get_profile`, `get_fee_breakdown`, `get_tracking`, `get_overlap`, `get_look_through_valuation` and `get_liquidity`.
 
 ### Obtaining Fixed Income Metrics
 

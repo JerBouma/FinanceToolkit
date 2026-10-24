@@ -212,10 +212,6 @@ direct_methods:
   - "get_stock_splits"
   - "get_insider_trade_statistics"
   - "get_stock_grades"
-  - "get_etf_holdings"
-  - "get_etf_information"
-  - "get_etf_country_weightings"
-  - "get_etf_sector_weightings"
   - "get_earnings_call_transcripts"
   # - "get_exchange_rates"
 
@@ -292,7 +288,7 @@ category_descriptions:
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
-  etf:                     "ETF analysis (profile and premium/discount to NAV, tracking difference and error, concentration, overlap between funds, look-through valuation of the holdings, liquidity)."
+  etf:                     "ETF analysis (holdings, information, sector and country weightings, profile and premium/discount to NAV, tracking difference and error, concentration, overlap between funds, look-through valuation of the holdings, liquidity)."
   government:              "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   macroeconomics:          "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation, trade, investment, consumption, confidence, money supply, output gap, real interest rate, crisis indicators, commodity forward curves). Use countries= param (commodity forward curve uses commodity= instead). Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
@@ -300,7 +296,7 @@ category_descriptions:
   rates:                   "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates, U.S. Treasury par yield curve, real (TIPS) yield curve, breakeven inflation. Use countries= param. Economics-sourced rates support rolling=/trailing=."
   fixed_income:            "Bond and derivative valuation calculations (a bond's price is present value; duration, yield to maturity, derivative pricing, par yield, forward rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield)."
   discovery:               "Market discovery (lists of stocks, ETFs, indices, currencies and cryptocurrencies, stock screener, gainers and losers, sector and industry performance, earnings, IPO and split calendars, 8-K filings, insider trades, news). No tickers needed."
-  market_data:             "Raw data (historical prices, financial statements, company profile, quotes, analyst estimates, earnings calendar and call transcripts, ETF holdings, insider statistics, market risk premium, Commitment of Traders). Use ratios/performance/risk tools for computed metrics."
+  market_data:             "Raw data (historical prices, financial statements, company profile, quotes, analyst estimates, earnings calendar and call transcripts, insider statistics, market risk premium, Commitment of Traders). Use ratios/performance/risk tools for computed metrics."
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Router group specifications
@@ -491,7 +487,7 @@ tool_groups:
 
   - tool_name:    "etf"
     display_name: "ETF Analysis"
-    description:  "Analysis of ETFs and other funds. Requires tickers='VOO' — use comma-separated values for several funds. get_profile: name, issuer, asset class, domicile, inception date, expense ratio, assets under management, NAV, latest price, premium/discount to NAV (only when the latest close and the published NAV are of about the same date), holdings count and average (dollar) volume. get_tracking: tracking difference (annualized return gap, about minus the expense ratio for an index fund), tracking error, correlation, beta and R Squared against benchmark_ticker (set it to the fund's index or another fund of the same index, e.g. benchmark_ticker='SPY' for VOO); yearly=true gives the gap per calendar year. get_concentration: number of holdings, largest holding, top 10 weight, Herfindahl-Hirschman index and effective number of holdings. get_overlap: the overlap of every pair of funds (sum of the smaller weight over shared holdings). get_look_through_valuation: weighted (harmonic) P/E, P/B, P/S and P/FCF, dividend yield and net margin of the largest holdings (holdings=25) with the coverage. get_liquidity: average volume and dollar volume, dollar volume to assets and the price impact per $100 million traded (Amihud). For a fund's sectors, countries and holdings use market_data get_etf_sector_weightings, get_etf_country_weightings and get_etf_holdings."
+    description:  "Analysis of ETFs and other funds. Requires tickers='VOO' — use comma-separated values for several funds; tickers that are not an ETF or fund return no data. get_holdings: the 25 largest holdings of each fund by weight (shares, weight and market value) unless limit= asks for more, limit=-10 for the smallest; the holdings carry no sector or country, so use get_sector_weightings and get_country_weightings for those breakdowns, or the Finance Database server to classify the holdings. get_information: everything published about each fund, including its identifiers, description and website. get_profile: name, issuer, asset class, domicile, inception date, expense ratio, assets under management, NAV, latest price, premium/discount to NAV (only when the latest close and the published NAV are of about the same date), holdings count and average (dollar) volume. get_tracking: tracking difference (annualized return gap, about minus the expense ratio for an index fund), tracking error, correlation, beta and R Squared against benchmark_ticker (set it to the fund's index or another fund of the same index, e.g. benchmark_ticker='SPY' for VOO); yearly=true gives the gap per calendar year. get_concentration: number of holdings, largest holding, top 10 weight, Herfindahl-Hirschman index and effective number of holdings. get_overlap: the overlap of every pair of funds (sum of the smaller weight over shared holdings). get_look_through_valuation: weighted (harmonic) P/E, P/B, P/S and P/FCF, dividend yield and net margin of the largest holdings (holdings=25) with the coverage. get_liquidity: average volume and dollar volume, dollar volume to assets and the price impact per $100 million traded (Amihud)."
     module_name:  "etf"
     category:     "ticker"
 
@@ -809,7 +805,7 @@ tool_groups:
   # Method list is populated at startup from toolkit_direct_methods above.
   - tool_name:                    "market_data"
     display_name:                 "Raw Financial Data"
-    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, ETF/fund holdings, information and country/sector weightings, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium (by country) and get_treasury_data (US Treasury rates) are market-wide and need no tickers. get_commitment_of_traders takes CFTC futures symbols, e.g. tickers='NG' (natural gas) or 'GC' (gold), not stocks. The ETF/fund methods return no data for tickers that are not an ETF or fund. get_earnings_call_transcripts returns the full, never shortened text (often 40,000 to 60,000 characters) of one call of one ticker: the most recent, or the one of fiscal_period (e.g. '2025Q4', the company's own fiscal quarter); call it once per ticker and period. A period without a transcript is answered with the most recent periods that have one. Currency and crypto pairs may be written either way: EURUSD or EURUSD=X, BTCUSD or BTC-USD. To find which instruments exist, use the Finance Database server. get_etf_holdings returns the 25 largest holdings of each fund by weight unless limit= asks for more; it holds no sector or country per holding, so use get_etf_sector_weightings and get_etf_country_weightings for those breakdowns, or the Finance Database server to classify the holdings."
+    description:                  "Raw financial data (historical prices, income statement, balance sheet, cash flow statement, company profile, quotes, analyst estimates, dividend/earnings calendars, statistics, market risk premium by country, CFTC Commitment of Traders report, executives and their compensation, company notes, employee count, share float, mergers and acquisitions, stock splits, insider trade statistics, analyst stock grades, earnings call transcripts). Use this ONLY for raw data needs — for pre-computed ratios, performance, risk, or model metrics use the dedicated tools instead. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_risk_premium (by country) and get_treasury_data (US Treasury rates) are market-wide and need no tickers. get_commitment_of_traders takes CFTC futures symbols, e.g. tickers='NG' (natural gas) or 'GC' (gold), not stocks. get_earnings_call_transcripts returns the full, never shortened text (often 40,000 to 60,000 characters) of one call of one ticker: the most recent, or the one of fiscal_period (e.g. '2025Q4', the company's own fiscal quarter); call it once per ticker and period. A period without a transcript is answered with the most recent periods that have one. Currency and crypto pairs may be written either way: EURUSD or EURUSD=X, BTCUSD or BTC-USD. To find which instruments exist, use the Finance Database server. The holdings, information and sector and country weightings of ETFs and funds are in the etf tool."
     module_name:                  "toolkit"
     index_category:               "market_data"
     category:                     "toolkit"
@@ -880,7 +876,7 @@ method_defaults:
     lookahead_days: 7
   # A world equity fund holds well over a thousand assets; the largest 25 are what a
   # question about its exposure needs. limit= asks for more.
-  get_etf_holdings:
+  etf.get_holdings:
     limit: 25
   # 150 maturities per country and month; maturity_years= asks for others.
   get_eiopa_risk_free_rate:

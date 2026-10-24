@@ -59,11 +59,20 @@ def fixture_etf():
             "Z": {"Price-to-Earnings": 40.0, "Dividend Yield": 0.0},
         }
     )
+    sectors = pd.DataFrame(
+        {"AAA": [0.2, 0.8, None], "BBB": [0.5, 0.3, 0.2]},
+        index=pd.Index(["Energy", "Technology", "Utilities"], name="Sector"),
+    )
+    datasets = {
+        "information": information,
+        "holdings": holdings,
+        "sector_weightings": sectors,
+        "country_weightings": pd.DataFrame(),
+    }
     return ETF(
         tickers=["AAA", "BBB", "Benchmark"],
-        daily_historical=daily,
-        information_function=lambda: information,
-        holdings_function=lambda: holdings,
+        historical_function=lambda: daily,
+        fund_data_function=lambda dataset, overwrite=False: datasets[dataset],
         ratios_function=lambda tickers: ratios[[t for t in tickers if t in ratios]],
         start_date="2025-01-01",
         end_date="2026-12-31",
@@ -112,14 +121,37 @@ def test_liquidity(etf):
     )
 
 
+def test_holdings_and_weightings(etf):
+    largest = etf.get_holdings(limit=1)
+    sectors = etf.get_sector_weightings()
+
+    assert list(largest["Weight"]) == [0.5, 0.6]
+    assert list(etf.get_holdings(limit=-1)["Weight"]) == [0.2, 0.4]
+    # The largest weights of the first fund come first, and a sector a fund does not hold
+    # weighs zero in it.
+    assert list(sectors.index) == ["Technology", "Energy", "Utilities"]
+    assert sectors.loc["Utilities", "AAA"] == 0
+    assert etf.get_country_weightings().empty
+
+
 def test_a_single_fund(etf):
-    holdings = etf._holdings_function().loc["AAA"]
     single = ETF(
         tickers=["AAA"],
-        daily_historical=etf._daily_historical,
-        information_function=etf._information_function,
-        holdings_function=lambda: holdings,
+        historical_function=etf._historical_function,
+        fund_data_function=etf._fund_data_function,
         ratios_function=etf._ratios_function,
     )
 
+    # The holdings of a single fund are indexed by the asset only.
+    assert list(single.get_holdings().index) == ["X", "Y", "Z"]
     assert single.get_concentration().loc["Largest Holding", "AAA"] == "X"
+
+
+def test_the_holdings_need_no_prices(etf):
+    def no_prices():
+        raise AssertionError("The prices were retrieved.")
+
+    etf._historical_function = no_prices
+
+    assert not etf.get_holdings().empty
+    assert not etf.get_concentration().empty

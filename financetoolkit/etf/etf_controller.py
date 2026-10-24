@@ -7,6 +7,7 @@ from collections.abc import Callable
 import pandas as pd
 
 from financetoolkit.etf import etf_model, sec_model
+from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -28,17 +29,16 @@ MAXIMUM_SYMBOL_LENGTH = 10
 
 class ETF:
     """
-    The ETF module analyzes exchange traded funds (and other funds): what they cost, how they
-    track their index, how concentrated and how much alike they are, what their holdings are
+    The ETF module analyzes exchange traded funds (and other funds): what they hold, what they
+    cost, how they track their index, how concentrated and how much alike they are, what their holdings are
     valued at and how liquid they are.
     """
 
     def __init__(
         self,
         tickers: str | list[str],
-        daily_historical: pd.DataFrame,
-        information_function: Callable[[], pd.DataFrame],
-        holdings_function: Callable[[], pd.DataFrame],
+        historical_function: Callable[[], pd.DataFrame],
+        fund_data_function: Callable[..., pd.DataFrame | None],
         ratios_function: Callable[[list[str]], pd.DataFrame],
         start_date: str | None = None,
         end_date: str | None = None,
@@ -49,12 +49,11 @@ class ETF:
 
         Args:
             tickers (str | list[str]): The tickers of the funds.
-            daily_historical (pd.DataFrame): The daily historical data of the tickers and the
-                Benchmark.
-            information_function (Callable[[], pd.DataFrame]): Retrieves the profile of every
-                fund (Toolkit.get_etf_information).
-            holdings_function (Callable[[], pd.DataFrame]): Retrieves the holdings of every
-                fund (Toolkit.get_etf_holdings).
+            historical_function (Callable[[], pd.DataFrame]): Retrieves the daily historical
+                data of the tickers and the Benchmark, when an analysis first needs it.
+            fund_data_function (Callable[..., pd.DataFrame | None]): Retrieves a fund dataset
+                of the tickers (holdings, information, country_weightings or
+                sector_weightings), with overwrite= to retrieve it again.
             ratios_function (Callable[[list[str]], pd.DataFrame]): Retrieves the trailing twelve
                 month ratios of a list of tickers, the holdings.
             start_date (str | None, optional): The start date. Defaults to None.
@@ -73,9 +72,9 @@ class ETF:
         ```
         """
         self._tickers = [tickers] if isinstance(tickers, str) else list(tickers)
-        self._daily_historical = daily_historical
-        self._information_function = information_function
-        self._holdings_function = holdings_function
+        self._historical_function = historical_function
+        self._daily_historical: pd.DataFrame | None = None
+        self._fund_data_function = fund_data_function
         self._ratios_function = ratios_function
         self._start_date = start_date
         self._end_date = end_date
@@ -89,16 +88,19 @@ class ETF:
             if ticker not in (BENCHMARK_TICKER, "Portfolio")
         ]
 
+    def _historical(self) -> pd.DataFrame:
+        """The daily historical data of the tickers and the Benchmark."""
+        if self._daily_historical is None:
+            self._daily_historical = self._historical_function()
+        return self._daily_historical
+
     def _weights(self) -> dict[str, pd.Series]:
         """The weight of every holding per fund, from the holdings."""
-        holdings = self._holdings_function()
+        holdings = self._fund_data_function("holdings")
         if holdings is None or holdings.empty:
             raise ValueError(
                 "No holdings are available for these tickers; only ETFs and funds have them."
             )
-        # The holdings of a single fund are not indexed by the fund.
-        if holdings.index.nlevels == 1 and len(self._funds()) == 1:
-            holdings = pd.concat({self._funds()[0]: holdings})
         weights = {}
         for fund in holdings.index.get_level_values(0).unique():
             if fund not in self._funds():
@@ -117,9 +119,262 @@ class ETF:
             weights[fund] = fund_weights[fund_weights > 0]
         return weights
 
+    @staticmethod
+    def _sorted_weightings(weightings: pd.DataFrame | None) -> pd.DataFrame | None:
+        """The weightings with the largest weights of the first fund first."""
+        if weightings is None or weightings.empty:
+            return weightings
+        # A fund lists only the sectors or countries it holds, so one another fund holds has
+        # no weight in it rather than an unknown one.
+        return weightings.fillna(0).sort_values(
+            by=weightings.columns[0], ascending=False, kind="stable"
+        )
+
     def _round(self, data: pd.DataFrame, rounding: int | None) -> pd.DataFrame:
         return apply_rounding(
             data, rounding if rounding is not None else self._rounding
+        )
+
+    def get_holdings(
+        self,
+        overwrite: bool = False,
+        show_columns: list[str] | None = None,
+        limit: int | None = None,
+    ) -> pd.DataFrame | None:
+        """
+        Get the holdings of every fund: each asset it holds with the number of shares, the
+        market value and the weight in the fund (as a decimal). This shows what the fund is
+        actually exposed to and how concentrated it is; get_concentration and get_overlap
+        summarize the weights.
+
+        Tickers that are not an ETF or fund have no holdings and return no data. They are not
+        removed from the Toolkit instance.
+
+        Also known as: fund holdings, ETF constituents, fund portfolio.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the holdings again. Defaults to False.
+            show_columns (list[str] | None, optional): A list of column names to keep in the
+                result. Invalid names are reported and ignored. Defaults to None, which keeps
+                every column.
+            limit (int | None, optional): The number of largest holdings (by weight) to keep per
+                fund, e.g. 10 for the top 10, or of the smallest for a negative number, e.g.
+                -10. Defaults to None, which keeps every holding. The holdings carry no sector or
+                country; get_sector_weightings and get_country_weightings break the fund down by
+                those.
+
+        Returns:
+            pd.DataFrame | None: The holdings per fund, indexed by asset (only by asset for a
+            single fund). None without an API key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_holdings().loc["QQQ"].head()
+        ```
+
+        Which returns:
+
+        | Asset   | Name                       | ISIN         | CUSIP     |      Shares |    Weight |   Market Value | Updated At          |
+        |:--------|:---------------------------|:-------------|:----------|------------:|----------:|---------------:|:--------------------|
+        | NVDA    | NVIDIA Corp                | US67066G1040 | 67066G104 | 1.80964e+08 | 0.0850518 |    4.32937e+10 | 2026-10-07 14:14:58 |
+        | AAPL    | Apple Inc                  | US0378331005 | 037833100 | 1.09586e+08 | 0.0718253 |    3.65611e+10 | 2026-10-07 14:14:58 |
+        | MSFT    | Microsoft Corp             | US5949181045 | 594918104 | 5.57574e+07 | 0.057978  |    2.95124e+10 | 2026-10-07 14:14:58 |
+        | MU      | Micron Technology Inc      | US5951121038 | 595112103 | 2.34119e+07 | 0.0480888 |    2.44785e+10 | 2026-10-07 14:14:58 |
+        | AMD     | Advanced Micro Devices Inc | US0079031078 | 007903107 | 3.38406e+07 | 0.043174  |    2.19767e+10 | 2026-10-07 14:14:58 |
+        """
+        holdings = self._fund_data_function("holdings", overwrite=overwrite)
+        if holdings is None:
+            return None
+
+        if limit is not None and not holdings.empty and "Weight" in holdings:
+            # The largest holdings of each fund (or, for a negative limit, the smallest), as
+            # a full fund can hold thousands.
+            holdings = (
+                holdings.assign(
+                    _weight=pd.to_numeric(holdings["Weight"], errors="coerce")
+                )
+                .sort_values("_weight", ascending=limit < 0, kind="stable")
+                .groupby(level=0, sort=False)
+                .head(abs(limit))
+                .drop(columns="_weight")
+                .reindex(holdings.index.get_level_values(0).unique(), level=0)
+            )
+
+        if len(self._tickers) == 1 and not holdings.empty:
+            return filter_columns(holdings.loc[self._tickers[0]], show_columns)
+
+        return filter_columns(holdings, show_columns)
+
+    def get_information(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """
+        Get everything Financial Modeling Prep publishes about every fund: its name,
+        identifiers, issuer, asset class, domicile, inception date, expense ratio (as a
+        decimal), assets under management, net asset value, number of holdings, description
+        and website. The expense ratio in particular determines how much of the return is lost
+        to costs every year. get_profile adds the latest price, the premium or discount to the
+        NAV and the dollar volume to the key figures.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: fund profile, ETF profile, fund information.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the information again. Defaults to
+                False.
+
+        Returns:
+            pd.DataFrame | None: The information (rows) per fund (columns). None without an API
+            key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_information().drop(["Description", "Website"])
+        ```
+
+        Which returns:
+
+        |                         | QQQ                         | VTI                                         |
+        |:------------------------|:----------------------------|:--------------------------------------------|
+        | Name                    | Invesco QQQ Trust, Series 1 | Vanguard Morningstar Total Stock Market ETF |
+        | ISIN                    | US46090E1038                | US9229087690                                |
+        | CUSIP                   | 46090E103                   | 922908769                                   |
+        | Asset Class             | Equity                      | Large Cap Equity                            |
+        | Domicile                | US                          | US                                          |
+        | ETF Company             | Invesco                     | Vanguard                                    |
+        | Inception Date          | 1999-03-10                  | 2001-05-24                                  |
+        | Expense Ratio           | 0.0018                      | 0.0003                                      |
+        | Assets Under Management | 508484484641                | 2300000000000                               |
+        | Average Volume          | 39278732                    | 3259438                                     |
+        | NAV                     | 759.5                       | 381.13                                      |
+        | NAV Currency            | USD                         | USD                                         |
+        | Holdings Count          | 102                         | 3598                                        |
+        | Actively Trading        | True                        | True                                        |
+        | Updated At              | 2026-10-08T01:48:10.006Z    | 2026-10-08T02:22:30.046Z                    |
+        """
+        return self._fund_data_function("information", overwrite=overwrite)
+
+    def get_country_weightings(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """
+        Get how every fund is allocated across countries, as decimals, the largest weights of
+        the first fund first. Two funds tracking similar markets can differ considerably here,
+        which matters for the currency and political risk the fund carries.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: country allocation, geographic exposure, country exposure.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the weightings again. Defaults to
+                False.
+
+        Returns:
+            pd.DataFrame | None: The weight per country (rows) and fund (columns). None without
+            an API key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_country_weightings().head()
+        ```
+
+        Which returns:
+
+        | Country        |    QQQ |    VTI |
+        |:---------------|-------:|-------:|
+        | United States  | 0.9445 | 0.9733 |
+        | United Kingdom | 0.0164 | 0.0048 |
+        | Netherlands    | 0.0135 | 0.0003 |
+        | Canada         | 0.0096 | 0.0007 |
+        | Singapore      | 0.0074 | 0.0025 |
+        """
+        return self._sorted_weightings(
+            self._fund_data_function("country_weightings", overwrite=overwrite)
+        )
+
+    def get_sector_weightings(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """
+        Get how every fund is allocated across sectors, as decimals, the largest weights of the
+        first fund first. This shows whether a fund that looks broad is in fact concentrated
+        in a few sectors, such as technology in many large-cap indices.
+
+        Tickers that are not an ETF or fund return no data. They are not removed from the
+        Toolkit instance.
+
+        Also known as: sector allocation, sector exposure, sector breakdown.
+
+        Args:
+            overwrite (bool, optional): Whether to retrieve the weightings again. Defaults to
+                False.
+
+        Returns:
+            pd.DataFrame | None: The weight per sector (rows) and fund (columns). None without an
+            API key.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "VTI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.etf.get_sector_weightings()
+        ```
+
+        Which returns:
+
+        | Sector                 |      QQQ |      VTI |
+        |:-----------------------|---------:|---------:|
+        | Technology             | 0.603104 | 0.365041 |
+        | Communication Services | 0.117791 | 0.086689 |
+        | Consumer Cyclical      | 0.098732 | 0.089865 |
+        | Consumer Defensive     | 0.057355 | 0.042514 |
+        | Industrials            | 0.055378 | 0.088185 |
+        | Healthcare             | 0.036579 | 0.099808 |
+        | Utilities              | 0.010639 | 0.019731 |
+        | Basic Materials        | 0.009198 | 0.022242 |
+        | Cash & Others          | 0.004737 | 0.001929 |
+        | Energy                 | 0.004538 | 0.037377 |
+        | Financial Services     | 0.001949 | 0.123878 |
+        | Real Estate            | 0        | 0.022741 |
+        """
+        return self._sorted_weightings(
+            self._fund_data_function("sector_weightings", overwrite=overwrite)
         )
 
     @handle_errors
@@ -175,13 +430,13 @@ class ETF:
         | Average Volume          | 8676842.9444         | 49390737.9087               | 9471894.381                          |
         | Average Dollar Volume   | 5668940453.2057      | 32197925675.0503            | 933890010.5428                       |
         """
-        information = self._information_function()
+        information = self._fund_data_function("information")
         if information is None or information.empty:
             raise ValueError("No fund information is available for these tickers.")
 
         funds = [fund for fund in self._funds() if fund in information.columns]
-        close = self._daily_historical["Close"]
-        volume = self._daily_historical["Volume"]
+        close = self._historical()["Close"]
+        volume = self._historical()["Volume"]
         last_year = close.index[-min(len(close), TRADING_DAYS) :]
 
         rows = {}
@@ -387,7 +642,7 @@ class ETF:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly or yearly."
             )
-        prices = self._daily_historical["Adj Close"]
+        prices = self._historical()["Adj Close"]
         if BENCHMARK_TICKER not in prices:
             raise ValueError(
                 "Tracking is measured against the Benchmark of the Toolkit."
@@ -642,9 +897,9 @@ class ETF:
         | Dollar Volume to Assets       |          0.002588 |           0.056270 |         0.090822 |
         | Price Impact per $100 Million |          0.000179 |           0.000036 |         0.002990 |
         """
-        data = self._daily_historical.loc[self._start_date : self._end_date]
+        data = self._historical().loc[self._start_date : self._end_date]
         data = data.iloc[-min(len(data), TRADING_DAYS) :]
-        information = self._information_function()
+        information = self._fund_data_function("information")
 
         liquidity = {}
         for fund in self._funds():

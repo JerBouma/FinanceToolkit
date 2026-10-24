@@ -69,7 +69,7 @@ _OPAQUE_TYPES = {
 
 # Injected into each tool's Args docstring so FastMCP can surface them.
 # The indicators whose own limit also takes a negative number, for the last rows.
-NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
+NEGATIVE_LIMIT_METHODS = frozenset({"get_holdings"})
 
 
 _PARAM_DESCRIPTIONS: dict[str, str] = {

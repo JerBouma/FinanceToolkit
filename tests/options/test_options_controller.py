@@ -578,6 +578,8 @@ def option_market(monkeypatch, options_module):
                     "Open Interest": (300.0 if put_option else 200.0)
                     * np.exp(-(((strikes - price) / (0.1 * price)) ** 2)),
                     "Implied Volatility": volatility,
+                    # The sources quote the price of the underlying with the chain.
+                    "Underlying Price": price,
                 },
                 index=pd.Index(strikes, name="Strike Price"),
             )
@@ -673,3 +675,72 @@ def test_the_volatility_risk_premium_in_variance_units(option_market):
     pd.testing.assert_series_equal(
         premium["Variance Risk Premium"], expected, check_names=False
     )
+
+
+def test_the_market_metrics_use_the_price_quoted_with_the_chain(
+    monkeypatch, option_market
+):
+    from financetoolkit.options import options_model  # noqa: PLC0415
+
+    module, _ = option_market
+    ticker = module._tickers[0]
+    original = options_model.get_option_chains
+
+    def quoted(tickers, expiration_date, put_option=False):
+        return original(tickers, expiration_date, put_option).assign(
+            **{"Underlying Price": 123.45}
+        )
+
+    monkeypatch.setattr(options_model, "get_option_chains", quoted)
+    exposure = module.get_gamma_exposure(number_of_expirations=1, rounding=6)
+
+    assert (exposure["Stock Price"] == 123.45).all()
+
+    def unquoted(tickers, expiration_date, put_option=False):
+        return original(tickers, expiration_date, put_option).drop(
+            columns="Underlying Price"
+        )
+
+    monkeypatch.setattr(options_model, "get_option_chains", unquoted)
+    exposure = module.get_gamma_exposure(number_of_expirations=1, rounding=6)
+
+    # Without a quoted price the traded Close is used, not the dividend-adjusted one.
+    close = module._daily_historical["Close"][ticker].dropna().iloc[-1]
+    assert exposure.loc[ticker, "Stock Price"] == pytest.approx(close, abs=1e-6)
+
+
+def test_the_market_metrics_warn_about_history_that_ends_before_today(
+    caplog, option_market
+):
+    import logging  # noqa: PLC0415
+
+    module, _ = option_market
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        module.get_implied_move(number_of_expirations=1)
+        module.get_volatility_risk_premium()
+
+    assert "Leave end_date at today" in caplog.text
+    assert "realized volatility covers the days up to that date" in caplog.text
+
+
+def test_the_model_free_volatility_beyond_the_longest_expiry_raises(option_market):
+    module, _ = option_market
+    ticker = module._tickers[0]
+
+    with pytest.raises(ValueError, match=f"longest usable expiry of {ticker}"):
+        module._model_free_volatility(ticker, days=365)
+    with pytest.raises(ValueError, match="longest usable expiry"):
+        module.get_model_free_implied_volatility(days=365)
+
+
+def test_the_model_free_volatility_extrapolates_a_short_target(option_market):
+    module, _ = option_market
+    ticker = module._tickers[0]
+
+    # The nearest expiry is 10 days away, so 7 days is extrapolated from the two nearest.
+    result = module._model_free_volatility(ticker, days=7)
+    near = module._model_free_volatility(ticker, days=10)
+
+    assert result["Near-Term Expiration"] == near["Near-Term Expiration"]
+    assert result["Next-Term Expiration"] == near["Next-Term Expiration"]
+    assert result["Model-Free Implied Volatility"] > 0

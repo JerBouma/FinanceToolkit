@@ -298,13 +298,20 @@ class Options:
 
         if strike_price_range is not None:
             # The strikes around the current price, where the trading (and the question) is.
-            current_prices = self._prices.iloc[-1]
+            current_prices = pd.Series(
+                {
+                    ticker: self._spot_price(ticker, option_chains.loc[ticker])
+                    for ticker in option_chains.index.get_level_values(0).unique()
+                }
+            )
             spot = option_chains.index.get_level_values(0).map(current_prices)
             strikes = option_chains.index.get_level_values(1)
             option_chains = option_chains[
                 (strikes >= spot * (1 - strike_price_range))
                 & (strikes <= spot * (1 + strike_price_range))
             ]
+
+        option_chains = option_chains.drop(columns="Underlying Price", errors="ignore")
 
         option_chains.name = expiration_date
 
@@ -6910,10 +6917,51 @@ class Options:
         upcoming = [date for date in available if _days_to_expiration(date) > 0]
         return upcoming[:number_of_expirations]
 
+    def _spot_price(self, ticker: str, *chains: pd.DataFrame) -> float:
+        """
+        The price of the underlying to combine with live option chains: the price quoted
+        with the chain (Yahoo Finance's regular market price or Cboe's current price) when
+        the source provides one, otherwise the traded Close of the last historical date.
+        The Adjusted Close is not used, since it is scaled down for later dividends and so
+        is not a price the strikes can be compared with.
+        """
+        for chain in chains:
+            if "Underlying Price" in chain:
+                quoted = pd.to_numeric(chain["Underlying Price"], errors="coerce")
+                quoted = quoted[quoted > 0]
+                if not quoted.empty:
+                    return float(quoted.iloc[-1])
+        prices = (
+            self._daily_historical["Close"]
+            if "Close" in self._daily_historical.columns.get_level_values(0)
+            else self._prices
+        )
+        return float(prices[ticker].dropna().iloc[-1])
+
+    def _warn_if_history_is_stale(self, purpose: str) -> None:
+        """
+        Warn when the historical data ends more than 5 days before today. The option chains
+        are always live, so history that ends earlier (an end_date in the past) mixes old
+        prices, rates and dividends with today's option quotes.
+        """
+        last_date = to_period_index(self._daily_historical.index)[-1].to_timestamp()
+        lag = (pd.Timestamp.today().normalize() - last_date).days
+        if lag > 5:  # noqa: PLR2004
+            logger.warning(
+                "The historical data ends on %s, %d days before today, while the option "
+                "chains are live: %s. Leave end_date at today for these metrics.",
+                last_date.strftime("%Y-%m-%d"),
+                lag,
+                purpose,
+            )
+
     def _expiry_inputs(
         self, ticker: str, expiration_date: str
     ) -> tuple[pd.DataFrame, pd.DataFrame, float, float, float, float]:
-        """The calls, puts, stock price, time to expiration, risk free rate and dividend yield."""
+        """
+        The calls, puts, stock price, time to expiration, risk free rate and dividend yield.
+        The stock price is the one quoted with the chain when available (see _spot_price).
+        """
         calls = options_model.get_option_chains([ticker], expiration_date, False)
         puts = options_model.get_option_chains([ticker], expiration_date, True)
         calls = calls.loc[ticker] if not calls.empty else calls
@@ -6933,7 +6981,7 @@ class Options:
             )
             if quoted(cboe_calls) + quoted(cboe_puts) > quoted(calls) + quoted(puts):
                 calls, puts = cboe_calls, cboe_puts
-        stock_price = float(self._prices[ticker].dropna().iloc[-1])
+        stock_price = self._spot_price(ticker, calls, puts)
         time_to_expiration = max(_days_to_expiration(expiration_date), 0.5) / 365
         risk_free_rate = float(self._risk_free_rate.dropna().iloc[-1])
         dividend_yield = (
@@ -6960,6 +7008,10 @@ class Options:
         rounding: int | None,
     ) -> pd.DataFrame:
         """Run a calculation on every expiry of every ticker, rows (ticker, expiration)."""
+        self._warn_if_history_is_stale(
+            "the risk free rate, the dividend yield and, when a chain quotes no price of "
+            "the underlying, the stock price come from that date"
+        )
         rows = {}
         for ticker in self._tickers:
             for expiration_date in self._expiries(
@@ -7191,6 +7243,12 @@ class Options:
         - The assumption about who holds which side is the main uncertainty: when
           investors sell calls (covered calls) the sign of that part flips.
         - Gamma uses each option's own implied volatility (Black-Scholes).
+        - The stock price is the price of the underlying quoted with the live option chain
+          (Yahoo Finance's regular market price or Cboe's current price), so both come from
+          the same moment; when the chain quotes none, the traded Close of the last
+          historical date is used. The risk free rate and dividend yield come from the
+          historical data as well, so leave end_date at today: a warning is logged when the
+          history ends more than 5 days before today.
 
         As an example:
 
@@ -7209,6 +7267,10 @@ class Options:
         | QQQ  |        704.4  |           1.83881e+09 |         -6.41458e+09 |         -4.57577e+09 |            727.993 |
         | AAPL |        347.73 |           7.48337e+08 |         -4.80606e+08 |          2.67731e+08 |            342.412 |
         """
+        self._warn_if_history_is_stale(
+            "the risk free rate, the dividend yield and, when a chain quotes no price of "
+            "the underlying, the stock price come from that date"
+        )
         summary, strikes = {}, {}
         for ticker in self._tickers:
             expiries = []
@@ -7293,6 +7355,14 @@ class Options:
             pd.DataFrame: Per ticker and expiry the Days to Expiration and the At-the-Money
             Volatility (annualized, as a decimal).
 
+        Notes:
+        - The stock price is the price of the underlying quoted with the live option chain
+          (Yahoo Finance's regular market price or Cboe's current price), so both come from
+          the same moment; when the chain quotes none, the traded Close of the last
+          historical date is used. The risk free rate and dividend yield come from the
+          historical data as well, so leave end_date at today: a warning is logged when the
+          history ends more than 5 days before today.
+
         As an example:
 
         ```python
@@ -7369,6 +7439,14 @@ class Options:
             At-the-Money and 25-Delta Call Volatility, the 25-Delta Risk Reversal and the
             25-Delta Butterfly.
 
+        Notes:
+        - The stock price is the price of the underlying quoted with the live option chain
+          (Yahoo Finance's regular market price or Cboe's current price), so both come from
+          the same moment; when the chain quotes none, the traded Close of the last
+          historical date is used. The risk free rate and dividend yield come from the
+          historical data as well, so leave end_date at today: a warning is logged when the
+          history ends more than 5 days before today.
+
         As an example:
 
         ```python
@@ -7438,6 +7516,12 @@ class Options:
         Notes:
         - The move up to an expiry after earnings also includes the ordinary daily moves
           until then; the closer the expiry is to the announcement, the purer the measure.
+        - The stock price is the price of the underlying quoted with the live option chain
+          (Yahoo Finance's regular market price or Cboe's current price), so both come from
+          the same moment; when the chain quotes none, the traded Close of the last
+          historical date is used. The risk free rate and dividend yield come from the
+          historical data as well, so leave end_date at today: a warning is logged when the
+          history ends more than 5 days before today.
 
         As an example:
 
@@ -7508,6 +7592,16 @@ class Options:
                 f"{ticker} has too few expiries for a model-free volatility."
             )
 
+        # Beyond the furthest expiry there is nothing to interpolate towards, and holding
+        # the last expiry's variance would present it as the volatility of a longer span.
+        if days > _days_to_expiration(usable[-1]):
+            raise ValueError(
+                f"The longest usable expiry of {ticker} is {usable[-1]} "
+                f"({_days_to_expiration(usable[-1])} days), shorter than days={days}."
+            )
+
+        # A target shorter than the nearest usable expiry is extrapolated from the two
+        # nearest terms, as the Cboe does when no expiry lies before the 30 days.
         near_candidates = [date for date in usable if _days_to_expiration(date) <= days]
         near = near_candidates[-1] if near_candidates else usable[0]
         following = [date for date in usable if date > near]
@@ -7583,6 +7677,12 @@ class Options:
         - Options without a bid are left out of the strip, as in the Cboe method. Outside
           market hours, when bids are missing, an expiry has no strip and the result is
           NaN.
+        - A target shorter than the nearest usable expiry (at least 7 days away) is
+          extrapolated from the two nearest terms, as in the Cboe method. A target beyond
+          the longest usable expiry raises a ValueError naming the ticker and that expiry,
+          since there is no later term to interpolate towards.
+        - The risk free rate comes from the historical data, so leave end_date at today: a
+          warning is logged when the history ends more than 5 days before today.
 
         As an example:
 
@@ -7601,15 +7701,20 @@ class Options:
         | ^SPX | 2026-11-23             | 2026-11-24             |                 0.1955 |                 0.1965 |        7649.3   |                          0.1955 |
         | AAPL | 2026-11-20             | 2026-11-27             |                 0.297  |                 0.2817 |         348.495 |                          0.2897 |
         """
-        rows = {}
+        self._warn_if_history_is_stale("the risk free rate comes from that date")
+        rows, errors = {}, []
         for ticker in self._tickers:
             try:
                 rows[ticker] = self._model_free_volatility(ticker, days)
             except ValueError as error:
                 logger.warning("%s", error)
+                errors.append(str(error))
 
         if not rows:
-            raise ValueError("No model-free implied volatility could be calculated.")
+            raise ValueError(
+                "No model-free implied volatility could be calculated. "
+                + " ".join(errors)
+            )
 
         table = pd.DataFrame(rows).T
         numeric = table.columns.drop(["Near-Term Expiration", "Next-Term Expiration"])
@@ -7662,6 +7767,14 @@ class Options:
             Risk Premium, Variance Risk Premium and the ratio of implied to realized
             volatility.
 
+        Notes:
+        - The realized volatility covers the last `days` calendar days of the historical
+          data, while the implied volatility comes from the live option chains. Leave
+          end_date at today so both describe the same moment: a warning is logged when the
+          history ends more than 5 days before today.
+        - A `days` beyond the longest usable expiry raises a ValueError, see
+          get_model_free_implied_volatility.
+
         As an example:
 
         ```python
@@ -7680,7 +7793,11 @@ class Options:
         | AAPL |               0.2897 |                0.1641 |                    0.1256 |                  0.057  |                      1.7653 |
         | TSLA |               0.4357 |                0.3516 |                    0.0841 |                  0.0662 |                      1.2392 |
         """
-        rows = {}
+        self._warn_if_history_is_stale(
+            "the realized volatility covers the days up to that date instead of the days "
+            "up to today, and the risk free rate comes from that date"
+        )
+        rows, errors = {}, []
         for ticker in self._tickers:
             try:
                 implied = float(
@@ -7690,6 +7807,7 @@ class Options:
                 )
             except ValueError as error:
                 logger.warning("%s", error)
+                errors.append(str(error))
                 continue
             returns = self._daily_historical["Return"][ticker].dropna()
             dates = to_period_index(returns.index).to_timestamp()
@@ -7706,7 +7824,9 @@ class Options:
             }
 
         if not rows:
-            raise ValueError("No volatility risk premium could be calculated.")
+            raise ValueError(
+                "No volatility risk premium could be calculated. " + " ".join(errors)
+            )
 
         return apply_rounding(
             pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding

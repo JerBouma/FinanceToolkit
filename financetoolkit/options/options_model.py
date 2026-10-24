@@ -73,7 +73,9 @@ def get_option_chains(
         put_option (bool, optional): If True, fetch put options; otherwise, fetch call options. Defaults to False.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the option chains for the specified tickers and expiration date.
+        pd.DataFrame: A DataFrame containing the option chains for the specified tickers and expiration date,
+        with the price of the underlying quoted with the chain in the "Underlying Price" column (NaN when the
+        source does not provide it).
     """
     cache = get_active_cache()
     cache_parameters = {
@@ -95,9 +97,15 @@ def get_option_chains(
                 result_dict[ticker] = cached_chain
                 continue
 
+        underlying_price = np.nan
         try:
             option_chain = yf.Ticker(ticker).option_chain(expiration_date)
             options_df = option_chain.puts if put_option else option_chain.calls
+            # The price of the underlying quoted with the chain, so metrics that combine
+            # the two use prices of the same moment rather than the last historical close.
+            underlying_price = (option_chain.underlying or {}).get(
+                "regularMarketPrice", np.nan
+            )
         except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
             logger.info("Yahoo Finance has no option chain of %s (%s).", ticker, error)
             options_df = pd.DataFrame()
@@ -131,6 +139,8 @@ def get_option_chains(
 
         if "Contract Size" in options_df.columns:
             options_df = options_df.drop(columns="Contract Size")
+
+        options_df["Underlying Price"] = underlying_price
 
         options_df = options_df.set_index("Strike")
         result_dict[ticker] = options_df
@@ -171,7 +181,8 @@ def _get_cboe_option_chain(
         put_option (bool): Whether to return the puts instead of the calls.
 
     Returns:
-        pd.DataFrame: The options, indexed by strike price.
+        pd.DataFrame: The options, indexed by strike price, with Cboe's current price of the
+        underlying in the "Underlying Price" column.
     """
     chain = cboe_model.get_option_chain(ticker)
 
@@ -211,6 +222,7 @@ def _get_cboe_option_chain(
                 "Last Trade Date",
                 "Implied Volatility",
                 "In The Money",
+                "Underlying Price",
             ]
         ]
         .set_index("Strike")

@@ -138,8 +138,9 @@ ZERO_COUPON_CURVES = ("Euro Area", "Germany")
 COUPON_FREQUENCIES = {"Sweden": 1, "Norway": 1}
 # How the countries quote their bill yields (up to a year), see curve_model.bill_yields_to_annual:
 # the US Treasury's bond-equivalent yields (simple interest up to half a year), simple interest
-# on ACT/365 for Government of Canada bills and on ACT/360 for Swedish statsskuldväxlar. The
-# other countries' yields are compounded with the coupon frequency.
+# on ACT/365 for Government of Canada bills and on ACT/360 for Swedish statsskuldväxlar (quoted
+# on 30/360 before April 2001, which ACT/360 overstates by about 1.4% of the rate). The other
+# countries' yields are compounded with the coupon frequency.
 BILL_CONVENTIONS = {
     "United States": "bond-equivalent",
     "Canada": "act/365",
@@ -3701,7 +3702,6 @@ class FixedIncome:
             row_slice=True,
         )
 
-    @handle_errors
     @handle_errors
     def get_ice_bofa_effective_yield(
         self,

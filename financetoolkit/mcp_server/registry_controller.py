@@ -185,7 +185,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "bond_price": "Clean price of the bond per 100 face value.",
     "coupon_rate": "Annual coupon rate as a decimal, e.g. 0.05 for 5 %.",
     "years_to_maturity": "Years remaining until the bond matures.",
-    "maturities": "Comma-separated bond maturity labels, e.g. '3month,2year,10year'.",
+    "maturities": "Comma-separated maturities, e.g. '1M,3M,6M,1Y'.",
     "strike_rate": "Option strike price.",
     "factors_to_calculate": "Comma-separated factor names to include in the calculation.",
     "growth_rate": "Assumed constant growth rate as a decimal.",

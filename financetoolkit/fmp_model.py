@@ -1182,7 +1182,8 @@ def get_analyst_estimates(
             before=start_date, axis=1
         )
 
-        analyst_estimates_total = analyst_estimates_total.round(rounding)
+        if rounding is not None:
+            analyst_estimates_total = analyst_estimates_total.round(rounding)
 
         if quarter:
             analyst_estimates_total.columns = pd.PeriodIndex(
@@ -1639,6 +1640,11 @@ def get_dividend_calendar(
             dividend_calendar = dividend_calendar.sort_index()
 
             dividend_calendar = dividend_calendar.rename(columns=naming)
+            # The yield is published in percent and returned as a decimal, like every rate.
+            if "Yield" in dividend_calendar:
+                dividend_calendar["Yield"] = (
+                    pd.to_numeric(dividend_calendar["Yield"], errors="coerce") / 100
+                )
 
             dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
                 before=start_date, after=end_date, axis=0

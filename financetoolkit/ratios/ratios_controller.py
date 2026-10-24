@@ -8443,7 +8443,7 @@ class Ratios:
             )
 
         price_earnings = self.get_price_to_earnings_ratio(
-            include_dividends, diluted=diluted
+            include_dividends=include_dividends, diluted=diluted
         )
 
         price_to_earnings_growth_ratio = (

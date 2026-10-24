@@ -28,19 +28,14 @@ def _fit_multi_start(
 ) -> np.ndarray:
     """
     Fits a GARCH-family log-likelihood by running `scipy.optimize.minimize` (L-BFGS-B)
-    from many deterministic starting points spread across `bounds`, and keeps the best.
+    from many deterministic starting points spread across `bounds`, keeps the best and
+    finishes it with Nelder-Mead. The search runs on the parameters scaled to [0, 1]
+    within their bounds.
 
-    This used to run `scipy.optimize.dual_annealing`, a global optimizer, instead. It
-    reports success (with message "Maximum number of iteration reached") even when the
-    local search never improves on `x0`, and worse, its chaotic simulated-annealing walk
-    turned out to be sensitive to platform floating-point differences: the exact same
-    integer seed produced a genuinely different local optimum on Linux than on macOS for
-    EGARCH (parameters differing enough to flip Gamma's sign), because the log-likelihood
-    it climbs isn't bit-identical across libm/BLAS backends, and tiny ULP differences
-    flip early Metropolis accept/reject decisions, fully diverging the search from there.
-    Neither more seeds (4 -> 8, no change) nor polishing each seed's result with L-BFGS-B
-    (no change either) closed that gap, which is expected: both just replay the same
-    biased trajectory more precisely, they don't change what the trajectory visits.
+    A global optimizer with a stochastic walk (such as simulated annealing) is avoided on
+    purpose: the log-likelihood is not bit-identical across libm/BLAS backends, and tiny
+    floating-point differences flip its accept/reject decisions, so the same seed reaches
+    different optima on different platforms.
 
     Gradient descent from many fixed points doesn't have that failure mode: there is no
     stochastic accept/reject step, so tiny platform-level floating-point noise in the
@@ -69,9 +64,22 @@ def _fit_multi_start(
     lower = np.array([b[0] for b in bounds], dtype=float)
     upper = np.array([b[1] for b in bounds], dtype=float)
 
+    # The search runs on the parameters scaled to [0, 1] within their bounds: omega is of
+    # the order of a daily variance (1e-5) and the other weights of 0.1, and on their own
+    # scales the numerical gradient is so badly conditioned that L-BFGS-B stops close to
+    # where it started.
+    span = upper - lower
+
+    def scaled_objective(unit: np.ndarray) -> float:
+        return wrapper_func(lower + unit * span)
+
     sampler = qmc.Sobol(d=dim, seed=42)
-    starts = qmc.scale(sampler.random(N_MULTI_START_POINTS), lower, upper)
-    starts = np.vstack([np.asarray(initial_guess, dtype=float), starts])
+    starts = np.vstack(
+        [
+            (np.asarray(initial_guess, dtype=float) - lower) / span,
+            sampler.random(N_MULTI_START_POINTS),
+        ]
+    )
 
     best_x = None
     best_value = np.inf
@@ -79,7 +87,10 @@ def _fit_multi_start(
     for start in starts:
         try:
             result = optimize.minimize(
-                wrapper_func, start, bounds=bounds, method="L-BFGS-B"
+                scaled_objective,
+                np.clip(start, 0.0, 1.0),
+                bounds=[(0.0, 1.0)] * dim,
+                method="L-BFGS-B",
             )
         except (ValueError, FloatingPointError):
             continue
@@ -89,7 +100,7 @@ def _fit_multi_start(
 
         if result.fun < best_value:
             best_value = result.fun
-            best_x = result.x
+            best_x = lower + result.x * span
 
     if best_x is None:
         logger.warning(
@@ -99,6 +110,19 @@ def _fit_multi_start(
             len(starts),
         )
         return np.full(dim, np.nan)
+
+    # The stationarity constraint is a wall of infinite values, along which gradient steps
+    # stall; Nelder-Mead, which only compares values, finishes the search from the best point.
+    polished = optimize.minimize(
+        lambda unit: (
+            scaled_objective(unit) if np.all((unit >= 0) & (unit <= 1)) else np.inf
+        ),
+        (best_x - lower) / span,
+        method="Nelder-Mead",
+        options={"xatol": 1e-8, "fatol": 1e-8, "maxiter": 2000 * dim},
+    )
+    if np.isfinite(polished.fun) and polished.fun < best_value:
+        best_x = lower + polished.x * span
 
     return best_x
 
@@ -225,7 +249,7 @@ def get_garch(
     p: int = 1,
     q: int = 1,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates volatility forecasts based on the GARCH model.
+    """Calculates the conditional variance of the GARCH model.
 
     GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
     instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
@@ -489,7 +513,7 @@ def get_gjr_garch(
     p: int = 1,
     q: int = 1,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates volatility forecasts based on the GJR-GARCH model.
+    """Calculates the conditional variance of the GJR-GARCH model.
 
     GJR-GARCH extends GARCH with a leverage term that lets negative shocks (bad news)
     raise volatility by more than positive shocks of the same size, a well documented
@@ -751,7 +775,7 @@ def get_egarch(
     p: int = 1,
     q: int = 1,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates volatility forecasts based on the EGARCH model.
+    """Calculates the conditional variance of the EGARCH model.
 
     EGARCH models the log of the conditional variance, which avoids having to
     constrain the parameters to keep the variance positive and, like GJR-GARCH, lets

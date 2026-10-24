@@ -3805,6 +3805,12 @@ class FixedIncome:
                 :, term_structures.columns.get_level_values(0).isin(requested)
             ]
 
+        if isinstance(maturity_years, str):
+            maturity_years = [
+                int(float(maturity))
+                for maturity in maturity_years.split(",")
+                if maturity.strip()
+            ]
         if maturity_years is not None:
             # 150 maturities per country and month are rarely all needed.
             term_structures = term_structures.loc[
@@ -4273,7 +4279,11 @@ class FixedIncome:
         | 2025-12 |    0.0192 |    0.0205 |    0.0214 |     0.0227 |
         """
         if isinstance(maturities, str):
-            maturities = [maturities]
+            maturities = [
+                maturity.strip()
+                for maturity in maturities.split(",")
+                if maturity.strip()
+            ]
 
         maturity_names = {
             "1M": "1-Month",

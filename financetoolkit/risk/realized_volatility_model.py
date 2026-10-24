@@ -438,8 +438,8 @@ def get_har_rv_forecast(
         pd.Series | pd.DataFrame: The fitted HAR-RV forecast of Realized Variance,
         indexed by the date the forecast was made (i.e. the forecast target is
         `horizon` days ahead of each index date). The first `monthly_window - 1`
-        (rolling window burn-in) and last `horizon` (no future data available to
-        forecast against) values are NaN.
+        values (the rolling window burn-in) are NaN; the last `horizon` values are the
+        forecasts of days that have not been observed yet.
 
     Raises:
         TypeError: If `realized_variance` is not a pd.Series or pd.DataFrame.
@@ -481,9 +481,14 @@ def get_har_rv_forecast(
         y = estimation_sample["target"].to_numpy()
 
         coefficients, _, _, _ = np.linalg.lstsq(x, y, rcond=None)
-        fitted_values = x @ coefficients
 
-        forecast = pd.Series(fitted_values, index=estimation_sample.index)
+        # The coefficients are estimated where the target is known, and the forecast is
+        # made wherever its inputs are, so the last `horizon` days get a forecast too.
+        inputs = regression_frame[["daily", "weekly", "monthly"]].dropna()
+        forecast = pd.Series(
+            np.column_stack([np.ones(len(inputs)), inputs.to_numpy()]) @ coefficients,
+            index=inputs.index,
+        )
 
         return forecast.reindex(realized_variance.index)
 

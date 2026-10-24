@@ -503,9 +503,10 @@ def irf_summary_table(result: dict) -> pd.DataFrame:
         `get_impulse_response_function`.
 
     Returns:
-        pd.DataFrame: The combined response table.
+        pd.DataFrame: The combined response table, with the column levels named "Shock"
+        and "Response".
     """
-    return pd.concat(result["responses"], axis=1)
+    return pd.concat(result["responses"], axis=1, names=["Shock", "Response"])
 
 
 _VAR_RESULT_KEYS = {"coefficient_matrices", "variable_names", "lags", "residuals"}
@@ -687,9 +688,10 @@ def variance_decomposition_summary_table(result: dict) -> pd.DataFrame:
         `get_variance_decomposition`.
 
     Returns:
-        pd.DataFrame: The combined decomposition table.
+        pd.DataFrame: The combined decomposition table, with the column levels named
+        "Response" and "Shock".
     """
-    return pd.concat(result["decomposition"], axis=1)
+    return pd.concat(result["decomposition"], axis=1, names=["Response", "Shock"])
 
 
 def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:

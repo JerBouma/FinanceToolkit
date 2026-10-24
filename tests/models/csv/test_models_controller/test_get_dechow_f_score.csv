@@ -1,0 +1,21 @@
+,,2022,2023
+AAPL,RSST Accruals,-0.0032,0.0146
+AAPL,Change in Receivables,0.0054,0.0038
+AAPL,Change in Inventory,-0.0046,0.0039
+AAPL,Soft Assets,0.784,0.7608
+AAPL,Change in Cash Sales,0.1034,-0.0267
+AAPL,Change in Return on Assets,0.0031,-0.0086
+AAPL,Actual Issuance,0.0,0.0
+AAPL,Predicted Value,-6.321,-6.3583
+AAPL,Probability of Misstatement,0.0018,0.0017
+AAPL,F-Score,0.4851,0.4674
+MSFT,RSST Accruals,0.0711,0.0487
+MSFT,Change in Receivables,0.0178,0.0114
+MSFT,Change in Inventory,0.0032,-0.0032
+MSFT,Soft Assets,0.7219,0.6488
+MSFT,Change in Cash Sales,0.1851,0.0804
+MSFT,Change in Return on Assets,0.0153,-0.0219
+MSFT,Actual Issuance,1.0,1.0
+MSFT,Predicted Value,-5.3132,-5.4825
+MSFT,Probability of Misstatement,0.0049,0.0041
+MSFT,F-Score,1.3248,1.1194

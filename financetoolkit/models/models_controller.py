@@ -2,11 +2,15 @@
 
 __docformat__ = "google"
 
+from collections.abc import Callable
+
 import pandas as pd
 
 from financetoolkit.models import (
     altman_model,
     beneish_model,
+    credit_model,
+    damodaran_model,
     dupont_model,
     enterprise_model,
     eva_model,
@@ -17,6 +21,7 @@ from financetoolkit.models import (
     intrinsic_model,
     ohlson_model,
     piotroski_model,
+    quality_model,
     springate_model,
     wacc_model,
     zmijewski_model,
@@ -34,6 +39,7 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 # pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
+# ruff: noqa: E501
 
 
 logger = get_logger()
@@ -59,6 +65,9 @@ class Models:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        peer_function: (
+            Callable[[dict[str, list[str]] | None], pd.DataFrame] | None
+        ) = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -72,6 +81,8 @@ class Models:
             cash (pd.DataFrame): The cash flow statement data.
             quarterly (bool, optional): Whether to use quarterly or yearly data. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            peer_function (Callable | None, optional): Compares the companies with their peers,
+                used by get_peer_comparison. Defaults to None.
 
         As an example:
 
@@ -107,6 +118,7 @@ class Models:
         self._rounding = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
+        self._peer_function = peer_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -4913,3 +4925,1382 @@ class Models:
             standardize=standardize,
             axis="columns",
         )
+
+    def _rows(self, statement: pd.DataFrame, row: str) -> pd.DataFrame:
+        """A statement row per ticker (rows) and period (columns); NaN when not reported."""
+        if row not in statement.index.get_level_values(1):
+            return pd.DataFrame(
+                float("nan"), index=self._tickers, columns=statement.columns
+            )
+        return (
+            statement.loc[:, row, :]
+            .reindex(self._tickers)
+            .apply(pd.to_numeric, errors="coerce")
+        )
+
+    def _period_prices(self) -> pd.DataFrame:
+        """The share price at the end of every statement period, per ticker."""
+        columns = self._balance_sheet_statement.columns
+        prices = self._historical_data["quarterly" if self._quarterly else "yearly"][
+            "Adj Close"
+        ]
+        prices = prices.reindex(columns=self._tickers)
+        prices.index = prices.index.asfreq(columns.freq)
+        return prices.reindex(columns).T
+
+    def _latest_value(self, statement: pd.DataFrame, ticker: str, row: str) -> float:
+        """The latest reported value of a statement row for a ticker, or NaN."""
+        values = self._rows(statement, row).loc[ticker].dropna()
+        return float(values.iloc[-1]) if not values.empty else float("nan")
+
+    def _latest_price(self, ticker: str) -> float:
+        """The latest daily share price of a ticker."""
+        prices = self._historical_data["daily"]["Adj Close"][ticker].dropna()
+        return float(prices.iloc[-1]) if not prices.empty else float("nan")
+
+    def _per_ticker(
+        self, value: float | dict[str, float] | None, name: str
+    ) -> dict[str, float | None]:
+        """A rate that is one number for every ticker or a number per ticker."""
+        if isinstance(value, dict):
+            missing = [ticker for ticker in self._tickers if ticker not in value]
+            if missing:
+                raise ValueError(f"No {name} given for: {', '.join(missing)}.")
+            return {ticker: float(value[ticker]) for ticker in self._tickers}
+        return dict.fromkeys(self._tickers, None if value is None else float(value))
+
+    def _resolve_wacc(
+        self, weighted_average_cost_of_capital: float | dict[str, float] | None
+    ) -> dict[str, float]:
+        """The discount rate per ticker: as given, otherwise the latest calculated WACC."""
+        rates = self._per_ticker(
+            weighted_average_cost_of_capital, "weighted average cost of capital"
+        )
+        if any(rate is None for rate in rates.values()):
+            calculated = self.get_weighted_average_cost_of_capital(
+                show_full_results=False
+            )
+            for ticker in self._tickers:
+                if rates[ticker] is None:
+                    history = (
+                        calculated.loc[ticker].dropna()
+                        if ticker in calculated.index
+                        else pd.Series(dtype=float)
+                    )
+                    rates[ticker] = (
+                        float(history.iloc[-1]) if not history.empty else float("nan")
+                    )
+        return {ticker: float(rate) for ticker, rate in rates.items()}  # type: ignore[arg-type]
+
+    def _combine(self, results: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """Per-period results as ticker and metric (rows) by period (columns)."""
+        combined = concat_frames(results).swaplevel(0, 1)
+        order = {name: position for position, name in enumerate(results)}
+        combined = combined.sort_index(
+            level=1, key=lambda names: names.map(order), sort_remaining=False
+        )
+        return combined.reindex(self._tickers, level=0)
+
+    @handle_errors
+    def get_reverse_discounted_cash_flow(
+        self,
+        perpetual_growth_rate: float | dict[str, float] = 0.025,
+        weighted_average_cost_of_capital: float | dict[str, float] | None = None,
+        periods: int = 5,
+        cash_flow_type: str = "Free Cash Flow",
+        trailing: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the growth rate the share price implies, a reverse Discounted Cash Flow
+        (DCF). Instead of estimating growth to arrive at a value, it takes the current share
+        price as given and solves for the yearly cash flow growth over the projection
+        periods at which the DCF value per share equals that price. The answer is the
+        market's expectation, which can then be compared with the company's history: an
+        implied growth far above what the company has achieved signals optimism.
+
+        The DCF is the same as in `get_intrinsic_valuation`:
+
+            - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Implied Growth Rate)
+            - Terminal Value = Last Projection * (1 + Perpetual Growth Rate) / (WACC - Perpetual Growth Rate)
+            - Equity Value = Present Value of Projections and Terminal Value + Cash - Total Debt
+            - Implied Growth Rate solves Equity Value / Shares Outstanding = Share Price
+
+        For more information, see the following book:
+
+        - Mauboussin, M.J. and Rappaport, A. (2001). "Expectations Investing: Reading Stock
+          Prices for Better Returns." Harvard Business School Press.
+
+        Also known as: reverse DCF, market-implied growth, expectations investing.
+
+        Args:
+            perpetual_growth_rate (float | dict[str, float], optional): The growth after the
+                projection periods, one number or a number per ticker. Defaults to 0.025.
+            weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
+                The discount rate, one number or a number per ticker. Defaults to None,
+                which uses the latest Weighted Average Cost of Capital of each company.
+            periods (int, optional): The number of projection periods. Defaults to 5.
+            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow" or
+                "Operating Cash Flow". Defaults to "Free Cash Flow".
+            trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
+                4 quarters) instead of taking the latest one. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per ticker the Share Price, the Cash Flow used, the Weighted
+            Average Cost of Capital, the Perpetual Growth Rate, the Implied Growth Rate and,
+            for comparison, the Historical Growth Rate (the compound annual growth of the
+            cash flow over the reported periods).
+
+        Notes:
+        - A negative cash flow, or a discount rate at or below the perpetual growth rate,
+          has no implied growth rate and gives NaN.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_reverse_discounted_cash_flow(weighted_average_cost_of_capital=0.09)
+        ```
+
+        Which returns:
+
+        |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate |
+        |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|
+        | AAPL |       271.122 |  9.8767e+10 |                               0.09 |                   0.025 |                0.27   |                   0.0613 |
+        | MSFT |       480.571 |  7.1611e+10 |                               0.09 |                   0.025 |                0.3253 |                   0.0962 |
+        | NVDA |       186.065 |  9.6676e+10 |                               0.09 |                   0.025 |                0.3023 |                   0.8313 |
+        """
+        if cash_flow_type not in ["Free Cash Flow", "Operating Cash Flow"]:
+            raise ValueError(
+                "The cash flow type must be 'Free Cash Flow' or 'Operating Cash Flow'."
+            )
+
+        perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        cash_flows = self._rows(self._cash_flow_statement, cash_flow_type)
+
+        rows = {}
+        for ticker in self._tickers:
+            history = cash_flows.loc[ticker].dropna()
+            if history.empty:
+                continue
+            cash_flow = (
+                float(history.iloc[-trailing:].sum())
+                if trailing
+                else float(history.iloc[-1])
+            )
+            share_price = self._latest_price(ticker)
+            implied = intrinsic_model.get_implied_growth_rate(
+                share_price=share_price,
+                cash_flow=cash_flow,
+                perpetual_growth_rate=perpetual[ticker],  # type: ignore[arg-type]
+                weighted_average_cost_of_capital=wacc[ticker],
+                cash_and_cash_equivalents=self._latest_value(
+                    self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
+                ),
+                total_debt=self._latest_value(
+                    self._balance_sheet_statement, ticker, "Total Debt"
+                ),
+                shares_outstanding=self._latest_value(
+                    self._income_statement, ticker, "Weighted Average Shares Diluted"
+                ),
+                periods=periods,
+            )
+            years = len(history) - 1
+            first, last = float(history.iloc[0]), float(history.iloc[-1])
+            historical = (
+                (last / first) ** (1 / years) - 1
+                if years > 0 and first > 0 and last > 0
+                else float("nan")
+            )
+            rows[ticker] = {
+                "Share Price": share_price,
+                "Cash Flow": cash_flow,
+                "Weighted Average Cost of Capital": wacc[ticker],
+                "Perpetual Growth Rate": perpetual[ticker],
+                "Implied Growth Rate": implied,
+                "Historical Growth Rate": historical,
+            }
+
+        return apply_rounding(
+            pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_earnings_power_value(
+        self,
+        weighted_average_cost_of_capital: float | dict[str, float] | None = None,
+        periods: int = 5,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Earnings Power Value (EPV), the value of a company's current earnings
+        if they never grew. Bruce Greenwald uses it to separate what is known (today's
+        earnings power) from what is speculative (growth): the operating margin is averaged
+        over several periods and applied to the latest revenue, taxed, and capitalized at
+        the cost of capital.
+
+            - Normalized Operating Income = Average Operating Margin * Latest Revenue
+            - NOPAT = Normalized Operating Income * (1 - Average Tax Rate)
+            - Earnings Power Value = NOPAT / WACC
+            - EPV per Share = (EPV + Cash - Total Debt) / Shares Outstanding
+
+        A share price well above the EPV per share means the market pays for growth, which
+        only adds value when the company earns more than its cost of capital on it.
+
+        For more information, see the following book:
+
+        - Greenwald, B.C.N., Kahn, J., Sonkin, P.D. and van Biema, M. (2001). "Value
+          Investing: From Graham to Buffett and Beyond." Wiley.
+
+        Also known as: EPV, no-growth value, Greenwald valuation.
+
+        Args:
+            weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
+                The discount rate, one number or a number per ticker. Defaults to None,
+                which uses the latest Weighted Average Cost of Capital of each company.
+            periods (int, optional): The number of periods the operating margin and tax rate
+                are averaged over. Defaults to 5.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per ticker the Average Operating Margin, Normalized Operating
+            Income, Tax Rate, Normalized NOPAT, Weighted Average Cost of Capital, Earnings
+            Power Value, Equity Value, Earnings Power Value per Share, Share Price and the
+            Price to EPV ratio.
+
+        Notes:
+        - Maintenance capital expenditure is assumed to equal depreciation, so operating
+          income stands in for the cash the business could pay out without shrinking.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_earnings_power_value(weighted_average_cost_of_capital=0.08)
+        ```
+
+        Which returns:
+
+        |      |   Average Operating Margin |   Normalized Operating Income |   Tax Rate |   Normalized NOPAT |   Weighted Average Cost of Capital |   Earnings Power Value |   Equity Value |   Earnings Power Value per Share |   Share Price |   Price to EPV |
+        |:-----|---------------------------:|------------------------------:|-----------:|-------------------:|-----------------------------------:|-----------------------:|---------------:|---------------------------------:|--------------:|---------------:|
+        | AAPL |                     0.3067 |                   1.27656e+11 |     0.1679 |        1.06229e+11 |                               0.08 |            1.32786e+12 |    1.25141e+12 |                          83.4015 |       271.122 |         3.2508 |
+        | KO   |                     0.2534 |                   1.21476e+10 |     0.1861 |        9.88662e+09 |                               0.08 |            1.23583e+11 |    8.66388e+10 |                          20.0878 |        68.58  |         3.414  |
+        | MSFT |                     0.4314 |                   1.2153e+11  |     0.1636 |        1.01652e+11 |                               0.08 |            1.27066e+12 |    1.18871e+12 |                         159.238  |       480.571 |         3.0179 |
+        """
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        revenue = self._rows(self._income_statement, "Revenue")
+        operating_income = self._rows(self._income_statement, "Operating Income")
+        taxes = self._rows(self._income_statement, "Income Tax Expense")
+        income_before_tax = self._rows(self._income_statement, "Income Before Tax")
+
+        rows = {}
+        for ticker in self._tickers:
+            reported = (
+                revenue.loc[ticker].notna() & operating_income.loc[ticker].notna()
+            )
+            columns = revenue.columns[reported][-periods:]
+            if columns.empty:
+                continue
+            result = intrinsic_model.get_earnings_power_value(
+                revenue=revenue.loc[ticker, columns],
+                operating_income=operating_income.loc[ticker, columns],
+                income_tax_expense=taxes.loc[ticker, columns],
+                income_before_tax=income_before_tax.loc[ticker, columns],
+                weighted_average_cost_of_capital=wacc[ticker],
+                cash_and_cash_equivalents=self._latest_value(
+                    self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
+                ),
+                total_debt=self._latest_value(
+                    self._balance_sheet_statement, ticker, "Total Debt"
+                ),
+                shares_outstanding=self._latest_value(
+                    self._income_statement, ticker, "Weighted Average Shares Diluted"
+                ),
+            )
+            share_price = self._latest_price(ticker)
+            result = pd.concat(
+                [
+                    result.iloc[:4],
+                    pd.Series({"Weighted Average Cost of Capital": wacc[ticker]}),
+                    result.iloc[4:],
+                    pd.Series(
+                        {
+                            "Share Price": share_price,
+                            "Price to EPV": share_price
+                            / result["Earnings Power Value per Share"],
+                        }
+                    ),
+                ]
+            )
+            rows[ticker] = result
+
+        return apply_rounding(
+            pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_monte_carlo_intrinsic_valuation(
+        self,
+        growth_rate: float | dict[str, float],
+        growth_rate_volatility: float = 0.02,
+        perpetual_growth_rate: float | dict[str, float] = 0.025,
+        perpetual_growth_rate_volatility: float = 0.005,
+        weighted_average_cost_of_capital: float | dict[str, float] | None = None,
+        weighted_average_cost_of_capital_volatility: float = 0.01,
+        periods: int = 5,
+        simulations: int = 10000,
+        cash_flow_type: str = "Free Cash Flow",
+        seed: int | None = 0,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the distribution of the intrinsic value per share when the inputs of the
+        Discounted Cash Flow model are uncertain. A single DCF value hides how sensitive it
+        is to its assumptions; here the growth rate, the perpetual growth rate and the
+        discount rate are drawn from normal distributions around their expected values in
+        every simulation, and the DCF of `get_intrinsic_valuation` is calculated for each
+        draw. The spread of the outcomes, and the probability that the value exceeds the
+        share price, show how robust the conclusion is.
+
+        Draws in which the discount rate does not exceed the perpetual growth rate by at
+        least half a percentage point are redrawn, as the terminal value is undefined there.
+
+        For more information, see the following book:
+
+        - Damodaran, A. (2012). "Investment Valuation: Tools and Techniques for Determining
+          the Value of Any Asset." Wiley, 3rd edition, chapter 33 (probabilistic approaches).
+
+        Also known as: Monte Carlo DCF, probabilistic valuation, DCF simulation.
+
+        Args:
+            growth_rate (float | dict[str, float]): The expected yearly growth over the
+                projection periods, one number or a number per ticker.
+            growth_rate_volatility (float, optional): The standard deviation of the growth
+                rate. Defaults to 0.02.
+            perpetual_growth_rate (float | dict[str, float], optional): The expected growth
+                after the projection periods. Defaults to 0.025.
+            perpetual_growth_rate_volatility (float, optional): Its standard deviation.
+                Defaults to 0.005.
+            weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
+                The expected discount rate. Defaults to None, which uses the latest Weighted
+                Average Cost of Capital of each company.
+            weighted_average_cost_of_capital_volatility (float, optional): Its standard
+                deviation. Defaults to 0.01.
+            periods (int, optional): The number of projection periods. Defaults to 5.
+            simulations (int, optional): The number of simulations. Defaults to 10,000.
+            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow" or
+                "Operating Cash Flow". Defaults to "Free Cash Flow".
+            seed (int | None, optional): The seed of the random numbers, so that results
+                can be reproduced. Defaults to 0; None gives different draws every time.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per ticker the Mean, Standard Deviation and the 5th, 25th, 50th,
+            75th and 95th Percentile of the value per share, the Share Price and the
+            Probability Undervalued (the share of simulations above the share price).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_monte_carlo_intrinsic_valuation(
+            growth_rate=0.08, weighted_average_cost_of_capital=0.09
+        )
+        ```
+
+        Which returns:
+
+        |      |    Mean |   Standard Deviation |   5th Percentile |   25th Percentile |   50th Percentile |   75th Percentile |   95th Percentile |   Share Price |   Probability Undervalued |
+        |:-----|--------:|---------------------:|-----------------:|------------------:|------------------:|------------------:|------------------:|--------------:|--------------------------:|
+        | AAPL | 130.65  |              28.0739 |          94.6441 |           111.402 |           126.183 |           144.853 |           181.963 |       271.122 |                    0.0018 |
+        | MSFT | 186.851 |              40.9136 |         134.378  |           158.799 |           180.342 |           207.549 |           261.633 |       480.571 |                    0.0003 |
+        """
+        if cash_flow_type not in ["Free Cash Flow", "Operating Cash Flow"]:
+            raise ValueError(
+                "The cash flow type must be 'Free Cash Flow' or 'Operating Cash Flow'."
+            )
+
+        growth = self._per_ticker(growth_rate, "growth rate")
+        perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        cash_flows = self._rows(self._cash_flow_statement, cash_flow_type)
+
+        rows = {}
+        for ticker in self._tickers:
+            history = cash_flows.loc[ticker].dropna()
+            if history.empty:
+                continue
+            values = intrinsic_model.get_monte_carlo_intrinsic_value(
+                cash_flow=float(history.iloc[-1]),
+                growth_rate=growth[ticker],  # type: ignore[arg-type]
+                growth_rate_volatility=growth_rate_volatility,
+                perpetual_growth_rate=perpetual[ticker],  # type: ignore[arg-type]
+                perpetual_growth_rate_volatility=perpetual_growth_rate_volatility,
+                weighted_average_cost_of_capital=wacc[ticker],
+                weighted_average_cost_of_capital_volatility=weighted_average_cost_of_capital_volatility,
+                cash_and_cash_equivalents=self._latest_value(
+                    self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
+                ),
+                total_debt=self._latest_value(
+                    self._balance_sheet_statement, ticker, "Total Debt"
+                ),
+                shares_outstanding=self._latest_value(
+                    self._income_statement, ticker, "Weighted Average Shares Diluted"
+                ),
+                periods=periods,
+                simulations=simulations,
+                seed=seed,
+            )
+            share_price = self._latest_price(ticker)
+            percentiles = pd.Series(values).quantile([0.05, 0.25, 0.5, 0.75, 0.95])
+            rows[ticker] = {
+                "Mean": float(values.mean()),
+                "Standard Deviation": float(values.std()),
+                "5th Percentile": percentiles[0.05],
+                "25th Percentile": percentiles[0.25],
+                "50th Percentile": percentiles[0.5],
+                "75th Percentile": percentiles[0.75],
+                "95th Percentile": percentiles[0.95],
+                "Share Price": share_price,
+                "Probability Undervalued": float((values > share_price).mean()),
+            }
+
+        return apply_rounding(
+            pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_merton_distance_to_default(
+        self,
+        time_horizon: float = 1.0,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the distance to default and probability of default with the Merton
+        (1974) structural credit model. Equity is seen as a call option on the company's
+        assets with its debt as strike price: shareholders receive what is left after the
+        debt is repaid. The market value and volatility of the assets, which cannot be
+        observed, are solved from the market value and volatility of the equity:
+
+            - E = V N(d1) - D e^(-rT) N(d2)
+            - σ_E E = N(d1) σ_V V
+            - Distance to Default = (ln(V/D) + (r - σ_V²/2) T) / (σ_V √T)
+            - Probability of Default = N(-Distance to Default)
+
+        where E is the market capitalization, σ_E the volatility of the share price over the
+        year before, D the default point (short-term debt plus half of the long-term debt,
+        the KMV convention), r the risk free rate and T the time horizon. The distance to
+        default is the number of standard deviations the asset value is above the default
+        point; it reacts to the share price immediately, long before a rating changes.
+
+        For more information, see the following papers:
+
+        - Merton, R.C. (1974). "On the Pricing of Corporate Debt: The Risk Structure of
+          Interest Rates." The Journal of Finance, 29(2), 449-470.
+        - Crosbie, P. and Bohn, J. (2003). "Modeling Default Risk." Moody's KMV.
+        - Vassalou, M. and Xing, Y. (2004). "Default Risk in Equity Returns." The Journal of
+          Finance, 59(2), 831-868.
+
+        Also known as: KMV model, structural credit model, expected default frequency.
+
+        Args:
+            time_horizon (float, optional): The horizon in years over which default is
+                measured. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Equity Value, Equity Volatility, Default
+            Point, Asset Value, Asset Volatility, Distance to Default and Probability of
+            Default (a decimal).
+
+        Notes:
+        - The probability is the model's risk-neutral probability; it ranks companies by
+          credit risk well but tends to understate the actual default rate of safe ones.
+        - Financial companies, whose debt is their raw material, are outside the model's
+          intended use.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_merton_distance_to_default().loc["F"]
+        ```
+
+        Which returns:
+
+        |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:-----------------------|------------:|------------:|------------:|------------:|------------:|
+        | Equity Value           | 6.18816e+10 | 3.5564e+10  | 4.15011e+10 | 3.58673e+10 | 5.04935e+10 |
+        | Equity Volatility      | 0.4163      | 0.491       | 0.355       | 0.36        | 0.3319      |
+        | Default Point          | 9.3892e+10  | 9.45665e+10 | 9.945e+10   | 1.07294e+11 | 1.1133e+11  |
+        | Asset Value            | 1.5436e+11  | 1.26487e+11 | 1.37175e+11 | 1.38366e+11 | 1.57286e+11 |
+        | Asset Volatility       | 0.167       | 0.1391      | 0.1074      | 0.0934      | 0.1066      |
+        | Distance to Default    | 2.9835      | 2.3004      | 3.3002      | 3.1665      | 3.5797      |
+        | Probability of Default | 0.0014      | 0.0107      | 0.0005      | 0.0008      | 0.0002      |
+        """
+        prices = self._period_prices()
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        equity_value = prices * shares
+        default_point = self._rows(
+            self._balance_sheet_statement, "Short Term Debt"
+        ).fillna(0) + 0.5 * self._rows(
+            self._balance_sheet_statement, "Long Term Debt"
+        ).fillna(
+            0
+        )
+
+        # The volatility of the year (or quarter) up to every period end, annualized.
+        daily_returns = self._historical_data["daily"]["Return"].reindex(
+            columns=self._tickers
+        )
+        daily_returns.index = daily_returns.index.to_timestamp()
+        volatility = daily_returns.rolling(252, min_periods=60).std() * (252**0.5)
+        period_end = self._balance_sheet_statement.columns.to_timestamp(how="end")
+        equity_volatility = (
+            volatility.reindex(volatility.index.union(period_end))
+            .ffill()
+            .reindex(period_end)
+        )
+        equity_volatility.index = self._balance_sheet_statement.columns
+        equity_volatility = equity_volatility.T
+
+        risk_free = self._risk_free_rate_data[
+            "quarterly" if self._quarterly else "yearly"
+        ]["Adj Close"]
+        risk_free.index = risk_free.index.asfreq(
+            self._balance_sheet_statement.columns.freq
+        )
+        risk_free = risk_free.reindex(self._balance_sheet_statement.columns)
+
+        metrics = [
+            "Equity Value",
+            "Equity Volatility",
+            "Default Point",
+            "Asset Value",
+            "Asset Volatility",
+            "Distance to Default",
+            "Probability of Default",
+        ]
+        results = {
+            metric: pd.DataFrame(
+                index=self._tickers,
+                columns=self._balance_sheet_statement.columns,
+                dtype=float,
+            )
+            for metric in metrics
+        }
+
+        for ticker in self._tickers:
+            for period in self._balance_sheet_statement.columns:
+                model = credit_model.get_merton_model(
+                    equity_value=float(equity_value.loc[ticker, period]),
+                    equity_volatility=float(equity_volatility.loc[ticker, period]),
+                    default_point=float(default_point.loc[ticker, period]),
+                    risk_free_rate=float(risk_free.get(period, float("nan"))),
+                    time_horizon=time_horizon,
+                )
+                results["Equity Value"].loc[ticker, period] = equity_value.loc[
+                    ticker, period
+                ]
+                results["Equity Volatility"].loc[ticker, period] = (
+                    equity_volatility.loc[ticker, period]
+                )
+                for metric in metrics[2:]:
+                    results[metric].loc[ticker, period] = model[metric]
+
+        merton = self._combine(results).dropna(axis=1, how="all")
+        merton = apply_rounding(
+            merton, rounding if rounding is not None else self._rounding
+        )
+
+        return filter_columns(
+            merton.loc[:, self._start_date : self._end_date], show_columns
+        )
+
+    @handle_errors
+    def get_synthetic_credit_rating(
+        self,
+        firm_type: str = "auto",
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate a synthetic credit rating and the cost of debt that comes with it, from the
+        interest coverage ratio (EBIT divided by interest expense), following Aswath
+        Damodaran. Most companies have no traded bonds or rating of their own; the coverage
+        ratio is the measure that explains ratings best, so it is mapped to the rating that
+        companies with a similar ratio have, and to that rating's default spread over the
+        risk free rate:
+
+            - Interest Coverage Ratio = EBIT / Interest Expense
+            - Rating and Default Spread from Damodaran's synthetic rating table
+            - Pre-tax Cost of Debt = Risk Free Rate + Default Spread
+
+        The table, with this year's default spreads, is read from Damodaran's website. Large
+        and small companies use different coverage ranges, as smaller companies need a
+        higher coverage for the same rating.
+
+        For more information, see the following book and data:
+
+        - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 8.
+        - Damodaran, A. "Ratings, Interest Coverage Ratios and Default Spread."
+          https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/ratings.html
+
+        Also known as: implied credit rating, interest coverage rating, cost of debt.
+
+        Args:
+            firm_type (str, optional): The table to use: "large" (market capitalization above
+                five billion), "small" (smaller and riskier firms), "financial" (banks and
+                other financial firms) or "auto", which picks large or small from the market
+                capitalization of every period. Defaults to "auto".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Interest Coverage Ratio, Rating, Default
+            Spread, Risk Free Rate and Pre-tax Cost of Debt.
+
+        Notes:
+        - A company without interest expense gets the best rating; its coverage ratio, which
+          is infinite, shows as NaN.
+        - The market capitalization is compared with five billion in the reporting
+          currency; for companies that do not report in US dollars, pass the firm type.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "AAPL", "T"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_synthetic_credit_rating()
+        ```
+
+        Which returns:
+
+        |                                     | 2021     | 2022    | 2023    | 2024    | 2025    |
+        |:------------------------------------|:---------|:--------|:--------|:--------|:--------|
+        | ('AAPL', 'Interest Coverage Ratio') | 41.1905  | 40.7496 | 29.062  | nan     | nan     |
+        | ('AAPL', 'Rating')                  | Aaa/AAA  | Aaa/AAA | Aaa/AAA | Aaa/AAA | Aaa/AAA |
+        | ('AAPL', 'Default Spread')          | 0.004    | 0.004   | 0.004   | 0.004   | 0.004   |
+        | ('AAPL', 'Risk Free Rate')          | 0.0151   | 0.0388  | 0.0387  | 0.0457  | 0.0416  |
+        | ('AAPL', 'Pre-tax Cost of Debt')    | 0.0191   | 0.0428  | 0.0427  | 0.0497  | 0.0456  |
+        | ('F', 'Interest Coverage Ratio')    | 2.7915   | 5.0905  | 4.1306  | 4.5695  | 2.0191  |
+        | ('F', 'Rating')                     | Baa2/BBB | A2/A    | A3/A-   | A2/A    | Ba2/BB  |
+        | ('F', 'Default Spread')             | 0.0111   | 0.0078  | 0.0089  | 0.0078  | 0.0184  |
+        | ('F', 'Risk Free Rate')             | 0.0151   | 0.0388  | 0.0387  | 0.0457  | 0.0416  |
+        | ('F', 'Pre-tax Cost of Debt')       | 0.0262   | 0.0466  | 0.0476  | 0.0535  | 0.06    |
+        | ('T', 'Interest Coverage Ratio')    | 3.8675   | -0.7472 | 3.7011  | 3.5969  | 3.6743  |
+        | ('T', 'Rating')                     | A3/A-    | D2/D    | A3/A-   | A3/A-   | A3/A-   |
+        | ('T', 'Default Spread')             | 0.0089   | 0.19    | 0.0089  | 0.0089  | 0.0089  |
+        | ('T', 'Risk Free Rate')             | 0.0151   | 0.0388  | 0.0387  | 0.0457  | 0.0416  |
+        | ('T', 'Pre-tax Cost of Debt')       | 0.024    | 0.2288  | 0.0476  | 0.0546  | 0.0505  |
+        """
+        firm_type = firm_type.lower()
+        if firm_type not in ("auto", "large", "small", "financial"):
+            raise ValueError(
+                "The firm type must be 'auto', 'large', 'small' or 'financial'."
+            )
+
+        table = damodaran_model.get_synthetic_rating_table()
+        if table.empty:
+            raise ValueError(
+                "Damodaran's synthetic rating table could not be retrieved."
+            )
+
+        ebit = self._rows(self._income_statement, "Operating Income")
+        interest = self._rows(self._income_statement, "Interest Expense").abs()
+        coverage = (ebit / interest.where(interest > 0)).where(ebit.notna())
+        coverage = coverage.where(interest > 0, float("inf")).where(ebit.notna())
+
+        market_cap = self._period_prices() * self._rows(
+            self._income_statement, "Weighted Average Shares Diluted"
+        )
+
+        risk_free = self._risk_free_rate_data[
+            "quarterly" if self._quarterly else "yearly"
+        ]["Adj Close"]
+        risk_free.index = risk_free.index.asfreq(
+            self._balance_sheet_statement.columns.freq
+        )
+        risk_free = risk_free.reindex(coverage.columns)
+
+        rows = {}
+        for ticker in self._tickers:
+            for period in coverage.columns:
+                ratio = coverage.loc[ticker, period]
+                if pd.isna(ratio):
+                    continue
+                kind = firm_type
+                if kind == "auto":
+                    cap = market_cap.loc[ticker, period]
+                    kind = (
+                        "large"
+                        if pd.notna(cap) and cap > credit_model.LARGE_FIRM_MARKET_CAP
+                        else "small"
+                    )
+                rating, spread = credit_model.get_synthetic_rating(
+                    float(ratio), table[table["Firm Type"] == kind.capitalize()]
+                )
+                rate = float(risk_free.get(period, float("nan")))
+                rows[(ticker, period)] = {
+                    "Interest Coverage Ratio": (
+                        float(ratio) if ratio != float("inf") else float("nan")
+                    ),
+                    "Rating": rating,
+                    "Default Spread": spread,
+                    "Risk Free Rate": rate,
+                    "Pre-tax Cost of Debt": rate + spread,
+                }
+
+        if not rows:
+            raise ValueError("No interest coverage ratio could be calculated.")
+
+        long = pd.DataFrame(rows).T
+        numeric = [
+            "Interest Coverage Ratio",
+            "Default Spread",
+            "Risk Free Rate",
+            "Pre-tax Cost of Debt",
+        ]
+        long[numeric] = apply_rounding(
+            long[numeric].astype(float),
+            rounding if rounding is not None else self._rounding,
+        )
+        result = long.stack().unstack(level=1)
+        result.index.names = [None, None]
+        order = {name: position for position, name in enumerate(long.columns)}
+        result = result.sort_index(
+            level=1, key=lambda names: names.map(order), sort_remaining=False
+        ).reindex(self._tickers, level=0)
+
+        return filter_columns(
+            result.loc[:, self._start_date : self._end_date], show_columns
+        )
+
+    @handle_errors
+    def get_peer_comparison(
+        self,
+        peers: dict[str, list[str]] | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Compare every company with its peers on valuation, profitability, growth and
+        leverage. For each metric it shows the company's latest value, the median and mean
+        of its peers and the company's percentile among them (the share of peers with a
+        lower value), which tells at a glance whether a company is expensive or cheap,
+        and better or worse run, than comparable companies.
+
+        The metrics are the Price-to-Earnings, EV-to-EBITDA, Price-to-Book and
+        Price-to-Sales ratios, the Gross, Operating and Net Profit Margin, the Return on
+        Equity and on Invested Capital, Revenue Growth, the Debt-to-Equity ratio and the
+        Dividend Yield, all of the latest fiscal year.
+
+        Also known as: comparable companies analysis, comps, relative valuation, peer
+        group analysis.
+
+        Args:
+            peers (dict[str, list[str]] | None, optional): The peers per ticker, e.g.
+                {"AAPL": ["MSFT", "GOOGL"]}. Defaults to None, which uses the peers
+                Financial Modeling Prep lists for each company (same sector and exchange,
+                similar size).
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per ticker and metric the Company value, the Peer Median and Peer
+            Mean, the Percentile (0 to 1) and the number of Peers with a value.
+
+        Notes:
+        - A high percentile is not always good: for valuation ratios it means expensive,
+          for margins and returns it means strong.
+        - Retrieving the peers' financial statements takes a few seconds per peer.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_peer_comparison()
+        ```
+
+        Which returns:
+
+        |                                        |   Company |   Peer Median |   Peer Mean |   Percentile |   Peers |
+        |:---------------------------------------|----------:|--------------:|------------:|-------------:|--------:|
+        | ('MSFT', 'Price-to-Earnings')          |   29.2276 |       30.5776 |     33.6282 |          0.5 |      10 |
+        | ('MSFT', 'EV-to-EBITDA')               |   20.7309 |       19.8087 |     22.6758 |          0.5 |      10 |
+        | ('MSFT', 'Price-to-Book')              |    8.8365 |        7.2576 |      8.103  |          0.6 |      10 |
+        | ('MSFT', 'Price-to-Sales')             |   11.7803 |        6.1724 |      6.0304 |          0.9 |      10 |
+        | ('MSFT', 'Gross Margin')               |    0.6794 |        0.6242 |      0.6164 |          0.6 |      10 |
+        | ('MSFT', 'Operating Margin')           |    0.4678 |        0.1998 |      0.2226 |          1   |      10 |
+        | ('MSFT', 'Net Profit Margin')          |    0.4031 |        0.1682 |      0.187  |          1   |      10 |
+        | ('MSFT', 'Return on Equity')           |    0.3404 |        0.2392 |      0.287  |          0.6 |      10 |
+        | ('MSFT', 'Return on Invested Capital') |    0.209  |        0.1001 |      0.1434 |          0.8 |      10 |
+        | ('MSFT', 'Revenue Growth')             |    0.1779 |        0.1146 |      0.128  |          0.8 |      10 |
+        | ('MSFT', 'Debt-to-Equity')             |    0.2912 |        0.3313 |      0.7928 |          0.5 |      10 |
+        | ('MSFT', 'Dividend Yield')             |    0.0052 |        0.0088 |      0.0096 |          0.4 |      10 |
+        """
+        if self._peer_function is None:
+            raise ValueError("Peer data is not available for this Toolkit.")
+
+        result = self._peer_function(peers)
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    def _score_inputs(self, trailing: int | None) -> dict[str, pd.DataFrame]:
+        """The statement rows the quality and manipulation scores use, per ticker."""
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            frame = self._rows(statement, row)
+            return frame.T.rolling(trailing).sum().T if trailing else frame
+
+        def stock(row: str) -> pd.DataFrame:
+            frame = self._rows(self._balance_sheet_statement, row)
+            return frame.T.rolling(trailing).mean().T if trailing else frame
+
+        balance_rows = [
+            "Total Assets",
+            "Total Current Assets",
+            "Total Current Liabilities",
+            "Total Liabilities",
+            "Cash and Short Term Investments",
+            "Cash and Cash Equivalents",
+            "Short Term Investments",
+            "Long Term Investments",
+            "Short Term Debt",
+            "Long Term Debt",
+            "Preferred Stock",
+            "Accounts Receivable",
+            "Inventory",
+            "Property, Plant and Equipment",
+            "Other Current Assets",
+            "Tax Payables",
+            "Total Debt",
+            "Minority Interest",
+        ]
+        income_rows = [
+            "Revenue",
+            "Cost of Goods Sold",
+            "Operating Income",
+            "Net Income",
+            "Research and Development Expenses",
+            "Selling and Marketing Expenses",
+            "Depreciation and Amortization",
+        ]
+        cash_rows = [
+            "Operating Cash Flow",
+            "Capital Expenditure",
+            "Cash Flow from Investing",
+            "Long Term Debt Issued",
+            "Common Stock Issued",
+        ]
+        inputs = {row: stock(row) for row in balance_rows}
+        inputs.update({row: flow(self._income_statement, row) for row in income_rows})
+        inputs.update({row: flow(self._cash_flow_statement, row) for row in cash_rows})
+        return inputs
+
+    def _finish_score(
+        self,
+        results: dict[str, pd.DataFrame],
+        rounding: int | None,
+        show_columns: list[str] | None,
+        first_columns: int = 1,
+    ) -> pd.DataFrame:
+        """Combine score components, drop the periods without a comparison and round."""
+        combined = self._combine(results)
+        combined = combined[combined.columns[first_columns:]].dropna(axis=1, how="all")
+        combined = apply_rounding(
+            combined, rounding if rounding is not None else self._rounding
+        )
+        return filter_columns(
+            combined.loc[:, self._start_date : self._end_date], show_columns
+        )
+
+    @handle_errors
+    def get_magic_formula(
+        self,
+        diluted: bool = True,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Joel Greenblatt's Magic Formula ranking. Companies are ranked on two
+        measures and the ranks are added; the lowest total combines a good business with a
+        low price:
+
+            - Earnings Yield = EBIT / Enterprise Value (how cheap the company is)
+            - Return on Capital = EBIT / (Net Working Capital + Net Fixed Assets) (how good
+              the business is)
+
+        Net working capital excludes cash and short-term debt, so the return on capital
+        measures the operating business. The ranking is across the Toolkit's tickers, so
+        pass the universe to choose from.
+
+        For more information, see the following book:
+
+        - Greenblatt, J. (2006). "The Little Book That Beats the Market." Wiley.
+
+        Also known as: Greenblatt formula, earnings yield and return on capital ranking.
+
+        Args:
+            diluted (bool, optional): Whether to use the diluted share count for the market
+                capitalization. Defaults to True.
+            trailing (int | None, optional): Sum the income over this many periods (e.g. 4
+                quarters). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Earnings Yield, Return on Capital, their
+            ranks and the Magic Formula Rank (1 is the most attractive).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "META", "INTC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_magic_formula().xs("Magic Formula Rank", level=1)
+        ```
+
+        Which returns:
+
+        |       |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:------|-------:|-------:|-------:|-------:|-------:|
+        | AAPL  |      2 |      1 |      1 |      2 |      2 |
+        | GOOGL |      4 |      2 |      2 |      1 |      4 |
+        | INTC  |      3 |      5 |      5 |      5 |      5 |
+        | META  |      1 |      2 |      2 |      4 |      2 |
+        | MSFT  |      5 |      4 |      4 |      2 |      1 |
+        """
+        inputs = self._score_inputs(trailing)
+        shares = self._rows(
+            self._income_statement,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+        )
+        market_cap = self._period_prices() * shares
+        enterprise_value = (
+            market_cap
+            + inputs["Total Debt"].fillna(0)
+            + inputs["Minority Interest"].fillna(0)
+            + inputs["Preferred Stock"].fillna(0)
+            - inputs["Cash and Cash Equivalents"].fillna(0)
+        )
+        net_working_capital = (
+            inputs["Total Current Assets"] - inputs["Cash and Cash Equivalents"]
+        ) - (inputs["Total Current Liabilities"] - inputs["Short Term Debt"].fillna(0))
+
+        results = quality_model.get_magic_formula(
+            operating_income=inputs["Operating Income"],
+            enterprise_value=enterprise_value,
+            net_working_capital=net_working_capital,
+            net_fixed_assets=inputs["Property, Plant and Equipment"],
+        )
+        return self._finish_score(results, rounding, show_columns, first_columns=0)
+
+    @handle_errors
+    def get_mohanram_g_score(
+        self,
+        variance_periods: int = 4,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Partha Mohanram's G-Score, a score from 0 to 8 that separates winners
+        from losers among growth (low book-to-market) companies, where value measures such
+        as the Piotroski F-Score say little. Each signal is 1 when the company does better
+        than the median of its peers, the Toolkit's tickers:
+
+        - Profitability: return on assets (G1) and cash flow return on assets (G2) above
+          the median, and cash flow above net income (G3).
+        - Naive extrapolation: a lower than median variance of the return on assets (G4)
+          and of revenue growth (G5).
+        - Accounting conservatism: research and development (G6), capital expenditure (G7)
+          and advertising (G8, selling and marketing expenses) relative to assets above the
+          median, as these investments depress current earnings.
+
+        For more information, see the following paper:
+
+        - Mohanram, P.S. (2005). "Separating Winners from Losers among Low Book-to-Market
+          Stocks using Financial Statement Analysis." Review of Accounting Studies, 10,
+          133-170.
+
+        Also known as: G-Score, growth stock score.
+
+        Args:
+            variance_periods (int, optional): The number of periods the variances of G4 and
+                G5 are calculated over. Defaults to 4.
+            trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
+                quarters). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the eight signals and the G-Score.
+
+        Notes:
+        - The paper compares with industry medians; here the medians are those of the
+          tickers given, so pass a peer group of the same industry.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "META", "NVDA", "ADBE"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_mohanram_g_score().xs("G-Score", level=1)
+        ```
+
+        Which returns:
+
+        |       |   2024 |   2025 |
+        |:------|-------:|-------:|
+        | AAPL  |      4 |      4 |
+        | ADBE  |      5 |      6 |
+        | GOOGL |      4 |      6 |
+        | META  |      5 |      4 |
+        | MSFT  |      5 |      3 |
+        | NVDA  |      3 |      2 |
+        """
+        inputs = self._score_inputs(trailing)
+        results = quality_model.get_mohanram_g_score(
+            net_income=inputs["Net Income"],
+            operating_cash_flow=inputs["Operating Cash Flow"],
+            total_assets=inputs["Total Assets"],
+            revenue=inputs["Revenue"],
+            research_and_development=inputs["Research and Development Expenses"],
+            capital_expenditure=inputs["Capital Expenditure"],
+            selling_and_marketing=inputs["Selling and Marketing Expenses"],
+            variance_periods=variance_periods,
+        )
+        return self._finish_score(
+            results, rounding, show_columns, first_columns=variance_periods
+        )
+
+    @handle_errors
+    def get_dechow_f_score(
+        self,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Dechow F-Score, the probability that a company's financial statements
+        are misstated relative to the average company. It was estimated on companies the
+        SEC charged with misstating their earnings, and combines:
+
+        - Accrual quality: RSST accruals (the change in non-cash working capital,
+          non-current operating assets and financial assets), the changes in receivables and
+          inventory, and the share of soft assets (assets other than cash and property,
+          plant and equipment).
+        - Performance: the change in cash sales and in return on assets.
+        - Incentives: whether the company issued debt or equity.
+
+            Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables + 1.191
+            ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales - 0.932 ΔROA + 1.029 Issuance
+            Probability = e^PV / (1 + e^PV), F-Score = Probability / 0.0037
+
+        An F-Score of 1 is average risk; above 1 the risk is elevated, above 1.85
+        substantial and above 2.45 high.
+
+        For more information, see the following paper:
+
+        - Dechow, P.M., Ge, W., Larson, C.R. and Sloan, R.G. (2011). "Predicting Material
+          Accounting Misstatements." Contemporary Accounting Research, 28(1), 17-82.
+
+        Also known as: F-Score (Dechow), misstatement score, earnings manipulation
+        probability.
+
+        Args:
+            trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
+                quarters). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the seven inputs, the Predicted Value, the
+            Probability of Misstatement and the F-Score.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "SMCI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_dechow_f_score().xs("F-Score", level=1)
+        ```
+
+        Which returns:
+
+        |      |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|
+        | AAPL | 0.4851 | 0.4674 | 0.5005 | 0.4672 |
+        | MSFT | 1.3248 | 1.1194 | 1.2686 | 1.059  |
+        | SMCI | 2.8035 | 0.6471 | 6.128  | 0.8275 |
+        """
+        inputs = self._score_inputs(trailing)
+        results = quality_model.get_dechow_f_score(
+            total_assets=inputs["Total Assets"],
+            current_assets=inputs["Total Current Assets"],
+            current_liabilities=inputs["Total Current Liabilities"],
+            total_liabilities=inputs["Total Liabilities"],
+            cash_and_short_term_investments=inputs["Cash and Short Term Investments"],
+            cash_and_cash_equivalents=inputs["Cash and Cash Equivalents"],
+            short_term_investments=inputs["Short Term Investments"],
+            long_term_investments=inputs["Long Term Investments"],
+            short_term_debt=inputs["Short Term Debt"],
+            long_term_debt=inputs["Long Term Debt"],
+            preferred_stock=inputs["Preferred Stock"],
+            accounts_receivable=inputs["Accounts Receivable"],
+            inventory=inputs["Inventory"],
+            property_plant_and_equipment=inputs["Property, Plant and Equipment"],
+            revenue=inputs["Revenue"],
+            net_income=inputs["Net Income"],
+            debt_issued=inputs["Long Term Debt Issued"],
+            stock_issued=inputs["Common Stock Issued"],
+        )
+        # The changes and averages need two periods before the first full score.
+        return self._finish_score(results, rounding, show_columns, first_columns=2)
+
+    @handle_errors
+    def get_montier_c_score(
+        self,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate James Montier's C-Score, a count from 0 to 6 of warning signs that a
+        company is "cooking the books". Each sign is 1 when present:
+
+        - A growing gap between net income and cash flow from operations.
+        - Rising days sales outstanding: receivables growing faster than sales.
+        - Rising days sales of inventory: inventory growing faster than cost of sales.
+        - Rising other current assets relative to revenue, a place to park costs.
+        - Falling depreciation relative to property, plant and equipment, which flatters
+          earnings.
+        - Total asset growth above 10%, typical of serial acquirers.
+
+        Montier found that companies scoring 5 or 6 underperformed the market markedly.
+
+        For more information, see the following paper:
+
+        - Montier, J. (2008). "Cooking the Books, or, More Sailing Under the Black Flag."
+          Société Générale, Mind Matters.
+
+        Also known as: C-Score, cooking the books score.
+
+        Args:
+            trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
+                quarters). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the six signals and the C-Score.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "SMCI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_montier_c_score().xs("C-Score", level=1)
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL |      4 |      2 |      3 |      2 |      3 |
+        | MSFT |      5 |      2 |      5 |      3 |      2 |
+        | SMCI |      3 |      5 |      2 |      5 |      2 |
+        """
+        inputs = self._score_inputs(trailing)
+        results = quality_model.get_montier_c_score(
+            net_income=inputs["Net Income"],
+            operating_cash_flow=inputs["Operating Cash Flow"],
+            accounts_receivable=inputs["Accounts Receivable"],
+            revenue=inputs["Revenue"],
+            inventory=inputs["Inventory"],
+            cost_of_goods_sold=inputs["Cost of Goods Sold"],
+            other_current_assets=inputs["Other Current Assets"],
+            depreciation_and_amortization=inputs["Depreciation and Amortization"],
+            property_plant_and_equipment=inputs["Property, Plant and Equipment"],
+            total_assets=inputs["Total Assets"],
+        )
+        return self._finish_score(results, rounding, show_columns)
+
+    @handle_errors
+    def get_accruals_ratio(
+        self,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the accruals ratios: the part of earnings that is not backed by cash,
+        relative to average total assets. Richard Sloan showed that earnings driven by
+        accruals are less persistent than cash earnings and that companies with high
+        accruals earn lower future returns (the accrual anomaly).
+
+            - Balance Sheet Accruals Ratio = [(ΔCurrent Assets - ΔCash) - (ΔCurrent
+              Liabilities - ΔShort-term Debt - ΔTaxes Payable) - Depreciation] / Average
+              Total Assets
+            - Cash Flow Accruals Ratio = (Net Income - Cash Flow from Operations - Cash Flow
+              from Investing) / Average Total Assets
+
+        The cash flow version avoids the distortion of acquisitions and divestments, which
+        change the balance sheet without being accruals. Values near zero or negative are a
+        sign of high earnings quality.
+
+        For more information, see the following papers:
+
+        - Sloan, R.G. (1996). "Do Stock Prices Fully Reflect Information in Accruals and
+          Cash Flows about Future Earnings?" The Accounting Review, 71(3), 289-315.
+        - Hribar, P. and Collins, D.W. (2002). "Errors in Estimating Accruals: Implications
+          for Empirical Research." Journal of Accounting Research, 40(1), 105-134.
+
+        Also known as: Sloan ratio, accrual ratio, earnings quality ratio.
+
+        Args:
+            trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
+                quarters). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Balance Sheet Accruals Ratio and the Cash
+            Flow Accruals Ratio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_accruals_ratio()
+        ```
+
+        Which returns:
+
+        |                                          |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----------------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | ('AAPL', 'Balance Sheet Accruals Ratio') | -0.1047 | -0.0446 | -0.0115 | -0.0285 | -0.108  |
+        | ('AAPL', 'Cash Flow Accruals Ratio')     |  0.0154 |  0      | -0.0489 | -0.0765 | -0.0405 |
+        | ('MSFT', 'Balance Sheet Accruals Ratio') | -0.0687 | -0.1109 | -0.0683 | -0.1017 | -0.0735 |
+        | ('MSFT', 'Cash Flow Accruals Ratio')     |  0.0381 |  0.0401 |  0.0192 |  0.144  |  0.0677 |
+        """
+        inputs = self._score_inputs(trailing)
+        results = quality_model.get_accruals_ratios(
+            current_assets=inputs["Total Current Assets"],
+            cash_and_cash_equivalents=inputs["Cash and Cash Equivalents"],
+            current_liabilities=inputs["Total Current Liabilities"],
+            short_term_debt=inputs["Short Term Debt"],
+            tax_payables=inputs["Tax Payables"],
+            depreciation_and_amortization=inputs["Depreciation and Amortization"],
+            net_income=inputs["Net Income"],
+            operating_cash_flow=inputs["Operating Cash Flow"],
+            investing_cash_flow=inputs["Cash Flow from Investing"],
+            total_assets=inputs["Total Assets"],
+        )
+        return self._finish_score(results, rounding, show_columns)

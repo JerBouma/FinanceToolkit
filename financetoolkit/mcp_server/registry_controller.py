@@ -932,6 +932,12 @@ class ToolRegistry:
             m: inspector.get_method_param_names(owning_class(m), m)
             for m in group_methods
         }
+        # The order of every indicator's own parameters, so the inputs it requires are named
+        # as its signature lists them rather than in the order the group first saw them.
+        method_param_order = {
+            m: list(inspect.signature(getattr(owning_class(m), m)).parameters)
+            for m in group_methods
+        }
         param_meta = [(p.name, p.annotation, p.default) for p in extra_params]
         all_indicators = group_methods
 
@@ -1246,12 +1252,20 @@ class ToolRegistry:
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
-            missing_inputs = [
-                pname
-                for pname, per_method in parameter_defaults.items()
-                if per_method.get(method_name, None) is inspect.Parameter.empty
-                and method_kwargs.get(pname) in (None, "")
-            ]
+            signature_order = method_param_order.get(method_name, [])
+            missing_inputs = sorted(
+                (
+                    pname
+                    for pname, per_method in parameter_defaults.items()
+                    if per_method.get(method_name, None) is inspect.Parameter.empty
+                    and method_kwargs.get(pname) in (None, "")
+                ),
+                key=lambda pname: (
+                    signature_order.index(pname)
+                    if pname in signature_order
+                    else len(signature_order)
+                ),
+            )
             if missing_inputs:
                 listed = ", ".join(f"`{pname}`" for pname in missing_inputs)
                 return (

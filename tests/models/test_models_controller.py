@@ -165,3 +165,143 @@ def test_get_grover_score(recorder, models_module):
 def test_get_fulmer_h_score(recorder, models_module):
     recorder.capture(models_module.get_fulmer_h_score())
     recorder.capture(models_module.get_fulmer_h_score(growth=True))
+
+
+def test_get_reverse_discounted_cash_flow(recorder, models_module):
+    recorder.capture(
+        models_module.get_reverse_discounted_cash_flow(
+            weighted_average_cost_of_capital=0.09
+        )
+    )
+    recorder.capture(
+        models_module.get_reverse_discounted_cash_flow(
+            perpetual_growth_rate={"AAPL": 0.02, "MSFT": 0.03},
+            weighted_average_cost_of_capital=0.1,
+            cash_flow_type="Operating Cash Flow",
+        )
+    )
+
+
+def test_get_earnings_power_value(recorder, models_module):
+    recorder.capture(
+        models_module.get_earnings_power_value(weighted_average_cost_of_capital=0.08)
+    )
+    recorder.capture(
+        models_module.get_earnings_power_value(
+            weighted_average_cost_of_capital=0.08, periods=2
+        )
+    )
+
+
+def test_get_monte_carlo_intrinsic_valuation(recorder, models_module):
+    recorder.capture(
+        models_module.get_monte_carlo_intrinsic_valuation(
+            growth_rate=0.08, weighted_average_cost_of_capital=0.09, simulations=2000
+        )
+    )
+
+
+def test_get_merton_distance_to_default(recorder, models_module):
+    recorder.capture(models_module.get_merton_distance_to_default())
+    recorder.capture(models_module.get_merton_distance_to_default(time_horizon=2))
+
+
+def test_get_synthetic_credit_rating(recorder, models_module, monkeypatch):
+    import pandas as pd  # noqa: PLC0415
+
+    from financetoolkit.models import damodaran_model  # noqa: PLC0415
+
+    bounds = [
+        -100000,
+        0.2,
+        0.65,
+        0.8,
+        1.25,
+        1.5,
+        1.75,
+        2,
+        2.25,
+        2.5,
+        3,
+        4.25,
+        5.5,
+        6.5,
+        8.5,
+    ]
+    ratings = [
+        "D",
+        "C",
+        "CC",
+        "CCC",
+        "B-",
+        "B",
+        "B+",
+        "BB",
+        "BB+",
+        "BBB",
+        "A-",
+        "A",
+        "A+",
+        "AA",
+        "AAA",
+    ]
+    spreads = [
+        0.19,
+        0.16,
+        0.13,
+        0.09,
+        0.05,
+        0.03,
+        0.028,
+        0.018,
+        0.014,
+        0.011,
+        0.009,
+        0.008,
+        0.007,
+        0.0055,
+        0.004,
+    ]
+    table = pd.concat(
+        [
+            pd.DataFrame(
+                {
+                    "Firm Type": firm_type,
+                    "Lower": [bound * scale for bound in bounds],
+                    "Upper": [bound * scale for bound in bounds[1:]] + [100000],
+                    "Rating": ratings,
+                    "Default Spread": spreads,
+                }
+            )
+            for firm_type, scale in (("Large", 1), ("Small", 1.5), ("Financial", 0.3))
+        ]
+    )
+    monkeypatch.setattr(damodaran_model, "get_synthetic_rating_table", lambda: table)
+
+    recorder.capture(models_module.get_synthetic_credit_rating())
+    recorder.capture(models_module.get_synthetic_credit_rating(firm_type="small"))
+    assert models_module.get_synthetic_credit_rating(firm_type="tiny").empty
+
+
+def test_get_peer_comparison_without_peer_data(models_module):
+    assert models_module.get_peer_comparison().empty
+
+
+def test_get_magic_formula(recorder, models_module):
+    recorder.capture(models_module.get_magic_formula())
+
+
+def test_get_mohanram_g_score(recorder, models_module):
+    recorder.capture(models_module.get_mohanram_g_score(variance_periods=2))
+
+
+def test_get_dechow_f_score(recorder, models_module):
+    recorder.capture(models_module.get_dechow_f_score())
+
+
+def test_get_montier_c_score(recorder, models_module):
+    recorder.capture(models_module.get_montier_c_score())
+
+
+def test_get_accruals_ratio(recorder, models_module):
+    recorder.capture(models_module.get_accruals_ratio())

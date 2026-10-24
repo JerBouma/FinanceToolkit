@@ -3067,3 +3067,28 @@ def get_earnings_call_transcripts(
     return _collect_per_ticker_frames(
         worker, ticker_list, "earnings call transcripts", user_subscription
     )
+
+
+def get_stock_peers(
+    ticker: str, api_key: str, user_subscription: str = "Free"
+) -> list[str]:
+    """
+    Retrieves the peers Financial Modeling Prep lists for a company: companies in the same
+    sector, listed on the same exchange and of a similar market capitalization.
+
+    Args:
+        ticker (str): The company.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        list[str]: The peers' tickers, empty when none are listed.
+    """
+    _require_fmp_api_key(api_key)
+    url = f"https://financialmodelingprep.com/stable/stock-peers?symbol={ticker}&apikey={api_key}"
+    records = _get_records(url=url, user_subscription=user_subscription)
+
+    if "symbol" not in records.columns:
+        return []
+
+    return [str(symbol) for symbol in records["symbol"] if str(symbol) != ticker]

@@ -1,0 +1,19 @@
+# The textbook strategic allocation: 60% of the US stock market and 40% of the US bond market.
+name: 60/40 Balanced
+aliases: ["60/40", "60-40", "Balanced", "Sixty Forty"]
+description: "The textbook mix: 60% US stocks and 40% US investment-grade bonds."
+source:
+  text: "Vanguard (2026, p. 1), Balanced Index Fund summary prospectus of 28 Apr 2026, Investment Objective: 60% tracks the overall US stock market and 40% a broad, market-weighted bond index."
+  link: "https://personal1.vanguard.com/pub/Pdf/sp502.pdf"
+rebalancing: quarterly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.6
+    asset_class: Equity
+    currency: USD
+  - ticker: BND
+    name: Vanguard Total Bond Market ETF
+    weight: 0.4
+    asset_class: Fixed Income
+    currency: USD

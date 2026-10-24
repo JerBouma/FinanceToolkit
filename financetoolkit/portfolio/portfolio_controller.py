@@ -6,7 +6,13 @@ from importlib import resources
 
 import pandas as pd
 
-from financetoolkit.portfolio import helpers, overview_model, portfolio_model
+from financetoolkit.portfolio import (
+    definition_model,
+    helpers,
+    overview_model,
+    portfolio_model,
+)
+from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, validation_model
@@ -46,9 +52,17 @@ class Portfolio:
         configuration_file: str | None = None,
         rounding: int = 4,
         use_cached_data: bool | str | None = None,
+        weights: dict[str, float] | pd.Series | str | None = None,
+        holdings: dict[str, float] | None = None,
+        transactions: pd.DataFrame | str | None = None,
+        definition: PortfolioDefinition | None = None,
+        start_date: str | None = None,
+        initial_value: float = 10000.0,
+        rebalancing: str | None = None,
     ):
         """
-        Initialize the Portfolio class with the provided configuration file and portfolio dataset.
+        Initialize the Portfolio class from weights, holdings, a classic portfolio
+        (`Portfolio.from_preset`) or your own transactions.
 
         This constructor sets up a portfolio management instance, configuring it with a dataset (either as a
         pandas DataFrame or a file path to an Excel/CSV file), a benchmark ticker for performance comparison,
@@ -56,10 +70,21 @@ class Portfolio:
         key columns for cash flow analysis, such as date columns, asset tickers, price, volume, and transaction costs.
         It also allows for the use of quarterly data and fetching of historical financial data via an API.
 
+        A portfolio can be given in four ways:
+
+        - weights, e.g. {"VTI": 0.6, "BND": 0.4} or "VTI:0.6, BND:0.4": a model portfolio that
+          invests `initial_value` on `start_date` and is rebalanced to these weights;
+        - holdings, e.g. {"AAPL": 10, "MSFT": 5}: the number of shares, bought on `start_date`;
+        - transactions: a DataFrame, CSV or Excel file with one row per trade and the columns
+          Date, Ticker (or Symbol, Identifier, ISIN), Volume (or Quantity, Shares; negative
+          for a sale) and optionally Price, Costs (negative) and Currency. A missing Price is
+          filled with the closing price of the day;
+        - a definition (`PortfolioDefinition`), as the classic portfolios of
+          `Portfolio.from_preset` are.
+
         Args:
-            portfolio_dataset (pd.DataFrame | str | None): A pandas DataFrame containing the portfolio dataset,
-                or a file path to an Excel/CSV file containing the portfolio data. If None, the dataset must
-                be loaded later using the `read_portfolio_dataset` method.
+            portfolio_dataset (pd.DataFrame | str | None): The transactions, as a DataFrame or the path to an
+                Excel or CSV file (or a folder of them). Equivalent to `transactions`. Defaults to None.
             benchmark_ticker (str | None): The ticker symbol for the benchmark asset used for performance comparison.
                 If None, the benchmark ticker specified in the configuration file will be used.
             api_key (str): The API key for accessing financial data and historical metrics. If not provided, only
@@ -75,6 +100,20 @@ class Portfolio:
                 in the Toolkit. None or True uses the shared cache, False retrieves everything every time and a
                 string is the path to a dedicated cache folder or database file. Defaults to None, which caches
                 unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is set to 0.
+            weights (dict[str, float] | pd.Series | str | None): The target weight per ticker, e.g.
+                {"VTI": 0.6, "BND": 0.4}, "VTI:0.6, BND:0.4" or the table an optimizer of
+                `toolkit.portfolio` returns. Defaults to None.
+            holdings (dict[str, float] | None): The number of shares per ticker, bought on `start_date`.
+                Defaults to None.
+            transactions (pd.DataFrame | str | None): The transactions, as a DataFrame or the path to a CSV or
+                Excel file. Defaults to None.
+            definition (PortfolioDefinition | None): A portfolio definition with weights, rebalancing and
+                optionally a schedule. Defaults to None.
+            start_date (str | None): When weights or holdings are invested. Defaults to None, ten years ago
+                for weights and five years ago for holdings, or the first day all tickers have a price.
+            initial_value (float): The amount invested in a weights portfolio. Defaults to 10,000.
+            rebalancing (str | None): How often a weights portfolio returns to its weights: "none",
+                "monthly", "quarterly" or "yearly". Defaults to None, the definition's frequency or quarterly.
 
         Raises:
             ValueError: If the provided configuration file is not in YAML format.
@@ -85,19 +124,23 @@ class Portfolio:
         ```python
         from financetoolkit import Portfolio
 
-        # Download porfolio files
-        portfolio = Portfolio()
-
-        # Load the portfolio dataset
-        portfolio = Portfolio(portfolio_dataset="portfolio_template.xlsx")
-
-        # Load an example portfolio instead
-        portfolio = Portfolio(example=True)
-
-        # Use an API key to access all features
+        # A model portfolio from weights, rebalanced every quarter
         portfolio = Portfolio(
-            portfolio_dataset="portfolio_template.xlsx",
-            api_key="FINANCIAL_MODELING_PREP_KEY")
+            weights={"VTI": 0.6, "BND": 0.4},
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+        )
+
+        # A classic portfolio
+        portfolio = Portfolio.from_preset("All Weather", api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        # The shares you hold
+        portfolio = Portfolio(holdings={"AAPL": 10, "MSFT": 5}, start_date="2022-01-03")
+
+        # Your own trades, from a CSV or Excel file or a DataFrame
+        portfolio = Portfolio(transactions="my_trades.csv")
+
+        # The example portfolio
+        portfolio = Portfolio(example=True)
         ```
         """
         example_xlsx_path = str(
@@ -111,8 +154,15 @@ class Portfolio:
             )
         )
 
+        if transactions is not None:
+            portfolio_dataset = transactions
+        self._definition: PortfolioDefinition | None = None
+        built_portfolio = (
+            weights is not None or holdings is not None or definition is not None
+        )
+
         # An explicit None check is required because the truth value of a DataFrame is ambiguous, which made passing a DataFrame raise a ValueError here.
-        if portfolio_dataset is None and not example:
+        if portfolio_dataset is None and not example and not built_portfolio:
             example = True
             logger.info(
                 "No portfolio dataset provided thus loading the example portfolio for demonstration purposes.\n"
@@ -128,7 +178,7 @@ class Portfolio:
 
         portfolio_dataset = (
             example_xlsx_path
-            if example or portfolio_dataset is None
+            if example or (portfolio_dataset is None and not built_portfolio)
             else portfolio_dataset
         )
 
@@ -213,6 +263,20 @@ class Portfolio:
         self._volume_column: str = self._cfg["general"]["volume_columns"]
         self._costs_column: str = self._cfg["general"]["costs_columns"]
 
+        # Weights, holdings and definitions are turned into the transactions that invest them,
+        # so every analysis of the transactions applies to them as well.
+        if built_portfolio:
+            portfolio_dataset = self._build_portfolio(
+                weights=weights,
+                holdings=holdings,
+                definition=definition,
+                start_date=start_date,
+                initial_value=initial_value,
+                rebalancing=rebalancing,
+            )
+        elif portfolio_dataset is not None and not example:
+            portfolio_dataset = self._complete_transactions(portfolio_dataset)
+
         # Portfolio Dataset
         self._portfolio_dataset_path: str | list = (
             portfolio_dataset if isinstance(portfolio_dataset, str) else []
@@ -225,6 +289,274 @@ class Portfolio:
         )
 
         self.read_portfolio_dataset()
+
+    def _price_toolkit(self, tickers: list[str], start_date: str) -> Toolkit:
+        """A Toolkit for the tickers, reused later for the historical data."""
+        self._toolkit = Toolkit(
+            api_key=self._api_key,
+            tickers=tickers,
+            benchmark_ticker=None,
+            start_date=start_date,
+            use_cached_data=self._use_cached_data,
+            progress_bar=False,
+        )
+        return self._toolkit
+
+    def _ticker_currencies(self, toolkit: Toolkit) -> dict[str, str]:
+        """The currency every ticker trades in, so no conversion is applied."""
+        try:
+            statistics = toolkit.get_historical_statistics()
+        except Exception:  # noqa: BLE001 - the statistics are optional
+            return {}
+        if statistics is None or statistics.empty or "Currency" not in statistics.index:
+            return {}
+        return {
+            str(ticker): str(currency)
+            for ticker, currency in statistics.loc["Currency"].items()
+            if isinstance(currency, str) and len(currency) == 3  # noqa: PLR2004
+        }
+
+    def _build_portfolio(
+        self,
+        weights: dict[str, float] | pd.Series | str | None,
+        holdings: dict[str, float] | None,
+        definition: PortfolioDefinition | None,
+        start_date: str | None,
+        initial_value: float,
+        rebalancing: str | None,
+    ) -> pd.DataFrame:
+        """The transactions that invest weights, holdings or a definition."""
+        today = pd.Timestamp.today()
+
+        if holdings is not None:
+            start = start_date or (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
+            tickers = list(holdings)
+            toolkit = self._price_toolkit(tickers, start)
+            prices = toolkit.get_historical_data(period="daily")["Adj Close"]
+            prices = (
+                prices.to_frame(tickers[0]) if isinstance(prices, pd.Series) else prices
+            )
+            currencies = self._ticker_currencies(toolkit)
+            first = prices.reindex(columns=tickers).dropna(how="any")
+            if first.empty:
+                raise ValueError(
+                    "The holdings have no day on which all of them have a price."
+                )
+            day = first.index[0]
+            self._definition = PortfolioDefinition.from_weights(
+                {
+                    ticker: shares * float(first.loc[day, ticker])
+                    for ticker, shares in holdings.items()
+                },
+                name="Holdings",
+                rebalancing="none",
+            )
+            return pd.DataFrame(
+                [
+                    {
+                        "Date": day.strftime("%Y-%m-%d"),
+                        "Identifier": ticker,
+                        "Name": ticker,
+                        "Price": float(first.loc[day, ticker]),
+                        "Volume": float(shares),
+                        "Costs": 0.0,
+                        "Currency": currencies.get(ticker, "USD"),
+                    }
+                    for ticker, shares in holdings.items()
+                ]
+            )
+
+        if definition is None:
+            definition = PortfolioDefinition.from_weights(
+                weights,  # type: ignore[arg-type]
+                rebalancing=rebalancing or "quarterly",
+            )
+        elif rebalancing is not None:
+            definition = PortfolioDefinition.from_dict(
+                {**definition.to_dict(), "rebalancing": rebalancing}
+            )
+        self._definition = definition
+
+        start = start_date or (today - pd.DateOffset(years=10)).strftime("%Y-%m-%d")
+        toolkit = self._price_toolkit(definition.tickers, start)
+        prices = toolkit.get_historical_data(period="daily")["Adj Close"]
+        if isinstance(prices, pd.Series):
+            prices = prices.to_frame(definition.tickers[0])
+
+        return definition_model.build_transactions(
+            definition=definition,
+            prices=prices,
+            currencies=self._ticker_currencies(toolkit),
+            initial_value=initial_value,
+        )
+
+    def _complete_transactions(
+        self, dataset: pd.DataFrame | str | list
+    ) -> pd.DataFrame | str | list:
+        """
+        Fill in the price of transactions that leave it out: the closing price of the day,
+        in the currency the ticker trades in. Files and folders that have a price column
+        are passed on as they are.
+        """
+        if isinstance(dataset, list) or (
+            isinstance(dataset, str) and not dataset.endswith(("csv", "xlsx", "xls"))
+        ):
+            return dataset
+
+        frame = (
+            dataset
+            if isinstance(dataset, pd.DataFrame)
+            else helpers.read_excel(dataset)
+        )
+        columns = {str(column).strip().lower(): column for column in frame.columns}
+        general = self._cfg["general"]
+
+        def find(names: list[str]):
+            return next(
+                (columns[name.lower()] for name in names if name.lower() in columns),
+                None,
+            )
+
+        date = find(general["date_columns"])
+        ticker = find(general["ticker_columns"])
+        if find(general["price_columns"]) is not None or date is None or ticker is None:
+            return dataset
+
+        frame = frame.copy()
+        dates = pd.to_datetime(frame[date], errors="coerce")
+        tickers = list(frame[ticker].astype(str).unique())
+        toolkit = self._price_toolkit(
+            tickers, (dates.min() - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
+        )
+        closes = toolkit.get_historical_data(period="daily")["Close"]
+        if isinstance(closes, pd.Series):
+            closes = closes.to_frame(tickers[0])
+        closes = closes.copy()
+        closes.index = closes.index.to_timestamp()
+        closes = closes.sort_index().ffill()
+        frame["Price"] = [
+            (
+                float(closes[str(symbol)].asof(day))
+                if str(symbol) in closes.columns and pd.notna(day)
+                else float("nan")
+            )
+            for symbol, day in zip(frame[ticker], dates, strict=True)
+        ]
+
+        # The prices are in the currency each ticker trades in, so the transactions are too.
+        if find(general["currency_columns"]) is None:
+            currencies = self._ticker_currencies(toolkit)
+            frame["Currency"] = [
+                currencies.get(str(symbol), "USD") for symbol in frame[ticker]
+            ]
+
+        return frame
+
+    @staticmethod
+    def get_presets() -> pd.DataFrame:
+        """
+        List the classic portfolios that ship with the Finance Toolkit, to use with
+        `Portfolio.from_preset`. Each is defined with real funds and the source of its
+        allocation: the 60/40, Ray Dalio's All Weather, Harry Browne's Permanent Portfolio,
+        the Golden Butterfly, the Bogleheads three-fund portfolio, Warren Buffett's 90/10,
+        Nassim Taleb's barbell, a target-date glide path and more.
+
+        Returns:
+            pd.DataFrame: Per preset (by identifier) its Name, Description, Holdings,
+            Rebalancing and Aliases.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        Portfolio.get_presets()[["Name", "Holdings", "Rebalancing"]]
+        ```
+
+        Which returns:
+
+        |                       | Name                             | Holdings                                                                                          | Rebalancing   |
+        |:----------------------|:---------------------------------|:--------------------------------------------------------------------------------------------------|:--------------|
+        | all_weather           | All Weather                      | VTI 30.0%, TLT 40.0%, GOVT 15.0%, GLD 7.5%, DBC 7.5%                                              | quarterly     |
+        | balanced_60_40        | 60/40 Balanced                   | VTI 60.0%, BND 40.0%                                                                              | quarterly     |
+        | barbell               | Barbell                          | BIL 85.0%, VB 7.5%, VUG 7.5%                                                                      | yearly        |
+        | bogleheads_three_fund | Bogleheads Three-Fund            | VTI 42.0%, VXUS 18.0%, BND 40.0%                                                                  | yearly        |
+        | buffett_90_10         | Buffett's 90/10                  | VOO 90.0%, BIL 10.0%                                                                              | yearly        |
+        | conservative_income   | Conservative Multi-Country Bonds | VTI 10.0%, GOVT 40.0%, IEGA.L 30.0%, IGLT.L 20.0%                                                 | quarterly     |
+        | global_60_40          | Global 60/40                     | VTI 30.0%, VGK 15.0%, VWO 15.0%, GOVT 20.0%, IEGA.L 10.0%, IGLT.L 10.0%                           | quarterly     |
+        | global_equity_growth  | Global Equity Growth             | VTI 30.0%, VGK 15.0%, EWJ 10.0%, VWO 15.0%, MCHI 10.0%, VUG 20.0%                                 | yearly        |
+        | golden_butterfly      | Golden Butterfly                 | VTI 20.0%, VBR 20.0%, TLT 20.0%, SHY 20.0%, GLD 20.0%                                             | yearly        |
+        | permanent_portfolio   | Permanent Portfolio              | VTI 25.0%, TLT 25.0%, BIL 25.0%, GLD 25.0%                                                        | yearly        |
+        | small_cap_value_tilt  | Small-Cap Value Tilt             | VB 40.0%, VTV 40.0%, GOVT 20.0%                                                                   | yearly        |
+        | target_date_glidepath | Target-Date Glidepath            | VTI 90.0%, BND 10.0%                                                                              | quarterly     |
+        | us_equity_sectors     | US Equity Sectors                | XLK 11.1%, XLF 11.1%, XLE 11.1%, XLV 11.1%, XLI 11.1%, XLY 11.1%, XLP 11.1%, XLU 11.1%, XLB 11.1% | quarterly     |
+        """
+        rows = {
+            identifier: {
+                "Name": definition.name,
+                "Description": definition.description,
+                "Holdings": ", ".join(
+                    f"{holding.ticker} {holding.weight:.1%}"
+                    for holding in definition.holdings
+                ),
+                "Rebalancing": definition.rebalancing,
+                "Aliases": ", ".join(definition.aliases),
+            }
+            for identifier, definition in definition_model.load_presets().items()
+        }
+        return pd.DataFrame(rows).T
+
+    @classmethod
+    def from_preset(cls, name: str, **kwargs) -> "Portfolio":
+        """
+        Create a Portfolio from one of the classic portfolios, by its identifier, name or
+        alias (see `Portfolio.get_presets`), e.g. "60/40", "All Weather", "Permanent",
+        "Golden Butterfly" or "Three Fund". It invests `initial_value` on `start_date` and
+        rebalances as the definition says, after which every Portfolio and Toolkit analysis
+        applies.
+
+        Args:
+            name (str): The identifier, name or alias of the preset.
+            **kwargs: The other arguments of Portfolio, such as api_key, start_date,
+                initial_value, rebalancing and benchmark_ticker.
+
+        Returns:
+            Portfolio: The portfolio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio.from_preset(
+            "Permanent Portfolio",
+            start_date="2016-01-01",
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+        )
+
+        portfolio.get_portfolio_overview()
+        ```
+        """
+        return cls(definition=definition_model.find_preset(name), **kwargs)
+
+    @property
+    def definition(self) -> PortfolioDefinition:
+        """
+        The portfolio as a `PortfolioDefinition`: the definition it was built from (a preset
+        or weights), or, for holdings and transactions, the current weight of every position.
+        It can be stored with `to_yaml` and read by other tools.
+
+        Returns:
+            PortfolioDefinition: The definition.
+        """
+        if self._definition is not None and self._definition.name != "Holdings":
+            return self._definition
+
+        overview = self.get_portfolio_overview()
+        weights = overview["Weight"].drop("Portfolio", errors="ignore")
+        return PortfolioDefinition.from_weights(
+            weights[weights > 0], name="Portfolio", rebalancing="none"
+        )
 
     @property
     def toolkit(self) -> Toolkit | pd.DataFrame:
@@ -1739,10 +2071,19 @@ class Portfolio:
         # Imported here: the attribution model is only needed for this calculation.
         from financetoolkit.portfolio import attribution_model  # noqa: PLC0415
 
-        transactions = self.get_transactions_overview()
         overview = self.get_portfolio_overview()
+        # Every transaction, sales included; the transactions overview leaves sold
+        # positions out by default.
+        transactions = self._portfolio_dataset.rename(
+            columns={
+                self._price_column: "Price",
+                self._volume_column: "Volume",
+                self._costs_column: "Costs",
+            }
+        )
+        transactions.index = transactions.index.set_names(["Date", "Identifier"])
 
-        if not isinstance(transactions, pd.DataFrame) or transactions.empty:
+        if transactions.empty:
             raise ValueError("The portfolio has no transactions.")
 
         # From the investor's point of view: a purchase is money in (negative), a sale

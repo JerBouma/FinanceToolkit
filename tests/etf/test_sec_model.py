@@ -60,7 +60,10 @@ def test_the_fee_table_is_read_per_share_class():
     # The latest value of a tag is kept.
     assert fees.loc["C1", "Gross Expense Ratio"] == pytest.approx(0.0004)
     assert fees.loc["C1", "Portfolio Turnover"] == pytest.approx(0.03)
-    assert fees.loc["C1", "Fiscal Year End"] == "2025-12-31"
+    # Without the filings (sub.tsv) there is no prospectus date, and the period end date of
+    # the facts is not reported as one.
+    assert pd.isna(fees.loc["C1", "Prospectus Date"])
+    assert "Fiscal Year End" not in fees.columns
 
 
 def test_a_user_agent_with_an_email_is_required(monkeypatch):
@@ -116,15 +119,18 @@ def test_the_quarters_are_read_back_until_every_fund_is_found(monkeypatch):
     assert isinstance(fees, pd.DataFrame)
 
 
-def filings_file(rows: list[tuple], filings: dict[str, tuple[str, str]]) -> bytes:
-    """A quarterly file with several filings: num.tsv rows with their adsh, and sub.tsv."""
+def filings_file(rows: list[tuple], filings: dict[str, tuple]) -> bytes:
+    """
+    A quarterly file with several filings: num.tsv rows with their adsh, and sub.tsv with
+    the filing date, acceptance time and, optionally, the prospectus date of each filing.
+    """
     text = HEADER + "".join(
         f"{adsh}\t{tag}\tv\t{date}\tpure\tS1\t\t\tdoc\tClass=C1;\t0\t{value}\n"
         for adsh, tag, date, value in rows
     )
-    submissions = "adsh\tform\tfiled\taccepted\n" + "".join(
-        f"{adsh}\t485BPOS\t{filed}\t{accepted}\n"
-        for adsh, (filed, accepted) in filings.items()
+    submissions = "adsh\tform\tpdate\tfiled\taccepted\n" + "".join(
+        f"{adsh}\t485BPOS\t{(rest or [''])[0]}\t{filed}\t{accepted}\n"
+        for adsh, (filed, accepted, *rest) in filings.items()
     )
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -162,7 +168,7 @@ def test_the_fee_waiver_is_negative_and_completes_the_net_ratio(monkeypatch):
             "Fee Waiver": [-0.002, 0.001],
             "Net Expense Ratio": [np.nan, 0.009],
             "Series": ["S1", "S2"],
-            "Fiscal Year End": ["2025-12-31"] * 2,
+            "Prospectus Date": ["2026-04-28"] * 2,
             "Filing Date": ["2026-04-28"] * 2,
         },
         index=["C1", "C2"],
@@ -179,3 +185,49 @@ def test_the_fee_waiver_is_negative_and_completes_the_net_ratio(monkeypatch):
     assert breakdown.loc["AAA", "Net Expense Ratio"] == pytest.approx(0.0175)
     # A waiver entered as a positive reduction is the difference of the two ratios.
     assert breakdown.loc["BBB", "Fee Waiver"] == pytest.approx(-0.001)
+
+
+def test_the_prospectus_date_comes_from_the_filing():
+    # The period end date of the facts (ddate) is the date of the fee table's fiscal period
+    # at best; the prospectus date is the one on the prospectus cover (sub.tsv's pdate).
+    fees = sec_model.read_risk_return_fees(
+        filings_file(
+            [("only", "ManagementFeesOverAssets", "20260630", "0.0010")],
+            {"only": ("20260428", "2026-04-28 16:00:00.0", "20260501")},
+        )
+    )
+
+    assert fees.loc["C1", "Prospectus Date"] == "2026-05-01"
+    assert fees.loc["C1", "Filing Date"] == "2026-04-28"
+    assert "Fiscal Year End" not in fees.columns
+
+
+def test_a_reported_waiver_is_kept_without_a_gross_ratio(monkeypatch):
+    table = pd.DataFrame(
+        {
+            "Gross Expense Ratio": [np.nan, 0.0100],
+            "Fee Waiver": [0.002, np.nan],
+            "Net Expense Ratio": [0.0050, 0.0100],
+            "Series": ["S1", "S2"],
+            "Prospectus Date": ["2026-04-28"] * 2,
+            "Filing Date": ["2026-04-28"] * 2,
+        },
+        index=["C1", "C2"],
+    )
+    monkeypatch.setattr(
+        sec_model,
+        "get_fund_classes",
+        lambda user_agent: pd.DataFrame({"Class": ["C1", "C2"]}, index=["AAA", "BBB"]),
+    )
+    monkeypatch.setattr(sec_model, "_quarter_fees", lambda *args: table)
+
+    breakdown = sec_model.get_fee_breakdown(["AAA", "BBB"], "Jane Doe jane@example.com")
+
+    # The waiver stays (negative) and the gross ratio is the net one minus the waiver.
+    assert breakdown.loc["AAA", "Fee Waiver"] == pytest.approx(-0.002)
+    assert breakdown.loc["AAA", "Gross Expense Ratio"] == pytest.approx(0.007)
+    # Without a reported waiver none is made up from two equal ratios.
+    assert pd.isna(breakdown.loc["BBB", "Fee Waiver"])
+    assert list(breakdown.columns).index("Prospectus Date") < list(
+        breakdown.columns
+    ).index("Filing Date")

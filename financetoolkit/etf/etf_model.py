@@ -90,7 +90,7 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
     with a very high multiple dominate; holdings with negative earnings count with their
     negative earnings, as in the fund's own earnings. The dividend yield and net profit margin
     are weighted arithmetic means. The coverage is the share of the fund's
-    weight whose holdings have a usable price-to-earnings ratio. When the holdings' earnings
+    weight whose holdings have a usable, non-zero price-to-earnings ratio. When the holdings' earnings
     add up to a loss, the fund's price-to-earnings ratio is negative (some data providers
     show none in that case).
 
@@ -165,7 +165,7 @@ def get_tracking(
     Calculate how closely a fund tracks a benchmark (its index): the tracking difference
     (the annualized return of the fund minus the annualized return of the benchmark over the
     period, which for an index fund should be about minus its expense ratio), the annualized
-    tracking error (the volatility of the return difference), the correlation, the beta and
+    tracking error (the volatility of the per-period return difference), the correlation, the beta and
     the R Squared.
 
     Args:

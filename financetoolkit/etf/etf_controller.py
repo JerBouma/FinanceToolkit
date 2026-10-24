@@ -25,6 +25,30 @@ TRADING_DAYS = 252
 NAV_PRICE_DAYS = 3
 # Symbols are short; a longer identifier is an ISIN or a name.
 MAXIMUM_SYMBOL_LENGTH = 10
+# The NAV is struck at the 16:00 New York close, so an update at any time is of the last close
+# 16 hours or more before it (an update before the open is of the previous day's close).
+NAV_CLOSE_HOURS = 16
+# A premium or discount beyond half the NAV is a data error (a NAV in another unit or
+# currency, a stale price), not a market price.
+MAXIMUM_PREMIUM = 0.5
+# Some exchanges quote in a minor unit: London in pence (GBp, also written GBX), Johannesburg
+# in cents (ZAc) and Tel Aviv in agorot (ILA). The NAV is in the major unit.
+MINOR_CURRENCIES = {
+    "GBp": ("GBP", 0.01),
+    "GBX": ("GBP", 0.01),
+    "ZAc": ("ZAR", 0.01),
+    "ILA": ("ILS", 0.01),
+}
+
+
+def _major_currency(currency: object) -> tuple[str | None, float]:
+    """The major currency of a currency code and the factor to it, e.g. GBp is GBP 0.01."""
+    if not isinstance(currency, str) or not currency.strip():
+        return None, 1.0
+    currency = currency.strip()
+    if currency in MINOR_CURRENCIES:
+        return MINOR_CURRENCIES[currency]
+    return currency.upper(), 1.0
 
 
 class ETF:
@@ -43,6 +67,7 @@ class ETF:
         start_date: str | None = None,
         end_date: str | None = None,
         rounding: int | None = 4,
+        currency_function: Callable[[], pd.Series] | None = None,
     ):
         """
         Initializes the ETF Controller Class, which the Toolkit creates as `toolkit.etf`.
@@ -60,6 +85,10 @@ class ETF:
             end_date (str | None, optional): The end date. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
+            currency_function (Callable[[], pd.Series] | None, optional): Retrieves the
+                currency every ticker is listed (and its prices are quoted) in, to compare the
+                close with a NAV of the same currency. Defaults to None, which leaves the
+                listing currency unknown.
 
         As an example:
 
@@ -79,6 +108,22 @@ class ETF:
         self._start_date = start_date
         self._end_date = end_date
         self._rounding = rounding
+        self._currency_function = currency_function
+
+    def _listing_currencies(self) -> pd.Series:
+        """The currency every ticker is listed in, empty when it cannot be retrieved."""
+        if self._currency_function is None:
+            return pd.Series(dtype=object)
+        try:
+            currencies = self._currency_function()
+        # The listing currency only guards the premium, so failing to retrieve it must not
+        # fail the profile.
+        except Exception as error:  # noqa: BLE001
+            logger.warning("The listing currencies could not be retrieved: %s", error)
+            return pd.Series(dtype=object)
+        return (
+            currencies if isinstance(currencies, pd.Series) else pd.Series(dtype=object)
+        )
 
     def _funds(self) -> list[str]:
         """The tickers other than the Benchmark and a Portfolio."""
@@ -386,8 +431,12 @@ class ETF:
         daily volume and dollar volume. The expense ratio is what holding the fund costs every
         year; a premium means buying it costs more than the holdings are worth, which happens in
         stress for funds of less liquid assets such as bonds. The NAV is the latest Financial
-        Modeling Prep publishes, so the premium is only given when the latest close is of about
-        the same date (an end date in the past leaves it empty).
+        Modeling Prep publishes and the NAV Date the New York close it was struck at (the last
+        16:00 close before its update), so the premium compares the close on the NAV Date with
+        the NAV (SEC Rule 6c-11), not the latest Price. It is empty without a close within three
+        days before the NAV Date (an end date in the past), when the NAV is in another currency
+        than the listing (a close in pence, GBp or GBX, is compared in pounds) and, with a logged
+        warning, when it exceeds 50% either way, which is a data error rather than a price.
 
         Also known as: ETF profile, expense ratio, assets under management, premium discount.
 
@@ -440,15 +489,18 @@ class ETF:
         volume = self._historical()["Volume"]
         last_year = close.index[-min(len(close), TRADING_DAYS) :]
 
+        currencies = self._listing_currencies()
+
         rows = {}
         for fund in funds:
             info = information[fund]
             price = close[fund].dropna()
             latest = float(price.iloc[-1]) if not price.empty else float("nan")
             nav = pd.to_numeric(info.get("NAV"), errors="coerce")
-            # The NAV is struck after the New York close and published in UTC, often after
-            # midnight, so its date is the New York date of the update; the premium compares
-            # it with the close of that date (SEC Rule 6c-11), not with a later close.
+            # The NAV is struck at the 16:00 New York close and published in UTC, often after
+            # midnight or the next morning, so its date is that of the last close 16 hours or
+            # more before the update in New York; the premium compares it with the close of
+            # that date (SEC Rule 6c-11), not with a later close.
             raw = str(info.get("Updated At") or "").strip()
             updated = pd.to_datetime(raw, utc=True, errors="coerce")
             nav_date = (
@@ -458,9 +510,10 @@ class ETF:
                     # A date without a time is the NAV date itself.
                     updated.tz_localize(None).normalize()
                     if len(raw) <= 10  # noqa: PLR2004
-                    else updated.tz_convert("America/New_York")
-                    .tz_localize(None)
-                    .normalize()
+                    else (
+                        updated.tz_convert("America/New_York").tz_localize(None)
+                        - pd.Timedelta(hours=NAV_CLOSE_HOURS)
+                    ).normalize()
                 )
             )
             dates = (
@@ -472,6 +525,9 @@ class ETF:
                 if not before.empty
                 and (nav_date - before.index[-1].to_timestamp()).days <= NAV_PRICE_DAYS
                 else float("nan")
+            )
+            premium = self._premium(
+                fund, close_at_nav, nav, info.get("NAV Currency"), currencies.get(fund)
             )
             rows[fund] = {
                 "Name": info.get("Name"),
@@ -490,7 +546,7 @@ class ETF:
                     nav_date.strftime("%Y-%m-%d") if pd.notna(nav_date) else None
                 ),
                 "Price": latest,
-                "Premium/Discount": close_at_nav / nav - 1 if nav else float("nan"),
+                "Premium/Discount": premium,
                 "Holdings Count": pd.to_numeric(
                     info.get("Holdings Count"), errors="coerce"
                 ),
@@ -511,6 +567,41 @@ class ETF:
                 )
             )
         return profile
+
+    @staticmethod
+    def _premium(
+        fund: str,
+        close: float,
+        nav: float,
+        nav_currency: object,
+        listing_currency: object,
+    ) -> float:
+        """
+        The premium (positive) or discount of a close to the NAV, NaN when they are in
+        different currencies or the premium is implausible.
+        """
+        if not nav or pd.isna(nav) or pd.isna(close):
+            return float("nan")
+        nav_major, nav_factor = _major_currency(nav_currency)
+        listing_major, listing_factor = _major_currency(listing_currency)
+        if nav_major and listing_major and nav_major != listing_major:
+            logger.info(
+                "The NAV of %s is in %s and its close in %s, so no premium is given.",
+                fund,
+                nav_currency,
+                listing_currency,
+            )
+            return float("nan")
+        premium = (close * listing_factor) / (nav * nav_factor) - 1
+        if abs(premium) > MAXIMUM_PREMIUM:
+            logger.warning(
+                "The premium of %s (%.2f) points to a NAV in another unit or currency than "
+                "its close, so no premium is given.",
+                fund,
+                premium,
+            )
+            return float("nan")
+        return premium
 
     @handle_errors
     def get_fee_breakdown(
@@ -545,8 +636,9 @@ class ETF:
                 Defaults to None, which uses the rounding of the Toolkit.
 
         Returns:
-            pd.DataFrame: The fees, turnover, the fiscal year end the fee table covers, the
-            filing date, series and class (rows) per fund (columns).
+            pd.DataFrame: The fees, turnover, the prospectus date (the date on the cover of the
+            prospectus the fee table is from, empty when the filer gave none), the filing
+            date, series and class (rows) per fund (columns).
 
         As an example:
 
@@ -570,7 +662,7 @@ class ETF:
         | Fee Waiver                           | nan        | nan        | 0.0        | nan        |
         | Net Expense Ratio                    | 0.0003     | 0.0003     | 0.0003     | 0.0003     |
         | Portfolio Turnover                   | 0.03       | 0.02       | 0.62       | 0.38       |
-        | Fiscal Year End                      | 2025-12-31 | 2025-12-31 | 2026-02-28 | 2025-12-31 |
+        | Prospectus Date                      | 2026-04-28 | 2026-04-28 | 2026-06-29 | 2026-04-28 |
         | Filing Date                          | 2026-04-28 | 2026-04-28 | 2026-06-18 | 2026-04-28 |
         | Series                               | S000002848 | S000002839 | S000004362 | S000002564 |
         | Class                                | C000007808 | C000092055 | C000012092 | C000046844 |
@@ -588,7 +680,7 @@ class ETF:
                 "fund outside the US, files none).",
                 ", ".join(missing),
             )
-        labels = ["Fiscal Year End", "Filing Date", "Series", "Class"]
+        labels = ["Prospectus Date", "Filing Date", "Series", "Class"]
         numeric = breakdown.drop(columns=labels).apply(pd.to_numeric, errors="coerce")
         numeric = self._round(numeric, rounding)
         return pd.concat([numeric, breakdown[labels]], axis=1).T
@@ -609,8 +701,8 @@ class ETF:
           over the period, as issuers report it. An index fund trails its index by roughly its
           expense ratio; less points to securities lending income, more to a costly or loose
           replication.
-        - Tracking Error: the annualized volatility of that difference, how far the fund strays
-          from the index from day to day.
+        - Tracking Error: the annualized volatility of the per-period return difference, how
+          far the fund strays from the index from period to period.
         - Correlation, Beta and R Squared of the fund's returns with the Benchmark's.
 
         With yearly=True the tracking difference is given per calendar year instead, the return
@@ -712,9 +804,10 @@ class ETF:
     def get_concentration(self, rounding: int | None = None) -> pd.DataFrame:
         """
         Measure how concentrated every fund is from its holdings: the number of holdings, the
-        largest holding and its weight, the weight of the ten largest, the
-        Herfindahl-Hirschman index (the sum of the squared weights) and the effective number of
-        holdings (one over that index). A fund of 500 holdings whose ten largest make up a third
+        largest holding and its weight, the weight of the ten largest (shares of the fund), the
+        Herfindahl-Hirschman index (the sum of the squared weights, after scaling the weights of
+        the holdings to sum to one, so cash and holdings without a weight do not dilute it) and
+        the effective number of holdings (one over that index). A fund of 500 holdings whose ten largest make up a third
         of it behaves like a fund of far fewer stocks; the effective number says how many
         equally weighted holdings would give the same concentration.
 
@@ -809,8 +902,9 @@ class ETF:
         price-to-sales and price-to-free-cash-flow ratio, the dividend yield and the net profit
         margin of its largest holdings, weighted by their weight in the fund. The multiples are
         weighted harmonic means, the multiple of the fund as a whole, so one holding with a very
-        high multiple does not dominate. The coverage is the share of the fund the valued
-        holdings make up; more holdings raise it at the cost of more requests.
+        high multiple does not dominate. The coverage is the share of the fund's weight held in
+        holdings with a usable, non-zero price-to-earnings ratio; more holdings raise it at the
+        cost of more requests.
 
         The ratios are the trailing twelve month ratios Financial Modeling Prep calculates for
         every holding.

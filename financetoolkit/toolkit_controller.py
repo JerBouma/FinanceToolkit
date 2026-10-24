@@ -1289,6 +1289,15 @@ class Toolkit:
             )
             return ratios_ttm
 
+        def currencies() -> pd.Series:
+            # The currency each ticker is listed in, to compare its close with the NAV.
+            statistics = self.get_historical_statistics()
+            if isinstance(statistics, pd.Series):
+                return pd.Series({self._tickers[0]: statistics.get("Currency")})
+            if statistics.empty or "Currency" not in statistics.index:
+                return pd.Series(dtype=object)
+            return statistics.loc["Currency"]
+
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
@@ -1297,6 +1306,7 @@ class Toolkit:
             start_date=self._start_date,
             end_date=self._end_date,
             rounding=self._rounding,
+            currency_function=currencies,
         )
 
     @property

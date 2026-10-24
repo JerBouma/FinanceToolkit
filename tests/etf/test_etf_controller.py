@@ -177,3 +177,91 @@ def test_the_premium_compares_the_nav_with_the_close_of_its_date(etf):
 
     assert profile.loc["Premium/Discount", "AAA"] == pytest.approx(0, abs=1e-8)
     assert profile.loc["NAV Date", "AAA"] == nav_day.strftime("%Y-%m-%d")
+
+
+def with_information(etf, **fields):
+    """The ETF with fields of fund AAA's information replaced."""
+    information = etf._fund_data_function("information").copy()
+    for field, value in fields.items():
+        information.loc[field.replace("_", " "), "AAA"] = value
+    datasets = {
+        "information": information,
+        "holdings": etf._fund_data_function("holdings"),
+    }
+    etf._fund_data_function = lambda dataset, overwrite=False: datasets[dataset]
+    return etf
+
+
+def test_a_nav_updated_before_the_open_is_of_the_previous_close(etf):
+    close = etf._historical()["Close"]["AAA"]
+    # An update at 09:00 New York time (13:00 UTC in summer, 14:00 in winter) comes before
+    # that day's close, so the NAV is of the previous trading day's close.
+    nav_day = close.index[-2].to_timestamp()
+    update_day = close.index[-1].to_timestamp()
+    updated = (
+        (update_day + pd.Timedelta(hours=9))
+        .tz_localize("America/New_York")
+        .tz_convert("UTC")
+    )
+    with_information(
+        etf,
+        NAV=float(close.iloc[-2]),
+        Updated_At=updated.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+
+    profile = etf.get_profile(rounding=8)
+
+    assert profile.loc["NAV Date", "AAA"] == nav_day.strftime("%Y-%m-%d")
+    assert profile.loc["Premium/Discount", "AAA"] == pytest.approx(0, abs=1e-8)
+
+
+def test_a_date_only_update_is_the_nav_date(etf):
+    close = etf._historical()["Close"]["AAA"]
+    day = close.index[-1].to_timestamp().strftime("%Y-%m-%d")
+    with_information(etf, Updated_At=day)
+
+    assert etf.get_profile().loc["NAV Date", "AAA"] == day
+
+
+def test_no_premium_against_a_nav_in_another_currency(etf):
+    etf._currency_function = lambda: pd.Series({"AAA": "USD", "BBB": "USD"})
+    with_information(etf, NAV_Currency="EUR")
+
+    profile = etf.get_profile()
+
+    assert pd.isna(profile.loc["Premium/Discount", "AAA"])
+    assert profile.loc["Premium/Discount", "BBB"] == pytest.approx(0.01, abs=1e-4)
+
+
+def test_a_close_in_pence_is_compared_in_pounds(etf):
+    close = etf._historical()["Close"]["AAA"]
+    # The close is quoted in pence (GBp) and the NAV in pounds, a hundredth of it.
+    etf._currency_function = lambda: pd.Series({"AAA": "GBp"})
+    with_information(etf, NAV=float(close.iloc[-1]) / 100, NAV_Currency="GBP")
+
+    assert etf.get_profile(rounding=8).loc["Premium/Discount", "AAA"] == pytest.approx(
+        0, abs=1e-8
+    )
+
+
+def test_an_implausible_premium_is_left_out_with_a_warning(etf, caplog):
+    close = etf._historical()["Close"]["AAA"]
+    # Without a known listing currency a NAV in another unit shows as a premium of 99%.
+    with_information(etf, NAV=float(close.iloc[-1]) / 100)
+
+    with caplog.at_level("WARNING"):
+        profile = etf.get_profile()
+
+    assert pd.isna(profile.loc["Premium/Discount", "AAA"])
+    assert "AAA" in caplog.text
+
+
+def test_a_failing_currency_lookup_keeps_the_premium(etf):
+    def fail():
+        raise ValueError("no statistics")
+
+    etf._currency_function = fail
+
+    assert etf.get_profile().loc["Premium/Discount", "BBB"] == pytest.approx(
+        0.01, abs=1e-4
+    )

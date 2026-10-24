@@ -104,8 +104,13 @@ def get_fund_classes(user_agent: str) -> pd.DataFrame:
     )
 
 
-def _filings(archive: zipfile.ZipFile) -> dict[str, tuple[str, str]]:
-    """The acceptance time and filing date (YYYYMMDD) of every filing (adsh) in a file."""
+def _filings(archive: zipfile.ZipFile) -> dict[str, tuple[str, str, str]]:
+    """
+    The acceptance time, filing date and prospectus date (both YYYYMMDD) of every filing
+    (adsh) in a file. The prospectus date is the date on the cover of the prospectus, the one
+    its fee table speaks for; the period end date of the facts (ddate) is often no fiscal
+    year end at all, so it is not reported.
+    """
     if "sub.tsv" not in archive.namelist():
         return {}
     with archive.open("sub.tsv") as file:
@@ -113,7 +118,11 @@ def _filings(archive: zipfile.ZipFile) -> dict[str, tuple[str, str]]:
             io.TextIOWrapper(file, encoding="utf-8", errors="replace"), delimiter="\t"
         )
         return {
-            row["adsh"]: (row.get("accepted") or "", row.get("filed") or "")
+            row["adsh"]: (
+                row.get("accepted") or "",
+                row.get("filed") or "",
+                row.get("pdate") or "",
+            )
             for row in reader
         }
 
@@ -130,8 +139,9 @@ def read_risk_return_fees(zip_data: bytes) -> pd.DataFrame:
         zip_data (bytes): The quarterly ZIP file.
 
     Returns:
-        pd.DataFrame: The fees per share class, with the Series, the Fiscal Year End the fee
-        table covers, the Filing Date and the Portfolio Turnover of its fund.
+        pd.DataFrame: The fees per share class, with the Series, the Prospectus Date (the
+        date on the cover of the prospectus, empty when the filer gave none), the Filing Date
+        and the Portfolio Turnover of its fund.
     """
     fees: dict[str, dict] = {}
     turnover: dict[str, tuple[tuple[str, str], float]] = {}
@@ -150,9 +160,9 @@ def read_risk_return_fees(zip_data: bytes) -> pd.DataFrame:
                     value = float(row["value"])
                 except ValueError:
                     continue
-                accepted, filed = filings.get(row["adsh"], ("", ""))
-                # Filings of one fiscal year share the end date of that year (ddate), so
-                # the acceptance time decides which is the latest.
+                accepted, filed, prospectus = filings.get(row["adsh"], ("", "", ""))
+                # Filings of one fiscal year share the period end date of their facts
+                # (ddate), so the acceptance time decides which is the latest.
                 key = (accepted, row["ddate"])
                 if tag == TURNOVER_TAG:
                     series = row["series"]
@@ -176,23 +186,25 @@ def read_risk_return_fees(zip_data: bytes) -> pd.DataFrame:
                     record = fees[share_class] = {
                         "Series": row["series"],
                         "Accepted": accepted,
-                        "Fiscal Year End": row["ddate"],
+                        "Period": row["ddate"],
+                        "Prospectus Date": prospectus,
                         "Filing Date": filed,
                     }
                 elif accepted < record["Accepted"]:
                     continue
                 name = FEE_TAGS[tag]
-                if name not in record or row["ddate"] >= record["Fiscal Year End"]:
+                # Within a filing a fact of a later period replaces an earlier one.
+                if name not in record or row["ddate"] >= record["Period"]:
                     record[name] = value
-                    record["Fiscal Year End"] = max(
-                        record["Fiscal Year End"], row["ddate"]
-                    )
+                    record["Period"] = max(record["Period"], row["ddate"])
 
     if not fees:
         return pd.DataFrame()
 
-    table = pd.DataFrame.from_dict(fees, orient="index").drop(columns="Accepted")
-    for column in ("Fiscal Year End", "Filing Date"):
+    table = pd.DataFrame.from_dict(fees, orient="index").drop(
+        columns=["Accepted", "Period"]
+    )
+    for column in ("Prospectus Date", "Filing Date"):
         table[column] = pd.to_datetime(
             table[column], format="%Y%m%d", errors="coerce"
         ).dt.strftime("%Y-%m-%d")
@@ -284,17 +296,20 @@ def get_fee_breakdown(
     ).apply(pd.to_numeric, errors="coerce")
     gross, net, waiver = (numbers[column] for column in numbers)
     # The fee table defines the net expense ratio as the gross one plus the (negative)
-    # waiver, but some filers enter the waiver as a positive reduction: with both ratios
-    # reported the waiver is their difference, otherwise it is made negative.
-    waiver = (net - gross).round(6).where(net.notna() & waiver.notna(), -waiver.abs())
+    # waiver, but some filers enter the waiver as a positive reduction: with both ratios and
+    # a waiver reported the waiver is their difference, otherwise the reported waiver is made
+    # negative (a missing gross ratio must not lose it).
+    both = net.notna() & gross.notna() & waiver.notna()
+    waiver = (net - gross).round(6).where(both, -waiver.abs())
     breakdown["Fee Waiver"] = waiver
-    # Without a reported net expense ratio it is the gross one plus the waiver, if any.
+    # A missing ratio follows from the other and the waiver, if any.
+    breakdown["Gross Expense Ratio"] = gross.fillna(net - waiver.fillna(0))
     breakdown["Net Expense Ratio"] = net.fillna(gross + waiver.fillna(0))
     breakdown["Class"] = [wanted[symbol] for symbol in breakdown.index]
     columns = [
         *FEE_TAGS.values(),
         "Portfolio Turnover",
-        "Fiscal Year End",
+        "Prospectus Date",
         "Filing Date",
         "Series",
         "Class",

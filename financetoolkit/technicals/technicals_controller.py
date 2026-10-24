@@ -7433,7 +7433,8 @@ class Technicals:
         relative to history.
 
         Realized volatility is the standard deviation of the log returns over each rolling
-        window, annualized with the square root of 252, which assumes daily data. For each
+        window, annualized with the square root of the observations per year of the period
+        (252 for daily, 52 for weekly and 12 for monthly data). For each
         window, the cone reports the minimum, the 10th, 25th, 50th, 75th and 90th percentiles,
         the maximum and the most recent value of that realized volatility series.
 

@@ -3749,7 +3749,7 @@ class FixedIncome:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             maturity_years (list[int] | None, optional): The maturities in years to keep, e.g.
-                [1, 2, 5, 10, 20, 30] for the key points of the curve. Defaults to None, which
+                [1, 2, 5, 10, 20, 30] (or "1,2,5,10,20,30") for the key points of the curve. Defaults to None, which
                 keeps every maturity from 1 to 150 years.
 
         Returns:
@@ -4226,7 +4226,8 @@ class FixedIncome:
         Also known as: euro interbank offered rate, eurozone money market.
 
         Args:
-            maturities (str | list | None, optional): The maturities to retrieve, from "1M", "3M", "6M" and "1Y".
+            maturities (str | list | None, optional): The maturities to retrieve, from "1M", "3M", "6M" and "1Y",
+                as a list or a comma-separated string ("1M,3M").
                 Defaults to None, which retrieves all four.
             nominal (bool, optional): Whether to retrieve the nominal Euribor fixings or their real
                 (inflation-adjusted) counterpart. The ECB only publishes a real Euribor for the 3-month

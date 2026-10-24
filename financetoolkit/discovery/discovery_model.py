@@ -678,6 +678,7 @@ def get_sectors_performance(
     start_date: str | None = None,
     end_date: str | None = None,
     user_subscription: str = "Free",
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get the historical performance of every sector, one column per sector.
@@ -692,6 +693,8 @@ def get_sectors_performance(
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
             Defaults to today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance indexed by date, with one column per sector
@@ -704,7 +707,8 @@ def get_sectors_performance(
         # A year up to today unless a range is given (see _history_range).
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
         sector_performance = get_cached_financial_data(
@@ -1714,6 +1718,7 @@ def get_sector_performance(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get sector performance. Provide exactly one of `date` (a snapshot across all
@@ -1726,6 +1731,8 @@ def get_sector_performance(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance, indexed by Sector (snapshot)
@@ -1737,12 +1744,13 @@ def get_sector_performance(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/sector-performance-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     sector_performance = get_cached_financial_data(
@@ -1781,6 +1789,7 @@ def get_industry_performance(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get industry performance. Provide exactly one of `date` (a snapshot across all
@@ -1794,6 +1803,8 @@ def get_industry_performance(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry performance, indexed by Industry (snapshot)
@@ -1805,12 +1816,13 @@ def get_industry_performance(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/industry-performance-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-performance"
-            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     industry_performance = get_cached_financial_data(
@@ -1849,6 +1861,7 @@ def get_sector_pe(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1862,6 +1875,8 @@ def get_sector_pe(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector P/E ratios, indexed by Sector (snapshot)
@@ -1873,12 +1888,13 @@ def get_sector_pe(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/sector-pe-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-pe"
-            f"?sector={sector}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     sector_pe = get_cached_financial_data(url=url, user_subscription=user_subscription)
@@ -1911,6 +1927,7 @@ def get_industry_pe(
     user_subscription: str = "Free",
     start_date: str | None = None,
     end_date: str | None = None,
+    exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
     Get industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
@@ -1924,6 +1941,8 @@ def get_industry_pe(
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to today.
+        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+            or "AMEX". Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry P/E ratios, indexed by Industry (snapshot)
@@ -1935,12 +1954,13 @@ def get_industry_pe(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/industry-pe-snapshot"
-            f"?date={date}&apikey={api_key}"
+            f"?date={date}&exchange={exchange}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-pe"
-            f"?industry={industry}{_history_range(start_date, end_date)}&apikey={api_key}"
+            f"?industry={industry}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"&apikey={api_key}"
         )
 
     industry_pe = get_cached_financial_data(

@@ -1573,11 +1573,11 @@ class Toolkit:
 
         | date                | Rating   |   Rating Score |   DCF Score |   ROE Score |   ROA Score |   DE Score |   PE Score |   PB Score |
         |:--------------------|:---------|---------------:|------------:|------------:|------------:|-----------:|-----------:|-----------:|
-        | 2026-10-01 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-02 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-05 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-06 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-07 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
+        | 2025-12-24 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-26 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-29 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-30 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
+        | 2025-12-31 00:00:00 | B+       |              3 |           2 |           5 |           5 |          3 |          2 |          1 |
         """
         if not self._api_key:
             logger.error(
@@ -1613,13 +1613,9 @@ class Toolkit:
         # The full history is kept, and the ratings between the start and end date returned.
         rating = self._rating
         if isinstance(rating, pd.DataFrame) and not rating.empty:
-            dates = rating.index.get_level_values(-1).astype(str).str[:10]
-            keep = pd.Series(True, index=range(len(rating))).to_numpy()
-            if self._start_date:
-                keep &= dates >= self._start_date
-            if self._end_date:
-                keep &= dates <= self._end_date
-            rating = rating[keep]
+            dates = pd.Series(rating.index.get_level_values(-1).astype(str).str[:10])
+            keep = dates.ge(self._start_date or "") & dates.le(self._end_date or "9999")
+            rating = rating[keep.to_numpy()]
 
         return rating
 
@@ -2654,8 +2650,8 @@ class Toolkit:
             - Date: The date of the dividend.
             - Adj Dividend: The adjusted dividend amount.
             - Dividend: The dividend amount.
-            - Yield: The annualized dividend yield at the time of the dividend, in percent
-            (0.54 is 0.54%).
+            - Yield: The annualized dividend yield at the time of the dividend, as a decimal
+            (0.0054 is 0.54%).
             - Record Date: The record date of the dividend.
             - Payment Date: The payment date of the dividend.
             - Declaration Date: The declaration date of the dividend.
@@ -2693,20 +2689,20 @@ class Toolkit:
 
         | date       |   Adj Dividend |   Dividend |   Yield | Record Date   | Payment Date   | Declaration Date   |
         |:-----------|---------------:|-----------:|--------:|:--------------|:---------------|:-------------------|
-        | 2022-08-05 |           0.23 |       0.23 |  0.5443 | 2022-08-08    | 2022-08-11     | 2022-07-28         |
-        | 2022-11-04 |           0.23 |       0.23 |  0.6576 | 2022-11-07    | 2022-11-10     | 2022-10-27         |
-        | 2023-02-10 |           0.23 |       0.23 |  0.6092 | 2023-02-13    | 2023-02-16     | 2023-02-02         |
-        | 2023-05-12 |           0.24 |       0.24 |  0.5389 | 2023-05-15    | 2023-05-18     | 2023-05-04         |
-        | 2023-08-11 |           0.24 |       0.24 |  0.5287 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
-        | 2023-11-10 |           0.24 |       0.24 |  0.5097 | 2023-11-13    | 2023-11-16     | 2023-11-02         |
-        | 2024-02-09 |           0.24 |       0.24 |  0.5083 | 2024-02-12    | 2024-02-15     | 2024-02-01         |
-        | 2024-05-10 |           0.25 |       0.25 |  0.5299 | 2024-05-13    | 2024-05-16     | 2024-05-02         |
-        | 2024-08-12 |           0.25 |       0.25 |  0.4505 | 2024-08-12    | 2024-08-15     | 2024-08-01         |
-        | 2024-11-08 |           0.25 |       0.25 |  0.4362 | 2024-11-11    | 2024-11-14     | 2024-10-31         |
-        | 2025-02-10 |           0.25 |       0.25 |  0.4393 | 2025-02-10    | 2025-02-13     | 2025-01-30         |
-        | 2025-05-12 |           0.26 |       0.26 |  0.4791 | 2025-05-12    | 2025-05-15     | 2025-05-01         |
-        | 2025-08-11 |           0.26 |       0.26 |  0.449  | 2025-08-11    | 2025-08-14     | 2025-07-31         |
-        | 2025-11-10 |           0.26 |       0.26 |  0.3823 | 2025-11-10    | 2025-11-13     | 2025-10-30         |
+        | 2022-08-05 |           0.23 |       0.23 |  0.0054 | 2022-08-08    | 2022-08-11     | 2022-07-28         |
+        | 2022-11-04 |           0.23 |       0.23 |  0.0066 | 2022-11-07    | 2022-11-10     | 2022-10-27         |
+        | 2023-02-10 |           0.23 |       0.23 |  0.0061 | 2023-02-13    | 2023-02-16     | 2023-02-02         |
+        | 2023-05-12 |           0.24 |       0.24 |  0.0054 | 2023-05-15    | 2023-05-18     | 2023-05-04         |
+        | 2023-08-11 |           0.24 |       0.24 |  0.0053 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
+        | 2023-11-10 |           0.24 |       0.24 |  0.0051 | 2023-11-13    | 2023-11-16     | 2023-11-02         |
+        | 2024-02-09 |           0.24 |       0.24 |  0.0051 | 2024-02-12    | 2024-02-15     | 2024-02-01         |
+        | 2024-05-10 |           0.25 |       0.25 |  0.0053 | 2024-05-13    | 2024-05-16     | 2024-05-02         |
+        | 2024-08-12 |           0.25 |       0.25 |  0.0045 | 2024-08-12    | 2024-08-15     | 2024-08-01         |
+        | 2024-11-08 |           0.25 |       0.25 |  0.0044 | 2024-11-11    | 2024-11-14     | 2024-10-31         |
+        | 2025-02-10 |           0.25 |       0.25 |  0.0044 | 2025-02-10    | 2025-02-13     | 2025-01-30         |
+        | 2025-05-12 |           0.26 |       0.26 |  0.0048 | 2025-05-12    | 2025-05-15     | 2025-05-01         |
+        | 2025-08-11 |           0.26 |       0.26 |  0.0045 | 2025-08-11    | 2025-08-14     | 2025-07-31         |
+        | 2025-11-10 |           0.26 |       0.26 |  0.0038 | 2025-11-10    | 2025-11-13     | 2025-10-30         |
         """
         if not self._api_key:
             logger.error(
@@ -4262,9 +4258,9 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            risk_free_rate (str | None, optional): The maturity to return as the risk free rate
-                ('13w', '5y', '10y' or '30y'). Defaults to None, which uses the maturity set on
-                the Toolkit.
+            risk_free_rate (str | None, optional): One maturity to return ('13w', '5y', '10y' or
+                '30y'). Defaults to None, which returns all four. The Toolkit's own risk free rate
+                stays the maturity set on the Toolkit either way.
             divide_ohlc_by (int | float | None, optional): A value to divide the yields by. Treasury
                 yields are published in percent, so this defaults to 100 to return decimals.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -5793,7 +5789,7 @@ class Toolkit:
         toolkit.clear_cache(source="YahooFinance", ticker="AAPL")
 
         # Remove everything retrieved from the OECD
-        toolkit.clear_cache(source=policy_model.OECD)
+        toolkit.clear_cache(source="OECD")
 
         # Remove the entire cache
         toolkit.clear_cache(confirm=True)

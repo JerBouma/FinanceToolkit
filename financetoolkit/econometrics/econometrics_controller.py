@@ -1215,6 +1215,10 @@ class Econometrics:
         ```
 
         Which returns: (the 1%/10% critical value columns follow the same pattern as
+        |                  |   Engle-Granger Statistic |   P-Value |   Critical Value 1% |   Critical Value 5% |   Critical Value 10% | Cointegrated (5%)   |
+        |:-----------------|--------------------------:|----------:|--------------------:|--------------------:|---------------------:|:--------------------|
+        | ('AAPL', 'MSFT') |                  -3.26596 | 0.0595728 |            -4.56573 |            -3.67661 |             -3.27521 | False               |
+        | ('MSFT', 'AAPL') |                  -2.56708 | 0.250313  |            -4.56573 |            -3.67661 |             -3.27521 | False               |
         5%, omitted here for width)
 
         |                  |   Engle-Granger Statistic |   P-Value |   Critical Value 1% |   Critical Value 5% |   Critical Value 10% | Cointegrated (5%)   |
@@ -5137,21 +5141,25 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["GOOGL", "GOOG"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL/MSFT alone aren't cointegrated in this sample -- add Benchmark to the
-        # system to get one that is.
-        toolkit.econometrics.get_vecm_forecast(period="quarterly", include_benchmark=True)
+        # The two share classes of Alphabet are cointegrated: their prices cannot drift apart.
+        toolkit.econometrics.get_vecm_forecast(period="daily")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |   Step |   GOOGL |    GOOG |
+        |-------:|--------:|--------:|
+        |      1 | 312.565 | 313.351 |
+        |      2 | 312.747 | 313.551 |
+        |      3 | 312.926 | 313.745 |
+        |      4 | 313.105 | 313.94  |
+        |      5 | 313.285 | 314.133 |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)

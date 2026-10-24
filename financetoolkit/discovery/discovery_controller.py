@@ -447,13 +447,17 @@ class Discovery:
         return stock_shares_float
 
     def get_sectors_performance(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
         Returns the historical performance of every sector, one column per sector.
 
-        The values are the average change of the companies in that sector on that date, as a
-        decimal (0.0125 is +1.25%). One API call is made per sector.
+        The values are the average change of the companies in that sector listed on an
+        exchange (NASDAQ by default) on that date, as a decimal (0.0125 is +1.25%). One API call
+        is made per sector.
 
         Without a date range the API hands back only the earliest days it holds, so the
         last year up to today is retrieved unless `start_date` and `end_date` say otherwise.
@@ -463,6 +467,8 @@ class Discovery:
                 Defaults to a year ago.
             end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
                 Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with the sectors performance for each sector.
@@ -481,13 +487,13 @@ class Discovery:
 
         Which returns:
 
-        | Date       |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |   Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |   Utilities |
-        |:-----------|------------------:|-------------------------:|--------------------:|---------------------:|---------:|---------------------:|-------------:|--------------:|--------------:|-------------:|------------:|
-        | 2024-02-26 |           -2.0728 |                  -1.454  |              0.7303 |               0.324  |  -0.1413 |              -0.0491 |       2.7031 |       -1.2333 |        0.4945 |       0.2893 |     -1.5214 |
-        | 2024-02-27 |            2.8956 |                   1.0041 |             -0.7125 |               0.1136 |   2.5373 |               3.0268 |       9.1978 |       -0.5179 |        0.7542 |       0.0419 |      4.6884 |
-        | 2024-02-28 |            4.343  |                  -0.8573 |             -0.9692 |              -0.0826 |  -3.6163 |               1.8261 |      -0.9719 |        1.0113 |       -0.2592 |      -0.6251 |      1.6461 |
-        | 2024-02-29 |           -1.3336 |                   0.7907 |              1.2483 |               3.4536 |   0.6259 |              -0.5633 |      -1.4379 |       -4.1022 |        1.7541 |       1.2096 |      9.9286 |
-        | 2024-03-01 |            0.8526 |                   0.0092 |              1.5435 |              -3.7427 |   1.399  |              -0.8531 |       2.544  |        0.1322 |        0.1964 |       1.6327 |     -2.0912 |
+        | Date       |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |      Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |    Utilities |
+        |:-----------|------------------:|-------------------------:|--------------------:|---------------------:|------------:|---------------------:|-------------:|--------------:|--------------:|-------------:|-------------:|
+        | 2026-10-19 |       0.00875661  |              -0.00107542 |          0.022757   |           0.00868844 | -0.00464467 |          -0.00881873 |  0.000189793 |   -0.00922967 |   -0.017014   |  -0.00402035 | -0.0337457   |
+        | 2026-10-20 |      -0.000397105 |              -0.00517301 |          0.00326353 |          -0.0077103  | -0.00762765 |           0.0113436  |  0.0203693   |    0.0078808  |    0.0143695  |   0.00333534 |  0.000870726 |
+        | 2026-10-21 |       0.00524548  |              -0.00377267 |          0.00255038 |           0.00805013 | -0.00226659 |           0.00122279 |  0.0128648   |   -0.00171778 |   -0.010997   |   0.0036553  |  0.00699986  |
+        | 2026-10-22 |       0.0158222   |              -0.0267501  |         -0.0112764  |           0.0126416  | -0.019561   |           0.0161104  |  0.00804433  |   -0.0265981  |   -0.0313195  |  -0.0187846  | -0.024581    |
+        | 2026-10-23 |      -0.00121107  |               0.00150168 |         -0.00270255 |          -0.0133687  |  0.0308545  |           0.0101811  | -0.00300935  |    0.00179638 |    0.00460377 |   0.00759818 | -0.00308007  |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -496,6 +502,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return sectors_performance
@@ -1609,12 +1616,13 @@ class Discovery:
         sector: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns sector performance — the average price change, in percent (1.25 means
-        +1.25%), of the NASDAQ-listed companies in each sector. Provide exactly one of
-        `date` (a snapshot across all sectors on that date) or `sector` (the historical
-        time series for one sector).
+        Returns sector performance — the average price change, as a decimal (0.0125 means
+        +1.25%), of the companies listed on an exchange (NASDAQ by default) in each sector.
+        Provide exactly one of `date` (a snapshot across all sectors on that date) or `sector`
+        (the historical time series for one sector).
 
         Also known as: sector performance snapshot, sector performance history, sector trend.
 
@@ -1624,6 +1632,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one sector. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one sector. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with sector performance, indexed by Sector
@@ -1649,11 +1659,11 @@ class Discovery:
 
         | Date                | Sector   | Exchange   |   Average Change |
         |:--------------------|:---------|:-----------|-----------------:|
-        | 2024-02-26 00:00:00 | Energy   | NASDAQ     |        -0.141335 |
-        | 2024-02-27 00:00:00 | Energy   | NASDAQ     |         2.5373   |
-        | 2024-02-28 00:00:00 | Energy   | NASDAQ     |        -3.61631  |
-        | 2024-02-29 00:00:00 | Energy   | NASDAQ     |         0.625943 |
-        | 2024-03-01 00:00:00 | Energy   | NASDAQ     |         1.399    |
+        | 2026-10-19 00:00:00 | Energy   | NASDAQ     |      -0.00464467 |
+        | 2026-10-20 00:00:00 | Energy   | NASDAQ     |      -0.00762765 |
+        | 2026-10-21 00:00:00 | Energy   | NASDAQ     |      -0.00226659 |
+        | 2026-10-22 00:00:00 | Energy   | NASDAQ     |      -0.019561   |
+        | 2026-10-23 00:00:00 | Energy   | NASDAQ     |       0.0308545  |
         """
         _validate_arguments(date=date)
 
@@ -1664,6 +1674,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return sector_performance
@@ -1674,12 +1685,13 @@ class Discovery:
         industry: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns industry performance — the average price change, in percent (1.25 means
-        +1.25%), of the NASDAQ-listed companies in each industry. Provide exactly one of
-        `date` (a snapshot across all industries on that date) or `industry` (the
-        historical time series for one industry).
+        Returns industry performance — the average price change, as a decimal (0.0125 means
+        +1.25%), of the companies listed on an exchange (NASDAQ by default) in each industry.
+        Provide exactly one of `date` (a snapshot across all industries on that date) or
+        `industry` (the historical time series for one industry).
 
         Also known as: industry performance snapshot, industry performance history, industry trend.
 
@@ -1689,6 +1701,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one industry. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one industry. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with industry performance, indexed by Industry
@@ -1714,11 +1728,11 @@ class Discovery:
 
         | Date                | Industry      | Exchange   |   Average Change |
         |:--------------------|:--------------|:-----------|-----------------:|
-        | 2024-02-26 00:00:00 | Biotechnology | NASDAQ     |         3.05736  |
-        | 2024-02-27 00:00:00 | Biotechnology | NASDAQ     |         9.45945  |
-        | 2024-02-28 00:00:00 | Biotechnology | NASDAQ     |        -0.838124 |
-        | 2024-02-29 00:00:00 | Biotechnology | NASDAQ     |        -1.46899  |
-        | 2024-03-01 00:00:00 | Biotechnology | NASDAQ     |         2.61434  |
+        | 2026-10-19 00:00:00 | Biotechnology | NASDAQ     |       0.00476346 |
+        | 2026-10-20 00:00:00 | Biotechnology | NASDAQ     |       0.0238001  |
+        | 2026-10-21 00:00:00 | Biotechnology | NASDAQ     |       0.00810473 |
+        | 2026-10-22 00:00:00 | Biotechnology | NASDAQ     |       0.00288922 |
+        | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |      -0.00890932 |
         """
         _validate_arguments(date=date)
 
@@ -1729,6 +1743,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return industry_performance
@@ -1739,11 +1754,12 @@ class Discovery:
         sector: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns sector price-to-earnings (P/E) ratios of the NASDAQ-listed companies in
-        each sector. Provide exactly one of `date` (a snapshot across all sectors on that
-        date) or `sector` (the historical time series for one sector).
+        Returns sector price-to-earnings (P/E) ratios of the companies listed on an exchange
+        (NASDAQ by default) in each sector. Provide exactly one of `date` (a snapshot across all
+        sectors on that date) or `sector` (the historical time series for one sector).
 
         Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
 
@@ -1753,6 +1769,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one sector. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one sector. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with sector P/E ratios, indexed by Sector
@@ -1793,6 +1811,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return sector_pe
@@ -1803,11 +1822,13 @@ class Discovery:
         industry: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns industry price-to-earnings (P/E) ratios of the NASDAQ-listed companies
-        in each industry. Provide exactly one of `date` (a snapshot across all industries
-        on that date) or `industry` (the historical time series for one industry).
+        Returns industry price-to-earnings (P/E) ratios of the companies listed on an exchange
+        (NASDAQ by default) in each industry. Provide exactly one of `date` (a snapshot across
+        all industries on that date) or `industry` (the historical time series for one
+        industry).
 
         Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
 
@@ -1817,6 +1838,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one industry. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one industry. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with industry P/E ratios, indexed by Industry
@@ -1857,6 +1880,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return industry_pe

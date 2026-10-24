@@ -1672,7 +1672,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2000-01-01', end_date="2025-12-31")
+        economics = Economics(start_date='2016-01-01', end_date="2025-12-31")
 
         fixed_investment_to_gdp_ratio = economics.get_fixed_investment_to_gdp_ratio()
 
@@ -4066,7 +4066,8 @@ class Economics:
 
         By default the data comes from the Global Macro Database (GMDB), annual with
         2015 = 100. Set gmdb_source=False to retrieve it from the OECD instead, which is
-        the only source with quarterly data.
+        the only source with quarterly data: asking for quarterly data takes it from the
+        OECD unless gmdb_source=True is given.
 
         In the OECD data, the real house price index is given by the ratio of the nominal
         house price index to the consumers' expenditure deflator in each country from the
@@ -4080,12 +4081,12 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            quarterly (bool | None, optional): Whether to return the quarterly data or the annual data. Only applies
-                to the OECD data (gmdb_source=False). Defaults to None, which falls back to the quarterly setting of
-                the Economics class.
+            quarterly (bool | None, optional): Whether to return the quarterly data (from the OECD) or the annual
+                data. Defaults to None, which falls back to the quarterly setting of the Economics class.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data or the nominal data.
-            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
-                Defaults to None, which falls back to the gmdb_source set on the Economics class (True by default).
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB),
+                which is annual. Defaults to None, which uses the GMDB unless quarterly data is asked for (the
+                gmdb_source set on the Economics class is True by default).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -8510,7 +8511,7 @@ class Economics:
           for the euro area, developing Asia, Japan and the United Kingdom: GDP growth,
           inflation and the dollar exchange rate. scenario="historic" returns the history
           of the same variables from 1976. year selects the year of the test (published in
-          February), from 2026; by default the latest.
+          February), from 2025; by default the latest.
         - "esrb": the macro-financial scenario the European Systemic Risk Board designs for
           the EU-wide bank stress test of the EBA, yearly over three years: GDP growth,
           inflation, unemployment, residential and commercial real estate prices and
@@ -8536,7 +8537,7 @@ class Economics:
             countries (list[str] | str | None, optional): The countries (or regions) to
                 include. Defaults to None, which includes all of them.
             year (int | None, optional): The year of the Federal Reserve's stress test, from
-                2026. Defaults to None, which takes the latest.
+                2025. Defaults to None, which takes the latest.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
@@ -9428,9 +9429,9 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get the forward/futures curve for a commodity from Yahoo Finance -- the
-        historical daily closing price of each dated futures contract over `contracts`
-        calendar months from the current month (e.g. Crude Oil's December 2026, January
-        2027, ... contracts), rather than a single flat continuous/spot price.
+        historical daily closing price of each of the nearest `contracts` dated futures
+        contracts from the current month on (e.g. Crude Oil's December 2026, January 2027,
+        ... contracts), rather than a single flat continuous/spot price.
 
         This is what a Schwartz-Smith (2000) two-factor commodity price model needs
         to back out the convenience-yield term structure under the risk-neutral (Q)
@@ -9440,9 +9441,8 @@ class Economics:
         Not every commodity has a listed contract for every calendar month (grains
         in particular only trade specific delivery months), and the contracts of the
         first months may already have expired (for crude oil the current month's
-        contract and, late in the month, the next month's). Months with no listed
-        contract are silently skipped -- the number of columns returned can be fewer
-        than `contracts`.
+        contract and, late in the month, the next month's). Those months are skipped and
+        later months are tried instead, until `contracts` contracts are found.
 
         Also known as: futures term structure, forward curve.
 
@@ -9450,10 +9450,8 @@ class Economics:
             commodity (str): The commodity to retrieve the curve for. One of "Crude
                 Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn", "Wheat" or
                 "Soybeans".
-            contracts (int, optional): The number of calendar months, starting with
-                the current month, whose contracts are fetched. Contracts that have
-                expired or are not listed are skipped, so fewer columns can be
-                returned. Defaults to 12.
+            contracts (int, optional): The number of contracts to return, the nearest
+                listed ones from the current month on. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Raises:

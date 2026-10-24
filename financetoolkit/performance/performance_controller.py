@@ -3692,10 +3692,10 @@ class Performance:
 
         |                                       |   AAPL |   TSLA |   Benchmark |
         |:--------------------------------------|-------:|-------:|------------:|
-        | Compound Annual Growth Rate (CAGR)    | 0.1181 | 0.063  |      0.1099 |
-        | Compound Quarterly Growth Rate (CQGR) | 0.0444 | 0.0377 |      0.0325 |
-        | Compound Monthly Growth Rate (CMGR)   | 0.0128 | 0.009  |      0.0116 |
-        | Compound Weekly Growth Rate (CWGR)    | 0.0029 | 0.0016 |      0.0025 |
+        | Compound Annual Growth Rate (CAGR)    | 0.1672 | 0.1314 |      0.1472 |
+        | Compound Quarterly Growth Rate (CQGR) | 0.0394 | 0.0314 |      0.0349 |
+        | Compound Monthly Growth Rate (CMGR)   | 0.013  | 0.0103 |      0.0115 |
+        | Compound Weekly Growth Rate (CWGR)    | 0.003  | 0.0024 |      0.0026 |
         | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0005 |
         """
         compound_growth_rates = {}

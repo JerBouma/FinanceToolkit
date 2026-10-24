@@ -1640,24 +1640,24 @@ class Risk:
         | Date   |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
         | 2021Q2 | 0.0125 | 0.0003 |      0.007  |
-        | 2021Q3 | 0.0186 | 0.0462 |      0.0068 |
-        | 2021Q4 | 0.0222 | 0.0745 |      0.0065 |
-        | 2022Q1 | 0.0244 | 0.092  |      0.0063 |
-        | 2022Q2 | 0.0257 | 0.1029 |      0.0061 |
-        | 2022Q3 | 0.0264 | 0.1096 |      0.006  |
-        | 2022Q4 | 0.0269 | 0.1137 |      0.0058 |
-        | 2023Q1 | 0.0271 | 0.1163 |      0.0056 |
-        | 2023Q2 | 0.0273 | 0.1179 |      0.0055 |
-        | 2023Q3 | 0.0274 | 0.1189 |      0.0054 |
-        | 2023Q4 | 0.0274 | 0.1195 |      0.0053 |
-        | 2024Q1 | 0.0275 | 0.1199 |      0.0051 |
-        | 2024Q2 | 0.0275 | 0.1201 |      0.005  |
-        | 2024Q3 | 0.0275 | 0.1202 |      0.0049 |
-        | 2024Q4 | 0.0275 | 0.1203 |      0.0049 |
-        | 2025Q1 | 0.0275 | 0.1204 |      0.0048 |
-        | 2025Q2 | 0.0275 | 0.1204 |      0.0047 |
-        | 2025Q3 | 0.0275 | 0.1204 |      0.0046 |
-        | 2025Q4 | 0.0275 | 0.1204 |      0.0046 |
+        | 2021Q3 | 0.0186 | 0.0462 |      0.0069 |
+        | 2021Q4 | 0.0222 | 0.0745 |      0.0068 |
+        | 2022Q1 | 0.0244 | 0.092  |      0.0067 |
+        | 2022Q2 | 0.0257 | 0.1029 |      0.0066 |
+        | 2022Q3 | 0.0264 | 0.1096 |      0.0065 |
+        | 2022Q4 | 0.0269 | 0.1137 |      0.0064 |
+        | 2023Q1 | 0.0271 | 0.1163 |      0.0063 |
+        | 2023Q2 | 0.0273 | 0.1179 |      0.0062 |
+        | 2023Q3 | 0.0274 | 0.1189 |      0.0061 |
+        | 2023Q4 | 0.0274 | 0.1195 |      0.0061 |
+        | 2024Q1 | 0.0275 | 0.1199 |      0.006  |
+        | 2024Q2 | 0.0275 | 0.1201 |      0.0059 |
+        | 2024Q3 | 0.0275 | 0.1202 |      0.0058 |
+        | 2024Q4 | 0.0275 | 0.1203 |      0.0057 |
+        | 2025Q1 | 0.0275 | 0.1204 |      0.0056 |
+        | 2025Q2 | 0.0275 | 0.1204 |      0.0056 |
+        | 2025Q3 | 0.0275 | 0.1204 |      0.0055 |
+        | 2025Q4 | 0.0275 | 0.1204 |      0.0054 |
         """
         period = period if period else "daily"
 
@@ -1771,16 +1771,16 @@ class Risk:
 
         |        |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0275 | 0.1205 |      0.0045 |
-        | 2026Q2 | 0.0275 | 0.1205 |      0.0044 |
-        | 2026Q3 | 0.0275 | 0.1205 |      0.0044 |
-        | 2026Q4 | 0.0275 | 0.1205 |      0.0043 |
-        | 2027Q1 | 0.0275 | 0.1205 |      0.0043 |
-        | 2027Q2 | 0.0275 | 0.1205 |      0.0042 |
-        | 2027Q3 | 0.0275 | 0.1205 |      0.0042 |
-        | 2027Q4 | 0.0275 | 0.1205 |      0.0042 |
-        | 2028Q1 | 0.0275 | 0.1205 |      0.0041 |
-        | 2028Q2 | 0.0275 | 0.1205 |      0.0041 |
+        | 2026Q1 | 0.0275 | 0.1205 |      0.0053 |
+        | 2026Q2 | 0.0275 | 0.1205 |      0.0052 |
+        | 2026Q3 | 0.0275 | 0.1205 |      0.0052 |
+        | 2026Q4 | 0.0275 | 0.1205 |      0.0051 |
+        | 2027Q1 | 0.0275 | 0.1205 |      0.005  |
+        | 2027Q2 | 0.0275 | 0.1205 |      0.0049 |
+        | 2027Q3 | 0.0275 | 0.1205 |      0.0049 |
+        | 2027Q4 | 0.0275 | 0.1205 |      0.0048 |
+        | 2028Q1 | 0.0275 | 0.1205 |      0.0047 |
+        | 2028Q2 | 0.0275 | 0.1205 |      0.0047 |
         """
         period = period if period else "daily"
 
@@ -1856,7 +1856,9 @@ class Risk:
 
         With the constraints Omega, Alpha, Beta > 0 and Alpha + Beta < 1. The parameters are
         estimated by maximizing the GARCH log-likelihood with L-BFGS-B, started from a
-        domain-informed initial guess and from 32 points of a Sobol sequence, keeping the best fit.
+        domain-informed initial guess and from 32 points of a Sobol sequence, and the best fit is
+        finished with Nelder-Mead. The search runs on the parameters scaled to their bounds, as
+        Omega (of the order of a daily variance) and Alpha and Beta differ by orders of magnitude.
 
         Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) conditional variance
         path, this method returns the fitted parameters themselves. This is useful when the parameters
@@ -1899,16 +1901,16 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_garch_parameters(period="quarterly")
+        toolkit.risk.get_garch_parameters(period="daily", rounding=6)
         ```
 
         Which returns:
 
-        |       |   AMZN |   TSLA |   Benchmark |
-        |:------|-------:|-------:|------------:|
-        | Omega | 0.0112 | 0.046  |      0.0003 |
-        | Alpha | 0      | 0      |      0      |
-        | Beta  | 0.5947 | 0.6184 |      0.9274 |
+        |       |     AMZN |     TSLA |   Benchmark |
+        |:------|---------:|---------:|------------:|
+        | Omega | 6.3e-05  | 0.00015  |    4e-06    |
+        | Alpha | 0.207024 | 0.061295 |    0.111343 |
+        | Beta  | 0.680546 | 0.839749 |    0.855921 |
         """
         period = period if period else "daily"
 
@@ -2008,24 +2010,24 @@ class Risk:
         | Date   |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
         | 2021Q2 | 0.0125 | 0.0003 |      0.007  |
-        | 2021Q3 | 0.0208 | 0.0523 |      0.0065 |
-        | 2021Q4 | 0.0219 | 0.0735 |      0.0057 |
-        | 2022Q1 | 0.0219 | 0.0821 |      0.0057 |
-        | 2022Q2 | 0.0219 | 0.0856 |      0.0054 |
-        | 2022Q3 | 0.0319 | 0.1403 |      0.0088 |
-        | 2022Q4 | 0.0233 | 0.1093 |      0.0079 |
-        | 2023Q1 | 0.0275 | 0.2052 |      0.0072 |
-        | 2023Q2 | 0.0235 | 0.1357 |      0.0066 |
-        | 2023Q3 | 0.0232 | 0.1074 |      0.0062 |
-        | 2023Q4 | 0.0221 | 0.0966 |      0.0056 |
-        | 2024Q1 | 0.0225 | 0.0915 |      0.0057 |
-        | 2024Q2 | 0.0225 | 0.1218 |      0.0056 |
-        | 2024Q3 | 0.022  | 0.1018 |      0.0052 |
-        | 2024Q4 | 0.022  | 0.0936 |      0.0048 |
-        | 2025Q1 | 0.0224 | 0.0903 |      0.0044 |
-        | 2025Q2 | 0.0234 | 0.1375 |      0.0044 |
-        | 2025Q3 | 0.0225 | 0.1081 |      0.0046 |
-        | 2025Q4 | 0.0219 | 0.0962 |      0.0046 |
+        | 2021Q3 | 0.0178 | 0.0523 |      0.0068 |
+        | 2021Q4 | 0.0205 | 0.0735 |      0.0066 |
+        | 2022Q1 | 0.0212 | 0.0821 |      0.0065 |
+        | 2022Q2 | 0.0216 | 0.0856 |      0.0064 |
+        | 2022Q3 | 0.0538 | 0.1403 |      0.0063 |
+        | 2022Q4 | 0.0355 | 0.1093 |      0.0062 |
+        | 2023Q1 | 0.0451 | 0.2052 |      0.0061 |
+        | 2023Q2 | 0.0318 | 0.1357 |      0.0061 |
+        | 2023Q3 | 0.0261 | 0.1074 |      0.006  |
+        | 2023Q4 | 0.0237 | 0.0966 |      0.006  |
+        | 2024Q1 | 0.0226 | 0.0915 |      0.006  |
+        | 2024Q2 | 0.0221 | 0.1218 |      0.006  |
+        | 2024Q3 | 0.0219 | 0.1018 |      0.006  |
+        | 2024Q4 | 0.0221 | 0.0936 |      0.0059 |
+        | 2025Q1 | 0.0219 | 0.0903 |      0.0059 |
+        | 2025Q2 | 0.0265 | 0.1375 |      0.0059 |
+        | 2025Q3 | 0.0238 | 0.1081 |      0.0059 |
+        | 2025Q4 | 0.0226 | 0.0962 |      0.0059 |
         """
         period = period if period else "daily"
 
@@ -2133,16 +2135,16 @@ class Risk:
 
         |        |   AMZN |   TSLA |   Benchmark |
         |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0219 | 0.0913 |      0.0042 |
-        | 2026Q2 | 0.023  | 0.1066 |      0.0043 |
-        | 2026Q3 | 0.0232 | 0.1158 |      0.0044 |
-        | 2026Q4 | 0.0232 | 0.1212 |      0.0045 |
-        | 2027Q1 | 0.0232 | 0.1244 |      0.0046 |
-        | 2027Q2 | 0.0232 | 0.1264 |      0.0047 |
-        | 2027Q3 | 0.0232 | 0.1275 |      0.0048 |
-        | 2027Q4 | 0.0232 | 0.1282 |      0.0048 |
-        | 2028Q1 | 0.0232 | 0.1286 |      0.0049 |
-        | 2028Q2 | 0.0232 | 0.1288 |      0.0049 |
+        | 2026Q1 | 0.0221 | 0.0913 |      0.0059 |
+        | 2026Q2 | 0.0248 | 0.1066 |      0.0059 |
+        | 2026Q3 | 0.0263 | 0.1158 |      0.0059 |
+        | 2026Q4 | 0.0272 | 0.1212 |      0.0059 |
+        | 2027Q1 | 0.0277 | 0.1244 |      0.0059 |
+        | 2027Q2 | 0.0279 | 0.1264 |      0.0059 |
+        | 2027Q3 | 0.0281 | 0.1275 |      0.0059 |
+        | 2027Q4 | 0.0282 | 0.1282 |      0.0059 |
+        | 2028Q1 | 0.0282 | 0.1286 |      0.0059 |
+        | 2028Q2 | 0.0283 | 0.1288 |      0.0059 |
         """
         period = period if period else "daily"
 
@@ -2249,17 +2251,17 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_gjr_garch_parameters(period="quarterly")
+        toolkit.risk.get_gjr_garch_parameters(period="daily", rounding=6)
         ```
 
         Which returns:
 
-        |       |   AMZN |   TSLA |   Benchmark |
-        |:------|-------:|-------:|------------:|
-        | Omega | 0.0189 | 0.0522 |      0.0005 |
-        | Alpha | 0.0169 | 0      |      0.05   |
-        | Gamma | 0.0656 | 0.3783 |      0.1    |
-        | Beta  | 0.1363 | 0.4067 |      0.8    |
+        |       |     AMZN |     TSLA |   Benchmark |
+        |:------|---------:|---------:|------------:|
+        | Omega | 3.2e-05  | 0.000156 |    4e-06    |
+        | Alpha | 0.035099 | 0.037563 |    0        |
+        | Gamma | 0.146226 | 0.062236 |    0.205132 |
+        | Beta  | 0.834269 | 0.831086 |    0.87099  |
         """
         period = period if period else "daily"
 
@@ -2600,17 +2602,17 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_egarch_parameters(period="quarterly")
+        toolkit.risk.get_egarch_parameters(period="daily", rounding=6)
         ```
 
         Which returns:
 
-        |       |    AMZN |    TSLA |   Benchmark |
-        |:------|--------:|--------:|------------:|
-        | Omega |  0.0232 | -1.4376 |     -2.5535 |
-        | Alpha | -1      | -1      |     -1      |
-        | Gamma | -0.4903 | -0.414  |     -0.4958 |
-        | Beta  |  0.999  |  0.2582 |      0.4535 |
+        |       |      AMZN |      TSLA |   Benchmark |
+        |:------|----------:|----------:|------------:|
+        | Omega | -0.427443 | -3.36109  |   -0.366356 |
+        | Alpha |  0.207328 |  0.177209 |    0.085515 |
+        | Gamma | -0.082022 | -0.054572 |   -0.187666 |
+        | Beta  |  0.943158 |  0.48343  |    0.959592 |
         """
         period = period if period else "daily"
 
@@ -2740,13 +2742,17 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_tail_dependence_coefficient("AAPL", "MSFT", period="weekly")
+        toolkit.risk.get_tail_dependence_coefficient("AMZN", "TSLA", period="weekly")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |                       |    Value |
+        |:----------------------|---------:|
+        | Lower Tail Dependence |   0.0769 |
+        | Upper Tail Dependence |   0.1538 |
+        | Correlation           |   0.4393 |
+        | Observations          | 260      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2850,13 +2856,19 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_copula_parameters("AAPL", "MSFT", copula="clayton", period="weekly")
+        toolkit.risk.get_copula_parameters("AMZN", "TSLA", copula="clayton", period="weekly")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |                       |    Value |
+        |:----------------------|---------:|
+        | Theta                 |   0.6154 |
+        | Lower Tail Dependence |   0.3242 |
+        | Upper Tail Dependence |   0      |
+        | Log-Likelihood        |  21.6826 |
+        | AIC                   | -41.3651 |
+        | Observations          | 260      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2973,18 +2985,22 @@ class Risk:
         )
 
         toolkit.risk.get_copula_simulation(
-            "AAPL", "MSFT", copula="clayton", period="weekly", n_simulations=5000
+            "AMZN", "TSLA", copula="clayton", period="weekly", n_simulations=5000
         ).describe()
         ```
 
         Which returns:
 
-        |        |   0 |
-        |:-------|----:|
-        | count  |   0 |
-        | unique |   0 |
-        | top    | nan |
-        | freq   | nan |
+        |       |          AMZN |          TSLA |
+        |:------|--------------:|--------------:|
+        | count | 5000          | 5000          |
+        | mean  |    0.00206638 |    0.00380068 |
+        | std   |    0.0435261  |    0.0792416  |
+        | min   |   -0.1382     |   -0.1796     |
+        | 25%   |   -0.022325   |   -0.049125   |
+        | 50%   |    0.0004     |   -0.0001     |
+        | 75%   |    0.0297     |    0.052725   |
+        | max   |    0.1385     |    0.3331     |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3145,13 +3161,20 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_best_fitting_copula("AAPL", "MSFT", period="weekly")
+        copulas = toolkit.risk.get_best_fitting_copula("AMZN", "TSLA", period="weekly")
+
+        copulas[["Lower Tail Dependence", "Upper Tail Dependence", "Log-Likelihood", "AIC"]]
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        | Copula    |   Lower Tail Dependence |   Upper Tail Dependence |   Log-Likelihood |      AIC |
+        |:----------|------------------------:|------------------------:|-----------------:|---------:|
+        | Frank     |                  0      |                  0      |          32.402  | -62.8039 |
+        | Gaussian  |                  0      |                  0      |          30.2955 | -58.5909 |
+        | Student-T |                  0.0094 |                  0.0094 |          30.5604 | -57.1208 |
+        | Gumbel    |                  0      |                  0.3659 |          27.8789 | -53.7579 |
+        | Clayton   |                  0.3242 |                  0      |          21.6826 | -41.3651 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3290,13 +3313,18 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_covar("AAPL", "MSFT", period="weekly")
+        toolkit.risk.get_covar("AMZN", "TSLA", period="weekly")
         ```
 
         Which returns:
 
-        | 0   |
-        |-----|
+        |                               |    Value |
+        |:------------------------------|---------:|
+        | CoVaR                         |  -0.1041 |
+        | Delta-CoVaR                   |  -0.0423 |
+        | Quantile Regression Slope     |   0.3252 |
+        | Quantile Regression Intercept |  -0.062  |
+        | Observations                  | 260      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -4557,15 +4585,16 @@ class Risk:
 
         Which returns:
 
-        | Date       |     AMZN |     TSLA |   Benchmark |
-        |:-----------|---------:|---------:|------------:|
-        | 2025-12-24 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-26 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-29 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-30 |   0.0003 |   0.0011 |      0.0001 |
-        | 2025-12-31 | nan      | nan      |    nan      |
+        | Date       |   AMZN |   TSLA |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-24 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-26 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-29 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-30 | 0.0003 | 0.0011 |      0.0001 |
+        | 2025-12-31 | 0.0003 | 0.0011 |      0.0001 |
 
-        The last row is NaN since there is no return after 2025-12-31 yet to forecast against.
+        The last row is the forecast for the first trading day after 2025-12-31, which has not
+        been observed yet.
         """
         if estimator not in (
             "squared_return",

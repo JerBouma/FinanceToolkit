@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from financetoolkit.portfolio import portfolio_model
+
 # pylint: disable=too-many-instance-attributes
 
 # How often a model portfolio is brought back to its target weights.
@@ -354,6 +356,8 @@ def build_transactions(
     currencies: dict[str, str] | None = None,
     initial_value: float = 10000.0,
     years_offset: float = 0.0,
+    currency: str | None = None,
+    exchange_rates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     The transactions that invest a portfolio definition: the purchase of every holding on
@@ -362,24 +366,55 @@ def build_transactions(
     quarter or year). A schedule's weights are taken for the years since the first day plus
     the offset.
 
+    Weights only add up when every price is in the same currency, so the prices are first
+    converted to the portfolio's currency (pence to pounds included) with the exchange rate
+    of each day, and every transaction is recorded in that currency.
+
     Args:
         definition (PortfolioDefinition): The portfolio.
-        prices (pd.DataFrame): The daily (adjusted) prices, one column per ticker.
-        currencies (dict[str, str] | None, optional): The currency per ticker. Defaults to
-            None, the currency of each holding or USD.
-        initial_value (float, optional): The amount invested at the start. Defaults to
-            10,000.
+        prices (pd.DataFrame): The daily (adjusted) prices, one column per ticker, each in
+            the currency the ticker is quoted in.
+        currencies (dict[str, str] | None, optional): The currency each ticker is quoted
+            in, e.g. {"IGLT.L": "GBP"}. Defaults to None, the currency of each holding or
+            otherwise the portfolio's currency.
+        initial_value (float, optional): The amount invested at the start, in the
+            portfolio's currency. Defaults to 10,000.
         years_offset (float, optional): The years to add to the time since the start when
             reading a schedule, e.g. to start a glide path part of the way. Defaults to 0.
+        currency (str | None, optional): The portfolio's currency. Defaults to None, the
+            currency with the largest share of the target weights (USD when no currency is
+            known).
+        exchange_rates (pd.DataFrame | None, optional): The daily exchange rates to convert
+            the prices with, one column per rate such as USDGBP=X (the pounds per dollar).
+            Defaults to None, for a portfolio whose holdings all trade in its currency.
 
     Returns:
         pd.DataFrame: The transactions with Date, Identifier, Name, Price, Volume, Costs and
         Currency columns.
+
+    Raises:
+        ValueError: When a holding has no prices, when the holdings share no day with a
+            price, or when a holding trades in another currency and its exchange rate is
+            not available.
     """
     tickers = definition.tickers
     missing = [ticker for ticker in tickers if ticker not in prices.columns]
     if missing:
         raise ValueError(f"No prices are available for: {', '.join(missing)}.")
+
+    known_currencies = {
+        holding.ticker: (currencies or {}).get(holding.ticker) or holding.currency
+        for holding in definition.holdings
+    }
+    known_currencies = {
+        ticker: ticker_currency
+        for ticker, ticker_currency in known_currencies.items()
+        if ticker_currency
+    }
+    base_currency = portfolio_model.get_price_unit(
+        currency
+        or portfolio_model.get_base_currency(known_currencies, definition.weights)
+    )[0]
 
     prices = prices[tickers].copy()
     prices.index = (
@@ -387,6 +422,15 @@ def build_transactions(
         if not isinstance(prices.index, pd.PeriodIndex)
         else prices.index
     )
+    if exchange_rates is not None and not isinstance(
+        exchange_rates.index, pd.PeriodIndex
+    ):
+        exchange_rates = exchange_rates.copy()
+        exchange_rates.index = pd.PeriodIndex(exchange_rates.index, freq="D")
+    prices = portfolio_model.convert_prices(
+        prices, known_currencies, base_currency, exchange_rates
+    )
+
     complete = prices.dropna(how="any")
     if complete.empty:
         raise ValueError("The holdings have no day on which all of them have a price.")
@@ -404,12 +448,6 @@ def build_transactions(
 
     names = {
         holding.ticker: holding.name or holding.ticker
-        for holding in definition.holdings
-    }
-    holding_currencies = {
-        holding.ticker: (currencies or {}).get(holding.ticker)
-        or holding.currency
-        or "USD"
         for holding in definition.holdings
     }
 
@@ -432,7 +470,7 @@ def build_transactions(
                     "Price": price,
                     "Volume": volume,
                     "Costs": 0.0,
-                    "Currency": holding_currencies[ticker],
+                    "Currency": base_currency,
                 }
             )
 

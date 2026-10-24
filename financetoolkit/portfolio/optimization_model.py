@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.optimize import linprog, minimize
-from scipy.spatial.distance import squareform
+from scipy.spatial.distance import pdist
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -16,6 +16,17 @@ OPTIMIZER_OPTIONS = {"ftol": 1e-12, "maxiter": 1000}
 
 # Weights closer to zero than this are numerical noise of the optimizer.
 ZERO_WEIGHT = 1e-10
+
+# How far a solution may lie outside a constraint or bound and still be accepted.
+FEASIBILITY_TOLERANCE = 1e-8
+
+# SLSQP's "Positive directional derivative for linesearch": the line search found no step
+# that improves the objective, which also happens at an optimum that is flat to machine
+# precision.
+SLSQP_LINE_SEARCH_STATUS = 8
+
+# How closely the risk contributions of a risk parity portfolio must match the budget.
+RISK_BUDGET_TOLERANCE = 1e-6
 
 
 def _bounds(
@@ -44,6 +55,27 @@ def _fully_invested() -> dict:
     }
 
 
+def _is_feasible(
+    weights: np.ndarray, bounds: list[tuple[float, float]], constraints: list[dict]
+) -> bool:
+    """Whether weights lie within the bounds and meet every constraint."""
+    lower = np.array([bound[0] for bound in bounds])
+    upper = np.array([bound[1] for bound in bounds])
+    if not np.all(np.isfinite(weights)):
+        return False
+    if np.any(weights < lower - FEASIBILITY_TOLERANCE) or np.any(
+        weights > upper + FEASIBILITY_TOLERANCE
+    ):
+        return False
+    for constraint in constraints:
+        value = np.atleast_1d(constraint["fun"](weights))
+        if constraint["type"] == "eq" and np.any(np.abs(value) > FEASIBILITY_TOLERANCE):
+            return False
+        if constraint["type"] == "ineq" and np.any(value < -FEASIBILITY_TOLERANCE):
+            return False
+    return True
+
+
 def _solve(
     objective,
     gradient,
@@ -51,7 +83,12 @@ def _solve(
     bounds: list[tuple[float, float]],
     constraints: list[dict],
 ) -> np.ndarray:
-    """Run SLSQP from the equally weighted portfolio, clipped into the bounds."""
+    """
+    Run SLSQP from the equally weighted portfolio, clipped into the bounds. A line search
+    that stops without a better step (status 8) is accepted when the weights meet every
+    constraint and bound: SLSQP reports it at optima whose objective no longer changes at
+    machine precision, e.g. for the maximum Sharpe ratio.
+    """
     lower = np.array([bound[0] for bound in bounds])
     upper = np.array([bound[1] for bound in bounds])
     start = np.clip(np.full(assets, 1 / assets), lower, upper)
@@ -66,7 +103,10 @@ def _solve(
         options=OPTIMIZER_OPTIONS,
     )
 
-    if not result.success:
+    if not result.success and not (
+        result.status == SLSQP_LINE_SEARCH_STATUS
+        and _is_feasible(result.x, bounds, constraints)
+    ):
         raise ValueError(f"The optimization did not converge: {result.message}")
 
     return result.x
@@ -74,8 +114,11 @@ def _solve(
 
 def _return_range(
     mu: np.ndarray, bounds: list[tuple[float, float]]
-) -> tuple[float, float]:
-    """The lowest and highest expected return a fully invested portfolio can have."""
+) -> tuple[float, float, np.ndarray]:
+    """
+    The lowest and highest expected return a fully invested portfolio can have, and the
+    weights of the portfolio with the highest return.
+    """
     assets = len(mu)
     extremes = [
         linprog(
@@ -87,7 +130,7 @@ def _return_range(
         )
         for sign in (1, -1)
     ]
-    return float(extremes[0].fun), float(-extremes[1].fun)
+    return float(extremes[0].fun), float(-extremes[1].fun), extremes[1].x
 
 
 def _as_series(weights: np.ndarray, assets: pd.Index) -> pd.Series:
@@ -267,7 +310,7 @@ def get_mean_variance_weights(
     bounds = _bounds(assets, minimum_weight, maximum_weight)
 
     if target_return is not None:
-        lowest, highest = _return_range(mu, bounds)
+        lowest, highest, _ = _return_range(mu, bounds)
         if not lowest - 1e-9 <= target_return <= highest + 1e-9:
             raise ValueError(
                 f"A target return of {target_return:.4f} cannot be reached within the "
@@ -339,24 +382,33 @@ def get_efficient_frontier(
     assets = len(mu)
     bounds = _bounds(assets, minimum_weight, maximum_weight)
     # The frontier runs up to the highest return the bounds allow.
-    highest = _return_range(mu, bounds)[1]
+    _, highest, highest_weights = _return_range(mu, bounds)
+    targets = np.linspace(lowest, highest, points)
 
     rows = []
-    for target in np.linspace(lowest, highest, points):
-        weights = _solve(
-            lambda w: w @ sigma @ w,
-            lambda w: 2 * sigma @ w,
-            assets,
-            bounds,
-            [
-                _fully_invested(),
-                {
-                    "type": "eq",
-                    "fun": lambda w, target=target: w @ mu - target,
-                    "jac": lambda w: mu,
-                },
-            ],
-        )
+    for number, target in enumerate(targets, start=1):
+        try:
+            weights = _solve(
+                lambda w: w @ sigma @ w,
+                lambda w: 2 * sigma @ w,
+                assets,
+                bounds,
+                [
+                    _fully_invested(),
+                    {
+                        "type": "eq",
+                        "fun": lambda w, target=target: w @ mu - target,
+                        "jac": lambda w: mu,
+                    },
+                ],
+            )
+        except ValueError:
+            # The highest return is a corner of the weight bounds, where SLSQP can report
+            # the constraints as incompatible although the portfolio exists: it is the one
+            # the linear programme of the return range found. Other points still fail.
+            if number != len(targets):
+                raise
+            weights = highest_weights
         weights = _as_series(weights, covariance.index)
         statistics = get_portfolio_statistics(
             weights, expected_returns, covariance, risk_free_rate
@@ -423,10 +475,18 @@ def get_risk_parity_weights(
         options={"ftol": 1e-15, "gtol": 1e-12, "maxiter": 10000},
     )
 
-    if not result.success:
+    # The solution is judged by what it has to achieve, risk contributions in proportion
+    # to the budget, rather than by the solver's status: L-BFGS-B stops with ABNORMAL when
+    # its line search cannot improve an objective that is already flat to machine
+    # precision, which happens at the optimum for some covariance matrices.
+    weights = result.x / result.x.sum()
+    contributions = weights * (sigma @ weights)
+    if not np.all(np.isfinite(contributions)) or not np.allclose(
+        contributions / contributions.sum(), budget, atol=RISK_BUDGET_TOLERANCE
+    ):
         raise ValueError(f"The optimization did not converge: {result.message}")
 
-    return _as_series(result.x / result.x.sum(), covariance.index)
+    return _as_series(weights, covariance.index)
 
 
 def get_hierarchical_risk_parity_weights(
@@ -439,6 +499,11 @@ def get_hierarchical_risk_parity_weights(
     variance. It needs no matrix inversion, so it stays stable when assets are highly
     correlated.
 
+    As in the paper (Stage 1, step 2), the clustering uses the Euclidean distance between
+    the columns of the correlation distance matrix d = √((1 - ρ) / 2), a distance of
+    distances that compares how each pair of assets relates to all the others. Some
+    libraries cluster on d itself, which can order the assets differently.
+
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         linkage_method (str, optional): The linkage of the hierarchical clustering, e.g.
@@ -450,12 +515,12 @@ def get_hierarchical_risk_parity_weights(
     volatility = np.sqrt(np.diag(covariance.to_numpy()))
     correlation = covariance / np.outer(volatility, volatility)
 
-    # The correlation distance of López de Prado, sqrt((1 - rho) / 2).
+    # The correlation distance of López de Prado, sqrt((1 - rho) / 2), and the Euclidean
+    # distance between its columns that the paper clusters on (its code passes the square
+    # matrix to linkage, which reads the rows as observations and does exactly this).
     distance = np.sqrt(np.clip((1 - correlation.to_numpy()) / 2, 0, None))
     np.fill_diagonal(distance, 0)
-    order = leaves_list(
-        linkage(squareform(distance, checks=False), method=linkage_method)
-    )
+    order = leaves_list(linkage(pdist(distance), method=linkage_method))
     ordered = covariance.index[order].tolist()
 
     def cluster_variance(items: list) -> float:
@@ -548,29 +613,49 @@ def get_black_litterman_returns(
     view_confidences: dict[str, float] | None = None,
     risk_aversion: float = 2.5,
     tau: float = 0.05,
+    risk_free_rate: float = 0.0,
 ) -> pd.DataFrame:
     """
-    The Black-Litterman expected returns (Black and Litterman, 1992). The prior is the
-    return the market implies through its weights, Π = δΣw; views move it towards the
-    investor's expectations in proportion to their confidence. A view is absolute
-    ("AAPL": 0.10, AAPL returns 10% a year) or relative ("AAPL-MSFT": 0.02, AAPL beats MSFT
-    by 2%). Without a confidence, a view's uncertainty is the variance of the view
-    portfolio scaled by tau (He and Litterman, 1999); a confidence c between 0 and 1 scales
-    that uncertainty by (1 - c) / c.
+    The Black-Litterman expected returns (Black and Litterman, 1992), as total returns.
+    The prior is the return the market implies through its weights: the excess return
+    Π = δΣw at which holding the market is optimal (He and Litterman, 1999), plus the risk
+    free rate. Views move it towards the investor's expectations in proportion to their
+    confidence. A view is absolute ("AAPL": 0.10, AAPL returns 10% a year in total) or
+    relative ("AAPL-MSFT": 0.02, AAPL beats MSFT by 2%, which the risk free rate does not
+    affect). Without a confidence, a view's uncertainty is the variance of the view
+    portfolio scaled by tau, Ω_k = τ p_k'Σp_k (He and Litterman, 1999). A confidence c
+    between 0 and 1 scales it to Ω_k = (1 - c) / c × τ p_k'Σp_k, the closed form of
+    Idzorek's (2005) confidence method derived by Walters (2014): a confidence of 0.5 keeps
+    the uncertainty and one close to 1 moves the return all the way to the view.
+
+    References:
+        - Black, F. and Litterman, R. (1992). "Global Portfolio Optimization." Financial
+          Analysts Journal, 48(5), 28-43.
+        - He, G. and Litterman, R. (1999). "The Intuition Behind Black-Litterman Model
+          Portfolios." Goldman Sachs Investment Management Research.
+        - Idzorek, T. (2005). "A Step-by-Step Guide to the Black-Litterman Model:
+          Incorporating User-Specified Confidence Levels." Working paper.
+        - Walters, J. (2014). "The Black-Litterman Model in Detail."
+          https://ssrn.com/abstract=1314585
 
     Args:
         covariance (pd.DataFrame): The annualized covariance matrix.
         market_weights (pd.Series): The market capitalization weight per asset.
-        views (dict[str, float] | None, optional): The views, as described above. Defaults
-            to None, which returns the market implied returns.
+        views (dict[str, float] | None, optional): The annualized views, absolute views as
+            total returns, as described above. Defaults to None, which returns the market
+            implied returns.
         view_confidences (dict[str, float] | None, optional): The confidence per view,
             between 0 and 1. Defaults to None.
         risk_aversion (float, optional): The risk aversion of the market, δ. Defaults to 2.5.
         tau (float, optional): The uncertainty of the prior relative to the covariance.
             Defaults to 0.05.
+        risk_free_rate (float, optional): The annualized risk free rate, added to the
+            implied excess returns so that they are total returns like the views. Defaults
+            to 0.
 
     Returns:
-        pd.DataFrame: The Implied Return and the Black-Litterman Return per asset.
+        pd.DataFrame: The Implied Return and the Black-Litterman Return per asset, both
+        annualized total returns.
     """
     assets = covariance.index
     sigma = covariance.to_numpy()
@@ -579,7 +664,10 @@ def get_black_litterman_returns(
         raise ValueError("The market weights must sum to a positive number.")
     weights = weights / weights.sum()
 
-    implied = risk_aversion * sigma @ weights
+    # Π = δΣw is an excess return; with the risk free rate added it is a total return,
+    # comparable to absolute views. A relative view compares two total returns, so the
+    # risk free rate cancels out of it.
+    implied = risk_aversion * sigma @ weights + risk_free_rate
     posterior = implied
 
     if views:

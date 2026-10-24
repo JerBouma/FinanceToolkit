@@ -21,7 +21,7 @@ holdings:
     asset_class: Fixed Income
     currency: USD
     duration: 5.43
-  - ticker: IEGA.L
+  - ticker: IEGA.AS
     name: iShares Core EUR Govt Bond UCITS ETF
     weight: 0.3
     asset_class: Fixed Income

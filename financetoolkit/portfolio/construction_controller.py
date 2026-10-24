@@ -673,6 +673,11 @@ class PortfolioConstruction:
         stable with many or highly correlated assets, where mean-variance weights become
         erratic.
 
+        As in the paper, the clustering uses the Euclidean distance between the columns of
+        the correlation distance matrix √((1 - ρ) / 2): two assets are close when they
+        relate to all the other assets in the same way. Some libraries cluster on the
+        correlation distance itself, which can order the assets differently.
+
         For more information, see the following paper:
 
         - López de Prado, M. (2016). "Building Diversified Portfolios that Outperform Out of
@@ -899,14 +904,21 @@ class PortfolioConstruction:
         """
         Calculate the Black-Litterman expected returns and the weights they lead to. The
         starting point is the return the market implies through its capitalization
-        weights, Π = δΣw_mkt: the returns at which holding the market is optimal. Views then
-        move these returns towards the investor's expectations, in proportion to the
-        confidence in each view. The result avoids the extreme weights that historical
-        average returns give.
+        weights: the excess return Π = δΣw_mkt at which holding the market is optimal, plus
+        the risk free rate, so the Implied Return is a total return. Views then move these
+        returns towards the investor's expectations, in proportion to the confidence in
+        each view. The result avoids the extreme weights that historical average returns
+        give.
 
-        Views are absolute ({"AAPL": 0.10}: AAPL returns 10% a year) or relative
-        ({"AAPL-MSFT": 0.02}: AAPL beats MSFT by 2% a year). The weights are the
-        mean-variance portfolio of the Black-Litterman returns with the same risk aversion.
+        Views are absolute ({"AAPL": 0.10}: AAPL returns 10% a year in total, risk free
+        rate included) or relative ({"AAPL-MSFT": 0.02}: AAPL beats MSFT by 2% a year).
+        Without a confidence, a view is as uncertain as the variance of the view portfolio
+        scaled by tau; a confidence c scales that by (1 - c) / c, Idzorek's confidence
+        method in the closed form of Walters (2014). The weights are the mean-variance
+        portfolio of the Black-Litterman returns with the same risk aversion. Without views,
+        or with relative views only, the risk free rate shifts every return by the same
+        amount and leaves the weights unchanged; an absolute view is compared with the
+        implied total return, so there it matters.
 
         For more information, see the following papers:
 
@@ -914,12 +926,17 @@ class PortfolioConstruction:
           Analysts Journal, 48(5), 28-43.
         - He, G. and Litterman, R. (1999). "The Intuition Behind Black-Litterman Model
           Portfolios." Goldman Sachs Investment Management Research.
+        - Idzorek, T. (2005). "A Step-by-Step Guide to the Black-Litterman Model:
+          Incorporating User-Specified Confidence Levels." Working paper.
+        - Walters, J. (2014). "The Black-Litterman Model in Detail."
+          https://ssrn.com/abstract=1314585
 
         Also known as: BL model, equilibrium returns with views.
 
         Args:
-            views (dict[str, float] | None, optional): The annualized views, as described
-                above. Defaults to None, which returns the market implied returns.
+            views (dict[str, float] | None, optional): The annualized views, absolute views
+                as total returns, as described above. Defaults to None, which returns the
+                market implied returns.
             view_confidences (dict[str, float] | None, optional): The confidence per view,
                 between 0 and 1. Defaults to None, which sets each view's uncertainty to the
                 variance of the view scaled by tau.
@@ -940,7 +957,7 @@ class PortfolioConstruction:
 
         Returns:
             pd.DataFrame: Per asset its Market Weight, Implied Return, Black-Litterman Return
-            and the resulting Weight.
+            (both annualized total returns) and the resulting Weight.
 
         As an example:
 
@@ -963,12 +980,12 @@ class PortfolioConstruction:
 
         |      |   Market Weight |   Implied Return |   Black-Litterman Return |   Weight |
         |:-----|----------------:|-----------------:|-------------------------:|---------:|
-        | AAPL |          0.4899 |           0.1415 |                   0.1459 |   0.4558 |
-        | MSFT |          0.376  |           0.1194 |                   0.123  |   0.347  |
-        | JNJ  |          0.0614 |           0.0172 |                   0.0196 |   0      |
-        | XOM  |          0.0727 |           0.0372 |                   0.0684 |   0.1972 |
+        | AAPL |          0.4899 |           0.1752 |                   0.1769 |   0.4738 |
+        | MSFT |          0.376  |           0.1531 |                   0.155  |   0.3729 |
+        | JNJ  |          0.0614 |           0.0509 |                   0.052  |   0.0145 |
+        | XOM  |          0.0727 |           0.0709 |                   0.0853 |   0.1387 |
         """
-        _, _, covariance, _ = self._get_inputs(period, False)
+        _, _, covariance, risk_free_rate = self._get_inputs(period, False)
         assets = covariance.index.tolist()
 
         if market_weights is not None:
@@ -985,7 +1002,13 @@ class PortfolioConstruction:
             )
 
         returns = optimization_model.get_black_litterman_returns(
-            covariance, market, views, view_confidences, risk_aversion, tau
+            covariance,
+            market,
+            views=views,
+            view_confidences=view_confidences,
+            risk_aversion=risk_aversion,
+            tau=tau,
+            risk_free_rate=risk_free_rate,
         )
         weights = optimization_model.get_mean_variance_weights(
             returns["Black-Litterman Return"],

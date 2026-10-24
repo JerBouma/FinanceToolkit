@@ -136,6 +136,9 @@ DEFAULT_REAL_SPOT_CURVE: dict[float, float] = {
 # yields of coupon bonds, paying twice a year except in Sweden and Norway.
 ZERO_COUPON_CURVES = ("Euro Area", "Germany")
 COUPON_FREQUENCIES = {"Sweden": 1, "Norway": 1}
+# The countries whose bill yields are bond-equivalent yields, with simple interest up to half
+# a year (the US Treasury convention) rather than compounded with the coupon frequency.
+SIMPLE_INTEREST_BILLS = ("United States",)
 
 # The share of the dates a maturity must cover to be part of a principal component analysis.
 CURVE_COVERAGE = 0.9
@@ -1479,11 +1482,13 @@ class FixedIncome:
         the OAS takes the value of the option out, so callable and straight bonds can be
         compared on their credit spread alone.
 
-        The interest rate is modeled with a Ho-Lee binomial tree calibrated to the
-        zero-coupon curve (with the short rate's volatility in absolute terms, 0.01 being
-        100 basis points a year). The bond is valued backwards through the tree, capped at
-        the call price on every coupon date from the first call date, and the spread added
-        to every rate in the tree is solved for. At that spread the method also returns:
+        The interest rate is modeled with a Ho-Lee binomial tree of twenty steps per coupon
+        period, calibrated to the zero-coupon curve (with the short rate's volatility in
+        absolute terms, 0.01 being 100 basis points a year). The bond is valued backwards
+        through the tree, capped at the call price on every coupon date from the first call
+        date, and the spread added to every rate in the tree is solved for. The bond price is
+        the clean price: between coupon dates the interest accrued since the last coupon is
+        added to it, as a buyer pays it on top. At that spread the method also returns:
 
         - Straight Bond Price: the price of the same bond without the call.
         - Option Value: the straight bond price minus the market price, the value of the
@@ -1492,17 +1497,19 @@ class FixedIncome:
           shift of the curve at an unchanged OAS, which account for the call (a callable
           bond's convexity turns negative when the call is near).
 
-        For more information, see the following book:
+        For more information, see the following sources:
 
+        - Ho, T.S.Y. and Lee, S.-B. (1986). "Term Structure Movements and Pricing Interest
+          Rate Contingent Claims." Journal of Finance, 41(5), 1011-1029.
         - Fabozzi, F.J. (2016). "Bond Markets, Analysis, and Strategies." Pearson, 9th
-          edition, chapter 17.
+          edition, chapter 18.
 
         Also known as: OAS, option-adjusted spread of a callable bond, effective duration,
         negative convexity.
 
         Args:
-            bond_price (float | list[float], optional): The market price of the bond, or
-                several prices. Defaults to 100.
+            bond_price (float | list[float], optional): The market (clean) price of the bond,
+                or several prices. Defaults to 100.
             coupon_rate (float, optional): The annual coupon rate. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity. Defaults to 10.
             call_price (float | None, optional): The price at which the issuer can call the
@@ -1540,13 +1547,13 @@ class FixedIncome:
 
         Which returns:
 
-        |                        |       98 |      100 |       102 |
-        |:-----------------------|---------:|---------:|----------:|
-        | Option-Adjusted Spread |   0.0055 |   0.001  |   -0.0038 |
-        | Straight Bond Price    | 103.499  | 107.291  |  111.564  |
-        | Option Value           |   5.4992 |   7.2907 |    9.5639 |
-        | Effective Duration     |   4.7574 |   4.1949 |    3.6148 |
-        | Effective Convexity    |  25.8032 | -66.3622 | -368.923  |
+        |                        |        98 |       100 |       102 |
+        |:-----------------------|----------:|----------:|----------:|
+        | Option-Adjusted Spread |    0.0057 |    0.0012 |   -0.0039 |
+        | Straight Bond Price    |  103.338  |  107.146  |  111.637  |
+        | Option Value           |    5.3382 |    7.1458 |    9.6374 |
+        | Effective Duration     |    4.7946 |    4.2009 |    3.5915 |
+        | Effective Convexity    | -106.593  | -104.552  | -103.387  |
         """
         if spot_rates is None:
             zero_rates = self._to_zero_coupon(
@@ -2747,8 +2754,9 @@ class FixedIncome:
         """
         Converts a country's par yield curve into zero-coupon rates by bootstrapping every
         date, see curve_model.bootstrap_zero_rates. The curves of the Euro Area and Germany
-        are zero-coupon already and are returned as they are. A date is left out when the
-        curve has no maturity of a year or less to start the bootstrap from.
+        are zero-coupon already, published continuously compounded by the ECB and the
+        Bundesbank, and are only converted to annual compounding. A date is left out when
+        the curve has no maturity of a year or less to start the bootstrap from.
 
         Args:
             curve (pd.DataFrame): The par yields by date (rows) and maturity label (columns).
@@ -2758,7 +2766,7 @@ class FixedIncome:
             pd.DataFrame: The zero-coupon rates (annually compounded), in the same layout.
         """
         if country in ZERO_COUPON_CURVES:
-            return curve
+            return np.expm1(curve)
 
         maturities = np.array(
             [curve_model.maturity_in_years(label) for label in curve.columns]
@@ -2774,6 +2782,7 @@ class FixedIncome:
                 maturities[available],
                 yields[available],
                 COUPON_FREQUENCIES.get(country, 2),
+                country in SIMPLE_INTEREST_BILLS,
             )
 
         return pd.DataFrame(
@@ -2795,8 +2804,9 @@ class FixedIncome:
         are what bonds and other cash flows are discounted with, and what forward rates and
         the curve models (Nelson-Siegel, Vasicek) are built on.
 
-        Maturities up to one year are treasury bills, which pay no coupon, so their
-        (bond-equivalent) yield only needs converting to annual compounding. Beyond that the
+        Maturities up to one year are treasury bills, which pay no coupon, so their yield
+        only needs converting to annual compounding (US bill yields are bond-equivalent
+        yields, with simple interest up to half a year). Beyond that the
         par yields are interpolated linearly to every coupon date and each discount factor
         follows from the earlier ones:
 
@@ -2804,7 +2814,8 @@ class FixedIncome:
 
         with c the par yield of maturity t_n and f the coupons per year (two, and one for
         Sweden and Norway). The curves of the Euro Area and Germany are estimated as
-        zero-coupon curves by the ECB and the Bundesbank and are returned as published. A
+        zero-coupon curves by the ECB and the Bundesbank, which publish them continuously
+        compounded; they are converted to annual compounding like the others. A
         curve needs a maturity of a year or less to start from, so the United Kingdom,
         Norway and Australia (and Canada before its bill yields start) are not covered.
 
@@ -2883,7 +2894,8 @@ class FixedIncome:
         (Gürkaynak, Sack and Wright) publish their curves with.
 
         The Nelson-Siegel model has a level β0 (the yield at an infinite maturity), a slope
-        β1 (the short end minus the long end) and a curvature β2 (a hump around τ1 years):
+        β1 (the short end minus the long end) and a curvature β2 (a hump that peaks at about
+        1.8 τ1 years):
 
             y(m) = β0 + β1 (1 - e^(-m/τ1)) / (m/τ1) + β2 [(1 - e^(-m/τ1)) / (m/τ1) - e^(-m/τ1)]
 
@@ -2894,10 +2906,16 @@ class FixedIncome:
         curvature (Diebold and Li, 2006).
 
         Given the decays the betas follow exactly from least squares, so the decays are
-        searched on a grid and refined for every date (the second decay is kept at least
-        1.5 times the first). The curve is the zero-coupon curve of
+        searched on a grid and refined for every date. The second decay is kept at least 1.5
+        times the first and the first at least a third of the shortest maturity, and the
+        level at or above the lower of zero and the longest yield (as Gürkaynak, Sack and
+        Wright keep it at or above zero), so that the curve extrapolates sensibly beyond the
+        maturities it is fitted to. The curve is the zero-coupon curve of
         `get_zero_coupon_curve`, so the countries are those it covers that have at least as
-        many maturities as the model has parameters.
+        many maturities as the model has parameters. The model is fitted to the
+        continuously compounded rates, as the ECB, the Bundesbank and the Federal Reserve
+        fit it, so the parameters compare with theirs; the yields at `maturities` are
+        annually compounded, like those of `get_zero_coupon_curve`.
 
         For more information, see the following papers:
 
@@ -2907,6 +2925,8 @@ class FixedIncome:
           Sweden 1992-1994." NBER Working Paper 4871.
         - Diebold, F.X. and Li, C. (2006). "Forecasting the Term Structure of Government
           Bond Yields." Journal of Econometrics, 130(2), 337-364.
+        - Gürkaynak, R.S., Sack, B. and Wright, J.H. (2007). "The U.S. Treasury Yield Curve:
+          1961 to the Present." Journal of Monetary Economics, 54(8), 2291-2304.
 
         Also known as: NSS, Svensson curve, Nelson-Siegel curve, yield curve fitting,
         level slope curvature factors.
@@ -2925,9 +2945,10 @@ class FixedIncome:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: Per date, the parameters (Beta 0 to Beta 3, Tau 1 and Tau 2 in
-            years) and the Root Mean Squared Error of the fit, or the fitted yields, with a
-            column per country and parameter (or maturity).
+            pd.DataFrame: Per date, the parameters (Beta 0 to Beta 3 as continuously
+            compounded rates, Tau 1 and Tau 2 in years) and the Root Mean Squared Error of the
+            fit, or the fitted (annually compounded) yields, with a column per country and
+            parameter (or maturity).
 
         As an example:
 
@@ -2943,11 +2964,11 @@ class FixedIncome:
 
         |            |   Beta 0 |   Beta 1 |   Beta 2 |   Beta 3 |   Tau 1 |   Tau 2 |   Root Mean Squared Error |
         |:-----------|---------:|---------:|---------:|---------:|--------:|--------:|--------------------------:|
-        | 2026-10-19 |   0.0409 |  -0.0177 |   0.0271 |  -0.0377 |  1.0343 |  1.9106 |                         0 |
-        | 2026-10-20 |   0.0408 |  -0.0177 |   0.0303 |  -0.0405 |  1.0866 |  1.8788 |                         0 |
-        | 2026-10-21 |   0.0407 |  -0.0167 |   0.0278 |  -0.0385 |  1.1339 |  1.9313 |                         0 |
-        | 2026-10-22 |   0.0398 |  -0.016  |   0.0285 |  -0.0361 |  1.1343 |  1.9342 |                         0 |
-        | 2026-10-23 |   0.0395 |  -0.0156 |   0.0267 |  -0.0374 |  1.1259 |  1.9153 |                         0 |
+        | 2026-10-19 |   0.0409 |  -0.0173 |   0.0418 |  -0.051  |  1.1799 |  1.7805 |                         0 |
+        | 2026-10-20 |   0.0408 |  -0.0172 |   0.0411 |  -0.0505 |  1.1997 |  1.7996 |                         0 |
+        | 2026-10-21 |   0.0406 |  -0.0168 |   0.0308 |  -0.041  |  1.1497 |  1.8913 |                         0 |
+        | 2026-10-22 |   0.0397 |  -0.0161 |   0.0313 |  -0.0385 |  1.1471 |  1.8929 |                         0 |
+        | 2026-10-23 |   0.0395 |  -0.0154 |   0.0365 |  -0.0462 |  1.2162 |  1.8245 |                         0 |
         """
         # A number of years (also written as a string, "0.5") is labeled "0.5Y".
         labels = [
@@ -2967,7 +2988,9 @@ class FixedIncome:
             zero_curve.columns = [
                 curve_model.maturity_in_years(label) for label in zero_curve.columns
             ]
-            parameters = curve_model.fit_nelson_siegel_curves(zero_curve, svensson)
+            parameters = curve_model.fit_nelson_siegel_curves(
+                np.log1p(zero_curve), svensson
+            )
             parameters = parameters.dropna(how="all")
             if parameters.empty:
                 logger.warning(
@@ -2984,14 +3007,16 @@ class FixedIncome:
             years = np.array([curve_model.maturity_in_years(label) for label in labels])
             fits[country] = pd.DataFrame(
                 [
-                    curve_model.nelson_siegel_svensson_yield(
-                        years,
-                        row["Beta 0"],
-                        row["Beta 1"],
-                        row["Beta 2"],
-                        row.get("Beta 3", 0.0),
-                        row["Tau 1"],
-                        row.get("Tau 2", 1.0),
+                    np.expm1(
+                        curve_model.nelson_siegel_svensson_yield(
+                            years,
+                            row["Beta 0"],
+                            row["Beta 1"],
+                            row["Beta 2"],
+                            row.get("Beta 3", 0.0),
+                            row["Tau 1"],
+                            row.get("Tau 2", 1.0),
+                        )
                     )
                     for _, row in parameters.iterrows()
                 ],
@@ -3032,8 +3057,10 @@ class FixedIncome:
         portfolio against the first two covers most of its interest rate risk.
 
         The components are the eigenvectors of the covariance matrix of the yield changes
-        (or levels), sorted by the share of the variance they explain. Their sign is chosen
-        so that the loadings sum to a positive number, which makes PC1 a rise in all yields.
+        (or levels), sorted by the share of the variance they explain. Their sign is
+        arbitrary, so PC1 is oriented as a rise in all yields (its loadings sum to a
+        positive number), PC2 as a steepening (the longest maturity loads above the shortest)
+        and the others so that their loadings sum to a positive number.
         Maturities that are only published for part of the period (such as the 4-month
         Treasury bill from 2022) are left out, so that the analysis covers the full period.
 
@@ -3074,17 +3101,17 @@ class FixedIncome:
 
         | Maturity           |    PC1 |     PC2 |     PC3 |
         |:-------------------|-------:|--------:|--------:|
-        | 1M                 | 0.1332 |  0.6209 |  0.3084 |
-        | 3M                 | 0.1713 |  0.4809 |  0.1636 |
-        | 6M                 | 0.225  |  0.3809 | -0.0592 |
-        | 1Y                 | 0.2789 |  0.2545 | -0.2647 |
-        | 2Y                 | 0.3538 |  0.0249 | -0.4383 |
-        | 3Y                 | 0.3676 | -0.0701 | -0.3617 |
-        | 5Y                 | 0.3733 | -0.1595 | -0.1347 |
-        | 7Y                 | 0.3636 | -0.1907 |  0.0399 |
-        | 10Y                | 0.3434 | -0.1972 |  0.2136 |
-        | 20Y                | 0.3052 | -0.1888 |  0.4277 |
-        | 30Y                | 0.2855 | -0.1773 |  0.4831 |
+        | 1M                 | 0.1332 | -0.6209 |  0.3084 |
+        | 3M                 | 0.1713 | -0.4809 |  0.1636 |
+        | 6M                 | 0.225  | -0.3809 | -0.0592 |
+        | 1Y                 | 0.2789 | -0.2545 | -0.2647 |
+        | 2Y                 | 0.3538 | -0.0249 | -0.4383 |
+        | 3Y                 | 0.3676 |  0.0701 | -0.3617 |
+        | 5Y                 | 0.3733 |  0.1595 | -0.1347 |
+        | 7Y                 | 0.3636 |  0.1907 |  0.0399 |
+        | 10Y                | 0.3434 |  0.1972 |  0.2136 |
+        | 20Y                | 0.3052 |  0.1888 |  0.4277 |
+        | 30Y                | 0.2855 |  0.1773 |  0.4831 |
         | Explained Variance | 0.732  |  0.1938 |  0.0501 |
         """
         curve = self._yield_curves(country, period)[country]
@@ -3108,6 +3135,33 @@ class FixedIncome:
             result, rounding if rounding is not None else self._rounding
         )
 
+    @staticmethod
+    def _continuous_short_rate(rates: pd.Series, country: str, label: str) -> pd.Series:
+        """
+        The yields of one maturity as continuously compounded rates, the short rate the
+        Vasicek, CIR and Hull-White models describe, converted the way `_to_zero_coupon`
+        converts the bills.
+
+        Args:
+            rates (pd.Series): The yields over time.
+            country (str): The country, which sets the quote convention.
+            label (str): The maturity label, such as "3M".
+
+        Returns:
+            pd.Series: The continuously compounded rates.
+        """
+        rates = rates.dropna()
+        if country in ZERO_COUPON_CURVES:
+            return rates
+        maturity = curve_model.maturity_in_years(label)
+        annual = curve_model.bill_yields_to_annual(
+            np.full(len(rates), maturity),
+            rates.to_numpy(dtype=float),
+            COUPON_FREQUENCIES.get(country, 2),
+            country in SIMPLE_INTEREST_BILLS,
+        )
+        return pd.Series(np.log1p(annual), index=rates.index, name=rates.name)
+
     @handle_errors
     def get_short_rate_model(
         self,
@@ -3126,7 +3180,10 @@ class FixedIncome:
             - CIR (1985): dr = a (b - r) dt + σ √r dW
 
         In CIR the volatility shrinks as the rate approaches zero, so the rate stays
-        positive; in Vasicek it can turn negative. Both give bond prices, and so a full
+        positive when 2ab ≥ σ² (the Feller condition) and can otherwise touch zero; in
+        Vasicek it can turn negative. The models describe a continuously compounded short
+        rate, so the yields are converted to continuous compounding first (US bill yields
+        from their bond-equivalent quote). Both give bond prices, and so a full
         zero-coupon curve, in closed form. The parameters are estimated by regressing the
         change of the rate on its level over the period (CIR on the changes scaled by the
         square root of the rate, which needs a rate above zero throughout). The half-life is
@@ -3175,25 +3232,25 @@ class FixedIncome:
 
         | Parameter               |   Vasicek |    CIR |   Market |
         |:------------------------|----------:|-------:|---------:|
-        | Speed of Mean Reversion |    0.0879 | 0.1473 | nan      |
-        | Long-Run Mean           |    0.0145 | 0.0171 | nan      |
-        | Volatility              |    0.006  | 0.056  | nan      |
-        | Current Rate            |    0.043  | 0.043  |   0.043  |
-        | Half-Life               |    7.8844 | 4.7056 | nan      |
-        | Zero Rate 1M            |    0.0429 | 0.0428 |   0.0407 |
-        | Zero Rate 1.5M          |    0.0428 | 0.0428 |   0.0407 |
-        | Zero Rate 2M            |    0.0428 | 0.0427 |   0.0412 |
-        | Zero Rate 3M            |    0.0427 | 0.0425 |   0.0418 |
-        | Zero Rate 4M            |    0.0426 | 0.0424 |   0.0425 |
-        | Zero Rate 6M            |    0.0424 | 0.0421 |   0.0425 |
-        | Zero Rate 1Y            |    0.0418 | 0.0412 |   0.0439 |
-        | Zero Rate 2Y            |    0.0406 | 0.0395 |   0.0464 |
-        | Zero Rate 3Y            |    0.0395 | 0.0379 |   0.047  |
-        | Zero Rate 5Y            |    0.0374 | 0.0351 |   0.0477 |
-        | Zero Rate 7Y            |    0.0356 | 0.0328 |   0.0485 |
-        | Zero Rate 10Y           |    0.0331 | 0.03   |   0.0497 |
-        | Zero Rate 20Y           |    0.0271 | 0.0244 |   0.0548 |
-        | Zero Rate 30Y           |    0.0234 | 0.0218 |   0.0534 |
+        | Speed of Mean Reversion |    0.0873 | 0.1481 | nan      |
+        | Long-Run Mean           |    0.0144 | 0.017  | nan      |
+        | Volatility              |    0.0059 | 0.0558 | nan      |
+        | Current Rate            |    0.0425 | 0.0425 |   0.0425 |
+        | Half-Life               |    7.9398 | 4.6816 | nan      |
+        | Zero Rate 1M            |    0.0424 | 0.0424 |   0.041  |
+        | Zero Rate 1.5M          |    0.0424 | 0.0423 |   0.041  |
+        | Zero Rate 2M            |    0.0423 | 0.0422 |   0.0415 |
+        | Zero Rate 3M            |    0.0422 | 0.0421 |   0.042  |
+        | Zero Rate 4M            |    0.0421 | 0.0419 |   0.0427 |
+        | Zero Rate 6M            |    0.0419 | 0.0416 |   0.0425 |
+        | Zero Rate 1Y            |    0.0413 | 0.0407 |   0.0439 |
+        | Zero Rate 2Y            |    0.0402 | 0.039  |   0.0464 |
+        | Zero Rate 3Y            |    0.0391 | 0.0375 |   0.047  |
+        | Zero Rate 5Y            |    0.0371 | 0.0347 |   0.0477 |
+        | Zero Rate 7Y            |    0.0353 | 0.0324 |   0.0485 |
+        | Zero Rate 10Y           |    0.0328 | 0.0297 |   0.0497 |
+        | Zero Rate 20Y           |    0.0269 | 0.0242 |   0.0548 |
+        | Zero Rate 30Y           |    0.0232 | 0.0216 |   0.0534 |
         """
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "short rate model"
@@ -3205,7 +3262,7 @@ class FixedIncome:
                 f"{', '.join(curve.columns)}."
             )
 
-        rates = curve[short_rate].dropna()
+        rates = self._continuous_short_rate(curve[short_rate], country, short_rate)
         latest = curve.dropna(how="all").iloc[[-1]]
         zero_rates = self._to_zero_coupon(latest, country).iloc[0].dropna()
         years = np.array(
@@ -3273,7 +3330,8 @@ class FixedIncome:
         rate, see `get_short_rate_model`. In the Vasicek and CIR models the rate is pulled
         to the long-run mean of that history. The Hull-White (1990) model replaces it with a
         mean that varies over time and follows from today's zero-coupon curve, so that the
-        model's expected path reproduces the forward rates the market prices:
+        model reproduces the discount factors of that curve (its expected short rate lies
+        above the forward rate by the convexity term σ² (1 - e^(-at))² / (2a²)):
 
             dr = [θ(t) - a r] dt + σ dW,  θ(t) = ∂f/∂t + a f(t) + σ² (1 - e^(-2at)) / (2a)
 
@@ -3325,12 +3383,12 @@ class FixedIncome:
 
         |   Years |   Mean |     5% |    25% |    50% |    75% |    95% |
         |--------:|-------:|-------:|-------:|-------:|-------:|-------:|
-        |       0 | 0.043  | 0.043  | 0.043  | 0.043  | 0.043  | 0.043  |
-        |       1 | 0.0489 | 0.0391 | 0.0449 | 0.0489 | 0.053  | 0.0588 |
-        |       2 | 0.0483 | 0.0348 | 0.0429 | 0.0483 | 0.0538 | 0.0616 |
-        |       3 | 0.0485 | 0.033  | 0.042  | 0.0484 | 0.0548 | 0.0645 |
-        |       4 | 0.0493 | 0.0322 | 0.0422 | 0.0493 | 0.0564 | 0.0668 |
-        |       5 | 0.0503 | 0.032  | 0.0427 | 0.0503 | 0.058  | 0.0691 |
+        |       0 | 0.0425 | 0.0425 | 0.0425 | 0.0425 | 0.0425 | 0.0425 |
+        |       1 | 0.0489 | 0.0393 | 0.0449 | 0.0489 | 0.0529 | 0.0587 |
+        |       2 | 0.0483 | 0.035  | 0.0429 | 0.0483 | 0.0537 | 0.0614 |
+        |       3 | 0.0485 | 0.0332 | 0.0421 | 0.0484 | 0.0547 | 0.0643 |
+        |       4 | 0.0493 | 0.0324 | 0.0423 | 0.0492 | 0.0563 | 0.0666 |
+        |       5 | 0.0503 | 0.0322 | 0.0427 | 0.0503 | 0.0579 | 0.0689 |
         """
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "short rate simulation"
@@ -3354,7 +3412,7 @@ class FixedIncome:
             )
 
         parameters = short_rate_model.calibrate_short_rate_model(
-            curve[short_rate],
+            self._continuous_short_rate(curve[short_rate], country, short_rate),
             "cir" if model == "cir" else "vasicek",
             PERIODS_PER_YEAR[period],
         )
@@ -3429,7 +3487,10 @@ class FixedIncome:
         The data comes from the Treasury's Fiscal Data API, from 1979 on, without an API key.
         The Yield is the high yield of notes and bonds and the investment rate (the bond
         equivalent yield) of bills; the High Discount Rate is the discount rate bills are
-        quoted at. The bidder shares are each class's part of the competitive awards:
+        quoted at. The Bid-to-Cover Ratio is the Treasury's, which leaves out the Federal
+        Reserve's (SOMA) bids, while the Total Tendered and Total Accepted include them, so
+        their ratio is lower when the Federal Reserve rolls over maturing holdings. The
+        bidder shares are each class's part of the competitive awards:
         primary dealers (who must bid at every auction), direct bidders (buying for their
         own account) and indirect bidders (bidding through a dealer, such as foreign and
         international monetary authorities and investment funds). Auctions that are

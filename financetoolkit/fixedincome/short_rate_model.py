@@ -9,6 +9,10 @@ from scipy.optimize import brentq
 # pylint: disable=too-many-arguments,too-many-locals
 
 MODELS = ("vasicek", "cir")
+# The tree steps per coupon period. With one step per period the call is valued too coarsely
+# (the effective convexity of a callable bond can even turn positive); twenty steps match a
+# continuous-time valuation to a fraction of a basis point.
+STEPS_PER_PERIOD = 20
 
 
 def calibrate_short_rate_model(
@@ -21,7 +25,13 @@ def calibrate_short_rate_model(
         - Vasicek: dr = a (b - r) dt + σ dW
         - CIR: dr = a (b - r) dt + σ √r dW, estimated on Δr / √r
 
-    with a the speed of mean reversion, b the long-run mean and σ the volatility.
+    with a the speed of mean reversion, b the long-run mean and σ the volatility. In both
+    models the expected rate keeps φ = e^(-aΔt) of its distance to the long-run mean over a
+    step of Δt, so the slope β of the regression gives the speed exactly, a = -ln(1 + β) / Δt,
+    whatever the frequency of the data; the volatility follows from the variance of a step,
+    σ² (1 - φ²) / (2a) for Vasicek and r σ² φ (1 - φ) / a for CIR. Over a few decades of
+    data the speed of a slowly reverting rate is overestimated (the small-sample bias of the
+    regression near a unit root), so a short half-life of such a rate calls for caution.
 
     Args:
         rates (pd.Series): The short rate over time, as decimals.
@@ -51,20 +61,28 @@ def calibrate_short_rate_model(
 
     if model == "vasicek":
         design = np.column_stack([np.ones_like(level), level])
-        (alpha, beta), *_ = np.linalg.lstsq(design, change, rcond=None)
-        residual = change - design @ np.array([alpha, beta])
-        speed = -beta / dt
-        mean = alpha / (speed * dt) if speed else np.nan
-        volatility = residual.std(ddof=2) / np.sqrt(dt)
+        target = change
     else:
         root = np.sqrt(level)
         design = np.column_stack([1 / root, root])
         target = change / root
-        (alpha, beta), *_ = np.linalg.lstsq(design, target, rcond=None)
-        residual = target - design @ np.array([alpha, beta])
+    (alpha, beta), *_ = np.linalg.lstsq(design, target, rcond=None)
+    deviation = (target - design @ np.array([alpha, beta])).std(ddof=2)
+
+    persistence = 1 + beta
+    if 0 < persistence < 1:
+        speed = -np.log(persistence) / dt
+        mean = alpha / (1 - persistence)
+        if model == "vasicek":
+            volatility = deviation * np.sqrt(2 * speed / (1 - persistence**2))
+        else:
+            volatility = deviation * np.sqrt(speed / (persistence * (1 - persistence)))
+    else:
+        # A rate that does not revert to a mean over the sample has no exact mapping; the
+        # Euler discretization reports its (non-positive) speed.
         speed = -beta / dt
         mean = alpha / (speed * dt) if speed else np.nan
-        volatility = residual.std(ddof=2) / np.sqrt(dt)
+        volatility = deviation / np.sqrt(dt)
 
     return {
         "Speed of Mean Reversion": float(speed),
@@ -227,21 +245,17 @@ def _ho_lee_tree(
     A Ho-Lee binomial tree of the short rate calibrated to the discount factors: at step i
     the rates are θ_i + σ √dt (2j - i), j = 0..i, with θ_i solved so that the tree prices the
     zero-coupon bond maturing one step later exactly (forward induction on Arrow-Debreu
-    prices with up and down probabilities of one half).
+    prices with up and down probabilities of one half), which has the closed form
+    θ_i = [ln Σ_j Q_j e^(-σ √dt (2j - i) dt) - ln P(i + 1)] / dt.
     """
     steps = len(discount_factors)
     rates = []
     arrow = np.array([1.0])
     for i in range(steps):
         spread = volatility * np.sqrt(dt) * (2 * np.arange(i + 1) - i)
-
-        def price(theta, spread=spread, arrow=arrow, i=i):
-            return (
-                float(np.sum(arrow * np.exp(-(theta + spread) * dt)))
-                - discount_factors[i]
-            )
-
-        theta = brentq(price, -1.0, 1.0)
+        theta = (
+            np.log(np.sum(arrow * np.exp(-spread * dt))) - np.log(discount_factors[i])
+        ) / dt
         step_rates = theta + spread
         rates.append(step_rates)
         discounted = arrow * np.exp(-step_rates * dt) / 2
@@ -259,35 +273,41 @@ def price_callable_bond(
     call_price: float | None = None,
     first_call_step: int = 0,
     spread: float = 0.0,
+    steps_per_period: int = 1,
+    first_coupon_step: int | None = None,
 ) -> float:
     """
-    The price of a bond on a short-rate tree, discounting at the tree rate plus a spread.
-    A callable bond is redeemed by the issuer whenever its value exceeds the call price
-    from the first call date on, so its value at those nodes is capped at the call price.
+    The price of a bond on a short-rate tree, discounting at the tree rate plus a spread:
+    the value of all its remaining payments, so including the interest accrued since the
+    last coupon (the dirty price). A callable bond is redeemed by the issuer whenever its
+    value exceeds the call price on a coupon date from the first call date on, so its value
+    at those nodes is capped at the call price.
 
     Args:
-        tree (list[np.ndarray]): The short rates per step.
+        tree (list[np.ndarray]): The short rates per step; the last coupon is paid at the
+            end of the last step.
         coupon_rate (float): The annual coupon rate.
-        frequency (int): The coupons per year; the tree steps are coupon periods.
+        frequency (int): The coupons per year.
         face_value (float, optional): The face value. Defaults to 100.
         call_price (float | None, optional): The call price; None for a straight bond.
             Defaults to None.
-        first_call_step (int, optional): The first coupon date (step) on which the bond can
-            be called. Defaults to 0.
+        first_call_step (int, optional): The first step on which the bond can be called (on
+            the coupon dates from then on). Defaults to 0.
         spread (float, optional): The spread added to every rate (the OAS). Defaults to 0.
+        steps_per_period (int, optional): The tree steps per coupon period. Defaults to 1.
+        first_coupon_step (int | None, optional): The step of the next coupon. Defaults to
+            None, which is one coupon period from now.
 
     Returns:
         float: The price.
     """
-    dt = 1 / frequency
+    dt = 1 / (frequency * steps_per_period)
     coupon = face_value * coupon_rate / frequency
+    first = steps_per_period if first_coupon_step is None else first_coupon_step
     value = np.full(len(tree) + 1, face_value + coupon)
     for step in range(len(tree) - 1, -1, -1):
-        continuation = (
-            (value[:-1] + value[1:]) / 2 * np.exp(-(tree[step] + spread) * dt)
-        )
-        value = continuation
-        if step > 0:
+        value = (value[:-1] + value[1:]) / 2 * np.exp(-(tree[step] + spread) * dt)
+        if step > 0 and step >= first and (step - first) % steps_per_period == 0:
             if call_price is not None and step >= first_call_step:
                 value = np.minimum(value, call_price)
             value = value + coupon
@@ -314,13 +334,20 @@ def get_option_adjusted_spread(
     The effective duration and convexity follow from shifting the curve by 25 basis points
     at an unchanged OAS.
 
-    For more information, see the following book:
+    The tree has twenty steps per coupon period. A bond bought between coupon dates also pays
+    the interest accrued since the last coupon, so the market (clean) price plus the accrued
+    interest is what the tree values; the next coupon date is placed on the nearest step
+    (within a twentieth of a period).
 
+    For more information, see the following sources:
+
+    - Ho, T.S.Y. and Lee, S.-B. (1986). "Term Structure Movements and Pricing Interest Rate
+      Contingent Claims." Journal of Finance, 41(5), 1011-1029.
     - Fabozzi, F.J. (2016). "Bond Markets, Analysis, and Strategies." Pearson, 9th edition,
-      chapter 17.
+      chapter 18.
 
     Args:
-        price (float): The market price of the bond.
+        price (float): The market (clean) price of the bond.
         coupon_rate (float): The annual coupon rate.
         years_to_maturity (float): The years to maturity.
         maturities (np.ndarray): The maturities of the zero curve in years.
@@ -335,16 +362,26 @@ def get_option_adjusted_spread(
         face_value (float, optional): The face value. Defaults to 100.
 
     Returns:
-        dict[str, float]: The Option-Adjusted Spread, the Straight Bond Price and Option
-        Value at that spread, and the Effective Duration and Effective Convexity.
+        dict[str, float]: The Option-Adjusted Spread, the Straight Bond Price (clean) and
+        Option Value at that spread, and the Effective Duration and Effective Convexity.
     """
-    dt = 1 / frequency
-    steps = int(round(years_to_maturity * frequency))
-    if steps < 1:
-        raise ValueError("The bond must have at least one coupon period left.")
+    periods = years_to_maturity * frequency
+    coupons = int(np.ceil(periods - 1e-9))
+    if coupons < 1:
+        raise ValueError("The bond must have at least one coupon left.")
+    first_coupon_step = max(1, round((periods - (coupons - 1)) * STEPS_PER_PERIOD))
+    steps = first_coupon_step + (coupons - 1) * STEPS_PER_PERIOD
+    dt = 1 / (frequency * STEPS_PER_PERIOD)
+    accrued = (
+        face_value
+        * coupon_rate
+        / frequency
+        * (1 - first_coupon_step / STEPS_PER_PERIOD)
+    )
+    dirty_price = price + accrued
     times = np.arange(1, steps + 1) * dt
     continuous = np.log1p(np.interp(times, maturities, zero_rates))
-    first_call_step = int(np.ceil(years_to_first_call * frequency))
+    first_call_step = int(np.ceil(years_to_first_call / dt - 1e-9))
 
     def tree_for(shift: float) -> list[np.ndarray]:
         return _ho_lee_tree(np.exp(-(continuous + shift) * times), volatility, dt)
@@ -360,11 +397,26 @@ def get_option_adjusted_spread(
             call_price,
             first_call_step,
             spread,
+            STEPS_PER_PERIOD,
+            first_coupon_step,
         )
 
-    oas = brentq(lambda spread: callable_price(base_tree, spread) - price, -0.2, 1.0)
-    straight = price_callable_bond(
-        base_tree, coupon_rate, frequency, face_value, None, 0, oas
+    oas = brentq(
+        lambda spread: callable_price(base_tree, spread) - dirty_price, -0.2, 1.0
+    )
+    straight = (
+        price_callable_bond(
+            base_tree,
+            coupon_rate,
+            frequency,
+            face_value,
+            None,
+            0,
+            oas,
+            STEPS_PER_PERIOD,
+            first_coupon_step,
+        )
+        - accrued
     )
 
     shift = 0.0025
@@ -375,8 +427,8 @@ def get_option_adjusted_spread(
         "Option-Adjusted Spread": float(oas),
         "Straight Bond Price": straight,
         "Option Value": straight - price,
-        "Effective Duration": (down - up) / (2 * price * shift),
-        "Effective Convexity": (down + up - 2 * price) / (price * shift**2),
+        "Effective Duration": (down - up) / (2 * dirty_price * shift),
+        "Effective Convexity": (down + up - 2 * dirty_price) / (dirty_price * shift**2),
     }
 
 

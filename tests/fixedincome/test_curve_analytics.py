@@ -56,13 +56,14 @@ def test_zero_coupon_curve(fixedincome):
         "United States",
         "Germany",
     ]
-    # Germany's curve is zero-coupon already; the US bills only change compounding and the
-    # zero rates of an upward sloping par curve lie above it.
+    # Germany's curve is zero-coupon already, published continuously compounded; the US
+    # bills (bond-equivalent yields, simple interest up to half a year) only change
+    # compounding and the zero rates of an upward sloping par curve lie above it.
     assert zero_curve["Germany"].iloc[-1].to_numpy() == pytest.approx(
-        curves.iloc[-1][zero_curve["Germany"].columns].to_numpy()
+        np.expm1(curves.iloc[-1][zero_curve["Germany"].columns].to_numpy())
     )
     last = zero_curve["United States"].iloc[-1]
-    assert last["3M"] == pytest.approx((1 + curves.iloc[-1]["3M"] / 2) ** 2 - 1)
+    assert last["3M"] == pytest.approx((1 + curves.iloc[-1]["3M"] / 4) ** 4 - 1)
     assert last["30Y"] > curves.iloc[-1]["30Y"]
 
 
@@ -101,6 +102,8 @@ def test_principal_components(fixedincome):
 
     assert list(loadings.index) == [*LABELS, "Explained Variance"]
     assert (loadings.loc[LABELS, "PC1"] > 0).all()
+    # PC2 is oriented as a steepening: the long end rises against the short end.
+    assert loadings.loc["30Y", "PC2"] > loadings.loc["1M", "PC2"]
     assert loadings.loc["Explained Variance", "PC1"] > 0.9
     assert list(scores.columns) == ["PC1", "PC2"]
 
@@ -110,8 +113,10 @@ def test_short_rate_model(fixedincome, monkeypatch):
 
     assert list(result.columns) == ["Vasicek", "CIR", "Market"]
     assert result.loc["Long-Run Mean", "Vasicek"] == pytest.approx(0.03, abs=0.02)
+    # The models describe a continuously compounded rate; the 3M bill yield is simple
+    # interest over the quarter.
     assert result.loc["Current Rate", "Market"] == pytest.approx(
-        simulated_curves()["3M"].iloc[-1]
+        4 * np.log1p(simulated_curves()["3M"].iloc[-1] / 4)
     )
     assert result.loc["Zero Rate 30Y", "Market"] > result.loc["Zero Rate 1M", "Market"]
 
@@ -130,7 +135,7 @@ def test_short_rate_simulation(fixedincome, model):
     assert list(simulation.index) == [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
     assert (simulation["5%"] <= simulation["95%"]).all()
     assert simulation.iloc[0].to_numpy() == pytest.approx(
-        np.full(6, simulated_curves()["3M"].iloc[-1])
+        np.full(6, 4 * np.log1p(simulated_curves()["3M"].iloc[-1] / 4))
     )
 
 

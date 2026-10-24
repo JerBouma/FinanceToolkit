@@ -120,3 +120,61 @@ def test_principal_components_of_level_and_slope_moves():
     assert (loadings["PC1"] > 0).all()
     assert loadings.loc["30Y", "PC2"] * loadings.loc["1Y", "PC2"] < 0
     assert len(scores) == len(curves) - 1
+
+
+def test_the_yield_at_maturity_zero_is_the_short_rate():
+    yields = curve_model.nelson_siegel_svensson_yield(
+        [0.0, 1e-8], 0.04, -0.02, 0.01, 0.005, 1.5, 8.0
+    )
+
+    assert yields == pytest.approx([0.02, 0.02])
+
+
+def test_the_level_stays_at_or_above_zero():
+    # A curve whose unbounded fit offsets a negative level with the second curvature.
+    maturities = np.array([1, 2, 3, 5, 7, 10, 20, 30.0])
+    yields = (
+        curve_model.nelson_siegel_svensson_yield(
+            maturities, 0.02, 0.01, -0.03, 0.06, 1.0, 12.0
+        )
+        + np.array([0, 2, -1, 1, -2, 1, 0, -1]) * 1e-4
+    )
+
+    fit = curve_model.fit_nelson_siegel_svensson(maturities, yields)
+
+    assert fit["Beta 0"] >= 0
+    # Without a maturity under a year the first decay stays at least a third of a year,
+    # so the short end is not bent far away from the shortest yield.
+    assert fit["Tau 1"] >= 1 / 3 - 1e-9
+    short_end = curve_model.nelson_siegel_svensson_yield(
+        [0.25],
+        *[
+            fit[name]
+            for name in ("Beta 0", "Beta 1", "Beta 2", "Beta 3", "Tau 1", "Tau 2")
+        ],
+    )[0]
+    assert abs(short_end - yields[0]) < 0.01
+
+
+def test_the_fit_is_polished_beyond_the_grid():
+    maturities = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30.0])
+    yields = curve_model.nelson_siegel_svensson_yield(
+        maturities, 0.045, -0.01, 0.02, -0.015, 1.792, 15.918
+    )
+
+    fit = curve_model.fit_nelson_siegel_svensson(maturities, yields)
+
+    assert fit["Root Mean Squared Error"] < 1e-6
+
+
+def test_bill_yields_as_bond_equivalent_yields():
+    annual = curve_model.bill_yields_to_annual(
+        np.array([0.25, 0.5, 1.0]), np.full(3, 0.04), 2, simple_interest=True
+    )
+
+    assert annual[0] == pytest.approx(1.01**4 - 1)
+    assert annual[1] == pytest.approx(1.02**2 - 1)
+    assert annual[2] == pytest.approx(1.02**2 - 1)
+    assert curve_model.bill_yields_to_annual(
+        np.array([0.25]), np.array([0.04])
+    ) == pytest.approx([1.02**2 - 1])

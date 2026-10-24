@@ -89,16 +89,16 @@ def test_option_adjusted_spread_of_a_straight_bond():
         zero_rates=ZERO_RATES,
         call_price=None,
     )
+    steps = short_rate_model.STEPS_PER_PERIOD
+    times = np.arange(1, 20 * steps + 1) / (2 * steps)
     tree = short_rate_model._ho_lee_tree(
-        np.exp(
-            -np.log1p(np.interp(np.arange(1, 21) / 2, ZERO_MATURITIES, ZERO_RATES))
-            * np.arange(1, 21)
-            / 2
-        ),
+        np.exp(-np.log1p(np.interp(times, ZERO_MATURITIES, ZERO_RATES)) * times),
         0.01,
-        0.5,
+        1 / (2 * steps),
     )
-    model_price = short_rate_model.price_callable_bond(tree, 0.05, 2)
+    model_price = short_rate_model.price_callable_bond(
+        tree, 0.05, 2, steps_per_period=steps
+    )
     repriced = short_rate_model.get_option_adjusted_spread(
         price=model_price,
         coupon_rate=0.05,
@@ -142,3 +142,63 @@ def test_implied_default_probability():
     assert result["5Y Default Probability"] == pytest.approx(1 - np.exp(-0.1))
     with pytest.raises(ValueError):
         short_rate_model.get_implied_default_probability(0.01, 1.0)
+
+
+def test_vasicek_calibration_is_exact_for_monthly_data():
+    # The Euler mapping a = -β/Δt understates a fast speed on monthly data (about 1.84 for
+    # 2); the exact AR(1) mapping recovers it.
+    speeds = []
+    for seed in range(10):
+        path = short_rate_model.simulate_short_rate(
+            "vasicek", 2.0, 0.04, 0.01, 0.04, 300, 240, 1, seed
+        )[0][::20]
+        speeds.append(
+            short_rate_model.calibrate_short_rate_model(
+                pd.Series(path), "vasicek", periods_per_year=12
+            )["Speed of Mean Reversion"]
+        )
+
+    assert np.mean(speeds) == pytest.approx(2.0, rel=0.03)
+
+
+def test_option_adjusted_spread_matches_a_fine_tree():
+    # QuantLib's TreeCallableFixedRateBondEngine (Hull-White with a near-zero speed, which is
+    # Ho-Lee, on 400 steps) gives an OAS of 0.005704 and an effective convexity of -105.2 for
+    # this bond; a coarse tree of one step per coupon gave a positive convexity.
+    result = short_rate_model.get_option_adjusted_spread(
+        price=98.0,
+        coupon_rate=0.05,
+        years_to_maturity=10,
+        maturities=np.array([1, 2, 5, 10, 20, 30.0]),
+        zero_rates=np.array([0.036, 0.035, 0.037, 0.041, 0.047, 0.047]),
+        call_price=100.0,
+        years_to_first_call=2,
+    )
+
+    assert result["Option-Adjusted Spread"] == pytest.approx(0.005704, abs=2e-5)
+    assert result["Effective Convexity"] == pytest.approx(-105.2, rel=0.03)
+
+
+def test_option_adjusted_spread_between_coupon_dates():
+    # A straight bond priced at the value of its cash flows on the curve (clean, so without
+    # the interest accrued since the last coupon) has an OAS of zero.
+    years, coupon_rate = 9.75, 0.05
+    times = np.arange(0.25, years + 1e-9, 0.5)
+    continuous = np.log1p(np.interp(times, ZERO_MATURITIES, ZERO_RATES))
+    dirty = float(
+        np.sum(2.5 * np.exp(-continuous * times))
+        + 100 * np.exp(-continuous[-1] * years)
+    )
+    clean = dirty - 2.5 * 0.5
+
+    result = short_rate_model.get_option_adjusted_spread(
+        price=clean,
+        coupon_rate=coupon_rate,
+        years_to_maturity=years,
+        maturities=ZERO_MATURITIES,
+        zero_rates=ZERO_RATES,
+        call_price=None,
+    )
+
+    assert result["Option-Adjusted Spread"] == pytest.approx(0, abs=1e-6)
+    assert result["Straight Bond Price"] == pytest.approx(clean, abs=1e-6)

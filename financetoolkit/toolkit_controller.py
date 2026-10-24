@@ -69,6 +69,9 @@ if TYPE_CHECKING:
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
     from financetoolkit.performance.performance_controller import Performance
+    from financetoolkit.portfolio.construction_controller import (
+        PortfolioConstruction,
+    )
     from financetoolkit.ratios.ratios_controller import Ratios
     from financetoolkit.risk.risk_controller import Risk
     from financetoolkit.technicals.technicals_controller import Technicals
@@ -1245,6 +1248,138 @@ class Toolkit:
             econometrics._portfolio_weights = self._portfolio_weights
 
         return econometrics
+
+    @property
+    def portfolio(self) -> "PortfolioConstruction":
+        """
+        This gives access to the Portfolio Construction module, which builds and examines
+        portfolios from the assets of this Toolkit: optimal weights (minimum variance,
+        maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity,
+        inverse volatility, minimum CVaR and Black-Litterman), the efficient frontier, risk
+        contributions, historical stress tests, look-through exposure of funds and a
+        Brinson-Fachler attribution against the benchmark.
+
+        When the Toolkit comes from a Portfolio (`Portfolio.toolkit`), the methods that take
+        weights use the Portfolio's latest weights by default.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_risk_parity_weights()
+        ```
+        """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.portfolio.construction_controller import (  # noqa: PLC0415
+            PortfolioConstruction,
+        )
+
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            self.get_historical_data(period=period)
+
+        historical_data = {
+            "daily": self._daily_historical_data,
+            "weekly": self._weekly_historical_data,
+            "monthly": self._monthly_historical_data,
+            "quarterly": self._quarterly_historical_data,
+            "yearly": self._yearly_historical_data,
+        }
+        risk_free_rate_data = {
+            "daily": self._daily_risk_free_rate["Adj Close"],
+            "weekly": self._weekly_risk_free_rate["Adj Close"],
+            "monthly": self._monthly_risk_free_rate["Adj Close"],
+            "quarterly": self._quarterly_risk_free_rate["Adj Close"],
+            "yearly": self._yearly_risk_free_rate["Adj Close"],
+        }
+
+        def other_toolkit(tickers: list[str], start: str, end: str) -> "Toolkit":
+            # Other tickers (sector funds, the benchmark, earlier crises) get a Toolkit of
+            # their own that shares this one's key, cache and source.
+            return Toolkit(
+                tickers=tickers,
+                api_key=self._api_key,
+                start_date=start,
+                end_date=end,
+                use_cached_data=self._cache,
+                enforce_source=self._enforce_source,
+                benchmark_ticker=None,
+                progress_bar=False,
+            )
+
+        def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
+            historical = other_toolkit(tickers, start, end).get_historical_data(
+                period="daily"
+            )
+            if historical.empty:
+                return pd.DataFrame(columns=tickers)
+            adjusted = historical["Adj Close"]
+            if isinstance(adjusted, pd.Series):
+                adjusted = adjusted.to_frame(tickers[0])
+            return adjusted
+
+        def funds(kind: str, tickers: list[str]) -> pd.DataFrame:
+            own = set(tickers) <= set(self._tickers)
+            source = (
+                self
+                if own
+                else other_toolkit(tickers, self._start_date, self._end_date)
+            )
+            if kind == "sector":
+                result = source.get_etf_sector_weightings()
+            elif kind == "country":
+                result = source.get_etf_country_weightings()
+            else:
+                holdings = source.get_etf_holdings()
+                if holdings is None or holdings.empty:
+                    return pd.DataFrame()
+                # One fund comes back indexed by holding, several by fund and holding.
+                if not isinstance(holdings.index, pd.MultiIndex):
+                    holdings = pd.concat({tickers[0]: holdings})
+                weights = pd.to_numeric(holdings["Weight"], errors="coerce")
+                result = pd.DataFrame(
+                    {
+                        fund: weights.loc[fund].groupby(level=0).sum()
+                        for fund in holdings.index.get_level_values(0).unique()
+                    }
+                )
+            if result is None:
+                return pd.DataFrame()
+            if isinstance(result, pd.Series):
+                result = result.to_frame(tickers[0])
+            return result
+
+        portfolio = PortfolioConstruction(
+            tickers=self._tickers,
+            historical_data=historical_data,
+            risk_free_rate_data=risk_free_rate_data,
+            benchmark_name=self._benchmark_ticker,
+            portfolio_weights=self._portfolio_weights,
+            price_function=prices,
+            profile_function=self.get_profile,
+            fund_function=funds,
+            rounding=self._rounding,
+            start_date=self._start_date,
+            end_date=self._end_date,
+        )
+
+        return portfolio
 
     @property
     def fixedincome(self) -> "FixedIncome":

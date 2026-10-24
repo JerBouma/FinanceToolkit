@@ -1662,3 +1662,140 @@ class Portfolio:
         )
 
         return self._transactions_performance
+
+    def get_money_weighted_return(self, rounding: int | None = None) -> pd.DataFrame:
+        """
+        Calculate the money-weighted return of every position and of the whole portfolio:
+        the annual rate at which the money put in grew into the money taken out plus the
+        value still held (the internal rate of return, or XIRR, of the transactions).
+
+        Unlike the time-weighted return, it depends on when money was added: buying more
+        just before a rally raises it and buying at a peak lowers it. It therefore
+        measures the investor's own result, including the timing of every purchase and
+        sale, rather than the result of the assets alone.
+
+        The cash flows are every purchase (money in, including costs), every sale (money
+        out, after costs) and the latest value of the positions still held, on the last
+        date of the historical data.
+
+        For more information, see the following book:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+          Wiley, 2nd edition, chapter 2.
+
+        Also known as: internal rate of return, IRR, XIRR, dollar-weighted return.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+
+        Returns:
+            pd.DataFrame: Per position and for the Portfolio, the money Invested, the money
+            Received from sales, the Latest Value, the First Transaction date and the
+            annualized Money-Weighted Return.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_money_weighted_return()
+        ```
+
+        Which returns:
+
+        |           |   Invested |   Received |     Latest Value | First Transaction   |   Money-Weighted Return |
+        |:----------|-----------:|-----------:|-----------------:|:--------------------|------------------------:|
+        | ASML      |   4978.04  |          0 | 215337           | 2000-01-07          |                  0.2236 |
+        | SKY       |   2493.75  |          0 |  10733.1         | 2000-01-10          |                  0.0669 |
+        | AMZN      |   5040.91  |          0 |  33480           | 2000-01-28          |                  0.2101 |
+        | FIX       |   1756.57  |          0 | 152073           | 2000-02-23          |                  0.2617 |
+        | MSFT      |   4384.18  |          0 |  57696.1         | 2000-02-28          |                  0.1476 |
+        | AMD       |   2395.23  |          0 |  54262.9         | 2000-04-27          |                  0.1563 |
+        | AAPL      |   5623.11  |          0 |  51116.3         | 2000-05-08          |                  0.2757 |
+        | FICO      |   4833.32  |          0 | 107621           | 2000-06-01          |                  0.1697 |
+        | BAC       |   1844.25  |          0 |   4752.64        | 2000-11-16          |                  0.0639 |
+        | ALGN      |   9863.99  |          0 |  15760           | 2001-09-18          |                  0.0555 |
+        | CWST      |   1368.73  |          0 |   6344.65        | 2001-10-15          |                  0.1321 |
+        | OXY       |   1432.45  |          0 |   2438.46        | 2001-11-16          |                  0.0373 |
+        | WMT       |   1775.63  |          0 |  12108.9         | 2001-12-28          |                  0.1322 |
+        | CAMT      |    540.111 |          0 |   7148.44        | 2002-08-07          |                  0.2721 |
+        | NVDA      |    195.66  |          0 |  17087.8         | 2002-09-20          |                  0.3405 |
+        | NFLX      |  16441.9   |          0 |   8231.25        | 2002-11-18          |                 -0.0983 |
+        | GOOGL     |   4648.01  |          0 |  47391.1         | 2004-08-24          |                  0.2193 |
+        | MPWR      |  30125.9   |          0 | 139095           | 2005-09-16          |                  0.2762 |
+        | BLDR      |   1685.06  |          0 |   3467.85        | 2006-12-22          |                  0.1169 |
+        | VSS       |   8431.99  |          0 |  16279.1         | 2009-06-05          |                  0.0732 |
+        | AVGO      |   1562.27  |          0 |  24126           | 2009-11-02          |                  0.3532 |
+        | MCHI      |   2681.91  |          0 |   2793           | 2011-04-26          |                  0.0065 |
+        | VOO       |  18684.8   |          0 |  55187.8         | 2011-12-20          |                  0.1489 |
+        | META      |   4796.75  |          0 |   9639.3         | 2012-06-20          |                  0.1913 |
+        | KHC       |    572.969 |          0 |    396.8         | 2017-03-07          |                 -0.0526 |
+        | EMXC      |   1270     |          0 |   2201.04        | 2019-05-03          |                  0.1002 |
+        | Portfolio | 139428     |          0 |      1.05677e+06 | 2000-01-07          |                  0.1783 |
+        """
+        # Imported here: the attribution model is only needed for this calculation.
+        from financetoolkit.portfolio import attribution_model  # noqa: PLC0415
+
+        transactions = self.get_transactions_overview()
+        overview = self.get_portfolio_overview()
+
+        if not isinstance(transactions, pd.DataFrame) or transactions.empty:
+            raise ValueError("The portfolio has no transactions.")
+
+        # From the investor's point of view: a purchase is money in (negative), a sale
+        # money out (positive). Costs are recorded as negative amounts.
+        flows = -transactions["Price"] * transactions["Volume"] + transactions["Costs"]
+        last_date = pd.Timestamp(
+            str(self._daily_historical_data.index.get_level_values(0).max())
+        )
+
+        rows = {}
+        latest_values: dict[str, float] = {}
+        identifiers = transactions.index.get_level_values("Identifier")
+        for identifier in list(dict.fromkeys(identifiers)) + ["Portfolio"]:
+            selected = (
+                flows if identifier == "Portfolio" else flows[identifiers == identifier]
+            )
+            dates = pd.to_datetime(selected.index.get_level_values("Date").astype(str))
+            cash_flows = pd.Series(selected.to_numpy(), index=dates)
+            # The value still held follows from the same transactions: their net volume
+            # at the latest price.
+            if identifier == "Portfolio":
+                latest_value = float(sum(latest_values.values()))
+            else:
+                net_volume = float(
+                    transactions["Volume"][identifiers == identifier].sum()
+                )
+                latest_price = (
+                    float(overview.loc[identifier, "Latest Price"])
+                    if identifier in overview.index
+                    else 0.0
+                )
+                latest_value = net_volume * latest_price
+                latest_values[identifier] = latest_value
+            all_flows = pd.concat(
+                [cash_flows, pd.Series([latest_value], index=[last_date])]
+            )
+            try:
+                money_weighted = attribution_model.get_money_weighted_return(all_flows)
+            except ValueError:
+                money_weighted = float("nan")
+
+            rows[identifier] = {
+                "Invested": float(-cash_flows[cash_flows < 0].sum()),
+                "Received": float(cash_flows[cash_flows > 0].sum()),
+                "Latest Value": latest_value,
+                "First Transaction": dates.min().strftime("%Y-%m-%d"),
+                "Money-Weighted Return": money_weighted,
+            }
+
+        result = pd.DataFrame(rows).T
+        numeric = ["Invested", "Received", "Latest Value", "Money-Weighted Return"]
+        result[numeric] = result[numeric].astype(float)
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )

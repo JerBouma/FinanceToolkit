@@ -75,3 +75,7 @@ def test_get_transactions_performance(recorder):
     recorder.capture(portfolio.get_transactions_performance(period="monthly"))
     recorder.capture(portfolio.get_transactions_performance(period="quarterly"))
     recorder.capture(portfolio.get_transactions_performance(period="yearly"))
+
+
+def test_get_money_weighted_return(recorder):
+    recorder.capture(portfolio.get_money_weighted_return())

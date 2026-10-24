@@ -21,8 +21,8 @@ logger = get_logger()
 BENCHMARK_TICKER = "Benchmark"
 # The trading days the liquidity is measured over: the last year.
 TRADING_DAYS = 252
-# The most days between the published NAV and a close to compare them.
-NAV_PRICE_DAYS = 4
+# The most days the close compared with the NAV may lie before the NAV's date (a weekend).
+NAV_PRICE_DAYS = 3
 # Symbols are short; a longer identifier is an ISIN or a name.
 MAXIMUM_SYMBOL_LENGTH = 10
 
@@ -424,6 +424,7 @@ class ETF:
         | Expense Ratio           | 0.0003               | 0.0018                      | 0.0003                               |
         | Assets Under Management | 1700000000000        | 475210352597                | 139388224538                         |
         | NAV                     | 698.45               | 704.38                      | 96.07                                |
+        | NAV Date                | 2026-10-23           | 2026-10-23                  | 2026-10-23                           |
         | Price                   | 698.58               | 704.4                       | 95.96                                |
         | Premium/Discount        | 0.0002               | 0.0                         | -0.0011                              |
         | Holdings Count          | 505                  | 102                         | 13445                                |
@@ -445,14 +446,32 @@ class ETF:
             price = close[fund].dropna()
             latest = float(price.iloc[-1]) if not price.empty else float("nan")
             nav = pd.to_numeric(info.get("NAV"), errors="coerce")
-            # The NAV is the latest published, so it is only compared with a close of about
-            # the same date.
-            nav_date = pd.to_datetime(str(info.get("Updated At"))[:10], errors="coerce")
-            price_date = price.index[-1].to_timestamp() if not price.empty else pd.NaT
-            comparable = (
-                pd.notna(nav_date)
-                and pd.notna(price_date)
-                and abs((nav_date - price_date).days) <= NAV_PRICE_DAYS
+            # The NAV is struck after the New York close and published in UTC, often after
+            # midnight, so its date is the New York date of the update; the premium compares
+            # it with the close of that date (SEC Rule 6c-11), not with a later close.
+            raw = str(info.get("Updated At") or "").strip()
+            updated = pd.to_datetime(raw, utc=True, errors="coerce")
+            nav_date = (
+                pd.NaT
+                if pd.isna(updated)
+                else (
+                    # A date without a time is the NAV date itself.
+                    updated.tz_localize(None).normalize()
+                    if len(raw) <= 10  # noqa: PLR2004
+                    else updated.tz_convert("America/New_York")
+                    .tz_localize(None)
+                    .normalize()
+                )
+            )
+            dates = (
+                price.index.to_timestamp() if not price.empty else pd.DatetimeIndex([])
+            )
+            before = price[dates <= nav_date] if pd.notna(nav_date) else price.iloc[:0]
+            close_at_nav = (
+                float(before.iloc[-1])
+                if not before.empty
+                and (nav_date - before.index[-1].to_timestamp()).days <= NAV_PRICE_DAYS
+                else float("nan")
             )
             rows[fund] = {
                 "Name": info.get("Name"),
@@ -467,10 +486,11 @@ class ETF:
                     info.get("Assets Under Management"), errors="coerce"
                 ),
                 "NAV": nav,
-                "Price": latest,
-                "Premium/Discount": (
-                    latest / nav - 1 if nav and comparable else float("nan")
+                "NAV Date": (
+                    nav_date.strftime("%Y-%m-%d") if pd.notna(nav_date) else None
                 ),
+                "Price": latest,
+                "Premium/Discount": close_at_nav / nav - 1 if nav else float("nan"),
                 "Holdings Count": pd.to_numeric(
                     info.get("Holdings Count"), errors="coerce"
                 ),
@@ -499,13 +519,14 @@ class ETF:
         """
         Get the fee table of the prospectus of every US fund from the SEC: the management fee,
         the distribution and service (12b-1) fee, the other expenses, the fees of the funds it
-        invests in (acquired fund fees), the gross expense ratio, the fee waiver, the net expense
-        ratio (what investors pay) and the portfolio turnover (the share of the portfolio traded
+        invests in (acquired fund fees), the gross expense ratio, the fee waiver (negative, a
+        reduction), the net expense ratio (what investors pay) and the portfolio turnover (the share of the portfolio traded
         in a year, which costs a fund trading costs on top of its expense ratio), as decimals.
 
         The data comes from the risk/return summaries the SEC publishes each quarter from the
         prospectuses (Form N-1A) of US funds, read back up to five quarters until every fund is
-        found. A unit investment trust such as SPY files no such prospectus and is not covered.
+        found; of the filings of a quarter (the annual prospectus and supplements that change
+        the fees) the latest is used. A unit investment trust such as SPY files no such prospectus and is not covered.
         The first call downloads the quarterly files (about 80 MB each); the fees are cached
         for 90 days afterwards. The SEC asks every automated request to identify itself with a
         name and an email address, given as `sec_user_agent` or in the
@@ -524,8 +545,8 @@ class ETF:
                 Defaults to None, which uses the rounding of the Toolkit.
 
         Returns:
-            pd.DataFrame: The fees, turnover, prospectus date, series and class (rows) per fund
-            (columns).
+            pd.DataFrame: The fees, turnover, the fiscal year end the fee table covers, the
+            filing date, series and class (rows) per fund (columns).
 
         As an example:
 
@@ -549,7 +570,8 @@ class ETF:
         | Fee Waiver                           | nan        | nan        | 0.0        | nan        |
         | Net Expense Ratio                    | 0.0003     | 0.0003     | 0.0003     | 0.0003     |
         | Portfolio Turnover                   | 0.03       | 0.02       | 0.62       | 0.38       |
-        | Prospectus Date                      | 2025-12-31 | 2025-12-31 | 2026-02-28 | 2025-12-31 |
+        | Fiscal Year End                      | 2025-12-31 | 2025-12-31 | 2026-02-28 | 2025-12-31 |
+        | Filing Date                          | 2026-04-28 | 2026-04-28 | 2026-06-18 | 2026-04-28 |
         | Series                               | S000002848 | S000002839 | S000004362 | S000002564 |
         | Class                                | C000007808 | C000092055 | C000012092 | C000046844 |
         """
@@ -566,13 +588,10 @@ class ETF:
                 "fund outside the US, files none).",
                 ", ".join(missing),
             )
-        numeric = breakdown.drop(columns=["Prospectus Date", "Series", "Class"]).apply(
-            pd.to_numeric, errors="coerce"
-        )
+        labels = ["Fiscal Year End", "Filing Date", "Series", "Class"]
+        numeric = breakdown.drop(columns=labels).apply(pd.to_numeric, errors="coerce")
         numeric = self._round(numeric, rounding)
-        return pd.concat(
-            [numeric, breakdown[["Prospectus Date", "Series", "Class"]]], axis=1
-        ).T
+        return pd.concat([numeric, breakdown[labels]], axis=1).T
 
     @handle_errors
     def get_tracking(
@@ -586,9 +605,10 @@ class ETF:
         fund should be the index it follows (set benchmark_ticker to a total return index or to
         another fund of the same index). Per fund:
 
-        - Tracking Difference: the annualized average return difference with the Benchmark. An
-          index fund trails its index by roughly its expense ratio; less points to securities
-          lending income, more to a costly or loose replication.
+        - Tracking Difference: the annualized return of the fund minus that of the Benchmark
+          over the period, as issuers report it. An index fund trails its index by roughly its
+          expense ratio; less points to securities lending income, more to a costly or loose
+          replication.
         - Tracking Error: the annualized volatility of that difference, how far the fund strays
           from the index from day to day.
         - Correlation, Beta and R Squared of the fund's returns with the Benchmark's.
@@ -632,7 +652,7 @@ class ETF:
 
         |                     |    VOO |    IVV |    SPLG |
         |:--------------------|-------:|-------:|--------:|
-        | Tracking Difference | 0.0007 | 0.0006 | -0      |
+        | Tracking Difference | 0.0008 | 0.0007 | -0      |
         | Tracking Error      | 0.0011 | 0.0018 |  0.0021 |
         | Correlation         | 1      | 0.9999 |  0.9999 |
         | Beta                | 0.9994 | 1.0014 |  0.9986 |
@@ -649,9 +669,16 @@ class ETF:
             )
         prices = prices.loc[self._start_date : self._end_date]
 
+        # The first return starts from the last close before the range (the history holds
+        # a year before the start date), so the first day, or period, is not lost.
+        full = self._historical()["Adj Close"]
+        base = full[full.index < prices.index[0]].iloc[-1:]
+
         if yearly:
             yearly_prices = prices.groupby(prices.index.asfreq("Y")).last()
-            first = prices.iloc[[0]].set_axis([yearly_prices.index[0] - 1])
+            first = (base if not base.empty else prices.iloc[[0]]).set_axis(
+                [yearly_prices.index[0] - 1]
+            )
             returns = (
                 pd.concat([first, yearly_prices]).pct_change(fill_method=None).iloc[1:]
             )
@@ -666,7 +693,10 @@ class ETF:
                 "yearly": "Y",
             }[period]
             prices = prices.groupby(prices.index.asfreq(frequency)).last()
-        returns = prices.pct_change(fill_method=None)
+            base = base.set_axis(base.index.asfreq(frequency))
+        returns = (
+            pd.concat([base, prices]).pct_change(fill_method=None).iloc[len(base) :]
+        )
 
         tracking = pd.DataFrame(
             {
@@ -710,7 +740,7 @@ class ETF:
 
         Which returns:
 
-                |                              | VOO     | QQQ     | RSP      |
+        |                              | VOO     | QQQ     | RSP      |
         |:-----------------------------|:--------|:--------|:---------|
         | Number of Holdings           | 507.0   | 105.0   | 507.0    |
         | Largest Holding              | NVDA    | NVDA    | PTC      |
@@ -761,7 +791,7 @@ class ETF:
 
         Which returns:
 
-                |      |    VOO |    QQQ |    VTI |   SCHD |
+        |      |    VOO |    QQQ |    VTI |   SCHD |
         |:-----|-------:|-------:|-------:|-------:|
         | VOO  | 1.0017 | 0.556  | 0.8911 | 0.0764 |
         | QQQ  | 0.556  | 1.0014 | 0.4994 | 0.0516 |
@@ -809,7 +839,7 @@ class ETF:
 
         Which returns:
 
-                |                         |     VOO |     QQQ |    SCHD |
+        |                         |     VOO |     QQQ |    SCHD |
         |:------------------------|--------:|--------:|--------:|
         | Price-to-Earnings       | 26.616  | 31.6436 | 20.7484 |
         | Price-to-Book           |  8.3525 | 10.2411 |  4.7307 |
@@ -918,8 +948,10 @@ class ETF:
                 "Dollar Volume to Assets": (
                     float(dollar_volume.mean()) / assets if assets else float("nan")
                 ),
+                # Total returns, so a distribution on its ex-date is not counted as a
+                # price move.
                 "Price Impact per $100 Million": etf_model.get_price_impact(
-                    close.pct_change(fill_method=None), dollar_volume
+                    data["Adj Close"][fund].pct_change(fill_method=None), dollar_volume
                 ),
             }
         # A price impact of a fraction of a basis point matters here, so the result is only

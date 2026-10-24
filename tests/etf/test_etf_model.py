@@ -57,6 +57,16 @@ def test_price_impact_and_tracking():
     benchmark = pd.Series(rng.normal(0.0004, 0.01, 500))
     fund = benchmark - 0.0003 / 252
     tracking = etf_model.get_tracking(fund, benchmark)
-    assert tracking["Tracking Difference"] == pytest.approx(-0.0003)
+    # The difference of the annualized returns: about the yearly cost.
+    assert tracking["Tracking Difference"] == pytest.approx(-0.0003, rel=0.05)
     assert tracking["Tracking Error"] == pytest.approx(0, abs=1e-12)
     assert tracking["Beta"] == pytest.approx(1)
+
+
+def test_the_tracking_difference_is_the_difference_of_annualized_returns():
+    benchmark = pd.Series([0.01, -0.02, 0.015, 0.005] * 63)
+    fund = benchmark - 0.0001
+    tracking = etf_model.get_tracking(fund, benchmark, 252)
+
+    expected = (1 + fund).prod() - (1 + benchmark).prod()
+    assert tracking["Tracking Difference"] == pytest.approx(expected)

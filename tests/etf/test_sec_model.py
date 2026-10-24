@@ -4,6 +4,7 @@ import io
 import zipfile
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 import pytest
 import requests
@@ -59,7 +60,7 @@ def test_the_fee_table_is_read_per_share_class():
     # The latest value of a tag is kept.
     assert fees.loc["C1", "Gross Expense Ratio"] == pytest.approx(0.0004)
     assert fees.loc["C1", "Portfolio Turnover"] == pytest.approx(0.03)
-    assert fees.loc["C1", "Prospectus Date"] == "2025-12-31"
+    assert fees.loc["C1", "Fiscal Year End"] == "2025-12-31"
 
 
 def test_a_user_agent_with_an_email_is_required(monkeypatch):
@@ -113,3 +114,68 @@ def test_the_quarters_are_read_back_until_every_fund_is_found(monkeypatch):
     assert fees.loc["AAA", "Net Expense Ratio"] == pytest.approx(0.0005)
     assert any("2026q1" in url for url in requested)
     assert isinstance(fees, pd.DataFrame)
+
+
+def filings_file(rows: list[tuple], filings: dict[str, tuple[str, str]]) -> bytes:
+    """A quarterly file with several filings: num.tsv rows with their adsh, and sub.tsv."""
+    text = HEADER + "".join(
+        f"{adsh}\t{tag}\tv\t{date}\tpure\tS1\t\t\tdoc\tClass=C1;\t0\t{value}\n"
+        for adsh, tag, date, value in rows
+    )
+    submissions = "adsh\tform\tfiled\taccepted\n" + "".join(
+        f"{adsh}\t485BPOS\t{filed}\t{accepted}\n"
+        for adsh, (filed, accepted) in filings.items()
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("num.tsv", text)
+        archive.writestr("sub.tsv", submissions)
+    return buffer.getvalue()
+
+
+def test_the_latest_filing_of_a_class_is_kept():
+    # A supplement filed after the annual prospectus cuts the fees of the same fiscal year.
+    fees = sec_model.read_risk_return_fees(
+        filings_file(
+            [
+                ("late", "ManagementFeesOverAssets", "20251231", "0.0055"),
+                ("early", "ManagementFeesOverAssets", "20251231", "0.0074"),
+                ("early", "OtherExpensesOverAssets", "20251231", "0.0010"),
+            ],
+            {
+                "early": ("20260428", "2026-04-28 16:00:00.0"),
+                "late": ("20260630", "2026-06-30 09:00:00.0"),
+            },
+        )
+    )
+
+    assert fees.loc["C1", "Management Fee"] == pytest.approx(0.0055)
+    # Tags of an earlier filing are not mixed in.
+    assert pd.isna(fees.loc["C1"].get("Other Expenses"))
+    assert fees.loc["C1", "Filing Date"] == "2026-06-30"
+
+
+def test_the_fee_waiver_is_negative_and_completes_the_net_ratio(monkeypatch):
+    table = pd.DataFrame(
+        {
+            "Gross Expense Ratio": [0.0195, 0.0100],
+            "Fee Waiver": [-0.002, 0.001],
+            "Net Expense Ratio": [np.nan, 0.009],
+            "Series": ["S1", "S2"],
+            "Fiscal Year End": ["2025-12-31"] * 2,
+            "Filing Date": ["2026-04-28"] * 2,
+        },
+        index=["C1", "C2"],
+    )
+    monkeypatch.setattr(
+        sec_model,
+        "get_fund_classes",
+        lambda user_agent: pd.DataFrame({"Class": ["C1", "C2"]}, index=["AAA", "BBB"]),
+    )
+    monkeypatch.setattr(sec_model, "_quarter_fees", lambda *args: table)
+
+    breakdown = sec_model.get_fee_breakdown(["AAA", "BBB"], "Jane Doe jane@example.com")
+
+    assert breakdown.loc["AAA", "Net Expense Ratio"] == pytest.approx(0.0175)
+    # A waiver entered as a positive reduction is the difference of the two ratios.
+    assert breakdown.loc["BBB", "Fee Waiver"] == pytest.approx(-0.001)

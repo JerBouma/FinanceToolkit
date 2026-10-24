@@ -155,3 +155,25 @@ def test_the_holdings_need_no_prices(etf):
 
     assert not etf.get_holdings().empty
     assert not etf.get_concentration().empty
+
+
+def test_the_premium_compares_the_nav_with_the_close_of_its_date(etf):
+    information = etf._fund_data_function("information").copy()
+    close = etf._historical()["Close"]["AAA"]
+    # A NAV published after midnight UTC is the previous New York day's, equal to that
+    # day's close, three trading days before the last close.
+    nav_day = close.index[-4].to_timestamp()
+    information.loc["NAV", "AAA"] = float(close.iloc[-4])
+    information.loc["Updated At", "AAA"] = (
+        nav_day + pd.Timedelta(days=1, hours=2)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    datasets = {
+        "information": information,
+        "holdings": etf._fund_data_function("holdings"),
+    }
+    etf._fund_data_function = lambda dataset, overwrite=False: datasets[dataset]
+
+    profile = etf.get_profile(rounding=8)
+
+    assert profile.loc["Premium/Discount", "AAA"] == pytest.approx(0, abs=1e-8)
+    assert profile.loc["NAV Date", "AAA"] == nav_day.strftime("%Y-%m-%d")

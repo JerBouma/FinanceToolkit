@@ -104,67 +104,98 @@ def get_fund_classes(user_agent: str) -> pd.DataFrame:
     )
 
 
+def _filings(archive: zipfile.ZipFile) -> dict[str, tuple[str, str]]:
+    """The acceptance time and filing date (YYYYMMDD) of every filing (adsh) in a file."""
+    if "sub.tsv" not in archive.namelist():
+        return {}
+    with archive.open("sub.tsv") as file:
+        reader = csv.DictReader(
+            io.TextIOWrapper(file, encoding="utf-8", errors="replace"), delimiter="\t"
+        )
+        return {
+            row["adsh"]: (row.get("accepted") or "", row.get("filed") or "")
+            for row in reader
+        }
+
+
 def read_risk_return_fees(zip_data: bytes) -> pd.DataFrame:
     """
     Reads the fee table of every share class from a quarterly risk/return summary file,
-    reading the numbers line by line so the (large) file is never held as a table. When a class
-    has several values of a tag (prospectuses filed in the quarter), the latest is kept.
+    reading the numbers line by line so the (large) file is never held as a table. A class
+    can be in several filings of the quarter (the annual prospectus and supplements that
+    change the fees), so only the latest accepted filing of each class is kept, and the
+    portfolio turnover of each fund (series) likewise.
 
     Args:
         zip_data (bytes): The quarterly ZIP file.
 
     Returns:
-        pd.DataFrame: The fees per share class, with the Series, the Prospectus Date and the
-        Portfolio Turnover of its fund.
+        pd.DataFrame: The fees per share class, with the Series, the Fiscal Year End the fee
+        table covers, the Filing Date and the Portfolio Turnover of its fund.
     """
     fees: dict[str, dict] = {}
-    turnover: dict[str, tuple[str, float]] = {}
-    with (
-        zipfile.ZipFile(io.BytesIO(zip_data)) as archive,
-        archive.open("num.tsv") as file,
-    ):
-        reader = csv.DictReader(
-            io.TextIOWrapper(file, encoding="utf-8", errors="replace"), delimiter="\t"
-        )
-        for row in reader:
-            tag = row["tag"]
-            if tag not in FEE_TAGS and tag != TURNOVER_TAG:
-                continue
-            try:
-                value = float(row["value"])
-            except ValueError:
-                continue
-            date = row["ddate"]
-            if tag == TURNOVER_TAG:
-                series = row["series"]
-                if series and (series not in turnover or date >= turnover[series][0]):
-                    turnover[series] = (date, value)
-                continue
-            share_class = row["class"] or next(
-                (
-                    part.split("=", 1)[1]
-                    for part in row["otherdims"].split(";")
-                    if part.startswith("Class=")
-                ),
-                "",
+    turnover: dict[str, tuple[tuple[str, str], float]] = {}
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as archive:
+        filings = _filings(archive)
+        with archive.open("num.tsv") as file:
+            reader = csv.DictReader(
+                io.TextIOWrapper(file, encoding="utf-8", errors="replace"),
+                delimiter="\t",
             )
-            if not share_class:
-                continue
-            record = fees.setdefault(share_class, {"Series": row["series"]})
-            name = FEE_TAGS[tag]
-            if name not in record or date >= record[f"{name} Date"]:
-                record[name] = value
-                record[f"{name} Date"] = date
+            for row in reader:
+                tag = row["tag"]
+                if tag not in FEE_TAGS and tag != TURNOVER_TAG:
+                    continue
+                try:
+                    value = float(row["value"])
+                except ValueError:
+                    continue
+                accepted, filed = filings.get(row["adsh"], ("", ""))
+                # Filings of one fiscal year share the end date of that year (ddate), so
+                # the acceptance time decides which is the latest.
+                key = (accepted, row["ddate"])
+                if tag == TURNOVER_TAG:
+                    series = row["series"]
+                    if series and (
+                        series not in turnover or key >= turnover[series][0]
+                    ):
+                        turnover[series] = (key, value)
+                    continue
+                share_class = row["class"] or next(
+                    (
+                        part.split("=", 1)[1]
+                        for part in row["otherdims"].split(";")
+                        if part.startswith("Class=")
+                    ),
+                    "",
+                )
+                if not share_class:
+                    continue
+                record = fees.get(share_class)
+                if record is None or accepted > record["Accepted"]:
+                    record = fees[share_class] = {
+                        "Series": row["series"],
+                        "Accepted": accepted,
+                        "Fiscal Year End": row["ddate"],
+                        "Filing Date": filed,
+                    }
+                elif accepted < record["Accepted"]:
+                    continue
+                name = FEE_TAGS[tag]
+                if name not in record or row["ddate"] >= record["Fiscal Year End"]:
+                    record[name] = value
+                    record["Fiscal Year End"] = max(
+                        record["Fiscal Year End"], row["ddate"]
+                    )
 
     if not fees:
         return pd.DataFrame()
 
-    table = pd.DataFrame.from_dict(fees, orient="index")
-    dates = table[[column for column in table if column.endswith(" Date")]]
-    table["Prospectus Date"] = pd.to_datetime(
-        dates.max(axis=1), format="%Y%m%d", errors="coerce"
-    ).dt.strftime("%Y-%m-%d")
-    table = table.drop(columns=dates.columns)
+    table = pd.DataFrame.from_dict(fees, orient="index").drop(columns="Accepted")
+    for column in ("Fiscal Year End", "Filing Date"):
+        table[column] = pd.to_datetime(
+            table[column], format="%Y%m%d", errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
     table["Portfolio Turnover"] = table["Series"].map(
         {series: value for series, (_, value) in turnover.items()}
     )
@@ -208,9 +239,10 @@ def get_fee_breakdown(
     """
     Retrieves the fee table of the prospectus of every fund share class: the management fee,
     the distribution and service (12b-1) fee, the other expenses, the fees of the funds it
-    invests in, the gross expense ratio, the fee waiver, the net expense ratio and the
-    portfolio turnover of the fund, as decimals. The quarterly files are read from the latest
-    back, up to five quarters, until every fund is found.
+    invests in, the gross expense ratio, the fee waiver (negative, as the fee table reports
+    it), the net expense ratio and the portfolio turnover of the fund, as decimals. The
+    quarterly files are read from the latest back, up to five quarters, until every fund is
+    found.
 
     Args:
         symbols (list[str]): The tickers.
@@ -247,17 +279,23 @@ def get_fee_breakdown(
         return pd.DataFrame()
 
     breakdown = pd.DataFrame(found).T
-    # Without a waiver the net expense ratio is the gross one.
-    if "Gross Expense Ratio" in breakdown:
-        net = breakdown.get(
-            "Net Expense Ratio", pd.Series(index=breakdown.index, dtype=float)
-        )
-        breakdown["Net Expense Ratio"] = net.fillna(breakdown["Gross Expense Ratio"])
+    numbers = breakdown.reindex(
+        columns=["Gross Expense Ratio", "Net Expense Ratio", "Fee Waiver"]
+    ).apply(pd.to_numeric, errors="coerce")
+    gross, net, waiver = (numbers[column] for column in numbers)
+    # The fee table defines the net expense ratio as the gross one plus the (negative)
+    # waiver, but some filers enter the waiver as a positive reduction: with both ratios
+    # reported the waiver is their difference, otherwise it is made negative.
+    waiver = (net - gross).round(6).where(net.notna() & waiver.notna(), -waiver.abs())
+    breakdown["Fee Waiver"] = waiver
+    # Without a reported net expense ratio it is the gross one plus the waiver, if any.
+    breakdown["Net Expense Ratio"] = net.fillna(gross + waiver.fillna(0))
     breakdown["Class"] = [wanted[symbol] for symbol in breakdown.index]
     columns = [
         *FEE_TAGS.values(),
         "Portfolio Turnover",
-        "Prospectus Date",
+        "Fiscal Year End",
+        "Filing Date",
         "Series",
         "Class",
     ]

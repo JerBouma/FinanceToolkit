@@ -20,9 +20,10 @@ TOP_HOLDINGS = 10
 def get_concentration(weights: pd.Series) -> pd.Series:
     """
     Calculate how concentrated a fund is from the weights of its holdings: the number of
-    holdings, the weight of the largest holding and of the ten largest, the
-    Herfindahl-Hirschman index (the sum of the squared weights) and the effective number of
-    holdings (one over that index). A fund of 500 holdings whose ten largest make up 40% of
+    holdings, the weight of the largest holding and of the ten largest (shares of the fund),
+    the Herfindahl-Hirschman index (the sum of the squared weights, after scaling the weights
+    of the holdings to sum to one) and the effective number of holdings (one over that
+    index). A fund of 500 holdings whose ten largest make up 40% of
     it behaves like a fund of far fewer stocks; the effective number says how many equally
     weighted holdings would give the same concentration.
 
@@ -89,7 +90,9 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
     with a very high multiple dominate; holdings with negative earnings count with their
     negative earnings, as in the fund's own earnings. The dividend yield and net profit margin
     are weighted arithmetic means. The coverage is the share of the fund's
-    weight whose holdings have the ratio.
+    weight whose holdings have a usable price-to-earnings ratio. When the holdings' earnings
+    add up to a loss, the fund's price-to-earnings ratio is negative (some data providers
+    show none in that case).
 
     Args:
         weights (pd.Series): The weight of every holding, as decimals.
@@ -121,15 +124,12 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
     total = weights.sum()
     multiples = [ratio for ratio in MULTIPLES if ratio in ratios]
     first = multiples[0] if multiples else None
-    result["Coverage"] = (
-        float(
-            weights[
-                pd.to_numeric(ratios.loc[common, first], errors="coerce").notna()
-            ].sum()
-        )
-        if first and total
-        else np.nan
-    )
+    if first and total:
+        # The holdings the first multiple uses: those with a non-zero ratio.
+        values = pd.to_numeric(ratios.loc[common, first], errors="coerce")
+        result["Coverage"] = float(weights[values.notna() & (values != 0)].sum())
+    else:
+        result["Coverage"] = np.nan
     return pd.Series(result)
 
 
@@ -162,10 +162,11 @@ def get_tracking(
     returns: pd.Series, benchmark_returns: pd.Series, periods_per_year: int = 252
 ) -> pd.Series:
     """
-    Calculate how closely a fund tracks a benchmark (its index): the annualized tracking
-    difference (the average return difference, which for an index fund should be about minus
-    its expense ratio), the annualized tracking error (the volatility of the difference), the
-    correlation, the beta and the R Squared.
+    Calculate how closely a fund tracks a benchmark (its index): the tracking difference
+    (the annualized return of the fund minus the annualized return of the benchmark over the
+    period, which for an index fund should be about minus its expense ratio), the annualized
+    tracking error (the volatility of the return difference), the correlation, the beta and
+    the R Squared.
 
     Args:
         returns (pd.Series): The fund's returns.
@@ -183,7 +184,10 @@ def get_tracking(
     correlation = float(fund.corr(benchmark))
     return pd.Series(
         {
-            "Tracking Difference": float(difference.mean() * periods_per_year),
+            "Tracking Difference": float(
+                (1 + fund).prod() ** (periods_per_year / len(data))
+                - (1 + benchmark).prod() ** (periods_per_year / len(data))
+            ),
             "Tracking Error": float(difference.std(ddof=1) * np.sqrt(periods_per_year)),
             "Correlation": correlation,
             "Beta": float(fund.cov(benchmark) / benchmark.var()),

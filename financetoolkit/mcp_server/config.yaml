@@ -96,6 +96,7 @@ module_class_map:
   risk:         "financetoolkit.risk.risk_controller.Risk"
   econometrics: "financetoolkit.econometrics.econometrics_controller.Econometrics"
   options:      "financetoolkit.options.options_controller.Options"
+  etf:          "financetoolkit.etf.etf_controller.ETF"
   economics:    "financetoolkit.economics.economics_controller.Economics"
   fixedincome:  "financetoolkit.fixedincome.fixedincome_controller.FixedIncome"
   discovery:    "financetoolkit.discovery.discovery_controller.Discovery"
@@ -117,6 +118,9 @@ module_class_map:
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
+  # Needs the caller's own name and email for the SEC and downloads quarterly files of
+  # about 80 MB, which does not suit a shared server.
+  - "get_fee_breakdown"
   - "collect_bond_statistics"
   - "collect_all_ratios"
   - "collect_custom_ratios"
@@ -288,6 +292,7 @@ category_descriptions:
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
+  etf:                     "ETF analysis (profile and premium/discount to NAV, tracking difference and error, concentration, overlap between funds, look-through valuation of the holdings, liquidity)."
   government:              "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   macroeconomics:          "Macroeconomic indicators by country (GDP, real GDP, CPI, PPI, inflation, trade, investment, consumption, confidence, money supply, output gap, real interest rate, crisis indicators, commodity forward curves). Use countries= param (commodity forward curve uses commodity= instead). Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
@@ -482,6 +487,12 @@ tool_groups:
     display_name: "Econometrics Tests"
     description:  "Statistical and econometric analysis of price or return series: unit root tests (ADF, KPSS, Phillips-Perron, Zivot-Andrews), cointegration (Engle-Granger, Johansen, VECM), Granger causality, VAR forecasts, impulse responses and variance decomposition, ARIMA forecasts, regressions (OLS, WLS, GLS, quantile, logistic, probit, IV/2SLS, Fama-MacBeth, fixed and random effects panels), causal designs (difference-in-differences, event study, regression discontinuity, synthetic control, propensity score matching), diagnostics (ARCH-LM, Jarque-Bera, Ljung-Box, Durbin-Watson, Breusch-Pagan, White, Ramsey RESET, VIF, Chow, CUSUM, variance ratio) and forecast comparison (Diebold-Mariano, RMSE, MAE). No need to fetch price data first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:  "econometrics"
+    category:     "ticker"
+
+  - tool_name:    "etf"
+    display_name: "ETF Analysis"
+    description:  "Analysis of ETFs and other funds. Requires tickers='VOO' — use comma-separated values for several funds. get_profile: name, issuer, asset class, domicile, inception date, expense ratio, assets under management, NAV, latest price, premium/discount to NAV (only when the latest close and the published NAV are of about the same date), holdings count and average (dollar) volume. get_tracking: tracking difference (annualized return gap, about minus the expense ratio for an index fund), tracking error, correlation, beta and R Squared against benchmark_ticker (set it to the fund's index or another fund of the same index, e.g. benchmark_ticker='SPY' for VOO); yearly=true gives the gap per calendar year. get_concentration: number of holdings, largest holding, top 10 weight, Herfindahl-Hirschman index and effective number of holdings. get_overlap: the overlap of every pair of funds (sum of the smaller weight over shared holdings). get_look_through_valuation: weighted (harmonic) P/E, P/B, P/S and P/FCF, dividend yield and net margin of the largest holdings (holdings=25) with the coverage. get_liquidity: average volume and dollar volume, dollar volume to assets and the price impact per $100 million traded (Amihud). For a fund's sectors, countries and holdings use market_data get_etf_sector_weightings, get_etf_country_weightings and get_etf_holdings."
+    module_name:  "etf"
     category:     "ticker"
 
   - tool_name:    "options"

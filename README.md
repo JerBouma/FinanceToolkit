@@ -389,6 +389,30 @@ And below the Ichimoku Cloud of the last twelve months is plotted for Apple and 
 
 The 40+ indicators are divided into four categories: [**Breadth**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-breadth-indicators) (McClellan Oscillator, Advancers/Decliners, OBV, ADL, Chaikin Oscillator, TRIN, New Highs - New Lows), [**Momentum**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-momentum-indicators) (RSI, MACD, Stochastic, Williams %R, Aroon, CCI, ADX and more), [**Overlap**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-overlap-indicators) (SMA, EMA, DEMA, TRIX, WMA, Hull MA, VWAP, Parabolic SAR, Pivot Points, Support/Resistance) and [**Volatility**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-volatility-indicators) (ATR, Keltner Channels, Bollinger Bands, Donchian Channels, Volatility Cone). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#getting-started) and the full technical indicator documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals).**
 
+### Analyzing ETFs
+
+The `etf` module analyzes exchange traded funds and other funds: their profile and premium or discount to NAV, the fee table of their prospectus (from the SEC), how closely they track their index, how concentrated and how much alike they are, what their holdings are valued at and how liquid they are.
+
+```python
+# How concentrated are an S&P 500, a NASDAQ 100 and an equal weight S&P 500 fund?
+funds = Toolkit(["VOO", "QQQ", "RSP"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+funds.etf.get_concentration()
+```
+
+Which returns:
+
+|                              | VOO     | QQQ     | RSP      |
+|:-----------------------------|:--------|:--------|:---------|
+| Number of Holdings           | 507.0   | 105.0   | 507.0    |
+| Largest Holding              | NVDA    | NVDA    | PTC      |
+| Largest Weight               | 0.084   | 0.0814  | 0.003    |
+| Top 10 Weight                | 0.3913  | 0.4665  | 0.0266   |
+| Herfindahl-Hirschman Index   | 0.023   | 0.0316  | 0.002    |
+| Effective Number of Holdings | 43.4661 | 31.6935 | 497.7398 |
+
+The S&P 500 of VOO behaves like a portfolio of about 43 equally weighted stocks, while the equal weight RSP spreads it over nearly all 500. Next to `get_concentration`, the module has `get_profile`, `get_fee_breakdown`, `get_tracking`, `get_overlap`, `get_look_through_valuation` and `get_liquidity`.
+
 ### Obtaining Fixed Income Metrics
 
 Get access to the [ICE BofA Corporate Bond](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/effective-yield) benchmark indices and a variety of other bond and derivative related valuations within the `fixedincome` module.

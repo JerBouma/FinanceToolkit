@@ -41,6 +41,7 @@ from financetoolkit.fmp_model import (
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
+    get_ratios_ttm as _get_ratios_ttm,
     get_revenue_segmentation as _get_revenue_segmentation,
     get_shares_float as _get_shares_float,
     get_stock_grades as _get_stock_grades,
@@ -65,6 +66,7 @@ if TYPE_CHECKING:
     # importing the Finance Toolkit does not load every module and its dependencies.
     from financetoolkit.econometrics.econometrics_controller import Econometrics
     from financetoolkit.economics.economics_controller import Economics
+    from financetoolkit.etf.etf_controller import ETF
     from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
@@ -1245,6 +1247,55 @@ class Toolkit:
             econometrics._portfolio_weights = self._portfolio_weights
 
         return econometrics
+
+    @property
+    def etf(self) -> "ETF":
+        """
+        The ETF module analyzes the Toolkit's exchange traded funds (and other funds): their
+        profile and premium or discount to NAV, the fee table of their prospectus, how closely
+        they track the Benchmark, how concentrated and how much alike they are, what their
+        holdings are valued at and how liquid they are.
+
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/etf
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["VOO", "QQQ", "AGG"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_profile()
+        ```
+        """
+        # Imported when first used, so the Finance Toolkit loads only what is needed.
+        from financetoolkit.etf.etf_controller import ETF  # noqa: PLC0415
+
+        if not self._start_date:
+            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
+                "%Y-%m-%d"
+            )
+        if not self._end_date:
+            self._end_date = datetime.today().strftime("%Y-%m-%d")
+
+        self.get_historical_data(period="daily")
+
+        def ratios(tickers: list[str]) -> pd.DataFrame:
+            ratios_ttm, _ = _get_ratios_ttm(
+                tickers, api_key=self._api_key, user_subscription=self._fmp_plan
+            )
+            return ratios_ttm
+
+        return ETF(
+            tickers=self._tickers,
+            daily_historical=self._daily_historical_data,
+            information_function=self.get_etf_information,
+            holdings_function=self.get_etf_holdings,
+            ratios_function=ratios,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            rounding=self._rounding,
+        )
 
     @property
     def fixedincome(self) -> "FixedIncome":

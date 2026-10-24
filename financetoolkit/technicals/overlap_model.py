@@ -38,7 +38,9 @@ def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     return prices.rolling(window=window).mean()
 
 
-def get_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
+def get_exponential_moving_average(
+    prices: pd.Series | pd.DataFrame, window: int
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the Exponential Moving Average (EMA) of a given price series.
 
@@ -50,6 +52,7 @@ def get_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
     The formula is a follows:
 
     - Smoothing Factor (alpha) = 2 / (window + 1)
+    - First EMA = SMA(Close, window), on the window-th period
     - EMA(t) = alpha * Close(t) + (1 — alpha) * EMA(t-1)
 
     Also known as: EMA.
@@ -59,14 +62,39 @@ def get_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
     standard technical-analysis treatment is Murphy, J.J. (1999). "Technical Analysis of the
     Financial Markets." New York Institute of Finance.
 
+    Notes:
+        - The recursion is seeded with the Simple Moving Average of the first `window`
+          values, placed on the last of them, and the periods before it are missing. This
+          is the convention of TA-Lib (`ta_EMA.c`) and StockCharts. Seeding with the first
+          price instead gives every early value a weight on that single price that a
+          `window`-period average does not have.
+        - A missing value inside the series leaves the average unchanged on that period
+          and the recursion continues from it on the next value, as with Wilder's
+          smoothing.
+        - A DataFrame is smoothed per column, each column seeded on its own first
+          `window` values, so tickers with a later first price get their own warm-up.
+
     Args:
-        prices (pd.Series): Series of prices.
+        prices (pd.Series | pd.DataFrame): Series (or DataFrame with one column per
+            ticker) of prices.
         window (int): Number of periods to consider for EMA calculation.
 
     Returns:
-        pd.Series: EMA values.
+        pd.Series | pd.DataFrame: EMA values, missing for the first `window` - 1 periods.
     """
-    return prices.ewm(span=window, min_periods=1, adjust=False).mean()
+    # The first full window marks the seed; every period before it stays missing.
+    simple_moving_average = prices.rolling(window=window).mean()
+    has_seed = simple_moving_average.notna().astype(bool).cummax()
+    seed_period = has_seed & ~has_seed.shift(1, fill_value=False).astype(bool)
+
+    # The seed replaces the price on its own period, after which ewm with adjust=False
+    # runs the plain recursion EMA(t) = alpha * Price(t) + (1 - alpha) * EMA(t-1).
+    seeded_prices = prices.where(has_seed).mask(seed_period, simple_moving_average)
+    exponential_moving_average = seeded_prices.ewm(
+        span=window, adjust=False, ignore_na=True
+    ).mean()
+
+    return exponential_moving_average.where(has_seed)
 
 
 def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -96,8 +124,10 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     Returns:
         pd.Series: DEMA values.
     """
-    ema_first = prices.ewm(span=window, min_periods=1, adjust=False).mean()
-    ema_second = ema_first.ewm(span=window, min_periods=1, adjust=False).mean()
+    # The second EMA is seeded on the first `window` values of the first, so DEMA starts
+    # at period 2 * (window - 1), as in TA-Lib's ta_DEMA.c.
+    ema_first = get_exponential_moving_average(prices, window)
+    ema_second = get_exponential_moving_average(ema_first, window)
     dema = 2 * ema_first - ema_second
 
     return dema
@@ -176,8 +206,10 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
         sub_window_first = max(window // 2, 1)
         sub_window_second = sub_window_first + 1
 
-    first_pass = prices.rolling(window=sub_window_first, min_periods=1).mean()
-    tri_ma = first_pass.rolling(window=sub_window_second, min_periods=1).mean()
+    # Both passes need full windows, so the first value is the full triangular average at
+    # period window - 1 (as in TA-Lib) rather than an average over fewer prices.
+    first_pass = prices.rolling(window=sub_window_first).mean()
+    tri_ma = first_pass.rolling(window=sub_window_second).mean()
 
     return tri_ma
 
@@ -275,9 +307,10 @@ def get_kaufman_adaptive_moving_average(
     Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
 
     Notes:
-        - The recursion is seeded with the closing price on the first period where the
-          Efficiency Ratio is defined, matching TA-Lib's `ta_KAMA.c` (`prevKAMA =
-          inReal[today-1]`). StockCharts instead describes seeding with a Simple Moving
+        - The recursion is seeded with the closing price of the period before the first
+          period where the Efficiency Ratio is defined, and the first KAMA value is one
+          update of that seed, matching TA-Lib's `ta_KAMA.c` (`prevKAMA = inReal[today-1]`
+          followed by one step). StockCharts instead describes seeding with a Simple Moving
           Average; the two conventions differ only in a transient that decays geometrically
           over the periods that follow, and neither affects the steady-state values.
 
@@ -328,17 +361,18 @@ def get_kaufman_adaptive_moving_average(
     price_values = prices.to_numpy(dtype="float64").tolist()
     constants = smoothing_constant.to_numpy(dtype="float64").tolist()
     averages = [math.nan] * length
-    averages[start_position] = price_values[start_position]
 
-    for i in range(start_position + 1, length):
+    # The Efficiency Ratio needs the previous `window` changes, so the price before the first defined ratio always exists and seeds the recursion; the first output is already one update of it, as in TA-Lib.  # noqa: E501
+    previous_average = price_values[start_position - 1]
+
+    for i in range(start_position, length):
         smoothing_constant_value = constants[i]
-        if math.isnan(smoothing_constant_value):
-            averages[i] = averages[i - 1]
-            continue
+        if not math.isnan(smoothing_constant_value):
+            previous_average = previous_average + smoothing_constant_value * (
+                price_values[i] - previous_average
+            )
 
-        averages[i] = averages[i - 1] + smoothing_constant_value * (
-            price_values[i] - averages[i - 1]
-        )
+        averages[i] = previous_average
 
     return pd.Series(averages, index=prices.index, dtype="float64")
 

@@ -45,8 +45,14 @@ def get_money_flow_index(
 
     Also known as: MFI, volume-weighted RSI.
 
-    Reference: Quong, G. & Soudack, A. (1989). "Money Flow Index." Technical Analysis of
-    Stocks & Commodities, 7(6).
+    Reference: Quong, G. & Soudack, A. (1989). "Volume-Weighted RSI: Money Flow."
+    Technical Analysis of Stocks & Commodities, 7(3), 76-77.
+
+    Notes:
+        - The first period has no prior typical price and therefore no money flow, so the
+          first MFI value is on period `window` and covers the flows of periods 1 to
+          `window`, as in TA-Lib's `ta_MFI.c`. A missing price or volume leaves its flow
+          missing rather than counting it as zero.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -61,13 +67,18 @@ def get_money_flow_index(
     typical_prices = (prices_high + prices_low + prices_close) / 3
     raw_money_flow = typical_prices * volumes
 
+    # A flow needs a prior typical price to be classified as positive or negative, so the first period (and any period next to a missing price) has no flow at all rather than a zero flow.  # noqa: E501
+    has_flow = raw_money_flow.notna() & typical_prices.shift(1).notna()
+
     positive_money_flow = (
         raw_money_flow.where(typical_prices > typical_prices.shift(1), 0)
+        .where(has_flow)
         .rolling(window=window)
         .sum()
     )
     negative_money_flow = (
         raw_money_flow.where(typical_prices < typical_prices.shift(1), 0)
+        .where(has_flow)
         .rolling(window=window)
         .sum()
     )
@@ -236,58 +247,76 @@ def get_commodity_channel_index(
 
 
 def get_relative_vigor_index(
-    prices_open: pd.Series, prices_close: pd.Series, window: int
-) -> pd.Series:
+    prices_open: pd.Series,
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+) -> pd.DataFrame:
     """
-    Calculate the (Close-Open) Vigor Index for a given price series.
+    Calculate the Relative Vigor Index (RVI) for a given price series.
 
-    This indicator measures the proportion of "upward vigor" — how much of the total
-    close-minus-open movement over the window was upward — as a bounded oscillator between 0
-    and 1. It is conceptually related to John Ehlers' "Relative Vigor Index" (which compares
-    close-open movement to the high-low range using a symmetric 4-bar weighted average) but
-    is not numerically identical to Ehlers' published formula: this implementation uses a
-    plain rolling sum of upward versus downward close-open movement rather than Ehlers'
-    weighted numerator/denominator construction, and does not require high/low data.
+    The Relative Vigor Index measures the conviction behind a move by comparing where each
+    period closes relative to its open with the period's full high-low range, on the idea
+    that in an uptrend prices tend to close above where they opened and in a downtrend
+    below. Both the close-open move and the high-low range are first smoothed with a
+    symmetric 4-period weighted average (weights 1, 2, 2, 1) to remove the shortest cycles,
+    then averaged over `window` periods, and their ratio is the RVI. The signal line applies
+    the same 4-period weighting to the RVI itself, and crossovers of the two lines are the
+    usual trigger.
 
     The formula is a follows:
 
-    - Upward Movement = (Close — Open) where positive, else 0
-    - Downward Movement = (Open — Close) where positive, else 0
-    - RVI = Sum(Upward Movement, window) / (Sum(Upward Movement, window) + Sum(Downward
-      Movement, window))
+    - Numerator = [(Close — Open) + 2 * (Close(t-1) — Open(t-1)) + 2 * (Close(t-2) —
+      Open(t-2)) + (Close(t-3) — Open(t-3))] / 6
+    - Denominator = [(High — Low) + 2 * (High(t-1) — Low(t-1)) + 2 * (High(t-2) — Low(t-2))
+      + (High(t-3) — Low(t-3))] / 6
+    - RVI = SMA(Numerator, window) / SMA(Denominator, window)
+    - Signal Line = [RVI + 2 * RVI(t-1) + 2 * RVI(t-2) + RVI(t-3)] / 6
 
-    Also known as: vigor index.
+    Also known as: RVI, RVGI, Relative Vigor Index.
+
+    Reference: Ehlers, J.F. (2002). "Relative Vigor Index." Technical Analysis of Stocks &
+    Commodities.
 
     Notes:
-        - Unlike Ehlers' original Relative Vigor Index, this version has no dependency on
-          trading volume or the high/low range; it is purely a ratio of upward to total
-          close-open movement, in the same spirit as the numerator of the Relative Strength
-          Index but based on each period's own open-to-close change rather than period-to-
-          period close-to-close changes.
-        - There is no single canonical academic citation for this specific formulation; the
-          standard textbook treatment of the underlying Relative Vigor Index concept is
-          Ehlers, J.F. (2002). "Relative Vigor Index." Technical Analysis of Stocks &
-          Commodities, 20(7).
+        - The RVI is a fraction of the average range, so it usually lies between -1 and 1:
+          positive when closes sit above opens, negative when they sit below.
+        - The first RVI value is on period `window` + 2 (the weighting needs four periods and
+          the average `window` weighted values), and the first signal value three periods
+          later.
 
     Args:
         prices_open (pd.Series): Series of opening prices.
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
-        window (int): Number of periods for RVI calculation.
+        window (int): Number of periods for the averages of the numerator and denominator.
 
     Returns:
-        pd.Series: RVI values, bounded between 0 and 1.
+        pd.DataFrame: Relative Vigor Index and Signal Line values.
     """
-    close_open_diff = prices_close - prices_open
 
-    up_close_open = close_open_diff.where(close_open_diff > 0, 0)
-    down_close_open = -close_open_diff.where(close_open_diff < 0, 0)
+    # Ehlers' symmetric weighting (1, 2, 2, 1) / 6 over the current and three prior periods.
+    def symmetric_weighted_average(values: pd.Series) -> pd.Series:
+        return (
+            values + 2 * values.shift(1) + 2 * values.shift(2) + values.shift(3)
+        ) / 6
 
-    up_sum = up_close_open.rolling(window=window).sum()
-    down_sum = down_close_open.rolling(window=window).sum()
+    numerator = symmetric_weighted_average(prices_close - prices_open)
+    denominator = symmetric_weighted_average(prices_high - prices_low)
 
-    rvi = up_sum / (up_sum + down_sum)
+    relative_vigor_index = (
+        numerator.rolling(window=window).mean()
+        / denominator.rolling(window=window).mean()
+    )
+    signal_line = symmetric_weighted_average(relative_vigor_index)
 
-    return rvi
+    return pd.concat(
+        [relative_vigor_index, signal_line],
+        keys=["Relative Vigor Index", "Signal Line"],
+        axis=1,
+    )
 
 
 def get_force_index(
@@ -316,10 +345,11 @@ def get_force_index(
         prices_close (pd.Series): Series of closing prices.
         volumes (pd.Series): Series of trading volumes.
         window (int): Number of periods for the Exponential Moving Average used to smooth
-            the raw Force Index.
+            the raw Force Index, conventionally 13 (Elder's trend setting).
 
     Returns:
-        pd.Series: Force Index values.
+        pd.Series: Force Index values, missing until the first `window` raw values (from
+            the second period on) seed the Exponential Moving Average.
     """
     raw_force_index = prices_close.diff(1) * volumes
 
@@ -413,6 +443,10 @@ def get_percentage_price_oscillator(
     The formula is a follows:
 
     - PPO = ((EMA(Close, short_window) — EMA(Close, long_window)) / EMA(Close, long_window)) * 100
+
+    The conventional parameters are 12 and 26 periods, as for MACD. A signal line, if
+    wanted, is the 9-period EMA of the PPO (`get_exponential_moving_average(ppo, 9)`), and
+    the PPO histogram is the PPO minus that signal line.
 
     Also known as: PPO.
 
@@ -522,6 +556,13 @@ def get_average_directional_index(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
+    Notes:
+        - The True Range and both directional movements start on the second period, the
+          first with a previous period, so the first ADX value is on period 2 * window - 1,
+          as in TA-Lib. Wilder's smoothing is seeded with the average of the first `window`
+          values; TA-Lib seeds its running sums with `window` - 1 values instead, a
+          difference that decays within a few windows.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -531,14 +572,26 @@ def get_average_directional_index(
     Returns:
         pd.Series: ADX values.
     """
-    true_range = get_true_range(prices_high, prices_low, prices_close)
+    # The first period has no previous close or previous high and low, so it has no True
+    # Range and no directional movement; starting both series on the second period gives
+    # the first smoothed value on period `window` and the first ADX on period
+    # 2 * window - 1, as in TA-Lib's ta_ADX.c, instead of averaging in a High - Low range
+    # and two zero moves for the first period.
+    has_previous_period = prices_close.shift(1).notna()
+    true_range = get_true_range(prices_high, prices_low, prices_close).where(
+        has_previous_period
+    )
 
     # Wilder's rule: only the larger of the two moves counts and the other is set to zero. Counting both on an outside bar inflates each Directional Indicator and compresses the resulting Directional Index.  # noqa: E501
     up_move = prices_high.diff()
     down_move = -prices_low.diff()
 
-    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
-    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0).where(
+        up_move.notna() & has_previous_period
+    )
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0).where(
+        down_move.notna() & has_previous_period
+    )
 
     smoothed_true_range = get_wilder_moving_average(true_range, window)
     smoothed_plus_dm = get_wilder_moving_average(plus_dm, window)
@@ -572,8 +625,7 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
 
     Also known as: CMO.
 
-    Reference: Chande, T.S. (1994). "Adapting Moving Averages to Market Volatility."
-    Technical Analysis of Stocks & Commodities, 10(3).
+    Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -633,6 +685,11 @@ def get_ichimoku_cloud(
         - Because a span plotted `base_window` periods into the future is, at any given
           period, derived from data `base_window` periods in the *past*, both leading spans
           are computable from information available at that period and carry no look-ahead.
+        - The leading spans are shifted forward by exactly `base_window` periods, so the
+          value on period t is the one calculated on period t - `base_window`, as
+          StockCharts defines the cloud. Some charting platforms count the current period
+          as the first of the 26 and shift by `base_window` - 1 instead, which places the
+          same values one period earlier.
         - The Lagging Span (Chikou Span), the close plotted `base_window` periods into the
           past, is deliberately not returned: at any period it reports a *future* close and
           therefore cannot be used without look-ahead bias.
@@ -742,6 +799,13 @@ def get_moving_average_convergence_divergence(
     Reference: Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method."
     Signalert Corp.
 
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values (see
+          `get_exponential_moving_average`), so the MACD line starts on period
+          `long_window` - 1 and the signal line `signal_window` - 1 periods later, as on
+          StockCharts. TA-Lib's `ta_MACD.c` additionally starts the short EMA on the same
+          period as the long one, which changes only the first values.
+
     Args:
         prices (pd.Series): Series of prices.
         short_window (int): Number of periods for the short-term moving average.
@@ -751,11 +815,11 @@ def get_moving_average_convergence_divergence(
     Returns:
         pd.DataFrame: The MACD Line and Signal Line as columns.
     """
-    short_ema = prices.ewm(span=short_window, min_periods=1, adjust=False).mean()
-    long_ema = prices.ewm(span=long_window, min_periods=1, adjust=False).mean()
+    short_ema = get_exponential_moving_average(prices, short_window)
+    long_ema = get_exponential_moving_average(prices, long_window)
 
     macd_line = short_ema - long_ema
-    signal_line = macd_line.ewm(span=signal_window, min_periods=1, adjust=False).mean()
+    signal_line = get_exponential_moving_average(macd_line, signal_window)
 
     return pd.concat(
         [macd_line, signal_line], keys=["MACD Line", "Signal Line"], axis=1
@@ -835,6 +899,10 @@ def get_balance_of_power(
     Reference: Created by Igor Livshin; featured in Kaufman, P.J. (2005). "New Trading
     Systems and Methods." 4th ed. Wiley.
 
+    Notes:
+        - A period whose high equals its low has no range to divide by and is set to 0, as
+          in TA-Lib's `ta_BOP.c`. A period with a missing price stays missing.
+
     Args:
         prices_open (pd.Series): Series of opening prices.
         prices_high (pd.Series): Series of high prices.
@@ -844,9 +912,13 @@ def get_balance_of_power(
     Returns:
         pd.Series: BOP values.
     """
-    bop_values = ((prices_close - prices_open) / (prices_high - prices_low)).fillna(0)
+    price_range = prices_high - prices_low
 
-    return bop_values
+    # Only a flat period (High == Low) with known prices is a balance of zero; a missing price is unknown rather than balanced.  # noqa: E501
+    bop_values = (prices_close - prices_open) / price_range.where(price_range != 0)
+    flat_period = (price_range == 0) & prices_close.notna() & prices_open.notna()
+
+    return bop_values.mask(flat_period, 0.0)
 
 
 def get_awesome_oscillator(

@@ -32,6 +32,7 @@ from financetoolkit.utilities.statistics_model import (
     convert_annualized_rate_to_period,
     finalize_dataset,
     to_multi_index,
+    to_period_index,
 )
 
 # Division by zero is normal in these calculations, not a bug.
@@ -168,6 +169,9 @@ class Performance:
         )
 
         if not self._historical_data["intraday"].empty:
+            intraday_historical_data = self._add_intraday_excess_return(
+                intraday_historical_data
+            )
             intraday_historical_data.index = pd.DatetimeIndex(
                 intraday_historical_data.to_timestamp().index
             )
@@ -185,6 +189,72 @@ class Performance:
         self._data_cache: dict[
             tuple[str, str, bool, bool], pd.DataFrame | pd.Series
         ] = {}
+
+    def _add_intraday_excess_return(self, intraday_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add an "Excess Return" block to the intraday data, the return of each bar minus
+        the risk free rate earned over one bar, so the within-period ratios (Sharpe,
+        Sortino, ...) also work on the intraday bars within a day.
+
+        The per-bar rate spreads the daily risk free rate of the bar's day over the
+        median number of bars in a trading day:
+
+            - Bar Risk Free Rate = (1 + Daily Risk Free Rate)^(1 / Bars per Day) - 1
+
+        Days without a daily rate (e.g. a bar on a day the treasury data has no
+        quote) take the most recent earlier rate.
+
+        Args:
+            intraday_data (pd.DataFrame): The intraday historical data, PeriodIndexed.
+
+        Returns:
+            pd.DataFrame: The intraday data with its "Excess Return" columns.
+        """
+        intraday_data = intraday_data.drop(
+            columns="Excess Return", level=0, errors="ignore"
+        )
+        bars = to_period_index(intraday_data.index)
+        bar_days = bars.asfreq("D")
+        bars_per_day = float(pd.Series(1, index=bars).groupby(bar_days).size().median())
+
+        daily_rate = self._risk_free_rate_data["daily"].sort_index()
+        daily_rate = daily_rate[~daily_rate.index.duplicated(keep="last")]
+        bar_rate = (1 + daily_rate.reindex(bar_days, method="ffill")) ** (
+            1 / bars_per_day
+        ) - 1
+
+        excess_return = intraday_data["Return"].sub(bar_rate.to_numpy(), axis=0)
+        excess_return.columns = pd.MultiIndex.from_product(
+            [["Excess Return"], excess_return.columns]
+        )
+
+        return pd.concat([intraday_data, excess_return], axis=1)
+
+    def _get_observations_per_year(self, period: str) -> float:
+        """
+        The number of observations in a year of the returns nested within `period`, used to
+        annualize a ratio computed from them. Those are daily returns (252 a year), except
+        for period="daily" and "intraday", which nest the intraday bars: a year then holds
+        252 trading days times the median number of bars per day.
+
+        Args:
+            period (str): The period whose within-period observations are annualized.
+
+        Returns:
+            float: The number of within-period observations per year.
+        """
+        if (
+            period not in ("daily", "intraday")
+            or self._historical_data["intraday"].empty
+        ):
+            return PERIODS_PER_YEAR["daily"]
+
+        bars = self._get_within_historical_data(period).index.get_level_values(1)
+        bars_per_day = (
+            pd.Series(1, index=bars).groupby(bars.asfreq("D")).size().median()
+        )
+
+        return PERIODS_PER_YEAR["daily"] * float(bars_per_day)
 
     def _get_within_historical_data(self, period: str) -> pd.DataFrame:
         """
@@ -277,13 +347,13 @@ class Performance:
 
         Which returns:
 
-        |      |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |
-        |:-----|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|
-        | 2022 |     0.4781 |                 1.3094 |                   1.3191 |    -0.1669 |           0.0115 |
-        | 2023 |     0.58   |                 1.1825 |                   0.9646 |     0.3292 |           0.009  |
-        | 2024 |     0.5    |                 1.1178 |                   1.0487 |     0.1906 |           0.0121 |
-        | 2025 |     0.472  |                 1.0324 |                   1.0986 |     0.0709 |           0.0139 |
-        | 2021 |     0.4921 |                 1.3819 |                   1.422  |   nan      |           0.0118 |
+        |      |    Alpha |   Beta |     CAPM |   Jensen's Alpha |   Treynor Ratio |   Sharpe Ratio |   Sortino Ratio |   Ulcer Performance Index |   Calmar Ratio |   Sterling Ratio |   Burke Ratio |   Omega Ratio |   Kappa Ratio |   Gain to Pain Ratio |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |   Information Ratio |   Appraisal Ratio |   STARR Ratio |   Rachev Ratio |   Returns |   Excess Return |
+        |:-----|---------:|-------:|---------:|-----------------:|----------------:|---------------:|----------------:|--------------------------:|---------------:|-----------------:|--------------:|--------------:|--------------:|---------------------:|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|--------------------:|------------------:|--------------:|---------------:|----------:|----------------:|
+        | 2022 |  -0.0822 | 1.3025 |  -0.2458 |          -0.0182 |         -0.2254 |        -0.0482 |         -0.0675 |                   -4.4186 |        -0.8706 |          -1.0669 |       -0.1137 |        0.8943 |       -0.052  |              -0.1057 |     0.4781 |                 1.3036 |                   1.3242 |    -0.1698 |           0.0115 |             -0.025  |           -0.1098 |       -0.4128 |         1.0788 |   -0.2638 |         -0.2934 |
+        | 2023 |   0.2283 | 1.1148 |   0.2873 |           0.2028 |          0.4041 |         0.1189 |          0.1839 |                   13.8927 |         3.2719 |           3.3669 |        0.5152 |        1.4099 |        0.1284 |               0.4099 |     0.576  |                 1.1755 |                   0.9726 |     0.3296 |           0.009  |              0.0794 |            1.44   |        1.0736 |         1.0726 |    0.489  |          0.4494 |
+        | 2024 |   0.0583 | 0.9686 |   0.2423 |           0.0648 |          0.2736 |         0.07   |          0.1071 |                    7.7225 |         1.9958 |           1.9699 |        0.2621 |        1.2509 |        0.0767 |               0.2509 |     0.5    |                 1.1049 |                   1.0583 |     0.189  |           0.0121 |              0.0207 |            0.3386 |        0.5644 |         1.1443 |    0.3069 |          0.2648 |
+        | 2025 |  -0.0867 | 1.2551 |   0.2115 |          -0.121  |          0.0379 |         0.0188 |          0.0283 |                    0.9488 |         0.2913 |           0.445  |        0.0249 |        1.0903 |        0.0186 |               0.0903 |     0.472  |                 1.0147 |                   1.1139 |     0.0714 |           0.0139 |             -0.0127 |           -0.5668 |        0.0659 |         1.0729 |    0.0904 |          0.0475 |
+        | 2021 | nan      | 1.3196 | nan      |         nan      |        nan      |         0.0859 |          0.129  |                  nan      |       nan      |         nan      |      nan      |        1.2632 |        0.0943 |               0.2632 |     0.4921 |                 1.3706 |                   1.432  |   nan      |           0.0118 |              0.0266 |          nan      |      nan      |         0.9957 |    0.3811 |          0.3667 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         rounding = rounding if rounding is not None else self._rounding
@@ -557,11 +627,11 @@ class Performance:
 
         | Date   |   AAPL |   AMZN |
         |:-------|-------:|-------:|
-        | 2021   | 1.3203 | 1.0432 |
-        | 2022   | 1.3026 | 1.6343 |
+        | 2021   | 1.3196 | 1.0437 |
+        | 2022   | 1.3025 | 1.6344 |
         | 2023   | 1.1148 | 1.5303 |
-        | 2024   | 0.9688 | 1.5491 |
-        | 2025   | 1.2546 | 1.3254 |
+        | 2024   | 0.9686 | 1.5491 |
+        | 2025   | 1.2551 | 1.3254 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -660,7 +730,9 @@ class Performance:
         - Daily CAPM is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
         not give any useful insights.
         - The method retrieves historical data and calculates the CAPM for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -682,10 +754,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.2485 | -0.345  |
-        | 2023   |  0.2874 |  0.5403 |
-        | 2024   |  0.2425 |  0.5291 |
-        | 2025   |  0.2117 |  0.3446 |
+        | 2022   | -0.2458 | -0.3382 |
+        | 2023   |  0.2873 |  0.5392 |
+        | 2024   |  0.2423 |  0.5341 |
+        | 2025   |  0.2115 |  0.343  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -786,11 +858,11 @@ class Performance:
 
         |      |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
         |:-----|---------:|--------:|--------:|--------:|--------:|
-        | 2021 |   0.6661 | -0.0576 | -0.436  | -0.1188 | -0.0529 |
-        | 2022 |   0.8797 |  0.0565 | -0.5481 | -0.2579 | -0.4763 |
-        | 2023 |   0.6987 | -0.0083 | -0.2832 | -0.1014 | -0.4615 |
-        | 2024 |   0.5185 |  0.0353 | -0.3175 | -0.056  | -0.0849 |
-        | 2025 |   0.7407 |  0.0654 | -0.2097 | -0.1083 |  0.0753 |
+        | 2021 |   0.6658 | -0.0576 | -0.4358 | -0.1185 | -0.0526 |
+        | 2022 |   0.8797 |  0.0564 | -0.5479 | -0.2578 | -0.4763 |
+        | 2023 |   0.6988 | -0.0082 | -0.2835 | -0.1015 | -0.4615 |
+        | 2024 |   0.5184 |  0.0352 | -0.3176 | -0.056  | -0.0848 |
+        | 2025 |   0.7408 |  0.0656 | -0.2096 | -0.1083 |  0.0755 |
         """
 
         factors_to_calculate = (
@@ -1119,11 +1191,11 @@ class Performance:
 
         |      |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   RMW Slope |   CMA Slope |   Mean Squared Error (MSE) |   R Squared |
         |:-----|------------:|---------------:|------------:|------------:|------------:|------------:|---------------------------:|------------:|
-        | 2021 |      0      |         1.3145 |     -0.2741 |     -0.9797 |      0.3115 |      1.6357 |                     0.0001 |      0.7587 |
-        | 2022 |     -0.0001 |         1.2569 |     -0.2955 |     -0.6166 |      0.2339 |      0.683  |                     0.0001 |      0.818  |
-        | 2023 |      0.0003 |         1.1311 |     -0.0898 |     -0.445  |      0.4512 |     -0.0069 |                     0.0001 |      0.5905 |
-        | 2024 |      0.0002 |         0.8772 |      0.2648 |     -0.5829 |      0.7336 |      0.0606 |                     0.0001 |      0.3501 |
-        | 2025 |     -0.0001 |         1.4474 |     -0.0767 |      0.107  |      0.8063 |      0.0257 |                     0.0002 |      0.6027 |
+        | 2021 |      0      |         1.3139 |     -0.2738 |     -0.9794 |      0.3119 |      1.6356 |                     0.0001 |      0.7584 |
+        | 2022 |     -0.0001 |         1.257  |     -0.2958 |     -0.616  |      0.2338 |      0.6823 |                     0.0001 |      0.8179 |
+        | 2023 |      0.0003 |         1.1312 |     -0.089  |     -0.4462 |      0.4516 |     -0.0059 |                     0.0001 |      0.5907 |
+        | 2024 |      0.0002 |         0.8769 |      0.265  |     -0.5833 |      0.7337 |      0.0608 |                     0.0001 |      0.35   |
+        | 2025 |     -0.0001 |         1.4479 |     -0.076  |      0.1071 |      0.8066 |      0.0263 |                     0.0002 |      0.6029 |
         """
         if method not in ["simple", "multi"]:
             raise ValueError(
@@ -1613,7 +1685,7 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.0823 | -0.4685 |
+        | 2022   | -0.0822 | -0.4685 |
         | 2023   |  0.2283 |  0.7554 |
         | 2024   |  0.0583 |  0.3764 |
         | 2025   | -0.0867 | -0.0636 |
@@ -1711,7 +1783,9 @@ class Performance:
         - Daily Jensen's Alpha is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
         not give any useful insights.
         - The method retrieves historical data and calculates the CAPM for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -1733,10 +1807,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.0156 | -0.3053 |
-        | 2023   |  0.2027 |  0.4769 |
-        | 2024   |  0.0646 |  0.0961 |
-        | 2025   | -0.1212 | -0.231  |
+        | 2022   | -0.0182 | -0.3121 |
+        | 2023   |  0.2028 |  0.478  |
+        | 2024   |  0.0648 |  0.0911 |
+        | 2025   | -0.121  | -0.2294 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1828,7 +1902,9 @@ class Performance:
         - Daily Treynor Ratio is not an option as the standard deviation for 1 day is close to zero. Therefore,
         it does not give any useful insights.
         - The method retrieves historical data and calculates the TR for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -1850,10 +1926,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.2325 | -0.3961 |
-        | 2023   |  0.4049 |  0.4352 |
-        | 2024   |  0.2698 |  0.2435 |
-        | 2025   |  0.039  |  0.0322 |
+        | 2022   | -0.2254 | -0.3908 |
+        | 2023   |  0.4041 |  0.4348 |
+        | 2024   |  0.2736 |  0.245  |
+        | 2025   |  0.0379 |  0.0316 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1936,7 +2012,11 @@ class Performance:
 
             - Sharpe Ratio = Average Rolling Excess Return / Standard Deviation of Rolling Excess Returns
 
-        Note that this is explicitly already subtracts the Risk Free Rate.
+        Note that the Risk Free Rate is already subtracted from these returns. The Toolkit's
+        risk free rate is the 10-year US Treasury yield by default, while Sharpe (1994) and the
+        Ken French factor files use a short-term Treasury bill. Initialise the Toolkit with
+        risk_free_rate="13w" (the 13-week Treasury bill; "5y", "10y" and "30y" are the other
+        options) to use a short rate instead.
 
         By default the result is **not annualized**: it is a per-observation Sharpe ratio, so a
         value computed from daily returns is roughly SQRT(252) smaller than the annualized figure
@@ -1985,7 +2065,10 @@ class Performance:
         documented approximation, `Var[SR_trials]` is estimated from the variance of an auxiliary
         *rolling* Sharpe ratio series (see `get_rolling_sharpe_ratio`) computed over a
         `trials_window`-sized window across the full return history, and `n_trials` defaults to the
-        number of valid (non-NaN) values in that same rolling series. This treats each rolling
+        number of valid (non-NaN) values in that same rolling series. That series is built from the
+        same returns as the Sharpe ratio being deflated, so both are on the same scale: the daily
+        excess returns (the observations within each period) for the Sharpe ratio per period, and
+        the excess returns of `period` itself for a rolling Sharpe ratio. This treats each rolling
         window as if it were one "trial" — a reasonable proxy for how dispersed the Sharpe ratio
         could plausibly have been under different choices, but not a substitute for passing the
         actual number of variations tried (via `n_trials`) when that is known, since the quality of
@@ -2007,11 +2090,14 @@ class Performance:
             benchmark_sharpe_ratio (float, optional): The hypothesized or benchmark Sharpe ratio
             (SR*) to test the observed Sharpe ratio against. Only used when method="probabilistic".
             Defaults to 0.0, i.e. testing whether the strategy has any skill at all above doing nothing.
-            trials_window (int, optional): The window size (in units of `period`) used for the
-            auxiliary rolling Sharpe ratio series that approximates `Var[SR_trials]` and the
-            default `n_trials`, see above. Only used when method="deflated". Defaults to None, which
-            uses half of the available return history so that enough overlapping windows exist
-            regardless of `period` or date range.
+            trials_window (int, optional): The window size of the auxiliary rolling Sharpe ratio
+            series that approximates `Var[SR_trials]` and the default `n_trials`, see above. Only
+            used when method="deflated". It counts observations of the returns the Sharpe ratio is
+            computed from: daily (or intraday) observations for the Sharpe ratio per period, and
+            observations of `period` when `rolling` is set. Defaults to None, which uses the median
+            number of observations per period (so each trial spans about one period) for the Sharpe
+            ratio per period, and half of the available return history for a rolling Sharpe ratio
+            so that enough overlapping windows exist regardless of `period` or date range.
             n_trials (int, optional): The number of independent (or effectively independent)
             strategy variations, parameter combinations, or lookback windows tried before
             arriving at the reported Sharpe ratio. Only used when method="deflated". Defaults to
@@ -2026,8 +2112,9 @@ class Performance:
                 values. Defaults to False.
             annualize (bool, optional): Whether to annualize the Sharpe ratio, multiplying it by
                 the square root of the number of observations in a year: 252 for the daily
-                returns within each period, or the periods in a year for a rolling Sharpe ratio
-                (e.g. 12 for monthly). Only for method="standard" and "adjusted", since the other
+                returns within each period, 252 times the median number of bars per day for the
+                intraday returns within a day (period="daily" with an intraday_period), or the
+                periods in a year for a rolling Sharpe ratio (e.g. 12 for monthly). Only for method="standard" and "adjusted", since the other
                 methods return probabilities. Defaults to False.
 
         Returns:
@@ -2035,10 +2122,12 @@ class Performance:
             these are probabilities between 0 and 1 rather than ratios.
 
         Notes:
-        - Daily Sharpe Ratio is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
-        not give any useful insights.
+        - period="daily" needs intraday data (initialise the Toolkit with an intraday_period): the ratio per day
+        is then computed from the intraday bars within each day, with the daily risk free rate spread over the
+        bars of a day. Without intraday data a single day holds one return, so the result is empty and logs why.
         - The method retrieves historical data and calculates the Sharpe ratio for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default; choose
+        risk_free_rate="13w" when initialising the Toolkit for the short-term rate Sharpe (1994) uses.
         - The "adjusted", "probabilistic" and "deflated" variants use the **non-excess (raw)** kurtosis
         convention, i.e. a Normal distribution has a kurtosis of 3, not 0. Internally this calls
         `risk_model.get_kurtosis(..., fisher=False)`.
@@ -2064,9 +2153,9 @@ class Performance:
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
         | 2021   |  0.0859 |  0.0581 |
-        | 2022   | -0.0484 | -0.0812 |
-        | 2023   |  0.1193 |  0.095  |
-        | 2024   |  0.0702 |  0.0637 |
+        | 2022   | -0.0482 | -0.0812 |
+        | 2023   |  0.1189 |  0.095  |
+        | 2024   |  0.07   |  0.0637 |
         | 2025   |  0.0188 |  0.0263 |
 
         And, asking for the probability that these Sharpe ratios are genuine instead:
@@ -2098,8 +2187,7 @@ class Performance:
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        # The deflated variant needs the full (non within period) return history to approximate how dispersed the Sharpe ratio is across trials, regardless of whether the ratio being tested is itself a rolling one.  # noqa: E501
-        if rolling or method == "deflated":
+        if rolling:
             period_returns = self._get_column(period, "Return", within_period=False)
             full_excess_return = performance_model.get_excess_return(
                 period_returns, self._risk_free_rate_data[period]
@@ -2143,13 +2231,22 @@ class Performance:
                     n_observations=n_observations,
                 )
             else:
-                trials_window = (
-                    trials_window
-                    if trials_window is not None
-                    else max(2, len(full_excess_return) // 2)
-                )
+                # The trials are built from the same returns as the Sharpe ratio being
+                # deflated: comparing a daily-scale Sharpe ratio with the dispersion of
+                # Sharpe ratios of period returns (a much larger scale) would push the
+                # expected maximum far above it and the deflated ratio to 0.
+                if rolling:
+                    trials_returns = full_excess_return
+                    default_window = max(2, len(trials_returns) // 2)
+                else:
+                    trials_returns = excess_return.droplevel(0)
+                    default_window = max(
+                        2, int(excess_return.groupby(level=0).size().median())
+                    )
+
                 trials_sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-                    full_excess_return, trials_window
+                    trials_returns,
+                    trials_window if trials_window is not None else default_window,
                 )
                 trials = (
                     n_trials if n_trials is not None else trials_sharpe_ratio.count()
@@ -2166,9 +2263,11 @@ class Performance:
 
         if annualize:
             # The rolling ratio uses the returns of each period, the one per period the
-            # daily returns within it.
+            # observations within it: daily returns, or intraday bars within a day.
             result = result * np.sqrt(
-                PERIODS_PER_YEAR[period] if rolling else PERIODS_PER_YEAR["daily"]
+                PERIODS_PER_YEAR[period]
+                if rolling
+                else self._get_observations_per_year(period)
             )
 
         return finalize_dataset(
@@ -2222,7 +2321,12 @@ class Performance:
 
             - Sortino Ratio = Average Rolling Excess Return / Rolling Downside Deviation
 
-        Note that this is explicitly already subtracts the Risk Free Rate.
+        Note that the Risk Free Rate is already subtracted from these returns. It is the Toolkit's
+        risk_free_rate, the 10-year US Treasury yield by default; initialise the Toolkit with
+        risk_free_rate="13w" for a short-term Treasury bill rate instead.
+
+        A period needs at least two observations for a Sortino ratio, with a single one the ratio
+        would only show its sign, so such periods are left out.
 
         As with the Sharpe Ratio, the result is **not annualized**: it is a per-observation
         ratio, so multiply by SQRT(252), SQRT(52), SQRT(12) or SQRT(4) for daily, weekly,
@@ -2248,10 +2352,13 @@ class Performance:
             pd.DataFrame: Sortino ratio values.
 
         Notes:
-        - Daily Sortino Ratio is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
-        not give any useful insights.
+        - period="daily" needs intraday data (initialise the Toolkit with an intraday_period): the ratio per day
+        is then computed from the intraday bars within each day, with the daily risk free rate spread over the
+        bars of a day. Without intraday data a single day holds one return, so the result is empty and logs why.
         - The method retrieves historical data and calculates the Sortino ratio for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -2274,10 +2381,10 @@ class Performance:
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
         | 2021   |  0.129  |  0.0906 |
-        | 2022   | -0.0678 | -0.1069 |
-        | 2023   |  0.1846 |  0.1462 |
-        | 2024   |  0.1073 |  0.1044 |
-        | 2025   |  0.0282 |  0.0391 |
+        | 2022   | -0.0675 | -0.1069 |
+        | 2023   |  0.1839 |  0.1462 |
+        | 2024   |  0.1071 |  0.1044 |
+        | 2025   |  0.0283 |  0.0391 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2353,7 +2460,9 @@ class Performance:
 
         Notes:
         - The method retrieves historical data and calculates the UPI for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -2375,10 +2484,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -4.5178 | -5.0182 |
-        | 2023   | 13.666  | 11.6618 |
-        | 2024   |  7.6992 |  6.3795 |
-        | 2025   |  0.9945 |  0.7159 |
+        | 2022   | -4.4186 | -4.9807 |
+        | 2023   | 13.8927 | 11.818  |
+        | 2024   |  7.7225 |  6.4185 |
+        | 2025   |  0.9488 |  0.7201 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -2482,10 +2591,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.8691 | -0.8942 |
-        | 2023   |  3.2887 |  3.1074 |
-        | 2024   |  2.0024 |  1.461  |
-        | 2025   |  0.2995 |  0.2356 |
+        | 2022   | -0.8706 | -0.8942 |
+        | 2023   |  3.2719 |  3.1074 |
+        | 2024   |  1.9958 |  1.4606 |
+        | 2025   |  0.2913 |  0.2356 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2588,10 +2697,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -1.0657 | -1.4667 |
-        | 2023   |  3.3684 |  4.193  |
-        | 2024   |  1.9821 |  2.1544 |
-        | 2025   |  0.4622 |  0.3785 |
+        | 2022   | -1.0669 | -1.4667 |
+        | 2023   |  3.3669 |  4.1946 |
+        | 2024   |  1.9699 |  2.1599 |
+        | 2025   |  0.445  |  0.3793 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2666,8 +2775,9 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Burke Ratio for each asset in
         the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as
-        a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -2690,10 +2800,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.117  | -0.1172 |
-        | 2023   |  0.5201 |  0.4155 |
-        | 2024   |  0.2617 |  0.1765 |
-        | 2025   |  0.0275 |  0.0195 |
+        | 2022   | -0.1137 | -0.1156 |
+        | 2023   |  0.5152 |  0.4137 |
+        | 2024   |  0.2621 |  0.1775 |
+        | 2025   |  0.0249 |  0.0192 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2779,7 +2889,9 @@ class Performance:
         - Daily M2 is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
         not give any useful insights.
         - The method retrieves historical data and calculates the M2 for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -2801,10 +2913,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.1669 | -0.2118 |
-        | 2023   |  0.3292 |  0.2753 |
-        | 2024   |  0.1906 |  0.1604 |
-        | 2025   |  0.0709 |  0.0637 |
+        | 2022   | -0.1698 | -0.2176 |
+        | 2023   |  0.3296 |  0.276  |
+        | 2024   |  0.189  |  0.1575 |
+        | 2025   |  0.0714 |  0.0646 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         period_returns = self._get_column(period, "Return", within_period=False)
@@ -2899,7 +3011,6 @@ class Performance:
         - Daily Tracking Error is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
         not give any useful insights.
         - The method retrieves historical data and calculates the TE for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -3022,7 +3133,6 @@ class Performance:
         - Daily Information Ratio is not an option as the standard deviation for 1 day is close to zero.
         Therefore, it does not give any useful insights.
         - The method retrieves historical data and calculates the IR for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -3044,11 +3154,11 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021   |  0.0267 |  0.0306 |
-        | 2022   | -0.0253 | -0.0758 |
-        | 2023   |  0.08   |  0.0798 |
-        | 2024   |  0.0208 |  0.0486 |
-        | 2025   | -0.0128 |  0.015  |
+        | 2021   |  0.0266 |  0.0306 |
+        | 2022   | -0.025  | -0.0758 |
+        | 2023   |  0.0794 |  0.0798 |
+        | 2024   |  0.0207 |  0.0486 |
+        | 2025   | -0.0127 |  0.015  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3104,7 +3214,13 @@ class Performance:
 
         The formula is as follows:
 
-        - Upside Capture Ratio = Average Return in Up Periods / Average Benchmark Return in Up Periods
+        - Upside Capture Ratio = Geometric Average Return in Up Periods / Geometric Average Benchmark Return in Up Periods
+        - Geometric Average Return = (PRODUCT(1 + Return))^(1 / n) - 1
+
+        Where the up periods are the observations (days within each period) with a positive benchmark
+        return and n is their number, following Morningstar's definition. Geometric rather than arithmetic
+        averages make the ratio reflect the compounded return captured, so it does not depend on how
+        volatile the returns within the up periods were.
 
         Upside and downside capture (see `get_downside_capture_ratio`) are read together: an upside capture
         above the downside capture means the asset kept more of the benchmark's gains than of its losses, which
@@ -3150,11 +3266,11 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 1.3819 | 2.1068 |
-        | 2022   | 1.3094 | 1.7316 |
-        | 2023   | 1.1825 | 2.3099 |
-        | 2024   | 1.1178 | 2.5882 |
-        | 2025   | 1.0324 | 2.2452 |
+        | 2021   | 1.3706 | 2.0314 |
+        | 2022   | 1.3036 | 1.6853 |
+        | 2023   | 1.1755 | 2.2452 |
+        | 2024   | 1.1049 | 2.4646 |
+        | 2025   | 1.0147 | 2.1704 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -3199,7 +3315,13 @@ class Performance:
 
         The formula is as follows:
 
-        - Downside Capture Ratio = Average Return in Down Periods / Average Benchmark Return in Down Periods
+        - Downside Capture Ratio = Geometric Average Return in Down Periods / Geometric Average Benchmark Return in Down Periods
+        - Geometric Average Return = (PRODUCT(1 + Return))^(1 / n) - 1
+
+        Where the down periods are the observations (days within each period) with a negative benchmark
+        return and n is their number, following Morningstar's definition. As with the Upside Capture Ratio,
+        both ratios are computed from the daily returns within each period, while fund factsheets usually
+        use monthly returns over three to five years.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
@@ -3239,11 +3361,11 @@ class Performance:
 
         | Date   |   AAPL |   TSLA |
         |:-------|-------:|-------:|
-        | 2021   | 1.422  | 2.2024 |
-        | 2022   | 1.3191 | 2.0483 |
-        | 2023   | 0.9646 | 1.8781 |
-        | 2024   | 1.0487 | 2.4773 |
-        | 2025   | 1.0986 | 2.3391 |
+        | 2021   | 1.432  | 2.2762 |
+        | 2022   | 1.3242 | 2.0929 |
+        | 2023   | 0.9726 | 1.9565 |
+        | 2024   | 1.0583 | 2.5642 |
+        | 2025   | 1.1139 | 2.4078 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -3326,7 +3448,7 @@ class Performance:
         |:-------|-------:|-------:|
         | 2021   | 0.4921 | 0.496  |
         | 2022   | 0.4781 | 0.498  |
-        | 2023   | 0.58   | 0.532  |
+        | 2023   | 0.576  | 0.532  |
         | 2024   | 0.5    | 0.4683 |
         | 2025   | 0.472  | 0.468  |
         """
@@ -3391,8 +3513,9 @@ class Performance:
         Therefore, it does not give any useful insights.
         - The method retrieves historical data and calculates the Kappa Ratio for each asset in
         the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as
-        a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -3416,9 +3539,9 @@ class Performance:
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
         | 2021   |  0.0943 |  0.0653 |
-        | 2022   | -0.0522 | -0.0815 |
-        | 2023   |  0.1288 |  0.1026 |
-        | 2024   |  0.0768 |  0.0749 |
+        | 2022   | -0.052  | -0.0815 |
+        | 2023   |  0.1284 |  0.1026 |
+        | 2024   |  0.0767 |  0.0749 |
         | 2025   |  0.0186 |  0.0275 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -3512,11 +3635,11 @@ class Performance:
 
         |      |   AAPL |   TSLA |
         |:-----|-------:|-------:|
-        | 2021 | 1.2633 | 1.1824 |
-        | 2022 | 0.8939 | 0.8129 |
-        | 2023 | 1.4113 | 1.3043 |
-        | 2024 | 1.2514 | 1.2098 |
-        | 2025 | 1.0901 | 1.0871 |
+        | 2021 | 1.2632 | 1.1824 |
+        | 2022 | 0.8943 | 0.8129 |
+        | 2023 | 1.4099 | 1.3043 |
+        | 2024 | 1.2509 | 1.2098 |
+        | 2025 | 1.0903 | 1.0871 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3609,11 +3732,11 @@ class Performance:
 
         |      |    AAPL |    TSLA |
         |:-----|--------:|--------:|
-        | 2021 |  0.2633 |  0.1824 |
-        | 2022 | -0.1061 | -0.1871 |
-        | 2023 |  0.4113 |  0.3043 |
-        | 2024 |  0.2514 |  0.2098 |
-        | 2025 |  0.0901 |  0.0871 |
+        | 2021 |  0.2632 |  0.1824 |
+        | 2022 | -0.1057 | -0.1871 |
+        | 2023 |  0.4099 |  0.3043 |
+        | 2024 |  0.2509 |  0.2098 |
+        | 2025 |  0.0903 |  0.0871 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3758,9 +3881,13 @@ class Performance:
 
             - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
 
-        If cumulative is set to True, the period returns are compounded further into
-        a cumulative return over time instead. The cumulative return is always rebased
-        to start at 1 at the beginning of the selected date range.
+        If cumulative is set to True, the period returns within the selected date range
+        are compounded further into a cumulative return (growth of 1) instead:
+
+            - Cumulative Return = (1 + Period Return 1) * (1 + Period Return 2) * ... * (1 + Period Return N)
+
+        The compounding starts at 1 at the beginning of the date range, so the first value
+        is 1 plus the return of the first period.
 
         Also known as: periodic return.
 
@@ -3803,7 +3930,7 @@ class Performance:
 
         | Date   |    AMZN |    TSLA |   Benchmark |
         |:-------|--------:|--------:|------------:|
-        | 2021   |  0.0462 |  0.4488 |      0.3056 |
+        | 2021   |  0.0465 |  0.4488 |      0.3056 |
         | 2022   | -0.496  | -0.6503 |     -0.1816 |
         | 2023   |  0.8089 |  1.0174 |      0.2616 |
         | 2024   |  0.4449 |  0.6255 |      0.2492 |
@@ -3816,12 +3943,14 @@ class Performance:
 
         returns = self._historical_data["daily"]["Return"]
 
-        period_returns = performance_model.get_returns(
-            returns, period, cumulative=cumulative
-        ).loc[self._start_date : self._end_date]
+        # Compounded only after slicing to the date range, so the cumulative return
+        # starts at 1 before the first period and that period keeps its own return.
+        period_returns = performance_model.get_returns(returns, period).loc[
+            self._start_date : self._end_date
+        ]
 
         if cumulative:
-            period_returns = period_returns / period_returns.iloc[0]
+            period_returns = (1 + period_returns).cumprod()
 
         return finalize_dataset(
             dataset=period_returns,
@@ -3854,9 +3983,13 @@ class Performance:
 
         The Excess Return is defined as the period Return minus the risk free rate.
 
-        If cumulative is set to True, the excess returns are compounded further into
-        a cumulative excess return over time instead. The cumulative excess return is
-        always rebased to start at 1 at the beginning of the selected date range.
+        If cumulative is set to True, the excess returns within the selected date range
+        are compounded further into a cumulative excess return (growth of 1) instead:
+
+            - Cumulative Excess Return = (1 + Excess Return 1) * (1 + Excess Return 2) * ... * (1 + Excess Return N)
+
+        The compounding starts at 1 at the beginning of the date range, so the first value
+        is 1 plus the excess return of the first period.
 
         Also known as: return minus the risk-free rate.
 
@@ -3879,7 +4012,9 @@ class Performance:
         Notes:
         - The method retrieves the daily historical return data and calculates the Excess Return for
         the specified `period` for each asset in the Toolkit instance.
-        - The risk-free rate is often represented by the return of a risk-free investment, such as a Treasury bond.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of Excess Return values using the
         specified `lag`.
 
@@ -3902,11 +4037,11 @@ class Performance:
 
         | Date   |    AMZN |    TSLA |   Benchmark |
         |:-------|--------:|--------:|------------:|
-        | 2021   |  0.0311 |  0.4337 |      0.2905 |
-        | 2022   | -0.5348 | -0.6891 |     -0.2204 |
-        | 2023   |  0.7702 |  0.9787 |      0.2229 |
-        | 2024   |  0.3992 |  0.5798 |      0.2035 |
-        | 2025   |  0.01   |  0.0713 |      0.136  |
+        | 2021   |  0.0321 |  0.4344 |      0.2912 |
+        | 2022   | -0.5256 | -0.6799 |     -0.2112 |
+        | 2023   |  0.7693 |  0.9778 |      0.222  |
+        | 2024   |  0.4028 |  0.5834 |      0.2071 |
+        | 2025   |  0.0087 |  0.07   |      0.1347 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3917,12 +4052,13 @@ class Performance:
         period_returns = performance_model.get_returns(returns, period)
         risk_free_rate = self._risk_free_rate_data[period]
 
+        # Compounded only after slicing to the date range, see get_returns.
         excess_return = performance_model.get_excess_return(
-            period_returns, risk_free_rate, cumulative=cumulative
+            period_returns, risk_free_rate
         ).loc[self._start_date : self._end_date]
 
         if cumulative:
-            excess_return = excess_return / excess_return.iloc[0]
+            excess_return = (1 + excess_return).cumprod()
 
         return finalize_dataset(
             dataset=excess_return,
@@ -4142,10 +4278,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.0937 | -0.5925 |
-        | 2023   |  1.4388 |  1.0553 |
-        | 2024   |  0.3379 |  0.1715 |
-        | 2025   | -0.5682 | -0.5018 |
+        | 2022   | -0.1098 | -0.6057 |
+        | 2023   |  1.44   |  1.0578 |
+        | 2024   |  0.3386 |  0.1626 |
+        | 2025   | -0.5668 | -0.4983 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4302,10 +4438,10 @@ class Performance:
 
         | Date   |   Selectivity |   Diversification |
         |:-------|--------------:|------------------:|
-        | 2022   |        0.0219 |           -0.0374 |
-        | 2023   |        0.1048 |            0.0979 |
-        | 2024   |       -0.1051 |            0.1697 |
-        | 2025   |       -0.1773 |            0.0561 |
+        | 2022   |        0.0177 |           -0.0359 |
+        | 2023   |        0.1053 |            0.0975 |
+        | 2024   |       -0.108  |            0.1728 |
+        | 2025   |       -0.1765 |            0.0555 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4450,10 +4586,10 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2022   | -0.4259 | -0.4759 |
-        | 2023   |  1.0764 |  0.8716 |
-        | 2024   |  0.5567 |  0.4707 |
-        | 2025   |  0.0677 |  0.0554 |
+        | 2022   | -0.4128 | -0.4696 |
+        | 2023   |  1.0736 |  0.8708 |
+        | 2024   |  0.5644 |  0.4736 |
+        | 2025   |  0.0659 |  0.0544 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4554,10 +4690,10 @@ class Performance:
 
         |      |   AAPL |   TSLA |
         |:-----|-------:|-------:|
-        | 2022 | 1.0786 | 0.9469 |
-        | 2023 | 1.0743 | 1.1169 |
-        | 2024 | 1.1441 | 1.3081 |
-        | 2025 | 1.0735 | 1.0925 |
+        | 2022 | 1.0788 | 0.9469 |
+        | 2023 | 1.0726 | 1.1169 |
+        | 2024 | 1.1443 | 1.3081 |
+        | 2025 | 1.0729 | 1.0925 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4650,11 +4786,11 @@ class Performance:
 
         |      |   Alpha |   Beta |   Gamma |   R Squared |
         |:-----|--------:|-------:|--------:|------------:|
-        | 2021 | -0.0007 | 1.3263 |  9.8102 |      0.4698 |
-        | 2022 | -0.0007 | 1.3052 |  2.7524 |      0.7847 |
-        | 2023 | -0.0003 | 1.0941 | 14.403  |      0.5256 |
-        | 2024 |  0.0009 | 0.9439 | -9.4418 |      0.2941 |
-        | 2025 | -0.0005 | 1.2229 |  1.6316 |      0.5689 |
+        | 2021 | -0.0007 | 1.3256 |  9.7914 |      0.4696 |
+        | 2022 | -0.0007 | 1.3052 |  2.7494 |      0.7846 |
+        | 2023 | -0.0003 | 1.0941 | 14.3671 |      0.5257 |
+        | 2024 |  0.0009 | 0.9437 | -9.4488 |      0.294  |
+        | 2025 | -0.0005 | 1.2233 |  1.6355 |      0.569  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)
@@ -4768,11 +4904,11 @@ class Performance:
 
         |      |   Alpha |   Beta |   Up Market Beta |   R Squared |
         |:-----|--------:|-------:|-----------------:|------------:|
-        | 2021 | -0.0005 | 1.2449 |           0.1476 |      0.4661 |
-        | 2022 | -0.0011 | 1.22   |           0.1684 |      0.784  |
-        | 2023 | -0.0006 | 0.9024 |           0.3969 |      0.5214 |
-        | 2024 |  0.0013 | 1.1395 |          -0.3574 |      0.2927 |
-        | 2025 | -0.0009 | 1.1728 |           0.1513 |      0.5669 |
+        | 2021 | -0.0005 | 1.2444 |           0.1472 |      0.4658 |
+        | 2022 | -0.0011 | 1.2201 |           0.1682 |      0.7839 |
+        | 2023 | -0.0006 | 0.9032 |           0.3952 |      0.5214 |
+        | 2024 |  0.0013 | 1.1394 |          -0.3575 |      0.2925 |
+        | 2025 | -0.0009 | 1.173  |           0.1517 |      0.567  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)

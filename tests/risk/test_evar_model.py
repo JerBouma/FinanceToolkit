@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from financetoolkit.risk import evar_model
 
@@ -61,3 +62,12 @@ def test_get_evar_gaussian_edge_cases(recorder):
     # Test with constant returns
     constant_returns = pd.Series([0.01] * 10)
     recorder.capture(evar_model.get_evar_gaussian(returns=constant_returns, alpha=0.05))
+
+
+def test_get_evar_gaussian_uses_sample_standard_deviation():
+    returns = pd.Series([0.03, -0.02, 0.01, -0.04, 0.02, 0.005, -0.01])
+    expected = returns.mean() - returns.std(ddof=1) * np.sqrt(-2 * np.log(0.05))
+
+    assert np.isclose(evar_model.get_evar_gaussian(returns, 0.05), expected)
+    # The EVaR bounds the gaussian VaR at the same alpha.
+    assert expected <= returns.mean() + stats.norm.ppf(0.05) * returns.std(ddof=1)

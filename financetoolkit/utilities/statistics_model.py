@@ -496,6 +496,16 @@ def calculate_growth(
     """
     Calculates growth for a given dataset. Defaults to a lag of 1 (i.e. 1 year or 1 quarter).
 
+    The formula is as follows:
+
+        Growth = (Value - Previous Value) / |Previous Value|
+
+    Dividing by the absolute previous value keeps the sign of the growth equal to the sign of
+    the change: a loss narrowing from -100 to -50 is a growth of 0.5 and a profit of 20 after a
+    loss of -50 a growth of 1.4, where dividing by the signed previous value would report both
+    as a decline. For a positive previous value it equals the percentage change. Growth from a
+    previous value of 0 is undefined and reported as missing.
+
     Args:
         dataset (pd.Series | pd.DataFrame): the dataset to calculate the growth values for.
         lag (int | list[int]): the lag or lags to use for the calculation. A list returns one row or
@@ -524,7 +534,7 @@ def calculate_growth(
         filled = bounded_ffill(dataset, axis=axis)
         growth_per_lag = pd.concat(
             {
-                lag_key: filled.pct_change(periods=lag_value, axis=axis)
+                lag_key: calculate_change_over_absolute_base(filled, lag_value, axis)
                 for lag_key, lag_value in lag_dict.items()
             },
             axis=0 if axis == "columns" else 1,
@@ -556,8 +566,35 @@ def calculate_growth(
     dataset = bounded_ffill(dataset, axis=axis)
 
     return apply_rounding(
-        drop_infinite_growth(dataset.pct_change(periods=lag, axis=axis)), rounding
+        drop_infinite_growth(calculate_change_over_absolute_base(dataset, lag, axis)),
+        rounding,
     )
+
+
+def calculate_change_over_absolute_base(
+    dataset: pd.Series | pd.DataFrame, periods: int = 1, axis: str = "columns"
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the change over a number of periods relative to the absolute value at the
+    start, (Value - Previous Value) / |Previous Value|, so a negative base does not flip
+    the sign of the change.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset to calculate the change for.
+        periods (int): the number of periods to compare against. Defaults to 1.
+        axis (str): the axis to compute the change over for a DataFrame ("columns" or
+            "rows"). Defaults to "columns".
+
+    Returns:
+        pd.Series | pd.DataFrame: the change relative to the absolute previous value.
+    """
+    if isinstance(dataset, pd.DataFrame):
+        axis_number = 0 if axis in ("rows", "index") else 1
+        previous = dataset.shift(periods, axis=axis_number)
+    else:
+        previous = dataset.shift(periods)
+
+    return (dataset - previous) / previous.abs()
 
 
 def drop_infinite_growth(growth: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:

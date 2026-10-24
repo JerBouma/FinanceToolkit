@@ -462,3 +462,32 @@ def test_a_country_without_values_in_the_window_is_explained(caplog):
     assert result.isna().all().all()
     assert "The last one is from 2017" in caplog.text
     assert "use 'Euro Area'" in caplog.text
+
+
+def test_calculate_growth_divides_by_the_absolute_previous_value():
+    """A negative base keeps the sign of the change: a narrowing loss is growth."""
+    data = pd.DataFrame(
+        [[-100.0, -50.0, 20.0, -10.0, 0.0, 5.0]],
+        index=["X"],
+        columns=pd.period_range("2020", periods=6, freq="Y"),
+    )
+
+    result = statistics_model.calculate_growth(data, lag=1, rounding=4)
+
+    # -100 to -50 is +0.5, -50 to 20 is +1.4, 20 to -10 is -1.5, -10 to 0 is +1 and
+    # growth from 0 is undefined.
+    assert result.loc["X"].tolist()[1:5] == [0.5, 1.4, -1.5, 1.0]
+    assert pd.isna(result.loc["X"].iloc[5])
+
+    lagged = statistics_model.calculate_growth(data, lag=[1, 2], rounding=4)
+    assert lagged.loc[("X", "Lag 1")].tolist()[1:5] == [0.5, 1.4, -1.5, 1.0]
+    # -100 to 20 over two periods is +1.2.
+    assert lagged.loc[("X", "Lag 2")].iloc[2] == 1.2
+
+
+def test_calculate_growth_equals_the_percentage_change_for_positive_values():
+    data = pd.Series([100.0, 110.0, 99.0, 120.0])
+
+    pd.testing.assert_series_equal(
+        statistics_model.calculate_growth(data, rounding=None), data.pct_change()
+    )

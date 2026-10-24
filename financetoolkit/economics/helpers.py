@@ -55,6 +55,31 @@ COUNTRY_CODES: dict[str, str] = {
 
 # The periods a high-frequency series can be returned in, with the PeriodIndex frequency
 # each one maps to. Weekly periods end on Friday, the last trading day of the week.
+# The countries the OECD names differently from the Global Macro Database. An OECD series
+# combined with a GMDB series (the real interest rate and the misery index, whose inflation
+# leg is always the GMDB's) is renamed to the GMDB names first, as columns that differ only
+# in name would otherwise not line up and give a column of NaN for each spelling.
+OECD_TO_GMDB_COUNTRY_NAMES: dict[str, str] = {
+    "Russia": "Russian Federation",
+    "Swaziland": "Eswatini",
+    "Democratic Republic of the Congo": "Congo DR",
+}
+
+
+def to_gmdb_country_names(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Renames the country columns of an OECD series to the names the Global Macro Database
+    uses, so the two can be combined column by column.
+
+    Args:
+        data (pd.DataFrame): The OECD series with a column per country.
+
+    Returns:
+        pd.DataFrame: The same series with the GMDB country names.
+    """
+    return data.rename(columns=OECD_TO_GMDB_COUNTRY_NAMES)
+
+
 PERIOD_FREQUENCIES = {"daily": "D", "weekly": "W-FRI", "monthly": "M"}
 
 # History requested before the start date, so growth, lag and rolling windows can be

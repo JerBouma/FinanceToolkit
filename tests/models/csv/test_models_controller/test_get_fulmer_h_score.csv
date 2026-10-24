@@ -7,8 +7,8 @@ AAPL,Debt to Total Assets,0.3775,0.3889,0.3756,0.3151
 AAPL,Current Liabilities to Total Assets,0.3254,0.3575,0.4365,0.4121
 AAPL,Log of Tangible Total Assets,26.5037,26.5841,26.589,26.5886
 AAPL,Working Capital to Total Liabilities,0.1482,0.0325,-0.0615,-0.006
-AAPL,Log of EBIT to Interest Expense,3.1926,3.7445,3.729,3.3985
-AAPL,Fulmer H-Score,13.8002,14.2755,14.329,14.0137
+AAPL,Log of EBIT to Interest Expense,3.1387,3.7182,3.7074,3.3694
+AAPL,Fulmer H-Score,13.7519,14.252,14.3098,13.9878
 MSFT,Retained Earnings to Total Assets,0.1147,0.1709,0.231,0.2885
 MSFT,Sales to Total Assets,0.4746,0.5036,0.5434,0.5144
 MSFT,EBT to Total Equity,0.4483,0.5008,0.5027,0.4331
@@ -17,5 +17,5 @@ MSFT,Debt to Total Assets,0.2356,0.2031,0.1679,0.1456
 MSFT,Current Liabilities to Total Assets,0.24,0.2656,0.2606,0.2528
 MSFT,Log of Tangible Total Assets,26.2484,26.3446,26.3793,26.5366
 MSFT,Working Capital to Total Liabilities,0.5989,0.4992,0.3762,0.3893
-MSFT,Log of EBIT to Interest Expense,3.0666,3.4439,3.7276,3.8369
-MSFT,Fulmer H-Score,14.1287,14.8849,15.4206,15.8842
+MSFT,Log of EBIT to Interest Expense,3.0175,3.3946,3.6993,3.8062
+MSFT,Fulmer H-Score,14.0847,14.8409,15.3952,15.8568

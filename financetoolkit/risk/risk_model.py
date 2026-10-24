@@ -71,6 +71,30 @@ def get_wealth_and_peak(
     return wealth, wealth.cummax().clip(lower=1)
 
 
+def mask_without_observations(
+    result: pd.Series | float, returns: pd.Series | pd.DataFrame
+) -> pd.Series | float:
+    """
+    Set the result of every column without a single observation to NaN.
+
+    The drawdown measures compound the returns with missing returns counting as 0 (see
+    `get_wealth_and_peak`), which is right for a gap within the data but would report a
+    drawdown of exactly 0 for a column (or a period) that has no data at all.
+
+    Args:
+        result (pd.Series | float): The result per column (DataFrame input) or a float
+            (Series input).
+        returns (pd.Series | pd.DataFrame): The returns the result was calculated from.
+
+    Returns:
+        pd.Series | float: The result, NaN where `returns` holds no observation.
+    """
+    if isinstance(returns, pd.DataFrame) and isinstance(result, pd.Series):
+        return result.where(returns.count() > 0)
+
+    return result if returns.count() > 0 else np.nan
+
+
 def get_max_drawdown(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -125,7 +149,7 @@ def get_max_drawdown(
 
     wealth, peak = get_wealth_and_peak(returns)
 
-    return (wealth / peak - 1).min()
+    return mask_without_observations((wealth / peak - 1).min(), returns)
 
 
 def get_ui(
@@ -136,7 +160,21 @@ def get_ui(
     """
     Calculates the Ulcer Index (UI), a measure of downside volatility.
 
+    The formula is as follows:
+
+    - Drawdown_t = (Wealth_t - Highest High_t) / Highest High_t
+    - UI = SQRT(MEAN(Drawdown_t^2))
+
+    Martin & McCann (1989) measure every drawdown from the highest value so far
+    (`rolling=None`). A trailing high over the last `rolling` observations (14 by
+    default) is the variant StockCharts popularised. Until `rolling` observations are
+    available the high is taken over the observations so far, so short sub-periods
+    (e.g. a week of daily returns) still give a value. The result is a decimal (0.05 is
+    a root mean squared drawdown of 5%), where Martin quotes percentages.
+
     For more information see:
+     - Martin, P.G., & McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds."
+       John Wiley & Sons.
      - http://www.tangotools.com/ui/ui.htm
      - https://en.wikipedia.org/wiki/Ulcer_index
 
@@ -145,15 +183,11 @@ def get_ui(
         (method="return") or of raw levels (method="level").
         rolling (int | None, optional): The trailing lookback window used as the
         high-water mark reference for each day's drawdown. If you select
-        period='monthly' and set rolling to 12 you obtain the rolling 12-month
-        Ulcer Index. Pass None for an expanding (since-inception) high-water mark
-        instead of a fixed trailing window -- this matches the running-peak
-        convention used by `get_max_drawdown`/`get_conditional_drawdown_at_risk`/etc.
-        Note a fixed int window is NOT a substitute for "the entire period": pandas'
-        `.rolling(window=N)` only produces a value once N observations exist, so
-        passing `rolling=len(returns)` degenerates to just the final row's drawdown
-        rather than a true full-history calculation -- pass None instead. Defaults
-        to 14.
+        period='monthly' and set rolling to 12 the drawdowns are measured from the
+        trailing 12-month high. Pass None for an expanding (since-inception)
+        high-water mark instead of a fixed trailing window -- Martin's definition and
+        the running-peak convention used by
+        `get_max_drawdown`/`get_conditional_drawdown_at_risk`/etc. Defaults to 14.
         method (str, optional): Either "return" (default), the textbook Ulcer Index
         computed on percentage drawdowns of the compounded return series (a
         dimensionless, cross-asset-comparable figure), or "level", computed on
@@ -200,19 +234,27 @@ def get_ui(
             reference_max = (
                 returns.expanding().max()
                 if rolling is None
-                else returns.rolling(window=rolling).max()
+                else returns.rolling(window=rolling, min_periods=1).max()
             )
             drawdowns = returns - reference_max
         else:
             cumulative_returns, peak = get_wealth_and_peak(returns)
-            reference_max = (
-                peak
-                if rolling is None
-                else cumulative_returns.rolling(window=rolling).max()
-            )
+
+            if rolling is None:
+                reference_max = peak
+            else:
+                # min_periods=1: a window that is not yet full uses the high so far, otherwise every period shorter than the window (a week of daily returns) would be NaN.  # noqa: E501
+                reference_max = cumulative_returns.rolling(
+                    window=rolling, min_periods=1
+                ).max()
+                # The windows that reach back to the start also hold the starting wealth of 1, see get_wealth_and_peak.  # noqa: E501
+                reference_max.iloc[: max(rolling - 1, 0)] = reference_max.iloc[
+                    : max(rolling - 1, 0)
+                ].clip(lower=1)
+
             drawdowns = (cumulative_returns - reference_max) / reference_max
 
-        return np.sqrt((drawdowns**2).mean())
+        return mask_without_observations(np.sqrt((drawdowns**2).mean()), returns)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -285,7 +327,7 @@ def get_kurtosis(
             return kurtosis.T
         return returns.aggregate(get_kurtosis, fisher=fisher)
     if isinstance(returns, pd.Series):
-        # Pearson is Fisher shifted by 3 by definition, so both branches must come from the same estimator -- the population moment ratio used previously is a different (biased) estimator, leaving the two definitions inconsistent.  # noqa: E501
+        # Pearson is Fisher shifted by 3 by definition, so both branches come from the same bias-corrected estimator; the population moment ratio is a different (biased) estimator and would leave the two definitions inconsistent.  # noqa: E501
         return returns.kurtosis() if fisher else returns.kurtosis() + 3
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -454,7 +496,7 @@ def get_conditional_drawdown_at_risk(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
         (method="return") or of raw levels (method="level").
-        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
         method (str, optional): Either "return" (default), which measures percentage
         drawdowns of the compounded return series, or "level", which measures
         absolute drawdowns of the raw level series directly -- use this when
@@ -499,7 +541,9 @@ def get_conditional_drawdown_at_risk(
 
     drawdown_at_risk = drawdowns.quantile(alpha)
 
-    return drawdowns[drawdowns <= drawdown_at_risk].mean()
+    return mask_without_observations(
+        drawdowns[drawdowns <= drawdown_at_risk].mean(), returns
+    )
 
 
 def get_tail_ratio(
@@ -574,7 +618,7 @@ def get_rolling_conditional_drawdown_at_risk(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
         (method="return") or of raw levels (method="level").
-        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
         window_size (int): The size of the rolling window.
         method (str, optional): Either "return" (default), which rebuilds the
         cumulative return path within each window, or "level", which uses the raw
@@ -687,7 +731,7 @@ def get_max_drawdown_duration(
 
             return max_drawdown_duration.T
 
-        # Vectorized across every column at once -- was a per-column .aggregate() loop, see _drawdown_trough().
+        # Vectorized across every column at once, see _drawdown_trough().
         values = returns.to_numpy(dtype=float)
         computed, running_max, trough_position, all_nan = _drawdown_trough(
             values, method
@@ -701,9 +745,13 @@ def get_max_drawdown_duration(
         )
         peak_position = np.where(is_peak, row_index, -1).max(axis=0)
         duration = (trough_position - peak_position).astype(float)
-        duration[all_nan] = np.nan
+        duration[all_nan | (returns.count().to_numpy() == 0)] = np.nan
         return pd.Series(duration, index=returns.columns)
     if isinstance(returns, pd.Series):
+        # Without observations there is no drawdown, rather than one of zero periods.
+        if returns.count() == 0:
+            return np.nan
+
         if method == "level":
             series, running_max = returns, returns.cummax()
         else:
@@ -776,7 +824,7 @@ def get_max_drawdown_recovery_time(
 
             return max_drawdown_recovery_time.T
 
-        # Vectorized across every column at once -- was a per-column .aggregate() loop, see _drawdown_trough().
+        # Vectorized across every column at once, see _drawdown_trough().
         values = returns.to_numpy(dtype=float)
         computed, running_max, trough_position, all_nan = _drawdown_trough(
             values, method
@@ -792,9 +840,13 @@ def get_max_drawdown_recovery_time(
         first_recovery_row = np.where(recovered, row_index, n_rows).min(axis=0)
         recovery_time = (first_recovery_row - trough_position).astype(float)
         recovery_time[~has_recovered] = np.nan
-        recovery_time[all_nan] = np.nan
+        recovery_time[all_nan | (returns.count().to_numpy() == 0)] = np.nan
         return pd.Series(recovery_time, index=returns.columns)
     if isinstance(returns, pd.Series):
+        # Without observations there is no drawdown, rather than one of zero periods.
+        if returns.count() == 0:
+            return np.nan
+
         if method == "level":
             series, running_max = returns, returns.cummax()
         else:
@@ -1325,13 +1377,15 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
 
     For more information about the method, see the following paper:
 
-    - Weron, R. (2002). "Estimating Long-Range Dependence: Finite Sample Properties
-    and Confidence Intervals." Physica A, 312(1-2), 285-299.
+    - Di Matteo, T., Aste, T., & Dacorogna, M.M. (2005). "Long-Term Memories of
+    Developed and Emerging Markets: Using the Scaling Analysis to Characterize Their
+    Stage of Development." Journal of Banking & Finance, 29(4), 827-851.
 
     Args:
         data (pd.Series): A Series of values (e.g. prices) to calculate the Hurst
         Exponent for.
-        max_lag (int, optional): The maximum lag to use when estimating the exponent.
+        max_lag (int, optional): The maximum lag, included, to use when estimating the
+        exponent; the regression runs over the lags 2 up to and including `max_lag`.
         Defaults to 20.
 
     Returns:
@@ -1341,7 +1395,7 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
         raise TypeError("Expects pd.Series, no other value.")
 
     values = data.dropna().to_numpy()
-    lags = range(2, max_lag)
+    lags = range(2, max_lag + 1)
 
     standard_deviations = [
         np.std(np.subtract(values[lag:], values[:-lag])) for lag in lags

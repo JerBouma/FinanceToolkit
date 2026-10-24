@@ -50,6 +50,7 @@ from financetoolkit.economics.helpers import (
     combine_sources,
     extend_with_recent,
     resample_to_period,
+    to_gmdb_country_names,
     validate_period,
 )
 from financetoolkit.fixedincome import bundesbank_model, fed_model
@@ -748,10 +749,9 @@ class Economics:
         Get the Gross Domestic Product Deflator for a variety of countries over
         time from the Global Macro Database (GMDB). The GDP deflator is a measure of
         the price of all domestically produced final goods and services in an economy
-        relative to the price level in a base year which can vary per country.
+        relative to the price level in a base year.
 
-        The deflator is an index, set to 100 in the base year, which can vary per country,
-        and is annual.
+        The deflator is an annual index with 2015 = 100 for every country.
 
         The GDP deflator is the broadest measure of domestic inflation: it covers everything
         produced in the economy, including investment goods and government services, and
@@ -854,7 +854,10 @@ class Economics:
         having to perform the currency conversion or inflation adjustment yourself.
 
         The values are in millions of US dollars at constant 2015 prices, so the 18295020 for
-        the United States in 2015 is a real GDP of 18.3 trillion dollars.
+        the United States in 2015 is a real GDP of 18.3 trillion dollars. The real GDP in the
+        national currency is converted at the 2015 market exchange rate against the dollar,
+        not at purchasing power parities, so a country's level reflects its 2015 exchange
+        rate and its growth equals the growth of its real GDP in its own currency.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -4489,7 +4492,7 @@ class Economics:
         dividend payments, assuming they are re-invested in the same stocks.
         Occasionally agencies such as central banks will compile share indices.
 
-        This uses 2015 as the base year (= 100)
+        This is an index based on 2015 = 100.
 
         See definition: https://data.oecd.org/price/share-prices.htm
 
@@ -4739,8 +4742,8 @@ class Economics:
         Unlike a simple bilateral exchange rate, the REER captures a currency's overall
         competitiveness: a rising REER indicates that a country's exports are becoming more
         expensive (and imports cheaper) relative to its trading partners after accounting for
-        inflation differentials, while a falling REER indicates the opposite. The index is set to
-        100 in the base year, which can vary per country.
+        inflation differentials, while a falling REER indicates the opposite. The index is
+        annual with 2015 = 100 for every country.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -5262,11 +5265,15 @@ class Economics:
         themselves, without an API key: the U.S. Department of the Treasury (par yield,
         from 1990), the Bank of England (nominal par yield of gilts, from 1993), the
         Japanese Ministry of Finance (JGBs, from 1974) and the European Central Bank (the
-        euro area yield curve of all central government bonds, from 2004). Weekly takes the
-        yield on the last trading day of each week. Other countries have no daily source
+        euro area yield curve of all central government bonds, from 2004). The euro area
+        rate is the 10-year zero-coupon rate of the ECB's Svensson curve, converted from
+        continuous to annual compounding, while the other three are par yields. Weekly takes
+        the yield on the last trading day of each week. Other countries have no daily source
         and are not included.
 
-        Both sources return a decimal fraction (0.0357 for 3.57%).
+        A few countries report a national long-term rate to the OECD that is not a 10-year
+        government bond yield, such as Brazil, whose series is the TJLP (Taxa de Juros de Longo
+        Prazo), the long-term lending rate of the national development bank BNDES.
 
         Also known as: 10-year yield, government bond rate, long-term yield.
 
@@ -5303,7 +5310,7 @@ class Economics:
         economics = Economics(start_date='2023-05-01', end_date='2023-12-31')
 
         economics.get_long_term_interest_rate(
-            countries=['Japan', 'United States', 'Brazil'],
+            countries=['Japan', 'United States', 'Germany'],
             gmdb_source=False,
             period='monthly'
         )
@@ -5311,16 +5318,16 @@ class Economics:
 
         Which returns:
 
-        |         |   Japan |   United States |   Brazil |
-        |:--------|--------:|----------------:|---------:|
-        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
-        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
-        | 2023-07 |  0.0059 |          0.039  |   0.07   |
-        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
-        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
-        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
-        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
-        | 2023-12 |  0.0062 |          0.0402 |   0.0655 |
+        |         |   Japan |   United States |   Germany |
+        |:--------|--------:|----------------:|----------:|
+        | 2023-05 |  0.0043 |          0.0357 |    0.0234 |
+        | 2023-06 |  0.004  |          0.0375 |    0.0238 |
+        | 2023-07 |  0.0059 |          0.039  |    0.0246 |
+        | 2023-08 |  0.0064 |          0.0417 |    0.0255 |
+        | 2023-09 |  0.0076 |          0.0438 |    0.0266 |
+        | 2023-10 |  0.0095 |          0.048  |    0.0282 |
+        | 2023-11 |  0.0066 |          0.045  |    0.026  |
+        | 2023-12 |  0.0062 |          0.0402 |    0.021  |
         """
         check_period_type(period)
 
@@ -5539,11 +5546,12 @@ class Economics:
 
         The nominal interest rate is either the Long Term Interest Rate (the 10-year government
         bond yield) or the Short Term Interest Rate (the 3-month money market rate), selected via
-        the rate_type parameter. The Inflation Rate is only available on an annual basis (see
-        get_inflation_rate), which comes from the Global Macro Database (GMDB). Both legs are
-        annual decimal fractions (0.05 for 5%) whichever source is used, so they line up
-        directly for the subtraction and the result is itself a decimal fraction (-0.0016 for
-        a real rate of -0.16%).
+        the rate_type parameter. The Inflation Rate is always the annual inflation rate of the
+        Global Macro Database (GMDB), whichever source the nominal rate comes from; this
+        differs from get_inflation_rate, which defaults to monthly year-over-year inflation
+        from national sources. Both legs are annual decimal fractions (0.05 for 5%) whichever
+        source is used, so they line up directly for the subtraction and the result is itself
+        a decimal fraction (-0.0016 for a real rate of -0.16%).
 
         A negative real interest rate means that, after inflation, savers are effectively losing
         purchasing power and borrowers are being subsidized in real terms; this occurred in many
@@ -5566,6 +5574,8 @@ class Economics:
             gmdb_source (bool | None, optional): Whether to get the nominal interest rate from
                 the Global Macro Database (GMDB) instead of the OECD. Defaults to None, which
                 falls back to the gmdb_source set on the Economics class (True by default).
+                Either way the countries carry the GMDB names, such as "Russian Federation",
+                "Eswatini" and "Congo DR", as the inflation rate comes from the GMDB.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -5636,6 +5646,9 @@ class Economics:
                     end_date=self._end_date,
                 )
             )
+
+            # The inflation leg comes from the GMDB, which names a few countries differently.
+            nominal_interest_rate = to_gmdb_country_names(nominal_interest_rate)
 
         inflation_rate = gmdb_model.get_inflation_rate(
             gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
@@ -6195,6 +6208,8 @@ class Economics:
             gmdb_source (bool | None, optional): Whether to get the unemployment rate from the
                 Global Macro Database (GMDB) instead of the OECD. Defaults to None, which falls
                 back to the gmdb_source set on the Economics class (True by default).
+                Either way the countries carry the GMDB names, such as "Russian Federation",
+                "Eswatini" and "Congo DR", as the inflation rate comes from the GMDB.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -6242,6 +6257,9 @@ class Economics:
             unemployment_rate = oecd_model.get_unemployment_rate(
                 period="yearly", start_date=self._start_date, end_date=self._end_date
             )
+
+            # The inflation leg comes from the GMDB, which names a few countries differently.
+            unemployment_rate = to_gmdb_country_names(unemployment_rate)
 
         inflation_rate = gmdb_model.get_inflation_rate(
             gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
@@ -7676,10 +7694,12 @@ class Economics:
 
         No API key is needed: the prices come from the commercial property price indices
         the Bank for International Settlements collects from national sources, for the euro
-        area, the United States (from 1945), Japan, Denmark, Switzerland, Germany, France,
-        Spain and around a dozen more. When a FRED API key is set (see the `fred_api_key`
-        parameter of the `Economics` class), the United States instead comes from FRED's
-        series sourced from the IMF's Financial Soundness Indicators.
+        area, the United States (from 1945), Japan, Denmark, the Netherlands, Germany,
+        France, Spain and around ten more, taking per country a nominal index of commercial
+        property, preferably all commercial property in the whole country. When a FRED API
+        key is set (see the `fred_api_key` parameter of the `Economics` class), the United
+        States instead comes from FRED's series sourced from the IMF's Financial Soundness
+        Indicators.
 
         See definitions: https://data.bis.org/topics/CPP and
         https://fred.stlouisfed.org/series/COMREPUSQ159N
@@ -8518,6 +8538,11 @@ class Economics:
           long-term rates for every EU member and the main other economies, stock prices by
           region, commodity prices, iTraxx credit spreads and euro exchange rates.
           scenario="historic" returns the starting point. Always the latest exercise.
+
+        The Federal Reserve's growth and inflation variables (GDP, disposable income and
+        CPI, and the international GDP growth and inflation) are annualized
+        quarter-on-quarter rates, as the Federal Reserve publishes them, so a "Real GDP
+        growth" of -0.054 is a quarterly contraction of about 1.4%.
 
         Growth rates, inflation, interest rates, spreads and the VIX are decimal fractions
         (0.054 for 5.4%); price index levels, the stock market index and exchange rates are

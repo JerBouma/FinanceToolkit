@@ -6,6 +6,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.technicals.overlap_model import get_exponential_moving_average
+
 
 def get_mcclellan_oscillator(
     prices_close: pd.Series, short_ema_window: int, long_ema_window: int
@@ -30,6 +32,9 @@ def get_mcclellan_oscillator(
     Reference: McClellan, S. & McClellan, M. (1969). "Patterns for Profit." Trade Levels Inc.
 
     Notes:
+        - Both EMAs are seeded with the Simple Moving Average of their first values (see
+          `overlap_model.get_exponential_moving_average`), so the oscillator starts once the
+          long EMA has `long_ema_window` daily signals, which begin on the second period.
         - This implementation is applied to a single security's own daily up/down signal
           (see `get_advancers_decliners`) rather than to a true cross-sectional count of
           advancing versus declining issues across a market universe, which is how the
@@ -45,13 +50,13 @@ def get_mcclellan_oscillator(
     Returns:
         pd.Series: McClellan Oscillator values.
     """
-    advancers_decliners = get_advancers_decliners(prices_close)
-    short_ema = advancers_decliners.ewm(
-        span=short_ema_window, min_periods=1, adjust=False
-    ).mean()
-    long_ema = advancers_decliners.ewm(
-        span=long_ema_window, min_periods=1, adjust=False
-    ).mean()
+    # The first price has no previous close and therefore no advance or decline; leaving
+    # it missing keeps a zero that never happened out of the seed of both EMAs.
+    advancers_decliners = get_advancers_decliners(prices_close).where(
+        prices_close.shift(1).notna()
+    )
+    short_ema = get_exponential_moving_average(advancers_decliners, short_ema_window)
+    long_ema = get_exponential_moving_average(advancers_decliners, long_ema_window)
 
     return short_ema - long_ema
 
@@ -305,6 +310,13 @@ def get_chaikin_oscillator(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
+    Notes:
+        - Both EMAs are seeded with the Simple Moving Average of their first values (see
+          `overlap_model.get_exponential_moving_average`), as StockCharts calculates them, so
+          the oscillator starts on period `long_window` - 1. TA-Lib's `ta_ADOSC.c` seeds both
+          with the first Accumulation/Distribution value instead, which only changes the
+          first values.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -319,8 +331,8 @@ def get_chaikin_oscillator(
     adl = get_accumulation_distribution_line(
         prices_high, prices_low, prices_close, volumes
     )
-    short_ema = adl.ewm(span=short_window, min_periods=1, adjust=False).mean()
-    long_ema = adl.ewm(span=long_window, min_periods=1, adjust=False).mean()
+    short_ema = get_exponential_moving_average(adl, short_window)
+    long_ema = get_exponential_moving_average(adl, long_window)
 
     return short_ema - long_ema
 

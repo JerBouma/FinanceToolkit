@@ -218,6 +218,40 @@ def _get_cboe_option_chain(
     )
 
 
+# Treasury yields are quoted on a bond-equivalent basis: an annual rate compounded twice a year.
+TREASURY_COMPOUNDING_PER_YEAR = 2
+
+
+def get_continuously_compounded_rate(
+    bond_equivalent_yield: pd.Series | pd.DataFrame | float,
+    compounding_per_year: int = TREASURY_COMPOUNDING_PER_YEAR,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Converts a yield quoted with periodic compounding, such as the bond-equivalent yield of a
+    US Treasury, into the continuously compounded rate that the option pricing formulas
+    (Black-Scholes, binomial trees, Bjerksund-Stensland, barrier, Asian and binary options and
+    the Greeks) discount with through e^(-r * t). Both rates grow an investment by the same
+    amount over a year:
+
+        - (1 + y / m)^m = e^r, so r = m * ln(1 + y / m)
+
+    Where y is the quoted yield, m the number of compounding periods per year (2 for a
+    semi-annual bond-equivalent yield) and r the continuously compounded rate. A yield of 4.00%
+    compounded semi-annually equals a continuously compounded rate of 3.96%. Using the quoted
+    yield directly in e^(-r * t) would overstate the discounting and the forward drift.
+
+    Args:
+        bond_equivalent_yield (pd.Series | pd.DataFrame | float): The quoted yield as a decimal.
+        compounding_per_year (int, optional): The number of compounding periods per year.
+            Defaults to 2, the semi-annual compounding of a bond-equivalent Treasury yield.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The continuously compounded rate as a decimal, in the
+        same shape as the input.
+    """
+    return compounding_per_year * np.log1p(bond_equivalent_yield / compounding_per_year)
+
+
 # The trailing window of the dividend yield, and the history a ticker needs before a full window is available.  # noqa: E501
 DIVIDEND_YIELD_WINDOW = "365D"
 DIVIDEND_YIELD_DAYS = 365

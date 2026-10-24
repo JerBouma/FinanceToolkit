@@ -55,6 +55,70 @@ def _as_scalar(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
     return float(np.asarray(value).reshape(-1)[0])
 
 
+def _get_out_of_sample_estimates(
+    returns: pd.DataFrame,
+    measure: str,
+    distribution: str,
+    alpha: float,
+    window_size: int,
+) -> pd.DataFrame:
+    """
+    Builds the rolling, out-of-sample Value at Risk or Conditional Value at Risk path
+    of every ticker, as used by the VaR and Expected Shortfall backtests.
+
+    Each ticker is rolled over its own non-missing returns, so a ticker with a shorter
+    history (or a missing day) does not shorten the sample of the others, and the window
+    always holds `window_size` actual observations. The path is shifted by one
+    observation so that every estimate only uses the returns before the one it is
+    compared against.
+
+    Args:
+        returns (pd.DataFrame): The returns, one column per ticker.
+        measure (str): Either "var" or "cvar".
+        distribution (str): One of "historic", "gaussian", "studentt" or "evt".
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
+        window_size (int): The number of observations in each rolling window.
+
+    Returns:
+        pd.DataFrame: The out-of-sample estimates, on the index of `returns`.
+    """
+    parametric_estimators = {
+        ("var", "gaussian"): var_model.get_var_gaussian,
+        ("var", "studentt"): var_model.get_var_studentt,
+        ("var", "evt"): var_model.get_var_evt,
+        ("cvar", "gaussian"): cvar_model.get_cvar_gaussian,
+        ("cvar", "studentt"): cvar_model.get_cvar_studentt,
+        ("cvar", "evt"): cvar_model.get_cvar_evt,
+    }
+
+    estimates = {}
+
+    for column in returns.columns:
+        column_returns = returns[column].dropna()
+
+        if distribution == "historic":
+            estimate = (
+                var_model.get_rolling_var_historic(column_returns, alpha, window_size)
+                if measure == "var"
+                else cvar_model.get_rolling_cvar_historic(
+                    column_returns, alpha, window_size
+                )
+            )
+        else:
+            estimator = parametric_estimators[(measure, distribution)]
+            estimate = column_returns.rolling(window=window_size).apply(
+                lambda window, estimator=estimator: _as_scalar(
+                    estimator(window, alpha)
+                ),
+                raw=False,
+            )
+
+        # A trailing rolling window includes the current observation, so without the shift each estimate would be compared against a return it was computed from.  # noqa: E501
+        estimates[column] = estimate.shift(1).reindex(returns.index)
+
+    return pd.DataFrame(estimates, index=returns.index, columns=returns.columns)
+
+
 class Risk:
     """
     The Risk module is meant to calculate important risk metrics such
@@ -128,9 +192,9 @@ class Risk:
         self._end_date: str | None = end_date
         self._portfolio_weights: dict | None = None
 
-        # Within Return Calculations
-        daily_historical_data = self._historical_data["daily"].copy().fillna(0)
-        intraday_historical_data = self._historical_data["intraday"].copy().fillna(0)
+        # Within Return Calculations. Missing values stay missing: filling them with 0 would turn a period without data (e.g. before a listing, or the lone boundary observation at the start of the range) into 0% returns, i.e. a VaR, skewness or drawdown of exactly 0 instead of no value.  # noqa: E501
+        daily_historical_data = self._historical_data["daily"].copy()
+        intraday_historical_data = self._historical_data["intraday"].copy()
 
         daily_historical_data.index = pd.DatetimeIndex(
             daily_historical_data.to_timestamp().index
@@ -158,12 +222,12 @@ class Risk:
         The Return slice a calculation runs on, memoized per (period, within_period)
         pair (see `_data_cache` in `__init__`).
 
-        The whole-series slice drops the incomplete rows: a resampled series starts
-        with a NaN return (there is no previous period to compare against) and the
-        statistics computed over the entire series (quantiles, moments, drawdowns)
-        would propagate that single NaN to the result. The within-period frames carry
-        no such row because the first observation of each period is compared against
-        the last of the previous one.
+        The whole-series slice drops the rows without any return: a resampled series
+        starts with a NaN return (there is no previous period to compare against).
+        Rows where only some tickers miss a return (e.g. a ticker that listed later)
+        are kept, so every ticker uses its own full history; the calculations skip the
+        missing returns per column. The within-period frames keep their missing values
+        as well, so a period without observations for a ticker gives NaN rather than 0.
         """
         key = (period, within_period)
 
@@ -171,7 +235,7 @@ class Risk:
             self._data_cache[key] = (
                 self._within_historical_data[period]["Return"]
                 if within_period
-                else self._historical_data[period]["Return"].dropna()
+                else self._historical_data[period]["Return"].dropna(how="all")
             )
 
         return self._data_cache[key]
@@ -218,18 +282,20 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.collect_all_metrics().xs("AAPL", level=1, axis=1)
+        metrics = toolkit.risk.collect_all_metrics().xs("AAPL", level=1, axis=1)
+
+        metrics[["Value at Risk", "Maximum Drawdown", "Ulcer Index", "Skewness", "Kurtosis"]]
         ```
 
         Which returns:
 
-        |      |   Ulcer Index |    GARCH |   Skewness |   Kurtosis |   Downside Deviation |   Variance |   Volatility |
-        |:-----|--------------:|---------:|-----------:|-----------:|---------------------:|-----------:|-------------:|
-        | 2021 |        0.0373 | nan      |    -0.0735 |     3.4146 |               0.0105 |     0.0626 |       0.2502 |
-        | 2022 |        0.067  |   0.0697 |     0.3167 |     4.054  |               0.016  |     0.1274 |       0.357  |
-        | 2023 |        0.033  |   0.1142 |    -0.0662 |     4.4804 |               0.0082 |     0.0412 |       0.2031 |
-        | 2024 |        0.034  |   0.1142 |     0.4447 |     6.6121 |               0.0093 |     0.0514 |       0.2268 |
-        | 2025 |        0.0492 |   0.1142 |     1.1299 |    17.0667 |               0.0136 |     0.1056 |       0.325  |
+        |      |   Value at Risk |   Maximum Drawdown |   Ulcer Index |   Skewness |   Kurtosis |
+        |:-----|----------------:|-------------------:|--------------:|-----------:|-----------:|
+        | 2021 |         -0.0256 |            -0.1861 |        0.0366 |    -0.0748 |     3.4006 |
+        | 2022 |         -0.0373 |            -0.3032 |        0.0664 |     0.3168 |     4.0553 |
+        | 2023 |         -0.0175 |            -0.1498 |        0.0324 |    -0.0686 |     4.4756 |
+        | 2024 |         -0.0217 |            -0.1539 |        0.0343 |     0.4447 |     6.6112 |
+        | 2025 |         -0.0321 |            -0.3107 |        0.0502 |     1.1306 |    17.0892 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -420,7 +486,8 @@ class Risk:
         informed decisions about risk tolerance.
 
         The VaR is calculated as the quantile of the return distribution, representing the loss threshold
-        that is not expected to be exceeded with a given confidence level (e.g., 5% for alpha=0.05).
+        that is only exceeded with tail probability alpha (e.g., in 5% of the periods for alpha=0.05, the
+        95% confidence level).
 
         Value at Risk is a quantile: it says how bad a period gets at the chosen confidence level, not how
         bad the periods beyond it are, so two assets with the same VaR can have very different tails (see
@@ -434,8 +501,8 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            alpha (float, optional): The confidence level for VaR calculation (e.g., 0.05 for 95% confidence).
-            Defaults to 0.05.
+            alpha (float, optional): The tail probability for the VaR calculation (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate VaR within the specified period or for the entire
             period. Thus whether to look at the VaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
@@ -451,13 +518,14 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            distribution (str): The distribution to use for the VaR calculations (historic, gaussian, cf,
-            cornish-fisher, studentt or evt). Defaults to "historic". Note that "cf" and "cornish-fisher"
-            both adjust the gaussian quantile for skewness and kurtosis, but "cornish-fisher" uses the
-            more standard Cornish-Fisher expansion (see `var_model.get_var_cornish_fisher`), while "cf"
-            is kept for backwards compatibility.
+            distribution (str): The distribution to use for the VaR calculations (historic, gaussian,
+            cornish-fisher, studentt or evt). Defaults to "historic". The parametric distributions use the
+            sample standard deviation; "cornish-fisher" adjusts the gaussian quantile for the skewness and
+            excess kurtosis of the returns (see `var_model.get_var_cornish_fisher`) and "studentt" uses the
+            quantile of a Student-T distribution fitted by maximum likelihood.
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
-            of losses above which the Generalized Pareto Distribution is fitted. Defaults to 0.95.
+            of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
+            1 - `threshold_percentile`. Defaults to 0.95.
 
         Returns:
             pd.Series: VaR values with time as the index.
@@ -531,8 +599,6 @@ class Risk:
                 value_at_risk = var_model.get_var_historic(returns, alpha)
             elif distribution == "gaussian":
                 value_at_risk = var_model.get_var_gaussian(returns, alpha)
-            elif distribution == "cf":
-                value_at_risk = var_model.get_var_gaussian(returns, alpha, True)
             elif distribution == "cornish-fisher":
                 value_at_risk = var_model.get_var_cornish_fisher(returns, alpha)
             elif distribution == "studentt":
@@ -543,8 +609,8 @@ class Risk:
                 )
             else:
                 raise ValueError(
-                    "Distribution must be historic, gaussian, cf, cornish-fisher, "
-                    "studentt or evt."
+                    "Distribution must be historic, gaussian, cornish-fisher, studentt "
+                    "or evt."
                 )
 
         if rolling or within_period:
@@ -601,8 +667,8 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            alpha (float, optional): The confidence level for CVaR calculation (e.g., 0.05 for 95% confidence).
-            Defaults to 0.05.
+            alpha (float, optional): The tail probability for the CVaR calculation (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
@@ -621,7 +687,8 @@ class Risk:
             distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace,
             logistic, cornish-fisher or evt). Defaults to "historic".
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
-            of losses above which the Generalized Pareto Distribution is fitted. Defaults to 0.95.
+            of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
+            1 - `threshold_percentile`. Defaults to 0.95.
 
         Returns:
             pd.Series: CVaR values with time as the index.
@@ -756,19 +823,25 @@ class Risk:
         associated with an investment and helps investors make informed decisions about risk tolerance.
 
         The EVaR is calculated under the assumption that returns are normally distributed, for which the
-        Chernoff bound has the closed form Mean - Standard Deviation * SQRT(-2 * ln(alpha)), with a given
-        confidence level (e.g., 5% for alpha=0.05). It is an upper bound of the gaussian VaR and CVaR at the
-        same confidence level. Since it only uses the mean and the standard deviation of the returns, it does
-        not reflect their skewness or fat tails, and at high confidence levels it can be less severe than the
-        historical CVaR of an asset with heavy tails.
+        Chernoff bound has the closed form Mean - Standard Deviation * SQRT(-2 * ln(alpha)), where alpha is
+        the tail probability (0.05 for the 95% confidence level) and the standard deviation is the sample
+        standard deviation. It is an upper bound of the gaussian VaR and CVaR at the same confidence level.
+        Since it only uses the mean and the standard deviation of the returns, it does not reflect their
+        skewness or fat tails, and at high confidence levels it can be less severe than the historical CVaR
+        of an asset with heavy tails.
+
+        For more information about the method, see the following paper:
+
+        - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
+        Optimization Theory and Applications, 155(3), 1105-1123.
 
         Also known as: EVaR.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            alpha (float, optional): The confidence level for EVaR calculation (e.g., 0.05 for 95% confidence).
-            Defaults to 0.05.
+            alpha (float, optional): The tail probability for the EVaR calculation (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate EVaR within the specified period or for the entire
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
@@ -807,11 +880,11 @@ class Risk:
 
         |      |    AMZN |    TSLA |   Benchmark |
         |:-----|--------:|--------:|------------:|
-        | 2021 | -0.0366 | -0.0821 |     -0.0188 |
-        | 2022 | -0.0793 | -0.1059 |     -0.038  |
-        | 2023 | -0.0482 | -0.0798 |     -0.0191 |
-        | 2024 | -0.0416 | -0.095  |     -0.0184 |
-        | 2025 | -0.0525 | -0.0965 |     -0.0293 |
+        | 2021 | -0.0368 | -0.0824 |     -0.0188 |
+        | 2022 | -0.0795 | -0.1061 |     -0.0381 |
+        | 2023 | -0.0483 | -0.08   |     -0.0192 |
+        | 2024 | -0.0417 | -0.0952 |     -0.0185 |
+        | 2025 | -0.0526 | -0.0967 |     -0.0293 |
         """
         period = period if period else "daily"
 
@@ -884,8 +957,8 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            alpha (float, optional): The confidence level for CDaR calculation (e.g., 0.05 for 95% confidence).
-            Defaults to 0.05.
+            alpha (float, optional): The tail probability for the CDaR calculation (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CDaR within the specified period or for the entire
             period. Thus whether to look at the CDaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
@@ -927,10 +1000,10 @@ class Risk:
 
         |      |    AMZN |    TSLA |   Benchmark |
         |:-----|--------:|--------:|------------:|
-        | 2021 | -0.1325 | -0.3407 |     -0.0413 |
-        | 2022 | -0.499  | -0.6603 |     -0.2343 |
+        | 2021 | -0.1324 | -0.3407 |     -0.0413 |
+        | 2022 | -0.4989 | -0.6603 |     -0.2343 |
         | 2023 | -0.1756 | -0.2867 |     -0.0806 |
-        | 2024 | -0.1612 | -0.3662 |     -0.0576 |
+        | 2024 | -0.1612 | -0.3664 |     -0.0576 |
         | 2025 | -0.2721 | -0.4558 |     -0.1434 |
         """
         period = period if period else "daily"
@@ -1058,8 +1131,8 @@ class Risk:
 
         |      |   AMZN |   TSLA |   Benchmark |
         |:-----|-------:|-------:|------------:|
-        | 2021 | 0.8591 | 1.0173 |      1.1327 |
-        | 2022 | 0.8406 | 1.0049 |      0.9524 |
+        | 2021 | 0.8574 | 1.017  |      1.1304 |
+        | 2022 | 0.8415 | 1.0049 |      0.9524 |
         | 2023 | 1.2609 | 1.1958 |      1.0466 |
         | 2024 | 1.1246 | 1.1942 |      0.9091 |
         | 2025 | 0.9359 | 1.0702 |      0.93   |
@@ -1185,10 +1258,10 @@ class Risk:
 
         |      |    AMZN |    TSLA |   Benchmark |
         |:-----|--------:|--------:|------------:|
-        | 2021 | -0.146  | -0.3625 |     -0.051  |
+        | 2021 | -0.1456 | -0.3625 |     -0.051  |
         | 2022 | -0.5197 | -0.7272 |     -0.245  |
         | 2023 | -0.1965 | -0.3273 |     -0.0999 |
-        | 2024 | -0.1949 | -0.4279 |     -0.0841 |
+        | 2024 | -0.1949 | -0.4281 |     -0.0841 |
         | 2025 | -0.3088 | -0.4821 |     -0.1877 |
         """
         period = period if period else "daily"
@@ -1297,7 +1370,7 @@ class Risk:
         | 2021 |     30 |     28 |          21 |
         | 2022 |    248 |    247 |         195 |
         | 2023 |     25 |     73 |          63 |
-        | 2024 |     23 |     76 |          14 |
+        | 2024 |     23 |     77 |          14 |
         | 2025 |     52 |     57 |          34 |
         """
         period = period if period else "daily"
@@ -1484,6 +1557,12 @@ class Risk:
 
         Ulcer Index = SQRT(SUM[((Pn - Highest High) / Highest High)^2] / n)
 
+        Martin measures every drawdown from the highest value so far (`rolling=None`); the default
+        trailing 14-period high is the variant StockCharts popularised. While fewer than `rolling`
+        observations are available, the high is taken over the observations so far, so periods shorter
+        than the window still have a value. The result is a decimal (0.05 is a root mean squared
+        drawdown of 5%), where Martin quotes percentages.
+
         The Ulcer Index punishes both the depth and the length of drawdowns, so an asset that falls 10% and
         stays there for months scores worse than one that drops 10% and recovers within a week, which a
         volatility figure would not show. It is the risk measure behind the Martin ratio (excess return
@@ -1497,14 +1576,9 @@ class Risk:
                 Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rolling (int | None, optional): The trailing lookback window used as the high-water
                 mark reference for each day's drawdown. Pass None for an expanding
-                (since-inception) high-water mark instead -- this is what the "Highest High"
-                in the formula above literally refers to; a fixed int window is a common,
-                distinct variant (e.g. a 14-day trailing high) rather than a substitute for
-                "the entire period". Note that passing `rolling=` the full length of your
-                return series does NOT give you the since-inception result -- pandas only
-                starts producing a rolling value once the full window is filled, so it would
-                silently degenerate to just the final period's drawdown; use `rolling=None`
-                instead. Defaults to 14.
+                (since-inception) high-water mark instead -- Martin's "Highest High"; a fixed
+                int window is the common trailing-high variant (e.g. a 14-day trailing high).
+                Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the UI values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1518,7 +1592,7 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates UI for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+        - If `growth` is set to True, the method calculates the growth of UI values using the specified `lag`.
 
         As an example:
 
@@ -1539,11 +1613,11 @@ class Risk:
 
         |      |   AMZN |   TSLA |   Benchmark |
         |:-----|-------:|-------:|------------:|
-        | 2021 | 0.0427 | 0.0851 |      0.0133 |
-        | 2022 | 0.1081 | 0.1373 |      0.0488 |
-        | 2023 | 0.0483 | 0.0839 |      0.0202 |
-        | 2024 | 0.0395 | 0.0908 |      0.0167 |
-        | 2025 | 0.0567 | 0.1006 |      0.0276 |
+        | 2021 | 0.0418 | 0.0833 |      0.013  |
+        | 2022 | 0.106  | 0.1365 |      0.0481 |
+        | 2023 | 0.0472 | 0.0827 |      0.0198 |
+        | 2024 | 0.0388 | 0.0908 |      0.0164 |
+        | 2025 | 0.0555 | 0.0982 |      0.027  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2654,7 +2728,8 @@ class Risk:
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
 
-        return self._historical_data[period][column].dropna()
+        # Only rows without any value are dropped: the pairwise calculations (copulas, tail dependence, CoVaR) align each pair themselves, so a joint dropna would cut every ticker's sample down to the shortest history.  # noqa: E501
+        return self._historical_data[period][column].dropna(how="all")
 
     def _resolve_ticker_pairs(
         self, ticker_a: str | None, ticker_b: str | None
@@ -2786,8 +2861,11 @@ class Risk:
         rounding: int | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calibrate a bivariate copula between `ticker_a` and `ticker_b`, via
-        maximum likelihood.
+        Calibrate a bivariate copula between `ticker_a` and `ticker_b` on the
+        pseudo-observations (ranks) of their returns: the Clayton, Gumbel and Frank
+        parameters by maximum likelihood, the gaussian correlation from the normal
+        scores, and the Student-T correlation from Kendall's tau with the degrees of
+        freedom by maximum likelihood (Demarta & McNeil, 2005).
 
         When `ticker_a`/`ticker_b` are not given, every unique pair among the
         Toolkit's tickers is calibrated instead.
@@ -2873,11 +2951,11 @@ class Risk:
 
         |                       |    Value |
         |:----------------------|---------:|
-        | Theta                 |   0.6154 |
-        | Lower Tail Dependence |   0.3242 |
+        | Theta                 |   0.6155 |
+        | Lower Tail Dependence |   0.3243 |
         | Upper Tail Dependence |   0      |
-        | Log-Likelihood        |  21.6826 |
-        | AIC                   | -41.3651 |
+        | Log-Likelihood        |  21.68   |
+        | AIC                   | -41.3599 |
         | Observations          | 260      |
         """
         period = period if period else "daily"
@@ -3004,8 +3082,8 @@ class Risk:
         |       |          AMZN |          TSLA |
         |:------|--------------:|--------------:|
         | count | 5000          | 5000          |
-        | mean  |    0.00206638 |    0.00380068 |
-        | std   |    0.0435261  |    0.0792416  |
+        | mean  |    0.00206652 |    0.00380104 |
+        | std   |    0.0435259  |    0.0792412  |
         | min   |   -0.1382     |   -0.1796     |
         | 25%   |   -0.022325   |   -0.049125   |
         | 50%   |    0.0004     |   -0.0001     |
@@ -3180,11 +3258,11 @@ class Risk:
 
         | Copula    |   Lower Tail Dependence |   Upper Tail Dependence |   Log-Likelihood |      AIC |
         |:----------|------------------------:|------------------------:|-----------------:|---------:|
-        | Frank     |                  0      |                  0      |          32.402  | -62.8039 |
-        | Gaussian  |                  0      |                  0      |          30.2955 | -58.5909 |
-        | Student-T |                  0.0094 |                  0.0094 |          30.5604 | -57.1208 |
-        | Gumbel    |                  0      |                  0.3659 |          27.8789 | -53.7579 |
-        | Clayton   |                  0.3242 |                  0      |          21.6826 | -41.3651 |
+        | Frank     |                  0      |                  0      |          32.3868 | -62.7736 |
+        | Gaussian  |                  0      |                  0      |          30.2817 | -58.5634 |
+        | Student-T |                  0.0198 |                  0.0198 |          30.5851 | -57.1701 |
+        | Gumbel    |                  0      |                  0.3659 |          27.8687 | -53.7375 |
+        | Clayton   |                  0.3243 |                  0      |          21.68   | -41.3599 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3298,8 +3376,8 @@ class Risk:
                 lower frequency provides -- at "yearly" a decade of history is only ten
                 observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
-            alpha (float, optional): The confidence level for both the tail quantile regression and
-            the VaR of `conditioning_ticker` (e.g., 0.05 for 95% confidence). Defaults to 0.05.
+            alpha (float, optional): The tail probability for both the tail quantile regression and
+            the VaR of `conditioning_ticker` (e.g., 0.05 for the 95% confidence level). Defaults to 0.05.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
@@ -3332,7 +3410,7 @@ class Risk:
         |:------------------------------|---------:|
         | CoVaR                         |  -0.1041 |
         | Delta-CoVaR                   |  -0.0423 |
-        | Quantile Regression Slope     |   0.3252 |
+        | Quantile Regression Slope     |   0.3256 |
         | Quantile Regression Intercept |  -0.062  |
         | Observations                  | 260      |
         """
@@ -3422,7 +3500,7 @@ class Risk:
                 "daily", since a whole-series estimate needs far more observations than a single
                 quarter or year holds.
             column (str, optional): The historical data column to use. Defaults to "Return".
-            alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
+            alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
             Defaults to 0.05.
             distribution (str, optional): The distribution to use for the underlying portfolio
             VaR calculation (historic, gaussian, cornish-fisher or studentt). Defaults to
@@ -3457,7 +3535,7 @@ class Risk:
 
         |      |   Marginal VaR |
         |:-----|---------------:|
-        | AMZN |        -0.0298 |
+        | AMZN |        -0.0297 |
         | TSLA |        -0.05   |
         | MSFT |        -0.0182 |
         """
@@ -3465,8 +3543,12 @@ class Risk:
         returns = self._get_price_column(period, column)
         weights_series = self._get_portfolio_weights(returns, weights)
 
+        # The portfolio return needs every constituent on the same dates, so only here are the rows with any missing return dropped.  # noqa: E501
         marginal_var = var_model.get_marginal_var(
-            returns[weights_series.index], weights_series, alpha, distribution
+            returns[weights_series.index].dropna(),
+            weights_series,
+            alpha,
+            distribution,
         )
         marginal_var.name = "Marginal VaR"
 
@@ -3526,7 +3608,7 @@ class Risk:
                 "daily", since a whole-series estimate needs far more observations than a single
                 quarter or year holds.
             column (str, optional): The historical data column to use. Defaults to "Return".
-            alpha (float, optional): The confidence level (e.g., 0.05 for 95% confidence).
+            alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
             Defaults to 0.05.
             distribution (str, optional): The distribution to use for the underlying portfolio
             VaR calculation (historic, gaussian, cornish-fisher or studentt). Defaults to
@@ -3571,8 +3653,12 @@ class Risk:
         returns = self._get_price_column(period, column)
         weights_series = self._get_portfolio_weights(returns, weights)
 
+        # The portfolio return needs every constituent on the same dates, so only here are the rows with any missing return dropped.  # noqa: E501
         component_var = var_model.get_component_var(
-            returns[weights_series.index], weights_series, alpha, distribution
+            returns[weights_series.index].dropna(),
+            weights_series,
+            alpha,
+            distribution,
         )
         component_var.loc["Portfolio"] = component_var.sum()
         component_var.name = "Component VaR"
@@ -3625,8 +3711,8 @@ class Risk:
             (252 only means "about one year" when `period` is daily).
             distribution (str, optional): The distribution to use for the rolling VaR estimates, one of
             "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
-            alpha (float, optional): The confidence level for the VaR estimates (e.g., 0.05 for 95%
-            confidence). Defaults to 0.05.
+            alpha (float, optional): The tail probability for the VaR estimates (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
             window_size (int, optional): The rolling window size (in number of return observations) used to
             estimate each VaR value. Defaults to 252 (approximately one trading year of daily returns).
             test (str, optional): Which test(s) to run, one of "kupiec", "christoffersen" or "both". Defaults
@@ -3639,7 +3725,8 @@ class Risk:
         Notes:
         - The rolling VaR path is calculated over the full return history, not the `within_period` slices
         used elsewhere in this module, since a meaningful rolling window generally needs more history than
-        a single sub-period provides.
+        a single sub-period provides. Each asset is rolled over its own available returns, so a shorter
+        history of one asset does not shorten the others.
 
         As an example:
 
@@ -3660,10 +3747,10 @@ class Risk:
 
         |                          |   AMZN |   TSLA |   Benchmark |
         |:-------------------------|-------:|-------:|------------:|
-        | Kupiec Statistic         | 2.3413 | 0.1736 |      0.312  |
-        | P-Value                  | 0.126  | 0.677  |      0.5765 |
-        | Christoffersen Statistic | 0.4588 | 5.9293 |      4.7906 |
-        | P-Value                  | 0.4982 | 0.0149 |      0.0286 |
+        | Kupiec Statistic         | 1.9421 | 0.1736 |      0.312  |
+        | P-Value                  | 0.1634 | 0.677  |      0.5765 |
+        | Christoffersen Statistic | 0.5605 | 5.9293 |      4.7906 |
+        | P-Value                  | 0.4541 | 0.0149 |      0.0286 |
         """
         period = period if period else "daily"
 
@@ -3678,30 +3765,10 @@ class Risk:
         if test not in ["kupiec", "christoffersen", "both"]:
             raise ValueError("Test must be kupiec, christoffersen, or both.")
 
-        returns = self._historical_data[period]["Return"].dropna()
-
-        if distribution == "historic":
-            rolling_var = var_model.get_rolling_var_historic(
-                returns, alpha, window_size
-            )
-        elif distribution == "gaussian":
-            rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(var_model.get_var_gaussian(window, alpha)),
-                raw=False,
-            )
-        elif distribution == "studentt":
-            rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(var_model.get_var_studentt(window, alpha)),
-                raw=False,
-            )
-        else:
-            rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(var_model.get_var_evt(window, alpha)),
-                raw=False,
-            )
-
-        # A trailing rolling window includes the current observation, so without the shift each estimate would be compared against a return it was computed from.  # noqa: E501
-        rolling_var = rolling_var.shift(1)
+        returns = self._historical_data[period]["Return"].dropna(how="all")
+        rolling_var = _get_out_of_sample_estimates(
+            returns, "var", distribution, alpha, window_size
+        )
 
         results = []
         if test in ("kupiec", "both"):
@@ -3755,8 +3822,8 @@ class Risk:
             Defaults to "daily", since `window_size` is expressed in return observations of this frequency.
             distribution (str, optional): The distribution to use for the rolling VaR/CVaR estimates,
             one of "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
-            alpha (float, optional): The confidence level for the VaR/CVaR estimates (e.g., 0.05 for 95%
-            confidence). Defaults to 0.05.
+            alpha (float, optional): The tail probability for the VaR/CVaR estimates (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
             window_size (int, optional): The rolling window size (in number of return observations) used
             to estimate each VaR/CVaR value. Defaults to 252 (approximately one trading year of daily
             returns).
@@ -3767,13 +3834,18 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: The Z2 statistic, its bootstrap Standard Error, its p-value, and the number of
-            breaches observed, per asset.
+            pd.DataFrame: The Z2 statistic, its bootstrap Standard Error, its one-sided p-value (a low
+            value means the model underestimates the tail losses), and the number of breaches observed
+            (returns strictly below the VaR), per asset.
 
         Notes:
         - The rolling VaR/CVaR path is calculated over the full return history, not the `within_period`
         slices used elsewhere in this module, since a meaningful rolling window generally needs more
-        history than a single sub-period provides.
+        history than a single sub-period provides. Each asset is rolled over its own available returns.
+        - The paper simulates the null distribution of Z2 from the model's predictive distributions; a
+        rolling path does not carry those, so the p-value is approximated with a paired bootstrap of the
+        observed (return, VaR, CVaR) triples and a normal approximation (see
+        `backtesting_model.get_acerbi_szekely_test`).
 
         As an example:
 
@@ -3796,7 +3868,7 @@ class Risk:
         |:-------------------------|--------:|--------:|------------:|
         | Acerbi-Szekely Statistic |  0.2146 |  0.2444 |      0.3931 |
         | Standard Error           |  0.1615 |  0.1543 |      0.1554 |
-        | P-Value                  |  0.1838 |  0.1133 |      0.0114 |
+        | P-Value                  |  0.0919 |  0.0566 |      0.0057 |
         | Breaches                 | 65      | 70      |     78      |
         """
         period = period if period else "daily"
@@ -3810,46 +3882,13 @@ class Risk:
                 "Distribution must be historic, gaussian, studentt, or evt."
             )
 
-        returns = self._historical_data[period]["Return"].dropna()
-
-        if distribution == "historic":
-            rolling_var = var_model.get_rolling_var_historic(
-                returns, alpha, window_size
-            )
-            rolling_cvar = cvar_model.get_rolling_cvar_historic(
-                returns, alpha, window_size
-            )
-        elif distribution == "gaussian":
-            rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(var_model.get_var_gaussian(window, alpha)),
-                raw=False,
-            )
-            rolling_cvar = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(cvar_model.get_cvar_gaussian(window, alpha)),
-                raw=False,
-            )
-        elif distribution == "studentt":
-            rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(var_model.get_var_studentt(window, alpha)),
-                raw=False,
-            )
-            rolling_cvar = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(cvar_model.get_cvar_studentt(window, alpha)),
-                raw=False,
-            )
-        else:
-            rolling_var = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(var_model.get_var_evt(window, alpha)),
-                raw=False,
-            )
-            rolling_cvar = returns.rolling(window=window_size).apply(
-                lambda window: _as_scalar(cvar_model.get_cvar_evt(window, alpha)),
-                raw=False,
-            )
-
-        # A trailing rolling window includes the current observation, so without the shift each estimate would be compared against a return it was computed from.  # noqa: E501
-        rolling_var = rolling_var.shift(1)
-        rolling_cvar = rolling_cvar.shift(1)
+        returns = self._historical_data[period]["Return"].dropna(how="all")
+        rolling_var = _get_out_of_sample_estimates(
+            returns, "var", distribution, alpha, window_size
+        )
+        rolling_cvar = _get_out_of_sample_estimates(
+            returns, "cvar", distribution, alpha, window_size
+        )
 
         result = backtesting_model.get_acerbi_szekely_test(
             returns, rolling_var, rolling_cvar, alpha, n_bootstrap, random_state
@@ -3930,11 +3969,11 @@ class Risk:
 
         |      |    MSFT |    AAPL |    TSLA |   Benchmark |
         |:-----|--------:|--------:|--------:|------------:|
-        | 2021 | -0.0175 | -0.0735 |  0.669  |     -0.3324 |
-        | 2022 |  0.1474 |  0.3167 | -0.026  |      0.0454 |
-        | 2023 |  0.3774 | -0.0662 |  0.0021 |     -0.0206 |
-        | 2024 | -0.8882 |  0.4447 |  0.8937 |     -0.5242 |
-        | 2025 |  1.3142 |  1.1299 |  0.4045 |      1.5069 |
+        | 2021 | -0.0195 | -0.0748 |  0.667  |     -0.3334 |
+        | 2022 |  0.1478 |  0.3168 | -0.026  |      0.0454 |
+        | 2023 |  0.3773 | -0.0686 |  0.0021 |     -0.0206 |
+        | 2024 | -0.888  |  0.4447 |  0.8937 |     -0.5242 |
+        | 2025 |  1.3116 |  1.1306 |  0.4045 |      1.5069 |
         """
         period = period if period else "daily"
 
@@ -4065,11 +4104,11 @@ class Risk:
 
         |      |    MSFT |    AAPL |   TSLA |   Benchmark |
         |:-----|--------:|--------:|-------:|------------:|
-        | 2021 |  3.3906 |  3.4146 | 7.488  |      3.7279 |
-        | 2022 |  3.8936 |  4.054  | 3.386  |      3.3635 |
-        | 2023 |  4.4619 |  4.4804 | 4.3336 |      2.843  |
-        | 2024 |  5.1741 |  6.6121 | 7.5225 |      4.7961 |
-        | 2025 | 13.1336 | 17.0667 | 7.7019 |     26.576  |
+        | 2021 |  3.377  |  3.4006 | 7.4582 |      3.7144 |
+        | 2022 |  3.896  |  4.0553 | 3.386  |      3.3635 |
+        | 2023 |  4.4636 |  4.4756 | 4.3336 |      2.843  |
+        | 2024 |  5.1739 |  6.6112 | 7.5225 |      4.7961 |
+        | 2025 | 13.1151 | 17.0892 | 7.7019 |     26.576  |
         """
         period = period if period else "daily"
 
@@ -4193,9 +4232,9 @@ class Risk:
 
         |                       |    AMZN |    TSLA |   Benchmark |
         |:----------------------|--------:|--------:|------------:|
-        | Hill Tail Index       |  3.2418 |  9.5123 |      2.7487 |
-        | Hill Shape (xi)       |  0.3085 |  0.1051 |      0.3638 |
-        | Standard Error        |  0.9358 |  2.746  |      0.8288 |
+        | Hill Tail Index       |  3.2425 |  9.5123 |      2.7487 |
+        | Hill Shape (xi)       |  0.3084 |  0.1051 |      0.3638 |
+        | Standard Error        |  0.936  |  2.746  |      0.8288 |
         | Observations Used (k) | 12      | 12      |     11      |
         """
         period = period if period else "daily"
@@ -4214,7 +4253,7 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        returns = self._get_returns(period, within_period).dropna()
+        returns = self._get_returns(period, within_period)
 
         result = risk_model.get_hill_estimator(returns, k=k, tail=tail)
 
@@ -4618,7 +4657,10 @@ class Risk:
             )
 
         if estimator == "squared_return":
-            realized_variance = self._historical_data["daily"]["Return"].dropna() ** 2
+            # The forecast drops missing values per ticker, so only rows without any return go.
+            realized_variance = (
+                self._historical_data["daily"]["Return"].dropna(how="all") ** 2
+            )
         else:
             open_prices = self._historical_data["daily"]["Open"]
             high_prices = self._historical_data["daily"]["High"]
@@ -4734,11 +4776,11 @@ class Risk:
 
         Which returns:
 
-        |           |      0 |
-        |:----------|-------:|
-        | AMZN      | 0.2447 |
-        | TSLA      | 0.1704 |
-        | Benchmark | 0.0306 |
+        |           |   Value |
+        |:----------|--------:|
+        | AMZN      |  0.2447 |
+        | TSLA      |  0.1704 |
+        | Benchmark |  0.0306 |
 
         Note that a large `scale` is used here since these are liquid, large-cap
         stocks with very high dollar trading volume relative to their typical daily
@@ -4773,7 +4815,8 @@ class Risk:
             else self._historical_data[period]
         )
 
-        returns = source_data["Return"].dropna()
+        # Missing returns are skipped per ticker, so a ticker with a shorter history does not cut the others.
+        returns = source_data["Return"].dropna(how="all")
         dollar_volume = source_data["Close"] * source_data["Volume"]
 
         illiquidity = market_liquidity_model.get_amihud_illiquidity(
@@ -4837,9 +4880,9 @@ class Risk:
             None.
 
         Returns:
-            pd.DataFrame: The Roll Spread (in price units), the Roll Spread as a percentage of the mean
-            price, the underlying lag-1 autocovariance, and whether that autocovariance was negative (i.e.
-            whether a valid estimate could be backed out), per asset.
+            pd.DataFrame: The Roll Spread (in price units), the Relative Roll Spread (the Roll Spread divided
+            by the mean price, as a decimal), the underlying lag-1 autocovariance, and whether that
+            autocovariance was negative (i.e. whether a valid estimate could be backed out), per asset.
 
         Notes:
         - The method retrieves historical Close price data based on the specified `period` and calculates
@@ -4862,12 +4905,11 @@ class Risk:
 
         Which returns:
 
-        |                 |      AMZN |     TSLA |   Benchmark |
-        |:----------------|----------:|---------:|------------:|
-        | Roll Spread     |  0.917232 |  3.64757 |    1.97906  |
-        | Roll Spread (%) |  0.561329 |  1.37352 |    0.408282 |
-        | Autocovariance  | -0.210329 | -3.32619 |   -0.979167 |
-        | Valid Estimate  |  1        |  1       |    1        |
+        |                |      AMZN |     TSLA |   Benchmark |
+        |:---------------|----------:|---------:|------------:|
+        | Roll Spread    |  0.917291 |  3.64757 |    1.97906  |
+        | Autocovariance | -0.210356 | -3.32619 |   -0.979167 |
+        | Valid Estimate |  1        |  1       |    1        |
         """
         period = period if period else "daily"
 
@@ -5283,8 +5325,8 @@ class Risk:
 
         | Date   |     AMZN |     TSLA |   Benchmark |
         |:-------|---------:|---------:|------------:|
-        | 2021   |  51.4326 |  16.7257 |      7.4324 |
-        | 2022   | -14.1417 | -12.7544 |    -22.3928 |
+        | 2021   |  51.2239 |  16.7257 |      7.4324 |
+        | 2022   | -14.1455 | -12.7544 |    -22.3928 |
         | 2023   |   8.0356 |  10.0506 |      8.5443 |
         | 2024   |  10.9398 |  14.7623 |      8.6564 |
         | 2025   |  49.9543 |  32.8037 |     16.8499 |
@@ -5459,18 +5501,18 @@ class Risk:
 
         Which returns:
 
-        |    |    AMZN |    TSLA |   Benchmark |
-        |---:|--------:|--------:|------------:|
-        |  1 | -0.0125 | -0.026  |     -0.031  |
-        |  2 | -0.0064 |  0.0128 |     -0.0069 |
-        |  3 | -0.0114 | -0.0109 |     -0.0626 |
-        |  4 |  0.0112 |  0.0189 |     -0.0344 |
-        |  5 | -0.0143 | -0.0213 |     -0.0075 |
-        |  6 |  0.0047 |  0.045  |     -0.0104 |
-        |  7 | -0.0523 |  0.0309 |     -0.0109 |
-        |  8 | -0.0307 |  0.0198 |     -0.0063 |
-        |  9 | -0.0102 |  0.063  |      0.0399 |
-        | 10 | -0.0084 | -0.0499 |     -0.0111 |
+        |   Lag |    AMZN |    TSLA |   Benchmark |
+        |------:|--------:|--------:|------------:|
+        |     1 | -0.0125 | -0.026  |     -0.031  |
+        |     2 | -0.0064 |  0.0128 |     -0.0069 |
+        |     3 | -0.0113 | -0.0109 |     -0.0626 |
+        |     4 |  0.0112 |  0.0189 |     -0.0344 |
+        |     5 | -0.0144 | -0.0213 |     -0.0075 |
+        |     6 |  0.0048 |  0.045  |     -0.0104 |
+        |     7 | -0.0523 |  0.0309 |     -0.0109 |
+        |     8 | -0.0309 |  0.0198 |     -0.0063 |
+        |     9 | -0.0103 |  0.063  |      0.0399 |
+        |    10 | -0.0083 | -0.0499 |     -0.0111 |
         """
         returns = self._historical_data["daily"]["Return"]
 
@@ -5505,13 +5547,17 @@ class Risk:
         few years is within estimation noise rather than evidence of a tradable pattern.
 
         Args:
-            max_lag (int, optional): The maximum lag to use when estimating the exponent.
-                Defaults to 20.
+            max_lag (int, optional): The maximum lag, included, to use when estimating the exponent:
+                the regression runs over the lags 2 up to and including `max_lag`. Defaults to 20.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
 
         Returns:
             pd.Series: The estimated Hurst Exponent for each asset.
+
+        Notes:
+        - The exponent is estimated with the generalized Hurst (structure function) method of
+        Di Matteo, Aste & Dacorogna (2005), see `risk_model.get_hurst_exponent`.
 
         As an example:
 
@@ -5530,11 +5576,11 @@ class Risk:
 
         Which returns:
 
-        |           |      0 |
-        |:----------|-------:|
-        | AMZN      | 0.4596 |
-        | TSLA      | 0.52   |
-        | Benchmark | 0.4362 |
+        |           |   Value |
+        |:----------|--------:|
+        | AMZN      |  0.459  |
+        | TSLA      |  0.5198 |
+        | Benchmark |  0.4361 |
         """
         # The estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series. Feeding it returns, which are already differenced, collapses the exponent towards zero.  # noqa: E501
         prices = self._historical_data["daily"]["Adj Close"]

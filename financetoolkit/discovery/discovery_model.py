@@ -668,6 +668,13 @@ def get_stock_shares_float(
         }
     )
 
+    # The free float is published in percent and returned as a decimal (0.85 is 85%), the
+    # same as the per-company shares float.
+    if "Free Float" in stock_shares_float.columns:
+        stock_shares_float["Free Float"] = (
+            pd.to_numeric(stock_shares_float["Free Float"], errors="coerce") / 100
+        )
+
     stock_shares_float = stock_shares_float.set_index("Symbol").sort_index()
 
     return stock_shares_float
@@ -769,6 +776,12 @@ def get_biggest_gainers(api_key: str, user_subscription: str = "Free") -> pd.Dat
         }
     )
 
+    # The change is published in percent and returned as a decimal (0.0125 is +1.25%).
+    if "Change %" in biggest_gainers.columns:
+        biggest_gainers["Change %"] = (
+            pd.to_numeric(biggest_gainers["Change %"], errors="coerce") / 100
+        )
+
     # The largest rise first, so the head of the list is what its name promises.
     biggest_gainers = biggest_gainers.set_index("Symbol").sort_values(
         "Change %", ascending=False, kind="stable"
@@ -807,6 +820,12 @@ def get_biggest_losers(api_key: str, user_subscription: str = "Free") -> pd.Data
             "exchange": "Exchange",
         }
     )
+
+    # The change is published in percent and returned as a decimal (0.0125 is +1.25%).
+    if "Change %" in biggest_losers.columns:
+        biggest_losers["Change %"] = (
+            pd.to_numeric(biggest_losers["Change %"], errors="coerce") / 100
+        )
 
     # The largest fall first, so the head of the list is what its name promises.
     biggest_losers = biggest_losers.set_index("Symbol").sort_values(
@@ -848,6 +867,12 @@ def get_most_active_stocks(
             "exchange": "Exchange",
         }
     )
+
+    # The change is published in percent and returned as a decimal (0.0125 is +1.25%).
+    if "Change %" in most_active.columns:
+        most_active["Change %"] = (
+            pd.to_numeric(most_active["Change %"], errors="coerce") / 100
+        )
 
     # Kept in the source's order, the most traded first, as there is no volume to sort on.
     most_active = most_active.set_index("Symbol")

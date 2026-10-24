@@ -1,5 +1,6 @@
 """WACC Model Tests""" ""
 import pandas as pd
+import pytest
 
 from financetoolkit.models import wacc_model
 
@@ -58,4 +59,25 @@ def test_weighted_average_cost_of_capital_without_debt_is_the_cost_of_equity():
     assert wacc.loc["Cost of Debt"].tolist() == [0.0, 0.005]
     assert (
         wacc.loc["Weighted Average Cost of Capital", 0] == wacc.loc["Cost of Equity", 0]
+    )
+
+
+def test_weighted_average_cost_of_capital_keeps_the_tax_rate_within_zero_and_one():
+    wacc = wacc_model.get_weighted_average_cost_of_capital(
+        share_price=pd.Series([10.0, 10.0, 10.0]),
+        total_shares_outstanding=pd.Series([100.0, 100.0, 100.0]),
+        interest_expense=pd.Series([50.0, 50.0, 50.0]),
+        total_debt=pd.Series([1000.0, 1000.0, 1000.0]),
+        risk_free_rate=pd.Series([0.02, 0.02, 0.02]),
+        beta=pd.Series([1.0, 1.0, 1.0]),
+        benchmark_returns=pd.Series([0.08, 0.08, 0.08]),
+        # A tax benefit on a profit, a loss (no taxable income to shield) and an ordinary rate.
+        income_tax_expense=pd.Series([-20.0, 30.0, 21.0]),
+        income_before_tax=pd.Series([100.0, -10.0, 100.0]),
+    )
+
+    assert wacc.loc["Corporate Tax Rate"].tolist() == [0.0, 0.0, 0.21]
+    # Half equity at 8% and half debt at 5% before tax.
+    assert wacc.loc["Weighted Average Cost of Capital"].tolist() == pytest.approx(
+        [0.065, 0.065, 0.5 * 0.08 + 0.5 * 0.05 * 0.79]
     )

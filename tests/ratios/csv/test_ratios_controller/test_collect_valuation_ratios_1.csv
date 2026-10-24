@@ -6,7 +6,7 @@ AAPL,Price-to-Earnings-Growth,,,4.3968,
 AAPL,Book Value per Share,,0.0036,-0.1703,0.2663
 AAPL,Price-to-Book,,0.3335,-0.1181,
 AAPL,Interest Debt per Share,,0.1557,0.0051,-0.123
-AAPL,CAPEX per Share,,0.5763,-0.0021,0.0567
+AAPL,CAPEX per Share,,-0.5763,0.0021,-0.0567
 AAPL,Earnings Yield,,0.2794,0.4873,
 AAPL,Dividend Payout Ratio,,-0.3771,-0.0268,0.0417
 AAPL,Dividend Yield,,-0.7513,0.4286,
@@ -15,14 +15,14 @@ AAPL,Price-to-Cash-Flow,,-0.0016,-0.3967,
 AAPL,Price-to-Free-Cash-Flow,,0.0163,-0.4092,
 AAPL,Price-to-Sales,,-0.0338,-0.3429,
 AAPL,Market Cap,,0.2876,-0.2917,
-AAPL,Enterprise Value,,0.2847,-0.2798,
-AAPL,EV-to-Sales,,-0.0359,-0.3318,
-AAPL,EV-to-EBIT,,-0.1964,-0.3399,
-AAPL,EV-to-EBITDA,,-0.1736,-0.3366,
-AAPL,EV-to-Operating-Cash-Flow,,-0.0038,-0.3866,
+AAPL,Enterprise Value,,0.3018,-0.2813,
+AAPL,EV-to-Sales,,-0.0231,-0.3333,
+AAPL,EV-to-EBIT,,-0.2079,-0.3444,
+AAPL,EV-to-EBITDA,,-0.1626,-0.3381,
+AAPL,EV-to-Operating-Cash-Flow,,0.0095,-0.3879,
 AAPL,Tangible Asset Value,,-0.0344,-0.1968,0.2264
-AAPL,Net Current Asset Value,,0.333,0.0889,-0.1188
-AAPL,EV-to-Free-Cash-Flow,,0.014,-0.3993,
+AAPL,Net Current Asset Value,,-0.333,-0.0889,0.1188
+AAPL,EV-to-Free-Cash-Flow,,0.0275,-0.4005,
 AAPL,Buyback Yield,,-0.0782,0.4876,
 AAPL,Shareholder Yield,,-0.3413,0.4789,
 AAPL,SBC-Adjusted Free Cash Flow,,0.2782,0.2041,-0.1333
@@ -33,7 +33,7 @@ MSFT,Price-to-Earnings-Growth,,,0.1951,
 MSFT,Book Value per Share,,0.212,0.1835,0.2495
 MSFT,Price-to-Book,,0.2476,-0.3975,
 MSFT,Interest Debt per Share,,-0.0377,-0.0887,-0.0132
-MSFT,CAPEX per Share,,0.3487,0.1687,0.1874
+MSFT,CAPEX per Share,,-0.3487,-0.1687,-0.1874
 MSFT,Earnings Yield,,-0.0772,0.682,
 MSFT,Dividend Payout Ratio,,-0.2112,-0.0753,0.0975
 MSFT,Dividend Yield,,-0.2766,0.5588,
@@ -42,14 +42,14 @@ MSFT,Price-to-Cash-Flow,,0.1839,-0.3909,
 MSFT,Price-to-Free-Cash-Flow,,0.2069,-0.3913,
 MSFT,Price-to-Sales,,0.274,-0.4009,
 MSFT,Market Cap,,0.4973,-0.2933,
-MSFT,Enterprise Value,,0.479,-0.2897,
-MSFT,EV-to-Sales,,0.2584,-0.3978,
-MSFT,EV-to-EBIT,,0.1201,-0.3918,
-MSFT,EV-to-EBITDA,,0.1918,-0.4076,
-MSFT,EV-to-Operating-Cash-Flow,,0.1694,-0.3878,
-MSFT,Tangible Asset Value,,0.2311,0.0731,0.3971
-MSFT,Net Current Asset Value,,5.7628,2.8746,-0.2488
-MSFT,EV-to-Free-Cash-Flow,,0.1921,-0.3881,
+MSFT,Enterprise Value,,0.519,-0.293,
+MSFT,EV-to-Sales,,0.2924,-0.4007,
+MSFT,EV-to-EBIT,,0.1506,-0.4072,
+MSFT,EV-to-EBITDA,,0.224,-0.4104,
+MSFT,EV-to-Operating-Cash-Flow,,0.201,-0.3907,
+MSFT,Tangible Asset Value,,0.2439,0.0384,0.4703
+MSFT,Net Current Asset Value,,-5.7628,-2.8746,0.2488
+MSFT,EV-to-Free-Cash-Flow,,0.2244,-0.391,
 MSFT,Buyback Yield,,-0.2126,0.71,
 MSFT,Shareholder Yield,,-0.2398,0.6488,
 MSFT,SBC-Adjusted Free Cash Flow,,0.2517,0.1529,-0.135

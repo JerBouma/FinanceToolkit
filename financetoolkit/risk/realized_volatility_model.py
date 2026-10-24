@@ -34,9 +34,11 @@ def _group_and_scale(
 ) -> pd.Series | pd.DataFrame:
     """
     Groups a daily estimator "term" (e.g. a squared log high/low ratio) by the given
-    period and scales the resulting (already period-average) variance to an annualized
-    Volatility figure, in the same way as `risk_model.get_volatility` scales the daily
-    Variance of close-to-close returns.
+    period and returns, per period, the daily Variance it implies: the mean of the
+    term, or the Variance of a daily return series. It does not scale anything; the
+    callers multiply the result by the number of trading days in the period (e.g.
+    252 / 52 for weekly) and take the square root, in the same way as
+    `risk_model.get_volatility` scales the daily Variance of close-to-close returns.
 
     Args:
         daily_term (pd.Series | pd.DataFrame): The daily estimator term to group.
@@ -54,7 +56,8 @@ def _group_and_scale(
         DatetimeIndex/PeriodIndex on `daily_term`.
 
     Returns:
-        pd.Series | pd.DataFrame: The period Variance (not yet annualized).
+        pd.Series | pd.DataFrame: The daily Variance per period, not yet scaled to the
+        period.
     """
     dates = (
         groups
@@ -365,7 +368,9 @@ def get_yang_zhang_volatility(
     dates = (
         groups
         if groups is not None
-        else open_to_close_returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(open_to_close_returns.index).asfreq(
+            PERIOD_TRANSLATION[period]
+        )
     )
     number_of_days = open_to_close_returns.groupby(dates).count()
 

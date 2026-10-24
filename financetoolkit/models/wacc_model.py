@@ -121,8 +121,12 @@ def get_weighted_average_cost_of_capital(
     - The market value of debt is calculated as the total debt. This is a simplification, as the market value of debt
     should be calculated as the present value of all future cash flows of the debt.
     - The cost of equity is calculated using the Capital Asset Pricing Model (CAPM).
-    - The cost of debt is calculated as the interest expense divided by the total debt.
-    - The corporate tax rate is calculated as the income tax expense divided by the income before taxes.
+    - The cost of debt is calculated as the interest expense divided by the total debt at the end of
+    the period. Debt that is raised or repaid during the period makes this differ from the rate on the
+    average debt outstanding.
+    - The corporate tax rate is calculated as the income tax expense divided by the income before taxes,
+    kept within 0 and 1, and 0 when there is no pre-tax profit (no taxable income for the interest to
+    shield).
     """
     # Calculate the Market Value of Equity
     market_value_equity = valuation_model.get_market_cap(
@@ -153,10 +157,16 @@ def get_weighted_average_cost_of_capital(
         )
         cost_of_debt = cost_of_debt.replace([np.inf, -np.inf], 0)
 
-    # Calculate the Corporate Tax Rate
-    corporate_tax_rate = profitability_model.get_effective_tax_rate(
-        income_tax_expense, income_before_tax
+    # Calculate the Corporate Tax Rate. A tax benefit on a profit gives an effective rate below 0, which would turn the tax shield on debt into a tax penalty, and a rate above 1 would shield more than the interest itself; the rate is therefore kept within 0 and 1. Without a pre-tax profit there is no taxable income for the interest to shield (Damodaran), so the rate is 0 rather than undefined.  # noqa: E501
+    corporate_tax_rate = np.clip(
+        profitability_model.get_effective_tax_rate(
+            income_tax_expense, income_before_tax
+        ),
+        0,
+        1,
     )
+    if isinstance(corporate_tax_rate, pd.Series | pd.DataFrame):
+        corporate_tax_rate = corporate_tax_rate.mask(income_before_tax <= 0, 0)
 
     # Without debt there is no cost of debt (0 / 0 interest over debt) and the debt
     # carries no weight, so the WACC is the cost of equity rather than missing.

@@ -228,6 +228,11 @@ def get_supervisory_scenario(scenario: str, year: int | None = None) -> pd.DataF
     euro area, developing Asia, Japan and the United Kingdom (GDP, inflation and exchange
     rates).
 
+    As the Federal Reserve publishes them, the growth and inflation variables (GDP,
+    disposable income, CPI and the international GDP growth and inflation) are
+    annualized quarter-on-quarter rates, not the change on the same quarter a year
+    earlier.
+
     Args:
         scenario (str): "baseline", "adverse" (severely adverse) or "historic".
         year (int | None): The year of the stress test. Defaults to None, which takes the

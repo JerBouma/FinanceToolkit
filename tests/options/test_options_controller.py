@@ -476,7 +476,7 @@ def test_get_barrier_option(recorder, options_module):
     recorder.capture(options_module.get_barrier_option(put_option=True))
     recorder.capture(
         options_module.get_barrier_option(
-            barrier_percentage=0.8,
+            barrier_percentage=1.2,
             barrier_direction="up",
             knock_type="in",
             strike_price_range=0.10,
@@ -619,3 +619,59 @@ def test_trailing_dividend_yield_is_the_dividends_of_the_year_over_the_close():
         dividend_yield.loc[pd.Timestamp(last).to_period("D"), "ABC"]
         > without.loc[pd.Timestamp(last).to_period("D"), "ABC"] + 0.004
     )
+
+
+def test_get_barrier_option_refuses_a_breached_barrier(options_module):
+    # An up barrier at or below the spot and a down barrier at or above it are breached
+    # before the option starts.
+    with pytest.raises(ValueError, match="above the current stock price"):
+        options_module.get_barrier_option(
+            barrier_direction="up", barrier_percentage=0.9
+        )
+    with pytest.raises(ValueError, match="above the current stock price"):
+        options_module.get_barrier_option(barrier_direction="up", barrier_percentage=1)
+    with pytest.raises(ValueError, match="below the current stock price"):
+        options_module.get_barrier_option(
+            barrier_direction="down", barrier_percentage=1.1
+        )
+
+
+def test_the_treasury_yield_is_converted_to_continuous_compounding(
+    options_module, test_toolkit
+):
+    import numpy as np
+
+    from financetoolkit.options import options_model
+
+    # 4% compounded twice a year grows to the same amount as 3.9605% compounded continuously.
+    assert options_model.get_continuously_compounded_rate(0.04) == pytest.approx(
+        2 * np.log(1.02)
+    )
+    assert np.exp(
+        options_model.get_continuously_compounded_rate(0.05)
+    ) == pytest.approx(1.025**2)
+
+    # The option formulas receive the continuously compounded equivalent of the Toolkit's yield.
+    quoted = test_toolkit._daily_risk_free_rate["Adj Close"].dropna()
+    used = options_module._risk_free_rate.loc[quoted.index]
+    pd.testing.assert_series_equal(used, 2 * np.log1p(quoted / 2), check_names=False)
+    assert (used[quoted > 0] < quoted[quoted > 0]).all()
+
+
+def test_a_stale_spot_next_to_live_chains_is_reported(options_module, monkeypatch):
+    from financetoolkit.options import options_controller
+
+    warnings = []
+    monkeypatch.setattr(
+        options_controller.logger, "warning", lambda *args: warnings.append(args)
+    )
+    monkeypatch.setattr(
+        options_module, "_stale_spot_warning_shown", False, raising=False
+    )
+
+    # The recorded price history ends years before today.
+    options_module._warn_if_spot_is_stale()
+    options_module._warn_if_spot_is_stale()
+
+    assert len(warnings) == 1
+    assert "option chains" in warnings[0][0]

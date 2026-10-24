@@ -177,6 +177,98 @@ class Ratios:
         self._valuation_ratios: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios_growth: pd.DataFrame = pd.DataFrame()
 
+    def _get_days(self, days: int | float | None, trailing: int | None) -> float:
+        """
+        Returns the number of days the flow figures of a ratio cover.
+
+        Without trailing, a flow (revenue, cost of goods sold, expenses) covers one period: 365
+        days for annual data and 365 / 4 for quarterly data. With trailing, the flows are summed
+        over `trailing` periods, so the window is `trailing` times as long. An explicit `days`
+        is taken as the length of that whole window and returned unchanged.
+
+        Args:
+            days (int | float | None): The number of days given by the caller, or None.
+            trailing (int | None): The number of periods the flows are summed over, or None.
+
+        Returns:
+            float: The number of days of the window the flows cover.
+        """
+        if days:
+            return days
+
+        return (365 / 4 if self._quarterly else 365) * (trailing or 1)
+
+    def _get_valuation_trailing(self, trailing: int | None) -> int | None:
+        """
+        Returns the trailing window of the price-based valuation ratios.
+
+        Prices are compared with a year of earnings, sales or cash flows, so on quarterly data
+        the flows default to the trailing twelve months (4 quarters), as for the
+        price-to-earnings ratio. An explicit `trailing` is returned unchanged.
+
+        Args:
+            trailing (int | None): The trailing window given by the caller, or None.
+
+        Returns:
+            int | None: The trailing window to use, None for annual data without trailing.
+        """
+        if trailing is not None:
+            return trailing
+
+        return 4 if self._quarterly else None
+
+    def _get_share_prices(
+        self, begin: str, end: str, show_daily: bool = False
+    ) -> pd.DataFrame:
+        """
+        Returns the traded close of the tickers, as used by every price-based ratio.
+
+        Args:
+            begin (str): The first period (or date) to return.
+            end (str): The last period to return; daily prices run up to the latest date.
+            show_daily (bool, optional): Whether to return daily prices (dates as index) instead
+                of period-end prices (tickers as index, periods as columns). Defaults to False.
+
+        Returns:
+            pd.DataFrame: The daily or period-end closing prices.
+        """
+        if show_daily:
+            return self._daily_historical_data.loc[begin:, "Close"][
+                self._tickers_without_portfolio
+            ]
+
+        return self._historical_data.loc[begin:end, "Close"][
+            self._tickers_without_portfolio
+        ].T
+
+    @staticmethod
+    def _sum_trailing(data: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
+        """
+        Sums a flow (income or cash flow statement item) over the trailing periods.
+
+        Args:
+            data (pd.DataFrame): The period data, with the periods as columns.
+            trailing (int | None): The number of periods to sum over, or None for no sum.
+
+        Returns:
+            pd.DataFrame: The trailing sums, or the data itself without trailing.
+        """
+        return data.T.rolling(trailing).sum().T if trailing else data
+
+    @staticmethod
+    def _mean_trailing(data: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
+        """
+        Averages a balance sheet item over the trailing period ends.
+
+        Args:
+            data (pd.DataFrame): The period data, with the periods as columns.
+            trailing (int | None): The number of period ends to average, or None for none.
+
+        Returns:
+            pd.DataFrame: The trailing averages, or the data itself without trailing.
+        """
+        return data.T.rolling(trailing).mean().T if trailing else data
+
     @handle_errors
     def collect_all_ratios(
         self,
@@ -197,15 +289,20 @@ class Ratios:
                 earnings-based ratios. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for the calculation.
                 Defaults to True.
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the flows cover. Defaults to
+                None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
+                `trailing` when set (e.g. 365 for quarterly data with trailing=4).
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.Series or pd.DataFrame: Ratios calculated based on the specified parameters.
@@ -234,19 +331,17 @@ class Ratios:
 
         |                             |         2021 |         2022 |         2023 |         2024 |         2025 |
         |:----------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | EV-to-Sales                 |  8.2741      |  5.5609      |  8.0923      | 10.0244      |  9.9589      |
-        | EV-to-EBIT                  | 27.0608      | 17.969       | 26.3593      | 31.7437      | 31.2254      |
-        | EV-to-EBITDA                | 25.1745      | 16.798       | 24.6516      | 29.1092      | 28.6326      |
-        | EV-to-Operating-Cash-Flow   | 29.0932      | 17.9518      | 28.0585      | 33.1479      | 37.1766      |
+        | EV-to-Sales                 |  8.3883      |  5.5928      |  8.1056      | 10.0052      |  9.9405      |
+        | EV-to-EBIT                  | 28.1653      | 18.4649      | 27.1806      | 31.7522      | 31.0925      |
+        | EV-to-EBITDA                | 25.522       | 16.8942      | 24.6921      | 29.0536      | 28.5797      |
+        | EV-to-Operating-Cash-Flow   | 29.4949      | 18.0546      | 28.1046      | 33.0846      | 37.1078      |
         | Tangible Asset Value        |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
         | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
-        | EV-to-Free-Cash-Flow        | 32.5627      | 19.6766      | 31.1463      | 36.026       | 41.9626      |
-        | Buyback Yield               |  0.029       |  0.0429      |  0.0258      |  0.0248      |  0.0223      |
-        | Shareholder Yield           |  0.034       |  0.05        |  0.0308      |  0.0288      |  0.0261      |
+        | EV-to-Free-Cash-Flow        | 33.0122      | 19.7894      | 31.1974      | 35.9571      | 41.885       |
+        | Buyback Yield               |  0.0283      |  0.0421      |  0.0255      |  0.0246      |  0.0222      |
+        | Shareholder Yield           |  0.0332      |  0.0491      |  0.0304      |  0.0286      |  0.026       |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
 
         if self._efficiency_ratios.empty:
             self.collect_efficiency_ratios(days=days, trailing=trailing)
@@ -386,14 +481,14 @@ class Ratios:
 
         Which returns:
 
-        |                        |          2022Q4 |         2023Q1 |         2023Q2 |        2023Q3 |
-        |:-----------------------|----------------:|---------------:|---------------:|--------------:|
-        | WC / Net Income as %   | -3094.24        | -357.787       | -114.904       | -22.4618      |
-        | Large Revenues         |     1           |    1           |    1           |   1           |
-        | Quick Assets           |     1.12386e+11 |    1.02051e+11 |    1.03895e+11 |   1.07589e+11 |
-        | Cash Op Expenses       |     8.8646e+10  |    6.9883e+10  |    7.1731e+10  |   7.6003e+10  |
-        | Daily Cash Op Expenses |     2.42866e+08 |    1.9146e+08  |    1.96523e+08 |   2.08227e+08 |
-        | Defensive Interval     |   462.75        |  533.014       |  528.665       | 516.69        |
+        |                        |          2022Q4 |         2023Q1 |         2023Q2 |        2023Q3 |        2023Q4 |        2024Q1 |        2024Q2 |        2024Q3 |        2024Q4 |        2025Q1 |        2025Q2 |        2025Q3 |        2025Q4 |
+        |:-----------------------|----------------:|---------------:|---------------:|--------------:|--------------:|--------------:|--------------:|--------------:|--------------:|--------------:|--------------:|--------------:|--------------:|
+        | WC / Net Income as %   | -3094.24        | -357.787       | -114.904       | -22.4618      |  69.9736      | 105.685       | 112.236       |  93.3912      |  57.1686      |  49.4774      |  24.7688      |   7.8822      |  52.2744      |
+        | Large Revenues         |     1           |    1           |    1           |   1           |   1           |   1           |   1           |   1           |   1           |   1           |   1           |   1           |   1           |
+        | Quick Assets           |     1.12386e+11 |    1.02051e+11 |    1.03895e+11 |   1.07589e+11 |   1.39033e+11 |   1.32842e+11 |   1.39198e+11 |   1.39689e+11 |   1.56653e+11 |   1.48781e+11 |   1.50595e+11 |   1.55372e+11 |   1.90758e+11 |
+        | Cash Op Expenses       |     8.8646e+10  |    6.9883e+10  |    7.1731e+10  |   7.6003e+10  |   9.4645e+10  |   7.3353e+10  |   7.53e+10    |   8.0857e+10  |   9.9249e+10  |   7.5105e+10  |   7.9963e+10  |   8.6435e+10  |   1.07456e+11 |
+        | Daily Cash Op Expenses |     2.42866e+08 |    1.9146e+08  |    1.96523e+08 |   2.08227e+08 |   2.59301e+08 |   2.00967e+08 |   2.06301e+08 |   2.21526e+08 |   2.71915e+08 |   2.05767e+08 |   2.19077e+08 |   2.36808e+08 |   2.944e+08   |
+        | Defensive Interval     |   462.75        |  533.014       |  528.665       | 516.69        | 536.183       | 661.014       | 674.731       | 630.576       | 576.11        | 723.055       | 687.408       | 656.109       | 647.955       |
         """
         if self._all_ratios.empty:
             self.collect_all_ratios()
@@ -582,15 +677,20 @@ class Ratios:
         Calculates and collects all Efficiency Ratios based on the provided data.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the flows cover. Defaults to
+                None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
+                `trailing` when set (e.g. 365 for quarterly data with trailing=4).
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.Series or pd.DataFrame: Efficiency ratios calculated based on the specified parameters.
@@ -629,7 +729,7 @@ class Ratios:
         | Inventory Turnover Ratio             |  40.0303 |  38.7899 |  37.9777 |  30.8955 |  33.9834 |
         | Accounts Payable Turnover Ratio      |   4.3887 |   3.7609 |   3.3795 |   3.1975 |   3.1834 |
         | SGA-to-Revenue Ratio                 |   0.0601 |   0.0636 |   0.065  |   0.0667 |   0.0663 |
-        | Fixed Asset Turnover                 |   1.846  |   1.8192 |   1.7979 |   1.8576 |   1.9664 |
+        | Fixed Asset Turnover                 |   7.7125 |   7.7273 |   7.1702 |   7.8163 |   8.7141 |
         | Asset Turnover Ratio                 |   1.0841 |   1.1206 |   1.0868 |   1.0899 |   1.1493 |
         | Operating Ratio                      |   0.7022 |   0.6971 |   0.7018 |   0.6849 |   0.6803 |
         | R&D Intensity Ratio                  |   0.0599 |   0.0666 |   0.078  |   0.0802 |   0.083  |
@@ -639,8 +739,6 @@ class Ratios:
         | Deferred Revenue Ratio               |   0.0208 |   0.0201 |   0.021  |   0.0211 |   0.0218 |
         | Working Capital Turnover Ratio       |  15.346  | -85.519  | -37.7268 | -31.0999 | -20.2615 |
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
 
         efficiency_ratios_dict: dict = {}
 
@@ -796,8 +894,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.Series: Asset turnover ratio values.
@@ -899,8 +1000,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.Series: Inventory turnover ratio values.
@@ -992,15 +1096,20 @@ class Ratios:
         Also known as: DIO, days inventory outstanding.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the flows cover. Defaults to
+                None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
+                `trailing` when set (e.g. 365 for quarterly data with trailing=4).
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Days sales in inventory ratio values.
@@ -1033,8 +1142,7 @@ class Ratios:
         | AAPL |  9.1181 |  9.4097 |  9.6109 | 11.814  | 10.7405 |
         | TSLA | 44.7344 | 55.9945 | 61.0502 | 58.3231 | 57.307  |
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
+        days = self._get_days(days, trailing)
 
         if trailing:
             days_of_inventory_outstanding = (
@@ -1110,15 +1218,20 @@ class Ratios:
         Also known as: DSO, days sales outstanding, receivable days.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the flows cover. Defaults to
+                None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
+                `trailing` when set (e.g. 365 for quarterly data with trailing=4).
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Days of sales outstanding ratio values.
@@ -1151,8 +1264,7 @@ class Ratios:
         | AAPL | 21.1517 | 25.2057 | 27.4699 | 29.3645 | 32.0949 |
         | TSLA | 12.8814 | 10.8991 | 12.1826 | 14.807  | 17.3095 |
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
+        days = self._get_days(days, trailing)
 
         if trailing:
             days_of_sales_outstanding = efficiency_model.get_days_of_sales_outstanding(
@@ -1211,15 +1323,20 @@ class Ratios:
         Also known as: inventory-to-cash cycle.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the flows cover. Defaults to
+                None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
+                `trailing` when set (e.g. 365 for quarterly data with trailing=4).
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Operating cycle ratio values.
@@ -1252,8 +1369,7 @@ class Ratios:
         | AAPL | 30.2698 | 34.6154 | 37.0808 | 41.1785 | 42.8354 |
         | TSLA | 57.6159 | 66.8936 | 73.2328 | 73.1301 | 74.6164 |
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
+        days = self._get_days(days, trailing)
 
         if trailing:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
@@ -1343,8 +1459,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Accounts payable turnover ratio values.
@@ -1440,15 +1559,20 @@ class Ratios:
         Also known as: DPO, days payable outstanding.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the flows cover. Defaults to
+                None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
+                `trailing` when set (e.g. 365 for quarterly data with trailing=4).
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Days payables outstanding (DPO) ratio values.
@@ -1481,8 +1605,7 @@ class Ratios:
         | AAPL | 83.1683 | 97.0504 | 108.003  | 114.15   | 114.657  |
         | TSLA | 72.951  | 76.1207 |  68.4805 |  61.1935 |  60.6784 |
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
+        days = self._get_days(days, trailing)
 
         if trailing:
             days_of_accounts_payable_outstanding = (
@@ -1556,15 +1679,20 @@ class Ratios:
         Also known as: CCC.
 
         Args:
-            days (int, optional): The number of days to use for the calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the flows cover. Defaults to
+                None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
+                `trailing` when set (e.g. 365 for quarterly data with trailing=4).
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Cash Conversion Cycle (CCC) values.
@@ -1595,8 +1723,7 @@ class Ratios:
         | AAPL | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
         | TSLA | -15.3351 |  -9.2271 |   4.7523 |  11.9367 |  13.9381 |
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
+        days = self._get_days(days, trailing)
 
         if trailing:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
@@ -1710,8 +1837,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Cash conversion efficiency ratio values.
@@ -1811,8 +1941,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
         Returns:
             pd.DataFrame: Receivables turnover ratio values.
 
@@ -1903,8 +2036,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: SG&A to revenue ratio values.
@@ -1981,18 +2117,19 @@ class Ratios:
         measures how efficiently a company uses its fixed assets to generate sales.
 
         The Fixed Asset Turnover ratio is calculated by dividing the company's revenue by
-        its average non-current assets: property, plant and equipment, but also goodwill,
-        intangible assets and long-term investments. It indicates how well a company is
-        utilizing its long-term assets to generate revenue. A higher ratio suggests more
-        efficient utilization of these assets. Because goodwill and intangible assets are
-        included, the ratio is far lower than a turnover of property, plant and equipment
-        alone for a company that has made large acquisitions.
+        its average net property, plant and equipment (PP&E after accumulated depreciation),
+        as defined by the CFA Institute. It indicates how well a company is utilizing its
+        physical capital to generate revenue. A higher ratio suggests more efficient
+        utilization of these assets. Goodwill, intangible assets and long-term investments
+        are left out, so acquisitions do not dilute the ratio. Because net PP&E shrinks as
+        assets depreciate, a company with an old asset base shows a higher ratio than one
+        that has just invested, and leased assets only count when they are capitalised.
 
         The formula is as follows:
 
-        - Fixed Asset Turnover Ratio = Revenue / Average Non-Current Assets
+        - Fixed Asset Turnover Ratio = Revenue / Average Net Property, Plant and Equipment
 
-        Also known as: non-current asset turnover.
+        Also known as: PP&E turnover, fixed asset utilization.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -2001,8 +2138,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Fixed Asset Turnover ratio values.
@@ -2032,13 +2172,13 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 1.846  | 1.8192 | 1.7979 | 1.8576 | 1.9664 |
-        | TSLA | 1.7804 | 2.1312 | 1.9665 | 1.6185 | 1.4273 |
+        | AAPL | 7.7125 | 7.7273 | 7.1702 | 7.8163 | 8.7141 |
+        | TSLA | 1.9732 | 2.4026 | 2.3673 | 2.0219 | 2.0581 |
         """
         if trailing:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
                 self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
-                self._balance_sheet_statement.loc[:, "Fixed Assets", :]
+                self._balance_sheet_statement.loc[:, "Property, Plant and Equipment", :]
                 .T.rolling(trailing)
                 .mean()
                 .T,
@@ -2046,7 +2186,7 @@ class Ratios:
         else:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
                 self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Fixed Assets", :]
+                self._balance_sheet_statement.loc[:, "Property, Plant and Equipment", :]
                 .T.rolling(2)
                 .mean()
                 .T,
@@ -2103,8 +2243,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Working capital turnover ratio values.
@@ -2199,8 +2342,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Operating ratio values.
@@ -2302,8 +2448,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: R&D intensity ratio values.
@@ -2393,8 +2542,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: S&M to revenue ratio values.
@@ -2488,8 +2640,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: G&A to revenue ratio values.
@@ -2584,8 +2739,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: SBC to revenue ratio values.
@@ -2666,6 +2824,10 @@ class Ratios:
 
         - Deferred Revenue Ratio = Deferred Revenue / Revenue
 
+        Without trailing, the deferred revenue balance at the end of the period is used, so
+        the ratio shows the backlog of prepaid revenue at that date. With trailing, the
+        balance is averaged over the `trailing` period ends to match the summed revenue.
+
         Also known as: deferred revenue intensity, unearned revenue ratio.
 
         Args:
@@ -2675,8 +2837,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Deferred revenue ratio values.
@@ -2755,8 +2920,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Liquidity ratios calculated based on the specified parameters.
@@ -2794,7 +2962,7 @@ class Ratios:
         | Operating Cash Flow Ratio          |   0.8291    |   0.7933     |   0.7607    |   0.6704     |   0.6731     |
         | Operating Cash Flow to Sales Ratio |   0.2844    |   0.3098     |   0.2884    |   0.3024     |   0.2679     |
         | Short Term Coverage Ratio          |   6.6635    |   5.7864     |   6.9933    |   5.6638     |   5.4839     |
-        | Defensive Interval Ratio           | 995.452     | 693.773      | 767.125     | 781.845      | 683.468      |
+        | Defensive Interval Ratio           | 132.153     | 105.836      | 129.097     | 140.35       | 127.05       |
         """
         liquidity_ratios_dict: dict = {}
 
@@ -2918,8 +3086,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Current ratio values.
@@ -3016,8 +3187,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Quick ratio values.
@@ -3119,8 +3293,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Cash ratio values.
@@ -3217,8 +3394,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Working capital values.
@@ -3310,8 +3490,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Operating cash flow ratio values.
@@ -3403,8 +3586,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Operating cash flow to sales ratio values.
@@ -3499,8 +3685,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         As an example:
 
@@ -3580,27 +3769,32 @@ class Ratios:
         - Defensive Interval Ratio = (Cash and Cash Equivalents + Short Term Investments +
           Accounts Receivable) / Daily Operating Expenses
 
-        Where Daily Operating Expenses = (Operating Expenses - Depreciation and
-        Amortization) / Days. Operating Expenses here excludes the cost of goods sold,
-        while the depreciation and amortization from the cash flow statement also
-        includes the part charged to the cost of goods sold. The ratio therefore counts
-        the days that liquid assets would cover selling, general, administrative and
-        research costs, not all cash costs, and for a capital-intensive company with
-        small overheads the denominator can approach zero or turn negative.
+        Where Daily Operating Expenses = (Cost of Goods Sold + Operating Expenses -
+        Depreciation and Amortization) / Days, the daily cash expenditures (AccountingTools,
+        Wall Street Prep). The cost of goods sold is included because the depreciation and
+        amortization from the cash flow statement also covers the part charged to it, and
+        because paying suppliers and production staff is the largest cash cost for most
+        companies. Days is the length of the window the expenses cover: 365 for annual
+        data, 365 / 4 for quarterly data, times `trailing` when the expenses are summed
+        over several periods, so the ratio is in calendar days for any frequency.
 
         Also known as: defensive interval period, basic defense interval.
 
         Args:
-            days (int, optional): The number of days to use for the daily operating
-                expenses calculation. Defaults to 365.
+            days (int | float, optional): The number of days in the window the expenses cover, used
+                to turn them into daily expenditures. Defaults to None, which uses 365 for annual data
+                and 365 / 4 for quarterly data, multiplied by `trailing` when set.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Defensive interval ratio values, expressed in days.
@@ -3621,12 +3815,19 @@ class Ratios:
         defensive_interval_ratios = toolkit.ratios.get_defensive_interval_ratio()
         ```
         """
-        if not days:
-            days = 365 / 4 if self._quarterly else 365
+        days = self._get_days(days, trailing)
 
+        # Daily expenditures count all cash costs: the cost of goods sold plus the operating
+        # expenses, minus the non-cash depreciation and amortization charged to either of them.
         if trailing:
             operating_expenses = (
                 self._income_statement.loc[:, "Operating Expenses", :]
+                .T.rolling(trailing)
+                .sum()
+                .T
+            )
+            cost_of_goods_sold = (
+                self._income_statement.loc[:, "Cost of Goods Sold", :]
                 .T.rolling(trailing)
                 .sum()
                 .T
@@ -3638,7 +3839,7 @@ class Ratios:
                 .T
             )
             daily_operating_expenses = (
-                operating_expenses - depreciation_and_amortization
+                cost_of_goods_sold + operating_expenses - depreciation_and_amortization
             ) / days
 
             defensive_interval_ratio = liquidity_model.get_defensive_interval_ratio(
@@ -3658,11 +3859,12 @@ class Ratios:
             )
         else:
             operating_expenses = self._income_statement.loc[:, "Operating Expenses", :]
+            cost_of_goods_sold = self._income_statement.loc[:, "Cost of Goods Sold", :]
             depreciation_and_amortization = self._cash_flow_statement.loc[
                 :, "Depreciation and Amortization", :
             ]
             daily_operating_expenses = (
-                operating_expenses - depreciation_and_amortization
+                cost_of_goods_sold + operating_expenses - depreciation_and_amortization
             ) / days
 
             defensive_interval_ratio = liquidity_model.get_defensive_interval_ratio(
@@ -3702,8 +3904,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Profitability ratios calculated based on the specified parameters.
@@ -3739,15 +3944,15 @@ class Ratios:
         | Net Profit Margin                           |  0.2588 |  0.2531 |  0.2531 |   0.2397 |   0.2692 |
         | EBITDA Margin                               |  0.3287 |  0.331  |  0.3283 |   0.3444 |   0.3478 |
         | Free Cash Flow Margin                       |  0.2541 |  0.2826 |  0.2598 |   0.2783 |   0.2373 |
-        | Interest Coverage Ratio                     | 45.4567 | 44.538  | 31.9908 | inf      | inf      |
+        | Interest Coverage Ratio                     | 41.1905 | 40.7496 | 29.062  | nan      | nan      |
         | Income Before Tax Profit Margin             |  0.2985 |  0.302  |  0.2967 |   0.3158 |   0.3189 |
         | Effective Tax Rate                          |  0.133  |  0.162  |  0.1472 |   0.2409 |   0.1561 |
         | Return on Assets                            |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Cash Return on Assets                       |  0.3083 |  0.3471 |  0.3134 |   0.3296 |   0.3079 |
         | Return on Equity                            |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
-        | Return on Invested Capital                  |  0.4143 |  0.4439 |  0.444  |   0.4336 |   0.5335 |
-        | Return on Capital Employed                  |  0.496  |  0.6139 |  0.5677 |   0.6548 |   0.6855 |
-        | Return on Tangible Assets                   |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
+        | Return on Invested Capital                  |  0.4879 |  0.5229 |  0.528  |   0.5166 |   0.6201 |
+        | Return on Capital Employed                  |  0.4831 |  0.6009 |  0.5514 |   0.6534 |   0.6872 |
+        | Return on Tangible Assets                   |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
         | Net Income per EBT                          |  0.867  |  0.838  |  0.8528 |   0.7591 |   0.8439 |
         | Free Cash Flow to Operating Cash Flow Ratio |  0.8935 |  0.9123 |  0.9009 |   0.9201 |   0.8859 |
@@ -3920,8 +4125,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Gross margin ratio values.
@@ -4030,8 +4238,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Operating margin ratio values.
@@ -4120,8 +4331,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Net profit margin ratio values.
@@ -4214,8 +4428,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: EBITDA margin values.
@@ -4290,10 +4507,10 @@ class Ratios:
         interest income) exceeds interest expense.
 
         Note that this is related to, but not the same as, the Interest Coverage Ratio
-        (`get_interest_coverage_ratio`), which divides EBITDA by interest expense and is
+        (`get_interest_coverage_ratio`), which divides EBIT by interest expense and is
         unbounded above. When income before tax is roughly operating income minus
-        interest expense, the interest burden is about 1 minus interest expense divided
-        by operating income.
+        interest expense, the interest burden is about 1 minus the reciprocal of the
+        interest coverage ratio.
 
         The formula is as follows:
 
@@ -4308,8 +4525,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Interest Burden Ratio values.
@@ -4399,8 +4619,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Pretax Profit Margin values.
@@ -4492,7 +4715,8 @@ class Ratios:
         benefits. Single years can be far from the trend because of settlements, law
         changes or the release of a valuation allowance (the negative rate for TSLA in
         2023 in the example below is such a case), so forecasts usually start from a
-        normalized rate. `get_cash_tax_rate` shows what was actually paid.
+        normalized rate. `get_cash_tax_rate` shows what was actually paid. A period
+        with zero or negative income before tax has no meaningful tax rate and is NaN.
 
         Also known as: ETR, actual tax rate.
 
@@ -4503,8 +4727,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Effective tax rate values.
@@ -4537,22 +4764,18 @@ class Ratios:
         | AAPL | 0.133  | 0.162  |  0.1472 | 0.2409 | 0.1561 |
         | TSLA | 0.1102 | 0.0825 | -0.5015 | 0.2043 | 0.2696 |
         """
-        if trailing:
-            effective_tax_rate = profitability_model.get_effective_tax_rate(
-                self._income_statement.loc[:, "Income Tax Expense", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._income_statement.loc[:, "Income Before Tax", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-            )
-        else:
-            effective_tax_rate = profitability_model.get_effective_tax_rate(
-                self._income_statement.loc[:, "Income Tax Expense", :],
-                self._income_statement.loc[:, "Income Before Tax", :],
-            )
+        # A tax rate is only meaningful on a pre-tax profit: with a loss the ratio flips sign, so
+        # periods with zero or negative income before tax are NaN.
+        income_before_tax = self._sum_trailing(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
+        )
+
+        effective_tax_rate = profitability_model.get_effective_tax_rate(
+            self._sum_trailing(
+                self._income_statement.loc[:, "Income Tax Expense", :], trailing
+            ),
+            income_before_tax.where(income_before_tax > 0),
+        )
 
         return finalize_dataset(
             dataset=effective_tax_rate,
@@ -4603,8 +4826,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Return on assets (ROA) values.
@@ -4703,8 +4929,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Cash return on assets (Cash ROA) values.
@@ -4800,8 +5029,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Return on equity (ROE) values.
@@ -4868,7 +5100,6 @@ class Ratios:
     @handle_errors
     def get_return_on_invested_capital(
         self,
-        dividend_adjusted: bool = True,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -4879,36 +5110,38 @@ class Ratios:
         Calculate the return on invested capital (ROIC), a financial ratio that measures
         the company's return on the capital invested in it, including both equity and debt.
 
-        The return on invested capital is calculated by dividing net income, less the dividends paid when
-        dividend_adjusted is True (the default), by the average invested capital: total equity plus total debt.
-        Invested capital includes both equity and debt, making this ratio a valuable measure of how efficiently a
-        company generates returns for all of its investors. Net income is used as a proxy for net operating profit
-        after taxes (NOPAT); it is after interest, so for companies with much debt it gives a lower return than a
-        NOPAT-based ROIC. Set dividend_adjusted=False for the more common definition without the dividend deduction.
+        The return on invested capital is calculated by dividing the net operating profit after taxes (NOPAT)
+        by the average invested capital: total equity plus total debt (Damodaran). NOPAT is operating income
+        (EBIT) taxed at the effective tax rate (Income Tax Expense / Income Before Tax, bounded to [0, 1]; set to
+        0 for a period with a pre-tax loss). Because EBIT is before interest, the return does not depend on how
+        the capital is financed, which makes the ratio a measure of how efficiently a company generates returns
+        for all of its investors. Cash is not deducted from the invested capital: for companies that hold large
+        cash balances, deducting it can shrink the base to near zero or below.
 
         The formula is as follows:
 
-        - Return on Invested Capital = (Net Income — Paid Dividends) / Average Invested Capital
+        - Return on Invested Capital = Operating Income x (1 — Effective Tax Rate) / (Average Total Equity +
+          Average Total Debt)
 
         ROIC is compared with the weighted average cost of capital
         (`Toolkit.models.get_weighted_average_cost_of_capital`): a company that earns more than its cost of capital
         creates value as it invests and grows, one that earns less destroys it. It is less distorted by buybacks and
-        leverage than ROE. With the default dividend adjustment a company with a high payout shows a much lower ROIC
-        than one that retains its earnings, so compare companies with the same setting.
+        leverage than ROE.
 
-        Also known as: ROIC.
+        Also known as: ROIC, return on capital (ROC).
 
         Args:
-            dividend_adjusted (bool, optional): Whether to deduct the dividends paid from net income.
-            Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Return on invested capital (ROIC) values.
@@ -4936,50 +5169,49 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.4143 | 0.4439 | 0.444  | 0.4336 | 0.5335 |
-        | TSLA | 0.1429 | 0.2733 | 0.2403 | 0.0889 | 0.0425 |
+        | AAPL | 0.4879 | 0.5229 | 0.528  | 0.5166 | 0.6201 |
+        | TSLA | 0.15   | 0.2721 | 0.1425 | 0.0702 | 0.0356 |
         """
         if trailing:
-            return_on_invested_capital = profitability_model.get_return_on_invested_capital(
-                self._income_statement.loc[:, "Net Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                (
-                    # Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
-                    self._cash_flow_statement.loc[:, "Dividends Paid", :]
+            return_on_invested_capital = (
+                profitability_model.get_return_on_invested_capital(
+                    self._income_statement.loc[:, "Operating Income", :]
                     .T.rolling(trailing)
                     .sum()
-                    .T.abs()
-                    if dividend_adjusted
-                    else 0
-                ),
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Debt", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
+                    .T,
+                    self._income_statement.loc[:, "Income Tax Expense", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._income_statement.loc[:, "Income Before Tax", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._balance_sheet_statement.loc[:, "Total Equity", :]
+                    .T.rolling(trailing)
+                    .mean()
+                    .T,
+                    self._balance_sheet_statement.loc[:, "Total Debt", :]
+                    .T.rolling(trailing)
+                    .mean()
+                    .T,
+                )
             )
         else:
-            return_on_invested_capital = profitability_model.get_return_on_invested_capital(
-                self._income_statement.loc[:, "Net Income", :],
-                (
-                    # Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
-                    self._cash_flow_statement.loc[:, "Dividends Paid", :].abs()
-                    if dividend_adjusted
-                    else 0
-                ),
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(2)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Debt", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+            return_on_invested_capital = (
+                profitability_model.get_return_on_invested_capital(
+                    self._income_statement.loc[:, "Operating Income", :],
+                    self._income_statement.loc[:, "Income Tax Expense", :],
+                    self._income_statement.loc[:, "Income Before Tax", :],
+                    self._balance_sheet_statement.loc[:, "Total Equity", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
+                    self._balance_sheet_statement.loc[:, "Total Debt", :]
+                    .T.rolling(2)
+                    .mean()
+                    .T,
+                )
             )
 
         return finalize_dataset(
@@ -5031,8 +5263,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Income quality ratio values.
@@ -5108,16 +5343,16 @@ class Ratios:
 
         The return on tangible assets (ROTA) provides insights into the efficiency with which a company
         utilizes its tangible assets to generate profits. It is calculated by dividing net income by the
-        average tangible book value: total assets minus intangible assets and total liabilities (goodwill
-        is not deducted). Because liabilities are deducted, the ratio behaves like a return on tangible
-        equity: for a company with few intangibles and much debt, such as Apple, the base is small and the
-        ratio well above 1, and it turns negative when liabilities and intangible assets exceed total
-        assets.
+        average tangible assets: total assets minus goodwill and other intangible assets. Liabilities are
+        not deducted, so the ratio is the return on the whole tangible asset base however it is financed,
+        like the return on assets but without the acquired goodwill and intangibles that inflate the asset
+        base of acquisitive companies. A ROTA well above the ROA therefore points to a large share of
+        goodwill and intangible assets on the balance sheet.
 
         The formula is as follows:
 
-        - Return on Tangible Assets = Net Income / (Average Total Assets — Average Intangible Assets —
-          Average Total Liabilities)
+        - Return on Tangible Assets = Net Income / (Average Total Assets — Average Goodwill and
+          Intangible Assets)
 
         Also known as: ROTA, tangible asset return.
 
@@ -5128,8 +5363,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Return on tangible assets (ROTA) values.
@@ -5157,8 +5395,8 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
-        | TSLA | 0.2071 | 0.3331 | 0.2759 | 0.1051 | 0.0489 |
+        | AAPL | 0.2806 | 0.2836 | 0.275  | 0.2613 | 0.3093 |
+        | TSLA | 0.0988 | 0.177  | 0.1598 | 0.0629 | 0.0294 |
         """
         if trailing:
             return_on_tangible_assets = (
@@ -5171,11 +5409,9 @@ class Ratios:
                     .T.rolling(trailing)
                     .mean()
                     .T,
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :]
-                    .T.rolling(trailing)
-                    .mean()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+                    self._balance_sheet_statement.loc[
+                        :, "Goodwill and Intangible Assets", :
+                    ]
                     .T.rolling(trailing)
                     .mean()
                     .T,
@@ -5189,11 +5425,9 @@ class Ratios:
                     .T.rolling(2)
                     .mean()
                     .T,
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+                    self._balance_sheet_statement.loc[
+                        :, "Goodwill and Intangible Assets", :
+                    ]
                     .T.rolling(2)
                     .mean()
                     .T,
@@ -5233,6 +5467,9 @@ class Ratios:
 
         - Return on Capital Employed = EBIT / (Total Assets — Current Liabilities)
 
+        EBIT is taken as operating income, so non-operating gains and losses such as interest
+        income or investment results do not enter the return.
+
         ROCE is widely used for capital-intensive industries such as oil and gas, mining, utilities and telecoms,
         because it measures the operating return on all long-term funding, equity and debt, regardless of the
         capital structure. It is compared with the cost of capital and with peers over a full cycle, since commodity
@@ -5249,8 +5486,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Return on capital employed (ROCE) values.
@@ -5278,21 +5518,13 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.496  | 0.6139 | 0.5677 | 0.6548 | 0.6855 |
-        | TSLA | 0.1556 | 0.25   | 0.1304 | 0.0999 | 0.0524 |
+        | AAPL | 0.4831 | 0.6009 | 0.5514 | 0.6534 | 0.6872 |
+        | TSLA | 0.1538 | 0.2455 | 0.1142 | 0.0759 | 0.041  |
         """
         if trailing:
             return_on_capital_employed = (
                 profitability_model.get_return_on_capital_employed(
-                    self._income_statement.loc[:, "Net Income", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._income_statement.loc[:, "Interest Expense", :]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    self._income_statement.loc[:, "Income Tax Expense", :]
+                    self._income_statement.loc[:, "Operating Income", :]
                     .T.rolling(trailing)
                     .sum()
                     .T,
@@ -5309,9 +5541,7 @@ class Ratios:
         else:
             return_on_capital_employed = (
                 profitability_model.get_return_on_capital_employed(
-                    self._income_statement.loc[:, "Net Income", :],
-                    self._income_statement.loc[:, "Interest Expense", :],
-                    self._income_statement.loc[:, "Income Tax Expense", :],
+                    self._income_statement.loc[:, "Operating Income", :],
                     self._balance_sheet_statement.loc[:, "Total Assets", :],
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
@@ -5366,8 +5596,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Net income per earnings before taxes (EBT) values.
@@ -5460,8 +5693,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Free cash flow to operating cash flow ratio values.
@@ -5556,8 +5792,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Free cash flow margin values.
@@ -5638,8 +5877,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Tax burden ratio values.
@@ -5731,8 +5973,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: EBT to EBIT ratio values.
@@ -5823,17 +6068,20 @@ class Ratios:
         and taxes on its earnings.
 
         The EBIT to Revenue ratio measures the company's ability to generate profit
-        from its core operations relative to its revenue. It provides insights into
-        the operational efficiency and profitability of the company, as it excludes
-        the impact of interest expenses and taxes on its earnings. A higher ratio
-        indicates that a larger portion of the company's revenue is converted into
-        operating profit.
+        before financing costs and taxes relative to its revenue. EBIT is rebuilt from
+        the bottom of the income statement (net income plus income tax expense plus
+        interest expense), the same EBIT as in `get_EBT_to_EBIT`. It therefore includes
+        non-operating income and expenses such as interest income, investment gains
+        and other income, which is why it differs from the operating margin
+        (`get_operating_margin`), which divides the reported operating income by
+        revenue. A higher ratio indicates that a larger portion of the company's
+        revenue is converted into profit before interest and taxes.
 
         The formula is as follows:
 
-        - EBIT to Revenue = EBIT / Revenue
+        - EBIT to Revenue = (Net Income + Income Tax Expense + Interest Expense) / Revenue
 
-        Also known as: EBIT margin, operating income to revenue.
+        Also known as: EBIT margin.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -5842,8 +6090,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: EBIT to Revenue ratio values.
@@ -5934,7 +6185,8 @@ class Ratios:
         with the effective tax rate to see whether reported earnings rely on taxes
         that are deferred rather than saved. When the data has no income taxes paid
         for a year, the rate shows as 0 (TSLA in 2025 in the example below), which
-        should be read as missing, not as a company that paid no tax.
+        should be read as missing, not as a company that paid no tax. A period with
+        zero or negative income before tax has no meaningful tax rate and is NaN.
 
         Also known as: cash effective tax rate.
 
@@ -5945,8 +6197,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Cash tax rate values.
@@ -5979,22 +6234,18 @@ class Ratios:
         | AAPL | 0.2324 | 0.1643 | 0.1642 | 0.2114 | 0.3267 |
         | TSLA | 0.0884 | 0.0877 | 0.1122 | 0.1481 | 0      |
         """
-        if trailing:
-            cash_tax_rate = profitability_model.get_cash_tax_rate(
-                self._cash_flow_statement.loc[:, "Income Taxes Paid", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._income_statement.loc[:, "Income Before Tax", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-            )
-        else:
-            cash_tax_rate = profitability_model.get_cash_tax_rate(
-                self._cash_flow_statement.loc[:, "Income Taxes Paid", :],
-                self._income_statement.loc[:, "Income Before Tax", :],
-            )
+        # A tax rate is only meaningful on a pre-tax profit: with a loss the ratio flips sign, so
+        # periods with zero or negative income before tax are NaN.
+        income_before_tax = self._sum_trailing(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
+        )
+
+        cash_tax_rate = profitability_model.get_cash_tax_rate(
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Income Taxes Paid", :], trailing
+            ),
+            income_before_tax.where(income_before_tax > 0),
+        )
 
         return finalize_dataset(
             dataset=cash_tax_rate,
@@ -6035,8 +6286,8 @@ class Ratios:
         year without reported income taxes paid shows a divergence equal to minus the
         effective tax rate (TSLA in 2025 in the example below: -0.2696 against an
         effective rate of 0.2696), so check `get_cash_tax_rate` for zeros before
-        reading a large negative value as aggressive tax deferral. The measure is also
-        unstable when income before tax is small or negative.
+        reading a large negative value as aggressive tax deferral. The measure is
+        unstable when income before tax is small and NaN when it is zero or negative.
 
         Also known as: cash-accrual tax gap.
 
@@ -6047,8 +6298,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Tax rate divergence values.
@@ -6118,8 +6372,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Solvency ratios calculated based on the specified parameters.
@@ -6153,16 +6410,16 @@ class Ratios:
         | Debt-to-Assets Ratio              |   0.3889 |   0.3756 |   0.3515 |   0.3262 |   0.3128 |
         | Asset Coverage Ratio              |   1.7663 |   1.6597 |   1.8001 |   1.7594 |   1.9038 |
         | Debt-to-Equity Ratio              |   2.1639 |   2.6145 |   1.9942 |   2.0906 |   1.5241 |
-        | Debt Service Coverage Ratio       |   0.8683 |   0.7757 |   0.7866 |   0.6985 |   0.8033 |
+        | Debt Service Coverage Ratio       |   6.5852 |   5.4299 |   6.3739 |   6.4496 |   7.1203 |
         | Equity Multiplier                 |   5.255  |   6.1862 |   6.252  |   6.0251 |   5.5418 |
-        | Free Cash Flow Yield              |   0.0318 |   0.0535 |   0.0331 |   0.0284 |   0.0243 |
+        | Free Cash Flow Yield              |   0.031  |   0.0525 |   0.0327 |   0.0282 |   0.0242 |
         | Net-Debt to EBITDA Ratio          |   0.8449 |   0.8337 |   0.7468 |   0.6618 |   0.5281 |
         | Gross Debt to EBITDA Ratio        |   1.1355 |   1.0149 |   0.985  |   0.8841 |   0.7764 |
         | Cash Flow Coverage Ratio          |   0.7621 |   0.922  |   0.892  |   0.9932 |   0.992  |
         | CAPEX Coverage Ratio              |   9.3855 |  11.4075 |  10.087  |  12.5176 |   8.7678 |
         | Dividend CAPEX Coverage Ratio     |   4.0716 |   4.781  |   4.2543 |   4.7913 |   3.9623 |
         | Debt-to-Capital Ratio             |   0.6839 |   0.7233 |   0.666  |   0.6764 |   0.6038 |
-        | Preferred Dividend Coverage Ratio | inf      | inf      | inf      | inf      | inf      |
+        | Preferred Dividend Coverage Ratio | nan      | nan      | nan      | nan      | nan      |
         | Interest Paid to Expense Ratio    |   1.0159 |   0.9775 |   0.9669 | nan      | nan      |
         """
         solvency_ratios_dict: dict = {}
@@ -6301,8 +6558,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Debt to assets ratio values.
@@ -6396,8 +6656,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Asset coverage ratio values.
@@ -6501,8 +6764,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Debt to equity ratio values.
@@ -6576,27 +6842,24 @@ class Ratios:
         ability to pay its interest expenses on outstanding debt.
 
         The interest coverage ratio evaluates a company's ability to meet its interest
-        obligations from its earnings before interest, taxes, depreciation and amortization
-        (EBITDA). A higher ratio indicates a company's stronger ability to cover its interest
-        payments using its earnings, implying lower financial risk. Conversely, a lower ratio
-        suggests a company may have difficulty meeting its interest obligations and could be
-        at higher risk of default.
+        obligations from its earnings before interest and taxes (EBIT), taken as operating
+        income, following the CFA Institute definition. A higher ratio indicates a company's
+        stronger ability to cover its interest payments using its earnings, implying lower
+        financial risk. Conversely, a lower ratio suggests a company may have difficulty
+        meeting its interest obligations and could be at higher risk of default.
 
         The formula is as follows:
 
-        - Interest Coverage Ratio = (Operating Income + Depreciation and Amortization) / Interest Expense
+        - Interest Coverage Ratio = EBIT / Interest Expense
 
         Lenders and rating agencies use interest coverage to judge how much room a company has
         before its earnings no longer cover its interest bill, and loan covenants often set a
-        minimum. EBITDA coverage is higher than EBIT coverage, and the gap is largest for
-        capital-intensive companies, where depreciation stands for real reinvestment. The ratio
-        shows as infinite when no interest expense is reported (AAPL in 2024 and 2025 in the
-        example below), which is often a gap in the reported data rather than an absence of
-        debt.
+        minimum. Some covenants use EBITDA instead of EBIT, which gives a higher ratio, most of
+        all for capital-intensive companies. The ratio is NaN when no interest expense is
+        reported (AAPL in 2024 and 2025 in the example below), which is often a gap in the
+        reported data rather than an absence of debt.
 
-        Also known as: EBITDA interest coverage. Note that times interest earned (TIE) uses
-        operating income without adding back depreciation and amortization, and is therefore
-        lower.
+        Also known as: times interest earned (TIE), EBIT interest coverage.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
@@ -6605,8 +6868,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Interest coverage ratio values.
@@ -6632,18 +6898,14 @@ class Ratios:
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |     2024 |    2025 |
-        |:-----|--------:|--------:|--------:|---------:|--------:|
-        | AAPL | 45.4567 | 44.538  | 31.9908 | inf      | inf     |
-        | TSLA | 25.4286 | 90.0471 | 86.9103 |  35.5543 |  31.074 |
+        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|--------:|--------:|---------:|---------:|
+        | AAPL | 41.1905 | 40.7496 | 29.062  | nan      | nan      |
+        | TSLA | 17.5822 | 71.4974 | 56.9936 |  20.2171 |  12.8846 |
         """
         if trailing:
             interest_coverage_ratio = solvency_model.get_interest_coverage_ratio(
                 self._income_statement.loc[:, "Operating Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :]
                 .T.rolling(trailing)
                 .sum()
                 .T,
@@ -6655,7 +6917,6 @@ class Ratios:
         else:
             interest_coverage_ratio = solvency_model.get_interest_coverage_ratio(
                 self._income_statement.loc[:, "Operating Income", :],
-                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 self._income_statement.loc[:, "Interest Expense", :],
             )
 
@@ -6709,8 +6970,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Equity multiplier values.
@@ -6787,20 +7051,24 @@ class Ratios:
     ):
         """
         Calculate the debt service coverage ratio, a solvency ratio that measures how well a
-        company's operating income covers what it owes within a year.
+        company's operating earnings cover its debt service: the interest of the period and the
+        principal due within a year.
 
-        The debt service coverage ratio, as calculated here, compares operating income with all
-        current liabilities, not only the debt due within a year, so it measures how well one
-        year of operating income covers everything the company owes within a year. Current
-        liabilities also include accounts payable, accrued expenses and deferred revenue, so a
-        company with little debt but large deferred revenue shows a low ratio, while a company
-        with heavy long-term debt but small payables can show a high one. A lower ratio
-        indicates higher financial risk and potential difficulties in meeting short-term
-        obligations.
+        The debt service coverage ratio compares EBITDA (operating income plus depreciation and
+        amortization) with the total debt service, the interest expense plus the short-term debt
+        on the balance sheet, which includes the current portion of long-term debt. A ratio
+        below 1 means the operating earnings do not cover the debt service, so the company
+        depends on refinancing or cash reserves; lenders often require 1.25 or more. A company
+        without short-term debt and interest has no debt service, which gives NaN.
 
         The formula is as follows:
 
-        - Debt Service Coverage Ratio = Operating Income / Total Current Liabilities
+        - Debt Service Coverage Ratio = (Operating Income + Depreciation and Amortization) /
+          (Interest Expense + Short Term Debt)
+
+        The short-term debt is the principal due over the next year, so with quarterly data the
+        ratio compares a quarter of earnings and interest with a year of principal; use
+        trailing=4 to compare a year of each.
 
         Also known as: DSCR, debt service ratio.
 
@@ -6811,8 +7079,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Debt service coverage ratio values.
@@ -6838,10 +7109,10 @@ class Ratios:
 
         Which returns:
 
-        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.8683 | 0.7757 | 0.7866 | 0.6985 | 0.8033 |
-        | TSLA | 0.331  | 0.5113 | 0.3093 | 0.2455 | 0.1373 |
+        |      |   2021 |    2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|--------:|-------:|-------:|-------:|
+        | AAPL | 6.5852 |  5.4299 | 6.3739 | 6.4496 | 7.1203 |
+        | TSLA | 6.4661 | 14.2494 | 6.3623 | 4.6209 | 5.3099 |
         """
         if trailing:
             debt_service_coverage_ratio = (
@@ -6850,7 +7121,15 @@ class Ratios:
                     .T.rolling(trailing)
                     .sum()
                     .T,
-                    self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+                    self._cash_flow_statement.loc[:, "Depreciation and Amortization", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._income_statement.loc[:, "Interest Expense", :]
+                    .T.rolling(trailing)
+                    .sum()
+                    .T,
+                    self._balance_sheet_statement.loc[:, "Short Term Debt", :]
                     .T.rolling(trailing)
                     .mean()
                     .T,
@@ -6860,9 +7139,11 @@ class Ratios:
             debt_service_coverage_ratio = (
                 solvency_model.get_debt_service_coverage_ratio(
                     self._income_statement.loc[:, "Operating Income", :],
-                    self._balance_sheet_statement.loc[
-                        :, "Total Current Liabilities", :
+                    self._cash_flow_statement.loc[
+                        :, "Depreciation and Amortization", :
                     ],
+                    self._income_statement.loc[:, "Interest Expense", :],
+                    self._balance_sheet_statement.loc[:, "Short Term Debt", :],
                 )
             )
 
@@ -6911,7 +7192,9 @@ class Ratios:
         Also known as: FCF yield.
 
         Args:
-            show_daily (bool, optional): Whether to use daily data for the calculation. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for market capitalization. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -6919,8 +7202,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Free cash flow yield ratio values.
@@ -6951,22 +7238,27 @@ class Ratios:
         | AAPL | 0.031  | 0.0525 | 0.0327 | 0.0282 | 0.0242 |
         | TSLA | 0.0029 | 0.0176 | 0.005  | 0.0025 | 0.0039 |
         """
+        # A yield compares the price with a year of free cash flow, so quarterly data defaults to
+        # the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
-        free_cash_flow = self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+        # The free cash flow is summed over the trailing periods before it is spread over the days.
+        free_cash_flow = self._sum_trailing(
+            self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
+        )
 
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Close"][
-                self._tickers_without_portfolio
-            ]
+        share_prices = self._get_share_prices(begin, end, show_daily)
 
+        if show_daily:
             average_shares = map_period_data_to_daily_data(
                 period_data=average_shares,
                 daily_dates=share_prices.index,
@@ -6978,36 +7270,13 @@ class Ratios:
                 daily_dates=share_prices.index,
                 quarterly=self._quarterly,
             )
-        else:
-            share_prices = self._historical_data.loc[begin:end, "Close"][
-                self._tickers_without_portfolio
-            ].T
 
-        if trailing:
-            market_cap = valuation_model.get_market_cap(
-                (
-                    share_prices.rolling(trailing).mean()
-                    if show_daily
-                    else share_prices.T.rolling(trailing).mean().T
-                ),
-                average_shares,
-            )
+        # The market cap uses the close at the end of the period (or on the day), not an average.
+        market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
-            free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
-                (
-                    free_cash_flow.rolling(trailing).sum()
-                    if show_daily
-                    else free_cash_flow.T.rolling(trailing).sum().T
-                ),
-                market_cap,
-            )
-        else:
-            market_cap = valuation_model.get_market_cap(share_prices, average_shares)
-
-            free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
-                free_cash_flow,
-                market_cap,
-            )
+        free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
+            free_cash_flow, market_cap
+        )
 
         return finalize_dataset(
             dataset=free_cash_flow_yield,
@@ -7057,8 +7326,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Net debt to EBITDA ratio values.
@@ -7156,8 +7428,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Gross debt to EBITDA ratio values.
@@ -7238,8 +7513,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Cash flow coverage ratio values.
@@ -7331,8 +7609,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Capital expenditure coverage ratio values.
@@ -7426,8 +7707,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Dividend paid and capex coverage ratio values.
@@ -7528,8 +7812,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Debt to capital ratio values.
@@ -7616,8 +7903,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Preferred dividend coverage ratio values.
@@ -7626,9 +7916,8 @@ class Ratios:
         - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
         - This ratio is only meaningful for companies that have preferred stock
-        outstanding. It has no value (NaN, or infinite after a division by zero) when
-        no preferred dividends are reported separately in the cash flow statement,
-        which also happens for some companies that do pay them.
+        outstanding. It is NaN when no preferred dividends are reported separately in
+        the cash flow statement, which also happens for some companies that do pay them.
 
         As an example:
 
@@ -7724,8 +8013,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Interest paid to interest expense ratio values.
@@ -7812,8 +8104,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Valuation ratios calculated based on the specified parameters.
@@ -7844,13 +8139,13 @@ class Ratios:
 
         |                             |         2021 |         2022 |         2023 |         2024 |         2025 |
         |:----------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | EV-to-Sales                 |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
-        | EV-to-EBIT                  | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
-        | EV-to-EBITDA                | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
-        | EV-to-Operating-Cash-Flow   | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
+        | EV-to-Sales                 |  8.3883      |  5.5928      |  8.1056      | 10.0052      |  9.9405      |
+        | EV-to-EBIT                  | 28.1653      | 18.4649      | 27.1806      | 31.7522      | 31.0925      |
+        | EV-to-EBITDA                | 25.522       | 16.8942      | 24.6921      | 29.0536      | 28.5797      |
+        | EV-to-Operating-Cash-Flow   | 29.4949      | 18.0546      | 28.1046      | 33.0846      | 37.1078      |
         | Tangible Asset Value        |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
         | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
-        | EV-to-Free-Cash-Flow        | 33.3102      | 20.0107      | 31.5146      | 36.2809      | 42.075       |
+        | EV-to-Free-Cash-Flow        | 33.0122      | 19.7894      | 31.1974      | 35.9571      | 41.885       |
         | Buyback Yield               |  0.0283      |  0.0421      |  0.0255      |  0.0246      |  0.0222      |
         | Shareholder Yield           |  0.0332      |  0.0491      |  0.0304      |  0.0286      |  0.026       |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
@@ -7912,11 +8207,9 @@ class Ratios:
         valuation_ratios_dict["Price-to-Sales"] = self.get_price_to_sales_ratio(
             diluted=diluted, trailing=trailing
         )
-        valuation_ratios_dict["Market Cap"] = self.get_market_cap(
-            diluted=diluted, trailing=trailing
-        )
+        valuation_ratios_dict["Market Cap"] = self.get_market_cap(diluted=diluted)
         valuation_ratios_dict["Enterprise Value"] = self.get_enterprise_value(
-            diluted=diluted, trailing=trailing
+            diluted=diluted
         )
         valuation_ratios_dict["EV-to-Sales"] = self.get_ev_to_sales_ratio(
             diluted=diluted, trailing=trailing
@@ -8050,8 +8343,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Earnings per share (EPS) values.
@@ -8165,8 +8461,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Revenue per share values.
@@ -8262,7 +8561,9 @@ class Ratios:
         Also known as: PE ratio, P/E ratio, price-earnings ratio, earnings multiple.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -8272,8 +8573,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int, optional): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Price earnings ratio (P/E) values.
@@ -8304,31 +8609,25 @@ class Ratios:
         | AAPL |  31.6299 | 21.254  | 31.3868 |  41.1631 |  36.418 |
         | TSLA | 215.568  | 34.0154 | 57.6961 | 198.126  | 418.189 |
         """
+        # Prices are compared with a year of earnings, so quarterly data defaults to the trailing
+        # twelve months. The earnings are summed over the periods before they are spread over days.
         eps = self.get_earnings_per_share(
             include_dividends,
             diluted,
-            trailing=(
-                trailing if trailing is not None else (4 if self._quarterly else None)
-            ),
+            trailing=self._get_valuation_trailing(trailing),
         )
 
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Close"][
-                self._tickers_without_portfolio
-            ]
+        share_prices = self._get_share_prices(begin, end, show_daily)
 
+        if show_daily:
             eps = map_period_data_to_daily_data(
                 period_data=eps,
                 daily_dates=share_prices.index,
                 quarterly=self._quarterly,
             )
-        else:
-            share_prices = self._historical_data.loc[begin:end, "Close"][
-                self._tickers_without_portfolio
-            ].T
 
         price_to_earnings_ratio = valuation_model.get_price_to_earnings_ratio(
             share_prices, eps
@@ -8372,8 +8671,9 @@ class Ratios:
         - Price Earnings to Growth Ratio (PEG) = Price Earnings Ratio (P/E) / (EPS Growth Rate * 100)
 
         The growth rate is the growth of the (diluted) earnings per share on the previous
-        period, or of EBITDA when use_ebitda_growth_rate is True, multiplied by 100 so that it
-        enters in percent.
+        year, or of EBITDA when use_ebitda_growth_rate is True, multiplied by 100 so that it
+        enters in percent. With quarterly data both the P/E and the growth use trailing twelve
+        month figures, and the growth compares them with those of four quarters earlier.
 
         A PEG around 1 is the traditional rule of thumb for a growth stock priced in line with
         its growth. This historical PEG uses a single period of earnings growth, so it swings
@@ -8423,9 +8723,11 @@ class Ratios:
 
         |      |   2021 |   2022 |    2023 |     2024 |    2025 |
         |:-----|-------:|-------:|--------:|---------:|--------:|
-        | AAPL | 0.4327 | 2.3488 | 91.2018 | -49.838  |  1.5992 |
-        | TSLA | 0.322  | 0.2797 |  3.0479 |  -3.7616 | -8.8524 |
+        | AAPL |  0.443 | 2.3908 | 92.3141 | -50.1989 |  1.6036 |
+        | TSLA |  0.322 | 0.2797 |  3.0479 |  -3.7616 | -8.8524 |
         """
+        # On quarterly data both the earnings and the growth cover a year: trailing twelve
+        # month figures compared with those of four quarters earlier.
         trailing_metric = 4 if self._quarterly else 1
 
         if use_ebitda_growth_rate:
@@ -8436,12 +8738,13 @@ class Ratios:
                 .T
             )
 
-            growth_rate = calculate_growth(dataset=growth_rate)
+            growth_rate = calculate_growth(dataset=growth_rate, lag=trailing_metric)
         else:
             growth_rate = self.get_earnings_per_share(
                 include_dividends,
                 diluted=diluted,
                 growth=True,
+                lag=trailing_metric,
                 trailing=trailing_metric,
             )
 
@@ -8576,7 +8879,7 @@ class Ratios:
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |    2026 |    2027 |    2028 |    2029 |    2030 |     2031 |
         |:-----|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|---------:|
         | AAPL |  48.478 | 44.5789 | 44.8792 | 42.2872 | 36.8284 | 30.7711 | 28.3317 | 25.5411 | 22.4681 | 21.7575 | nan      |
-        | MSFT | nan     | 52.1592 | 50.2865 | 39.7103 | 36.041  | 28.441  | 24.4886 | 20.5492 | 16.7779 | 13.7448 |  10.7807 |
+        | MSFT | nan     | 52.1592 | 50.2865 | 39.7103 | 36.041  | 28.441  | 24.4896 | 20.5502 | 16.7779 | 13.7448 |  10.7807 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8631,16 +8934,16 @@ class Ratios:
 
         The formula is as follows:
 
-            - Estimated EPS Growth Rate = (Estimated EPS - Trailing EPS) / |Trailing EPS|
+            - Estimated EPS Growth Rate = (Estimated EPS / Trailing EPS) ^ (1 / Years) - 1
             - Forward PEG = Forward P/E / (Estimated EPS Growth Rate * 100)
 
-        The growth rate is the total growth from the most recently reported EPS to the
-        estimate of each period, so only the next fiscal year gives a PEG on annual growth;
-        later periods show the growth over several years and a correspondingly lower PEG.
-        For periods up to the latest reported fiscal year the estimate is compared with a
-        later EPS, so the PEG there has no meaning. The trailing EPS is the reported diluted
-        EPS, while consensus estimates are usually on an adjusted basis, which inflates the
-        implied growth for companies with large non-cash charges.
+        The growth rate is the annualized growth from the most recently reported EPS to the
+        estimate of each period, with Years the number of years between the two, so the PEG
+        of every estimate period is based on a yearly growth rate. Periods up to the latest
+        reported period, and periods where either EPS is zero or negative, have no compound
+        growth rate and are NaN. The trailing EPS is the reported diluted EPS, while
+        consensus estimates are usually on an adjusted basis, which inflates the implied
+        growth for companies with large non-cash charges.
 
         Note that this requires an `api_key` to be set on the Toolkit and a Premium FMP
         subscription. Analyst estimates are fetched once per Toolkit instance and cached
@@ -8677,10 +8980,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |    2023 |    2024 |     2025 |   2026 |   2027 |   2028 |   2029 |   2030 |     2031 |
-        |:-----|---------:|--------:|--------:|--------:|---------:|-------:|-------:|-------:|-------:|-------:|---------:|
-        | AAPL |  -1.9526 | -2.4424 | -2.3873 | -3.0595 | -35.133  | 1.6696 | 0.9897 | 0.5984 | 0.3612 | 0.3224 | nan      |
-        | MSFT | nan      | -1.6288 | -1.7051 | -3.7066 | -22.2041 | 1.1531 | 0.5468 | 0.2833 | 0.1507 | 0.087  |   0.0471 |
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |   2026 |   2027 |   2028 |   2029 |   2030 |     2031 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|---------:|
+        | AAPL |    nan |    nan |    nan |    nan |    nan | 1.6696 | 2.1121 | 2.0305 | 1.7482 | 2.0023 | nan      |
+        | MSFT |    nan |    nan |    nan |    nan |    nan | 1.1531 | 1.2049 | 1.0307 | 0.8157 | 0.6587 |   0.4912 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8693,19 +8996,49 @@ class Ratios:
 
         estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
 
+        reported_eps = self._income_statement.loc[:, "EPS Diluted", :]
+
         trailing_eps = (
-            self._income_statement.loc[:, "EPS Diluted", :]
-            .ffill(axis=1)
-            .iloc[:, -1]
-            .reindex(estimated_eps.index)
+            reported_eps.ffill(axis=1).iloc[:, -1].reindex(estimated_eps.index)
         )
         trailing_eps_broadcast = pd.DataFrame(
             {period: trailing_eps for period in estimated_eps.columns},
             index=estimated_eps.index,
         )
 
+        # The growth is annualized over the years between the latest reported period of each
+        # ticker and each estimate period, so every estimate gives a yearly growth rate.
+        periods_per_year = 4 if self._quarterly else 1
+        latest_reported_period = reported_eps.apply(
+            lambda row: row.last_valid_index(), axis=1
+        ).reindex(estimated_eps.index)
+        years_ahead = pd.DataFrame(
+            {
+                period: [
+                    (
+                        (
+                            (period.year - latest.year) * periods_per_year
+                            + (
+                                period.quarter - latest.quarter
+                                if self._quarterly
+                                else 0
+                            )
+                        )
+                        / periods_per_year
+                        if isinstance(latest, pd.Period)
+                        else np.nan
+                    )
+                    for latest in latest_reported_period
+                ]
+                for period in estimated_eps.columns
+            },
+            index=estimated_eps.index,
+        )
+
         estimated_eps_growth_rate = valuation_model.get_estimated_eps_growth_rate(
-            estimated_eps=estimated_eps, trailing_eps=trailing_eps_broadcast
+            estimated_eps=estimated_eps,
+            trailing_eps=trailing_eps_broadcast,
+            years=years_ahead,
         )
 
         stock_price = (
@@ -8771,8 +9104,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Book value per share values.
@@ -8876,7 +9212,9 @@ class Ratios:
         Also known as: P/B ratio.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -8884,8 +9222,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Price to book ratio values.
@@ -8987,8 +9328,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Interest debt per share values.
@@ -9096,8 +9440,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Capex per share values.
@@ -9184,18 +9531,29 @@ class Ratios:
 
         - Dividend Yield = Dividends per Share / Share Price
 
+        The dividends per share are those paid over a year: the trailing four quarters with
+        quarterly data, each year with annual data and, with show_daily, the 365 calendar
+        days up to each day. The share price is the close at the end of the period (or day).
+
         Also known as: annual dividend yield, income yield.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the dividends paid in the 365 calendar days up to that day (or the
+                `trailing` periods in days). Days less than one window after the first price are
+                NaN. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Dividend yield values.
@@ -9228,33 +9586,47 @@ class Ratios:
         | AAPL | 0.0049 |  0.007 | 0.0049 |  0.004 | 0.0038 |
         | TSLA | 0      |  0     | 0      |  0     | 0      |
         """
+        # A dividend yield compares the price with a year of dividends, so quarterly data defaults
+        # to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         if show_daily:
             share_prices = self._daily_historical_data.loc[:, "Close"][
                 self._tickers_without_portfolio
             ]
-            dividends = self._daily_historical_data.loc[:, "Dividends"][
+            daily_dividends = self._daily_historical_data.loc[:, "Dividends"][
                 self._tickers_without_portfolio
             ]
+
+            # Dividends are only paid on a few days a year, so each day sums the dividends of the
+            # calendar window the yield covers (365 days, or the trailing periods in days). Days
+            # less than one window after the first price have an incomplete window and stay NaN.
+            window_days = round(self._get_days(None, trailing))
+
+            dividends = daily_dividends.copy()
+            dividends.index = (
+                dividends.index.to_timestamp()
+                if isinstance(dividends.index, pd.PeriodIndex)
+                else pd.DatetimeIndex(dividends.index)
+            )
+            dividends = dividends.rolling(f"{window_days}D").sum()
+            dividends.loc[
+                dividends.index
+                < dividends.index[0] + pd.Timedelta(days=window_days - 1)
+            ] = np.nan
+            dividends.index = daily_dividends.index
         else:
             share_prices = self._historical_data.loc[:, "Close"][
                 self._tickers_without_portfolio
             ].T
-            dividends = self._historical_data.loc[:, "Dividends"][
-                self._tickers_without_portfolio
-            ].T
+            dividends = self._sum_trailing(
+                self._historical_data.loc[:, "Dividends"][
+                    self._tickers_without_portfolio
+                ].T,
+                trailing,
+            )
 
-        dividend_yield = valuation_model.get_dividend_yield(
-            (
-                (
-                    dividends.rolling(trailing).sum()
-                    if show_daily
-                    else dividends.T.rolling(trailing).sum().T
-                )
-                if trailing
-                else dividends
-            ),
-            share_prices,
-        )
+        dividend_yield = valuation_model.get_dividend_yield(dividends, share_prices)
 
         return finalize_dataset(
             dataset=dividend_yield,
@@ -9295,7 +9667,9 @@ class Ratios:
         Also known as: blended dividend yield.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -9303,8 +9677,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Weighted dividend yield values.
@@ -9337,22 +9715,28 @@ class Ratios:
         | AAPL | 0.0048 |  0.007 | 0.0049 | 0.0039 | 0.0038 |
         | TSLA | 0      |  0     | 0      | 0      | 0      |
         """
+        # A yield compares the price with a year of dividends, so quarterly data defaults to the
+        # trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
             if diluted
             else self._income_statement.loc[:, "Weighted Average Shares", :]
         )
 
-        dividends_paid = abs(self._cash_flow_statement.loc[:, "Dividends Paid", :])
+        # Dividends Paid is reported as a negative cash outflow, so the magnitude is used. It is
+        # summed over the trailing periods before it is spread over the days.
+        dividends_paid = self._sum_trailing(
+            abs(self._cash_flow_statement.loc[:, "Dividends Paid", :]), trailing
+        )
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Close"][
-                self._tickers_without_portfolio
-            ]
+        share_prices = self._get_share_prices(begin, end, show_daily)
 
+        if show_daily:
             average_shares = map_period_data_to_daily_data(
                 period_data=average_shares,
                 daily_dates=share_prices.index,
@@ -9364,27 +9748,12 @@ class Ratios:
                 daily_dates=share_prices.index,
                 quarterly=self._quarterly,
             )
-        else:
-            share_prices = self._historical_data.loc[begin:end, "Close"][
-                self._tickers_without_portfolio
-            ].T
 
-        if trailing:
-            weighted_dividend_yield = valuation_model.get_weighted_dividend_yield(
-                (
-                    dividends_paid.rolling(trailing).sum()
-                    if show_daily
-                    else dividends_paid.T.rolling(trailing).sum().T
-                ),
-                average_shares,
-                share_prices,
-            )
-        else:
-            weighted_dividend_yield = valuation_model.get_weighted_dividend_yield(
-                dividends_paid,
-                average_shares,
-                share_prices,
-            )
+        weighted_dividend_yield = valuation_model.get_weighted_dividend_yield(
+            dividends_paid,
+            average_shares,
+            share_prices,
+        )
 
         return finalize_dataset(
             dataset=weighted_dividend_yield,
@@ -9425,7 +9794,9 @@ class Ratios:
         Also known as: P/CF ratio.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -9433,8 +9804,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Price to cash flow ratio values.
@@ -9467,15 +9842,17 @@ class Ratios:
         | AAPL |  28.7847 | 17.3655 | 27.5403 | 32.6289 |  36.5905 |
         | TSLA | 103.745  | 29.0716 | 65.2832 | 94.6614 | 107.589  |
         """
-        market_cap = self.get_market_cap(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
-        )
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
 
-        cash_flow_from_operations = self._cash_flow_statement.loc[
-            :, "Cash Flow from Operations", :
-        ]
+        market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        cash_flow_from_operations = self._sum_trailing(
+            self._cash_flow_statement.loc[:, "Cash Flow from Operations", :], trailing
+        )
 
         if show_daily:
             cash_flow_from_operations = map_period_data_to_daily_data(
@@ -9484,19 +9861,9 @@ class Ratios:
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            price_to_cash_flow_ratio = valuation_model.get_price_to_cash_flow_ratio(
-                market_cap,
-                (
-                    cash_flow_from_operations.rolling(trailing).sum()
-                    if show_daily
-                    else cash_flow_from_operations.T.rolling(trailing).sum().T
-                ),
-            )
-        else:
-            price_to_cash_flow_ratio = valuation_model.get_price_to_cash_flow_ratio(
-                market_cap, cash_flow_from_operations
-            )
+        price_to_cash_flow_ratio = valuation_model.get_price_to_cash_flow_ratio(
+            market_cap, cash_flow_from_operations
+        )
 
         return finalize_dataset(
             dataset=price_to_cash_flow_ratio,
@@ -9535,7 +9902,9 @@ class Ratios:
         Also known as: P/FCF ratio.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -9543,8 +9912,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Price to free cash flow ratio values.
@@ -9577,13 +9950,17 @@ class Ratios:
         | AAPL |  32.2174 | 19.0341 |  30.5711 |  35.4618 |  41.301 |
         | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082 |
         """
-        market_cap = self.get_market_cap(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
-        )
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
 
-        free_cash_flow = self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+        market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        free_cash_flow = self._sum_trailing(
+            self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
+        )
 
         if show_daily:
             free_cash_flow = map_period_data_to_daily_data(
@@ -9592,23 +9969,11 @@ class Ratios:
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            price_to_free_cash_flow_ratio = (
-                valuation_model.get_price_to_free_cash_flow_ratio(
-                    market_cap,
-                    (
-                        free_cash_flow.rolling(trailing).sum()
-                        if show_daily
-                        else free_cash_flow.T.rolling(trailing).sum().T
-                    ),
-                )
+        price_to_free_cash_flow_ratio = (
+            valuation_model.get_price_to_free_cash_flow_ratio(
+                market_cap, free_cash_flow
             )
-        else:
-            price_to_free_cash_flow_ratio = (
-                valuation_model.get_price_to_free_cash_flow_ratio(
-                    market_cap, free_cash_flow
-                )
-            )
+        )
 
         return finalize_dataset(
             dataset=price_to_free_cash_flow_ratio,
@@ -9652,7 +10017,9 @@ class Ratios:
         Also known as: P/S ratio, sales multiple.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -9660,8 +10027,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Price to sales ratio values.
@@ -9682,13 +10053,17 @@ class Ratios:
         price_to_sales_ratio = toolkit.ratios.get_price_to_sales_ratio()
         ```
         """
-        market_cap = self.get_market_cap(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
-        )
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
 
-        revenue = self._income_statement.loc[:, "Revenue", :]
+        market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        revenue = self._sum_trailing(
+            self._income_statement.loc[:, "Revenue", :], trailing
+        )
 
         if show_daily:
             revenue = map_period_data_to_daily_data(
@@ -9697,19 +10072,9 @@ class Ratios:
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            price_to_sales_ratio = valuation_model.get_price_to_sales_ratio(
-                market_cap,
-                (
-                    revenue.rolling(trailing).sum()
-                    if show_daily
-                    else revenue.T.rolling(trailing).sum().T
-                ),
-            )
-        else:
-            price_to_sales_ratio = valuation_model.get_price_to_sales_ratio(
-                market_cap, revenue
-            )
+        price_to_sales_ratio = valuation_model.get_price_to_sales_ratio(
+            market_cap, revenue
+        )
 
         return finalize_dataset(
             dataset=price_to_sales_ratio,
@@ -9733,7 +10098,6 @@ class Ratios:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        trailing: int | None = None,
     ):
         """
         Calculates the market capitalization of the company.
@@ -9749,10 +10113,19 @@ class Ratios:
 
         - Market Capitalization = Share Price * Weighted Average (Diluted) Shares
 
+        Market cap is a point-in-time value, so the price is the close on the last trading
+        day of each calendar period (or of each day with show_daily) and never an average.
+        The periods follow the calendar, so for a company whose fiscal year ends in, for
+        example, September, the price of the year is the December close while the shares
+        come from the fiscal year. With show_daily, each day uses the shares of the latest
+        period that has ended.
+
         Also known as: market capitalization.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -9760,8 +10133,6 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Market capitalization values.
@@ -9797,32 +10168,18 @@ class Ratios:
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Close"][
-                self._tickers_without_portfolio
-            ]
+        # Market cap is a point-in-time value: the traded close at the end of each period (or on
+        # each day) times the shares, never a price averaged over a trailing window.
+        share_prices = self._get_share_prices(begin, end, show_daily)
 
+        if show_daily:
             average_shares = map_period_data_to_daily_data(
                 period_data=average_shares,
                 daily_dates=share_prices.index,
                 quarterly=self._quarterly,
             )
-        else:
-            share_prices = self._historical_data.loc[begin:end, "Close"][
-                self._tickers_without_portfolio
-            ].T
 
-        if trailing:
-            market_cap = valuation_model.get_market_cap(
-                (
-                    share_prices.rolling(trailing).mean()
-                    if show_daily
-                    else share_prices.T.rolling(trailing).mean().T
-                ),
-                average_shares,
-            )
-        else:
-            market_cap = valuation_model.get_market_cap(share_prices, average_shares)
+        market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
         return finalize_dataset(
             dataset=market_cap,
@@ -9846,7 +10203,6 @@ class Ratios:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        trailing: int | None = None,
     ):
         """
         Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
@@ -9858,19 +10214,23 @@ class Ratios:
         The formula is as follows:
 
         - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
-            — Cash and Cash Equivalents
+            — (Cash and Cash Equivalents + Short Term Investments)
 
         Enterprise value is the price of the whole business, equity and debt together,
         which makes it the right numerator for multiples of operating results such as EV
         to EBITDA or EV to sales, and comparable across companies with different capital
-        structures. Only cash and cash equivalents are deducted, not short-term
-        investments, so for companies that hold much of their cash in marketable
-        securities the enterprise value is higher than a figure net of all cash.
+        structures. Cash and marketable securities (short-term investments) are both
+        deducted (Damodaran), since both are available to pay off the debt. Enterprise value is a
+        point-in-time value: the market cap and the balance sheet items are taken at the end
+        of each period, or on each day with show_daily, where each day uses the balance
+        sheet of the latest period that has ended.
 
         Also known as: EV, total enterprise value.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -9878,8 +10238,6 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
 
         Returns:
             pd.DataFrame: Enterprise Value values.
@@ -9903,79 +10261,52 @@ class Ratios:
 
         |      |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 3.09629e+12 | 2.23005e+12 | 3.13835e+12 | 3.94761e+12 | 4.15562e+12 |
-        | TSLA | 1.18544e+12 | 4.1874e+11  | 8.59544e+11 | 1.41088e+12 | 1.5792e+12  |
+        | AAPL | 3.06859e+12 | 2.20539e+12 | 3.10676e+12 | 3.91238e+12 | 4.13686e+12 |
+        | TSLA | 1.18531e+12 | 4.12808e+11 | 8.46848e+11 | 1.39046e+12 | 1.55166e+12 |
         """
-        total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
-        minority_interest = self._balance_sheet_statement.loc[:, "Minority Interest", :]
-        preferred_stock = self._balance_sheet_statement.loc[:, "Preferred Stock", :]
-        cash_and_cash_equivalents = self._balance_sheet_statement.loc[
+        # Enterprise value is a point-in-time value, so the balance sheet items are taken at the
+        # end of each period, like the share price in the market cap. Cash and marketable
+        # securities (short-term investments) are deducted together (Damodaran), built from
+        # the two separate rows so a missing combined row never leaves the cash out.
+        cash_and_short_term_investments = self._balance_sheet_statement.loc[
             :, "Cash and Cash Equivalents", :
         ]
 
-        market_cap = self.get_market_cap(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
-        )
+        if (
+            "Short Term Investments"
+            in self._balance_sheet_statement.index.get_level_values(1)
+        ):
+            cash_and_short_term_investments = cash_and_short_term_investments.add(
+                self._balance_sheet_statement.loc[:, "Short Term Investments", :],
+                fill_value=0,
+            )
+
+        balance_items = {
+            "total_debt": self._balance_sheet_statement.loc[:, "Total Debt", :],
+            "minority_interest": self._balance_sheet_statement.loc[
+                :, "Minority Interest", :
+            ],
+            "preferred_equity": self._balance_sheet_statement.loc[
+                :, "Preferred Stock", :
+            ],
+            "cash_and_cash_equivalents": cash_and_short_term_investments,
+        }
+
+        market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
 
         if show_daily:
-            total_debt = map_period_data_to_daily_data(
-                period_data=total_debt,
-                daily_dates=market_cap.index,
-                quarterly=self._quarterly,
-            )
+            balance_items = {
+                item: map_period_data_to_daily_data(
+                    period_data=values,
+                    daily_dates=market_cap.index,
+                    quarterly=self._quarterly,
+                )
+                for item, values in balance_items.items()
+            }
 
-            minority_interest = map_period_data_to_daily_data(
-                period_data=minority_interest,
-                daily_dates=market_cap.index,
-                quarterly=self._quarterly,
-            )
-
-            preferred_stock = map_period_data_to_daily_data(
-                period_data=preferred_stock,
-                daily_dates=market_cap.index,
-                quarterly=self._quarterly,
-            )
-
-            cash_and_cash_equivalents = map_period_data_to_daily_data(
-                period_data=cash_and_cash_equivalents,
-                daily_dates=market_cap.index,
-                quarterly=self._quarterly,
-            )
-
-        if trailing:
-            enterprise_value = valuation_model.get_enterprise_value(
-                market_cap,
-                (
-                    total_debt.rolling(trailing).mean()
-                    if show_daily
-                    else total_debt.T.rolling(trailing).mean().T
-                ),
-                (
-                    minority_interest.rolling(trailing).mean()
-                    if show_daily
-                    else minority_interest.T.rolling(trailing).mean().T
-                ),
-                (
-                    preferred_stock.rolling(trailing).mean()
-                    if show_daily
-                    else preferred_stock.T.rolling(trailing).mean().T
-                ),
-                (
-                    cash_and_cash_equivalents.rolling(trailing).mean()
-                    if show_daily
-                    else cash_and_cash_equivalents.T.rolling(trailing).mean().T
-                ),
-            )
-        else:
-            enterprise_value = valuation_model.get_enterprise_value(
-                market_cap,
-                total_debt,
-                minority_interest,
-                preferred_stock,
-                cash_and_cash_equivalents,
-            )
+        enterprise_value = valuation_model.get_enterprise_value(
+            market_cap=market_cap, **balance_items
+        )
 
         return finalize_dataset(
             dataset=enterprise_value,
@@ -10016,7 +10347,9 @@ class Ratios:
         Also known as: EV/Sales.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10024,8 +10357,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: EV to Sales Ratio values.
@@ -10049,16 +10386,22 @@ class Ratios:
 
         |      |    2021 |   2022 |   2023 |    2024 |    2025 |
         |:-----|--------:|-------:|-------:|--------:|--------:|
-        | AAPL |  8.464  | 5.6553 | 8.188  | 10.0953 |  9.9856 |
-        | TSLA | 22.0248 | 5.1403 | 8.8821 | 14.4425 | 16.6535 |
+        | AAPL |  8.3883 | 5.5928 | 8.1056 | 10.0052 |  9.9405 |
+        | TSLA | 22.0224 | 5.0675 | 8.7509 | 14.2334 | 16.363  |
         """
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
+            diluted=diluted, show_daily=show_daily
         )
 
-        revenue = self._income_statement.loc[:, "Revenue", :]
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        revenue = self._sum_trailing(
+            self._income_statement.loc[:, "Revenue", :], trailing
+        )
 
         if show_daily:
             revenue = map_period_data_to_daily_data(
@@ -10067,19 +10410,9 @@ class Ratios:
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            ev_to_sales_ratio = valuation_model.get_ev_to_sales_ratio(
-                enterprise_value,
-                (
-                    revenue.rolling(trailing).sum()
-                    if show_daily
-                    else revenue.T.rolling(trailing).sum().T
-                ),
-            )
-        else:
-            ev_to_sales_ratio = valuation_model.get_ev_to_sales_ratio(
-                enterprise_value, revenue
-            )
+        ev_to_sales_ratio = valuation_model.get_ev_to_sales_ratio(
+            enterprise_value, revenue
+        )
 
         return finalize_dataset(
             dataset=ev_to_sales_ratio,
@@ -10126,7 +10459,9 @@ class Ratios:
         Also known as: EV/EBITDA.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10134,8 +10469,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: EV to EBITDA Ratio values.
@@ -10157,21 +10496,28 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |    2023 |     2024 |     2025 |
-        |:-----|---------:|--------:|--------:|---------:|---------:|
-        | AAPL |  25.7524 | 17.0831 | 24.9432 |  29.3152 |  28.7093 |
-        | TSLA | 125.656  | 24.3467 | 63.3975 | 113.379  | 150.357  |
+        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|--------:|--------:|---------:|---------:|
+        | AAPL |  25.522 | 16.8942 | 24.6921 |  29.0536 |  28.5797 |
+        | TSLA | 125.643 | 24.0018 | 62.4611 | 111.737  | 147.735  |
         """
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
+            diluted=diluted, show_daily=show_daily
         )
 
-        operating_income = self._income_statement.loc[:, "Operating Income", :]
-        depreciation_and_amortization = self._cash_flow_statement.loc[
-            :, "Depreciation and Amortization", :
-        ]
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        operating_income = self._sum_trailing(
+            self._income_statement.loc[:, "Operating Income", :], trailing
+        )
+        depreciation_and_amortization = self._sum_trailing(
+            self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
+            trailing,
+        )
 
         if show_daily:
             operating_income = map_period_data_to_daily_data(
@@ -10179,31 +10525,15 @@ class Ratios:
                 daily_dates=enterprise_value.index,
                 quarterly=self._quarterly,
             )
-
             depreciation_and_amortization = map_period_data_to_daily_data(
                 period_data=depreciation_and_amortization,
                 daily_dates=enterprise_value.index,
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            ev_to_ebitda_ratio = valuation_model.get_ev_to_ebitda_ratio(
-                enterprise_value,
-                (
-                    operating_income.rolling(trailing).sum()
-                    if show_daily
-                    else operating_income.T.rolling(trailing).sum().T
-                ),
-                (
-                    depreciation_and_amortization.rolling(trailing).sum()
-                    if show_daily
-                    else depreciation_and_amortization.T.rolling(trailing).sum().T
-                ),
-            )
-        else:
-            ev_to_ebitda_ratio = valuation_model.get_ev_to_ebitda_ratio(
-                enterprise_value, operating_income, depreciation_and_amortization
-            )
+        ev_to_ebitda_ratio = valuation_model.get_ev_to_ebitda_ratio(
+            enterprise_value, operating_income, depreciation_and_amortization
+        )
 
         return finalize_dataset(
             dataset=ev_to_ebitda_ratio,
@@ -10243,7 +10573,9 @@ class Ratios:
         - Enterprise Value to Operating Cash Flow Ratio = Enterprise Value / Operating Cash Flow
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10251,8 +10583,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: EV to Operating Cash Flow Ratio values.
@@ -10276,18 +10612,22 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |
         |:-----|---------:|--------:|--------:|--------:|---------:|
-        | AAPL |  29.7611 | 18.2565 | 28.3904 | 33.3825 |  37.2762 |
-        | TSLA | 103.109  | 28.4392 | 64.8419 | 94.5442 | 107.086  |
+        | AAPL |  29.4949 | 18.0546 | 28.1046 | 33.0846 |  37.1078 |
+        | TSLA | 103.097  | 28.0364 | 63.8841 | 93.1756 | 105.219  |
         """
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
+            diluted=diluted, show_daily=show_daily
         )
 
-        cash_flow_from_operations = self._cash_flow_statement.loc[
-            :, "Cash Flow from Operations", :
-        ]
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        cash_flow_from_operations = self._sum_trailing(
+            self._cash_flow_statement.loc[:, "Cash Flow from Operations", :], trailing
+        )
 
         if show_daily:
             cash_flow_from_operations = map_period_data_to_daily_data(
@@ -10296,23 +10636,11 @@ class Ratios:
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            ev_to_operating_cashflow_ratio = (
-                valuation_model.get_ev_to_operating_cashflow_ratio(
-                    enterprise_value,
-                    (
-                        cash_flow_from_operations.rolling(trailing).sum()
-                        if show_daily
-                        else cash_flow_from_operations.T.rolling(trailing).sum().T
-                    ),
-                )
+        ev_to_operating_cashflow_ratio = (
+            valuation_model.get_ev_to_operating_cashflow_ratio(
+                enterprise_value, cash_flow_from_operations
             )
-        else:
-            ev_to_operating_cashflow_ratio = (
-                valuation_model.get_ev_to_operating_cashflow_ratio(
-                    enterprise_value, cash_flow_from_operations
-                )
-            )
+        )
 
         return finalize_dataset(
             dataset=ev_to_operating_cashflow_ratio,
@@ -10355,7 +10683,9 @@ class Ratios:
         Also known as: E/P ratio, inverse PE ratio.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -10365,8 +10695,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Earnings Yield Ratio values.
@@ -10393,27 +10727,25 @@ class Ratios:
         | AAPL | 0.0316 | 0.047  | 0.0319 | 0.0243 | 0.0275 |
         | TSLA | 0.0046 | 0.0294 | 0.0173 | 0.005  | 0.0024 |
         """
+        # The earnings yield is the inverse of the P/E, so it uses the same earnings: the trailing
+        # twelve months by default on quarterly data.
         eps = self.get_earnings_per_share(
-            include_dividends, diluted=diluted, trailing=trailing if trailing else None
+            include_dividends,
+            diluted=diluted,
+            trailing=self._get_valuation_trailing(trailing),
         )
 
         years = eps.columns
         begin, end = str(years[0]), str(years[-1])
 
-        if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Close"][
-                self._tickers_without_portfolio
-            ]
+        share_prices = self._get_share_prices(begin, end, show_daily)
 
+        if show_daily:
             eps = map_period_data_to_daily_data(
                 period_data=eps,
                 daily_dates=share_prices.index,
                 quarterly=self._quarterly,
             )
-        else:
-            share_prices = self._historical_data.loc[begin:end, "Close"][
-                self._tickers_without_portfolio
-            ].T
 
         earnings_yield = valuation_model.get_earnings_yield(eps, share_prices)
 
@@ -10468,8 +10800,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Payout Ratio values.
@@ -10557,8 +10892,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Reinvestment Rate values.
@@ -10619,13 +10957,13 @@ class Ratios:
     ):
         """
         Calculate the tangible asset value, a financial metric that represents the book value
-        of a company's equity after deducting goodwill: what remains of its assets, without
-        goodwill, once all liabilities are paid. Other intangible assets such as patents,
-        brands and customer relationships are not deducted.
+        of a company's equity after deducting goodwill and other intangible assets such as
+        patents, brands and customer relationships: what remains of its tangible assets once
+        all liabilities are paid.
 
         The formula is as follows:
 
-        - Tangible Asset Value = Total Assets — Total Liabilities — Goodwill
+        - Tangible Asset Value = Total Assets — Total Liabilities — Goodwill and Intangible Assets
 
         Also known as: net tangible assets.
 
@@ -10636,8 +10974,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Tangible Asset Value values.
@@ -10659,32 +11000,27 @@ class Ratios:
 
         Which returns:
 
-        |      |       2021 |       2022 |       2023 |       2024 |       2025 |
-        |:-----|-----------:|-----------:|-----------:|-----------:|-----------:|
-        | AAPL | 6.309e+10  | 5.0672e+10 | 6.2146e+10 | 5.695e+10  | 7.3733e+10 |
-        | TSLA | 3.1383e+10 | 4.5704e+10 | 6.3356e+10 | 7.3436e+10 | 8.2608e+10 |
+        |      |       2021 |       2022 |       2023 |      2024 |       2025 |
+        |:-----|-----------:|-----------:|-----------:|----------:|-----------:|
+        | AAPL | 6.309e+10  | 5.0672e+10 | 6.2146e+10 | 5.695e+10 | 7.3733e+10 |
+        | TSLA | 2.9866e+10 | 4.5305e+10 | 6.2994e+10 | 7.221e+10 | 8.2473e+10 |
         """
-        if trailing:
-            tangible_asset_value = valuation_model.get_tangible_asset_value(
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Goodwill", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-            )
-        else:
-            tangible_asset_value = valuation_model.get_tangible_asset_value(
-                self._balance_sheet_statement.loc[:, "Total Assets", :],
-                self._balance_sheet_statement.loc[:, "Total Liabilities", :],
-                self._balance_sheet_statement.loc[:, "Goodwill", :],
-            )
+        # Goodwill and the other intangible assets are both deducted, so only the assets with a
+        # physical or financial substance remain.
+        tangible_asset_value = valuation_model.get_tangible_asset_value(
+            self._mean_trailing(
+                self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
+            ),
+            self._mean_trailing(
+                self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
+            ),
+            self._mean_trailing(
+                self._balance_sheet_statement.loc[
+                    :, "Goodwill and Intangible Assets", :
+                ],
+                trailing,
+            ),
+        )
 
         return finalize_dataset(
             dataset=tangible_asset_value,
@@ -10730,8 +11066,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: Net Current Asset Value values.
@@ -10807,8 +11146,16 @@ class Ratios:
 
         - Enterprise Value to EBIT Ratio = Enterprise Value / EBIT
 
+        EBIT is the reported operating income, the same operating profit that EV to EBITDA
+        (`get_ev_to_ebitda_ratio`) adds depreciation and amortization to (Damodaran), so the
+        two multiples differ only by the depreciation and amortization. The enterprise value
+        is taken at the end of each period (or on each day with show_daily), while EBIT is
+        summed over the trailing periods.
+
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10816,8 +11163,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Enterprise Value over EBIT values.
@@ -10839,21 +11190,23 @@ class Ratios:
 
         Which returns:
 
-        |      |    2021 |   2022 |    2023 |     2024 |     2025 |
-        |:-----|--------:|-------:|--------:|---------:|---------:|
-        | AAPL |  27.682 | 18.274 | 26.671  |  31.9683 |  31.3091 |
-        | TSLA | 179.531 | 30.11  | 84.6508 | 151.431  | 284.285  |
+        |      |     2021 |    2022 |    2023 |     2024 |     2025 |
+        |:-----|---------:|--------:|--------:|---------:|---------:|
+        | AAPL |  28.1653 | 18.4649 | 27.1806 |  31.7522 |  31.0925 |
+        | TSLA | 181.713  | 30.229  | 95.2477 | 196.504  | 356.293  |
         """
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
+            diluted=diluted, show_daily=show_daily
         )
 
-        ebit = (
-            self._income_statement.loc[:, "Net Income", :]
-            + self._income_statement.loc[:, "Income Tax Expense", :]
-            + self._income_statement.loc[:, "Interest Expense", :]
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        ebit = self._sum_trailing(
+            self._income_statement.loc[:, "Operating Income", :], trailing
         )
 
         if show_daily:
@@ -10863,17 +11216,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            ev_to_ebit = valuation_model.get_ev_to_ebit(
-                enterprise_value,
-                (
-                    ebit.rolling(trailing).sum()
-                    if show_daily
-                    else ebit.T.rolling(trailing).sum().T
-                ),
-            )
-        else:
-            ev_to_ebit = valuation_model.get_ev_to_ebit(enterprise_value, ebit)
+        ev_to_ebit = valuation_model.get_ev_to_ebit(enterprise_value, ebit)
 
         return finalize_dataset(
             dataset=ev_to_ebit,
@@ -10914,7 +11257,9 @@ class Ratios:
         Also known as: EV/FCF.
 
         Args:
-            show_daily (bool, optional): Whether to show daily data. Defaults to False.
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the statement figures of the latest period that has ended on or before
+                that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10922,8 +11267,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: EV to free cash flow ratio values.
@@ -10947,16 +11296,22 @@ class Ratios:
 
         |      |     2021 |    2022 |     2023 |     2024 |    2025 |
         |:-----|---------:|--------:|---------:|---------:|--------:|
-        | AAPL |  33.3102 | 20.0107 |  31.5146 |  36.2809 |  42.075 |
-        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991  | 253.891 |
+        | AAPL |  33.0122 | 19.7894 |  31.1974 |  35.9571 |  41.885 |
+        | TSLA | 340.314  | 54.662  | 194.365  | 388.288  | 249.463 |
         """
+        # Price-based ratios compare the price with a year of flows, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
         enterprise_value = self.get_enterprise_value(
-            diluted=diluted,
-            trailing=trailing if trailing else None,
-            show_daily=show_daily,
+            diluted=diluted, show_daily=show_daily
         )
 
-        free_cash_flow = self._cash_flow_statement.loc[:, "Free Cash Flow", :]
+        # The flows are summed over the trailing periods first and only then spread over the
+        # days, so a trailing window always covers periods and never days.
+        free_cash_flow = self._sum_trailing(
+            self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
+        )
 
         if show_daily:
             free_cash_flow = map_period_data_to_daily_data(
@@ -10965,19 +11320,9 @@ class Ratios:
                 quarterly=self._quarterly,
             )
 
-        if trailing:
-            ev_to_free_cash_flow_ratio = valuation_model.get_ev_to_free_cash_flow_ratio(
-                enterprise_value,
-                (
-                    free_cash_flow.rolling(trailing).sum()
-                    if show_daily
-                    else free_cash_flow.T.rolling(trailing).sum().T
-                ),
-            )
-        else:
-            ev_to_free_cash_flow_ratio = valuation_model.get_ev_to_free_cash_flow_ratio(
-                enterprise_value, free_cash_flow
-            )
+        ev_to_free_cash_flow_ratio = valuation_model.get_ev_to_free_cash_flow_ratio(
+            enterprise_value, free_cash_flow
+        )
 
         return finalize_dataset(
             dataset=ev_to_free_cash_flow_ratio,
@@ -11032,8 +11377,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Buyback yield values.
@@ -11066,26 +11415,21 @@ class Ratios:
         | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0222 |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
-        market_cap = self.get_market_cap(diluted=diluted, trailing=trailing)
+        # A yield compares the market cap with a year of buybacks, so quarterly data defaults to
+        # the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
 
-        if trailing:
-            buyback_yield = valuation_model.get_buyback_yield(
-                self._cash_flow_statement.loc[:, "Common Stock Purchased", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._cash_flow_statement.loc[:, "Common Stock Issued", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                market_cap,
-            )
-        else:
-            buyback_yield = valuation_model.get_buyback_yield(
-                self._cash_flow_statement.loc[:, "Common Stock Purchased", :],
-                self._cash_flow_statement.loc[:, "Common Stock Issued", :],
-                market_cap,
-            )
+        market_cap = self.get_market_cap(diluted=diluted)
+
+        buyback_yield = valuation_model.get_buyback_yield(
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Common Stock Purchased", :], trailing
+            ),
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Common Stock Issued", :], trailing
+            ),
+            market_cap,
+        )
 
         return finalize_dataset(
             dataset=buyback_yield,
@@ -11128,8 +11472,12 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
 
         Returns:
             pd.DataFrame: Shareholder yield values.
@@ -11162,6 +11510,9 @@ class Ratios:
         | AAPL |  0.0332 |  0.0491 |  0.0304 |  0.0286 |  0.026  |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
+        # Both yields default to the trailing twelve months on quarterly data.
+        trailing = self._get_valuation_trailing(trailing)
+
         dividend_yield = self.get_dividend_yield(trailing=trailing)
         buyback_yield = self.get_buyback_yield(diluted=diluted, trailing=trailing)
 
@@ -11221,8 +11572,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
 
         Returns:
             pd.DataFrame: SBC-adjusted free cash flow values.

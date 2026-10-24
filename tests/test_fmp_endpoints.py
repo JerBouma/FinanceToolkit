@@ -759,3 +759,58 @@ def test_dividends_are_split_adjusted_like_the_prices(responses):
 
     assert historical.loc["2020-08-07", "Dividends"] == pytest.approx(0.205)
     assert historical.loc["2020-11-06", "Dividends"] == pytest.approx(0.205)
+
+
+def test_profile_and_quote_changes_are_decimals(responses):
+    canned, _ = responses
+    canned["profile"] = [
+        {
+            "symbol": "AAPL",
+            "price": 250.0,
+            "changePercentage": 1.25,
+            "companyName": "Apple Inc.",
+            "image": "",
+            "defaultImage": False,
+            "isEtf": False,
+            "isActivelyTrading": True,
+            "isAdr": False,
+            "isFund": False,
+        }
+    ]
+    canned["quote"] = [
+        {
+            "symbol": "AAPL",
+            "name": "Apple Inc.",
+            "price": 250.0,
+            "changePercentage": -0.5,
+        }
+    ]
+
+    profile, _ = fmp_model.get_profile("AAPL", api_key="K")
+    quote, _ = fmp_model.get_quote("AAPL", api_key="K")
+
+    # Published in percent, returned as decimals like every other change.
+    assert profile.loc["Change %", "AAPL"] == pytest.approx(0.0125)
+    assert quote.loc["Change %", "AAPL"] == pytest.approx(-0.005)
+    assert profile.loc["Company Name", "AAPL"] == "Apple Inc."
+
+
+def test_two_fiscal_periods_in_one_calendar_period_are_reported(responses, caplog):
+    """After a change of fiscal year end, the dropped period is named in a warning."""
+    canned, _ = responses
+    canned["income-statement"] = [
+        {"date": "2023-12-31", "symbol": "XYZ", "revenue": 300},
+        {"date": "2023-06-30", "symbol": "XYZ", "revenue": 200},
+        {"date": "2022-06-30", "symbol": "XYZ", "revenue": 100},
+    ]
+
+    with caplog.at_level("WARNING"):
+        statement = fmp_model.get_financial_statement(
+            "XYZ", statement="income", api_key="key"
+        )
+
+    assert statement.loc["revenue"].tolist() == [300, 100]
+    warning = " ".join(record.getMessage() for record in caplog.records)
+    assert "XYZ" in warning
+    assert "2023-12-31, 2023-06-30" in warning
+    assert "(2023)" in warning

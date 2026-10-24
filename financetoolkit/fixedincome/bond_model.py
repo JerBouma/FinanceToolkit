@@ -10,11 +10,11 @@ def get_number_of_periods(years_to_maturity: float, frequency: int) -> int:
     """
     The number of coupons until maturity.
 
-    Settlement is assumed to fall on a coupon date, so the maturity is a whole number of
-    periods, which is not truncated: 0.29 years of 100 periods a year is
-    28.999999999999996 periods in floating point, and 29 coupons. A maturity between
-    coupon dates counts the coupon of the partial period too (2.75 years of semi-annual
-    coupons is 6 coupons), each still discounted as a whole period.
+    A maturity that is a whole number of periods is not truncated: 0.29 years of 100
+    periods a year is 28.999999999999996 periods in floating point, and 29 coupons. A
+    maturity between coupon dates counts the coupon of the current, partial period too
+    (2.75 years of semi-annual coupons is 6 coupons); `get_cash_flow_periods` gives the
+    fractional time at which each of them is paid.
 
     Args:
         years_to_maturity (float): The number of years until the bond matures.
@@ -30,6 +30,116 @@ def get_number_of_periods(years_to_maturity: float, frequency: int) -> int:
         return whole_periods
 
     return math.ceil(periods)
+
+
+def get_accrued_fraction(years_to_maturity: float, frequency: int) -> float:
+    """
+    The share of the current coupon period that has already elapsed.
+
+    The coupon schedule is counted back from maturity, so a maturity of 2.75 years with
+    semi-annual coupons has its next coupon in 0.25 years and lies half a period past
+    the previous coupon date: the accrued fraction is 0.5. On a coupon date it is 0.
+
+    Args:
+        years_to_maturity (float): The number of years until the bond matures.
+        frequency (int): The number of coupon payments per year.
+
+    Returns:
+        float: The elapsed fraction of the current coupon period, from 0 up to (not including) 1.
+    """
+    periods = years_to_maturity * frequency
+
+    # Floating point noise on a coupon date (28.999999999999996 periods) is not a partial period.  # noqa: E501
+    if math.isclose(periods, round(periods), abs_tol=1e-9):
+        return 0.0
+
+    return get_number_of_periods(years_to_maturity, frequency) - periods
+
+
+def get_cash_flow_periods(years_to_maturity: float, frequency: int) -> np.ndarray:
+    """
+    The time, in coupon periods from today, at which each remaining coupon is paid.
+
+    The schedule runs back from maturity in whole periods, so the first coupon falls
+    after the unexpired part of the current period: for 2.75 years of semi-annual coupons
+    the coupons are paid after 0.5, 1.5, ..., 5.5 periods (0.25, 0.75, ..., 2.75 years).
+    On a coupon date these are simply 1, 2, ..., n. Dividing by `frequency` gives the
+    times in years.
+
+    Args:
+        years_to_maturity (float): The number of years until the bond matures.
+        frequency (int): The number of coupon payments per year.
+
+    Returns:
+        np.ndarray: The payment times in periods, the last one being years_to_maturity * frequency.
+    """
+    total_periods = get_number_of_periods(years_to_maturity, frequency)
+    accrued_fraction = get_accrued_fraction(years_to_maturity, frequency)
+
+    return np.arange(1, total_periods + 1, dtype=float) - accrued_fraction
+
+
+def _get_dirty_bond_price(
+    par_value: float,
+    coupon_rate: float,
+    years_to_maturity: float,
+    yield_to_maturity: float,
+    frequency: int,
+) -> float:
+    """
+    The full (dirty) price: every remaining cash flow discounted at the yield to maturity
+    over its fractional number of periods, accrued interest included.
+
+    Args:
+        par_value (float): The face value of the bond.
+        coupon_rate (float): The annual coupon rate (in decimal).
+        years_to_maturity (float): The number of years until the bond matures.
+        yield_to_maturity (float): The yield to maturity of the bond (in decimal).
+        frequency (int): The number of coupon payments per year.
+
+    Returns:
+        float: The dirty price of the bond.
+    """
+    coupon_payment = (par_value * coupon_rate) / frequency
+    periods = get_cash_flow_periods(years_to_maturity, frequency)
+    discount_factors = (1 + yield_to_maturity / frequency) ** -periods
+
+    # The principal is repaid with the last coupon, at the last payment time.
+    return float(
+        coupon_payment * discount_factors.sum() + par_value * discount_factors[-1]
+    )
+
+
+def get_accrued_interest(
+    par_value: float, coupon_rate: float, years_to_maturity: float, frequency: int
+) -> float:
+    """
+    The coupon interest accrued since the previous coupon date, which the buyer pays the
+    seller on top of the clean price.
+
+    The formula is as follows:
+
+        Accrued Interest = Coupon Rate * Par Value / m * Accrued Fraction
+
+    where m = frequency and the accrued fraction is the elapsed share of the current
+    coupon period (see `get_accrued_fraction`), measured in periods of equal length (a
+    30/360-style count). It is zero on a coupon date.
+
+    Args:
+        par_value (float): The face value of the bond.
+        coupon_rate (float): The annual coupon rate (in decimal).
+        years_to_maturity (float): The number of years until the bond matures.
+        frequency (int): The number of coupon payments per year.
+
+    Returns:
+        float: The accrued interest, in the same currency units as par_value.
+    """
+    return (
+        par_value
+        * coupon_rate
+        / frequency
+        * get_accrued_fraction(years_to_maturity, frequency)
+    )
 
 
 def solve_with_secant_method(
@@ -81,22 +191,31 @@ def get_bond_price(
 
     Every cash flow is discounted at the yield to maturity, which is treated as a
     nominal annual rate compounded `frequency` times per year — i.e. the per-period
-    discount rate is `yield_to_maturity / frequency` and the number of periods is
-    `years_to_maturity * frequency`. This is the standard bond-market convention
-    (semi-annual compounding for U.S. Treasuries and corporates, annual for most
-    European government bonds) rather than continuous compounding.
+    discount rate is `yield_to_maturity / frequency` and each cash flow is discounted
+    over its time in periods. This is the standard bond-market convention (semi-annual
+    compounding for U.S. Treasuries and corporates, annual for most European government
+    bonds) rather than continuous compounding.
 
-    Settlement is assumed to fall exactly on a coupon date, so the price returned is
-    a clean price with zero accrued interest and there is no fractional first period.
+    The coupon schedule runs back from maturity, so a maturity that is not a whole number
+    of periods (2.5 years of annual coupons) places today inside a coupon period: the
+    next coupon is paid after the unexpired fraction of that period and every later cash
+    flow a whole period after it. The price returned is the **clean** price, the quoted
+    price without the coupon interest accrued since the previous coupon date, which
+    matches the market convention (e.g. QuantLib's clean price with a 30/360 count). On a
+    coupon date the accrued interest is zero and the clean and dirty prices coincide.
 
-    Also known as: present value of a bond, full price on a coupon date.
+    Also known as: present value of a bond, clean price, quoted price.
 
     The formula is as follows:
 
-        Price = SUM_(t=1)^(n) [ (Coupon Rate * Par Value / m) / (1 + y / m)^t ]
-                + Par Value / (1 + y / m)^n
+        Dirty Price = SUM_(i=1)^(n) [ (Coupon Rate * Par Value / m) / (1 + y / m)^(t_i) ]
+                      + Par Value / (1 + y / m)^(t_n)
 
-    where m = frequency, y = yield to maturity and n = years_to_maturity * m.
+        Price = Dirty Price - Coupon Rate * Par Value / m * a
+
+    where m = frequency, y = yield to maturity, n is the number of remaining coupons,
+    a is the elapsed fraction of the current coupon period (0 on a coupon date) and
+    t_i = i - a is the time of the i-th cash flow in periods, so t_n = years_to_maturity * m.
 
     A yield of zero, a coupon rate of zero (a zero-coupon bond) and a negative yield
     are all handled correctly; only a yield of −m * 100% or below is undefined.
@@ -111,20 +230,12 @@ def get_bond_price(
         frequency (int): The number of coupon payments per year. Defaults to 1.
 
     Returns:
-        float: The price of the bond.
+        float: The clean price of the bond.
     """
-    coupon_payment = (par_value * coupon_rate) / frequency
-    total_periods = get_number_of_periods(years_to_maturity, frequency)
-    present_value: int | float = 0
-
-    # Calculate the present value of coupon payments
-    for t in range(1, total_periods + 1):
-        present_value += coupon_payment / ((1 + yield_to_maturity / frequency) ** t)
-
-    # Add the present value of the face value (at maturity)
-    present_value += par_value / ((1 + yield_to_maturity / frequency) ** total_periods)
-
-    return present_value
+    # The quoted (clean) price excludes the accrued coupon the buyer pays on top, so a 2.5 year bond at its coupon yield prices close to par (99.97) instead of at par plus half a coupon.  # noqa: E501
+    return _get_dirty_bond_price(
+        par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
+    ) - get_accrued_interest(par_value, coupon_rate, years_to_maturity, frequency)
 
 
 def get_current_yield(par_value: float, coupon_rate: float, bond_price: float):
@@ -195,11 +306,16 @@ def get_yield_to_maturity(
     """
     Calculate the yield to maturity of a bond using the secant method.
 
+    The yield is the nominal annual rate, compounded `frequency` times per year, at which
+    `get_bond_price` returns `bond_price`. The price is therefore read as a clean
+    (quoted) price, and a maturity between coupon dates discounts each cash flow over its
+    fractional number of periods.
+
     Args:
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
-        years_to_maturity (int): The number of years until the bond matures.
-        bond_price (float): The current market price of the bond.
+        years_to_maturity (float): The number of years until the bond matures.
+        bond_price (float): The current clean (quoted) market price of the bond.
         frequency (int): The number of coupon payments per year.
         guess (float): Initial guess for the yield to maturity.
         tolerance (float): The desired level of accuracy.
@@ -209,14 +325,12 @@ def get_yield_to_maturity(
         float: The yield to maturity of the bond.
     """
 
-    # Define the function to solve
+    # The same pricing as get_bond_price, so a price it returns is inverted to the yield it was priced at.  # noqa: E501
     def bond_value(ytm):
-        value = 0
-        total_periods = get_number_of_periods(years_to_maturity, frequency)
-        for t in range(1, total_periods + 1):
-            value += coupon_rate * par_value / frequency / ((1 + ytm / frequency) ** t)
-        value += par_value / ((1 + ytm / frequency) ** total_periods)
-        return value - bond_price
+        return (
+            get_bond_price(par_value, coupon_rate, years_to_maturity, ytm, frequency)
+            - bond_price
+        )
 
     return solve_with_secant_method(bond_value, guess, tolerance, max_iterations)
 
@@ -230,20 +344,22 @@ def get_macaulays_duration(
     Macaulay's duration is a measure of the weighted average time until the bond's cash flows are received.
     It takes into account the timing and amount of each cash flow, as well as the yield to maturity.
 
-    Because each cash flow is discounted with the same per-period rate that
-    `get_bond_price` uses, the weights are the present values of the cash flows as a
-    share of the bond's price, and the time attached to each weight is expressed in
-    **years** (t / frequency), so the result is in years regardless of the coupon
-    frequency.
+    Because each cash flow is discounted with the same per-period rate and the same
+    (fractional) payment times that `get_bond_price` uses, the weights are the present
+    values of the cash flows as a share of the bond's full (dirty) price, and the time
+    attached to each weight is expressed in **years** (t_i / frequency), so the result is
+    in years regardless of the coupon frequency and never exceeds the maturity.
 
     Also known as: Macaulay duration, weighted average time to cash flow.
 
     The formula is as follows:
 
-        Macaulay's Duration = SUM_(t=1)^(n) [ (t / m) * PV(CF_t) ] / Price
+        Macaulay's Duration = SUM_(i=1)^(n) [ (t_i / m) * PV(CF_i) ] / Dirty Price
 
-    where m = frequency, n = years_to_maturity * m and PV(CF_t) is the present value of
-    the cash flow received in period t, discounted at (1 + y / m)^t.
+    where m = frequency, t_i is the time of the i-th cash flow in periods (i minus the
+    elapsed fraction of the current coupon period, see `get_cash_flow_periods`) and
+    PV(CF_i) is its present value, discounted at (1 + y / m)^(t_i). On a coupon date the
+    dirty price equals the price `get_bond_price` returns.
 
     For more information, see: https://en.wikipedia.org/wiki/Bond_duration#Macaulay_duration
 
@@ -257,28 +373,17 @@ def get_macaulays_duration(
     Returns:
         float: The Macaulay's duration of the bond.
     """
-    total_periods = get_number_of_periods(years_to_maturity, frequency)
-    present_value_sum = 0
-    cash_flow_weighted_sum = 0
+    periods = get_cash_flow_periods(years_to_maturity, frequency)
+    cash_flows = np.full(periods.size, (par_value * coupon_rate) / frequency)
+    # The principal is repaid with the last coupon, the same moment the price discounts it to.  # noqa: E501
+    cash_flows[-1] += par_value
 
-    # Discounted by period count as get_bond_price does, then weighted by t/frequency.
-    for t in range(1, total_periods + 1):
-        coupon_payment = (par_value * coupon_rate) / frequency
-        present_value = coupon_payment / ((1 + yield_to_maturity / frequency) ** t)
-        present_value_sum += present_value
-        cash_flow_weighted_sum += (t / frequency) * present_value
+    present_values = cash_flows * (1 + yield_to_maturity / frequency) ** -periods
 
-    # Add the present value of the face value (at maturity)
-    present_value_sum += par_value / (
-        (1 + yield_to_maturity / frequency) ** total_periods
+    # The weights are shares of the dirty price (the sum of all present values), the price the duration is a sensitivity of.  # noqa: E501
+    macaulays_duration = float(
+        ((periods / frequency) * present_values).sum() / present_values.sum()
     )
-    # At the last coupon date, the same moment the price discounts the principal to.
-    cash_flow_weighted_sum += (total_periods / frequency) * (
-        par_value / ((1 + yield_to_maturity / frequency) ** total_periods)
-    )
-
-    # Calculate Macaulay's duration
-    macaulays_duration = cash_flow_weighted_sum / present_value_sum
 
     return macaulays_duration
 
@@ -296,7 +401,8 @@ def get_modified_duration(
     to maturity divided by the coupon frequency. Dividing by (1 + y) instead of
     (1 + y / m) is a common error that overstates the sensitivity of a semi-annual bond;
     the per-period division is what makes modified duration equal to the analytical
-    -(dP/dy) / P of the pricing formula.
+    -(dP/dy) / P of the pricing formula, with P the full (dirty) price; the accrued
+    interest does not depend on the yield, so dP/dy is the same for the clean price.
 
     Also known as: modified duration, adjusted duration, volatility of a bond.
 
@@ -360,7 +466,9 @@ def get_effective_duration(
         Effective Duration = (V- - V+) / (2 * V0 * Δy)
 
     where V- is the price after the yield is lowered by Δy, V+ is the price after the
-    yield is raised by Δy, V0 is the starting price and Δy = yield_change.
+    yield is raised by Δy, V0 is the starting price and Δy = yield_change. The prices are
+    full (dirty) prices, as for modified duration; on a coupon date they equal the price
+    `get_bond_price` returns.
 
     For more information, see: https://en.wikipedia.org/wiki/Bond_duration#Effective_duration
 
@@ -376,20 +484,20 @@ def get_effective_duration(
     Returns:
         float: The effective duration of the bond.
     """
-    # Calculate bond price at initial yield
-    initial_price = get_bond_price(
+    # Dirty prices, so that the result is comparable to modified duration between coupon dates.  # noqa: E501
+    initial_price = _get_dirty_bond_price(
         par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
     )
 
     # Reprice symmetrically around the starting yield, so that the curvature of the price-yield relationship cancels out instead of biasing the estimate downwards.  # noqa: E501
-    price_increased = get_bond_price(
+    price_increased = _get_dirty_bond_price(
         par_value,
         coupon_rate,
         years_to_maturity,
         yield_to_maturity + yield_change,
         frequency,
     )
-    price_decreased = get_bond_price(
+    price_decreased = _get_dirty_bond_price(
         par_value,
         coupon_rate,
         years_to_maturity,
@@ -411,9 +519,10 @@ def get_dollar_duration(
     """
     Calculate the bond's dollar duration.
 
-    The dollar duration is calculated by multiplying the bond's modified duration by the bond's price
-    and dividing the result by 100, so that it expresses the price change for a 1 percentage point
-    change in the yield to maturity.
+    The dollar duration is calculated by multiplying the bond's modified duration by the bond's full
+    (dirty) price and dividing the result by 100, so that it expresses the price change for a 1
+    percentage point change in the yield to maturity. On a coupon date the dirty price equals the
+    price `get_bond_price` returns.
 
     Args:
         par_value (float): The face value of the bond.
@@ -430,8 +539,8 @@ def get_dollar_duration(
         par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
     )
 
-    # Calculate bond price
-    bond_price = get_bond_price(
+    # Modified duration is a share of the dirty price, so the currency change is too.
+    bond_price = _get_dirty_bond_price(
         par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
     )
 
@@ -461,7 +570,8 @@ def get_dv01(par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequ
 
         DV01 = (Price(y - 0.0001) - Price(y + 0.0001)) / 2
 
-    Numerically this equals Modified Duration * Price / 10,000.
+    Numerically this equals Modified Duration * Dirty Price / 10,000; the accrued
+    interest does not move with the yield, so the clean and dirty price changes are equal.
 
     For more information, see: https://en.wikipedia.org/wiki/Bond_duration#DV01
 
@@ -517,7 +627,8 @@ def get_convexity(
 
         Convexity = (Price(y + Δy) + Price(y - Δy) - 2 * Price(y)) / (Price(y) * Δy^2)
 
-    with Δy = 0.0001. It is consumed as the second term of
+    with Δy = 0.0001 and full (dirty) prices, matching QuantLib's convexity between coupon
+    dates. It is consumed as the second term of
     %ΔPrice ≈ -Modified Duration * Δy + 0.5 * Convexity * Δy^2 — see
     `get_taylor_price_change`.
 
@@ -534,19 +645,19 @@ def get_convexity(
         float: The convexity of the bond.
     """
     # Calculate bond price at current yield
-    bond_price = get_bond_price(
+    bond_price = _get_dirty_bond_price(
         par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
     )
 
     # Calculate bond price when yield decreases by 1 basis point
     yield_decreased = yield_to_maturity - 0.0001  # 1 basis point decrease
-    bond_price_down = get_bond_price(
+    bond_price_down = _get_dirty_bond_price(
         par_value, coupon_rate, years_to_maturity, yield_decreased, frequency
     )
 
     # Calculate bond price when yield increases by 1 basis point
     yield_increased = yield_to_maturity + 0.0001  # 1 basis point increase
-    bond_price_up = get_bond_price(
+    bond_price_up = _get_dirty_bond_price(
         par_value, coupon_rate, years_to_maturity, yield_increased, frequency
     )
 
@@ -564,15 +675,20 @@ def _get_bond_price_from_curve(
     years_to_maturity: float,
     spot_rates: pd.Series,
     frequency: int,
+    clean: bool = True,
 ) -> float:
     """
     Calculate the price of a bond by discounting each of its cash flows with the
     zero/spot rate for that specific cash flow's maturity, rather than a single
     flat yield to maturity as `get_bond_price` does.
 
+    The spot rates are read as nominal annual rates compounded `frequency` times per
+    year, so a cash flow paid after t_i periods (t_i / frequency years, see
+    `get_cash_flow_periods`) is discounted by (1 + spot_rate(t_i / frequency) / frequency)^(t_i).
     The rate applied to a cash flow that falls in between two maturities present in
-    `spot_rates` is obtained through linear interpolation. This is the building block
-    used by `get_z_spread` (which shifts the curve uniformly) and
+    `spot_rates` is obtained through linear interpolation, and the principal is
+    discounted together with the last coupon at the maturity itself. This is the
+    building block used by `get_z_spread` (which shifts the curve uniformly) and
     `get_key_rate_duration` (which bumps a single point on the curve).
 
     Args:
@@ -582,26 +698,30 @@ def _get_bond_price_from_curve(
         spot_rates (pd.Series): The zero-coupon (spot) yield curve, indexed by
             maturity in years (in decimal).
         frequency (int): The number of coupon payments per year.
+        clean (bool): Whether to return the clean price, without the accrued interest
+            (see `get_accrued_interest`), as `get_bond_price` does. Defaults to True.
 
     Returns:
         float: The price of the bond as implied by the spot curve.
     """
     spot_rates_sorted = spot_rates.sort_index()
-    total_periods = get_number_of_periods(years_to_maturity, frequency)
-    coupon_payment = (par_value * coupon_rate) / frequency
+    periods = get_cash_flow_periods(years_to_maturity, frequency)
 
-    bond_price = 0.0
-    for t in range(1, total_periods + 1):
-        period_time = t / frequency
-        period_rate = np.interp(
-            period_time, spot_rates_sorted.index, spot_rates_sorted.to_numpy()
-        )
-        bond_price += coupon_payment / (1 + period_rate / frequency) ** t
+    cash_flows = np.full(periods.size, (par_value * coupon_rate) / frequency)
+    cash_flows[-1] += par_value
 
-    maturity_rate = np.interp(
-        years_to_maturity, spot_rates_sorted.index, spot_rates_sorted.to_numpy()
+    # Each cash flow at its own (fractional) time, so the principal and the last coupon share the maturity's rate and exponent.  # noqa: E501
+    period_rates = np.interp(
+        periods / frequency,
+        spot_rates_sorted.index.to_numpy(dtype=float),
+        spot_rates_sorted.to_numpy(dtype=float),
     )
-    bond_price += par_value / (1 + maturity_rate / frequency) ** total_periods
+    bond_price = float((cash_flows * (1 + period_rates / frequency) ** -periods).sum())
+
+    if clean:
+        bond_price -= get_accrued_interest(
+            par_value, coupon_rate, years_to_maturity, frequency
+        )
 
     return bond_price
 
@@ -632,8 +752,14 @@ def get_z_spread(
 
     The formula to solve for the Z-spread (Z) is as follows:
 
-        Bond Price = SUM_(t=1)^(n) [ Coupon / frequency / (1 + (spot_rate(t) + Z) / frequency)^t ]
-                     + Par Value / (1 + (spot_rate(n) + Z) / frequency)^n
+        Bond Price = SUM_(i=1)^(n) [ Coupon / m / (1 + (spot_rate(t_i / m) + Z) / m)^(t_i) ]
+                     + Par Value / (1 + (spot_rate(t_n / m) + Z) / m)^(t_n)
+                     - Accrued Interest
+
+    where m = frequency and t_i is the time of the i-th cash flow in periods (see
+    `get_cash_flow_periods`), so t_n / m = years_to_maturity. The spot rates are read as
+    nominal annual rates compounded m times per year and the bond price as a clean
+    (quoted) price; the accrued interest is zero on a coupon date.
 
     Because this equation cannot be solved for Z in closed form, it is solved
     iteratively using the secant method — the same numerical approach used by
@@ -645,9 +771,9 @@ def get_z_spread(
         par_value (float): The face value of the bond.
         coupon_rate (float): The annual coupon rate (in decimal).
         years_to_maturity (float): The number of years until the bond matures.
-        bond_price (float): The current market price of the bond.
+        bond_price (float): The current clean (quoted) market price of the bond.
         spot_rates (pd.Series): The benchmark zero-coupon (spot) yield curve, indexed
-            by maturity in years (in decimal).
+            by maturity in years (in decimal), compounded `frequency` times per year.
         frequency (int): The number of coupon payments per year. Defaults to 1.
         guess (float): Initial guess for the Z-spread. Defaults to 0.01.
         tolerance (float): The desired level of accuracy. Defaults to 0.0001.
@@ -785,7 +911,9 @@ def get_key_rate_duration(
     where only the rate at the key_rate_maturity tenor (rate_k) is bumped up or down by
     Δy = yield_change, all other tenors of the curve are held fixed, and Price(...) is
     calculated by discounting each cash flow with the (possibly interpolated) curve rate
-    for that cash flow's maturity — see `_get_bond_price_from_curve`.
+    for that cash flow's maturity — see `_get_bond_price_from_curve`. The prices are full
+    (dirty) prices, as for `get_modified_duration`, and the spot rates are read as
+    nominal annual rates compounded `frequency` times per year.
 
     For more information, see: https://en.wikipedia.org/wiki/Key_rate_duration
 
@@ -819,20 +947,26 @@ def get_key_rate_duration(
             f"{list(spot_rates.index)}"
         )
 
+    # Dirty prices, so that the key rate durations add up to a duration of the full price between coupon dates too.  # noqa: E501
     base_price = _get_bond_price_from_curve(
-        par_value, coupon_rate, years_to_maturity, spot_rates, frequency
+        par_value, coupon_rate, years_to_maturity, spot_rates, frequency, clean=False
     )
 
     spot_rates_up = spot_rates.copy()
     spot_rates_up.loc[key_rate_maturity] += yield_change
     price_up = _get_bond_price_from_curve(
-        par_value, coupon_rate, years_to_maturity, spot_rates_up, frequency
+        par_value, coupon_rate, years_to_maturity, spot_rates_up, frequency, clean=False
     )
 
     spot_rates_down = spot_rates.copy()
     spot_rates_down.loc[key_rate_maturity] -= yield_change
     price_down = _get_bond_price_from_curve(
-        par_value, coupon_rate, years_to_maturity, spot_rates_down, frequency
+        par_value,
+        coupon_rate,
+        years_to_maturity,
+        spot_rates_down,
+        frequency,
+        clean=False,
     )
 
     key_rate_duration = -(price_up - price_down) / (2 * base_price * yield_change)
@@ -865,7 +999,9 @@ def get_taylor_price_change(
 
         %ΔPrice ≈ -Modified Duration * Δy + 0.5 * Convexity * Δy^2
 
-    This function calls `get_modified_duration` and `get_convexity` directly rather than
+    The percentage is a change of the full (dirty) price, on which both duration and
+    convexity are measured; on a coupon date it equals the price `get_bond_price`
+    returns. This function calls `get_modified_duration` and `get_convexity` directly rather than
     recomputing them.
 
     For more information, see: https://en.wikipedia.org/wiki/Bond_convexity

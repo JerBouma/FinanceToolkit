@@ -196,14 +196,26 @@ def get_exchange_rates(
     )
 
 
+# The commercial types of the BIS property price dataset (RE_TYPE): all commercial
+# property, offices, retail, office and retail, and industrial property.
+COMMERCIAL_PROPERTY_TYPES = {"A", "B", "C", "D", "G"}
+
+# The PRICED_UNIT of an index in real terms, "real price per square meter".
+REAL_PRICE_UNIT = "8"
+
+
 def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFrame:
     """
     Retrieves the quarterly commercial property price indices the BIS collects from
     national sources, for around twenty economies including the euro area, from 1945 for
     the United States and from the 1990s and 2000s for most others.
 
-    Per country one index is taken: the one for all commercial property in the whole
-    country where there is one, otherwise the longest available.
+    Per country one nominal index of commercial property is taken: the one for all
+    commercial property in the whole country where there is one, otherwise the longest
+    index of a commercial type (offices, retail, office and retail, or industrial
+    property), preferring the whole country. Indices of dwellings, land, agricultural
+    property and real prices are left out, so a country without a nominal commercial
+    property index has no column.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -233,19 +245,33 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
             description,
         )
 
+        # The dataset also holds dwellings (rented ones for Switzerland), land and real
+        # prices (PRICED_UNIT 8, Iceland), which are not commercial property prices and
+        # would otherwise be picked for a country where they are the longest series.
+        data = data[data["RE_TYPE"].astype(str).isin(COMMERCIAL_PROPERTY_TYPES)]
+
+        if "PRICED_UNIT" in data.columns:
+            data = data[data["PRICED_UNIT"].astype(str) != REAL_PRICE_UNIT]
+
+        if data.empty:
+            return pd.DataFrame()
+
         series_columns = [
             column
             for column in data.columns
             if column not in ("FREQ", "TIME_PERIOD", "OBS_VALUE")
         ]
         lengths = data.groupby(series_columns, as_index=False).size()
-        lengths["preferred"] = (lengths["COVERED_AREA"].astype(str) == "0") & (
+        lengths["whole_country"] = lengths["COVERED_AREA"].astype(str) == "0"
+        lengths["preferred"] = lengths["whole_country"] & (
             lengths["RE_TYPE"].astype(str) == "A"
         )
         chosen = (
-            lengths.sort_values(["preferred", "size"], ascending=False)
+            lengths.sort_values(
+                ["preferred", "whole_country", "size"], ascending=False, kind="stable"
+            )
             .drop_duplicates(subset="REF_AREA")
-            .drop(columns=["preferred", "size"])
+            .drop(columns=["preferred", "whole_country", "size"])
         )
 
         data = data.merge(chosen, on=series_columns)

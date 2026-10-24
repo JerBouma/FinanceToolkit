@@ -668,3 +668,93 @@ def test_get_compound_annual_growth_rate_uses_calendar_time():
 
     # A single price spans no time, so it has no growth rate.
     assert np.isnan(performance_model.get_compound_annual_growth_rate(crypto.iloc[:1]))
+
+
+def test_get_rolling_beta_masks_the_benchmark_per_asset():
+    # Asset B has no returns for the first three dates, so its benchmark variance must
+    # cover only the dates on which B has a return, as the covariance does.
+    benchmark = pd.Series([0.01, -0.02, 0.03, 0.015, -0.01, 0.02, -0.005])
+    returns = pd.DataFrame(
+        {
+            "A": [0.02, -0.01, 0.025, 0.01, -0.02, 0.03, 0.0],
+            "B": [np.nan, np.nan, np.nan, 0.02, -0.015, 0.01, -0.01],
+        }
+    )
+
+    rolling_beta = performance_model.get_rolling_beta(returns, benchmark, 4)
+
+    # The first full window of B (dates 3-6) has four returns.
+    assert np.isnan(rolling_beta["B"].iloc[5])
+    window = slice(3, 7)
+    expected = (
+        returns["B"].iloc[window].cov(benchmark.iloc[window])
+        / benchmark.iloc[window].var()
+    )
+    assert rolling_beta["B"].iloc[6] == pytest.approx(expected)
+    expected_a = (
+        returns["A"].iloc[window].cov(benchmark.iloc[window])
+        / benchmark.iloc[window].var()
+    )
+    assert rolling_beta["A"].iloc[6] == pytest.approx(expected_a)
+
+
+def test_get_sortino_ratio_needs_two_observations():
+    index = pd.MultiIndex.from_arrays(
+        [
+            pd.PeriodIndex(["2019", "2020", "2020", "2020"], freq="Y"),
+            pd.PeriodIndex(
+                ["2019-12-31", "2020-01-02", "2020-01-03", "2020-01-06"], freq="D"
+            ),
+        ]
+    )
+    excess_returns = pd.DataFrame({"A": [0.01, 0.02, -0.01, 0.005]}, index=index)
+
+    sortino_ratio = performance_model.get_sortino_ratio(excess_returns)
+
+    # A single observation would report only its sign (+1 or -1).
+    assert np.isnan(sortino_ratio.loc[pd.Period("2019", "Y"), "A"])
+    assert sortino_ratio.loc[pd.Period("2020", "Y"), "A"] == pytest.approx(
+        np.mean([0.02, -0.01, 0.005]) / np.sqrt(0.01**2 / 3)
+    )
+    assert np.isnan(performance_model.get_sortino_ratio(pd.Series([-0.01])))
+    assert (
+        performance_model.get_rolling_sortino_ratio(excess_returns["A"], 1).isna().all()
+    )
+
+
+def test_get_tracking_error_and_information_ratio_per_column():
+    returns = pd.DataFrame(
+        {"A": [0.01, 0.02, -0.01, 0.03], "B": [0.0, -0.01, 0.02, 0.01]}
+    )
+    benchmark = pd.Series([0.005, 0.01, -0.005, 0.02])
+    active = returns.sub(benchmark, axis=0)
+
+    tracking_error = performance_model.get_tracking_error(returns, benchmark)
+    information_ratio = performance_model.get_information_ratio(returns, benchmark)
+
+    assert isinstance(tracking_error, pd.Series)
+    assert isinstance(information_ratio, pd.Series)
+    pd.testing.assert_series_equal(tracking_error, active.std())
+    pd.testing.assert_series_equal(information_ratio, active.mean() / active.std())
+
+
+def test_capture_ratios_use_geometric_averages():
+    benchmark = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01], name="Benchmark")
+    returns = pd.DataFrame({"A": [0.03, -0.02, 0.01, -0.01, 0.02]})
+
+    def geometric(values):
+        values = np.asarray(values)
+        return np.prod(1 + values) ** (1 / len(values)) - 1
+
+    up = performance_model.get_upside_capture_ratio(returns, benchmark)
+    down = performance_model.get_downside_capture_ratio(returns, benchmark)
+
+    assert up["A"] == pytest.approx(
+        geometric([0.03, 0.01, 0.02]) / geometric([0.02, 0.03, 0.01])
+    )
+    assert down["A"] == pytest.approx(
+        geometric([-0.02, -0.01]) / geometric([-0.01, -0.02])
+    )
+    assert performance_model.get_upside_capture_ratio(
+        returns["A"], benchmark
+    ) == pytest.approx(up["A"])

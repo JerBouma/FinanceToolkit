@@ -233,3 +233,196 @@ def test_cost_of_equity_follows_trailing(models_module):
         rounding=10, trailing=2
     ).xs("Cost of Equity", level=1)
     pd.testing.assert_frame_equal(wacc_double, 2 * wacc_single, rtol=1e-6)
+
+
+def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module):
+    import pandas as pd
+
+    from financetoolkit.models import intrinsic_model
+
+    valuation = models_module.get_intrinsic_valuation(
+        growth_rate=0.05,
+        perpetual_growth_rate=0.02,
+        weighted_average_cost_of_capital=0.10,
+        rounding=10,
+    )
+    fcff = models_module.get_free_cash_flow_to_firm(rounding=15).xs(
+        "Free Cash Flow to Firm", level=1
+    )
+
+    for ticker in models_module._tickers:
+        expected = intrinsic_model.get_intrinsic_value(
+            cash_flow=fcff.loc[ticker].dropna().iloc[-1],
+            growth_rate=0.05,
+            perpetual_growth_rate=0.02,
+            weighted_average_cost_of_capital=0.10,
+            cash_and_cash_equivalents=models_module._balance_sheet_statement.loc[
+                ticker, "Cash and Cash Equivalents"
+            ]
+            .dropna()
+            .iloc[-1],
+            total_debt=models_module._balance_sheet_statement.loc[ticker, "Total Debt"]
+            .dropna()
+            .iloc[-1],
+            shares_outstanding=models_module._income_statement.loc[
+                ticker, "Weighted Average Shares Diluted"
+            ]
+            .dropna()
+            .iloc[-1],
+        ).round(10)
+        pd.testing.assert_frame_equal(valuation.loc[ticker], expected)
+
+    # The capital expenditure and working capital are not cash flows to value a company on.
+    assert models_module.get_intrinsic_valuation(
+        0.05, 0.02, 0.10, cash_flow_type="Capital Expenditure"
+    ).empty
+    # Without a discount rate above the perpetual growth rate there is no valuation.
+    assert models_module.get_intrinsic_valuation(0.05, 0.10, 0.10).empty
+
+
+def test_quarterly_valuations_use_the_trailing_twelve_months(
+    models_module, monkeypatch
+):
+    import pandas as pd
+
+    monkeypatch.setattr(models_module, "_quarterly", True)
+
+    pd.testing.assert_frame_equal(
+        models_module.get_intrinsic_valuation(0.05, 0.02, 0.10),
+        models_module.get_intrinsic_valuation(0.05, 0.02, 0.10, trailing=4),
+    )
+    pd.testing.assert_frame_equal(
+        models_module.get_graham_number(),
+        models_module.get_graham_number(trailing=4),
+    )
+
+
+def test_present_value_of_growth_opportunities_uses_the_cost_of_equity(models_module):
+    import pandas as pd
+
+    pvgo = models_module.get_present_value_of_growth_opportunities(rounding=10)
+    cost_of_equity = models_module.get_weighted_average_cost_of_capital(rounding=15).xs(
+        "Cost of Equity", level=1
+    )
+    income = models_module._income_statement
+    earnings_per_share = (
+        income.loc[:, "Net Income", :]
+        / income.loc[:, "Weighted Average Shares Diluted", :]
+    )
+    close = models_module._historical_data["yearly"]["Close"]
+
+    expected = close[models_module._tickers] - (earnings_per_share / cost_of_equity).T
+    expected = expected.loc[pvgo.index].round(10)
+    pd.testing.assert_frame_equal(pvgo, expected, check_names=False, rtol=1e-8)
+
+
+def test_residual_income_charges_the_beginning_book_value(models_module):
+    import pandas as pd
+
+    residual_income = models_module.get_residual_income(rounding=10)
+    balance = models_module._balance_sheet_statement
+    beginning_book_value = (
+        balance.loc[:, "Total Shareholder Equity", :]
+        - balance.loc[:, "Preferred Stock", :]
+    ).shift(1, axis=1)
+
+    book_value = residual_income.xs("Book Value of Equity", level=1)
+    pd.testing.assert_frame_equal(
+        book_value,
+        beginning_book_value.loc[book_value.index, book_value.columns],
+        check_names=False,
+    )
+    expected = (
+        residual_income.xs("Net Income", level=1)
+        - residual_income.xs("Cost of Equity", level=1) * book_value
+    )
+    pd.testing.assert_frame_equal(
+        residual_income.xs("Residual Income", level=1), expected, rtol=1e-6
+    )
+
+
+def test_economic_value_added_uses_the_unrounded_wacc(models_module):
+    import pandas as pd
+
+    eva = models_module.get_economic_value_added(rounding=15)
+    wacc = models_module.get_weighted_average_cost_of_capital(
+        show_full_results=False, rounding=15
+    )
+
+    eva_wacc = eva.xs("Weighted Average Cost of Capital", level=1).dropna(
+        axis=1, how="all"
+    )
+    pd.testing.assert_frame_equal(
+        eva_wacc, wacc.loc[eva_wacc.index, eva_wacc.columns], check_names=False
+    )
+
+
+def test_models_take_operating_income_as_ebit(models_module):
+    import pandas as pd
+
+    altman = models_module.get_altman_z_score(rounding=10)
+    income = models_module._income_statement
+    balance = models_module._balance_sheet_statement
+    expected = (
+        income.loc[:, "Operating Income", :] / balance.loc[:, "Total Assets", :]
+    ).round(10)
+
+    ebit_to_assets = altman.xs("EBIT to Total Assets", level=1)
+    pd.testing.assert_frame_equal(
+        ebit_to_assets,
+        expected.loc[ebit_to_assets.index, ebit_to_assets.columns],
+        check_names=False,
+    )
+
+
+def test_growth_rates_use_beginning_equity_and_ending_assets(models_module):
+    import pandas as pd
+
+    income = models_module._income_statement
+    balance = models_module._balance_sheet_statement
+    cash = models_module._cash_flow_statement
+    net_income = income.loc[:, "Net Income", :]
+    retention = 1 - cash.loc[:, "Dividends Paid", :].abs() / net_income
+
+    sustainable = models_module.get_sustainable_growth_rate(rounding=10)
+    expected = (
+        net_income / balance.loc[:, "Total Equity", :].shift(1, axis=1) * retention
+    ).round(10)
+    pd.testing.assert_frame_equal(
+        sustainable,
+        expected.loc[sustainable.index, sustainable.columns],
+        check_names=False,
+    )
+
+    internal = models_module.get_internal_growth_rate(rounding=10)
+    retained_return = net_income / balance.loc[:, "Total Assets", :] * retention
+    expected = (retained_return / (1 - retained_return)).round(10)
+    pd.testing.assert_frame_equal(
+        internal, expected.loc[internal.index, internal.columns], check_names=False
+    )
+
+
+def test_dividend_discount_models_drop_an_unfinished_period():
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from financetoolkit.models.models_controller import Models
+
+    years = pd.period_range("2022", "2024", freq="Y")
+    dividends = pd.DataFrame({"AAPL": [0.9, 0.95, 0.5]}, index=years)
+
+    def complete(last_day: str) -> pd.DataFrame:
+        days = pd.period_range("2022-01-03", last_day, freq="D")
+        historical = {
+            "yearly": pd.concat({"Dividends": dividends}, axis=1),
+            "daily": pd.DataFrame(index=days),
+        }
+        return Models._complete_period_dividends(
+            SimpleNamespace(_quarterly=False, _historical_data=historical)
+        )
+
+    # Data up to the last trading day of the year covers the whole year.
+    assert complete("2024-12-31").index[-1] == years[-1]
+    # Data ending in June leaves 2024 unfinished, so 2023 is the last complete year.
+    assert complete("2024-06-28").index[-1] == years[-2]

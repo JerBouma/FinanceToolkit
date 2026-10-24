@@ -459,3 +459,35 @@ def test_period_ohlc_is_aggregated_from_the_adjusted_daily_prices(technical_modu
     # The close and every other column stay as they are.
     pd.testing.assert_frame_equal(weekly["Adj Close"], raw["Adj Close"])
     pd.testing.assert_frame_equal(weekly["Volume"], raw["Volume"])
+
+
+def test_conventional_default_windows():
+    import inspect  # noqa: PLC0415
+
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    def defaults(method):
+        return {
+            name: parameter.default
+            for name, parameter in inspect.signature(method).parameters.items()
+        }
+
+    assert defaults(Technicals.get_percentage_price_oscillator)["short_window"] == 12
+    assert defaults(Technicals.get_percentage_price_oscillator)["long_window"] == 26
+    assert defaults(Technicals.get_force_index)["window"] == 13
+    keltner = defaults(Technicals.get_keltner_channels)
+    assert (keltner["window"], keltner["atr_window"], keltner["atr_multiplier"]) == (
+        20,
+        10,
+        2,
+    )
+
+
+def test_relative_vigor_index_returns_index_and_signal_line(technical_module):
+    result = technical_module.get_relative_vigor_index()
+
+    assert {"Relative Vigor Index", "Signal Line"} <= set(
+        result.columns.get_level_values(0)
+    )

@@ -56,7 +56,8 @@ def get_days_of_inventory_outstanding(
         average_inventory (float or pd.Series): Average inventory of the company.
         This is typically calculated as (beginning inventory + ending inventory) / 2.
         cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
-        days (int, optional): Number of days in the year. Defaults to 365.
+        days (int | float, optional): Number of days the cost of goods sold or revenue covers
+            (365 for a year of flows). Defaults to 365.
 
     Returns:
         float | pd.Series: The days sales in inventory ratio value.
@@ -78,7 +79,8 @@ def get_days_of_sales_outstanding(
         average_accounts_receivable (float or pd.Series): Average accounts receivable of the company.
         This is typically calculated as (beginning accounts receivable + ending accounts receivable) / 2.
         net_credit_sales (float or pd.Series): Net credit sales of the company.
-        days (int, optional): Number of days in the year. Defaults to 365.
+        days (int | float, optional): Number of days the cost of goods sold or revenue covers
+            (365 for a year of flows). Defaults to 365.
 
     Returns:
         float | pd.Series: The days of sales outstanding value.
@@ -135,7 +137,8 @@ def get_days_of_accounts_payable_outstanding(
         cost_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
         average_accounts_payable (float or pd.Series): Average accounts payable of the company.
         This is typically calculated as (beginning accounts payable + ending accounts payable) / 2.
-        days (int, optional): Number of days in the year. Defaults to 365.
+        days (int | float, optional): Number of days the cost of goods sold or revenue covers
+            (365 for a year of flows). Defaults to 365.
 
     Returns:
         float | pd.Series: The days payables outstanding value.
@@ -219,7 +222,8 @@ def get_fixed_asset_turnover(
 
     Args:
         net_sales (float or pd.Series): Total sales of the company.
-        average_net_fixed_assets (float or pd.Series): Average net fixed assets of the company.
+        average_net_fixed_assets (float or pd.Series): Average net property, plant and equipment
+            of the company.
 
     Returns:
         float | pd.Series: The Fixed Asset Turnover ratio value.

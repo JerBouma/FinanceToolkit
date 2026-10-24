@@ -119,8 +119,8 @@ def get_covar(
         VaR is being measured.
         conditioning_returns (pd.Series): The returns of the asset/institution (or
         e.g. a financial-system index) whose distress `returns` is conditioned on.
-        alpha (float): The confidence level for both the tail quantile regression and
-        the VaR of `conditioning_returns` (e.g., 0.05 for 95% confidence).
+        alpha (float): The tail probability for both the tail quantile regression and
+        the VaR of `conditioning_returns` (e.g., 0.05 for the 95% confidence level).
 
     Returns:
         pd.Series: The CoVaR, the Delta-CoVaR, the tail (alpha-quantile) Quantile

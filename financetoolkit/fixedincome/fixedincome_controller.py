@@ -81,6 +81,79 @@ def _maturity_in_months(label: str) -> float:
     return float(label[:-1]) * (12 if label.endswith("Y") else 1)
 
 
+def _maturity_in_years(maturity) -> float:
+    """
+    Converts a maturity, a number of years or a label such as "6M" or "10Y", into years.
+
+    Args:
+        maturity (float | int | str): The maturity in years, or a label ending in "M"
+            (months) or "Y" (years) as the yield curve methods return them.
+
+    Returns:
+        float: The maturity in years.
+
+    Raises:
+        ValueError: If the maturity is neither a number nor such a label.
+    """
+    if isinstance(maturity, int | float | np.number):
+        return float(maturity)
+
+    label = str(maturity).strip().upper()
+
+    try:
+        return float(label)
+    except ValueError:
+        pass
+
+    if label[-1:] in ("M", "Y"):
+        try:
+            return _maturity_in_months(label) / 12
+        except ValueError:
+            pass
+
+    raise ValueError(
+        f"The maturity {maturity!r} is not a number of years or a label such as '6M' or '10Y'."
+    )
+
+
+def _get_spot_curve(curve: pd.Series | dict | None, default: dict) -> pd.Series:
+    """
+    Returns a yield curve as a Series indexed by maturity in years (floats), sorted by maturity.
+
+    A curve with string keys ('1', '10' or '10Y') would otherwise sort alphabetically, placing
+    10 years before 2 years, and break the linear interpolation between maturities.
+
+    Args:
+        curve (pd.Series | dict | None): The curve by maturity, or None for the default.
+        default (dict): The curve to use when none is given.
+
+    Returns:
+        pd.Series: The curve indexed by maturity in years, in increasing order.
+    """
+    curve_series = pd.Series(default if curve is None else curve, dtype=float)
+    curve_series.index = [_maturity_key(maturity) for maturity in curve_series.index]
+
+    return curve_series.sort_index()
+
+
+def _maturity_key(maturity) -> float | int:
+    """
+    Converts a maturity into years, kept as an integer when it is a whole number of years.
+
+    Whole years stay integers so that curve maturities and the key rate maturities read from
+    them label the output as 5 rather than 5.0.
+
+    Args:
+        maturity (float | int | str): The maturity in years, or a label such as "6M" or "10Y".
+
+    Returns:
+        float | int: The maturity in years.
+    """
+    years = _maturity_in_years(maturity)
+
+    return int(years) if years.is_integer() else years
+
+
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
@@ -269,7 +342,11 @@ class FixedIncome:
             - Dollar Duration: The modified duration multiplied by the bond price, divided by 100.
             - DV01: The currency change in the bond's price, per par value of face, for a one basis
                 point (0.01%) change in the yield to maturity.
-            - Convexity: The second derivative of the bond price with respect to the yield to maturity.
+            - Convexity: The second derivative of the bond price with respect to the yield to maturity,
+                divided by the price.
+            - Prices between coupon dates: the present value is the clean (quoted) price, while the
+                durations, DV01 and convexity are sensitivities of the full (dirty) price; on a coupon
+                date the two prices coincide.
 
         These statistics can be used to evaluate the bond's performance as opposed to other bonds or to estimate the bond's
         sensitivity to changes in interest rates to be able to apply a hedging strategy.
@@ -306,7 +383,7 @@ class FixedIncome:
 
         Which returns:
 
-        |                     |        0 |
+        |                     |    Value |
         |:--------------------|---------:|
         | Par Value           | 100      |
         | Coupon Rate         |   0.05   |
@@ -323,10 +400,12 @@ class FixedIncome:
         | DV01                |   0.0368 |
         | Convexity           |  22.4017 |
 
-        Note how the effective duration sits just above the modified duration for every
-        bond: the two measure the same sensitivity, and their small difference is exactly
-        the convexity picked up by repricing over a 100 basis point shift rather than
-        differentiating at a point.
+        Note how the effective duration sits just above the modified duration: the two
+        measure the same sensitivity, but the symmetric 100 basis point repricing of the
+        effective duration also picks up the third-order term of the price-yield
+        relationship, about -P'''(y) * Δy^2 / (6 * P), which the analytical modified
+        duration leaves out. The convexity (second-order) terms cancel in the symmetric
+        difference.
         """
         bond_statistics = {
             "Par Value": par_value,
@@ -439,6 +518,11 @@ class FixedIncome:
 
         The bond price is used to determine the fair value of the bond and to compare the bond's price to its market price to determine
         if the bond is overvalued or undervalued.
+
+        The coupon schedule runs back from maturity, so a maturity that is not a whole number of coupon periods (2.5 years of
+        annual coupons) discounts every cash flow over its fractional number of periods, and the price is the clean (quoted)
+        price: the full price minus the coupon interest accrued since the previous coupon date, matching QuantLib's clean price
+        with a 30/360 count. On a coupon date the two coincide.
 
         Also known as: PV, bond pricing, discounted cash flows.
 
@@ -726,7 +810,9 @@ class FixedIncome:
         - F = Face value of the bond
 
         The goal is to find the yield to maturity that satisfies the equation above. This is done using the secant method
-        which is an iterative method that converges to the root of a function.
+        which is an iterative method that converges to the root of a function. The bond price is read as a clean (quoted)
+        price, and a maturity between coupon dates discounts each cash flow over its fractional number of periods, in the
+        same way as `get_present_value`, so the yield is a nominal annual rate compounded `frequency` times per year.
 
         The yield to maturity is the return of a bond bought at this price and held to maturity, if every coupon is reinvested
         at the same yield and the issuer pays in full. It is the standard way to quote and compare bonds, but it is one average
@@ -739,7 +825,8 @@ class FixedIncome:
             par_value (float): The par value (face value) of the bond, the amount repaid at maturity. Defaults to 100.
             coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
-            bond_price (float, optional): The price of the bond. Defaults to None.
+            bond_price (float, optional): The clean (quoted) price of the bond. Defaults to None, a range of
+                prices around the par value.
             frequency (int, optional): The number of coupon payments per year. Defaults to 1.
             guess (float, optional): The initial guess for the yield to maturity. Defaults to 0.05.
             tolerance (float, optional): The tolerance level for convergence. Defaults to 0.0001.
@@ -875,8 +962,9 @@ class FixedIncome:
         Also known as: implied forward rate, forward-forward rate.
 
         Args:
-            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve,
-                indexed by maturity in years (in decimal). Defaults to a sample curve.
+            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
+                in decimals, read as effective annual (annually compounded) rates, indexed
+                by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             near_maturity (float | list, optional): The nearer maturity (or maturities),
                 in years. If not provided, a range of near maturities will be used.
             far_maturity (float | list, optional): The further maturity (or maturities),
@@ -910,11 +998,7 @@ class FixedIncome:
         |               2 | 0.042 | 0.047  |
         |               3 | 0.044 | 0.0483 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         near_maturity = range(1, 6) if near_maturity is None else near_maturity
         far_maturity = range(5, 11) if far_maturity is None else far_maturity
@@ -986,13 +1070,18 @@ class FixedIncome:
         where DF(k) = 1 / (1 + spot_rate(k / frequency) / frequency)^k is the discount
         factor for the cash flow at period k, spot_rate(t) is obtained by interpolating
         the spot curve at time t (in years), and n = years_to_maturity * frequency is
-        the number of coupon periods.
+        the number of coupon periods. The spot rates are read as nominal annual rates
+        compounded `frequency` times per year. For a maturity between coupon dates each
+        cash flow is discounted over its fractional number of periods and the par yield
+        is the coupon at which the clean price, without accrued interest, equals par
+        (see `yieldcurve_model.get_par_yield`).
 
         Also known as: par rate, par coupon rate.
 
         Args:
-            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve,
-                indexed by maturity in years (in decimal). Defaults to a sample curve.
+            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
+                in decimals, read as nominal annual rates compounded `frequency` times per
+                year, indexed by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             years_to_maturity (float | list, optional): The maturity (or maturities), in
                 years, to calculate the par yield for. If not provided, a range of years
                 to maturity will be used.
@@ -1027,11 +1116,7 @@ class FixedIncome:
         |                   5 |      0.0377 |
         |                  10 |      0.0431 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         years_to_maturity = (
             range(1, 11) if years_to_maturity is None else years_to_maturity
@@ -1088,8 +1173,8 @@ class FixedIncome:
         Also known as: term spread, yield curve slope.
 
         Args:
-            spot_rates (pd.Series | dict, optional): The yield curve, indexed by
-                maturity in years (in decimal). Defaults to a sample curve.
+            spot_rates (pd.Series | dict, optional): The yield curve in decimals, indexed
+                by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             long_maturity (float | list, optional): The longer maturity (or maturities),
                 in years. If not provided, a range of long maturities will be used.
             short_maturity (float | list, optional): The shorter maturity (or
@@ -1122,11 +1207,7 @@ class FixedIncome:
         |              10 | 0.014 | 0.012 |
         |              30 | 0.02  | 0.018 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         long_maturity = range(5, 11) if long_maturity is None else long_maturity
         short_maturity = range(1, 5) if short_maturity is None else short_maturity
@@ -1204,9 +1285,11 @@ class FixedIncome:
 
         Args:
             nominal_rates (pd.Series | dict, optional): The nominal (non-inflation-protected)
-                yield curve, indexed by maturity in years (in decimal). Defaults to a sample curve.
+                yield curve in decimals, indexed by maturity in years (a number, or a label such as '6M' or '10Y').
+                Defaults to a sample curve.
             real_rates (pd.Series | dict, optional): The real (inflation-protected) yield
-                curve, indexed by maturity in years (in decimal). Defaults to a sample curve.
+                curve in decimals, indexed by maturity in years (a number, or a label such as '6M' or '10Y').
+                Defaults to a sample curve.
             maturity (float | list, optional): The maturity (or maturities), in years,
                 to calculate the breakeven inflation rate for. If not provided, a range
                 of maturities will be used.
@@ -1238,16 +1321,8 @@ class FixedIncome:
         |         10 |                      0.028 |
         |         30 |                      0.03  |
         """
-        nominal_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if nominal_rates is None
-            else pd.Series(nominal_rates)
-        ).sort_index()
-        real_rates_series = (
-            pd.Series(DEFAULT_REAL_SPOT_CURVE)
-            if real_rates is None
-            else pd.Series(real_rates)
-        ).sort_index()
+        nominal_rates_series = _get_spot_curve(nominal_rates, DEFAULT_SPOT_CURVE)
+        real_rates_series = _get_spot_curve(real_rates, DEFAULT_REAL_SPOT_CURVE)
 
         maturity = [1, 2, 3, 5, 7, 10, 20, 30] if maturity is None else maturity
 
@@ -1331,9 +1406,11 @@ class FixedIncome:
             par_value (float): The par value (face value) of the bond.
             coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
-            bond_price (float, optional): The price of the bond. Defaults to None.
+            bond_price (float, optional): The clean (quoted) price of the bond. Defaults to None, a range of
+                prices around the par value.
             spot_rates (pd.Series | dict, optional): The benchmark zero-coupon (spot)
-                yield curve, indexed by maturity in years (in decimal). Defaults to a sample curve.
+                yield curve in decimals, read as nominal annual rates compounded `frequency`
+                times per year, indexed by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             frequency (int, optional): The number of coupon payments per year. Defaults to 1.
             guess (float, optional): The initial guess for the Z-spread. Defaults to 0.01.
             tolerance (float, optional): The tolerance level for convergence. Defaults to 0.0001.
@@ -1366,11 +1443,7 @@ class FixedIncome:
         |          100 | 0.0124 | 0.007  | 0.0053 |
         |          105 | 0.0012 | 0.0007 | 0.0005 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         if bond_price is None:
             step_size = par_value / 10
@@ -1579,8 +1652,9 @@ class FixedIncome:
             years_to_maturity (float | list, optional): The years to maturity of the
                 bond (or bonds). If not provided, a range of years to maturity will be used.
             spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
-                used to discount the bond's cash flows, indexed by maturity in years (in
-                decimal). Defaults to a sample curve.
+                used to discount the bond's cash flows, in decimals, read as nominal annual
+                rates compounded `frequency` times per year and indexed by maturity in years (a number, or a label such as '6M' or '10Y').
+                Defaults to a sample curve.
             key_rate_maturity (float | list, optional): The maturity (or maturities), in
                 years, of the curve point(s) to shock. Must be present in the index of
                 `spot_rates`. Defaults to every maturity in `spot_rates`.
@@ -1615,11 +1689,7 @@ class FixedIncome:
         |                   5 | 0.0862 | 4.0561 | -0      |
         |                  10 | 0.0862 | 0.377  |  6.4666 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         years_to_maturity = (
             range(1, 11) if years_to_maturity is None else years_to_maturity
@@ -1632,8 +1702,11 @@ class FixedIncome:
 
         if isinstance(years_to_maturity, int | float):
             years_to_maturity = [years_to_maturity]
-        if isinstance(key_rate_maturity, int | float):
+        if isinstance(key_rate_maturity, int | float | str):
             key_rate_maturity = [key_rate_maturity]
+
+        # The same years as the curve's maturities, so '5Y' finds the 5 year point of a labelled curve.
+        key_rate_maturity = [_maturity_key(key_rate) for key_rate in key_rate_maturity]
 
         key_rate_durations: dict[float, dict[float, float]] = {}
 
@@ -1811,12 +1884,15 @@ class FixedIncome:
         It is possible to use two different models to calculate the derivative price:
 
         - Black Model: A mathematical model used for pricing financial derivatives, its primary applications are for
-            pricing options on future contracts, bond options, interest rate cap and floors, and swaptions.
+            pricing options on future contracts, bond options, interest rate caps and floors, and swaptions.
             For more information, see: https://en.wikipedia.org/wiki/Black_model
         - Bachelier Model: A deviation of the Black Model that is used for pricing future contracts. It is a simple model
             that assumes the price of the underlying asset follows a normal distribution with constant volatility. This
             is in contrast to the Black Model which assumes the price of the underlying asset follows a log-normal distribution.
             For more information, see: https://en.wikipedia.org/wiki/Bachelier_model
+
+        Both models are applied to European swaptions here, the right to enter an interest rate swap at the strike
+        rate; caps, floors and bond options are not implemented.
 
         It is possible to alter all parameters within the models, e.g. strike rate, volatility, years to maturity,
         risk-free rate, notional amount, and whether the holder is the receiver or payer of the derivative. Next to that, you can
@@ -1858,8 +1934,10 @@ class FixedIncome:
                 by the Black model and as 100 basis points of normal volatility by the Bachelier model.
             years_to_maturity (float | list, optional): The years to maturity of the derivative. Defaults to None, which
                 returns the price for 1 to 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
-            risk_free_rate (float, optional): The risk-free interest rate used for discounting. Defaults to None, which uses
-                the forward rate.
+            risk_free_rate (float, optional): The risk-free interest rate used to discount the swap's payment dates,
+                read as a continuously compounded rate on a flat curve (discount factor exp(-r * t)). Defaults to None,
+                which uses the forward rate; as the forward rate is a swap rate on the swap's own compounding, pass the
+                continuously compounded rate explicitly for an exact annuity.
             notional (float, optional): The notional amount of the derivative. Defaults to 10_000_000.
             tenor (float | None, optional): The tenor (length in years) of the underlying swap. Defaults to None,
                 which means it is equal to years_to_maturity for each scenario.
@@ -2074,8 +2152,10 @@ class FixedIncome:
             short_term (bool, optional): Whether to return the short-term interest rate. Defaults to False.
                 This means that the long-term interest rate will be returned.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+                Defaults to None, which uses quarterly data when the FixedIncome class was initialized
+                with quarterly=True and yearly data otherwise.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
@@ -2094,21 +2174,21 @@ class FixedIncome:
 
         long_term_interest_rate = fixedincome.get_government_bond_yield(short_term=False, period='monthly')
 
-        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Brazil']]
+        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Germany']]
         ```
 
         Which returns:
 
-        |         |   Japan |   United States |   Brazil |
-        |:--------|--------:|----------------:|---------:|
-        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
-        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
-        | 2023-07 |  0.0059 |          0.039  |   0.07   |
-        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
-        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
-        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
-        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
-        | 2023-12 |  0.0062 |          0.0402 |   0.0655 |
+        |         |   Japan |   United States |   Germany |
+        |:--------|--------:|----------------:|----------:|
+        | 2023-05 |  0.0043 |          0.0357 |    0.0234 |
+        | 2023-06 |  0.004  |          0.0375 |    0.0238 |
+        | 2023-07 |  0.0059 |          0.039  |    0.0246 |
+        | 2023-08 |  0.0064 |          0.0417 |    0.0255 |
+        | 2023-09 |  0.0076 |          0.0438 |    0.0266 |
+        | 2023-10 |  0.0095 |          0.048  |    0.0282 |
+        | 2023-11 |  0.0066 |          0.045  |    0.026  |
+        | 2023-12 |  0.0062 |          0.0402 |    0.021  |
         """
         period = (
             period
@@ -2539,8 +2619,8 @@ class FixedIncome:
         of all bonds in a given maturity and rating category and a spot Treasury curve. An OAS index is constructed
         using each constituent bond's OAS, weighted by market capitalization.
 
-        The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually measured in
-        basis points (bp), that equates the theoretical present value of a series of uncertain cash flows to the
+        The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually quoted in
+        basis points, that equates the theoretical present value of a series of uncertain cash flows to the
         market price of a fixed-income investment. The spread is added to the risk-free rate to compensate for the
         uncertainty of the cash flows.
 
@@ -2551,19 +2631,20 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity option adjusted spread or the rating option adjusted spread.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Option Adjusted Spread, in basis points. The FRED
-            series are published in percent and are multiplied by 100 here, so a 0.77% spread is
-            returned as 77.
+            pd.DataFrame: A DataFrame containing the Option Adjusted Spread as decimal fractions, like
+            every other rate. The FRED series are published in percent and are divided by 100 here, so
+            a 0.77% (77 basis point) spread is returned as 0.0077.
 
         As an example:
 
@@ -2582,17 +2663,17 @@ class FixedIncome:
 
         | Date       |   1-3 Years |   3-5 Years |   5-7 Years |   7-10 Years |   10-15 Years |   15+ Years |
         |:-----------|------------:|------------:|------------:|-------------:|--------------:|------------:|
-        | 2024-01-01 |         nan |         nan |         nan |          nan |           nan |         nan |
-        | 2024-01-02 |          78 |          95 |         109 |          128 |           133 |         119 |
-        | 2024-01-03 |          80 |          98 |         113 |          133 |           136 |         122 |
-        | 2024-01-04 |          80 |          98 |         112 |          133 |           135 |         122 |
-        | 2024-01-05 |          80 |          98 |         112 |          132 |           134 |         121 |
-        | 2024-01-08 |          79 |          98 |         112 |          132 |           134 |         120 |
-        | 2024-01-09 |          78 |          96 |         110 |          130 |           131 |         117 |
-        | 2024-01-10 |          77 |          94 |         108 |          128 |           128 |         113 |
-        | 2024-01-11 |          75 |          94 |         107 |          128 |           127 |         113 |
-        | 2024-01-12 |          74 |          94 |         107 |          128 |           126 |         112 |
-        | 2024-01-15 |          74 |          94 |         107 |          128 |           125 |         111 |
+        | 2024-01-01 |    nan      |    nan      |    nan      |     nan      |      nan      |    nan      |
+        | 2024-01-02 |      0.0078 |      0.0095 |      0.0109 |       0.0128 |        0.0133 |      0.0119 |
+        | 2024-01-03 |      0.008  |      0.0098 |      0.0113 |       0.0133 |        0.0136 |      0.0122 |
+        | 2024-01-04 |      0.008  |      0.0098 |      0.0112 |       0.0133 |        0.0135 |      0.0122 |
+        | 2024-01-05 |      0.008  |      0.0098 |      0.0112 |       0.0132 |        0.0134 |      0.0121 |
+        | 2024-01-08 |      0.0079 |      0.0098 |      0.0112 |       0.0132 |        0.0134 |      0.012  |
+        | 2024-01-09 |      0.0078 |      0.0096 |      0.011  |       0.013  |        0.0131 |      0.0117 |
+        | 2024-01-10 |      0.0077 |      0.0094 |      0.0108 |       0.0128 |        0.0128 |      0.0113 |
+        | 2024-01-11 |      0.0075 |      0.0094 |      0.0107 |       0.0128 |        0.0127 |      0.0113 |
+        | 2024-01-12 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0126 |      0.0112 |
+        | 2024-01-15 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0125 |      0.0111 |
         """
         self._require_fred_api_key()
 
@@ -2629,9 +2710,7 @@ class FixedIncome:
         takes place on the weekend, weekend observations will occur as a result of month ending accrued interest adjustments.
 
         The effective yield of an ICE BofA index is the yield of the index as a whole, aggregated from the
-        yields of its constituent bonds and weighted by their market capitalisation, on the same
-        compounded (effective annual) basis that the accompanying Semi-Annual Yield to Worst series is
-        quoted on a semi-annual basis. It is an index-level yield of the corporate bond market segment,
+        yields of its constituent bonds and weighted by their market capitalisation. It is an index-level yield of the corporate bond market segment,
         not a statistic derived from any single bond's coupon — for the single-bond coupon-reinvestment
         calculation, see the "Effective Yield" row of `collect_bond_statistics` instead.
 
@@ -2647,14 +2726,15 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity effective yield or the rating effective yield.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ICE BofA Effective Yield
@@ -2732,14 +2812,15 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity total return or the rating total return.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ICE BofA Total Return, as an index level rather
@@ -2819,14 +2900,15 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity yield to worst or the rating yield to worst.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ICE BofA Yield to Worst. The FRED series are
@@ -3770,11 +3852,10 @@ class FixedIncome:
 
         Which returns:
 
-        |         |   ('Euro Area', '1Y') |   ('United Kingdom', '1Y') |   ('Euro Area', '10Y') |   ('United Kingdom', '10Y') |   ('Euro Area', '30Y') |
-        |:--------|----------------------:|---------------------------:|-----------------------:|----------------------------:|-----------------------:|
-        | 2026-07 |                0.0283 |                     0.0415 |                 0.0316 |                      0.0468 |                 0.0337 |
-        | 2026-08 |                0.0292 |                     0.0418 |                 0.0327 |                      0.0473 |                 0.0345 |
-        | 2026-09 |                0.0327 |                     0.0445 |                 0.0358 |                      0.0501 |                 0.0351 |
+        |         |   ('Euro Area', '1Y') |   ('United Kingdom', '1Y') |   ('Euro Area', '10Y') |   ('United Kingdom', '10Y') |   ('Euro Area', '30Y') |   ('United Kingdom', '30Y') |   ('Euro Area', '60Y') |   ('United Kingdom', '60Y') |   ('Euro Area', '150Y') |   ('United Kingdom', '150Y') |
+        |:--------|----------------------:|---------------------------:|-----------------------:|----------------------------:|-----------------------:|----------------------------:|-----------------------:|----------------------------:|------------------------:|-----------------------------:|
+        | 2026-07 |                0.0283 |                     0.0415 |                 0.0316 |                      0.0468 |                 0.0337 |                      0.0518 |                 0.0335 |                      0.0443 |                  0.0332 |                       0.0375 |
+        | 2026-09 |                0.0327 |                     0.0445 |                 0.0358 |                      0.0501 |                 0.0351 |                      0.0533 |                 0.0342 |                      0.0447 |                  0.0335 |                       0.0376 |
         """
         if curve not in {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}:
             raise ValueError(
@@ -4173,7 +4254,7 @@ class FixedIncome:
         | 2026-06 |      0.0098 |          0.0095 |           0.0072 |  0.0308 |
         | 2026-07 |      0.0129 |          0.0493 |           0.0075 |  0.0209 |
         | 2026-08 |      0.0205 |          0.0194 |           0.0011 |  0.0072 |
-        | 2026-09 |      0.0132 |          0.0092 |           0.0122 |  0.0015 |
+        | 2026-09 |      0.0133 |          0.0091 |           0.0122 |  0.0015 |
         """
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "financial stress index"

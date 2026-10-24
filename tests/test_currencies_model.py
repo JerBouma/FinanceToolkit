@@ -444,3 +444,57 @@ def test_symbols_are_written_as_each_provider_writes_them(
         == financial_modeling_prep
     )
     assert currencies_model.to_yahoo_finance_symbol(symbol) == yahoo_finance
+
+
+def test_convert_currencies_uses_the_rate_of_each_item():
+    """Cash balances take their own rate; the cash flows the average rate."""
+    periods = ["2020", "2021", "2022"]
+    items = [
+        "Cash Flow from Operations",
+        "Forex Changes on Cash",
+        "Net Change in Cash",
+        "Cash Beginning of Period",
+        "Cash End of Period",
+    ]
+    financial_data = pd.DataFrame(
+        [
+            [100.0, 100.0, 100.0],
+            [0.0, 0.0, 0.0],
+            [100.0, 100.0, 100.0],
+            [1000.0, 1100.0, 1200.0],
+            [1100.0, 1200.0, 1300.0],
+        ],
+        index=pd.MultiIndex.from_tuples([("ASML", item) for item in items]),
+        columns=periods,
+    )
+    currencies = pd.Series(["EURUSD=X"], index=["ASML"])
+    average_rates = pd.DataFrame({"EURUSD=X": [1.1, 1.2, 1.3]}, index=periods)
+    closing_rates = pd.DataFrame({"EURUSD=X": [1.15, 1.25, 1.35]}, index=periods)
+
+    result = currencies_model.convert_currencies(
+        financial_data,
+        currencies,
+        average_rates,
+        item_exchange_rate_data={
+            "Cash End of Period": closing_rates,
+            "Cash Beginning of Period": closing_rates.shift(1),
+        },
+    )
+
+    assert result.loc[("ASML", "Cash Flow from Operations"), "2021"] == 100 * 1.2
+    assert result.loc[("ASML", "Cash End of Period"), "2021"] == 1200 * 1.25
+    # The cash at the beginning equals the converted cash at the end of the period before.
+    assert result.loc[("ASML", "Cash Beginning of Period"), "2021"] == (
+        result.loc[("ASML", "Cash End of Period"), "2020"]
+    )
+    assert pd.isna(result.loc[("ASML", "Cash Beginning of Period"), "2020"])
+
+    # Net Change in Cash is the change in the converted cash, and Forex Changes on Cash
+    # the part of it the converted cash flows do not explain (IAS 7.28).
+    net_change = result.loc[("ASML", "Net Change in Cash"), "2021"]
+    assert net_change == pytest.approx(1200 * 1.25 - 1100 * 1.15)
+    assert result.loc[("ASML", "Forex Changes on Cash"), "2021"] == pytest.approx(
+        net_change - 100 * 1.2
+    )
+    # Without a beginning balance the period keeps its converted values.
+    assert result.loc[("ASML", "Net Change in Cash"), "2020"] == pytest.approx(110)

@@ -157,6 +157,9 @@ def get_depreciation_index(
     Notes:
     - A DEPI greater than 1 indicates a slowing depreciation rate, which can be a sign of
     earnings manipulation through the understatement of depreciation expense.
+    - Beneish (1999) uses depreciation expense alone. Statements report depreciation and
+    amortization as one line, so the rate here includes amortization, which also moves with
+    acquired intangible assets.
     """
     depreciation_rate = depreciation_and_amortization / (
         depreciation_and_amortization + property_plant_and_equipment
@@ -255,6 +258,16 @@ def get_total_accruals_to_total_assets(
     Notes:
     - A high TATA indicates that a large portion of earnings is composed of accruals rather
     than cash, which is a hallmark of earnings manipulation.
+    - Beneish (1999) builds total accruals from balance sheet changes (working capital excluding
+    cash, current maturities of long-term debt and income tax payable, minus depreciation). This
+    function uses the cash flow form, Net Income minus Cash Flow from Operations, as in Beneish,
+    Lee and Nichols (2013).
+
+    References:
+    - Beneish, Messod D. "The Detection of Earnings Manipulation." Financial Analysts Journal,
+    Vol. 55, No. 5, 1999, pp. 24-36.
+    - Beneish, Messod D., Charles M. C. Lee, and D. Craig Nichols. "Earnings Manipulation and
+    Expected Returns." Financial Analysts Journal, Vol. 69, No. 2, 2013, pp. 57-82.
     """
     return (net_income - cash_flow_from_operations) / total_assets
 
@@ -317,6 +330,8 @@ def get_beneish_m_score(
     References:
     - Beneish, Messod D. "The Detection of Earnings Manipulation." Financial Analysts Journal,
     Vol. 55, No. 5, 1999, pp. 24-36.
+    - Beneish, Messod D., Charles M. C. Lee, and D. Craig Nichols. "Earnings Manipulation and
+    Expected Returns." Financial Analysts Journal, Vol. 69, No. 2, 2013, pp. 57-82.
     """
     return (
         -4.84

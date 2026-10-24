@@ -17,8 +17,11 @@ AAPL,Preferred Equity,Lag 3,,,,
 AAPL,Cash and Cash Equivalents,Lag 1,,-0.0809,-0.3232,0.2672
 AAPL,Cash and Cash Equivalents,Lag 2,,,-0.378,-0.1424
 AAPL,Cash and Cash Equivalents,Lag 3,,,,-0.2118
-AAPL,Enterprise Value,Lag 1,,0.2847,-0.2798,
-AAPL,Enterprise Value,Lag 2,,,-0.0747,
+AAPL,Short Term Investments,Lag 1,,-0.4767,-0.1098,0.2811
+AAPL,Short Term Investments,Lag 2,,,-0.5341,0.1405
+AAPL,Short Term Investments,Lag 3,,,,-0.4031
+AAPL,Enterprise Value,Lag 1,,0.3018,-0.2813,
+AAPL,Enterprise Value,Lag 2,,,-0.0644,
 AAPL,Enterprise Value,Lag 3,,,,
 MSFT,Share Price,Lag 1,,0.5121,-0.2869,
 MSFT,Share Price,Lag 2,,,0.0782,
@@ -38,6 +41,9 @@ MSFT,Preferred Equity,Lag 3,,,,
 MSFT,Cash and Cash Equivalents,Lag 1,,0.0477,-0.0206,1.4911
 MSFT,Cash and Cash Equivalents,Lag 2,,,0.0261,1.4398
 MSFT,Cash and Cash Equivalents,Lag 3,,,,1.5563
-MSFT,Enterprise Value,Lag 1,,0.479,-0.2897,
-MSFT,Enterprise Value,Lag 2,,,0.0506,
+MSFT,Short Term Investments,Lag 1,,-0.0563,-0.2173,-0.1571
+MSFT,Short Term Investments,Lag 2,,,-0.2613,-0.3403
+MSFT,Short Term Investments,Lag 3,,,,-0.3774
+MSFT,Enterprise Value,Lag 1,,0.519,-0.293,
+MSFT,Enterprise Value,Lag 2,,,0.0739,
 MSFT,Enterprise Value,Lag 3,,,,

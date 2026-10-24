@@ -86,31 +86,48 @@ def get_price_to_earnings_growth_ratio(
 def get_estimated_eps_growth_rate(
     estimated_eps: float | pd.Series | pd.DataFrame,
     trailing_eps: float | pd.Series | pd.DataFrame,
+    years: float | pd.Series | pd.DataFrame = 1,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Calculate the estimated EPS growth rate, i.e. the growth implied by the analyst
-    consensus (average) EPS estimate for a future period relative to the company's
+    Calculate the estimated EPS growth rate, i.e. the annualized growth implied by the
+    analyst consensus (average) EPS estimate for a future period relative to the company's
     most recently reported actual (trailing) EPS.
 
     Unlike the generic `growth=True` parameter available on every ratio and model
     method — which compares two already-reported historical periods — this bridges an
     actual reported figure to a forward-looking analyst estimate, which is what a
-    forward-looking metric such as the PEG ratio needs.
+    forward-looking metric such as the PEG ratio needs. The growth is annualized over
+    the years between the two, so the estimates of later years give a yearly rate that
+    is comparable with that of the next year.
 
     The formula is as follows:
 
-        Estimated EPS Growth Rate = (Estimated EPS - Trailing EPS) / |Trailing EPS|
+        Estimated EPS Growth Rate = (Estimated EPS / Trailing EPS) ^ (1 / Years) - 1
+
+    A compound rate only exists when both EPS figures are positive and the estimate lies
+    in the future (Years > 0); otherwise the growth rate is NaN.
 
     Args:
         estimated_eps (float | pd.Series | pd.DataFrame): The analyst consensus
-        (average) EPS estimate for a future period.
+            (average) EPS estimate for a future period.
         trailing_eps (float | pd.Series | pd.DataFrame): The company's most recently
-        reported actual EPS.
+            reported actual EPS.
+        years (float | pd.Series | pd.DataFrame, optional): The number of years between the
+            trailing EPS and the estimate. Defaults to 1.
 
     Returns:
-        float | pd.Series | pd.DataFrame: The estimated EPS growth rate.
+        float | pd.Series | pd.DataFrame: The annualized estimated EPS growth rate.
     """
-    return (estimated_eps - trailing_eps) / abs(trailing_eps)
+    eps_ratio = estimated_eps / trailing_eps
+
+    valid = (estimated_eps > 0) & (trailing_eps > 0) & (years > 0)
+
+    growth_rate = eps_ratio ** (1 / years) - 1
+
+    if isinstance(growth_rate, pd.Series | pd.DataFrame):
+        return growth_rate.where(valid)
+
+    return growth_rate if valid else float("nan")
 
 
 def get_book_value_per_share(
@@ -343,7 +360,8 @@ def get_enterprise_value(
         total_debt (float or pd.Series): The total debt of the company.
         minority_interest (float or pd.Series): The value of minority interest in the company.
         preferred_equity (float or pd.Series): The value of the preferred equity in the company.
-        cash_and_cash_equivalents (float or pd.Series): The value of cash and cash equivalents of the company.
+        cash_and_cash_equivalents (float or pd.Series): The value of cash and cash equivalents of the
+            company, or of cash and short-term investments to also deduct marketable securities.
 
     Returns:
         float | pd.Series: The Enterprise Value (EV) of the company.
@@ -470,21 +488,26 @@ def get_reinvestment_ratio(
 def get_tangible_asset_value(
     total_assets: pd.Series | pd.DataFrame,
     total_liabilities: pd.Series | pd.DataFrame,
-    goodwill: pd.Series | pd.DataFrame,
+    goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the tangible asset value, which represents the total value of a company's assets
-    that can be used to generate revenue.
+    Calculate the tangible asset value, the book value of a company's equity after
+    deducting goodwill and other intangible assets.
+
+    The formula is as follows:
+
+        Tangible Asset Value = Total Assets - Total Liabilities - Goodwill and Intangible Assets
 
     Args:
         total_assets (float or pd.Series): The total assets of the company.
         total_liabilities (float or pd.Series): The total liabilities of the company.
-        goodwill (float or pd.Series): The goodwill of the company.
+        goodwill_and_intangible_assets (float or pd.Series): The goodwill and other intangible
+            assets of the company.
 
     Returns:
         float | pd.Series: The tangible asset value.
     """
-    return total_assets - total_liabilities - goodwill
+    return total_assets - total_liabilities - goodwill_and_intangible_assets
 
 
 def get_net_current_asset_value(

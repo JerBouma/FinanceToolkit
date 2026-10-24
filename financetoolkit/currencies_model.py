@@ -386,17 +386,81 @@ def determine_currencies(
     return statement_currencies, currencies
 
 
+CASH_BALANCE_ITEMS = {"Cash Beginning of Period", "Cash End of Period"}
+
+
+def reconcile_cash_translation(
+    cash_flow_statement: pd.DataFrame, ticker: str
+) -> pd.DataFrame:
+    """
+    Restores the reconciliation of the cash at the beginning and the end of a period after
+    a translation in which the cash flows are converted at the average rate of the period
+    and the cash balances at closing rates.
+
+    Translated at different rates, the cash flows no longer add up to the change in the
+    translated cash balances. IAS 7.28 reports that difference, the effect of exchange rate
+    changes on the cash held, as a separate item. Net Change in Cash therefore becomes the
+    change in the translated cash balances and Forex Changes on Cash takes up the
+    difference with the translated operating, investing and financing cash flows. A period
+    for which one of the items is missing is left as it is.
+
+    Args:
+        cash_flow_statement (pd.DataFrame): The translated cash flow statement with a
+            (ticker, item) index and the periods as columns.
+        ticker (str): The ticker to reconcile.
+
+    Returns:
+        pd.DataFrame: The cash flow statement with Net Change in Cash and Forex Changes on
+        Cash of the ticker reconciled to the translated cash balances.
+    """
+    items = [
+        "Cash Beginning of Period",
+        "Cash End of Period",
+        "Net Change in Cash",
+        "Forex Changes on Cash",
+    ]
+
+    if not all((ticker, item) in cash_flow_statement.index for item in items):
+        return cash_flow_statement
+
+    beginning, end, net_change, forex_changes = (
+        cash_flow_statement.loc[(ticker, item), :] for item in items
+    )
+
+    # The operating, investing and financing cash flows, all translated at the average rate.
+    cash_flows = net_change - forex_changes.fillna(0)
+    reconciled_net_change = end - beginning
+    reconciled_forex_changes = reconciled_net_change - cash_flows
+
+    cash_flow_statement.loc[(ticker, "Net Change in Cash"), :] = (
+        reconciled_net_change.where(reconciled_forex_changes.notna(), net_change)
+    ).to_numpy()
+    cash_flow_statement.loc[(ticker, "Forex Changes on Cash"), :] = (
+        reconciled_forex_changes.where(reconciled_forex_changes.notna(), forex_changes)
+    ).to_numpy()
+
+    return cash_flow_statement
+
+
 def convert_currencies(
     financial_statement_data: pd.DataFrame,
     financial_statement_currencies: pd.Series,
     exchange_rate_data: pd.DataFrame,
     items_not_to_adjust: list[str] | None = None,
     financial_statement_name: str | None = None,
+    item_exchange_rate_data: dict[str, pd.DataFrame] | None = None,
 ):
     """
     Based on the retrieved currency definitions (e.g. EURUSD=X) for each ticker, obtained
     through using the determine_currencies function, convert the financial statement data
     to the historical currency.
+
+    Each period is converted at the rate of exchange_rate_data for that period. Following
+    IAS 21.39-40 and IAS 7.25-28, the caller passes the closing rate (the rate at the end of
+    the period) for the balance sheet and the average rate of the period for the income and
+    cash flow statements. Items that describe a balance at a moment in time within a flow
+    statement, such as the cash at the beginning and the end of the period, take their own
+    rate through item_exchange_rate_data.
 
     The function reports the tickers that are converted and the currencies that they are
     converted from and to. If the currency is the same, then no conversion is applied.
@@ -411,6 +475,9 @@ def convert_currencies(
         items_not_to_adjust (list[str]): A list containing the items that should not be adjusted. Defaults to None.
         financial_statement_name (str | None): The name of the statement being converted, used in the log
             message that reports which tickers were converted. Defaults to None.
+        item_exchange_rate_data (dict[str, pd.DataFrame] | None): The exchange rate data for specific items,
+            as {item: exchange rate data}, used instead of exchange_rate_data for those items, e.g. the closing
+            rate of the previous period for Cash Beginning of Period. Defaults to None.
 
     Returns:
         pd.DataFrame: A DataFrame containing the converted financial statement data.
@@ -463,12 +530,36 @@ def convert_currencies(
                             financial_statement_data.index.get_level_values(level=1)
                         )
 
+                    # Items with a rate of their own are converted separately below.
+                    item_rates = {
+                        item: rate_data[currency].reindex(periods)
+                        for item, rate_data in (item_exchange_rate_data or {}).items()
+                        if item in items_to_adjust
+                        and (ticker, item) in financial_statement_data.index
+                        and currency in rate_data
+                    }
+                    items_to_adjust = [
+                        item for item in items_to_adjust if item not in item_rates
+                    ]
+
                     financial_statement_data.loc[(ticker, items_to_adjust), :] = (
                         financial_statement_data.loc[(ticker, items_to_adjust), :].mul(
                             rates * minor_unit_factor,
                             axis=1,
                         )
                     ).to_numpy()
+
+                    for item, item_rate in item_rates.items():
+                        financial_statement_data.loc[(ticker, item), :] = (
+                            financial_statement_data.loc[(ticker, item), :]
+                            * item_rate
+                            * minor_unit_factor
+                        ).to_numpy()
+
+                    if set(item_rates) >= CASH_BALANCE_ITEMS:
+                        financial_statement_data = reconcile_cash_translation(
+                            financial_statement_data, ticker
+                        )
 
                     currencies[currency].append(ticker)
             else:

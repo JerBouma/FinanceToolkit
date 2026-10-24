@@ -152,6 +152,14 @@ def get_average_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
+    Notes:
+        - This follows the StockCharts convention: the first period, which has no previous
+          close, has a True Range of High — Low, and the first ATR is the average of the
+          first `window` True Ranges, on period `window` - 1. TA-Lib's `ta_ATR.c` starts
+          the True Range on the second period instead, so its first ATR is one period later
+          and averages periods 1 to `window`; the two converge as the smoothing forgets the
+          seed.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -345,11 +353,18 @@ def get_keltner_channels(
     Statistical Service. The commonly used modern variant (EMA midline with an ATR-based
     envelope, as implemented here) was popularized by Linda Bradford Raschke in the 1980s.
 
+    Notes:
+        - The conventional parameters, as on StockCharts, are a 20-period EMA, a 10-period
+          ATR and a multiplier of 2.
+        - The EMA is seeded with the Simple Moving Average of the first `window` closes (see
+          `overlap_model.get_exponential_moving_average`), so the channel starts on period
+          `window` - 1 or `atr_window` - 1, whichever is later.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
-        window (int): Number of periods for the moving average.
+        window (int): Number of periods for the Exponential Moving Average (the middle line).
         atr_window (int): Number of periods for ATR calculation.
         atr_multiplier (float): Multiplier for ATR to determine channel width.
 

@@ -1,21 +1,21 @@
 ,,,2020,2021,2022,2023
-AAPL,Working Capital to Total Assets,Lag 1,,-0.7747,-2.9759,-0.9062
+AAPL,Working Capital to Total Assets,Lag 1,,-0.7747,-2.9759,0.9062
 AAPL,Working Capital to Total Assets,Lag 2,,,-1.4451,-1.1854
 AAPL,Working Capital to Total Assets,Lag 3,,,,-1.0418
-AAPL,Retained Earnings to Total Assets,Lag 1,,-0.6571,-1.5489,-0.9302
+AAPL,Retained Earnings to Total Assets,Lag 1,,-0.6571,-1.5489,0.9302
 AAPL,Retained Earnings to Total Assets,Lag 2,,,-1.1882,-1.0383
 AAPL,Retained Earnings to Total Assets,Lag 3,,,,-1.0131
-AAPL,EBIT to Total Assets,Lag 1,,0.4752,0.0856,-0.0353
-AAPL,EBIT to Total Assets,Lag 2,,,0.6015,0.0473
-AAPL,EBIT to Total Assets,Lag 3,,,,0.545
+AAPL,EBIT to Total Assets,Lag 1,,0.5166,0.0908,-0.0425
+AAPL,EBIT to Total Assets,Lag 2,,,0.6543,0.0444
+AAPL,EBIT to Total Assets,Lag 3,,,,0.584
 AAPL,Market Value to Total Liabilities,Lag 1,,0.1563,-0.3249,
 AAPL,Market Value to Total Liabilities,Lag 2,,,-0.2194,
 AAPL,Market Value to Total Liabilities,Lag 3,,,,
 AAPL,Sales to Total Assets,Lag 1,,0.2297,0.0726,-0.0275
 AAPL,Sales to Total Assets,Lag 2,,,0.3189,0.0431
 AAPL,Sales to Total Assets,Lag 3,,,,0.2826
-AAPL,Altman Z-Score,Lag 1,,0.1709,-0.2374,
-AAPL,Altman Z-Score,Lag 2,,,-0.1071,
+AAPL,Altman Z-Score,Lag 1,,0.1732,-0.2378,
+AAPL,Altman Z-Score,Lag 2,,,-0.1058,
 AAPL,Altman Z-Score,Lag 3,,,,
 MSFT,Working Capital to Total Assets,Lag 1,,-0.2114,-0.2872,-0.0491
 MSFT,Working Capital to Total Assets,Lag 2,,,-0.4379,-0.3222
@@ -23,15 +23,15 @@ MSFT,Working Capital to Total Assets,Lag 3,,,,-0.4654
 MSFT,Retained Earnings to Total Assets,Lag 1,,0.49,0.3514,0.2488
 MSFT,Retained Earnings to Total Assets,Lag 2,,,1.0137,0.6877
 MSFT,Retained Earnings to Total Assets,Lag 3,,,,1.5147
-MSFT,EBIT to Total Assets,Lag 1,,0.1919,0.0685,-0.0576
-MSFT,EBIT to Total Assets,Lag 2,,,0.2735,0.0069
-MSFT,EBIT to Total Assets,Lag 3,,,,0.2001
+MSFT,EBIT to Total Assets,Lag 1,,0.1918,0.0911,-0.0598
+MSFT,EBIT to Total Assets,Lag 2,,,0.3003,0.0258
+MSFT,EBIT to Total Assets,Lag 3,,,,0.2225
 MSFT,Market Value to Total Liabilities,Lag 1,,0.4288,-0.3165,
 MSFT,Market Value to Total Liabilities,Lag 2,,,-0.0234,
 MSFT,Market Value to Total Liabilities,Lag 3,,,,
 MSFT,Sales to Total Assets,Lag 1,,0.061,0.0791,-0.0535
 MSFT,Sales to Total Assets,Lag 2,,,0.145,0.0214
 MSFT,Sales to Total Assets,Lag 3,,,,0.0837
-MSFT,Altman Z-Score,Lag 1,,0.348,-0.2504,
-MSFT,Altman Z-Score,Lag 2,,,0.0104,
+MSFT,Altman Z-Score,Lag 1,,0.3486,-0.25,
+MSFT,Altman Z-Score,Lag 2,,,0.0115,
 MSFT,Altman Z-Score,Lag 3,,,,

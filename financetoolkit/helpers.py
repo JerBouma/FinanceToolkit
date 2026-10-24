@@ -195,21 +195,21 @@ def enrich_historical_data(
     return_column: str = "Adj Close",
 ):
     """
-    Retrieves enriched historical stock data for the given ticker(s) from Yahoo! Finance API for
-    a specified period. It calculates the following:
+    Enriches the historical data of a ticker, as retrieved from any data provider, with the
+    following columns:
 
         - Return: The return for the given period.
         - Cumulative Return: The cumulative return for the given period.
 
     The return is calculated as the percentage change in the given return column.
 
-    The cumulative return is calculated as the cumulative product of the percentage change in the given
-    return column.
+    The cumulative return is calculated as the cumulative product of one plus the return,
+    starting at 1 on the first date of the start to end window.
 
-    Note that Volatility, Excess Return and Excess Volatility are intentionally not calculated here
-    anymore. These are available as dedicated, reusable calculations in the Risk module
-    (e.g. risk_model.get_volatility, risk_model.get_excess_volatility) and the Performance module
-    (e.g. performance_model.get_excess_return) instead.
+    Volatility, Excess Return and Excess Volatility are not calculated here. These are
+    available as dedicated, reusable calculations in the Risk module (e.g.
+    risk_model.get_volatility, risk_model.get_excess_volatility) and the Performance module
+    (e.g. performance_model.get_excess_return).
 
     Args:
         historical_data (pd.DataFrame): A pandas DataFrame object containing the historical stock data
@@ -219,6 +219,7 @@ def enrich_historical_data(
         end (str, optional): A string representing the end date of the period to retrieve data for
             in 'YYYY-MM-DD' format. Defaults to None.
         return_column (str, optional): A string representing the column to use for return calculations.
+            Defaults to "Adj Close".
 
     Returns:
         pd.DataFrame: A pandas DataFrame object containing the enriched historical stock data for the given ticker(s).

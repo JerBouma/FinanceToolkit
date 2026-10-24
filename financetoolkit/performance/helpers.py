@@ -20,6 +20,8 @@ PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
         "30min": "D",
         "1hour": "D",
     },
+    # The intraday bars within each trading day; only available with intraday data.
+    "daily": "D",
     "weekly": "W",
     "monthly": "M",
     "quarterly": "Q",
@@ -53,6 +55,11 @@ def determine_within_historical_data(
         if not intraday_period and period == "intraday":
             continue
 
+        # A day only nests observations when there are intraday bars; without them the
+        # entry is left out and asking for it raises a clear error at the access point.
+        if period == "daily" and intraday_historical_data.empty:
+            continue
+
         # The intraday entry maps each intraday_period to a symbol; every other
         # entry is the symbol itself, and the intraday loop iteration is skipped
         # above whenever no intraday_period was given.
@@ -72,7 +79,7 @@ def determine_within_historical_data(
         else:
             source_data = daily_historical_data
 
-        inner_freq = "D" if period != "intraday" else "min"
+        inner_freq = "min" if period in ("intraday", "daily") else "D"
         period_data = source_data.copy()
         period_data.index = pd.MultiIndex.from_arrays(
             [

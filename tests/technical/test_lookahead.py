@@ -50,7 +50,7 @@ PER_SECURITY_INDICATORS = {
         )
     ),
     "get_relative_vigor_index": lambda high, low, close, opening, volume: momentum.get_relative_vigor_index(
-        opening, close, WINDOW
+        opening, high, low, close, WINDOW
     ),
     "get_force_index": lambda high, low, close, opening, volume: momentum.get_force_index(
         close, volume, WINDOW

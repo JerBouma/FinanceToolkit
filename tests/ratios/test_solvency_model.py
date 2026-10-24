@@ -28,7 +28,6 @@ def test_get_interest_coverage_ratio(recorder):
     recorder.capture(
         solvency_model.get_interest_coverage_ratio(
             operating_income=pd.Series([100, 110, 120, 130, 80]),
-            depreciation_and_amortization=pd.Series([30, 20, 10, 10, 0]),
             interest_expense=pd.Series([15, 13, 12, 10.3, 5]),
         )
     )
@@ -38,7 +37,9 @@ def test_get_debt_service_coverage_ratio(recorder):
     recorder.capture(
         solvency_model.get_debt_service_coverage_ratio(
             operating_income=pd.Series([100, 110, 120, 130, 80]),
-            current_liabilities=pd.Series([300, 200, 100, 100, 150]),
+            depreciation_and_amortization=pd.Series([30, 20, 10, 10, 0]),
+            interest_expense=pd.Series([15, 13, 12, 10.3, 5]),
+            short_term_debt=pd.Series([30, 20, 10, 10, 15]),
         )
     )
 
@@ -97,3 +98,36 @@ def test_get_dividend_capex_coverage_ratio(recorder):
             dividends=pd.Series([1, 3, 2, 0, 5]),
         )
     )
+
+
+def test_get_interest_coverage_ratio_uses_ebit_and_masks_zero_interest():
+    result = solvency_model.get_interest_coverage_ratio(
+        operating_income=pd.Series([100.0, 50.0]),
+        interest_expense=pd.Series([20.0, 0.0]),
+    )
+
+    assert result.iloc[0] == 5
+    assert pd.isna(result.iloc[1])
+
+
+def test_get_debt_service_coverage_ratio_uses_interest_and_principal():
+    # (EBIT + D&A) / (interest + short-term debt); no debt service gives NaN.
+    result = solvency_model.get_debt_service_coverage_ratio(
+        operating_income=pd.Series([80.0, 10.0]),
+        depreciation_and_amortization=pd.Series([20.0, 5.0]),
+        interest_expense=pd.Series([10.0, 0.0]),
+        short_term_debt=pd.Series([40.0, 0.0]),
+    )
+
+    assert result.iloc[0] == 2
+    assert pd.isna(result.iloc[1])
+
+
+def test_get_preferred_dividend_coverage_ratio_masks_zero_dividends():
+    result = solvency_model.get_preferred_dividend_coverage_ratio(
+        net_income=pd.Series([100.0, 100.0]),
+        preferred_dividends=pd.Series([-20.0, 0.0]),
+    )
+
+    assert result.iloc[0] == 5
+    assert pd.isna(result.iloc[1])

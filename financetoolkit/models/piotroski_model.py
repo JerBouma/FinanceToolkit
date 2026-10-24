@@ -1,4 +1,4 @@
-"""Altman Module"""
+"""Piotroski Module"""
 
 __docformat__ = "google"
 
@@ -14,24 +14,24 @@ from financetoolkit.ratios import (
 
 def get_return_on_assets_criteria(
     net_income: pd.DataFrame,
-    average_total_assets: pd.DataFrame,
+    beginning_total_assets: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Calculates the Return on Assets (ROA) criteria for the Piotroski F-Score model.
 
     The Return on Assets (ROA) is a financial metric used to measure a company's profitability by
-    showing how much profit a company generates from its total assets. The ROA is calculated by
-    dividing the net income by the total assets.
+    showing how much profit a company generates from its total assets. Piotroski (2000) defines ROA
+    as net income scaled by the total assets at the beginning of the year.
 
     The formula is as follows:
 
-        - Return on Assets (ROA) = (Net Income Beginning + Net Income End) /
-        (Total Assets Beginning + Total Assets End)
+        - Return on Assets (ROA) = Net Income / Total Assets (beginning of period)
         - Return on Assets Criteria = Return on Assets (ROA) > 0
 
     Args:
         net_income (pd.DataFrame): The net income of the company.
-        average_total_assets (pd.DataFrame): The average total assets of the company.
+        beginning_total_assets (pd.DataFrame): The total assets of the company at the beginning
+        of the period (the previous period's closing total assets).
 
     Returns:
         pd.DataFrame: A boolean value indicating whether the company meets the
@@ -43,7 +43,7 @@ def get_return_on_assets_criteria(
 
     return_on_assets = profitability_model.get_return_on_assets(
         net_income=net_income,
-        average_total_assets=average_total_assets,
+        average_total_assets=beginning_total_assets,
     )
 
     return_on_assets_criteria = return_on_assets > 0
@@ -79,27 +79,26 @@ def get_operating_cashflow_criteria(
 
 def get_change_in_return_on_asset_criteria(
     net_income: pd.DataFrame,
-    average_total_assets: pd.DataFrame,
+    beginning_total_assets: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Calculates the change in the return on assets (F_dROA) criteria for the Piotroski F-Score
     model.
 
     The function calculates the return on assets (ROA) for a company based on its net income
-    and total assets, and returns a boolean value indicating whether ROA in the current period
+    and beginning-of-period total assets, and returns a boolean value indicating whether ROA in the current period
     is higher than ROA in the prior period, matching Piotroski's (2000) original F_dROA signal.
 
     The formula is as follows:
 
-        - Return on Assets (ROA) = (Net Income Beginning + Net Income End) /
-        (Total Assets Beginning + Total Assets End)
+        - Return on Assets (ROA) = Net Income / Total Assets (beginning of period)
         - Change in Return on Assets Criteria = Return on Assets (ROA, t) > Return on Assets
         (ROA, t-1)
 
     Args:
         net_income (pd.DataFrame): The net income of the company for the period.
-        average_total_assets (pd.DataFrame): The average total assets of the company
-        for the period.
+        beginning_total_assets (pd.DataFrame): The total assets of the company at the
+        beginning of the period.
 
     Returns:
         pd.DataFrame: A boolean value indicating whether the ROA has increased
@@ -107,7 +106,7 @@ def get_change_in_return_on_asset_criteria(
 
     """
     return_on_assets = profitability_model.get_return_on_assets(
-        net_income=net_income, average_total_assets=average_total_assets
+        net_income=net_income, average_total_assets=beginning_total_assets
     )
 
     change_in_return_on_assets_criteria = return_on_assets > return_on_assets.shift(
@@ -119,9 +118,8 @@ def get_change_in_return_on_asset_criteria(
 
 def get_accruals_criteria(
     net_income: pd.DataFrame,
-    average_total_assets: pd.DataFrame,
     operating_cashflow: pd.DataFrame,
-    total_assets: pd.DataFrame,
+    beginning_total_assets: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Calculates the accruals criteria (F_ACCRUAL) for the Piotroski F-Score model.
@@ -133,19 +131,15 @@ def get_accruals_criteria(
 
     The formula is as follows:
 
-        - Accruals Criteria = (Operating Cashflow / Total Assets) > Return on Assets
+        - Return on Assets (ROA) = Net Income / Total Assets (beginning of period)
+        - Accruals Criteria = (Operating Cashflow / Total Assets (beginning of period)) > Return on Assets
 
     Args:
         net_income (pd.DataFrame): The net income of the company.
-        average_total_assets (pd.DataFrame): The average total assets of the company,
-        used as the denominator of the Return on Assets.
         operating_cashflow (pd.DataFrame): The operating cashflow of the company.
-        total_assets (pd.DataFrame): The total assets of the company, used as the
-        denominator of the operating cashflow. This must be the *same* asset base as
-        average_total_assets: Piotroski (2000) scales both Return on Assets and Cash Flow from Operations
-        by the same total assets figure, which is what makes the comparison reduce to the sign of
-        accruals. Passing a different asset base for each (e.g. an averaged one for the Return on Assets
-        and a point-in-time one here) biases the signal by the growth rate of the balance sheet.
+        beginning_total_assets (pd.DataFrame): The total assets of the company at the beginning of
+        the period. Piotroski (2000) scales both the Return on Assets and the Cash Flow from Operations
+        by this same figure, which is what makes the comparison reduce to the sign of accruals.
 
     Returns:
         pd.DataFrame: The accruals criteria for the company.
@@ -156,10 +150,10 @@ def get_accruals_criteria(
     """
 
     return_on_assets = profitability_model.get_return_on_assets(
-        net_income=net_income, average_total_assets=average_total_assets
+        net_income=net_income, average_total_assets=beginning_total_assets
     )
 
-    operating_cf_to_total_assets = operating_cashflow / total_assets
+    operating_cf_to_total_assets = operating_cashflow / beginning_total_assets
 
     accruals_criteria = operating_cf_to_total_assets > return_on_assets
 
@@ -322,19 +316,25 @@ def get_gross_margin_criteria(
 
 def get_asset_turnover_ratio_criteria(
     sales: pd.DataFrame,
-    average_total_assets: pd.DataFrame,
+    beginning_total_assets: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Asset Turnover Ratio over time.
 
     The Asset Turnover Ratio is a fundamental efficiency metric that assesses how effectively a company generates sales
     from its total assets. It indicates the company's ability to efficiently utilize its assets to generate revenue.
+    Piotroski (2000) scales sales by the total assets at the beginning of the year.
+
+    The formula is as follows:
+
+        - Asset Turnover Ratio = Sales / Total Assets (beginning of period)
+        - Asset Turnover Criteria = Asset Turnover Ratio (t) > Asset Turnover Ratio (t-1)
 
     Args:
         sales (pd.DataFrame): The sales or revenue generated by a company, which can
         be a time-series or DataFrame.
-        average_total_assets (pd.DataFrame): The average total assets of a company, which can
-        be a time-series or DataFrame.
+        beginning_total_assets (pd.DataFrame): The total assets of a company at the beginning
+        of the period, which can be a time-series or DataFrame.
 
     Returns:
         pd.DataFrame: A boolean criteria indicating whether the Asset Turnover Ratio increased compared to the
@@ -346,7 +346,7 @@ def get_asset_turnover_ratio_criteria(
     - This function can be used to monitor changes in a company's ability to generate revenue from its assets over time.
     """
     asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
-        sales=sales, average_total_assets=average_total_assets
+        sales=sales, average_total_assets=beginning_total_assets
     )
 
     asset_turnover_ratio_criteria = asset_turnover_ratio > asset_turnover_ratio.shift(

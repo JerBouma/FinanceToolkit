@@ -217,3 +217,54 @@ def test_sector_changes_are_decimals(monkeypatch):
     )
 
     assert snapshot.loc["Energy", "Average Change"] == pytest.approx(0.0125)
+
+
+@pytest.mark.parametrize(
+    ("function", "ascending"),
+    [
+        (discovery_model.get_biggest_gainers, False),
+        (discovery_model.get_biggest_losers, True),
+        (discovery_model.get_most_active_stocks, None),
+    ],
+)
+def test_movers_changes_are_decimals(monkeypatch, function, ascending):
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        return pd.DataFrame(
+            {
+                "symbol": ["A", "B"],
+                "name": ["A Inc.", "B Inc."],
+                "price": [10.0, 20.0],
+                "change": [1.0, -2.0],
+                "changesPercentage": [11.1111, -9.0909],
+                "exchange": ["NASDAQ", "NYSE"],
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    movers = function(api_key="KEY")
+
+    assert movers.loc["A", "Change %"] == pytest.approx(0.111111)
+    assert movers.loc["B", "Change %"] == pytest.approx(-0.090909)
+
+    if ascending is not None:
+        assert movers["Change %"].is_monotonic_increasing == ascending
+
+
+def test_free_float_of_all_stocks_is_a_decimal(monkeypatch):
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        return pd.DataFrame(
+            {
+                "symbol": ["INDI"],
+                "date": ["2026-10-07 22:37:55"],
+                "freeFloat": [98.543],
+                "floatShares": [2.0821e08],
+                "outstandingShares": [2.11289e08],
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    shares_float = discovery_model.get_stock_shares_float(api_key="KEY")
+
+    assert shares_float.loc["INDI", "Free Float"] == pytest.approx(0.98543)

@@ -402,6 +402,8 @@ def get_financial_statement(
     if not financial_statement.empty:
         financial_statement = financial_statement.drop("symbol", axis=1)
 
+        period_end_dates = pd.to_datetime(financial_statement["date"])
+
         # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
         financial_statement["date"] = pd.to_datetime(
             financial_statement["date"]
@@ -417,10 +419,28 @@ def get_financial_statement(
             )
         )
 
+        # Two different fiscal periods can map onto one calendar period, e.g. after a change
+        # of fiscal year end. Only the first (most recent) is kept, which is reported since the
+        # other period's figures are then missing from the output.
+        fiscal_periods = period_end_dates.groupby(
+            financial_statement["date"].to_numpy()
+        ).unique()
+        for calendar_period, end_dates in fiscal_periods.items():
+            if len(end_dates) > 1:
+                logger.warning(
+                    "%s reports the fiscal periods ending %s in one calendar period (%s). Only "
+                    "the period ending %s is kept.",
+                    ticker,
+                    ", ".join(str(pd.Timestamp(date).date()) for date in end_dates),
+                    calendar_period,
+                    pd.Timestamp(end_dates[0]).date(),
+                )
+
         financial_statement = financial_statement.set_index("date").T
 
         if financial_statement.columns.duplicated().any():
-            # Duplicate statements for one period are equal, so one copy can be dropped.
+            # Duplicate statements for one period are usually the same period reported twice,
+            # so one copy can be dropped; a different fiscal period is reported above.
             financial_statement = financial_statement.loc[
                 :, ~financial_statement.columns.duplicated()
             ]
@@ -1295,6 +1315,14 @@ def get_profile(
                 pd.concat(profile_dict)[0].unstack(level=0)
             )
             profile_dataframe = profile_dataframe.rename(index=naming)
+
+            # The source quotes the daily change in percent; returned as a decimal like every
+            # other change in the package (0.0125 is +1.25%).
+            if "Change %" in profile_dataframe.index:
+                profile_dataframe.loc["Change %"] = (
+                    pd.to_numeric(profile_dataframe.loc["Change %"], errors="coerce")
+                    / 100
+                )
             profile_dataframe = profile_dataframe.drop(
                 [
                     "image",
@@ -1399,6 +1427,13 @@ def get_quote(
     if quote_dict:
         quote_dataframe = to_dataframe(pd.concat(quote_dict)[0].unstack(level=0))
         quote_dataframe = quote_dataframe.rename(index=naming)
+
+        # The source quotes the daily change in percent; returned as a decimal like every
+        # other change in the package (0.0125 is +1.25%).
+        if "Change %" in quote_dataframe.index:
+            quote_dataframe.loc["Change %"] = (
+                pd.to_numeric(quote_dataframe.loc["Change %"], errors="coerce") / 100
+            )
 
     return quote_dataframe, no_data
 

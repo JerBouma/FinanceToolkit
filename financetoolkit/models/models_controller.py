@@ -5531,7 +5531,11 @@ class Models:
                 "75th Percentile": percentiles[0.75],
                 "95th Percentile": percentiles[0.95],
                 "Share Price": share_price,
-                "Probability Undervalued": float((values > share_price).mean()),
+                "Probability Undervalued": (
+                    float((values > share_price).mean())
+                    if pd.notna(values).any()
+                    else float("nan")
+                ),
             }
 
         return apply_rounding(

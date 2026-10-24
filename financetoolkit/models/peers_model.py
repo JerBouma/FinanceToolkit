@@ -29,6 +29,9 @@ def get_latest_values(frame: pd.DataFrame | pd.Series) -> pd.Series:
     """
     if isinstance(frame, pd.Series):
         frame = frame.to_frame().T
+    # A ratio that could not be calculated arrives without periods.
+    if frame.columns.empty:
+        return pd.Series(np.nan, index=frame.index)
     return frame.ffill(axis=1).iloc[:, -1]
 
 

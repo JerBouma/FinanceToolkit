@@ -43,3 +43,9 @@ def test_peer_mean_of_multiples_is_the_harmonic_mean_of_positive_values():
     assert result.loc["Price-to-Earnings", "Peer Median"] == 10
     assert result.loc["Gross Margin", "Peer Mean"] == pytest.approx(0.1)
     assert pd.isna(peers_model.get_harmonic_mean(pd.Series([-1.0, -2.0])))
+
+
+def test_a_ratio_without_periods_is_missing():
+    latest = peers_model.get_latest_values(pd.Series(dtype=object))
+
+    assert latest.isna().all()

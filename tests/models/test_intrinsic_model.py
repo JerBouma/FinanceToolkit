@@ -212,3 +212,19 @@ def test_get_monte_carlo_intrinsic_value_without_uncertainty():
         .iloc[0]
     )
     assert values == pytest.approx(deterministic)
+
+
+def test_implied_growth_rate_is_missing_with_a_missing_input():
+    import numpy as np
+
+    growth = intrinsic_model.get_implied_growth_rate(
+        cash_flow=100.0,
+        weighted_average_cost_of_capital=np.nan,
+        perpetual_growth_rate=0.02,
+        cash_and_cash_equivalents=10.0,
+        total_debt=20.0,
+        shares_outstanding=10.0,
+        share_price=50.0,
+    )
+
+    assert np.isnan(growth)

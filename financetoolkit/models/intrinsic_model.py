@@ -555,7 +555,8 @@ def get_implied_growth_rate(
         )
 
     lower, upper = -0.9, 5.0
-    if difference(lower) * difference(upper) > 0:
+    # No sign change, or a missing input (NaN), means no growth rate gives the price.
+    if not difference(lower) * difference(upper) <= 0:
         return np.nan
 
     return float(brentq(difference, lower, upper, maxiter=500))

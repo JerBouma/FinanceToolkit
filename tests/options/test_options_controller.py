@@ -647,3 +647,29 @@ def test_get_model_free_implied_volatility(recorder, option_market):
 def test_get_volatility_risk_premium(recorder, option_market):
     module, _ = option_market
     recorder.capture(module.get_volatility_risk_premium())
+
+
+def test_the_earnings_move_uses_the_first_expiry_after_the_announcement(option_market):
+    module, _ = option_market
+    expiries = [
+        (pd.Timestamp.today().normalize() + pd.Timedelta(days=days)).strftime(
+            "%Y-%m-%d"
+        )
+        for days in (10, 24, 45)
+    ]
+    # An expiry on the announcement day settles before an announcement after the close.
+    module._earnings_function = lambda: dict.fromkeys(module._tickers, expiries[0])
+
+    moves = module.get_implied_move(around_earnings=True)
+
+    assert (moves["Days to Expiration"] > 10).all()
+
+
+def test_the_volatility_risk_premium_in_variance_units(option_market):
+    module, _ = option_market
+    premium = module.get_volatility_risk_premium(rounding=12)
+
+    expected = premium["Implied Volatility"] ** 2 - premium["Realized Volatility"] ** 2
+    pd.testing.assert_series_equal(
+        premium["Variance Risk Premium"], expected, check_names=False
+    )

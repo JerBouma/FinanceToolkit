@@ -1,3 +1,3 @@
-,Implied Volatility,Realized Volatility,Volatility Risk Premium,Implied to Realized Ratio
-AAPL,0.2505,0.2884,-0.0379,0.8686
-MSFT,0.2507,0.2596,-0.0089,0.9655
+,Implied Volatility,Realized Volatility,Volatility Risk Premium,Variance Risk Premium,Implied to Realized Ratio
+AAPL,0.2505,0.2884,-0.0379,-0.0204,0.8686
+MSFT,0.2507,0.2596,-0.0089,-0.0046,0.9655

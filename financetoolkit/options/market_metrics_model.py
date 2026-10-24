@@ -15,7 +15,8 @@ CONTRACT_SIZE = 100
 # The delta that defines the wings of the volatility skew.
 SKEW_DELTA = 0.25
 
-# The Cboe method uses options with at least a week to expiration.
+# The expiries used have at least a week to expiration; the Cboe uses the Friday expiries
+# between 23 and 37 days away for the VIX.
 MINIMUM_DAYS = 7
 
 
@@ -123,6 +124,12 @@ def get_gamma_exposure(
 
     positive for calls and negative for puts. Positive total exposure means dealers trade
     against moves, which dampens volatility; negative exposure means they trade with it.
+
+    For more information, see the following sources:
+
+    - SqueezeMetrics (2017). "Gamma Exposure (GEX)." White paper.
+    - Perfiliev, S. (2021). "How to Calculate Gamma Exposure (GEX) and Zero Gamma Level."
+      https://perfiliev.com/blog/how-to-calculate-gamma-exposure-and-zero-gamma-level/
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike, with Open Interest
@@ -336,8 +343,10 @@ def get_implied_move(
     """
     The move the options market expects up to an expiry: the price of the at-the-money
     straddle (a call and a put at the strike closest to the current price) relative to the
-    price. Roughly 68% of outcomes fall within one implied move when returns are normal;
-    the straddle prices the expected absolute move, about 0.8 standard deviations.
+    price. The straddle prices the expected absolute move, √(2/π) ≈ 0.8 standard
+    deviations (Brenner and Subrahmanyam, 1988), so under a lognormal model about 57% of
+    outcomes fall within one implied move and one standard deviation is about 1.25 times
+    the straddle.
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike.
@@ -447,6 +456,10 @@ def get_model_free_variance(
 
     puts_used = selected(strikes[strikes < k0][::-1], put_bids)
     calls_used = selected(strikes[strikes > k0], call_bids)
+    # Without a strip of bid options on both sides there is no variance to measure: K0
+    # alone gives only the (negative) correction term.
+    if not puts_used or not calls_used:
+        return np.nan, float(forward)
     used = sorted(puts_used + [k0] + calls_used)
 
     prices = {
@@ -510,6 +523,14 @@ def get_constant_maturity_volatility(
         float: The annualized volatility at the constant maturity.
     """
     t1, t2, t = near_days / 365, next_days / 365, target_days / 365
+    # Both terms need a valid variance; one alone, weighted, looks like a valid figure.
+    if not (
+        np.isfinite(near_variance)
+        and near_variance > 0
+        and np.isfinite(next_variance)
+        and next_variance > 0
+    ):
+        return np.nan
     if next_days == near_days:
         return float(np.sqrt(near_variance))
     weight_near = (next_days - target_days) / (next_days - near_days)

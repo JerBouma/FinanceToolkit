@@ -115,3 +115,22 @@ def test_mid_prices_fall_back_to_the_last_price():
         {"Bid": [1.0, 0.0], "Ask": [1.2, 0.0], "Last Price": [1.05, 2.0]}, index=[1, 2]
     )
     assert market_metrics_model.get_mid_prices(quotes).tolist() == [1.1, 2.0]
+
+
+def test_a_term_without_bids_has_no_variance():
+    # Outside market hours the bids can be zero: only K0 is left, whose correction term
+    # alone is a small negative variance, so the term has none.
+    calls, puts = chain(False), chain(True)
+    calls["Bid"], puts["Bid"] = 0.0, 0.0
+    variance, _ = market_metrics_model.get_model_free_variance(calls, puts, TIME, RATE)
+
+    assert np.isnan(variance)
+    # One valid term, weighted, is not a constant maturity volatility.
+    assert np.isnan(
+        market_metrics_model.get_constant_maturity_volatility(
+            variance, 20, 0.04, 40, 30
+        )
+    )
+    assert np.isnan(
+        market_metrics_model.get_constant_maturity_volatility(-1e-5, 20, 0.04, 40, 30)
+    )

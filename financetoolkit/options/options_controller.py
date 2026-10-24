@@ -7164,6 +7164,12 @@ class Options:
         with negative exposure they trade in the direction of the move and amplify it. The
         gamma flip point is the price at which the total exposure changes sign.
 
+        For more information, see the following sources:
+
+        - SqueezeMetrics (2017). "Gamma Exposure (GEX)." White paper.
+        - Perfiliev, S. (2021). "How to Calculate Gamma Exposure (GEX) and Zero Gamma
+          Level." https://perfiliev.com/blog/how-to-calculate-gamma-exposure-and-zero-gamma-level/
+
         Also known as: GEX, dealer gamma, gamma positioning, net gamma.
 
         Args:
@@ -7407,9 +7413,10 @@ class Options:
             - Expected Range = Stock Price ± Straddle Price
 
         The straddle pays the absolute move, so its price is the market's expected size of
-        the move, regardless of direction. With around_earnings=True the expiry right after
+        the move, regardless of direction. With around_earnings=True the first expiry after
         the next earnings date is used, which gives the move the market prices for the
-        earnings announcement.
+        earnings announcement (an expiry on the announcement day itself settles at that
+        day's close, before the usual after-the-close announcement).
 
         Also known as: expected move, straddle move, earnings move, implied earnings move.
 
@@ -7418,8 +7425,8 @@ class Options:
                 None, the nearest `number_of_expirations` expiries.
             number_of_expirations (int, optional): The number of nearest expiries to use when
                 no dates are given. Defaults to 4.
-            around_earnings (bool, optional): Whether to use the first expiry on or after the
-                next earnings date instead. Defaults to False.
+            around_earnings (bool, optional): Whether to use the first expiry after the next
+                earnings date instead. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
 
@@ -7462,7 +7469,7 @@ class Options:
                 after = [
                     date
                     for date in options_model.get_option_expiry_dates(ticker)
-                    if date >= earnings_date
+                    if date > earnings_date
                 ]
                 if not after:
                     continue
@@ -7549,8 +7556,10 @@ class Options:
             - σ² = (2/T) Σ (ΔK_i / K_i²) e^(RT) Q(K_i) - (1/T) (F/K_0 - 1)²
             - Volatility = sqrt(interpolated variance at `days`)
 
-        Applied to the S&P 500 index options ("^SPX") with days=30 it reproduces the VIX;
-        for a single stock it gives the equivalent volatility index.
+        Applied to the S&P 500 index options ("^SPX") with days=30 it approximates the VIX,
+        within about a tenth of a volatility point: the Cboe counts the time to expiry in
+        minutes, uses Treasury rates for each expiry and the Friday expiries between 23 and
+        37 days away. For a single stock it gives the equivalent volatility index.
 
         For more information, see the following papers:
 
@@ -7571,8 +7580,9 @@ class Options:
             decimal).
 
         Notes:
-        - Outside market hours quotes can be stale or missing; the last traded prices are
-          used where there is no bid and ask, which makes the figure less precise.
+        - Options without a bid are left out of the strip, as in the Cboe method. Outside
+          market hours, when bids are missing, an expiry has no strip and the result is
+          NaN.
 
         As an example:
 
@@ -7617,7 +7627,7 @@ class Options:
         """
         Calculate the volatility risk premium: the model-free implied volatility over the
         coming `days` minus the volatility the stock actually realized over the same span
-        in the past. Implied volatility usually exceeds realized volatility, because
+        in the past, and the same in variance units. Implied volatility usually exceeds realized volatility, because
         investors pay a premium for protection, which is the return option sellers earn. A
         premium that turns negative means the market prices less movement than it has just
         seen, often after a shock.
@@ -7625,9 +7635,17 @@ class Options:
             - Realized Volatility = standard deviation of the daily returns over the last
               `days` calendar days, annualized
             - Volatility Risk Premium = Implied Volatility - Realized Volatility
+            - Variance Risk Premium = Implied Volatility² - Realized Volatility²
 
-        For more information, see the following paper:
+        Both compare the implied figure with the realized one of the past, which is known
+        today, as Bollerslev, Tauchen and Zhou (2009) do. Carr and Wu (2009) measure the
+        premium after the fact instead: the variance realized over the coming `days` minus
+        the variance swap rate, which is negative on average.
 
+        For more information, see the following papers:
+
+        - Bollerslev, T., Tauchen, G. and Zhou, H. (2009). "Expected Stock Returns and
+          Variance Risk Premia." The Review of Financial Studies, 22(11), 4463-4492.
         - Carr, P. and Wu, L. (2009). "Variance Risk Premiums." The Review of Financial
           Studies, 22(3), 1311-1341.
 
@@ -7641,7 +7659,8 @@ class Options:
 
         Returns:
             pd.DataFrame: Per ticker the Implied Volatility, Realized Volatility, Volatility
-            Risk Premium and the ratio of implied to realized volatility.
+            Risk Premium, Variance Risk Premium and the ratio of implied to realized
+            volatility.
 
         As an example:
 
@@ -7655,11 +7674,11 @@ class Options:
 
         Which returns:
 
-        |      |   Implied Volatility |   Realized Volatility |   Volatility Risk Premium |   Implied to Realized Ratio |
-        |:-----|---------------------:|----------------------:|--------------------------:|----------------------------:|
-        | QQQ  |               0.2846 |                0.1769 |                    0.1077 |                      1.609  |
-        | AAPL |               0.2897 |                0.1641 |                    0.1256 |                      1.7653 |
-        | TSLA |               0.4357 |                0.3516 |                    0.0841 |                      1.2392 |
+        |      |   Implied Volatility |   Realized Volatility |   Volatility Risk Premium |   Variance Risk Premium |   Implied to Realized Ratio |
+        |:-----|---------------------:|----------------------:|--------------------------:|------------------------:|----------------------------:|
+        | QQQ  |               0.2846 |                0.1769 |                    0.1077 |                  0.0497 |                      1.609  |
+        | AAPL |               0.2897 |                0.1641 |                    0.1256 |                  0.057  |                      1.7653 |
+        | TSLA |               0.4357 |                0.3516 |                    0.0841 |                  0.0662 |                      1.2392 |
         """
         rows = {}
         for ticker in self._tickers:
@@ -7680,6 +7699,7 @@ class Options:
                 "Implied Volatility": implied,
                 "Realized Volatility": realized,
                 "Volatility Risk Premium": implied - realized,
+                "Variance Risk Premium": implied**2 - realized**2,
                 "Implied to Realized Ratio": (
                     implied / realized if realized > 0 else np.nan
                 ),

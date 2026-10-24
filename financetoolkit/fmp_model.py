@@ -3085,13 +3085,16 @@ def get_upcoming_earnings_date(
         is scheduled.
     """
     _require_fmp_api_key(api_key)
-    url = f"https://financialmodelingprep.com/stable/earnings?symbol={ticker}&limit=10&apikey={api_key}"
+    today = pd.Timestamp.today().normalize()
+    url = (
+        f"https://financialmodelingprep.com/stable/earnings?symbol={ticker}&limit=10"
+        f"&from={today:%Y-%m-%d}&to={today + pd.Timedelta(days=400):%Y-%m-%d}&apikey={api_key}"
+    )
     records = _get_records(url=url, user_subscription=user_subscription)
 
     if "date" not in records.columns:
         return ""
 
-    today = pd.Timestamp.today().normalize()
     dates = pd.to_datetime(records["date"], errors="coerce")
     upcoming = dates[dates >= today]
 

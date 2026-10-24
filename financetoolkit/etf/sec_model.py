@@ -216,7 +216,6 @@ def read_risk_return_fees(zip_data: bytes) -> pd.DataFrame:
 
 def _quarter_fees(year: int, quarter: int, user_agent: str) -> pd.DataFrame:
     """The fees of every share class in the risk/return summary file of a quarter."""
-    description = f"SEC risk/return summary of {year}Q{quarter}"
 
     def fetch() -> pd.DataFrame:
         try:
@@ -240,7 +239,7 @@ def _quarter_fees(year: int, quarter: int, user_agent: str) -> pd.DataFrame:
         dataset="risk_return_fees",
         entity=f"{year}q{quarter}",
         fetch=fetch,
-        description=description,
+        description=f"SEC risk/return summary of {year}Q{quarter}",
         expect_empty=True,
     )
 
@@ -284,7 +283,7 @@ def get_fee_breakdown(
             break
         fees = _quarter_fees(year, quarter, user_agent)
         for symbol, share_class in remaining.items():
-            if not fees.empty and share_class in fees.index:
+            if share_class in fees.index:
                 found[symbol] = fees.loc[share_class]
 
     if not found:

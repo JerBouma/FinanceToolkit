@@ -105,6 +105,7 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
     common = weights.index.intersection(ratios.index)
     weights = weights[common]
     result: dict[str, float] = {}
+    coverage = np.nan
     for ratio in [*MULTIPLES, *YIELDS]:
         if ratio not in ratios:
             continue
@@ -112,6 +113,9 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
         # A multiple of zero cannot be inverted; a yield of zero (no dividend) counts.
         valid = values.notna() & ((values != 0) if ratio in MULTIPLES else True)
         covered = weights[valid]
+        # The coverage is that of the first multiple available.
+        if ratio in MULTIPLES and np.isnan(coverage) and weights.sum():
+            coverage = float(covered.sum())
         if covered.sum() <= 0:
             result[ratio] = np.nan
             continue
@@ -121,15 +125,7 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
             result[ratio] = 1 / inverse if inverse else np.nan
         else:
             result[ratio] = float((shares * values[valid]).sum())
-    total = weights.sum()
-    multiples = [ratio for ratio in MULTIPLES if ratio in ratios]
-    first = multiples[0] if multiples else None
-    if first and total:
-        # The holdings the first multiple uses: those with a non-zero ratio.
-        values = pd.to_numeric(ratios.loc[common, first], errors="coerce")
-        result["Coverage"] = float(weights[values.notna() & (values != 0)].sum())
-    else:
-        result["Coverage"] = np.nan
+    result["Coverage"] = coverage
     return pd.Series(result)
 
 

@@ -485,8 +485,8 @@ class ETF:
             raise ValueError("No fund information is available for these tickers.")
 
         funds = [fund for fund in self._funds() if fund in information.columns]
-        close = self._historical()["Close"]
-        volume = self._historical()["Volume"]
+        historical = self._historical()
+        close, volume = historical["Close"], historical["Volume"]
         last_year = close.index[-min(len(close), TRADING_DAYS) :]
 
         currencies = self._listing_currencies()
@@ -503,19 +503,16 @@ class ETF:
             # that date (SEC Rule 6c-11), not with a later close.
             raw = str(info.get("Updated At") or "").strip()
             updated = pd.to_datetime(raw, utc=True, errors="coerce")
-            nav_date = (
-                pd.NaT
-                if pd.isna(updated)
-                else (
-                    # A date without a time is the NAV date itself.
-                    updated.tz_localize(None).normalize()
-                    if len(raw) <= 10  # noqa: PLR2004
-                    else (
-                        updated.tz_convert("America/New_York").tz_localize(None)
-                        - pd.Timedelta(hours=NAV_CLOSE_HOURS)
-                    ).normalize()
-                )
-            )
+            if pd.isna(updated):
+                nav_date = pd.NaT
+            elif len(raw) <= 10:  # noqa: PLR2004
+                # A date without a time is the NAV date itself.
+                nav_date = updated.tz_localize(None).normalize()
+            else:
+                nav_date = (
+                    updated.tz_convert("America/New_York").tz_localize(None)
+                    - pd.Timedelta(hours=NAV_CLOSE_HOURS)
+                ).normalize()
             dates = (
                 price.index.to_timestamp() if not price.empty else pd.DatetimeIndex([])
             )
@@ -754,16 +751,15 @@ class ETF:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly or yearly."
             )
-        prices = self._historical()["Adj Close"]
-        if BENCHMARK_TICKER not in prices:
+        full = self._historical()["Adj Close"]
+        if BENCHMARK_TICKER not in full:
             raise ValueError(
                 "Tracking is measured against the Benchmark of the Toolkit."
             )
-        prices = prices.loc[self._start_date : self._end_date]
+        prices = full.loc[self._start_date : self._end_date]
 
         # The first return starts from the last close before the range (the history holds
         # a year before the start date), so the first day, or period, is not lost.
-        full = self._historical()["Adj Close"]
         base = full[full.index < prices.index[0]].iloc[-1:]
 
         if yearly:
@@ -851,7 +847,7 @@ class ETF:
         numeric = concentration.drop(index="Largest Holding").apply(
             pd.to_numeric, errors="coerce"
         )
-        numeric = self._round(numeric.astype(float), rounding)
+        numeric = self._round(numeric, rounding)
         return pd.concat([numeric, concentration.loc[["Largest Holding"]]]).reindex(
             concentration.index
         )

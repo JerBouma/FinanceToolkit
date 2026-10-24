@@ -251,9 +251,11 @@ def test_a_constant_fund_has_no_r_squared():
     from financetoolkit.performance import performance_model
 
     rng = np.random.default_rng(3)
-    styles = pd.DataFrame(rng.normal(0, 0.01, (40, 2)), columns=["A", "B"])
-    result = performance_model.get_style_analysis(
-        pd.Series(0.01, index=styles.index), styles
-    )
+    styles = pd.DataFrame(rng.normal(0, 0.01, (252, 2)), columns=["A", "B"])
 
-    assert np.isnan(result["R Squared"])
+    # A constant series has a variance of about 1e-36 in floating point, not exactly zero.
+    for value in (0.01, 0.013, 0.0004):
+        result = performance_model.get_style_analysis(
+            pd.Series(value, index=styles.index), styles
+        )
+        assert np.isnan(result["R Squared"])

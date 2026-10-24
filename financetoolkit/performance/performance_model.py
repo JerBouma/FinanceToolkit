@@ -2949,8 +2949,10 @@ def get_style_analysis(
         [
             *weights,
             (
+                # A constant fund has no variance to explain; in floating point its
+                # variance is a tiny positive number rather than zero.
                 1 - np.var(residual, ddof=1) / fund_variance
-                if fund_variance > 0
+                if np.ptp(y) > 0
                 else np.nan
             ),
             residual.mean() * periods_per_year,

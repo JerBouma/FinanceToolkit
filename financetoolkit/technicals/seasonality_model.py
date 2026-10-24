@@ -7,8 +7,8 @@ import calendar
 import numpy as np
 import pandas as pd
 
-# The weights of the quarters in the relative strength rating: the latest quarter counts
-# twice. Investor's Business Daily keeps its own rating's formula to itself; this weighting
+# The weights of the 3, 6, 9 and 12-month returns in the relative strength rating, so the
+# latest quarter weighs most. Investor's Business Daily keeps its own rating's formula to itself; this weighting
 # is the common public approximation of it.
 RATING_QUARTERS = {63: 0.4, 126: 0.2, 189: 0.2, 252: 0.2}
 

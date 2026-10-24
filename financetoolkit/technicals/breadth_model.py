@@ -27,7 +27,8 @@ def get_mcclellan_oscillator(
 
     Also known as: McClellan Oscillator.
 
-    Reference: McClellan, S. & McClellan, M. (1969). "Patterns for Profit." Trade Levels Inc.
+    Reference: McClellan, S. and McClellan, M. (1970). "Patterns for Profit: The McClellan
+    Oscillator and Summation Index." Trade Levels Inc.
 
     Notes:
         - This implementation is applied to a single security's own daily up/down signal
@@ -561,3 +562,133 @@ def get_positive_volume_index(
         raise TypeError("prices_close and volumes must be pandas Series.")
 
     return _get_volume_based_index(prices_close, volumes, "positive", start_value)
+
+
+def _get_seeded_exponential_moving_average(values: pd.Series, span: int) -> pd.Series:
+    """
+    The exponential moving average with smoothing constant 2 / (span + 1), seeded with the
+    simple average of the first `span` values rather than with the first value alone, so the
+    average does not carry the noise of a single day for weeks. Dates without a value stay
+    NaN and are skipped by the recursion, as is everything before the seed.
+
+    Args:
+        values (pd.Series): The values to average.
+        span (int): The span of the average.
+
+    Returns:
+        pd.Series: The exponential moving average, NaN until `span` values are available.
+    """
+    observed = values.dropna()
+    if len(observed) < span:
+        return pd.Series(np.nan, index=values.index)
+
+    seeded = observed.iloc[span - 1 :].copy()
+    seeded.iloc[0] = observed.iloc[:span].mean()
+
+    return seeded.ewm(span=span, adjust=False).mean().reindex(values.index)
+
+
+def get_market_breadth(
+    prices_close: pd.DataFrame,
+    short_window: int = 50,
+    long_window: int = 200,
+    high_low_window: int = 252,
+) -> pd.DataFrame:
+    """
+    Calculate the breadth of a market from the prices of its constituents: how many of them
+    take part in a move. An index can rise on the strength of a few large companies while
+    most of its members fall; breadth shows that divergence, which often comes before the
+    index itself turns.
+
+    - Advancers, Decliners and Unchanged: the number of constituents whose close rose, fell or
+      stayed the same.
+    - Advance-Decline Line: the running total of advancers minus decliners.
+    - Advance-Decline Ratio: advancers divided by decliners.
+    - McClellan Oscillator: the ratio-adjusted version, the 19-period minus the 39-period
+      exponential moving average (smoothing constants of 0.10 and 0.05) of the net advances
+      divided by advancers plus decliners (times 1,000, so it does not depend on the number
+      of constituents); unchanged issues are left out. Each average starts from the simple
+      average of its first 19 or 39 values, so the oscillator starts once the 39-period
+      average exists (NaN before), and so does its running total, the McClellan Summation
+      Index.
+    - Percentage Above the Moving Averages: the share of constituents whose close is above its
+      short and long moving average.
+    - New Highs and New Lows: the constituents whose close is above the highest (below the
+      lowest) close of the previous `high_low_window` - 1 periods, so the highest or lowest
+      of the last `high_low_window` periods. A close that only equals the previous high is no
+      new high. NaN until at least one constituent has `high_low_window` closes.
+
+    For more information, see the following book:
+
+    - McClellan, S. and McClellan, M. (1970). "Patterns for Profit: The McClellan Oscillator
+      and Summation Index." Trade Levels Inc.
+
+    Args:
+        prices_close (pd.DataFrame): The closes of the constituents, a column each.
+        short_window (int, optional): The short moving average window. Defaults to 50.
+        long_window (int, optional): The long moving average window. Defaults to 200.
+        high_low_window (int, optional): The number of periods, including the current one, of
+            the new highs and lows. Defaults to 252 (a year of daily closes).
+
+    Returns:
+        pd.DataFrame: The breadth measures per date.
+    """
+    changes = prices_close.diff()
+    observed = changes.notna()
+    advancers = (changes > 0).sum(axis=1)
+    decliners = (changes < 0).sum(axis=1)
+    unchanged = ((changes == 0) & observed).sum(axis=1)
+    net_advances = advancers - decliners
+
+    # The ratio-adjusted net advances (RANA) of StockCharts and McClellan: unchanged issues are left out of the denominator. A date on which every observed constituent closed unchanged has no net advance (zero) and a date without observations is unknown (NaN).  # noqa: E501
+    ratio_adjusted = (
+        (net_advances / (advancers + decliners).replace(0, np.nan) * 1000)
+        .fillna(0)
+        .where(observed.any(axis=1))
+    )
+    short_average = _get_seeded_exponential_moving_average(ratio_adjusted, 19)
+    long_average = _get_seeded_exponential_moving_average(ratio_adjusted, 39)
+    mcclellan = short_average - long_average
+
+    def share_above(window: int) -> pd.Series:
+        average = prices_close.rolling(window).mean()
+        counted = average.notna() & prices_close.notna()
+        above = (prices_close > average).astype(float).where(counted)
+        return above.sum(axis=1) / counted.sum(axis=1).replace(0, np.nan)
+
+    # Against the closes before today, so a close that merely equals the previous high (or low) is not counted as a new one day after day.  # noqa: E501
+    if high_low_window > 1:
+        previous_closes = prices_close.shift(1).rolling(high_low_window - 1)
+        previous_high, previous_low = previous_closes.max(), previous_closes.min()
+    else:
+        # A window of a single period has no earlier close to set a high or a low.
+        previous_high = previous_low = prices_close * np.nan
+    counted = previous_high.notna() & prices_close.notna()
+
+    breadth = pd.DataFrame(
+        {
+            "Advancers": advancers,
+            "Decliners": decliners,
+            "Unchanged": unchanged,
+            "Net Advances": net_advances,
+            "Advance-Decline Line": net_advances.cumsum(),
+            "Advance-Decline Ratio": advancers / decliners.replace(0, np.nan),
+            "McClellan Oscillator": mcclellan,
+            "McClellan Summation Index": mcclellan.cumsum(),
+            f"Percentage Above {short_window}-Period Average": share_above(
+                short_window
+            ),
+            f"Percentage Above {long_window}-Period Average": share_above(long_window),
+            # NaN rather than zero while no constituent has a full window yet.
+            "New Highs": (prices_close > previous_high)
+            .astype(float)
+            .where(counted)
+            .sum(axis=1, min_count=1),
+            "New Lows": (prices_close < previous_low)
+            .astype(float)
+            .where(counted)
+            .sum(axis=1, min_count=1),
+        }
+    )
+    # The first date has no change to count.
+    return breadth.iloc[1:]

@@ -170,3 +170,28 @@ def test_the_screener_takes_country_names_and_screens_stocks_only(monkeypatch):
         and "isFund=false" in urls[0]
     )
     assert "country=GB" in urls[1] and "isEtf=true" in urls[1]
+
+
+def test_index_constituents(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame(
+            {
+                "symbol": ["MSFT", "AAPL"],
+                "name": ["Microsoft", "Apple"],
+                "sector": ["Technology"] * 2,
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    constituents = discovery_model.get_index_constituents(
+        api_key="KEY", index="Dow Jones"
+    )
+
+    assert "dowjones-constituent" in requested[0]
+    assert list(constituents.index) == ["AAPL", "MSFT"]
+    with pytest.raises(ValueError, match="not available"):
+        discovery_model.get_index_constituents(api_key="KEY", index="DAX")

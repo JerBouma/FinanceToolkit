@@ -405,17 +405,57 @@ tool_groups:
   # ── Technicals (4 sub-groups) ────────────────────────────────────────────
   - tool_name:      "breadth"
     display_name:   "Breadth Indicators"
-    description:    "Market breadth technical indicators (McClellan Oscillator, OBV, Advance/Decline Line, Chaikin, TRIN, new highs and lows). Applied to price data automatically — no need to fetch prices first. TRIN treats the given tickers as one market, so every column holds the same value; pass the market's constituents for a meaningful figure. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:    "Market breadth technical indicators (McClellan Oscillator, OBV, Advance/Decline Line, Chaikin, TRIN, new highs and lows). Applied to price data automatically — no need to fetch prices first. TRIN treats the given tickers as one market, so every column holds the same value; pass the market's constituents for a meaningful figure. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_breadth measures the breadth of all tickers together (advancers and decliners, the advance-decline line, the McClellan oscillator and summation index, the share above the 50 and 200-period averages and new highs and lows), meant for many tickers such as an index's constituents (discovery get_index_constituents)."
     module_name:    "technicals"
     category:       "ticker"
-    collect_method: "collect_breadth_indicators"
+    # Listed explicitly, as the market-wide and relative measures are not part of the
+    # collect_* method; anything added to it must be added here too.
+    method_override:
+      - "get_mcclellan_oscillator"
+      - "get_advancers_decliners"
+      - "get_on_balance_volume"
+      - "get_accumulation_distribution_line"
+      - "get_chaikin_oscillator"
+      - "get_trin"
+      - "get_new_highs_new_lows"
+      - "get_market_breadth"
+      - "get_chaikin_money_flow"
+      - "get_ease_of_movement"
+      - "get_negative_volume_index"
+      - "get_positive_volume_index"
 
   - tool_name:      "momentum"
     display_name:   "Momentum Indicators"
-    description:    "Momentum technical indicators (RSI, MACD, Stochastic Oscillator, Williams %R, Aroon, ADX, CCI, MFI, rate of change, Ichimoku Cloud, awesome, ultimate and Chande momentum oscillators, vortex, Know Sure Thing and more). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:    "Momentum technical indicators (RSI, MACD, Stochastic Oscillator, Williams %R, Aroon, ADX, CCI, MFI, rate of change, Ichimoku Cloud, awesome, ultimate and Chande momentum oscillators, vortex, Know Sure Thing and more). Applied to price data automatically — no need to fetch prices first. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_relative_strength gives the price relative to the benchmark, the Mansfield relative strength and a 1-99 relative strength rating across the tickers; get_seasonality the average return, hit rate and t-statistic per calendar month (frequency='month') or weekday (frequency='weekday')."
     module_name:    "technicals"
     category:       "ticker"
-    collect_method: "collect_momentum_indicators"
+    # Listed explicitly, as the market-wide and relative measures are not part of the
+    # collect_* method; anything added to it must be added here too.
+    method_override:
+      - "get_money_flow_index"
+      - "get_williams_percent_r"
+      - "get_aroon_indicator"
+      - "get_commodity_channel_index"
+      - "get_relative_vigor_index"
+      - "get_force_index"
+      - "get_ultimate_oscillator"
+      - "get_percentage_price_oscillator"
+      - "get_detrended_price_oscillator"
+      - "get_average_directional_index"
+      - "get_chande_momentum_oscillator"
+      - "get_ichimoku_cloud"
+      - "get_stochastic_oscillator"
+      - "get_moving_average_convergence_divergence"
+      - "get_relative_strength_index"
+      - "get_balance_of_power"
+      - "get_awesome_oscillator"
+      - "get_vortex_indicator"
+      - "get_elder_ray_index"
+      - "get_rate_of_change"
+      - "get_choppiness_index"
+      - "get_know_sure_thing"
+      - "get_relative_strength"
+      - "get_seasonality"
 
   - tool_name:      "overlap"
     display_name:   "Overlap Indicators"
@@ -468,7 +508,7 @@ tool_groups:
 
   - tool_name:    "performance"
     display_name: "Performance Metrics"
-    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio incl. standard/adjusted/probabilistic/deflated methods, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns — Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Sharpe ratios are per observation (e.g. per day within the period) unless annualize=true. Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports period='daily' only together with rolling=N (e.g. period='daily', rolling=60 for a rolling 60-day figure); per-period results use weekly, monthly, quarterly, or yearly."
+    description:  "Pre-computed risk-adjusted performance metrics (Sharpe ratio incl. standard/adjusted/probabilistic/deflated methods, Sortino ratio, Alpha, Jensen's Alpha, Beta, CAPM, Treynor ratio, M2 ratio, Tracking Error, Information Ratio, Fama-French factors, period Returns, Excess Returns — Returns/Excess Returns support cumulative=true for a compounded growth index rebased to 1). Beta, CAPM, Alpha, Jensen's Alpha, Treynor, Sortino, M2, Tracking Error and Information Ratio support rolling=N for a rolling N-period value spanning the full history instead of one value per period (e.g. period='monthly', rolling=6 for a rolling 6-month figure). Sharpe ratios are per observation (e.g. per day within the period) unless annualize=true. Requires tickers='AAPL' — use comma-separated values for multiple tickers. Supports period='daily' only together with rolling=N (e.g. period='daily', rolling=60 for a rolling 60-day figure); per-period results use weekly, monthly, quarterly, or yearly. The factor models (get_fama_and_french_model, get_carhart_four_factor_model, get_factor_asset_correlations, get_factor_correlations) take region='United States' (default), 'Developed', 'Developed ex US', 'Europe', 'Japan', 'Asia Pacific ex Japan' or 'North America' for Ken French's regional factors. get_style_analysis is Sharpe's returns-based style analysis: style_tickers= names tickers of the call that serve as style indices (e.g. tickers='ARKK,IWF,IWD,IWO,IWN,AGG', style_tickers='IWF,IWD,IWO,IWN,AGG'), and every other ticker gets its style weights and in-sample R Squared, selection return and tracking error; window= for rolling weights, which adds Sharpe's out-of-sample selection return per period."
     module_name:  "performance"
     category:     "ticker"
 
@@ -790,7 +830,7 @@ tool_groups:
   # ── Discovery ────────────────────────────────────────────────────────────
   - tool_name:    "discovery"
     display_name: "Market Discovery"
-    description:  "Market discovery (lists of stocks, ETFs, indices, currencies, commodities and cryptocurrencies, stock screener, biggest gainers and losers, most active stocks, sector and industry performance and P/E, earnings, IPO and stock split calendars, latest 8-K filings, insider trades and mergers, market news and press releases). No tickers or countries needed. The calendars and filings take start_date/end_date; the market-wide earnings calendar covers the coming week unless a range is given. Sector and industry performance and P/E take date= for one day's snapshot or sector=/industry= for a history (the last year unless start_date/end_date say otherwise). The stock screener ranks by market cap in US dollars ('Market Cap (USD)'; 'Market Cap' is in the listing's own currency) and returns every listing of a company unless primary_only=true; to screen by classification, use the Finance Database server."
+    description:  "Market discovery (lists of stocks, ETFs, indices, currencies, commodities and cryptocurrencies, stock screener, biggest gainers and losers, most active stocks, sector and industry performance and P/E, earnings, IPO and stock split calendars, latest 8-K filings, insider trades and mergers, market news and press releases). No tickers or countries needed. The calendars and filings take start_date/end_date; the market-wide earnings calendar covers the coming week unless a range is given. Sector and industry performance and P/E take date= for one day's snapshot or sector=/industry= for a history (the last year unless start_date/end_date say otherwise). The stock screener ranks by market cap in US dollars ('Market Cap (USD)'; 'Market Cap' is in the listing's own currency) and returns every listing of a company unless primary_only=true; to screen by classification, use the Finance Database server. get_index_constituents lists the members of index='S&P 500', 'NASDAQ 100' or 'Dow Jones'."
     module_name:  "discovery"
     category:     "discovery"
 

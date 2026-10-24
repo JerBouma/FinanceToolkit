@@ -11,15 +11,19 @@ from financetoolkit.technicals import (
     breadth_model,
     momentum_model,
     overlap_model,
+    seasonality_model,
     volatility_model,
 )
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    PERIODS_PER_YEAR,
     apply_rounding,
     calculate_growth,
     calculate_standardization,
     finalize_dataset,
 )
+
+PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # pylint: disable=too-many-boolean-expressions
@@ -7691,4 +7695,354 @@ class Technicals:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+        )
+
+    def _close_prices(self, period: str, close_column: str) -> pd.DataFrame:
+        """The closes of a period between the start and end date, with the intraday check."""
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+        return self._historical_data[period][close_column]
+
+    @handle_errors
+    def get_market_breadth(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        short_window: int = 50,
+        long_window: int = 200,
+        high_low_window: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the breadth of the market the Toolkit's tickers make up: how many of them take
+        part in a move. An index can rise on the strength of a few large companies while most
+        of its members fall; breadth shows that divergence, which often comes before the index
+        itself turns. Breadth is most meaningful across many tickers, such as the constituents
+        of an index, which `Discovery.get_index_constituents` lists (e.g. the 500 tickers of the
+        S&P 500). Those are today's members: breadth of past dates computed from them leaves out
+        the companies that were removed from the index since (often after falling behind), so
+        it is biased towards the survivors, the further back the more.
+
+        Per date it returns:
+
+        - Advancers, Decliners and Unchanged: the number of tickers whose close rose, fell or
+          stayed the same, and the Net Advances.
+        - Advance-Decline Line: the running total of the net advances. A rising index with a
+          falling line is the classic negative divergence.
+        - Advance-Decline Ratio: the advancers divided by the decliners.
+        - McClellan Oscillator: the ratio-adjusted version, the 19-period minus the 39-period
+          exponential moving average (smoothing constants of 0.10 and 0.05) of the net advances
+          divided by advancers plus decliners (times 1,000); unchanged issues are left out.
+          Each average starts from the simple average of its first 19 or 39 values, so the
+          oscillator starts once the 39-period average exists (NaN before), as does its running
+          total, the McClellan Summation Index.
+        - Percentage Above the short and long moving average: the share of tickers trading
+          above their 50 and 200-period average, a gauge of how broad a trend is.
+        - New Highs and New Lows: the tickers whose close is above the highest (below the
+          lowest) close of the previous `high_low_window` - 1 periods, so the highest or
+          lowest of the last `high_low_window` periods; a close that only equals the previous
+          high is no new high. NaN until at least one ticker has a full window.
+
+        The Benchmark (and a Portfolio) are left out.
+
+        For more information, see the following book:
+
+        - McClellan, S. and McClellan, M. (1970). "Patterns for Profit: The McClellan
+          Oscillator and Summation Index." Trade Levels Inc.
+
+        Also known as: market breadth, advance-decline line, McClellan oscillator, percentage
+        above 200-day moving average, new highs new lows.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            short_window (int, optional): The short moving average window. Defaults to 50.
+            long_window (int, optional): The long moving average window. Defaults to 200.
+            high_low_window (int | None, optional): The number of periods, including the current
+                one, of the new highs and lows. Defaults to None, which uses a year of periods:
+                252 daily, 52 weekly, 12 monthly, 4 quarterly and 1 yearly (too short for a new
+                high or low, so those stay NaN), and 252 for intraday data.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The breadth measures per date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery, Toolkit
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        constituents = discovery.get_index_constituents("Dow Jones")
+
+        toolkit = Toolkit(
+            constituents.index.tolist(),
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_market_breadth().tail()
+        ```
+
+        Which returns:
+
+        | Date       |   Advancers |   Decliners |   Unchanged |   Net Advances |   Advance-Decline Line |   Advance-Decline Ratio |   McClellan Oscillator |   McClellan Summation Index |   Percentage Above 50-Period Average |   Percentage Above 200-Period Average |   New Highs |   New Lows |
+        |:-----------|------------:|------------:|------------:|---------------:|-----------------------:|------------------------:|-----------------------:|----------------------------:|-------------------------------------:|--------------------------------------:|------------:|-----------:|
+        | 2025-12-24 |          26 |           3 |           1 |             23 |                    978 |                  8.6667 |                65.5048 |                    -814.088 |                               0.7333 |                                   0.8 |           3 |          0 |
+        | 2025-12-26 |          14 |          16 |           0 |             -2 |                    976 |                  0.875  |                49.8424 |                    -764.246 |                               0.7    |                                   0.8 |           1 |          0 |
+        | 2025-12-29 |          10 |          20 |           0 |            -10 |                    966 |                  0.5    |                22.8684 |                    -741.377 |                               0.7333 |                                   0.8 |           0 |          0 |
+        | 2025-12-30 |           9 |          21 |           0 |            -12 |                    954 |                  0.4286 |                -3.642  |                    -745.019 |                               0.7    |                                   0.8 |           0 |          0 |
+        | 2025-12-31 |           3 |          27 |           0 |            -24 |                    930 |                  0.1111 |               -46.2902 |                    -791.309 |                               0.5667 |                                   0.8 |           0 |          0 |
+        """
+        prices = self._close_prices(period, close_column)
+        constituents = [
+            ticker
+            for ticker in prices.columns
+            if ticker not in ("Portfolio", "Benchmark")
+        ]
+        # A year of periods, so weekly data looks for 52-week highs rather than 252-week ones. Intraday bars have no fixed number per year and keep the daily count.  # noqa: E501
+        if high_low_window is None:
+            high_low_window = PERIODS_PER_YEAR.get(period, PERIODS_PER_YEAR["daily"])
+        breadth = breadth_model.get_market_breadth(
+            prices[constituents], short_window, long_window, high_low_window
+        ).loc[self._start_date : self._end_date]
+
+        return apply_rounding(
+            breadth, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_seasonality(
+        self,
+        frequency: str = "month",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the seasonality of every ticker's returns: the average return per calendar
+        month (from monthly returns) or per day of the week (from daily returns), with the
+        median, the hit rate (the share of positive returns), the t-statistic of the average
+        and the number of observations. Well-known examples are the January effect and the
+        "sell in May" pattern. A pattern needs many years and a t-statistic well above 2 before
+        it says much, and even then it can fade once it is widely traded on.
+
+        A monthly return runs from one month's last close to the next, so a final month that is
+        not complete yet (an end date before that month's last business day, as with the
+        default end date of today) is left out rather than averaged as a full month. The
+        Benchmark is included as a ticker, so its seasonality is there to compare with; a
+        Portfolio is left out.
+
+        For more information, see the following paper:
+
+        - Heston, S.L. and Sadka, R. (2008). "Seasonality in the Cross-Section of Stock
+          Returns." Journal of Financial Economics, 87(2), 418-445.
+
+        Also known as: seasonality, monthly seasonality, day of the week effect, January
+        effect, calendar anomalies.
+
+        Args:
+            frequency (str, optional): "month" (per calendar month) or "weekday" (per day of
+                the week). Defaults to "month".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The Average Return, Median Return, Hit Rate, t-Statistic and
+            Observations per month or weekday, with a column per statistic and ticker.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2000-01-01",
+            end_date="2025-12-31",
+        )
+
+        seasonality = toolkit.technicals.get_seasonality()
+
+        seasonality.xs("AAPL", level=1, axis="columns")
+        ```
+
+        Which returns:
+
+        | Month     |   Average Return |   Median Return |   Hit Rate |   t-Statistic |   Observations |
+        |:----------|-----------------:|----------------:|-----------:|--------------:|---------------:|
+        | January   |           0.0239 |          0.0477 |     0.6    |        0.8733 |             25 |
+        | February  |           0.0139 |          0.0245 |     0.5385 |        0.7962 |             26 |
+        | March     |           0.0486 |          0.0529 |     0.6538 |        2.6472 |             26 |
+        | April     |           0.028  |          0.0057 |     0.5769 |        1.5009 |             26 |
+        | May       |           0.018  |          0.0457 |     0.5769 |        0.7223 |             26 |
+        | June      |           0.0171 |          0.0096 |     0.5385 |        0.8119 |             26 |
+        | July      |           0.0523 |          0.0501 |     0.7692 |        2.7965 |             26 |
+        | August    |           0.0501 |          0.0466 |     0.6538 |        3.2948 |             26 |
+        | September |          -0.0252 |         -0.0128 |     0.4231 |       -0.8129 |             26 |
+        | October   |           0.0529 |          0.0616 |     0.7308 |        2.4423 |             26 |
+        | November  |           0.0306 |          0.0334 |     0.5769 |        1.4177 |             26 |
+        | December  |          -0.0061 |          0.0112 |     0.5385 |       -0.4179 |             26 |
+        """
+        if frequency not in ("month", "weekday"):
+            raise ValueError(
+                f"The frequency must be 'month' or 'weekday', not {frequency!r}."
+            )
+        prices = self._close_prices(
+            "monthly" if frequency == "month" else "daily", close_column
+        )
+        returns = prices.pct_change(fill_method=None).loc[
+            self._start_date : self._end_date
+        ]
+
+        seasonality = pd.concat(
+            {
+                ticker: seasonality_model.get_seasonality(
+                    returns[ticker], frequency, end_date=self._end_date
+                )
+                for ticker in returns.columns
+                if ticker != "Portfolio"
+            },
+            axis=1,
+        ).swaplevel(0, 1, axis=1)
+
+        return apply_rounding(
+            seasonality, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_relative_strength(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the relative strength of every ticker against the Benchmark and against the
+        other tickers. Relative strength investing buys what has been outperforming, the
+        momentum effect that has held across markets and decades.
+
+        - Relative Strength: the price divided by the Benchmark's, set to 1 on the first date.
+          It rises while the ticker outperforms the Benchmark.
+        - Mansfield Relative Strength: the relative strength against its own moving average
+          (of `window` periods, a year by default) minus 1. Above zero the ticker is gaining on
+          the Benchmark.
+        - Relative Strength Rating: the ticker's performance over the last year, with the last
+          quarter counting twice (the 3, 6, 9 and 12-month returns weighted 0.4, 0.2, 0.2 and
+          0.2), ranked against the other tickers from 1 (weakest) to 99 (strongest), from daily
+          prices. Investor's Business Daily publishes the original rating with a proprietary
+          formula; this weighting is its common public approximation. Tickers with the same
+          score share the highest rank among them, so the rating reads as the share of the
+          other tickers outperformed or matched and tied leaders both rate 99. It needs many
+          tickers to be meaningful, such as the constituents of an index (see
+          `Discovery.get_index_constituents`, whose current members leave out the companies
+          removed from the index since).
+
+        For more information, see the following papers and books:
+
+        - Jegadeesh, N. and Titman, S. (1993). "Returns to Buying Winners and Selling Losers:
+          Implications for Stock Market Efficiency." The Journal of Finance, 48(1), 65-91.
+        - Weinstein, S. (1988). "Stan Weinstein's Secrets for Profiting in Bull and Bear
+          Markets." McGraw-Hill.
+        - O'Neil, W.J. (1988). "How to Make Money in Stocks." McGraw-Hill.
+
+        Also known as: relative strength, price relative, Mansfield relative strength, RS
+        rating, relative performance.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The name of the column containing the close prices.
+                Defaults to "Adj Close".
+            window (int | None, optional): The moving average window of the Mansfield relative
+                strength, in periods. Defaults to None, which uses a year of periods: 252 daily,
+                52 weekly, 12 monthly, 4 quarterly and 1 yearly (a single period, which makes the
+                measure zero, so pass a longer window for yearly data).
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The Relative Strength, Mansfield Relative Strength and Relative Strength
+            Rating per date, with a column per measure and ticker.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2022-01-01",
+            end_date="2025-12-31",
+        )
+
+        relative_strength = toolkit.technicals.get_relative_strength()
+
+        relative_strength["Relative Strength Rating"].tail()
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   NVDA |   AMZN |   GOOGL |
+        |:-----------|-------:|-------:|-------:|-------:|--------:|
+        | 2025-12-24 |     50 |      1 |     74 |     26 |      99 |
+        | 2025-12-26 |     50 |      1 |     74 |     26 |      99 |
+        | 2025-12-29 |     50 |      1 |     74 |     26 |      99 |
+        | 2025-12-30 |     50 |      1 |     74 |     26 |      99 |
+        | 2025-12-31 |     50 |      1 |     74 |     26 |      99 |
+        """
+        if period == "intraday":
+            raise ValueError("The relative strength needs daily or longer periods.")
+        prices = self._close_prices(period, close_column)
+        if "Benchmark" not in prices:
+            raise ValueError(
+                "The relative strength needs the Benchmark of the Toolkit."
+            )
+        tickers = [
+            ticker
+            for ticker in prices.columns
+            if ticker not in ("Portfolio", "Benchmark")
+        ]
+        # A year of periods whatever the period: 252 periods would be almost five years of weekly and 21 years of monthly prices, leaving most histories without a value.  # noqa: E501
+        relative, mansfield = seasonality_model.get_relative_strength(
+            prices[tickers],
+            prices["Benchmark"],
+            window if window is not None else PERIODS_PER_YEAR[period],
+        )
+
+        rating = seasonality_model.get_relative_strength_rating(
+            self._historical_data["daily"][close_column][tickers]
+        )
+        if period != "daily":
+            rating = rating.groupby(rating.index.asfreq(prices.index.freqstr)).last()
+            rating = rating.reindex(prices.index)
+
+        relative_strength = pd.concat(
+            {
+                "Relative Strength": relative,
+                "Mansfield Relative Strength": mansfield,
+                "Relative Strength Rating": rating,
+            },
+            axis=1,
+        ).loc[self._start_date : self._end_date]
+
+        return apply_rounding(
+            relative_strength, rounding if rounding is not None else self._rounding
         )

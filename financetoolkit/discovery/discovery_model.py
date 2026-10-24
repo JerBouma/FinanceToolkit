@@ -1034,6 +1034,63 @@ def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     return etf_list
 
 
+# The indices whose constituents Financial Modeling Prep publishes, with their endpoint.
+INDEX_CONSTITUENTS = {
+    "S&P 500": "sp500-constituent",
+    "NASDAQ 100": "nasdaq-constituent",
+    "Dow Jones": "dowjones-constituent",
+}
+
+
+def get_index_constituents(
+    api_key: str, index: str = "S&P 500", user_subscription: str = "Free"
+) -> pd.DataFrame:
+    """
+    Get the current constituents of an index. Past figures computed from today's members
+    leave out the companies removed from the index since (survivorship bias).
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to "S&P 500".
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: The constituents, indexed by symbol, with their name, sector, sub-sector,
+        headquarters, the date they were added, CIK and founding year.
+    """
+    if index not in INDEX_CONSTITUENTS:
+        raise ValueError(
+            f"The constituents of {index!r} are not available. Choose from "
+            f"{', '.join(INDEX_CONSTITUENTS)}."
+        )
+
+    url = (
+        f"https://financialmodelingprep.com/stable/{INDEX_CONSTITUENTS[index]}"
+        f"?apikey={api_key}"
+    )
+    constituents = get_cached_financial_data(
+        url=url, user_subscription=user_subscription
+    )
+
+    if constituents.empty:
+        return constituents
+
+    constituents = constituents.rename(
+        columns={
+            "symbol": "Symbol",
+            "name": "Name",
+            "sector": "Sector",
+            "subSector": "Sub-Sector",
+            "headQuarter": "Headquarters",
+            "dateFirstAdded": "Date Added",
+            "cik": "CIK",
+            "founded": "Founded",
+        }
+    )
+
+    return constituents.set_index("Symbol").sort_index()
+
+
 def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Get a list of indexes.

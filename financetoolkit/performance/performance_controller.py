@@ -141,7 +141,8 @@ class Performance:
             self._risk_free_rate_data[frequency] = period_rate
 
         # Fama and French
-        self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
+        # The Fama and French factors per region, retrieved once each.
+        self._fama_and_french_datasets: dict[str, pd.DataFrame] = {}
         self._fama_and_french_model: pd.DataFrame = pd.DataFrame()
         self._fama_and_french_residuals: pd.DataFrame = pd.DataFrame()
         self._carhart_four_factor_model: pd.DataFrame = pd.DataFrame()
@@ -716,11 +717,28 @@ class Performance:
             dropna=True,
         )
 
+    def _get_fama_and_french_dataset(self, region: str) -> pd.DataFrame:
+        """
+        The Fama and French 5 factors of a region, retrieved once per region.
+
+        Args:
+            region (str): The region, see performance_model.FACTOR_REGIONS.
+
+        Returns:
+            pd.DataFrame: The daily factors as decimals.
+        """
+        if region not in self._fama_and_french_datasets:
+            self._fama_and_french_datasets[region] = (
+                performance_model.obtain_fama_and_french_dataset(region=region)
+            )
+        return self._fama_and_french_datasets[region]
+
     @handle_errors
     def get_factor_asset_correlations(
         self,
         period: str | None = None,
         factors_to_calculate: list[str] | None = None,
+        region: str = "United States",
         rounding: int | None = None,
         show_columns: list[str] | None = None,
     ):
@@ -746,6 +764,13 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
+            region (str, optional): The region whose factors to use: "United States", "Developed",
+                "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF),
+                so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
+                otherwise the exchange rate's moves end up in the factor loadings, mostly the market
+                beta. Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             show_columns (list of str, optional): Restrict the result to these top level columns.
                 Defaults to None, which returns every column.
@@ -795,13 +820,10 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
 
-        if self._fama_and_french_dataset.empty:
-            self._fama_and_french_dataset = (
-                performance_model.obtain_fama_and_french_dataset()
-            )
+        fama_and_french_dataset = self._get_fama_and_french_dataset(region)
 
         fama_and_french_period = determine_within_dataset(
-            dataset=self._fama_and_french_dataset, period=period, correlation=False
+            dataset=fama_and_french_dataset, period=period, correlation=False
         )
 
         merged_df = fama_and_french_period.merge(
@@ -860,6 +882,7 @@ class Performance:
         period: str | None = None,
         factors_to_calculate: list[str] | None = None,
         exclude_risk_free: bool = True,
+        region: str = "United States",
         rounding: int | None = None,
     ):
         """
@@ -885,6 +908,11 @@ class Performance:
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             exclude_risk_free (bool, optional): Whether to exclude the risk-free rate from the results. Defaults to True.
+            region (str, optional): The region whose factors to use: "United States", "Developed",
+                "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF).
+                Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
@@ -947,10 +975,7 @@ class Performance:
             else factors_to_calculate
         )
 
-        if self._fama_and_french_dataset.empty:
-            self._fama_and_french_dataset = (
-                performance_model.obtain_fama_and_french_dataset()
-            )
+        fama_and_french_dataset = self._get_fama_and_french_dataset(region)
 
         # The correlations are calculated for the whole periods within the date range
         # only, rather than for every period since 1963 and then sliced.
@@ -965,7 +990,7 @@ class Performance:
             if self._end_date
             else None
         )
-        factor_dataset = self._fama_and_french_dataset[factors_to_calculate]
+        factor_dataset = fama_and_french_dataset[factors_to_calculate]
         factor_dates = factor_dataset.index.to_timestamp()
         within_range = np.ones(len(factor_dataset), dtype=bool)
 
@@ -994,6 +1019,7 @@ class Performance:
         method: str = "multi",
         factors_to_calculate: list[str] | None = None,
         include_daily_residuals: bool = False,
+        region: str = "United States",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1056,6 +1082,13 @@ class Performance:
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             include_daily_residuals (bool, optional): Whether to also return the pointwise (daily)
                 regression residuals as a second DataFrame. Defaults to False.
+            region (str, optional): The region whose factors to use: "United States", "Developed",
+                "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF),
+                so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
+                otherwise the exchange rate's moves end up in the factor loadings, mostly the market
+                beta. Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
             lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1127,13 +1160,10 @@ class Performance:
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
 
-        if self._fama_and_french_dataset.empty:
-            self._fama_and_french_dataset = (
-                performance_model.obtain_fama_and_french_dataset()
-            )
+        fama_and_french_dataset = self._get_fama_and_french_dataset(region)
 
         fama_and_french_period = determine_within_dataset(
-            self._fama_and_french_dataset, period, correlation=False
+            fama_and_french_dataset, period, correlation=False
         )
 
         merged_df = fama_and_french_period.merge(
@@ -1338,6 +1368,7 @@ class Performance:
     def get_carhart_four_factor_model(
         self,
         period: str | None = None,
+        region: str = "United States",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1371,6 +1402,13 @@ class Performance:
         Args:
             period (str, optional): The period for the calculation (e.g., "weekly", "monthly", "quarterly", "yearly").
                 Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            region (str, optional): The region whose factors to use: "United States", "Developed",
+                "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America" (the
+                factors of Ken French's library for that region's stocks). Every region's factors are
+                U.S. dollar returns with the U.S. one-month Treasury bill as the risk-free rate (RF),
+                so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
+                otherwise the exchange rate's moves end up in the factor loadings, mostly the market
+                beta. Defaults to "United States".
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
             lag (int or list of int, optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1441,9 +1479,11 @@ class Performance:
 
         # Carhart (1997) extends the *three* factor model. The three and five factor files share Mkt-RF, HML and RF but their SMB series differ, so the three factor file is the correct source here.  # noqa: E501
         three_factor_dataset = (
-            performance_model.obtain_fama_and_french_three_factor_dataset()
+            performance_model.obtain_fama_and_french_three_factor_dataset(region=region)
         )
-        momentum_dataset = performance_model.obtain_carhart_momentum_dataset()
+        momentum_dataset = performance_model.obtain_carhart_momentum_dataset(
+            region=region
+        )
 
         carhart_dataset = three_factor_dataset[["Mkt-RF", "SMB", "HML", "RF"]].merge(
             momentum_dataset, left_index=True, right_index=True
@@ -1525,6 +1565,146 @@ class Performance:
                 row_slice=True,
             ),
             show_columns,
+        )
+
+    @handle_errors
+    def get_style_analysis(
+        self,
+        style_tickers: str | list[str],
+        period: str = "monthly",
+        window: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the returns-based style analysis (Sharpe, 1992) of every ticker: the mix of
+        style indices, such as growth and value, large and small caps or bonds, whose returns
+        track the ticker's returns most closely. The weights are found by minimizing the
+        variance of the difference between the ticker's return and the weighted style returns,
+        with every weight between 0 and 1 and the weights adding up to 1, so they read as the
+        effective asset mix of a fund without knowing its holdings.
+
+        The R Squared is the share of the ticker's variance the styles explain; what they do
+        not explain is the Selection Return (the return of the manager's own choices, annualized)
+        with its volatility, the Tracking Error. These three are in-sample: they are measured
+        over the same returns the weights are fitted to, which flatters the fit, as the weights
+        are chosen to explain exactly those returns.
+
+        A window estimates the weights over a rolling number of periods instead, which shows how
+        a fund's style drifts over time, and adds Sharpe's out-of-sample measure of selection:
+        the Out-of-Sample Selection Return of a date is the ticker's return of that period minus
+        the return of that period of the style mix estimated over the window that ends one
+        period earlier (Sharpe uses the previous 60 months). It is a return per period, not
+        annualized, and NaN for the first window, which has no earlier estimate. Its average
+        shows whether the manager added value beyond a passive mix of the styles the fund was
+        known to follow.
+
+        The style indices are tickers of the Toolkit as well (an ETF per style works well, for
+        example IWF, IWD, IWO and IWN for US large and small cap growth and value and AGG for
+        bonds), and every other ticker is analyzed against them. "Benchmark" can be one of them.
+
+        For more information, see the following paper:
+
+        - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance
+          Measurement." The Journal of Portfolio Management, 18(2), 7-19.
+
+        Also known as: returns-based style analysis, RBSA, style regression, effective asset mix,
+        selection return.
+
+        Args:
+            style_tickers (str | list[str]): The tickers of the style indices, as a list or a
+                comma-separated string.
+            period (str, optional): The return frequency (daily, weekly, monthly, quarterly or
+                yearly). Defaults to "monthly".
+            window (int | None, optional): The number of periods to estimate the weights over on a
+                rolling basis, which adds the Out-of-Sample Selection Return. Defaults to None,
+                which uses every period.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: Per ticker the weight of every style, the R Squared, the Selection Return
+            and the Tracking Error, or with a window the same and the Out-of-Sample Selection
+            Return per date (the last date of every window) and ticker. A ticker with no more
+            returns than there are styles (in a window) is NaN.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["ARKK", "IWF", "IWD", "IWO", "IWN", "AGG"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2019-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_style_analysis(["IWF", "IWD", "IWO", "IWN", "AGG"])
+        ```
+
+        Which returns:
+
+        |      |    IWF |   IWD |    IWO |   IWN |   AGG |   R Squared |   Selection Return |   Tracking Error |
+        |:-----|-------:|------:|-------:|------:|------:|------------:|-------------------:|-----------------:|
+        | ARKK | 0.0091 |     0 | 0.9909 |     0 |     0 |      0.6123 |             0.0638 |           0.2632 |
+        """
+        if period not in PERIODS_PER_YEAR:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly or yearly."
+            )
+        # A comma-separated string (as the MCP server passes a list) is split.
+        style_tickers = (
+            [ticker.strip() for ticker in style_tickers.split(",") if ticker.strip()]
+            if isinstance(style_tickers, str)
+            else list(style_tickers)
+        )
+        returns = self._historical_data[period].loc[:, "Return"]
+        if missing := [ticker for ticker in style_tickers if ticker not in returns]:
+            raise ValueError(
+                f"The style tickers {', '.join(missing)} are not part of the Toolkit; add "
+                "them to its tickers."
+            )
+        funds = [
+            ticker
+            for ticker in self._tickers_without_portfolio
+            if ticker not in style_tickers
+        ]
+        if not funds:
+            raise ValueError(
+                "Every ticker is a style ticker, so there is nothing to analyze."
+            )
+
+        returns = returns.loc[
+            self._start_date : self._end_date, [*funds, *style_tickers]
+        ]
+        # When the prices start within the range, their first period has no prior close and so no return for any ticker; leaving it in would give the first window one observation fewer than `window`.  # noqa: E501
+        if (first_return := returns.first_valid_index()) is not None:
+            returns = returns.loc[first_return:]
+        periods_per_year = PERIODS_PER_YEAR[period]
+
+        # A fund with too few returns (a recent listing, say) comes back as NaN in the model, so it does not empty the result of every other fund.  # noqa: E501
+        if window is None:
+            result = pd.DataFrame(
+                {
+                    fund: performance_model.get_style_analysis(
+                        returns[fund], returns[style_tickers], periods_per_year
+                    )
+                    for fund in funds
+                }
+            ).T
+        else:
+            result = pd.concat(
+                {
+                    fund: performance_model.get_rolling_style_analysis(
+                        returns[fund], returns[style_tickers], window, periods_per_year
+                    )
+                    for fund in funds
+                },
+                axis=1,
+            )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio

@@ -350,6 +350,15 @@ def find_preset(name: str) -> PortfolioDefinition:
     )
 
 
+def _daily_periods(frame: pd.DataFrame) -> pd.DataFrame:
+    """The frame on a daily PeriodIndex, the index the prices, dividends and rates share."""
+    if isinstance(frame.index, pd.PeriodIndex):
+        return frame
+    frame = frame.copy()
+    frame.index = pd.PeriodIndex(frame.index, freq="D")
+    return frame
+
+
 def build_transactions(
     definition: PortfolioDefinition,
     prices: pd.DataFrame,
@@ -427,19 +436,10 @@ def build_transactions(
         or portfolio_model.get_base_currency(known_currencies, definition.weights)
     )[0]
 
-    prices = prices[tickers].copy()
-    prices.index = (
-        pd.PeriodIndex(prices.index, freq="D")
-        if not isinstance(prices.index, pd.PeriodIndex)
-        else prices.index
-    )
-    if exchange_rates is not None and not isinstance(
-        exchange_rates.index, pd.PeriodIndex
-    ):
-        exchange_rates = exchange_rates.copy()
-        exchange_rates.index = pd.PeriodIndex(exchange_rates.index, freq="D")
+    if exchange_rates is not None:
+        exchange_rates = _daily_periods(exchange_rates)
     prices = portfolio_model.convert_prices(
-        prices, known_currencies, base_currency, exchange_rates
+        _daily_periods(prices[tickers]), known_currencies, base_currency, exchange_rates
     )
 
     complete = prices.dropna(how="any")
@@ -448,14 +448,13 @@ def build_transactions(
 
     # The cumulative dividends per share in the portfolio's currency on every trading day, so the dividends between two rebalancing dates are a difference; a dividend on a day without a complete set of prices counts on the next complete day.  # noqa: E501
     if dividends is not None:
-        dividends = dividends.reindex(columns=tickers).astype(float).fillna(0.0)
-        dividends.index = (
-            pd.PeriodIndex(dividends.index, freq="D")
-            if not isinstance(dividends.index, pd.PeriodIndex)
-            else dividends.index
-        )
         dividends = portfolio_model.convert_prices(
-            dividends, known_currencies, base_currency, exchange_rates
+            _daily_periods(
+                dividends.reindex(columns=tickers).astype(float).fillna(0.0)
+            ),
+            known_currencies,
+            base_currency,
+            exchange_rates,
         ).fillna(0.0)
         cumulative_dividends = (
             dividends.cumsum()

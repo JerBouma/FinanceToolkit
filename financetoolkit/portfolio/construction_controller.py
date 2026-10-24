@@ -220,6 +220,10 @@ class PortfolioConstruction:
             statistics["Sharpe Ratio"],
             contributions["Percentage Contribution"].sum(),
         ]
+        return self._round(table, rounding)
+
+    def _round(self, table: pd.DataFrame, rounding: int | None) -> pd.DataFrame:
+        """The table rounded to the given decimals, or to the Toolkit's rounding when None."""
         return apply_rounding(
             table, rounding if rounding is not None else self._rounding
         )
@@ -575,9 +579,7 @@ class PortfolioConstruction:
             minimum_weight,
             maximum_weight,
         )
-        return apply_rounding(
-            frontier, rounding if rounding is not None else self._rounding
-        )
+        return self._round(frontier, rounding)
 
     @handle_errors
     def get_risk_parity_weights(
@@ -884,9 +886,7 @@ class PortfolioConstruction:
         table["CVaR"] = [cvar(returns[asset]) for asset in returns.columns] + [
             cvar(returns @ weights)
         ]
-        return apply_rounding(
-            table, rounding if rounding is not None else self._rounding
-        )
+        return self._round(table, rounding)
 
     @handle_errors
     def get_black_litterman_weights(
@@ -1020,9 +1020,7 @@ class PortfolioConstruction:
         table = pd.concat(
             [(market / market.sum()).rename("Market Weight"), returns, weights], axis=1
         )
-        return apply_rounding(
-            table, rounding if rounding is not None else self._rounding
-        )
+        return self._round(table, rounding)
 
     @handle_errors
     def get_risk_contributions(
@@ -1099,9 +1097,7 @@ class PortfolioConstruction:
             table["Risk Contribution"].sum(),
             table["Percentage Contribution"].sum(),
         ]
-        return apply_rounding(
-            table, rounding if rounding is not None else self._rounding
-        )
+        return self._round(table, rounding)
 
     @handle_errors
     def get_stress_test(
@@ -1208,17 +1204,14 @@ class PortfolioConstruction:
         table.index.name = "Scenario"
         numeric = table.columns.drop(["Start Date", "End Date"])
         table[numeric] = table[numeric].astype(float)
-        return apply_rounding(
-            table, rounding if rounding is not None else self._rounding
-        )
+        return self._round(table, rounding)
 
     def _get_exposures(self, assets: list[str], by: str) -> dict[str, pd.Series]:
         """The sector, country or holding exposure of every asset."""
         if self._fund_function is None:
             raise ValueError("Fund data is not available for this Toolkit.")
 
-        kind = {"sector": "sector", "country": "country", "holdings": "holdings"}[by]
-        funds = self._fund_function(kind, assets)
+        funds = self._fund_function(by, assets)
         exposures: dict[str, pd.Series] = {}
         stocks = []
 
@@ -1347,9 +1340,7 @@ class PortfolioConstruction:
                     )
                     exposure = exposure.sort_values("Exposure", ascending=False)
 
-        return apply_rounding(
-            exposure, rounding if rounding is not None else self._rounding
-        )
+        return self._round(exposure, rounding)
 
     @handle_errors
     def get_brinson_attribution(
@@ -1499,6 +1490,4 @@ class PortfolioConstruction:
             portfolio_weights, portfolio_returns, benchmark_weights, benchmark_returns
         )
         table.index.name = "Sector"
-        return apply_rounding(
-            table, rounding if rounding is not None else self._rounding
-        )
+        return self._round(table, rounding)

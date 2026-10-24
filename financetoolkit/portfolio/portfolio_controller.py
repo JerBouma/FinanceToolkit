@@ -23,6 +23,14 @@ logger = logger_model.get_logger()
 # pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
 
+_PERIOD_SYMBOLS = {
+    "yearly": "Y",
+    "quarterly": "Q",
+    "monthly": "M",
+    "weekly": "W",
+    "daily": "D",
+}
+
 
 class Portfolio:
     """
@@ -174,7 +182,7 @@ class Portfolio:
             weights is not None or holdings is not None or definition is not None
         )
 
-        # An explicit None check is required because the truth value of a DataFrame is ambiguous, which made passing a DataFrame raise a ValueError here.
+        # An explicit None check: the truth value of a DataFrame is ambiguous.
         if portfolio_dataset is None and not example and not built_portfolio:
             example = True
             logger.info(
@@ -189,11 +197,8 @@ class Portfolio:
             if "portfolio_template.csv" not in os.listdir():
                 shutil.copy(example_csv_path, "portfolio_template.csv")
 
-        portfolio_dataset = (
-            example_xlsx_path
-            if example or (portfolio_dataset is None and not built_portfolio)
-            else portfolio_dataset
-        )
+        if example:
+            portfolio_dataset = example_xlsx_path
 
         self._currency: str | None = (
             portfolio_model.get_price_unit(currency)[0] if currency else None
@@ -223,16 +228,9 @@ class Portfolio:
             if benchmark_ticker
             else self._cfg["general"]["benchmark_ticker"]
         )
-        self._yearly_overview: pd.DataFrame = pd.DataFrame()
-        self._quarterly_overview: pd.DataFrame = pd.DataFrame()
-        self._monthly_overview: pd.DataFrame = pd.DataFrame()
-        self._yearly_cash_flow_dataset: pd.DataFrame = pd.DataFrame()
-        self._quarterly_cash_flow_dataset: pd.DataFrame = pd.DataFrame()
-        self._monthly_cash_flow_dataset: pd.DataFrame = pd.DataFrame()
 
         # Tickers
         self._ticker_combinations: dict[str, str] = {}
-        self._original_ticker_combinations: dict[str, str] = {}
 
         # Historical Data
         self._daily_historical_data: pd.DataFrame = pd.DataFrame()
@@ -272,7 +270,6 @@ class Portfolio:
         self._toolkit: Toolkit | None = None
         self._toolkit_instance: Toolkit | None = None
         self._benchmark_toolkit: Toolkit | None = None
-        self._currency_toolkit: Toolkit | None = None
         self._latest_price: pd.Series = pd.Series()
         self._daily_currency_data: pd.DataFrame = pd.DataFrame()
 
@@ -342,46 +339,38 @@ class Portfolio:
         }
 
     def _get_exchange_rates(
-        self, rate_tickers: list[str], start_date: str
+        self, rate_tickers: list[str | None], start_date: str
     ) -> pd.DataFrame:
         """
-        The daily exchange rates, one column per rate such as USDGBP=X, or an empty
-        DataFrame when none is needed. They are retrieved once and kept, so the prices of
-        a built portfolio's transactions and its historical data are converted with the
-        same rates and a transaction's price equals the converted price of its day.
+        The daily exchange rates, one column per rate such as USDGBP=X (None, a conversion
+        that needs no rate, is skipped), or an empty DataFrame when none is needed. They are
+        retrieved once and kept, so the prices of a built portfolio's transactions and its
+        historical data are converted with the same rates and a transaction's price equals
+        the converted price of its day.
         """
-        rate_tickers = sorted(set(rate_tickers))
+        rate_tickers = sorted(
+            {rate_ticker for rate_ticker in rate_tickers if rate_ticker}
+        )
         if not rate_tickers:
             return pd.DataFrame()
 
-        missing = [
-            rate_ticker
-            for rate_ticker in rate_tickers
+        retrieved = (
+            set()
             if self._daily_currency_data.empty
-            or ("Adj Close", rate_ticker) not in self._daily_currency_data.columns
-        ]
-        if missing:
+            else set(self._daily_currency_data["Adj Close"].columns)
+        )
+        if not retrieved.issuperset(rate_tickers):
             # The rates retrieved before are retrieved again with the new ones, so one
             # Toolkit holds every rate the portfolio uses.
-            collect = sorted(
-                set(rate_tickers)
-                | (
-                    set(self._daily_currency_data["Adj Close"].columns)
-                    if not self._daily_currency_data.empty
-                    else set()
-                )
-            )
-            self._currency_toolkit = Toolkit(
+            collect = sorted(retrieved.union(rate_tickers))
+            self._daily_currency_data = Toolkit(
                 api_key=self._api_key,
                 tickers=collect,
                 benchmark_ticker=None,
                 start_date=start_date,
                 use_cached_data=self._use_cached_data,
                 progress_bar=False,
-            )
-            self._daily_currency_data = self._currency_toolkit.get_historical_data(
-                period="daily"
-            )
+            ).get_historical_data(period="daily")
             # A single ticker comes back without the ticker level.
             if self._daily_currency_data.columns.nlevels == 1 and len(collect) == 1:
                 self._daily_currency_data.columns = pd.MultiIndex.from_product(
@@ -440,6 +429,23 @@ class Portfolio:
         )
 
         return benchmark_currency, ticker_currencies
+
+    def _collect_data(self) -> bool:
+        """
+        Collect the historical data of the tickers and the benchmark when it is not there yet,
+        False when the tickers or the benchmark have no historical data, for which every
+        method returns an empty result.
+        """
+        if self._weekly_historical_data.empty:
+            self.collect_historical_data()
+
+            if self._daily_historical_data.empty:
+                return False
+
+        if self._weekly_benchmark_data.empty:
+            self.collect_benchmark_historical_data()
+
+        return not self._daily_benchmark_data.empty
 
     def _values_at_transactions(self, daily_values: pd.DataFrame) -> pd.Series:
         """
@@ -881,16 +887,8 @@ class Portfolio:
                 "of (quarterly) data."
             )
 
-        if self._weekly_historical_data.empty:
-            self.collect_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
-        if self._weekly_benchmark_data.empty:
-            self.collect_benchmark_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
+        if not self._collect_data():
+            return pd.DataFrame()
 
         symbols = list(self._tickers) + ["Portfolio"]
 
@@ -1126,9 +1124,6 @@ class Portfolio:
         self._start_date = (
             self._portfolio_dataset[self._date_column].min().strftime("%Y-%m-%d")
         )
-        self._transactions_currencies = list(
-            self._portfolio_dataset[self._currency_column].unique()
-        )
 
         self._portfolio_dataset = self._portfolio_dataset.set_index(
             [self._date_column, self._ticker_column]
@@ -1169,11 +1164,12 @@ class Portfolio:
         on the portfolio tickers. The resulting benchmark data is returned in a structured DataFrame.
 
         Args:
-            benchmark_ticker (str | None): The default benchmark ticker symbol to use if no per-ticker mapping
-                is provided. If None, the default benchmark ticker is retrieved from the configuration.
+            benchmark_ticker (str | None): The benchmark ticker symbol. Defaults to None, the benchmark ticker
+                given to the Portfolio, or the one of the configuration file when none was given.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the benchmark data for the portfolio, indexed by the portfolio's dates.
+            pd.DataFrame: A DataFrame containing the benchmark data for the portfolio, indexed by the portfolio's dates,
+                or an empty DataFrame (with an error logged) when the benchmark has no historical data.
 
         Notes:
             - The benchmark data is retrieved in daily, weekly, monthly, quarterly, and yearly periods.
@@ -1234,17 +1230,13 @@ class Portfolio:
             if self._daily_historical_data.empty:
                 return pd.DataFrame()
 
-        benchmark_ticker = (
-            benchmark_ticker
-            if benchmark_ticker
-            else self._cfg["general"]["benchmark_ticker"]
-        )
+        # The constructor already fell back to the configuration's benchmark.
+        benchmark_ticker = benchmark_ticker or self._benchmark_ticker
 
         if not self._benchmark_toolkit:
-            self._benchmark_tickers = {}
-            for ticker in self._original_tickers:
-                self._benchmark_tickers[ticker] = benchmark_ticker
-
+            self._benchmark_tickers = dict.fromkeys(
+                self._original_tickers, benchmark_ticker
+            )
             self._benchmark_toolkit = Toolkit(
                 api_key=self._api_key,
                 tickers=list(set(self._benchmark_tickers.values())),
@@ -1272,13 +1264,10 @@ class Portfolio:
         )
         exchange_rates = self._get_exchange_rates(
             [
-                rate_ticker
-                for currency in conversions
-                if (
-                    rate_ticker := portfolio_model.get_exchange_rate_ticker(
-                        currency, str(benchmark_currency)
-                    )
+                portfolio_model.get_exchange_rate_ticker(
+                    currency, str(benchmark_currency)
                 )
+                for currency in conversions
             ],
             self._start_date,
         )
@@ -1317,6 +1306,14 @@ class Portfolio:
         )
 
         daily_benchmark_data = benchmark_period("daily")
+
+        if daily_benchmark_data.empty:
+            logger.error(
+                "Failed to collect the historical data of the benchmark %s. Please ensure it is a "
+                "valid ticker, or pass another one with benchmark_ticker.",
+                benchmark_name,
+            )
+            return pd.DataFrame()
 
         # Aligned with carried-forward prices: filling a missing date with the next quote would copy that day's return onto the earlier date as well and price it with information from the future.  # noqa: E501
         aligned_by_currency = {
@@ -1464,9 +1461,6 @@ class Portfolio:
 
         # Used when ISIN codes are provided and must be matched to tickers.
         self._ticker_combinations = dict(zip(self._toolkit._tickers, self._tickers))
-        self._original_ticker_combinations = dict(
-            zip(self._tickers, self._original_tickers)
-        )
 
         self._daily_historical_data = self._ticker_historical_data("daily")
 
@@ -1520,13 +1514,8 @@ class Portfolio:
 
         exchange_rates = self._get_exchange_rates(
             [
-                rate_ticker
+                portfolio_model.get_exchange_rate_ticker(currency, data_currency)
                 for data_currency, currency in currency_conversions.values()
-                if (
-                    rate_ticker := portfolio_model.get_exchange_rate_ticker(
-                        currency, data_currency
-                    )
-                )
             ],
             self._start_date,
         )
@@ -1664,17 +1653,8 @@ class Portfolio:
         | 2026-10-06 |                  129 |                 126 |                  116 |                 122 |                  105 |                  78 |
         | 2026-10-07 |                  129 |                 126 |                  116 |                 122 |                  105 |                  78 |
         """
-        if self._weekly_historical_data.empty:
-            self.collect_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
-
-        if self._weekly_benchmark_data.empty:
-            self.collect_benchmark_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
+        if not self._collect_data():
+            return pd.DataFrame()
 
         if self._transactions_overview.empty:
             try:
@@ -1828,17 +1808,8 @@ class Portfolio:
         | WMT          |       92 |     -18 |  22.2477 |   2265.02  |        119.89  |       11029.9  |     965.758 |   4.37   |        9898.01 |             3.409  |       0.2626 |                 0.1274 |  0.9609 | -0.0971 |   0.0114 |
         | Portfolio    |     2142 |    -532 |  55.8595 | 134818     |        452.235 |      968688    |   35730.9   |   8.8928 |      878276    |             2.5365 |       0.2752 |                 0.1274 |  6.3563 |  1.7913 |   1      |
         """
-        if self._weekly_historical_data.empty:
-            self.collect_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
-
-        if self._weekly_benchmark_data.empty:
-            self.collect_benchmark_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
+        if not self._collect_data():
+            return pd.DataFrame()
 
         # A trailing year of 252 trading days for the volatility and the beta alike, rather than the current calendar year, which holds only a few returns early in January.  # noqa: E501
         if self._portfolio_volatilities.empty:
@@ -1973,17 +1944,8 @@ class Portfolio:
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
 
-        if self._weekly_historical_data.empty:
-            self.collect_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
-
-        if self._weekly_benchmark_data.empty:
-            self.collect_benchmark_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
+        if not self._collect_data():
+            return pd.DataFrame()
 
         if self._positions_overview.empty:
             try:
@@ -1993,24 +1955,8 @@ class Portfolio:
                     f"Failed to get positions overview: {error}"
                 ) from error
 
-        if not period:
-            raise ValueError(
-                "Please provide a period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
-            )
-
-        period_string = period.lower()
-
-        if period_string == "yearly":
-            period_symbol = "Y"
-        elif period_string == "quarterly":
-            period_symbol = "Q"
-        elif period_string == "monthly":
-            period_symbol = "M"
-        elif period_string == "weekly":
-            period_symbol = "W"
-        elif period_string == "daily":
-            period_symbol = "D"
-        else:
+        period_symbol = _PERIOD_SYMBOLS.get(period.lower())
+        if period_symbol is None:
             raise ValueError(
                 "Please provide a valid period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
             )
@@ -2125,17 +2071,8 @@ class Portfolio:
                 "Please provide a valid method. This can be 'FIFO', 'LIFO', or 'AVERAGE'"
             )
 
-        if self._weekly_historical_data.empty:
-            self.collect_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
-
-        if self._weekly_benchmark_data.empty:
-            self.collect_benchmark_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
+        if not self._collect_data():
+            return pd.DataFrame()
 
         try:
             new_columns = overview_model.create_transactions_overview(
@@ -2280,41 +2217,14 @@ class Portfolio:
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
 
-        if self._weekly_historical_data.empty:
-            self.collect_historical_data()
+        if not self._collect_data():
+            return pd.DataFrame()
 
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
-
-        if self._weekly_benchmark_data.empty:
-            self.collect_benchmark_historical_data()
-
-            if self._daily_historical_data.empty:
-                return pd.DataFrame()
-
-        if not period:
+        period_symbol = _PERIOD_SYMBOLS.get(period.lower())
+        if period_symbol is None:
             raise ValueError(
-                "Please provide a period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
+                "Please provide a valid period. This can be 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'"
             )
-
-        period_string = period.lower()
-
-        period_symbols = {
-            "yearly": "Y",
-            "quarterly": "Q",
-            "monthly": "M",
-            "weekly": "W",
-            "daily": "D",
-        }
-
-        if period_string not in period_symbols:
-            raise ValueError(
-                "Please provide a valid period. This can be "
-                "'yearly', 'quarterly', 'monthly', 'weekly', "
-                "or 'daily'"
-            )
-
-        period_symbol = period_symbols[period_string]
 
         def end_of_period(daily_values: pd.DataFrame) -> pd.DataFrame:
             # The last value of every period, from the daily data so the asset and the benchmark are both in the currency of each ticker's transactions.  # noqa: E501

@@ -75,7 +75,7 @@ def read_portfolio_dataset(
     additional_files = []
     spreadsheet_files = []
 
-    # A copy is iterated and a new list is built, since removing entries from the list being iterated skips every other directory and mutates the caller's list in place.  # noqa: E501
+    # A folder stands for the spreadsheets in it, which are read after the files given directly.
     for file in excel_location:
         if file.split(".")[-1] not in ["xlsx", "xls", "csv"]:
             for sub_file in os.listdir(file):
@@ -89,7 +89,6 @@ def read_portfolio_dataset(
     logger.info("Reading Portfolio Files")
     for file in excel_location:
         portfolio_dataset = helpers.read_excel(file)
-        portfolio_dataset.columns = portfolio_dataset.columns.str.lower()
 
         (
             portfolio_dataset,
@@ -127,7 +126,7 @@ def read_portfolio_dataset(
             # Summing prices would falsely indicate a higher investment than made.
             number_columns.remove(selected_price_column)
 
-            # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears; adding the frame to itself instead only produced the right answer for a pair and silently deleted a group of three or more identical transactions altogether.  # noqa: E501
+            # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears.  # noqa: E501
             row_identity = portfolio_dataset.astype(str).agg("|".join, axis=1)
             occurrences = row_identity.map(row_identity.value_counts())
 
@@ -167,6 +166,11 @@ def read_portfolio_dataset(
         selected_currency_column,
         selected_costs_column,
     )
+
+
+def _first_column(dataset: pd.DataFrame, names: list[str]) -> str | None:
+    """The first of the names that is a column of the dataset, or None when none is."""
+    return next((name for name in names if name in dataset.columns), None)
 
 
 def format_portfolio_dataset(
@@ -232,14 +236,13 @@ def format_portfolio_dataset(
     dataset.columns = [str(column).strip().lower() for column in dataset.columns]
 
     date_columns = [column.lower() for column in date_columns]
-    date_column_match = [column for column in date_columns if column in dataset.columns]
+    date_column_first = _first_column(dataset, date_columns)
 
-    if not date_column_match:
+    if date_column_first is None:
         raise ValueError(
             "No date columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {date_columns}"
         )
-    date_column_first = date_column_match[0]
 
     dataset = dataset.set_index(date_column_first)
 
@@ -262,60 +265,44 @@ def format_portfolio_dataset(
     dataset = dataset.reset_index()
 
     tickers_columns = [column.lower() for column in tickers_columns]
-    tickers_columns_match = [
-        column for column in tickers_columns if column in dataset.columns
-    ]
+    tickers_column_first = _first_column(dataset, tickers_columns)
 
-    if not tickers_columns_match:
+    if tickers_column_first is None:
         raise ValueError(
             "No ticker columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {tickers_columns}"
         )
-    tickers_column_first = tickers_columns_match[0]
     dataset[tickers_column_first] = dataset[tickers_column_first].astype("category")
 
-    name_columns = [column.lower() for column in name_columns]
-    name_columns_match = [
-        column for column in name_columns if column in dataset.columns
-    ]
-
-    if not name_columns_match:
-        name_columns_match = tickers_columns_match
-
-    name_column_first = name_columns_match[0]
-    name_column_name = (
-        "TEMP " + name_column_first
-        if name_columns_match == tickers_columns_match
-        else name_column_first
-    )
+    # Without a name column the ticker doubles as the name, in a column of its own.
+    name_column_first = _first_column(dataset, [c.lower() for c in name_columns])
+    if name_column_first in (None, tickers_column_first):
+        name_column_first = tickers_column_first
+        name_column_name = "TEMP " + name_column_first
+    else:
+        name_column_name = name_column_first
     dataset[name_column_name] = dataset[name_column_first].astype("category")
 
     price_columns = [column.lower() for column in price_columns]
-    price_columns_match = [
-        column for column in price_columns if column in dataset.columns
-    ]
+    price_column_first = _first_column(dataset, price_columns)
 
-    if not price_columns_match:
+    if price_column_first is None:
         raise ValueError(
             "No price columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {price_columns}"
         )
-    price_column_first = price_columns_match[0]
     dataset[price_column_first] = dataset[price_column_first].apply(
         helpers.convert_to_float
     )
 
     volume_columns = [column.lower() for column in volume_columns]
-    volume_columns_match = [
-        column for column in volume_columns if column in dataset.columns
-    ]
+    volume_column_first = _first_column(dataset, volume_columns)
 
-    if not volume_columns_match:
+    if volume_column_first is None:
         raise ValueError(
             "No volume columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {volume_columns}"
         )
-    volume_column_first = volume_columns_match[0]
     dataset[volume_column_first] = dataset[volume_column_first].apply(
         helpers.convert_to_float
     )
@@ -341,11 +328,9 @@ def format_portfolio_dataset(
 
     if costs_columns:
         costs_columns = [column.lower() for column in costs_columns]
-        costs_columns_match = [
-            column for column in costs_columns if column in dataset.columns
-        ]
+        costs_column_first = _first_column(dataset, costs_columns)
 
-        if not costs_columns_match:
+        if costs_column_first is None:
             logger.warning(
                 "No costs columns found in the portfolio dataset. Please ensure in your dataset "
                 "there is a column named one of the following: %s. "
@@ -355,7 +340,6 @@ def format_portfolio_dataset(
             costs_column_first = "TEMP Costs"
             dataset[costs_column_first] = 0.0
         else:
-            costs_column_first = costs_columns_match[0]
             dataset[costs_column_first] = dataset[costs_column_first].apply(
                 helpers.convert_to_float
             )
@@ -365,11 +349,9 @@ def format_portfolio_dataset(
 
     if isinstance(currency_columns, list):
         currency_columns = [column.lower() for column in currency_columns]
-        currency_columns_match = [
-            column for column in currency_columns if column in dataset.columns
-        ]
+        currency_column_first = _first_column(dataset, currency_columns)
 
-        if not currency_columns_match:
+        if currency_column_first is None:
             logger.warning(
                 "No currency columns found in the portfolio dataset. Please ensure in your dataset "
                 "there is a column named one of the following: %s. "
@@ -379,8 +361,6 @@ def format_portfolio_dataset(
             currency_column_first = "TEMP Currency"
             dataset[currency_column_first] = "EUR"
         else:
-            currency_column_first = currency_columns_match[0]
-
             if (dataset[currency_column_first].str.len() != CURRENCY_CODE_LENGTH).any():
                 raise ValueError(
                     "Currency column must contain 3-letter currency codes only (e.g. EUR, USD or JPY)."
@@ -400,7 +380,7 @@ def format_portfolio_dataset(
             raise ValueError(
                 "Currency must be a 3-letter currency code (e.g. EUR, USD or JPY)."
             )
-        # A single currency code applies to every transaction, so it becomes a column of its own; using the code itself as the column name looked up a column that does not exist and made the rename below drop the currency entirely.  # noqa: E501
+        # A single currency code applies to every transaction, so it becomes a column of its own.
         currency_column_first = "TEMP Currency"
         dataset[currency_column_first] = normalize_currency(currency_columns)
     else:
@@ -650,7 +630,7 @@ def convert_historical_data(
         if ("Adj Close", ticker) not in historical_data.columns:
             continue
         for column in columns:
-            if column in available and (column, ticker) in historical_data.columns:
+            if (column, ticker) in historical_data.columns:
                 historical_data[(column, ticker)] = convert_prices(
                     historical_data[column][[ticker]],
                     {ticker: currency},

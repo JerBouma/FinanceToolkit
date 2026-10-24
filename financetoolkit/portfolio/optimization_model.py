@@ -55,6 +55,11 @@ def _fully_invested() -> dict:
     }
 
 
+def _target_return(mu: np.ndarray, target: float) -> dict:
+    """The constraint that the expected return of the weights equals the target."""
+    return {"type": "eq", "fun": lambda w: w @ mu - target, "jac": lambda w: mu}
+
+
 def _is_feasible(
     weights: np.ndarray, bounds: list[tuple[float, float]], constraints: list[dict]
 ) -> bool:
@@ -316,20 +321,12 @@ def get_mean_variance_weights(
                 f"A target return of {target_return:.4f} cannot be reached within the "
                 f"weight bounds ({lowest:.4f} to {highest:.4f})."
             )
-        constraints = [
-            _fully_invested(),
-            {
-                "type": "eq",
-                "fun": lambda w: w @ mu - target_return,
-                "jac": lambda w: mu,
-            },
-        ]
         weights = _solve(
             lambda w: w @ sigma @ w,
             lambda w: 2 * sigma @ w,
             assets,
             bounds,
-            constraints,
+            [_fully_invested(), _target_return(mu, target_return)],
         )
     else:
         weights = _solve(
@@ -393,14 +390,7 @@ def get_efficient_frontier(
                 lambda w: 2 * sigma @ w,
                 assets,
                 bounds,
-                [
-                    _fully_invested(),
-                    {
-                        "type": "eq",
-                        "fun": lambda w, target=target: w @ mu - target,
-                        "jac": lambda w: mu,
-                    },
-                ],
+                [_fully_invested(), _target_return(mu, target)],
             )
         except ValueError:
             # The highest return is a corner of the weight bounds, where SLSQP can report

@@ -95,6 +95,7 @@ def get_brinson_fachler_attribution(
     allocation = (wp - wb) * (rb - total_benchmark)
     selection = wb * (rp - rb)
     interaction = (wp - wb) * (rp - rb)
+    total = allocation + selection + interaction
 
     result = pd.DataFrame(
         {
@@ -105,7 +106,7 @@ def get_brinson_fachler_attribution(
             "Allocation Effect": allocation,
             "Selection Effect": selection,
             "Interaction Effect": interaction,
-            "Total Effect": allocation + selection + interaction,
+            "Total Effect": total,
         }
     )
     result.loc["Total"] = [
@@ -116,7 +117,7 @@ def get_brinson_fachler_attribution(
         allocation.sum(),
         selection.sum(),
         interaction.sum(),
-        (allocation + selection + interaction).sum(),
+        total.sum(),
     ]
 
     return result

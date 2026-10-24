@@ -10,9 +10,6 @@ logger = logger_model.get_logger()
 
 # pylint: disable=too-many-locals
 
-# Matches currency codes (EUR, USD) in Yahoo Finance notation, e.g. EURUSD=X.
-CURRENCY_CODE_LENGTH = 3
-
 # Trading days used to annualize, matching the Risk module's convention.
 TRADING_DAYS_PER_YEAR = 252
 
@@ -38,6 +35,17 @@ def _safe_divide(
     result = numerator / denominator.where(denominator > 0)
 
     return result.replace([np.inf, -np.inf], np.nan)
+
+
+def _per_transaction(values: pd.Series | None, length: int) -> np.ndarray:
+    """
+    Values per transaction, such as the dividends per unit since each transaction, as an array.
+    A missing value is no dividend at all rather than a missing return, so it counts as zero,
+    as do all of them when no values are given.
+    """
+    if values is None:
+        return np.zeros(length)
+    return np.nan_to_num(np.asarray(values, dtype=float))
 
 
 def create_transactions_overview(
@@ -78,11 +86,7 @@ def create_transactions_overview(
             Missing or invalid values are replaced with 0.0. Sell transactions have no current
             value, dividends or return, since their result is the realized PnL instead.
     """
-    dividends_per_unit = (
-        np.zeros(len(portfolio_volume))
-        if dividends is None
-        else np.nan_to_num(np.asarray(dividends, dtype=float))
-    )
+    dividends_per_unit = _per_transaction(dividends, len(portfolio_volume))
 
     invested_amount = []
     current_value = []
@@ -122,9 +126,7 @@ def create_transactions_overview(
         index=["Invested Amount", "Current Value", "Dividends", "% Return", "Return"],
     ).T
 
-    new_columns = new_columns.fillna(0.0)
-
-    return new_columns
+    return new_columns.fillna(0.0)
 
 
 def calculate_trailing_volatility(
@@ -234,7 +236,7 @@ def _calculate_portfolio_volatility(
         # Columns that are entirely missing would propagate NaNs across the matrix.
         recent_returns = recent_returns.dropna(axis=1, how="all")
 
-        if not recent_returns.empty and len(recent_returns.columns) > 0:
+        if not recent_returns.empty:
             annualized_covariance = recent_returns.cov() * TRADING_DAYS_PER_YEAR
             aligned_weights = weights.reindex(annualized_covariance.index).fillna(0.0)
 
@@ -400,16 +402,12 @@ def create_portfolio_overview(
         transaction_value / benchmark_prices.to_numpy()
     )
     # Every transaction adds or removes units that receive (or no longer receive) the dividends paid after its date, so the dividends of the position are the volume-weighted sum of the dividends per unit since each transaction.  # noqa: E501
-    portfolio_overview["Dividends"] = portfolio_volume * (
-        0.0 if dividends is None else np.nan_to_num(np.asarray(dividends, dtype=float))
+    portfolio_overview["Dividends"] = portfolio_volume * _per_transaction(
+        dividends, len(portfolio_volume)
     )
     portfolio_overview["Benchmark Dividends"] = portfolio_overview[
         "Benchmark Volume"
-    ] * (
-        0.0
-        if benchmark_dividends is None
-        else np.nan_to_num(np.asarray(benchmark_dividends, dtype=float))
-    )
+    ] * _per_transaction(benchmark_dividends, len(portfolio_volume))
 
     portfolio_overview_grouped = portfolio_overview.groupby(
         "Identifier", observed=True
@@ -752,12 +750,6 @@ def create_transactions_performance(
     ).asfreq(period_string)
     tickers = period_performance.index.get_level_values(ticker_column)
 
-    def per_transaction(values: pd.Series | None) -> np.ndarray:
-        # The cumulative dividends up to a missing date are unknown, which is no dividend at all rather than a missing return.  # noqa: E501
-        if values is None:
-            return np.zeros(len(period_performance))
-        return np.nan_to_num(np.asarray(values, dtype=float))
-
     end_prices = _lookup_period_values(period_prices, dates, tickers)
     end_dividends = np.nan_to_num(
         _lookup_period_values(period_dividends, dates, tickers)
@@ -785,14 +777,14 @@ def create_transactions_performance(
     period_performance["Current Value"] = (buy_volume * end_prices).where(bought, 0.0)
     # A unit receives every dividend with an ex-date after the day it was bought, up to the end of the period.  # noqa: E501
     period_performance["Dividends"] = buy_volume * (
-        end_dividends - per_transaction(transaction_dividends)
+        end_dividends - _per_transaction(transaction_dividends, len(period_performance))
     )
     period_performance["Benchmark Value"] = (
         benchmark_volume
         * (
             benchmark_end_prices
             + benchmark_end_dividends
-            - per_transaction(benchmark_transaction_dividends)
+            - _per_transaction(benchmark_transaction_dividends, len(period_performance))
         )
     ).where(bought, 0.0)
 
@@ -1110,9 +1102,7 @@ def create_portfolio_performance(
         positions_dataset_grouped["Invested Amount"],
     )
 
-    positions_dataset_grouped = positions_dataset_grouped.fillna(0.0)
-
-    return positions_dataset_grouped
+    return positions_dataset_grouped.fillna(0.0)
 
 
 def create_profit_and_loss_overview(

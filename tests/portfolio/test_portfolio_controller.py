@@ -414,3 +414,69 @@ def test_a_portfolio_of_one_ticker(monkeypatch):
     money_weighted = single.get_money_weighted_return()
     assert {"AAPL", "Portfolio"} <= set(money_weighted.index)
     assert money_weighted["Money-Weighted Return"].notna().all()
+
+
+class _EmptyToolkit:
+    """A Toolkit that records the tickers it is given and finds no historical data."""
+
+    tickers: list = []
+
+    def __init__(self, tickers, **kwargs):  # noqa: ARG002
+        _EmptyToolkit.tickers = list(tickers)
+
+    def get_historical_data(self, period="daily"):  # noqa: ARG002
+        return pd.DataFrame()
+
+    def get_historical_statistics(self):
+        return pd.DataFrame()
+
+
+def _portfolio_with_historical_data(**kwargs):
+    held = Portfolio(portfolio_dataset="tests/datasets/portfolio_test.xlsx", **kwargs)
+    held._daily_historical_data = historical
+    held._weekly_historical_data = historical
+    return held
+
+
+def test_the_benchmark_given_to_the_portfolio_is_collected(monkeypatch):
+    from financetoolkit.portfolio import portfolio_controller  # noqa: PLC0415
+
+    monkeypatch.setattr(portfolio_controller, "Toolkit", _EmptyToolkit)
+
+    _portfolio_with_historical_data(
+        benchmark_ticker="QQQ"
+    ).collect_benchmark_historical_data()
+    assert _EmptyToolkit.tickers == ["QQQ"]
+
+    # The argument of the method comes first, the configuration's benchmark last.
+    _portfolio_with_historical_data(
+        benchmark_ticker="QQQ"
+    ).collect_benchmark_historical_data(benchmark_ticker="VT")
+    assert _EmptyToolkit.tickers == ["VT"]
+
+    default = _portfolio_with_historical_data()
+    default.collect_benchmark_historical_data()
+    assert _EmptyToolkit.tickers == [default._cfg["general"]["benchmark_ticker"]]
+
+
+def test_a_benchmark_without_data_gives_an_empty_toolkit(monkeypatch):
+    from financetoolkit.portfolio import portfolio_controller  # noqa: PLC0415
+
+    monkeypatch.setattr(portfolio_controller, "Toolkit", _EmptyToolkit)
+    held = _portfolio_with_historical_data(benchmark_ticker="NOTATICKER")
+
+    assert held.collect_benchmark_historical_data().empty
+    toolkit = held.toolkit
+    assert isinstance(toolkit, pd.DataFrame)
+    assert toolkit.empty
+
+
+def test_an_overview_with_a_benchmark_without_data_is_empty(monkeypatch):
+    from financetoolkit.portfolio import portfolio_controller  # noqa: PLC0415
+
+    monkeypatch.setattr(portfolio_controller, "Toolkit", _EmptyToolkit)
+    held = _portfolio_with_historical_data(benchmark_ticker="NOTATICKER")
+
+    assert held.get_portfolio_overview().empty
+    assert held.get_portfolio_performance().empty
+    assert held.get_transactions_performance().empty

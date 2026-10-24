@@ -744,6 +744,35 @@ class ToolkitProvider:
 
         return method(**kwargs)
 
+    @staticmethod
+    def call_econometrics_with_data(
+        method_name: str,
+        data: pd.DataFrame,
+        changes: str = "percentage",
+        **method_kwargs: Any,
+    ) -> Any:
+        """
+        Runs an Econometrics method on any data, such as the indicators an econometrics call
+        names as its series, rather than on the prices of tickers.
+
+        Args:
+            method_name (str): The Econometrics method, e.g. "get_ols".
+            data (pd.DataFrame): The series, a column each, by date.
+            changes (str, optional): How their changes are calculated, see
+                Econometrics. Defaults to "percentage".
+            **method_kwargs (Any): The arguments of the method.
+
+        Returns:
+            Any: The method's result.
+        """
+        from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415
+            Econometrics,
+        )
+
+        return getattr(Econometrics(data=data, changes=changes), method_name)(
+            **method_kwargs
+        )
+
     def call_standalone_module_functionality(
         self,
         module_name: str,

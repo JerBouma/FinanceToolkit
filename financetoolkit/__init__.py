@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 _CLASSES = {
     "Toolkit": "financetoolkit.toolkit_controller",
     "Economics": "financetoolkit.economics.economics_controller",
+    "Econometrics": "financetoolkit.econometrics.econometrics_controller",
     "FixedIncome": "financetoolkit.fixedincome.fixedincome_controller",
     "Discovery": "financetoolkit.discovery.discovery_controller",
     "Portfolio": "financetoolkit.portfolio.portfolio_controller",
@@ -16,6 +17,7 @@ _CLASSES = {
 
 __all__ = [
     "Discovery",
+    "Econometrics",
     "Economics",
     "FixedIncome",
     "Portfolio",
@@ -25,6 +27,7 @@ __all__ = [
 
 if TYPE_CHECKING:
     from .discovery.discovery_controller import Discovery
+    from .econometrics.econometrics_controller import Econometrics
     from .economics.economics_controller import Economics
     from .fixedincome.fixedincome_controller import FixedIncome
     from .normalization_model import get_normalization_files
@@ -46,7 +49,17 @@ def __getattr__(name: str) -> Any:
         AttributeError: When the Finance Toolkit has no such class or function.
     """
     if name in _CLASSES:
-        value = getattr(importlib.import_module(_CLASSES[name]), name)
+        try:
+            module = importlib.import_module(_CLASSES[name])
+        except ModuleNotFoundError as error:
+            if name != "Econometrics":
+                raise
+            raise ImportError(
+                "The Econometrics module requires the optional 'econometrics' extra "
+                f"({error.name} is missing). Install it with: pip install "
+                "financetoolkit[econometrics]"
+            ) from error
+        value = getattr(module, name)
         globals()[name] = value
         return value
 

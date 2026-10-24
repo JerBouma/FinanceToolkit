@@ -6948,7 +6948,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0318 | 0.0535 | 0.0331 | 0.0284 | 0.0243 |
+        | AAPL | 0.031  | 0.0525 | 0.0327 | 0.0282 | 0.0242 |
         | TSLA | 0.0029 | 0.0176 | 0.005  | 0.0025 | 0.0039 |
         """
         average_shares = (
@@ -6963,7 +6963,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -6979,7 +6979,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -7843,15 +7843,15 @@ class Ratios:
 
         |                             |         2021 |         2022 |         2023 |         2024 |         2025 |
         |:----------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | EV-to-Sales                 |  8.2741      |  5.5609      |  8.0923      | 10.0244      |  9.9589      |
-        | EV-to-EBIT                  | 27.0608      | 17.969       | 26.3593      | 31.7437      | 31.2254      |
-        | EV-to-EBITDA                | 25.1745      | 16.798       | 24.6516      | 29.1092      | 28.6326      |
-        | EV-to-Operating-Cash-Flow   | 29.0932      | 17.9518      | 28.0585      | 33.1479      | 37.1766      |
+        | EV-to-Sales                 |  8.464       |  5.6553      |  8.188       | 10.0953      |  9.9856      |
+        | EV-to-EBIT                  | 27.682       | 18.274       | 26.671       | 31.9683      | 31.3091      |
+        | EV-to-EBITDA                | 25.7524      | 17.0831      | 24.9432      | 29.3152      | 28.7093      |
+        | EV-to-Operating-Cash-Flow   | 29.7611      | 18.2565      | 28.3904      | 33.3825      | 37.2762      |
         | Tangible Asset Value        |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |  5.695e+10   |  7.3733e+10  |
         | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
-        | EV-to-Free-Cash-Flow        | 32.5627      | 19.6766      | 31.1463      | 36.026       | 41.9626      |
-        | Buyback Yield               |  0.029       |  0.0429      |  0.0258      |  0.0248      |  0.0223      |
-        | Shareholder Yield           |  0.034       |  0.05        |  0.0308      |  0.0288      |  0.0261      |
+        | EV-to-Free-Cash-Flow        | 33.3102      | 20.0107      | 31.5146      | 36.2809      | 42.075       |
+        | Buyback Yield               |  0.0283      |  0.0421      |  0.0255      |  0.0246      |  0.0222      |
+        | Shareholder Yield           |  0.0332      |  0.0491      |  0.0304      |  0.0286      |  0.026       |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
         valuation_ratios_dict: dict = {}
@@ -8297,10 +8297,10 @@ class Ratios:
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |     2024 |     2025 |
-        |:-----|--------:|--------:|--------:|---------:|---------:|
-        | AAPL |  30.896 | 20.881  | 31.0086 |  40.8672 |  36.3188 |
-        | TSLA | 215.568 | 34.0154 | 57.6961 | 198.126  | 418.189  |
+        |      |     2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|--------:|---------:|--------:|
+        | AAPL |  31.6299 | 21.254  | 31.3868 |  41.1631 |  36.418 |
+        | TSLA | 215.568  | 34.0154 | 57.6961 | 198.126  | 418.189 |
         """
         eps = self.get_earnings_per_share(
             include_dividends,
@@ -8314,7 +8314,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -8324,7 +8324,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -8570,10 +8570,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |    2023 |    2024 |    2025 |    2026 |    2027 |    2028 |    2029 |    2030 |     2031 |
-        |:-----|---------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|---------:|
-        | AAPL |  48.3461 | 44.4576 | 44.757  | 42.1721 | 36.7282 | 30.685  | 28.2179 | 25.3703 | 22.1507 | 21.0089 | nan      |
-        | MSFT | nan      | 51.8302 | 49.9693 | 39.4599 | 35.8137 | 28.2617 | 24.3404 | 20.4472 | 16.6952 | 13.6994 |  10.7151 |
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |    2026 |    2027 |    2028 |    2029 |    2030 |     2031 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|---------:|
+        | AAPL |  48.478 | 44.5789 | 44.8792 | 42.2872 | 36.8284 | 30.7711 | 28.3317 | 25.5411 | 22.4681 | 21.7575 | nan      |
+        | MSFT | nan     | 52.1592 | 50.2865 | 39.7103 | 36.041  | 28.441  | 24.4886 | 20.5492 | 16.7779 | 13.7448 |  10.7807 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8587,7 +8587,7 @@ class Ratios:
         estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
 
         stock_price = (
-            self._daily_historical_data["Adj Close"]
+            self._daily_historical_data["Close"]
             .ffill()
             .iloc[-1][self._tickers_without_portfolio]
             .reindex(estimated_eps.index)
@@ -8676,8 +8676,8 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |   2026 |   2027 |   2028 |   2029 |   2030 |     2031 |
         |:-----|---------:|--------:|--------:|--------:|---------:|-------:|-------:|-------:|-------:|-------:|---------:|
-        | AAPL |  -1.9473 | -2.4358 | -2.3808 | -3.0511 | -35.0374 | 1.6641 | 0.98   | 0.5866 | 0.3457 | 0.2878 | nan      |
-        | MSFT | nan      | -1.6185 | -1.6943 | -3.6832 | -22.0641 | 1.1458 | 0.5439 | 0.2828 | 0.1504 | 0.0872 |   0.0468 |
+        | AAPL |  -1.9526 | -2.4424 | -2.3873 | -3.0595 | -35.133  | 1.6696 | 0.9897 | 0.5984 | 0.3612 | 0.3224 | nan      |
+        | MSFT | nan      | -1.6288 | -1.7051 | -3.7066 | -22.2041 | 1.1531 | 0.5468 | 0.2833 | 0.1507 | 0.087  |   0.0471 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -8706,7 +8706,7 @@ class Ratios:
         )
 
         stock_price = (
-            self._daily_historical_data["Adj Close"]
+            self._daily_historical_data["Close"]
             .ffill()
             .iloc[-1][self._tickers_without_portfolio]
             .reindex(estimated_eps.index)
@@ -8912,7 +8912,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL | 46.3658 | 41.127  | 48.397  | 67.2655 | 55.173  |
+        | AAPL | 47.4672 | 41.8616 | 48.9873 | 67.7525 | 55.3236 |
         | TSLA | 39.5096 |  9.5752 | 13.8166 | 19.3742 | 19.3166 |
         """
         book_value_per_share = self.get_book_value_per_share(
@@ -8923,7 +8923,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -8933,7 +8933,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -9222,18 +9222,18 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL |  0.005 | 0.0071 |  0.005 |  0.004 | 0.0038 |
-        | TSLA |  0     | 0      |  0     |  0     | 0      |
+        | AAPL | 0.0049 |  0.007 | 0.0049 |  0.004 | 0.0038 |
+        | TSLA | 0      |  0     | 0      |  0     | 0      |
         """
         if show_daily:
-            share_prices = self._daily_historical_data.loc[:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[:, "Close"][
                 self._tickers_without_portfolio
             ]
             dividends = self._daily_historical_data.loc[:, "Dividends"][
                 self._tickers_without_portfolio
             ]
         else:
-            share_prices = self._historical_data.loc[:, "Adj Close"][
+            share_prices = self._historical_data.loc[:, "Close"][
                 self._tickers_without_portfolio
             ].T
             dividends = self._historical_data.loc[:, "Dividends"][
@@ -9331,8 +9331,8 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0049 | 0.0071 |  0.005 |  0.004 | 0.0038 |
-        | TSLA | 0      | 0      |  0     |  0     | 0      |
+        | AAPL | 0.0048 |  0.007 | 0.0049 | 0.0039 | 0.0038 |
+        | TSLA | 0      |  0     | 0      | 0      | 0      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -9346,7 +9346,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -9362,7 +9362,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -9461,7 +9461,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |
         |:-----|---------:|--------:|--------:|--------:|---------:|
-        | AAPL |  28.1168 | 17.0608 | 27.2085 | 32.3943 |  36.4909 |
+        | AAPL |  28.7847 | 17.3655 | 27.5403 | 32.6289 |  36.5905 |
         | TSLA | 103.745  | 29.0716 | 65.2832 | 94.6614 | 107.589  |
         """
         market_cap = self.get_market_cap(
@@ -9569,10 +9569,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |     2023 |     2024 |     2025 |
-        |:-----|---------:|--------:|---------:|---------:|---------:|
-        | AAPL |  31.4699 | 18.7001 |  30.2027 |  35.2069 |  41.1886 |
-        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082  |
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  32.2174 | 19.0341 |  30.5711 |  35.4618 |  41.301 |
+        | TSLA | 342.45   | 56.6804 | 198.621  | 394.48   | 255.082 |
         """
         market_cap = self.get_market_cap(
             diluted=diluted,
@@ -9738,7 +9738,9 @@ class Ratios:
         Market capitalization, often referred to as "market cap," is the total value of a company's
         outstanding shares of stock in the stock market. It is calculated by multiplying the share
         price at the end of each period by the weighted average (diluted) number of shares
-        outstanding in that period.
+        outstanding in that period. The share price is the close as traded, adjusted for splits
+        but not for dividends, as are the prices of every price-based ratio (P/E, P/B, the
+        enterprise value multiples and the dividend, earnings and free cash flow yields).
 
         The formula is as follows:
 
@@ -9780,7 +9782,7 @@ class Ratios:
 
         |      |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 2.92522e+12 | 2.08399e+12 | 3.0077e+12  | 3.83076e+12 | 4.06807e+12 |
+        | AAPL | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
         | TSLA | 1.19275e+12 | 4.2805e+11  | 8.65394e+11 | 1.41263e+12 | 1.58661e+12 |
         """
         average_shares = (
@@ -9793,7 +9795,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -9803,7 +9805,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -9898,7 +9900,7 @@ class Ratios:
 
         |      |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 3.0268e+12  | 2.19282e+12 | 3.10167e+12 | 3.91988e+12 | 4.14452e+12 |
+        | AAPL | 3.09629e+12 | 2.23005e+12 | 3.13835e+12 | 3.94761e+12 | 4.15562e+12 |
         | TSLA | 1.18544e+12 | 4.1874e+11  | 8.59544e+11 | 1.41088e+12 | 1.5792e+12  |
         """
         total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
@@ -10044,7 +10046,7 @@ class Ratios:
 
         |      |    2021 |   2022 |   2023 |    2024 |    2025 |
         |:-----|--------:|-------:|-------:|--------:|--------:|
-        | AAPL |  8.2741 | 5.5609 | 8.0923 | 10.0244 |  9.9589 |
+        | AAPL |  8.464  | 5.6553 | 8.188  | 10.0953 |  9.9856 |
         | TSLA | 22.0248 | 5.1403 | 8.8821 | 14.4425 | 16.6535 |
         """
         enterprise_value = self.get_enterprise_value(
@@ -10154,7 +10156,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |     2024 |     2025 |
         |:-----|---------:|--------:|--------:|---------:|---------:|
-        | AAPL |  25.1745 | 16.798  | 24.6516 |  29.1092 |  28.6326 |
+        | AAPL |  25.7524 | 17.0831 | 24.9432 |  29.3152 |  28.7093 |
         | TSLA | 125.656  | 24.3467 | 63.3975 | 113.379  | 150.357  |
         """
         enterprise_value = self.get_enterprise_value(
@@ -10271,7 +10273,7 @@ class Ratios:
 
         |      |     2021 |    2022 |    2023 |    2024 |     2025 |
         |:-----|---------:|--------:|--------:|--------:|---------:|
-        | AAPL |  29.0932 | 17.9518 | 28.0585 | 33.1479 |  37.1766 |
+        | AAPL |  29.7611 | 18.2565 | 28.3904 | 33.3825 |  37.2762 |
         | TSLA | 103.109  | 28.4392 | 64.8419 | 94.5442 | 107.086  |
         """
         enterprise_value = self.get_enterprise_value(
@@ -10384,7 +10386,7 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.0324 | 0.0479 | 0.0322 | 0.0245 | 0.0275 |
+        | AAPL | 0.0316 | 0.047  | 0.0319 | 0.0243 | 0.0275 |
         | TSLA | 0.0046 | 0.0294 | 0.0173 | 0.005  | 0.0024 |
         """
         eps = self.get_earnings_per_share(
@@ -10395,7 +10397,7 @@ class Ratios:
         begin, end = str(years[0]), str(years[-1])
 
         if show_daily:
-            share_prices = self._daily_historical_data.loc[begin:, "Adj Close"][
+            share_prices = self._daily_historical_data.loc[begin:, "Close"][
                 self._tickers_without_portfolio
             ]
 
@@ -10405,7 +10407,7 @@ class Ratios:
                 quarterly=self._quarterly,
             )
         else:
-            share_prices = self._historical_data.loc[begin:end, "Adj Close"][
+            share_prices = self._historical_data.loc[begin:end, "Close"][
                 self._tickers_without_portfolio
             ].T
 
@@ -10833,10 +10835,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |   2022 |    2023 |     2024 |     2025 |
-        |:-----|---------:|-------:|--------:|---------:|---------:|
-        | AAPL |  27.0608 | 17.969 | 26.3593 |  31.7437 |  31.2254 |
-        | TSLA | 179.531  | 30.11  | 84.6508 | 151.431  | 284.285  |
+        |      |    2021 |   2022 |    2023 |     2024 |     2025 |
+        |:-----|--------:|-------:|--------:|---------:|---------:|
+        | AAPL |  27.682 | 18.274 | 26.671  |  31.9683 |  31.3091 |
+        | TSLA | 179.531 | 30.11  | 84.6508 | 151.431  | 284.285  |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -10939,10 +10941,10 @@ class Ratios:
 
         Which returns:
 
-        |      |     2021 |    2022 |     2023 |    2024 |     2025 |
-        |:-----|---------:|--------:|---------:|--------:|---------:|
-        | AAPL |  32.5627 | 19.6766 |  31.1463 |  36.026 |  41.9626 |
-        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991 | 253.891  |
+        |      |     2021 |    2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|--------:|---------:|---------:|--------:|
+        | AAPL |  33.3102 | 20.0107 |  31.5146 |  36.2809 |  42.075 |
+        | TSLA | 340.351  | 55.4475 | 197.279  | 393.991  | 253.891 |
         """
         enterprise_value = self.get_enterprise_value(
             diluted=diluted,
@@ -11057,7 +11059,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL |  0.029  |  0.0429 |  0.0258 |  0.0248 |  0.0223 |
+        | AAPL |  0.0283 |  0.0421 |  0.0255 |  0.0246 |  0.0222 |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
         market_cap = self.get_market_cap(diluted=diluted, trailing=trailing)
@@ -11153,7 +11155,7 @@ class Ratios:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL |  0.034  |  0.05   |  0.0308 |  0.0288 |  0.0261 |
+        | AAPL |  0.0332 |  0.0491 |  0.0304 |  0.0286 |  0.026  |
         | TSLA | -0.0006 | -0.0013 | -0.0008 | -0.0009 | -0.0001 |
         """
         dividend_yield = self.get_dividend_yield(trailing=trailing)

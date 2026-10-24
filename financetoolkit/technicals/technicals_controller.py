@@ -88,6 +88,8 @@ class Technicals:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._portfolio_weights: dict | None = None
+        # The historical data with the open, high and low adjusted like the close, per period.
+        self._consistent_data: dict[tuple, pd.DataFrame] = {}
 
         # Technical Indicators
         self._all_indicators: pd.DataFrame = pd.DataFrame()
@@ -396,6 +398,42 @@ class Technicals:
             )
 
         return self._breadth_indicators_growth if growth else self._breadth_indicators
+
+    def _get_historical_data(self, period: str, close_column: str) -> pd.DataFrame:
+        """
+        The historical data of a period with the open, high and low on the same basis as the
+        close an indicator uses. With the dividend-adjusted close (the default) they are
+        adjusted by the same factor, Adj Close / Close, so that a bounded indicator stays within
+        its bounds and a range is not distorted around ex-dividend days.
+
+        Args:
+            period (str): The period, e.g. "daily".
+            close_column (str): The close the indicator uses.
+
+        Returns:
+            pd.DataFrame: The historical data, with an adjusted open, high and low when the close
+            is the adjusted close.
+        """
+        historical_data = self._historical_data[period]
+        columns = historical_data.columns.get_level_values(0)
+        if close_column != "Adj Close" or "Close" not in columns:
+            return historical_data
+
+        key = ("consistent", period)
+        if key not in self._consistent_data:
+            factor = historical_data["Adj Close"] / historical_data["Close"]
+            self._consistent_data[key] = pd.concat(
+                {
+                    column: (
+                        historical_data[column] * factor
+                        if column in ("Open", "High", "Low")
+                        else historical_data[column]
+                    )
+                    for column in columns.unique()
+                },
+                axis=1,
+            )
+        return self._consistent_data[key]
 
     @handle_portfolio
     @handle_errors
@@ -791,9 +829,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Accumulation/Distribution Line.
@@ -829,18 +866,18 @@ class Technicals:
 
         Which returns:
 
-        | Date       |         AAPL |         MSFT |    Benchmark |
-        |:-----------|-------------:|-------------:|-------------:|
-        | 2025-12-17 | -1.45902e+11 | -9.37176e+10 | -7.798e+11   |
-        | 2025-12-18 | -1.45884e+11 | -9.37314e+10 | -7.80119e+11 |
-        | 2025-12-19 | -1.45842e+11 | -9.37925e+10 | -7.80274e+11 |
-        | 2025-12-22 | -1.45885e+11 | -9.38141e+10 | -7.80375e+11 |
-        | 2025-12-23 | -1.45873e+11 | -9.38379e+10 | -7.80477e+11 |
-        | 2025-12-24 | -1.45881e+11 | -9.38435e+10 | -7.80588e+11 |
-        | 2025-12-26 | -1.45906e+11 | -9.38632e+10 | -7.8078e+11  |
-        | 2025-12-29 | -1.45914e+11 | -9.38748e+10 | -7.80985e+11 |
-        | 2025-12-30 | -1.45935e+11 | -9.38961e+10 | -7.81265e+11 |
-        | 2025-12-31 | -1.4598e+11  | -9.39293e+10 | -7.81472e+11 |
+        | Date       |        AAPL |        MSFT |   Benchmark |
+        |:-----------|------------:|------------:|------------:|
+        | 2025-12-17 | 3.99772e+09 | 1.60643e+09 | 7.84069e+09 |
+        | 2025-12-18 | 4.02709e+09 | 1.60757e+09 | 7.79046e+09 |
+        | 2025-12-19 | 4.11449e+09 | 1.6274e+09  | 7.87163e+09 |
+        | 2025-12-22 | 4.0879e+09  | 1.62296e+09 | 7.92573e+09 |
+        | 2025-12-23 | 4.11472e+09 | 1.62833e+09 | 7.98338e+09 |
+        | 2025-12-24 | 4.11466e+09 | 1.6311e+09  | 8.01111e+09 |
+        | 2025-12-26 | 4.1024e+09  | 1.63659e+09 | 8.00572e+09 |
+        | 2025-12-29 | 4.11196e+09 | 1.64095e+09 | 8.01431e+09 |
+        | 2025-12-30 | 4.1095e+09  | 1.64021e+09 | 7.98763e+09 |
+        | 2025-12-31 | 4.08532e+09 | 1.62668e+09 | 7.919e+09   |
         """
         if period not in [
             "intraday",
@@ -860,7 +897,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         accumulation_distribution_line = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -918,9 +955,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             short_window (int, optional): Number of periods for the short-term moving average.
                 Defaults to 3.
             long_window (int, optional): Number of periods for the long-term moving average.
@@ -960,18 +996,18 @@ class Technicals:
 
         Which returns:
 
-        | Date       |         AAPL |         MSFT |    Benchmark |
-        |:-----------|-------------:|-------------:|-------------:|
-        | 2025-12-17 | -7.03961e+07 | -6.68531e+07 | -7.44616e+08 |
-        | 2025-12-18 | -6.35575e+07 | -6.82533e+07 | -7.92549e+08 |
-        | 2025-12-19 | -4.17226e+07 | -8.2076e+07  | -7.89548e+08 |
-        | 2025-12-22 | -4.25369e+07 | -8.71447e+07 | -7.48581e+08 |
-        | 2025-12-23 | -3.52131e+07 | -8.88686e+07 | -6.96233e+08 |
-        | 2025-12-24 | -3.16563e+07 | -8.32606e+07 | -6.47027e+08 |
-        | 2025-12-26 | -3.5274e+07  | -7.96613e+07 | -6.29072e+08 |
-        | 2025-12-29 | -3.60858e+07 | -7.46637e+07 | -6.29609e+08 |
-        | 2025-12-30 | -3.97223e+07 | -7.2589e+07  | -6.61784e+08 |
-        | 2025-12-31 | -5.19347e+07 | -7.5703e+07  | -6.80757e+08 |
+        | Date       |         AAPL |        MSFT |    Benchmark |
+        |:-----------|-------------:|------------:|-------------:|
+        | 2025-12-17 | -1.74845e+07 | 7.01681e+06 | -2.28053e+07 |
+        | 2025-12-18 | -1.16785e+07 | 4.50813e+06 | -5.08337e+07 |
+        | 2025-12-19 |  1.95658e+07 | 9.37952e+06 | -3.185e+07   |
+        | 2025-12-22 |  2.21091e+07 | 9.10779e+06 | -3.97501e+06 |
+        | 2025-12-23 |  2.96729e+07 | 9.8772e+06  |  2.61336e+07 |
+        | 2025-12-24 |  3.0052e+07  | 1.01762e+07 |  4.48979e+07 |
+        | 2025-12-26 |  2.35738e+07 | 1.11187e+07 |  4.67752e+07 |
+        | 2025-12-29 |  2.18213e+07 | 1.18816e+07 |  4.60255e+07 |
+        | 2025-12-30 |  1.83379e+07 | 1.08801e+07 |  3.30466e+07 |
+        | 2025-12-31 |  7.55142e+06 | 5.17349e+06 |  2.89497e+06 |
         """
         if period not in [
             "intraday",
@@ -991,7 +1027,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         chaikin_oscillator = breadth_model.get_chaikin_oscillator(
             historical_data["High"],
@@ -1049,9 +1085,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range and the indicator outside its bounds.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): Number of periods to sum the Money Flow Volume and
                 volume over. Defaults to 20.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1104,7 +1139,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         chaikin_money_flow = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1223,7 +1258,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         ease_of_movement = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1751,9 +1786,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods for calculating the MFI.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1793,16 +1827,16 @@ class Technicals:
 
         | Date       |    AAPL |    MSFT |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 39.7392 | 50.9834 |     44.2616 |
-        | 2025-12-18 | 34.4001 | 53.0157 |     47.098  |
-        | 2025-12-19 | 43.3298 | 65.0306 |     54.0785 |
-        | 2025-12-22 | 36.4311 | 64.7749 |     54.3411 |
-        | 2025-12-23 | 37.2983 | 72.343  |     54.6445 |
-        | 2025-12-24 | 41.658  | 71.0457 |     53.7969 |
-        | 2025-12-26 | 46.944  | 67.1793 |     52.2879 |
-        | 2025-12-29 | 48.1202 | 62.6155 |     51.9377 |
-        | 2025-12-30 | 43.4592 | 62.5152 |     52.4301 |
-        | 2025-12-31 | 38.2002 | 66.6327 |     45.3837 |
+        | 2025-12-17 | 39.7393 | 50.9835 |     44.2618 |
+        | 2025-12-18 | 34.4002 | 53.0158 |     47.0982 |
+        | 2025-12-19 | 43.3299 | 65.0307 |     54.0865 |
+        | 2025-12-22 | 36.4312 | 64.775  |     54.3543 |
+        | 2025-12-23 | 37.2984 | 72.3431 |     54.6624 |
+        | 2025-12-24 | 41.6581 | 71.0458 |     53.8185 |
+        | 2025-12-26 | 46.9441 | 67.1794 |     52.3144 |
+        | 2025-12-29 | 48.1203 | 62.6155 |     51.9586 |
+        | 2025-12-30 | 43.4593 | 62.5153 |     52.4466 |
+        | 2025-12-31 | 38.2003 | 66.6327 |     45.3997 |
         """
         if period not in [
             "intraday",
@@ -1822,7 +1856,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         money_flow_index = momentum_model.get_money_flow_index(
             historical_data["High"],
@@ -1873,9 +1907,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range and the indicator outside its bounds.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods for calculating the Williams %R.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1913,18 +1946,18 @@ class Technicals:
 
         Which returns:
 
-        | Date       |      AAPL |     MSFT |   Benchmark |
-        |:-----------|----------:|---------:|------------:|
-        | 2025-12-17 | -103.168  | -90.1043 |   -138.594  |
-        | 2025-12-18 |  -79.2289 | -55.5752 |   -110.805  |
-        | 2025-12-19 |  -72.4176 | -47.0526 |    -77.2    |
-        | 2025-12-22 |  -84.8436 | -48.7255 |    -53.892  |
-        | 2025-12-23 |  -73.7306 | -39.7722 |    -36.6859 |
-        | 2025-12-24 |  -56.8943 | -34.3445 |    -29.5492 |
-        | 2025-12-26 |  -56.7591 | -35.7829 |    -32.7468 |
-        | 2025-12-29 |  -54.0386 | -38.0923 |    -44.6774 |
-        | 2025-12-30 |  -59.1765 | -28.0484 |    -48.7512 |
-        | 2025-12-31 |  -68.3939 | -48.4511 |    -73.436  |
+        | Date       |     AAPL |     MSFT |   Benchmark |
+        |:-----------|---------:|---------:|------------:|
+        | 2025-12-17 | -98.8221 | -76.835  |    -98.892  |
+        | 2025-12-18 | -75.8192 | -42.0866 |    -70.8037 |
+        | 2025-12-19 | -68.9894 | -33.51   |    -36.8356 |
+        | 2025-12-22 | -81.4491 | -34.4537 |    -13.2761 |
+        | 2025-12-23 | -69.5722 | -25.4435 |     -1.2647 |
+        | 2025-12-24 | -51.6561 | -19.9814 |     -2.0826 |
+        | 2025-12-26 | -51.1365 | -21.4285 |     -6.0167 |
+        | 2025-12-29 | -48.4087 | -23.6348 |    -16.9808 |
+        | 2025-12-30 | -53.5605 | -11.7021 |    -20.7246 |
+        | 2025-12-31 | -62.803  | -32.2347 |    -43.4096 |
         """
         if period not in [
             "intraday",
@@ -1944,7 +1977,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         williams_percent_r = momentum_model.get_williams_percent_r(
             historical_data["High"],
@@ -2064,7 +2097,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         aroon_indicator_dict = {}
 
@@ -2121,9 +2154,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close". The high and low prices are not adjusted for
-                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
-                close the close can fall outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods for calculating the CCI.
                 Defaults to 14.
             constant (float, optional): Constant multiplier used in the CCI calculation.
@@ -2165,16 +2197,16 @@ class Technicals:
 
         | Date       |      AAPL |     MSFT |   Benchmark |
         |:-----------|----------:|---------:|------------:|
-        | 2025-12-17 | -139.878  | -74.8462 |   -239.064  |
-        | 2025-12-18 | -162.46   |  26.1856 |   -118.613  |
-        | 2025-12-19 | -103.254  |  54.4699 |    -50.7464 |
-        | 2025-12-22 | -104.72   |  66.0257 |     45.5952 |
-        | 2025-12-23 |  -97.9524 |  71.0192 |    102.705  |
-        | 2025-12-24 |  -34.668  |  72.917  |    142.159  |
-        | 2025-12-26 |  -25.6791 |  62.5848 |    138.631  |
-        | 2025-12-29 |  -30.5711 |  56.6661 |     77.376  |
-        | 2025-12-30 |  -35.5213 |  80.3202 |     62.6655 |
-        | 2025-12-31 |  -56.8883 |  33.0457 |      5.5432 |
+        | 2025-12-17 | -139.905  | -74.8723 |   -239.21   |
+        | 2025-12-18 | -162.429  |  26.1796 |   -118.591  |
+        | 2025-12-19 | -103.24   |  54.4683 |    -21.3408 |
+        | 2025-12-22 | -104.734  |  65.9747 |     74.5495 |
+        | 2025-12-23 |  -97.9332 |  71.0128 |    125.5    |
+        | 2025-12-24 |  -34.671  |  72.9192 |    155.835  |
+        | 2025-12-26 |  -25.6934 |  62.5804 |    144.031  |
+        | 2025-12-29 |  -30.5652 |  56.6706 |     82.3319 |
+        | 2025-12-30 |  -35.5272 |  80.307  |     67.1709 |
+        | 2025-12-31 |  -56.9146 |  32.9899 |     13.3121 |
         """
         if period not in [
             "intraday",
@@ -2194,7 +2226,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         commodity_channel_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -2256,9 +2288,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close". The open prices are not adjusted for
-                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
-                close each close is compared with an unadjusted open, which pulls the index towards 0.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods for calculating the RVI.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -2298,16 +2329,16 @@ class Technicals:
 
         | Date       |   AAPL |   MSFT |   Benchmark |
         |:-----------|-------:|-------:|------------:|
-        | 2025-12-17 | 0.2613 | 0.2151 |           0 |
-        | 2025-12-18 | 0.2279 | 0.239  |           0 |
-        | 2025-12-19 | 0.1418 | 0.2404 |           0 |
-        | 2025-12-22 | 0.0655 | 0.2174 |           0 |
-        | 2025-12-23 | 0.096  | 0.2191 |           0 |
-        | 2025-12-24 | 0.1358 | 0.2245 |           0 |
-        | 2025-12-26 | 0.1412 | 0.226  |           0 |
-        | 2025-12-29 | 0.1582 | 0.1717 |           0 |
-        | 2025-12-30 | 0.1666 | 0.1669 |           0 |
-        | 2025-12-31 | 0.1448 | 0.1712 |           0 |
+        | 2025-12-17 | 0.4113 | 0.6822 |      0.4021 |
+        | 2025-12-18 | 0.3632 | 0.6915 |      0.3527 |
+        | 2025-12-19 | 0.2821 | 0.6953 |      0.3917 |
+        | 2025-12-22 | 0.1765 | 0.6544 |      0.4079 |
+        | 2025-12-23 | 0.2381 | 0.6579 |      0.4178 |
+        | 2025-12-24 | 0.3175 | 0.6672 |      0.4577 |
+        | 2025-12-26 | 0.3312 | 0.6697 |      0.4517 |
+        | 2025-12-29 | 0.3642 | 0.6398 |      0.4871 |
+        | 2025-12-30 | 0.3868 | 0.6279 |      0.4834 |
+        | 2025-12-31 | 0.3403 | 0.6474 |      0.3647 |
         """
         if period not in [
             "intraday",
@@ -2327,7 +2358,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         relative_vigor_index = momentum_model.get_relative_vigor_index(
             historical_data["Open"],
@@ -2499,10 +2530,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close". The high and low prices are not adjusted for
-                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
-                close the close can fall outside the day's high-low range and the indicator outside its
-                bounds.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window_1 (int, optional): The number of periods for the first short-term window.
                 Defaults to 7.
             window_2 (int, optional): The number of periods for the second mid-term window.
@@ -2546,16 +2575,16 @@ class Technicals:
 
         | Date       |    AAPL |    MSFT |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 27.9933 | 17.9054 |     -7.5735 |
-        | 2025-12-18 | 35.8123 | 22.5115 |     -2.2767 |
-        | 2025-12-19 | 36.5493 | 25.4702 |      0.5161 |
-        | 2025-12-22 | 29.9138 | 20.0146 |      3.1977 |
-        | 2025-12-23 | 33.3379 | 23.4866 |      9.4209 |
-        | 2025-12-24 | 37.9768 | 25.935  |     13.1508 |
-        | 2025-12-26 | 34.3218 | 23.0549 |     14.4572 |
-        | 2025-12-29 | 39.1009 | 22.3076 |     19.2616 |
-        | 2025-12-30 | 33.287  | 14.6673 |     16.3247 |
-        | 2025-12-31 | 23.6054 |  6.9239 |      2.7084 |
+        | 2025-12-17 | 44.5333 | 47.4263 |     46.9209 |
+        | 2025-12-18 | 50.981  | 46.975  |     47.986  |
+        | 2025-12-19 | 51.5415 | 52.523  |     49.4149 |
+        | 2025-12-22 | 45.7605 | 48.6534 |     48.2421 |
+        | 2025-12-23 | 49.1968 | 52.0441 |     53.3907 |
+        | 2025-12-24 | 54.4449 | 55.7706 |     57.7082 |
+        | 2025-12-26 | 51.216  | 53.7378 |     56.8784 |
+        | 2025-12-29 | 57.3149 | 56.5047 |     64.5078 |
+        | 2025-12-30 | 54.1042 | 55.7348 |     66.0175 |
+        | 2025-12-31 | 46.408  | 51.1112 |     52.8914 |
         """
         if period not in [
             "intraday",
@@ -2575,7 +2604,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         ultimate_oscillator = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -2878,9 +2907,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
-                the closing prices. Defaults to "Adj Close". The high and low prices are not adjusted for
-                dividends, so for a dividend-paying asset use close_column="Close": with the adjusted
-                close the close can fall outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods to consider for the ADX calculation.
                 Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -2920,16 +2948,16 @@ class Technicals:
 
         | Date       |    AAPL |    MSFT |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 24.548  | 26.1163 |     14.9403 |
-        | 2025-12-18 | 24.3281 | 24.8053 |     14.355  |
-        | 2025-12-19 | 23.8204 | 23.5878 |     13.7378 |
-        | 2025-12-22 | 23.3491 | 22.3379 |     13.2009 |
-        | 2025-12-23 | 23.1372 | 21.1773 |     13.2036 |
-        | 2025-12-24 | 21.9724 | 19.8989 |     13.6364 |
-        | 2025-12-26 | 20.8908 | 18.7118 |     14.1712 |
-        | 2025-12-29 | 20.0343 | 17.8823 |     13.912  |
-        | 2025-12-30 | 19.2603 | 16.8765 |     13.6713 |
-        | 2025-12-31 | 18.7103 | 16.2998 |     12.9966 |
+        | 2025-12-17 | 24.6712 | 25.787  |     14.9614 |
+        | 2025-12-18 | 24.4322 | 24.4769 |     14.3719 |
+        | 2025-12-19 | 23.9076 | 23.2604 |     13.3526 |
+        | 2025-12-22 | 23.4205 | 22.0112 |     13.1626 |
+        | 2025-12-23 | 23.1942 | 20.8512 |     13.4437 |
+        | 2025-12-24 | 22.0178 | 19.5733 |     14.0998 |
+        | 2025-12-26 | 20.9255 | 18.3867 |     14.8316 |
+        | 2025-12-29 | 20.0591 | 17.5595 |     14.7623 |
+        | 2025-12-30 | 19.276  | 16.5556 |     14.6979 |
+        | 2025-12-31 | 18.7174 | 15.983  |     13.7115 |
         """
         if period not in [
             "intraday",
@@ -2949,7 +2977,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         average_directional_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -3184,16 +3212,16 @@ class Technicals:
 
         | Date       |   Base Line |   Conversion Line |   Leading Span A |   Leading Span B |
         |:-----------|------------:|------------------:|-----------------:|-----------------:|
-        | 2025-12-17 |     276.97  |           276.39  |          266.223 |          251.635 |
-        | 2025-12-18 |     276.97  |           273.55  |          266.223 |          251.635 |
-        | 2025-12-19 |     276.97  |           273.55  |          266.223 |          251.635 |
-        | 2025-12-22 |     276.97  |           273.55  |          266.067 |          251.635 |
-        | 2025-12-23 |     276.97  |           273.55  |          266.197 |          251.635 |
-        | 2025-12-24 |     276.97  |           273.55  |          266.113 |          251.635 |
-        | 2025-12-26 |     277.06  |           273.55  |          266.01  |          251.635 |
-        | 2025-12-29 |     277.145 |           271.555 |          266.118 |          251.635 |
-        | 2025-12-30 |     277.145 |           271.555 |          266.118 |          251.635 |
-        | 2025-12-31 |     277.785 |           271.19  |          266.652 |          251.985 |
+        | 2025-12-17 |     276.218 |           275.64  |          265.243 |          250.709 |
+        | 2025-12-18 |     276.218 |           272.807 |          265.243 |          250.709 |
+        | 2025-12-19 |     276.218 |           272.807 |          265.243 |          250.709 |
+        | 2025-12-22 |     276.218 |           272.807 |          265.155 |          250.709 |
+        | 2025-12-23 |     276.218 |           272.807 |          265.285 |          250.709 |
+        | 2025-12-24 |     276.218 |           272.807 |          265.264 |          250.709 |
+        | 2025-12-26 |     276.308 |           272.807 |          265.162 |          250.709 |
+        | 2025-12-29 |     276.393 |           270.818 |          265.269 |          250.709 |
+        | 2025-12-30 |     276.393 |           270.818 |          265.269 |          250.709 |
+        | 2025-12-31 |     277.031 |           270.454 |          265.802 |          251.058 |
         """
         if period not in [
             "intraday",
@@ -3213,7 +3241,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         ichimoku_cloud_dict = {}
 
@@ -3277,9 +3305,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range and the indicator outside its bounds.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods to consider for the %K line calculation.
                 Defaults to 14.
             smooth_window (int, optional): The number of periods used to smooth the %K line
@@ -3328,16 +3355,16 @@ class Technicals:
 
         | Date       |   Stochastic %D |   Stochastic %K |
         |:-----------|----------------:|----------------:|
-        | 2025-12-17 |          4.1637 |         -3.1678 |
-        | 2025-12-18 |          9.9765 |         20.7711 |
-        | 2025-12-19 |         15.0619 |         27.5824 |
-        | 2025-12-22 |         21.17   |         15.1564 |
-        | 2025-12-23 |         23.0027 |         26.2694 |
-        | 2025-12-24 |         28.1772 |         43.1057 |
-        | 2025-12-26 |         37.5387 |         43.2409 |
-        | 2025-12-29 |         44.1027 |         45.9614 |
-        | 2025-12-30 |         43.3419 |         40.8235 |
-        | 2025-12-31 |         39.4636 |         31.6061 |
+        | 2025-12-17 |          8.6606 |          1.1779 |
+        | 2025-12-18 |         14.0381 |         24.1808 |
+        | 2025-12-19 |         18.7898 |         31.0106 |
+        | 2025-12-22 |         24.5808 |         18.5509 |
+        | 2025-12-23 |         26.6631 |         30.4278 |
+        | 2025-12-24 |         32.4409 |         48.3439 |
+        | 2025-12-26 |         42.5451 |         48.8635 |
+        | 2025-12-29 |         49.5996 |         51.5913 |
+        | 2025-12-30 |         48.9648 |         46.4395 |
+        | 2025-12-31 |         45.0759 |         37.197  |
         """
         if smooth_widow is not None:
             warnings.warn(
@@ -3371,7 +3398,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         stochastic_oscillator_dict = {}
 
@@ -3696,9 +3723,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The open, high and low prices are not adjusted for dividends, so
-                for a dividend-paying asset use close_column="Close": with the adjusted close the close
-                can fall outside the day's high-low range and the indicator outside its bounds.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the BOP.
@@ -3737,16 +3763,16 @@ class Technicals:
 
         | Date       |    AAPL |    MSFT |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | -0.8646 | -0.7583 |     -1.6944 |
-        | 2025-12-18 | -0.3232 |  0.2339 |     -1.4299 |
-        | 2025-12-19 |  0.1654 | -0.8402 |     -0.2759 |
-        | 2025-12-22 | -0.7791 | -0.7048 |     -0.9261 |
-        | 2025-12-23 |  0.2655 | -0.3881 |     -0.2983 |
-        | 2025-12-24 |  0.225  | -0.1701 |     -0.9639 |
-        | 2025-12-26 | -0.5985 | -0.9605 |     -2.3766 |
-        | 2025-12-29 |  0.1626 | -0.1992 |     -1.6042 |
-        | 2025-12-30 | -0.2618 | -0.3644 |     -2.9114 |
-        | 2025-12-31 | -1.0041 | -1.5018 |     -1.8593 |
+        | 2025-12-17 | -0.7013 | -0.158  |     -0.9188 |
+        | 2025-12-18 | -0.2126 |  0.4944 |     -0.1935 |
+        | 2025-12-19 |  0.3234 | -0.2687 |      0.8658 |
+        | 2025-12-22 | -0.5608 | -0.1987 |      0.1866 |
+        | 2025-12-23 |  0.517  |  0.6052 |      0.933  |
+        | 2025-12-24 |  0.4551 |  0.5404 |      0.802  |
+        | 2025-12-26 | -0.3028 |  0.463  |     -0.1381 |
+        | 2025-12-29 |  0.5323 |  0.5372 |      0.099  |
+        | 2025-12-30 |  0.15   |  0.3708 |     -0.2222 |
+        | 2025-12-31 | -0.6218 | -0.8719 |     -0.9239 |
         """
         if period not in [
             "intraday",
@@ -3766,7 +3792,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         balance_of_power = momentum_model.get_balance_of_power(
             historical_data["Open"],
@@ -3868,16 +3894,16 @@ class Technicals:
 
         | Date       |    AAPL |     MSFT |   Benchmark |
         |:-----------|--------:|---------:|------------:|
-        | 2025-12-17 |  1.2158 | -14.8666 |      4.3348 |
-        | 2025-12-18 | -0.0362 | -12.9889 |      2.9057 |
-        | 2025-12-19 | -1.1611 | -10.7445 |      1.9561 |
-        | 2025-12-22 | -2.1283 |  -7.9246 |      2.0471 |
-        | 2025-12-23 | -2.6946 |  -4.7973 |      3.3903 |
-        | 2025-12-24 | -2.844  |  -2.2009 |      5.7422 |
-        | 2025-12-26 | -2.1811 |  -1.1385 |      7.759  |
-        | 2025-12-29 | -2.0726 |  -0.6239 |      8.8979 |
-        | 2025-12-30 | -1.9516 |   0.2001 |      9.5533 |
-        | 2025-12-31 | -1.6105 |   0.6829 |      9.1537 |
+        | 2025-12-17 |  1.2663 | -14.3575 |      4.2885 |
+        | 2025-12-18 |  0.01   | -12.5205 |      2.8747 |
+        | 2025-12-19 | -1.1196 | -10.3188 |      2.2738 |
+        | 2025-12-22 | -2.0919 |  -7.545  |      2.7043 |
+        | 2025-12-23 | -2.6643 |  -4.4653 |      4.3753 |
+        | 2025-12-24 | -2.8209 |  -1.9132 |      7.0459 |
+        | 2025-12-26 | -2.1675 |  -0.8848 |      9.3855 |
+        | 2025-12-29 | -2.0669 |  -0.4006 |     10.4583 |
+        | 2025-12-30 | -1.9463 |   0.3908 |     11.0502 |
+        | 2025-12-31 | -1.6061 |   0.8429 |     10.5952 |
         """
         if period not in [
             "intraday",
@@ -3897,7 +3923,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         awesome_oscillator = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -3957,9 +3983,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods to sum the directional movement and
                 true range over. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -4002,16 +4027,16 @@ class Technicals:
 
         | Date       |    VI+ |    VI- |
         |:-----------|-------:|-------:|
-        | 2025-12-17 | 0.9166 | 1.0481 |
-        | 2025-12-18 | 0.861  | 1.0752 |
-        | 2025-12-19 | 0.8987 | 1.1316 |
-        | 2025-12-22 | 0.8073 | 1.2145 |
-        | 2025-12-23 | 0.773  | 1.2658 |
-        | 2025-12-24 | 0.8802 | 1.1495 |
-        | 2025-12-26 | 0.8998 | 1.0898 |
-        | 2025-12-29 | 0.9218 | 1.084  |
-        | 2025-12-30 | 0.9046 | 1.0977 |
-        | 2025-12-31 | 0.9015 | 1.1027 |
+        | 2025-12-17 | 0.9211 | 1.0533 |
+        | 2025-12-18 | 0.865  | 1.0802 |
+        | 2025-12-19 | 0.903  | 1.137  |
+        | 2025-12-22 | 0.8075 | 1.2147 |
+        | 2025-12-23 | 0.7732 | 1.2661 |
+        | 2025-12-24 | 0.8892 | 1.1613 |
+        | 2025-12-26 | 0.9091 | 1.1011 |
+        | 2025-12-29 | 0.9316 | 1.0955 |
+        | 2025-12-30 | 0.9145 | 1.1096 |
+        | 2025-12-31 | 0.9113 | 1.1148 |
         """
         if period not in [
             "intraday",
@@ -4031,7 +4056,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         vortex_indicator_dict = {}
 
@@ -4093,9 +4118,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): The number of periods for the EMA used as the trend baseline.
                 Defaults to 13, as originally proposed by Elder.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -4140,16 +4164,16 @@ class Technicals:
 
         | Date       |   Bear Power |   Bull Power |
         |:-----------|-------------:|-------------:|
-        | 2025-12-17 |      -3.9033 |       0.6167 |
-        | 2025-12-18 |      -8.0087 |      -1.3287 |
-        | 2025-12-19 |      -4.7685 |      -0.0685 |
-        | 2025-12-22 |      -3.525  |      -0.155  |
-        | 2025-12-23 |      -4.1301 |      -1.1901 |
-        | 2025-12-24 |      -1.4011 |       1.8289 |
-        | 2025-12-26 |      -0.6063 |       1.9037 |
-        | 2025-12-29 |      -1.0521 |       0.9579 |
-        | 2025-12-30 |      -0.9702 |       0.8298 |
-        | 2025-12-31 |      -1.1962 |       0.7338 |
+        | 2025-12-17 |      -4.6407 |      -0.1329 |
+        | 2025-12-18 |      -8.7334 |      -2.0715 |
+        | 2025-12-19 |      -5.5011 |      -0.8139 |
+        | 2025-12-22 |      -4.2594 |      -0.8985 |
+        | 2025-12-23 |      -4.8618 |      -1.9298 |
+        | 2025-12-24 |      -2.14   |       1.0812 |
+        | 2025-12-26 |      -1.347  |       1.1561 |
+        | 2025-12-29 |      -1.7914 |       0.2132 |
+        | 2025-12-30 |      -1.7093 |       0.0858 |
+        | 2025-12-31 |      -1.9339 |      -0.0091 |
         """
         if period not in [
             "intraday",
@@ -4169,7 +4193,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         elder_ray_index_dict = {}
 
@@ -4337,9 +4361,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range and the indicator outside its bounds.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): Number of periods to consider for the Choppiness Index
                 calculation. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -4394,7 +4417,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         choppiness_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -5888,9 +5911,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): Number of periods to consider for the VWAP.
                 The number of periods (time intervals) over which to calculate the VWAP. Defaults to 14.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -5931,16 +5953,16 @@ class Technicals:
 
         | Date       |    AAPL |    MSFT |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 278.69  | 480.852 |     679.761 |
-        | 2025-12-18 | 278.036 | 480.654 |     679.295 |
-        | 2025-12-19 | 276.712 | 481.006 |     679.204 |
-        | 2025-12-22 | 275.771 | 480.754 |     679.359 |
-        | 2025-12-23 | 274.962 | 481.201 |     679.607 |
-        | 2025-12-24 | 274.503 | 481.459 |     679.795 |
-        | 2025-12-26 | 274.123 | 481.63  |     679.841 |
-        | 2025-12-29 | 273.864 | 481.314 |     680.09  |
-        | 2025-12-30 | 273.614 | 481.15  |     680.258 |
-        | 2025-12-31 | 273.296 | 481.637 |     680.121 |
+        | 2025-12-17 | 278.186 | 478.827 |     674.906 |
+        | 2025-12-18 | 277.532 | 478.63  |     674.443 |
+        | 2025-12-19 | 276.211 | 478.981 |     674.468 |
+        | 2025-12-22 | 275.272 | 478.73  |     674.699 |
+        | 2025-12-23 | 274.464 | 479.175 |     675.016 |
+        | 2025-12-24 | 274.006 | 479.432 |     675.253 |
+        | 2025-12-26 | 273.626 | 479.603 |     675.357 |
+        | 2025-12-29 | 273.368 | 479.287 |     675.675 |
+        | 2025-12-30 | 273.119 | 479.124 |     675.902 |
+        | 2025-12-31 | 272.801 | 479.609 |     675.857 |
         """
         if period not in [
             "intraday",
@@ -5960,7 +5982,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         volume_weighted_average_price = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -6066,16 +6088,16 @@ class Technicals:
 
         | Date       |    AAPL |    MSFT |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 286.488 | 490.376 |     688.965 |
-        | 2025-12-18 | 285.3   | 470.88  |     688.254 |
-        | 2025-12-19 | 283.465 | 471.254 |     687.572 |
-        | 2025-12-22 | 281.813 | 471.621 |     686.917 |
-        | 2025-12-23 | 280.327 | 471.981 |     671.2   |
-        | 2025-12-24 | 278.989 | 472.333 |     671.54  |
-        | 2025-12-26 | 277.785 | 472.679 |     672.312 |
-        | 2025-12-29 | 276.702 | 473.017 |     673.472 |
-        | 2025-12-30 | 275.727 | 473.349 |     674.564 |
-        | 2025-12-31 | 274.849 | 474.002 |     675.59  |
+        | 2025-12-17 | 285.71  | 487.285 |     681.611 |
+        | 2025-12-18 | 284.525 | 467.911 |     680.908 |
+        | 2025-12-19 | 282.695 | 468.284 |     680.233 |
+        | 2025-12-22 | 281.048 | 468.648 |     664.036 |
+        | 2025-12-23 | 279.566 | 469.005 |     664.356 |
+        | 2025-12-24 | 278.232 | 469.356 |     665.097 |
+        | 2025-12-26 | 277.031 | 469.699 |     666.319 |
+        | 2025-12-29 | 275.951 | 470.035 |     667.918 |
+        | 2025-12-30 | 274.978 | 470.365 |     669.388 |
+        | 2025-12-31 | 274.103 | 471.014 |     670.741 |
         """
         if period not in [
             "intraday",
@@ -6095,7 +6117,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         parabolic_sar = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -6156,9 +6178,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Pivot Points.
@@ -6197,16 +6218,16 @@ class Technicals:
 
         | Date       |   Pivot Point |   Resistance 1 |   Resistance 2 |   Resistance 3 |   Support 1 |   Support 2 |   Support 3 |
         |:-----------|--------------:|---------------:|---------------:|---------------:|------------:|------------:|------------:|
-        | 2025-12-17 |       273.718 |        275.646 |        277.428 |        279.356 |     271.936 |     270.008 |     268.226 |
-        | 2025-12-18 |       272.967 |        274.295 |        277.487 |        278.815 |     269.775 |     268.447 |     265.255 |
-        | 2025-12-19 |       270.677 |        274.404 |        277.357 |        281.084 |     267.724 |     263.997 |     261.044 |
-        | 2025-12-22 |       272.476 |        275.051 |        277.176 |        279.751 |     270.351 |     267.776 |     265.651 |
-        | 2025-12-23 |       271.541 |        272.573 |        274.911 |        275.943 |     269.203 |     268.171 |     265.833 |
-        | 2025-12-24 |       271.227 |        272.894 |        274.167 |        275.834 |     269.954 |     268.287 |     267.014 |
-        | 2025-12-26 |       273.566 |        274.931 |        276.796 |        278.161 |     271.701 |     270.336 |     268.471 |
-        | 2025-12-29 |       273.629 |        274.399 |        276.139 |        276.909 |     271.889 |     271.119 |     269.378 |
-        | 2025-12-30 |       273.242 |        274.135 |        275.252 |        276.145 |     272.125 |     271.232 |     270.115 |
-        | 2025-12-31 |       272.9   |        273.519 |        274.7   |        275.319 |     271.719 |     271.1   |     269.919 |
+        | 2025-12-17 |       273.223 |        275.394 |        276.923 |        279.094 |     271.694 |     269.523 |     267.994 |
+        | 2025-12-18 |       272.472 |        274.041 |        276.979 |        278.548 |     269.533 |     267.964 |     265.025 |
+        | 2025-12-19 |       270.188 |        274.15  |        276.85  |        280.812 |     267.489 |     263.526 |     260.827 |
+        | 2025-12-22 |       271.983 |        274.799 |        276.67  |        279.486 |     270.111 |     267.296 |     265.424 |
+        | 2025-12-23 |       271.049 |        272.322 |        274.41  |        275.683 |     268.961 |     267.688 |     265.6   |
+        | 2025-12-24 |       270.736 |        272.645 |        273.668 |        275.577 |     269.713 |     267.804 |     266.781 |
+        | 2025-12-26 |       273.07  |        274.679 |        276.291 |        277.9   |     271.458 |     269.849 |     268.236 |
+        | 2025-12-29 |       273.133 |        274.147 |        275.636 |        276.65  |     271.644 |     270.63  |     269.141 |
+        | 2025-12-30 |       272.748 |        273.885 |        274.752 |        275.889 |     271.88  |     270.743 |     269.875 |
+        | 2025-12-31 |       272.405 |        273.269 |        274.2   |        275.065 |     271.474 |     270.61  |     269.679 |
         """
         if period not in [
             "intraday",
@@ -6226,7 +6247,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         pivot_points_dict = {}
 
@@ -6505,18 +6526,18 @@ class Technicals:
         after "0.0%", ahead of "23.6%"), matching the sorting convention used by every other
         multi-column indicator in this module (e.g. Pivot Points' Resistance/Support levels).
 
-        | Date       |   0.0% |   100.0% |   23.6% |   38.2% |   50.0% |   61.8% |   78.6% |
-        |:-----------|-------:|---------:|--------:|--------:|--------:|--------:|--------:|
-        | 2025-12-17 | 288.62 |   271.64 | 284.613 | 282.134 | 280.13  | 278.126 | 275.274 |
-        | 2025-12-18 | 288.62 |   266.95 | 283.506 | 280.342 | 277.785 | 275.228 | 271.587 |
-        | 2025-12-19 | 288.62 |   266.95 | 283.506 | 280.342 | 277.785 | 275.228 | 271.587 |
-        | 2025-12-22 | 288.62 |   266.95 | 283.506 | 280.342 | 277.785 | 275.228 | 271.587 |
-        | 2025-12-23 | 284.73 |   266.95 | 280.534 | 277.938 | 275.84  | 273.742 | 270.755 |
-        | 2025-12-24 | 281.14 |   266.95 | 277.791 | 275.719 | 274.045 | 272.371 | 269.987 |
-        | 2025-12-26 | 280.15 |   266.95 | 277.035 | 275.108 | 273.55  | 271.992 | 269.775 |
-        | 2025-12-29 | 280.15 |   266.95 | 277.035 | 275.108 | 273.55  | 271.992 | 269.775 |
-        | 2025-12-30 | 280.15 |   266.95 | 277.035 | 275.108 | 273.55  | 271.992 | 269.775 |
-        | 2025-12-31 | 280.15 |   266.95 | 277.035 | 275.108 | 273.55  | 271.992 | 269.775 |
+        | Date       |    0.0% |   100.0% |   23.6% |   38.2% |   50.0% |   61.8% |   78.6% |
+        |:-----------|--------:|---------:|--------:|--------:|--------:|--------:|--------:|
+        | 2025-12-17 | 287.837 |  270.903 | 283.84  | 281.368 | 279.37  | 277.371 | 274.526 |
+        | 2025-12-18 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
+        | 2025-12-19 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
+        | 2025-12-22 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
+        | 2025-12-23 | 283.957 |  266.225 | 279.772 | 277.183 | 275.091 | 272.999 | 270.02  |
+        | 2025-12-24 | 280.377 |  266.225 | 277.037 | 274.971 | 273.301 | 271.631 | 269.254 |
+        | 2025-12-26 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
+        | 2025-12-29 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
+        | 2025-12-30 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
+        | 2025-12-31 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
         """
         if period not in [
             "intraday",
@@ -6536,7 +6557,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         fibonacci_retracement_levels_dict = {}
 
@@ -6777,9 +6798,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the True Range.
@@ -6817,16 +6837,16 @@ class Technicals:
 
         | Date       |   AAPL |    MSFT |   Benchmark |
         |:-----------|-------:|--------:|------------:|
-        | 2025-12-17 | 4.52   |  6.6132 |      9.24   |
-        | 2025-12-18 | 6.68   | 16.4816 |     16.5062 |
-        | 2025-12-19 | 4.7    |  6.9211 |     11.8403 |
-        | 2025-12-22 | 3.37   |  6.04   |     10.0446 |
-        | 2025-12-23 | 2.94   |  5.967  |      8.6775 |
-        | 2025-12-24 | 3.8093 |  5.3792 |      8.2018 |
-        | 2025-12-26 | 2.51   |  3.1766 |      6.6305 |
-        | 2025-12-29 | 2.01   |  4.17   |      4.24   |
-        | 2025-12-30 | 1.8    |  5.6508 |      6.041  |
-        | 2025-12-31 | 1.93   |  4.84   |      5.6745 |
+        | 2025-12-17 | 4.5077 |  4.9685 |      9.1414 |
+        | 2025-12-18 | 6.6619 | 13.3951 |      9.2402 |
+        | 2025-12-19 | 4.6872 |  5.3262 |      6.5619 |
+        | 2025-12-22 | 3.3609 |  6.0019 |      4.733  |
+        | 2025-12-23 | 2.932  |  3.0705 |      4.2964 |
+        | 2025-12-24 | 3.2212 |  4.3027 |      3.0065 |
+        | 2025-12-26 | 2.5032 |  2.1464 |      2.3715 |
+        | 2025-12-29 | 2.0045 |  4.1437 |      4.2072 |
+        | 2025-12-30 | 1.7951 |  4.1536 |      1.9647 |
+        | 2025-12-31 | 1.9248 |  4.8095 |      5.6062 |
         """
         if period not in [
             "intraday",
@@ -6846,7 +6866,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         true_range = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -6909,9 +6929,8 @@ class Technicals:
         Args:
             period (str): Period for which to calculate the ATR.
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int): Number of periods for ATR calculation.
                 The number of periods (time intervals) over which to calculate the Average True Range.
             rounding (int | None): Number of decimal places to round the resulting ATR values to.
@@ -6948,18 +6967,18 @@ class Technicals:
 
         Which returns:
 
-        | Date       |   AAPL |    MSFT |   Benchmark |
-        |:-----------|-------:|--------:|------------:|
-        | 2025-12-17 | 4.941  |  9.5365 |     10.9804 |
-        | 2025-12-18 | 5.0652 | 10.0326 |     11.3751 |
-        | 2025-12-19 | 5.0391 |  9.8103 |     11.4084 |
-        | 2025-12-22 | 4.9199 |  9.541  |     11.3109 |
-        | 2025-12-23 | 4.7785 |  9.2857 |     11.1228 |
-        | 2025-12-24 | 4.7092 |  9.0067 |     10.9142 |
-        | 2025-12-26 | 4.5521 |  8.5902 |     10.6082 |
-        | 2025-12-29 | 4.3706 |  8.2745 |     10.1533 |
-        | 2025-12-30 | 4.1869 |  8.0871 |      9.8596 |
-        | 2025-12-31 | 4.0257 |  7.8552 |      9.5607 |
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-17 | 4.8747 | 9.1159 |      7.3629 |
+        | 2025-12-18 | 5.0024 | 9.4216 |      7.497  |
+        | 2025-12-19 | 4.9799 | 9.1291 |      7.4302 |
+        | 2025-12-22 | 4.8642 | 8.9057 |      7.2376 |
+        | 2025-12-23 | 4.7262 | 8.4889 |      7.0275 |
+        | 2025-12-24 | 4.6187 | 8.1899 |      6.7403 |
+        | 2025-12-26 | 4.4676 | 7.7582 |      6.4282 |
+        | 2025-12-29 | 4.2917 | 7.5    |      6.2696 |
+        | 2025-12-30 | 4.1134 | 7.261  |      5.9621 |
+        | 2025-12-31 | 3.957  | 7.0859 |      5.9367 |
         """
         if period not in [
             "intraday",
@@ -6979,7 +6998,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         average_true_range = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -7048,9 +7067,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): Number of periods for the underlying Average True Range
                 calculation. Defaults to 10.
             multiplier (float, optional): Multiplier applied to the Average True Range to
@@ -7109,7 +7127,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         supertrend_dict = {}
 
@@ -7174,9 +7192,8 @@ class Technicals:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close". The high and low prices are not adjusted for dividends, so for a
-                dividend-paying asset use close_column="Close": with the adjusted close the close can fall
-                outside the day's high-low range, which distorts the result.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             window (int, optional): Number of periods for the moving average.
                 Defaults to 14.
             atr_window (int, optional): Number of periods for ATR calculation.
@@ -7219,16 +7236,16 @@ class Technicals:
 
         | Date       |   Lower Line |   Middle Line |   Upper Line |
         |:-----------|-------------:|--------------:|-------------:|
-        | 2025-12-17 |      265.641 |       275.523 |      285.405 |
-        | 2025-12-18 |      264.85  |       274.98  |      285.11  |
-        | 2025-12-19 |      264.628 |       274.706 |      284.784 |
-        | 2025-12-22 |      264.27  |       274.11  |      283.95  |
-        | 2025-12-23 |      264.221 |       273.778 |      283.335 |
-        | 2025-12-24 |      264.265 |       273.683 |      283.102 |
-        | 2025-12-26 |      264.442 |       273.547 |      282.651 |
-        | 2025-12-29 |      264.735 |       273.476 |      282.217 |
-        | 2025-12-30 |      264.95  |       273.324 |      281.698 |
-        | 2025-12-31 |      264.979 |       273.031 |      281.082 |
+        | 2025-12-17 |      265.774 |       275.523 |      285.272 |
+        | 2025-12-18 |      264.975 |       274.98  |      284.985 |
+        | 2025-12-19 |      264.747 |       274.706 |      284.666 |
+        | 2025-12-22 |      264.382 |       274.11  |      283.839 |
+        | 2025-12-23 |      264.326 |       273.778 |      283.231 |
+        | 2025-12-24 |      264.446 |       273.683 |      282.921 |
+        | 2025-12-26 |      264.611 |       273.547 |      282.482 |
+        | 2025-12-29 |      264.893 |       273.476 |      282.059 |
+        | 2025-12-30 |      265.098 |       273.324 |      281.551 |
+        | 2025-12-31 |      265.117 |       273.031 |      280.945 |
         """
         if period not in [
             "intraday",
@@ -7248,7 +7265,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         keltner_channels_dict = {}
 
@@ -7355,16 +7372,16 @@ class Technicals:
 
         | Date       |   Lower Channel |   Middle Channel |   Upper Channel |
         |:-----------|----------------:|-----------------:|----------------:|
-        | 2025-12-17 |          265.32 |          276.97  |          288.62 |
-        | 2025-12-18 |          265.5  |          277.06  |          288.62 |
-        | 2025-12-19 |          265.67 |          277.145 |          288.62 |
-        | 2025-12-22 |          265.67 |          277.145 |          288.62 |
-        | 2025-12-23 |          266.95 |          277.785 |          288.62 |
-        | 2025-12-24 |          266.95 |          277.785 |          288.62 |
-        | 2025-12-26 |          266.95 |          277.785 |          288.62 |
-        | 2025-12-29 |          266.95 |          277.785 |          288.62 |
-        | 2025-12-30 |          266.95 |          277.785 |          288.62 |
-        | 2025-12-31 |          266.95 |          277.785 |          288.62 |
+        | 2025-12-17 |         264.6   |          276.218 |         287.837 |
+        | 2025-12-18 |         264.779 |          276.308 |         287.837 |
+        | 2025-12-19 |         264.949 |          276.393 |         287.837 |
+        | 2025-12-22 |         264.949 |          276.393 |         287.837 |
+        | 2025-12-23 |         266.225 |          277.031 |         287.837 |
+        | 2025-12-24 |         266.225 |          277.031 |         287.837 |
+        | 2025-12-26 |         266.225 |          277.031 |         287.837 |
+        | 2025-12-29 |         266.225 |          277.031 |         287.837 |
+        | 2025-12-30 |         266.225 |          277.031 |         287.837 |
+        | 2025-12-31 |         266.225 |          277.031 |         287.837 |
         """
         if period not in [
             "intraday",
@@ -7384,7 +7401,7 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        historical_data = self._get_historical_data(period, close_column)
 
         donchian_channels_dict = {}
 

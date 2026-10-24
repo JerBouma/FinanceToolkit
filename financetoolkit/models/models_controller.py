@@ -556,13 +556,13 @@ class Models:
 
         |                           |          2021 |          2022 |          2023 |          2024 |          2025 |
         |:--------------------------|--------------:|--------------:|--------------:|--------------:|--------------:|
-        | Share Price               | 173.45        | 127.65        | 190.21        | 248.62        | 271.12        |
-        | Market Capitalization     |   2.92522e+12 |   2.08399e+12 |   3.0077e+12  |   3.83076e+12 |   4.06807e+12 |
+        | Share Price               | 177.57        | 129.93        | 192.53        | 250.42        | 271.86        |
+        | Market Capitalization     |   2.9947e+12  |   2.12121e+12 |   3.04439e+12 |   3.8585e+12  |   4.07918e+12 |
         | Total Debt                |   1.36522e+11 |   1.3248e+11  |   1.2393e+11  |   1.19059e+11 |   1.12377e+11 |
         | Minority Interest         |   0           |   0           |   0           |   0           |   0           |
         | Preferred Equity          |   0           |   0           |   0           |   0           |   0           |
         | Cash and Cash Equivalents |   3.494e+10   |   2.3646e+10  |   2.9965e+10  |   2.9943e+10  |   3.5934e+10  |
-        | Enterprise Value          |   3.0268e+12  |   2.19282e+12 |   3.10167e+12 |   3.91988e+12 |   4.14452e+12 |
+        | Enterprise Value          |   3.09629e+12 |   2.23005e+12 |   3.13835e+12 |   3.94761e+12 |   4.15562e+12 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -574,7 +574,7 @@ class Models:
         begin, end = str(years[0]), str(years[-1])
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -721,12 +721,12 @@ class Models:
 
         Which returns:
 
-        |                        |        2021 |        2022 |        2023 |         2024 |         2025 |
-        |:-----------------------|------------:|------------:|------------:|-------------:|-------------:|
-        | Market Value of Equity | 2.92522e+12 | 2.08399e+12 | 3.0077e+12  |  3.83076e+12 |  4.06807e+12 |
-        | Total Liabilities      | 2.87912e+11 | 3.02083e+11 | 2.90437e+11 |  3.0803e+11  |  2.85508e+11 |
-        | Total Assets           | 3.51002e+11 | 3.52755e+11 | 3.52583e+11 |  3.6498e+11  |  3.59241e+11 |
-        | Tobin's Q Ratio        | 9.1542      | 6.7641      | 9.3542      | 11.3398      | 12.1188      |
+        |                        |        2021 |        2022 |        2023 |        2024 |         2025 |
+        |:-----------------------|------------:|------------:|------------:|------------:|-------------:|
+        | Market Value of Equity | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 |  3.8585e+12 |  4.07918e+12 |
+        | Total Liabilities      | 2.87912e+11 | 3.02083e+11 | 2.90437e+11 |  3.0803e+11 |  2.85508e+11 |
+        | Total Assets           | 3.51002e+11 | 3.52755e+11 | 3.52583e+11 |  3.6498e+11 |  3.59241e+11 |
+        | Tobin's Q Ratio        | 9.3521      | 6.8696      | 9.4583      | 11.4158     | 12.1497      |
         """
         tobins_q_ratio = {}
 
@@ -741,7 +741,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -802,6 +802,38 @@ class Models:
         return filter_columns(tobins_q_results, show_columns)
 
     @handle_errors
+    def _capital_asset_pricing_inputs(
+        self,
+        risk_free_rate: pd.Series,
+        benchmark_returns: pd.Series,
+        market_risk_premium: float | None,
+    ) -> tuple[pd.Series, pd.Series]:
+        """
+        The risk-free rate and the expected market return per period for the Cost of Equity.
+        The market return is the risk-free rate plus the market risk premium, by default the
+        benchmark's average return above the risk-free rate over every period of the data,
+        so that the Cost of Equity does not follow the market up and down from year to year.
+        With quarterly data the annual yield and premium are divided by four, matching the
+        quarterly returns and costs of debt.
+
+        Args:
+            risk_free_rate (pd.Series): The annual risk-free yield per period.
+            benchmark_returns (pd.Series): The benchmark's return per period.
+            market_risk_premium (float | None): An annual premium to use instead.
+
+        Returns:
+            tuple[pd.Series, pd.Series]: The risk-free rate and the expected market return,
+            both per period.
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        risk_free_rate = risk_free_rate / periods_per_year
+        premium = (
+            (benchmark_returns - risk_free_rate).mean()
+            if market_risk_premium is None
+            else market_risk_premium / periods_per_year
+        )
+        return risk_free_rate, risk_free_rate + premium
+
     def get_weighted_average_cost_of_capital(
         self,
         show_full_results: bool = True,
@@ -811,6 +843,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -824,7 +857,7 @@ class Models:
             - Market Value of Equity = Share Price * Total Shares Outstanding
             - Market Value of Debt = Total Debt
             - Total Market Value = Market Value of Equity + Market Value of Debt
-            - Cost of Equity = Risk Free Rate + Beta * (Benchmark Return — Risk Free Rate)
+            - Cost of Equity = Risk Free Rate + Beta * Market Risk Premium
             - Cost of Debt = Interest Expense / Total Debt
             - WACC = (Market Value of Equity / Total Market Value) * Cost of Equity +
             (Market Value of Debt / Total Market Value) * Cost of Debt * (1 — Corporate Tax Rate)
@@ -873,6 +906,9 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
                 which shows all columns.
 
@@ -880,12 +916,11 @@ class Models:
             pd.DataFrame: DataFrame containing the WACC values.
 
         Notes:
-        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM), using the
-        benchmark's realized return over the same period as the market return and a Beta estimated from
-        that period's daily returns. It therefore moves with the market: in a year the benchmark falls, the
-        Cost of Equity (and often the WACC) can be negative, and in a strong year it lies far above a
-        long-run required return. Treat it as a realized rather than an expected cost of capital; a
-        valuation usually needs an expected market return or equity risk premium instead.
+        - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM): the risk-free rate of
+        the period plus Beta times the market risk premium, which defaults to the benchmark's average
+        return above the risk-free rate over every period of the data (set `market_risk_premium` to use
+        another premium, e.g. an implied equity risk premium). Beta is estimated from the period's daily
+        returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
         - The Market Value of Debt is approximated as the Total Debt.
 
         As an example:
@@ -905,14 +940,14 @@ class Models:
 
         Which returns:
 
-        |                                  |          2021 |         2022 |       2023 |        2024 |        2025 |
-        |:---------------------------------|--------------:|-------------:|-----------:|------------:|------------:|
-        | Market Value Equity              |   2.92522e+12 |  2.08399e+12 | 3.0077e+12 | 3.83076e+12 | 4.06807e+12 |
-        | Market Value Debt                |   1.36522e+11 |  1.3248e+11  | 1.2393e+11 | 1.19059e+11 | 1.12377e+11 |
-        | Cost of Equity                   | nan           | -0.2485      | 0.2874     | 0.2425      | 0.2117      |
-        | Cost of Debt                     |   0.0194      |  0.0221      | 0.0317     | 0           | 0           |
-        | Corporate Tax Rate               |   0.133       |  0.162       | 0.1472     | 0.2409      | 0.1561      |
-        | Weighted Average Cost of Capital | nan           | -0.2326      | 0.2771     | 0.2351      | 0.206       |
+        |                                  |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:---------------------------------|------------:|------------:|------------:|------------:|------------:|
+        | Market Value Equity              | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | Market Value Debt                | 1.36522e+11 | 1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
+        | Cost of Equity                   | 0.1277      | 0.1499      | 0.1338      | 0.1283      | 0.1486      |
+        | Cost of Debt                     | 0.0194      | 0.0221      | 0.0317      | 0           | 0           |
+        | Corporate Tax Rate               | 0.133       | 0.162       | 0.1472      | 0.2409      | 0.1561      |
+        | Weighted Average Cost of Capital | 0.1229      | 0.1422      | 0.1296      | 0.1245      | 0.1446      |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -925,7 +960,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -945,6 +980,9 @@ class Models:
         benchmark_returns = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
         ].loc[begin:end, "Return"][self._benchmark_name]
+        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
+            risk_free_rate, benchmark_returns, market_risk_premium
+        )
 
         if trailing:
             self._weighted_average_cost_of_capital = (
@@ -1072,6 +1110,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -1101,6 +1140,9 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -1118,10 +1160,8 @@ class Models:
         its closing balance, consistent with the Return on Invested Capital calculation in the
         Ratios module.
         - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
-        which uses the benchmark's realized return in the Cost of Equity. In a year the benchmark
-        falls it can be negative, and the EVA then exceeds the NOPAT; average the WACC over several
-        years, or compare EVA across companies within the same year, rather than reading single
-        years literally.
+        with the market risk premium given by `market_risk_premium` (by default the benchmark's
+        average return above the risk-free rate over the data).
 
         As an example:
 
@@ -1140,12 +1180,12 @@ class Models:
 
         Which returns:
 
-        |                                  |          2021 |         2022 |        2023 |        2024 |        2025 |
-        |:---------------------------------|--------------:|-------------:|------------:|------------:|------------:|
-        | Net Operating Profit After Taxes |   9.69732e+10 |  1.02259e+11 | 1.00349e+11 | 9.3736e+10  | 1.1201e+11  |
-        | Invested Capital                 |   1.93614e+11 |  1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
-        | Weighted Average Cost of Capital | nan           | -0.2326      | 0.2771      | 0.2351      | 0.206       |
-        | Economic Value Added             | nan           |  1.46775e+11 | 4.91926e+10 | 5.11729e+10 | 7.47117e+10 |
+        |                                  |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:---------------------------------|------------:|------------:|------------:|------------:|------------:|
+        | Net Operating Profit After Taxes | 9.69732e+10 | 1.02259e+11 | 1.00349e+11 | 9.3736e+10  | 1.1201e+11  |
+        | Invested Capital                 | 1.93614e+11 | 1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
+        | Weighted Average Cost of Capital | 0.1229      | 0.1422      | 0.1296      | 0.1245      | 0.1446      |
+        | Economic Value Added             | 7.31779e+10 | 7.50445e+10 | 7.64231e+10 | 7.11962e+10 | 8.58288e+10 |
         """
         eva = {}
 
@@ -1221,7 +1261,9 @@ class Models:
 
         eva["Weighted Average Cost of Capital"] = (
             self.get_weighted_average_cost_of_capital(
-                show_full_results=False, trailing=trailing
+                show_full_results=False,
+                trailing=trailing,
+                market_risk_premium=market_risk_premium,
             )
         )
 
@@ -1331,10 +1373,10 @@ class Models:
 
         |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----------------------|------------:|------------:|------------:|------------:|------------:|
-        | Market Value of Equity | 2.92522e+12 | 2.08399e+12 | 3.0077e+12  | 3.83076e+12 | 4.06807e+12 |
+        | Market Value of Equity | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
         | Market Value of Debt   | 1.36522e+11 | 1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
         | Invested Capital       | 1.93614e+11 | 1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
-        | Market Value Added     | 2.86813e+12 | 2.02509e+12 | 2.94702e+12 | 3.76878e+12 | 3.99939e+12 |
+        | Market Value Added     | 2.93761e+12 | 2.06231e+12 | 2.98371e+12 | 3.79651e+12 | 4.01049e+12 |
         """
         mva = {}
 
@@ -1343,7 +1385,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -2258,6 +2300,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -2282,6 +2325,9 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -2293,11 +2339,10 @@ class Models:
         equity holders required given the capital they have invested. A negative Residual
         Income indicates the company failed to earn its equity holders' required return, even
         if it still reported a positive Net Income.
-        - The Cost of Equity is approximated with the Capital Asset Pricing Model (CAPM), using
-        the benchmark's realized return over the same period as the market return, as in the
-        Weighted Average Cost of Capital calculation elsewhere in this module. In a year the
-        benchmark falls it can be negative and the Residual Income then exceeds the Net Income;
-        in a strong year it is far above a long-run required return.
+        - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM), as in
+        `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta times
+        the market risk premium, by default the benchmark's average return above the risk-free
+        rate over the data (see `market_risk_premium`).
         - The Book Value of Equity is approximated as the average of Total Shareholder Equity
         minus Preferred Stock over the current and prior period, excluding preferred equity
         since Residual Income (like Net Income) belongs to common equity holders only.
@@ -2323,12 +2368,12 @@ class Models:
 
         Which returns:
 
-        |                      |          2021 |        2022 |        2023 |        2024 |        2025 |
-        |:---------------------|--------------:|------------:|------------:|------------:|------------:|
-        | Net Income           |   9.468e+10   |  9.9803e+10 | 9.6995e+10  | 9.3736e+10  | 1.1201e+11  |
-        | Cost of Equity       | nan           | -0.2485     | 0.2874      | 0.2425      | 0.2117      |
-        | Book Value of Equity |   6.42145e+10 |  5.6881e+10 | 5.6409e+10  | 5.9548e+10  | 6.53415e+10 |
-        | Residual Income      | nan           |  1.1394e+11 | 8.07818e+10 | 7.92984e+10 | 9.81755e+10 |
+        |                      |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:---------------------|------------:|------------:|------------:|------------:|------------:|
+        | Net Income           | 9.468e+10   | 9.9803e+10  | 9.6995e+10  | 9.3736e+10  | 1.1201e+11  |
+        | Cost of Equity       | 0.1277      | 0.1499      | 0.1338      | 0.1283      | 0.1486      |
+        | Book Value of Equity | 6.42145e+10 | 5.6881e+10  | 5.6409e+10  | 5.9548e+10  | 6.53415e+10 |
+        | Residual Income      | 8.64785e+10 | 9.12761e+10 | 8.94477e+10 | 8.60939e+10 | 1.02299e+11 |
         """
         residual_income = {}
 
@@ -2379,6 +2424,9 @@ class Models:
         benchmark_returns = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
         ].loc[begin:end, "Return"][self._benchmark_name]
+        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
+            risk_free_rate, benchmark_returns, market_risk_premium
+        )
 
         cost_of_equity = wacc_model.get_cost_of_equity(
             risk_free_rate=risk_free_rate,
@@ -2509,9 +2557,9 @@ class Models:
         | Working Capital to Total Assets   |  0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
         | Retained Earnings to Total Assets |  0.0158 | -0.0087 | -0.0006 | -0.0525 | -0.0397 |
         | EBIT to Total Assets              |  0.3187 |  0.3459 |  0.3337 |  0.3383 |  0.3695 |
-        | Market Value to Total Liabilities | 10.1601 |  6.8987 | 10.3558 | 12.4363 | 14.2485 |
+        | Market Value to Total Liabilities | 10.4015 |  7.022  | 10.4821 | 12.5264 | 14.2874 |
         | Sales to Total Assets             |  1.0422 |  1.1179 |  1.0871 |  1.0714 |  1.1584 |
-        | Altman Z-Score                    |  8.244  |  6.3233 |  8.3951 |  9.4993 | 10.8122 |
+        | Altman Z-Score                    |  8.3888 |  6.3973 |  8.4709 |  9.5533 | 10.8355 |
         """
         altman_z_score = {}
 
@@ -2613,7 +2661,7 @@ class Models:
 
         share_prices = (
             self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Adj Close"][self._tickers]
+            .loc[begin:end, "Close"][self._tickers]
             .T
         )
 
@@ -4478,6 +4526,7 @@ class Models:
         diluted: bool = True,
         include_dividends: bool = False,
         trailing: int | None = None,
+        market_risk_premium: float | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -4503,6 +4552,9 @@ class Models:
             Income when calculating the Earnings per Share, so that the earnings figure reflects what is
             attributable to common shareholders only. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
+                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
+                over every period of the data.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4520,9 +4572,8 @@ class Models:
         instead, which blends in the (typically lower, tax-shielded) cost of debt and therefore
         generally understates PVGO. Prefer comparing PVGO across companies, or over time for the same
         company, over reading absolute levels literally.
-        - When the Earnings per Share or the Weighted Average Cost of Capital is negative (the latter
-        in a year the benchmark falls, see `get_weighted_average_cost_of_capital`), the no-growth value
-        is negative and the PVGO exceeds the share price, which has no meaningful interpretation.
+        - When the Earnings per Share is negative, the no-growth value is negative and the PVGO
+        exceeds the share price, which has no meaningful interpretation.
 
         As an example:
 
@@ -4541,15 +4592,17 @@ class Models:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | 153.932 | 133.831 |
-        | 2023   | 168.073 | 240.426 |
-        | 2024   | 222.744 | 399.952 |
-        | 2025   | 234.882 | 446.584 |
+        | Date   |     AAPL |    TSLA |
+        |:-------|---------:|--------:|
+        | 2022   |  86.9398 | 103.616 |
+        | 2023   | 145.199  | 229.608 |
+        | 2024   | 201.556  | 395.574 |
+        | 2025   | 220.235  | 445.067 |
         """
         wacc = self.get_weighted_average_cost_of_capital(
-            show_full_results=False, trailing=trailing
+            show_full_results=False,
+            trailing=trailing,
+            market_risk_premium=market_risk_premium,
         )
 
         average_shares = (
@@ -4585,10 +4638,10 @@ class Models:
         )
 
         historical_prices = (
-            self._historical_data["daily"]["Adj Close"]
+            self._historical_data["daily"]["Close"]
             if calculate_daily
             else self._historical_data["quarterly" if self._quarterly else "yearly"][
-                "Adj Close"
+                "Close"
             ]
         )
 

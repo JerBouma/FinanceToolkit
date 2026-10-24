@@ -4256,6 +4256,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None,
         period: str | None,
         column: str,
+        include_benchmark: bool = False,
     ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
         """
         Shared input-shaping step for `get_fixed_effects`/`get_random_effects`/
@@ -4265,8 +4266,8 @@ class Econometrics:
         that a handful of single ticker return series don't have on their own.
 
         This module treats `dependent_tickers` (defaulting to every ticker in the
-        `Toolkit` instance including "Benchmark", minus `independent_tickers` if
-        given) as the panel of ENTITIES -- e.g. a panel of stocks -- and supports
+        `Toolkit` instance, without "Benchmark" unless `include_benchmark` is True, minus
+        `independent_tickers` if given) as the panel of ENTITIES -- e.g. a panel of stocks -- and supports
         two, mutually exclusive ways of building the regressor `x`:
 
         - `independent_tickers`: a COMMON, time-varying factor (or factors),
@@ -4333,6 +4334,7 @@ class Econometrics:
                     ticker
                     for ticker in prices.columns
                     if ticker not in independent_tickers
+                    and (include_benchmark or ticker != BENCHMARK_TICKER)
                 ]
             else:
                 dependent_tickers = (
@@ -4355,7 +4357,11 @@ class Econometrics:
             )
         else:
             if dependent_tickers is None:
-                dependent_tickers = list(prices.columns)
+                dependent_tickers = [
+                    ticker
+                    for ticker in prices.columns
+                    if include_benchmark or ticker != BENCHMARK_TICKER
+                ]
             else:
                 dependent_tickers = (
                     [dependent_tickers]
@@ -4386,6 +4392,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None = None,
         period: str | None = None,
         column: str = "Return",
+        include_benchmark: bool = False,
         entity_effects: bool = True,
         time_effects: bool = False,
         rounding: int | None = None,
@@ -4427,12 +4434,13 @@ class Econometrics:
             use as the regressor. Mutually exclusive with `independent_tickers`.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
-            the `Toolkit` instance including "Benchmark" (other than
-            `independent_tickers`, if given).
+            the `Toolkit` instance (other than `independent_tickers`, if given).
             period (str, optional): The data frequency (daily, weekly, monthly,
             quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            entities. Defaults to False.
             entity_effects (bool, optional): Whether to control for time-invariant
             entity-specific characteristics. Defaults to True.
             time_effects (bool, optional): Whether to control for entity-invariant,
@@ -4478,7 +4486,12 @@ class Econometrics:
         | Entity Effect: MSFT |        0.0006 |     nan      |      nan      |       nan |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
-            independent_tickers, independent_column, dependent_tickers, period, column
+            independent_tickers,
+            independent_column,
+            dependent_tickers,
+            period,
+            column,
+            include_benchmark=include_benchmark,
         )
 
         result = panel_data_model.get_fixed_effects(
@@ -4510,6 +4523,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None = None,
         period: str | None = None,
         column: str = "Return",
+        include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -4543,12 +4557,13 @@ class Econometrics:
             use as the regressor. Mutually exclusive with `independent_tickers`.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
-            the `Toolkit` instance including "Benchmark" (other than
-            `independent_tickers`, if given).
+            the `Toolkit` instance (other than `independent_tickers`, if given).
             period (str, optional): The data frequency (daily, weekly, monthly,
             quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            entities. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
 
@@ -4582,11 +4597,16 @@ class Econometrics:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |         0.007 |       0.0024 |        2.8772 |    0.0041 |
-        | Volume    |        -0     |       0      |       -1.7774 |    0.0758 |
+        | Intercept |         0.006 |       0.0029 |        2.0339 |    0.0423 |
+        | Volume    |        -0     |       0      |       -1.0495 |    0.2943 |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
-            independent_tickers, independent_column, dependent_tickers, period, column
+            independent_tickers,
+            independent_column,
+            dependent_tickers,
+            period,
+            column,
+            include_benchmark=include_benchmark,
         )
 
         result = panel_data_model.get_random_effects(y_panel, x_panel)
@@ -4604,6 +4624,7 @@ class Econometrics:
         dependent_tickers: str | list[str] | None = None,
         period: str | None = None,
         column: str = "Return",
+        include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.Series:
         """
@@ -4631,12 +4652,13 @@ class Econometrics:
             use as the regressor. Mutually exclusive with `independent_tickers`.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
-            the `Toolkit` instance including "Benchmark" (other than
-            `independent_tickers`, if given).
+            the `Toolkit` instance (other than `independent_tickers`, if given).
             period (str, optional): The data frequency (daily, weekly, monthly,
             quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
             column. Defaults to "Return".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+            entities. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
 
@@ -4669,15 +4691,20 @@ class Econometrics:
 
         Which returns:
 
-        |                           |      0 |
-        |:--------------------------|-------:|
-        | Hausman Statistic         | 1.6066 |
-        | Degrees of Freedom        | 1      |
-        | P-Value                   | 0.205  |
-        | Prefer Fixed Effects (5%) | 0      |
+        |                           |   Value |
+        |:--------------------------|--------:|
+        | Hausman Statistic         |  0.5873 |
+        | Degrees of Freedom        |  1      |
+        | P-Value                   |  0.4435 |
+        | Prefer Fixed Effects (5%) |  0      |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
-            independent_tickers, independent_column, dependent_tickers, period, column
+            independent_tickers,
+            independent_column,
+            dependent_tickers,
+            period,
+            column,
+            include_benchmark=include_benchmark,
         )
 
         result = panel_data_model.get_hausman_test(y_panel, x_panel)

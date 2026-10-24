@@ -17,7 +17,6 @@ from financetoolkit.options import (
     svi_model,
 )
 from financetoolkit.ratios import valuation_model
-from financetoolkit.risk import risk_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -30,6 +29,11 @@ from financetoolkit.utilities.statistics_model import (
 # ruff: noqa: E501
 
 logger = logger_model.get_logger()
+
+# The volatility is measured over the trading year before the pricing date, once at least a
+# month of returns is available.
+TRAILING_DAYS = 252
+MINIMUM_VOLATILITY_DAYS = 21
 
 MINIMUM_OBSERVATIONS_FOR_SVI_FIT = 5
 MINIMUM_EXPIRATIONS_FOR_CALENDAR_CHECK = 2
@@ -139,12 +143,11 @@ class Options:
         # Option Statistics
         self._prices = self._daily_historical["Adj Close"]
 
-        yearly_volatility = risk_model.get_volatility(
-            self._daily_historical["Return"], "yearly"
-        )
-        year_labels = to_period_index(self._daily_historical.index).asfreq("Y")
-        self._volatility = yearly_volatility.reindex(year_labels)
-        self._volatility.index = self._daily_historical.index
+        # The volatility on a date is that of the year of daily returns up to it, so a past
+        # pricing date uses only what was known on that date.
+        self._volatility = self._daily_historical["Return"].rolling(
+            TRAILING_DAYS, min_periods=MINIMUM_VOLATILITY_DAYS
+        ).std() * np.sqrt(TRAILING_DAYS)
 
         self._risk_free_rate = risk_free_rate["Adj Close"]
         self._annual_historical = annual_historical
@@ -167,6 +170,49 @@ class Options:
                 dividend_yield_cleaned = dividend_yield.loc[ticker]
 
             self._dividend_yield[ticker] = dividend_yield_cleaned
+
+        # The dividend yield on a date: the dividends of the year up to it relative to the
+        # price. It follows from the dividend adjustment of the prices, Adj Close / Close, which
+        # grows by the yield of each dividend paid and is not affected by splits (unlike the
+        # dividends per share themselves). The first year, without a full year before it,
+        # takes the first full year's yield.
+        self._daily_dividend_yield = pd.DataFrame()
+        if "Close" in self._daily_historical:
+            dates = to_period_index(self._daily_historical.index).to_timestamp()
+            adjustment = (
+                self._daily_historical["Adj Close"] / self._daily_historical["Close"]
+            ).set_axis(dates)
+            year_earlier = adjustment.reindex(
+                dates - pd.Timedelta(days=365), method="ffill"
+            )
+            daily_dividend_yield = pd.DataFrame(
+                adjustment.to_numpy() / year_earlier.to_numpy() - 1,
+                index=self._daily_historical.index,
+                columns=adjustment.columns,
+            )
+            self._daily_dividend_yield = daily_dividend_yield.clip(lower=0).bfill()
+
+    def _dividend_yield_on(self, ticker: str, date) -> float:
+        """
+        The dividend yield of a ticker on a pricing date: the dividends of the year up to that
+        date over its price, or the latest annual yield when there are no daily dividends.
+
+        Args:
+            ticker (str): The ticker.
+            date: The pricing date.
+
+        Returns:
+            float: The dividend yield as a decimal.
+        """
+        if (
+            not self._daily_dividend_yield.empty
+            and ticker in self._daily_dividend_yield
+            and date in self._daily_dividend_yield.index
+        ):
+            value = self._daily_dividend_yield.loc[date, ticker]
+            if pd.notna(value):
+                return float(value)
+        return float(self._dividend_yield[ticker].iloc[-1])
 
     def get_option_chains(
         self,
@@ -337,11 +383,10 @@ class Options:
         - The risk—free rate and volatility of the underlying stock are known and constant.
         - The returns on the underlying stock are normally distributed.
 
-        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
-        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
-        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
-        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
-        and for an earlier start date it also includes the days of that year after it.
+        By default the stock price, risk free rate, dividend yield and volatility of the most recent date are used;
+        changing the start date prices the option as of that date instead. The volatility is the annualized standard
+        deviation of the daily returns over the year before that date and the dividend yield the dividends of that
+        year relative to the price, so an earlier start date only uses what was known on that date.
 
         The formulas are as follows:
 
@@ -376,8 +421,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -406,31 +451,31 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            175 |      55.8399 |      55.8599 |      55.8798 |      55.8998 |      55.9197 |      55.9396 |      55.9596 |      55.9795 |      55.9994 |
-        |            180 |      50.8405 |      50.861  |      50.8815 |      50.902  |      50.9225 |      50.943  |      50.9635 |      50.984  |      51.0045 |
-        |            185 |      45.8411 |      45.8622 |      45.8832 |      45.9043 |      45.9254 |      45.9465 |      45.9675 |      45.9886 |      46.0097 |
-        |            190 |      40.8417 |      40.8633 |      40.885  |      40.9066 |      40.9282 |      40.9499 |      40.9716 |      40.9933 |      41.0152 |
-        |            195 |      35.8422 |      35.8644 |      35.8867 |      35.9089 |      35.9311 |      35.9534 |      35.976  |      35.999  |      36.0226 |
-        |            200 |      30.8428 |      30.8656 |      30.8884 |      30.9112 |      30.9343 |      30.9581 |      30.9831 |      31.0098 |      31.0386 |
-        |            205 |      25.8434 |      25.8667 |      25.8902 |      25.9144 |      25.9407 |      25.9702 |      26.0039 |      26.0422 |      26.0853 |
-        |            210 |      20.8439 |      20.868  |      20.8941 |      20.926  |      20.9667 |      21.017  |      21.0765 |      21.1442 |      21.2191 |
-        |            215 |      15.8445 |      15.8734 |      15.92   |      15.9892 |      16.0782 |      16.1824 |      16.2979 |      16.4216 |      16.5511 |
-        |            220 |      10.8498 |      10.9347 |      11.079  |      11.2556 |      11.4481 |      11.6476 |      11.8495 |      12.0512 |      12.2513 |
-        |            225 |       5.9884 |       6.3445 |       6.708  |       7.0532 |       7.3783 |       7.6851 |       7.9758 |       8.2527 |       8.5173 |
-        |            230 |       2.1132 |       2.8035 |       3.3391 |       3.7938 |       4.1963 |       4.5617 |       4.8989 |       5.2137 |       5.5102 |
-        |            235 |       0.3563 |       0.8541 |       1.2982 |       1.6971 |       2.0612 |       2.3983 |       2.7135 |       3.0107 |       3.2927 |
-        |            240 |       0.0233 |       0.1671 |       0.38   |       0.6172 |       0.8611 |       1.1044 |       1.344  |       1.5787 |       1.8078 |
-        |            245 |       0.0005 |       0.0202 |       0.082  |       0.1801 |       0.3031 |       0.4424 |       0.5922 |       0.7486 |       0.9091 |
-        |            250 |       0      |       0.0015 |       0.013  |       0.0419 |       0.0896 |       0.1537 |       0.2316 |       0.3205 |       0.418  |
-        |            255 |       0      |       0.0001 |       0.0015 |       0.0078 |       0.0222 |       0.0463 |       0.0804 |       0.1238 |       0.1758 |
-        |            260 |       0      |       0      |       0.0001 |       0.0012 |       0.0046 |       0.0121 |       0.0248 |       0.0433 |       0.0677 |
-        |            265 |       0      |       0      |       0      |       0.0001 |       0.0008 |       0.0028 |       0.0068 |       0.0137 |       0.0239 |
-        |            270 |       0      |       0      |       0      |       0      |       0.0001 |       0.0006 |       0.0017 |       0.0039 |       0.0078 |
-        |            275 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.001  |       0.0023 |
-        |            280 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0006 |
-        |            285 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            175 |      55.8399 |      55.8599 |      55.8798 |      55.8998 |      55.9197 |      55.9396 |      55.9596 |      55.9795 |      55.9994 |      56.0193 |      56.0393 |      56.0592 |      56.0791 |      56.0991 |      56.119  |      56.139  |      56.159  |      56.1791 |      56.1993 |      56.2195 |      56.2398 |      56.2603 |      56.2808 |      56.3016 |      56.3225 |      56.3436 |      56.3648 |      56.3863 |      56.4081 |
+        |            180 |      50.8405 |      50.861  |      50.8815 |      50.902  |      50.9225 |      50.943  |      50.9635 |      50.984  |      51.0045 |      51.025  |      51.0456 |      51.0661 |      51.0867 |      51.1073 |      51.128  |      51.1488 |      51.1698 |      51.1909 |      51.2123 |      51.2338 |      51.2556 |      51.2777 |      51.3001 |      51.3229 |      51.346  |      51.3695 |      51.3933 |      51.4176 |      51.4422 |
+        |            185 |      45.8411 |      45.8622 |      45.8832 |      45.9043 |      45.9254 |      45.9465 |      45.9675 |      45.9886 |      46.0097 |      46.0309 |      46.0521 |      46.0734 |      46.0949 |      46.1166 |      46.1386 |      46.1609 |      46.1836 |      46.2068 |      46.2304 |      46.2545 |      46.2792 |      46.3045 |      46.3303 |      46.3568 |      46.3839 |      46.4117 |      46.4401 |      46.4691 |      46.4988 |
+        |            190 |      40.8417 |      40.8633 |      40.885  |      40.9066 |      40.9282 |      40.9499 |      40.9716 |      40.9933 |      41.0152 |      41.0373 |      41.0597 |      41.0826 |      41.106  |      41.13   |      41.1548 |      41.1804 |      41.2068 |      41.2341 |      41.2624 |      41.2917 |      41.3219 |      41.3531 |      41.3852 |      41.4184 |      41.4525 |      41.4876 |      41.5236 |      41.5604 |      41.5982 |
+        |            195 |      35.8422 |      35.8644 |      35.8867 |      35.9089 |      35.9311 |      35.9534 |      35.976  |      35.9989 |      36.0225 |      36.0469 |      36.0724 |      36.0991 |      36.1271 |      36.1566 |      36.1876 |      36.2202 |      36.2543 |      36.2899 |      36.3271 |      36.3657 |      36.4058 |      36.4473 |      36.4902 |      36.5343 |      36.5796 |      36.6262 |      36.6738 |      36.7225 |      36.7722 |
+        |            200 |      30.8428 |      30.8656 |      30.8884 |      30.9112 |      30.9343 |      30.958  |      30.983  |      31.0095 |      31.0382 |      31.0691 |      31.1026 |      31.1387 |      31.1773 |      31.2185 |      31.2622 |      31.3082 |      31.3565 |      31.4068 |      31.4592 |      31.5134 |      31.5693 |      31.6268 |      31.6858 |      31.7462 |      31.8079 |      31.8707 |      31.9346 |      31.9995 |      32.0653 |
+        |            205 |      25.8434 |      25.8667 |      25.8902 |      25.9144 |      25.9405 |      25.9699 |      26.0033 |      26.0414 |      26.0841 |      26.1314 |      26.183  |      26.2388 |      26.2982 |      26.361  |      26.4268 |      26.4954 |      26.5664 |      26.6396 |      26.7147 |      26.7915 |      26.8699 |      26.9496 |      27.0305 |      27.1125 |      27.1954 |      27.2792 |      27.3636 |      27.4486 |      27.5342 |
+        |            210 |      20.8439 |      20.868  |      20.894  |      20.9257 |      20.9661 |      21.0159 |      21.0747 |      21.1418 |      21.216  |      21.2963 |      21.3818 |      21.4715 |      21.5648 |      21.6611 |      21.7599 |      21.8607 |      21.9631 |      22.0669 |      22.1718 |      22.2775 |      22.3839 |      22.4908 |      22.598  |      22.7055 |      22.8132 |      22.9209 |      23.0286 |      23.1362 |      23.2437 |
+        |            215 |      15.8445 |      15.8732 |      15.9193 |      15.9878 |      16.0759 |      16.1792 |      16.2937 |      16.4164 |      16.5449 |      16.6777 |      16.8133 |      16.9509 |      17.0897 |      17.2291 |      17.3689 |      17.5086 |      17.648  |      17.7869 |      17.9253 |      18.0629 |      18.1997 |      18.3356 |      18.4707 |      18.6047 |      18.7378 |      18.87   |      19.0011 |      19.1313 |      19.2604 |
+        |            220 |      10.8497 |      10.9335 |      11.0764 |      11.2516 |      11.4427 |      11.6409 |      11.8417 |      12.0423 |      12.2413 |      12.4381 |      12.632  |      12.8228 |      13.0106 |      13.1952 |      13.3767 |      13.5553 |      13.7308 |      13.9036 |      14.0736 |      14.241  |      14.4059 |      14.5683 |      14.7284 |      14.8863 |      15.042  |      15.1956 |      15.3473 |      15.497  |      15.6449 |
+        |            225 |       5.9866 |       6.3402 |       6.7018 |       7.0454 |       7.3691 |       7.6746 |       7.9643 |       8.2401 |       8.5038 |       8.7569 |       9.0005 |       9.2356 |       9.4631 |       9.6836 |       9.8979 |      10.1064 |      10.3095 |      10.5078 |      10.7015 |      10.891  |      11.0765 |      11.2583 |      11.4366 |      11.6117 |      11.7836 |      11.9526 |      12.1189 |      12.2825 |      12.4436 |
+        |            230 |       2.1081 |       2.7963 |       3.3303 |       3.7836 |       4.1849 |       4.5491 |       4.8853 |       5.1992 |       5.4949 |       5.7752 |       6.0426 |       6.2986 |       6.5446 |       6.7819 |       7.0113 |       7.2335 |       7.4493 |       7.6592 |       7.8637 |       8.0632 |       8.2581 |       8.4487 |       8.6352 |       8.8181 |       8.9973 |       9.1733 |       9.3462 |       9.5161 |       9.6832 |
+        |            235 |       0.3531 |       0.8483 |       1.2906 |       1.6878 |       2.0507 |       2.3865 |       2.7006 |       2.9968 |       3.2779 |       3.546  |       3.8029 |       4.0499 |       4.288  |       4.5183 |       4.7415 |       4.9583 |       5.1691 |       5.3745 |       5.5749 |       5.7706 |       5.9621 |       6.1495 |       6.3332 |       6.5133 |       6.6901 |       6.8638 |       7.0345 |       7.2024 |       7.3677 |
+        |            240 |       0.0228 |       0.1648 |       0.3758 |       0.6113 |       0.8537 |       1.0956 |       1.334  |       1.5674 |       1.7956 |       2.0182 |       2.2355 |       2.4476 |       2.6548 |       2.8574 |       3.0555 |       3.2495 |       3.4396 |       3.6259 |       3.8088 |       3.9883 |       4.1647 |       4.3381 |       4.5086 |       4.6765 |       4.8418 |       5.0046 |       5.1651 |       5.3234 |       5.4795 |
+        |            245 |       0.0005 |       0.0197 |       0.0805 |       0.1774 |       0.2991 |       0.4371 |       0.5857 |       0.7409 |       0.9002 |       1.0619 |       1.2247 |       1.3879 |       1.5507 |       1.7129 |       1.8742 |       2.0342 |       2.193  |       2.3503 |       2.5062 |       2.6605 |       2.8134 |       2.9647 |       3.1146 |       3.2629 |       3.4097 |       3.5551 |       3.699  |       3.8416 |       3.9828 |
+        |            250 |       0      |       0.0014 |       0.0126 |       0.041  |       0.0878 |       0.1511 |       0.228  |       0.3159 |       0.4125 |       0.5159 |       0.6248 |       0.7378 |       0.8541 |       0.9729 |       1.0937 |       1.216  |       1.3393 |       1.4634 |       1.588  |       1.7129 |       1.8379 |       1.9628 |       2.0877 |       2.2123 |       2.3366 |       2.4605 |       2.5839 |       2.7069 |       2.8294 |
+        |            255 |       0      |       0.0001 |       0.0014 |       0.0075 |       0.0216 |       0.0453 |       0.0787 |       0.1215 |       0.1728 |       0.2315 |       0.2968 |       0.3677 |       0.4436 |       0.5237 |       0.6074 |       0.6942 |       0.7837 |       0.8754 |       0.9691 |       1.0645 |       1.1612 |       1.2592 |       1.3581 |       1.4579 |       1.5584 |       1.6595 |       1.761  |       1.8629 |       1.9651 |
+        |            260 |       0      |       0      |       0.0001 |       0.0011 |       0.0045 |       0.0118 |       0.0241 |       0.0422 |       0.0662 |       0.096  |       0.1314 |       0.172  |       0.2174 |       0.2673 |       0.3212 |       0.3787 |       0.4396 |       0.5034 |       0.57   |       0.6389 |       0.71   |       0.7831 |       0.8579 |       0.9343 |       1.0121 |       1.0911 |       1.1713 |       1.2526 |       1.3347 |
+        |            265 |       0      |       0      |       0      |       0.0001 |       0.0008 |       0.0027 |       0.0066 |       0.0133 |       0.0233 |       0.0369 |       0.0543 |       0.0756 |       0.1007 |       0.1295 |       0.1619 |       0.1976 |       0.2366 |       0.2785 |       0.3233 |       0.3706 |       0.4204 |       0.4724 |       0.5265 |       0.5825 |       0.6403 |       0.6998 |       0.7608 |       0.8233 |       0.887  |
+        |            270 |       0      |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0016 |       0.0038 |       0.0075 |       0.0131 |       0.021  |       0.0313 |       0.0441 |       0.0596 |       0.0779 |       0.0988 |       0.1223 |       0.1484 |       0.177  |       0.2079 |       0.2412 |       0.2766 |       0.3141 |       0.3536 |       0.3949 |       0.4381 |       0.4829 |       0.5292 |       0.5771 |
+        |            275 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.001  |       0.0022 |       0.0044 |       0.0076 |       0.0122 |       0.0183 |       0.0262 |       0.0358 |       0.0473 |       0.0608 |       0.0762 |       0.0936 |       0.113  |       0.1342 |       0.1574 |       0.1824 |       0.2091 |       0.2377 |       0.2678 |       0.2996 |       0.3329 |       0.3678 |
+        |            280 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0006 |       0.0013 |       0.0026 |       0.0045 |       0.0072 |       0.0109 |       0.0157 |       0.0218 |       0.0291 |       0.0378 |       0.0479 |       0.0595 |       0.0725 |       0.0871 |       0.1031 |       0.1206 |       0.1396 |       0.1601 |       0.1819 |       0.2051 |       0.2297 |
+        |            285 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |       0.0008 |       0.0016 |       0.0027 |       0.0044 |       0.0066 |       0.0096 |       0.0134 |       0.0181 |       0.0237 |       0.0304 |       0.0381 |       0.0469 |       0.0568 |       0.0679 |       0.0802 |       0.0936 |       0.1081 |       0.1239 |       0.1408 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -465,7 +510,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -568,8 +613,8 @@ class Options:
             it will calculate the call option price.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_expiration_dates (bool, optional): Whether to show the expiration dates. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
@@ -679,7 +724,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, current_period)
             )
 
             for strike_price, row in option_chain.iterrows():
@@ -785,8 +830,8 @@ class Options:
                 calculation. Defaults to None which means it will use the current
                 risk free rate.
             dividend_yield (float, optional): The dividend yield to use for the
-                calculation. Defaults to None which means it will use the dividend
-                yield as obtained through annual historical data.
+                calculation. Defaults to None, which uses the dividend yield on the
+                pricing date (the dividends of the year before it relative to the price).
             number_of_expirations (int, optional): The number of near-term
                 expiration dates to fit when `expiration_dates` is not given.
                 Defaults to 6.
@@ -920,7 +965,7 @@ class Options:
                 dividend_yield_value = (
                     dividend_yield
                     if dividend_yield is not None
-                    else self._dividend_yield[ticker].iloc[-1]
+                    else self._dividend_yield_on(ticker, current_period)
                 )
 
                 forward_price = stock_price.loc[ticker] * np.exp(
@@ -1046,8 +1091,8 @@ class Options:
                 calculation. Defaults to None which means it will use the current
                 risk free rate.
             dividend_yield (float, optional): The dividend yield to use for the
-                calculation. Defaults to None which means it will use the dividend
-                yield as obtained through annual historical data.
+                calculation. Defaults to None, which uses the dividend yield on the
+                pricing date (the dividends of the year before it relative to the price).
             strike_price_range (float, optional): The range of strikes to evaluate
                 the density over, as a fraction of the forward price in each
                 direction. Defaults to 0.5, i.e. from 50% to 150% of the forward
@@ -1163,7 +1208,7 @@ class Options:
             dividend_yield_value = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, current_period)
             )
 
             forward_price = stock_price.loc[ticker] * np.exp(
@@ -1228,11 +1273,10 @@ class Options:
         American style options. It does so by creating a binomial tree of price paths for the underlying asset, and
         then working backwards through the tree to determine the price of the option at each node.
 
-        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
-        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
-        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
-        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
-        and for an earlier start date it also includes the days of that year after it.
+        By default the stock price, risk free rate, dividend yield and volatility of the most recent date are used;
+        changing the start date prices the option as of that date instead. The volatility is the annualized standard
+        deviation of the daily returns over the year before that date and the dividend yield the dividends of that
+        year relative to the price, so an earlier start date only uses what was known on that date.
 
         The formulas are as follows:
 
@@ -1283,8 +1327,8 @@ class Options:
             time steps. This will be evenly distributed over the time to expiration.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -1317,14 +1361,14 @@ class Options:
 
         | Movement   |   2024-02-02 |   2024-03-09 |   2024-04-15 |   2024-05-21 |   2024-06-27 |   2024-08-02 |   2024-09-08 |   2024-10-14 |   2024-11-20 |   2024-12-26 |   2025-02-01 |
         |:-----------|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | UUUUUUUUUU |      49.8119 |      62.0866 |      75.8572 |      90.9918 |     107.405  |     125.099  |     144.156  |     164.677  |     186.771  |     210.556  |     236.159  |
-        | DUUUUUUUUU |     nan      |      37.5692 |      48.4029 |      60.8806 |      74.8219 |      90.0481 |     106.484  |     124.188  |     143.255  |     163.787  |     185.894  |
-        | DDUUUUUUUU |     nan      |     nan      |      26.7114 |      35.9396 |      47.0111 |      59.7425 |      73.8464 |      89.1104 |     105.555  |     123.269  |     142.346  |
-        | DDDUUUUUUU |     nan      |     nan      |     nan      |      17.4193 |      24.8233 |      34.2749 |      45.6962 |      58.7199 |      72.8924 |      88.164  |     104.617  |
-        | DDDDUUUUUU |     nan      |     nan      |     nan      |     nan      |       9.9312 |      15.2854 |      22.7845 |      32.6478 |      44.5944 |      57.7503 |      71.9295 |
-        | DDDDDUUUUU |     nan      |     nan      |     nan      |     nan      |     nan      |       4.4941 |       7.6818 |      12.8055 |      20.6027 |      31.4008 |      43.61   |
-        | DDDDDDUUUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       1.2456 |       2.464  |       4.8743 |       9.6424 |      19.0748 |
-        | DDDDDDDUUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |       0      |       0      |       0      |
+        | UUUUUUUUUU |      48.9262 |      59.949  |      72.1073 |      85.2847 |      99.4195 |     114.526  |     130.669  |     147.917  |     166.344  |     186.028  |     207.052  |
+        | DUUUUUUUUU |     nan      |      37.7929 |      47.7184 |      58.9104 |      71.1946 |      84.4291 |      98.5757 |     113.695  |     129.852  |     147.115  |     165.559  |
+        | DDUUUUUUUU |     nan      |     nan      |      27.7161 |      36.398  |      46.5394 |      57.9305 |      70.3195 |      83.5648 |      97.7233 |     112.856  |     129.027  |
+        | DDDUUUUUUU |     nan      |     nan      |     nan      |      18.8578 |      26.0839 |      35.0008 |      45.4416 |      57.0368 |      69.4357 |      82.6918 |      96.8621 |
+        | DDDDUUUUUU |     nan      |     nan      |     nan      |     nan      |      11.4501 |      16.966  |      24.3617 |      33.6805 |      44.5302 |      56.1344 |      68.5432 |
+        | DDDDDUUUUU |     nan      |     nan      |     nan      |     nan      |     nan      |       5.7713 |       9.3652 |      14.809  |      22.6024 |      32.7521 |      43.61   |
+        | DDDDDDUUUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       2.0572 |       3.7446 |       6.7741 |      12.1654 |      21.6578 |
+        | DDDDDDDUUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0.3079 |       0.6045 |       1.1869 |       2.3302 |
         | DDDDDDDDUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |       0      |       0      |
         | DDDDDDDDDU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |       0      |
         | DDDDDDDDDD |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |
@@ -1366,7 +1410,7 @@ class Options:
                 dividend_yield_value[ticker] = (
                     dividend_yield
                     if dividend_yield is not None
-                    else self._dividend_yield[ticker].iloc[-1]
+                    else self._dividend_yield_on(ticker, start_date)
                 )
 
                 if show_input_info:
@@ -1454,9 +1498,8 @@ class Options:
         u = e^(σ * sqrt(Δt)) or by d = 1 / u. The stock price is then simulated based on these up and down movements.
 
         By default the most recent stock price is used, you can alter this by changing the start date. The volatility
-        is the annualized standard deviation of the daily returns in the calendar year of the start date (year to date
-        for the most recent date), so in the first weeks of a year it rests on only a few observations, and for an
-        earlier start date it also includes the days of that year after it.
+        is the annualized standard deviation of the daily returns over the year before that date, so an earlier start
+        date only uses what was known on that date.
 
         The formulas are as follows:
 
@@ -1522,22 +1565,22 @@ class Options:
 
         | Movement   |   2025-06-20 |   2025-09-19 |   2025-12-19 |   2026-03-20 |   2026-06-20 |
         |:-----------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | UUUU       |       209.69 |      249.064 |      295.832 |      351.382 |      417.362 |
-        | UUUD       |       209.69 |      249.064 |      295.832 |      351.382 |      295.832 |
-        | UUDU       |       209.69 |      249.064 |      295.832 |      249.064 |      295.832 |
-        | UUDD       |       209.69 |      249.064 |      295.832 |      249.064 |      209.69  |
-        | UDUU       |       209.69 |      249.064 |      209.69  |      249.064 |      295.832 |
-        | UDUD       |       209.69 |      249.064 |      209.69  |      249.064 |      209.69  |
-        | UDDU       |       209.69 |      249.064 |      209.69  |      176.54  |      209.69  |
-        | UDDD       |       209.69 |      249.064 |      209.69  |      176.54  |      148.631 |
-        | DUUU       |       209.69 |      176.54  |      209.69  |      249.064 |      295.832 |
-        | DUUD       |       209.69 |      176.54  |      209.69  |      249.064 |      209.69  |
-        | DUDU       |       209.69 |      176.54  |      209.69  |      176.54  |      209.69  |
-        | DUDD       |       209.69 |      176.54  |      209.69  |      176.54  |      148.631 |
-        | DDUU       |       209.69 |      176.54  |      148.631 |      176.54  |      209.69  |
-        | DDUD       |       209.69 |      176.54  |      148.631 |      176.54  |      148.631 |
-        | DDDU       |       209.69 |      176.54  |      148.631 |      125.134 |      148.631 |
-        | DDDD       |       209.69 |      176.54  |      148.631 |      125.134 |      105.352 |
+        | UUUU       |       209.69 |      249.401 |      296.632 |      352.808 |      419.623 |
+        | UUUD       |       209.69 |      249.401 |      296.632 |      352.808 |      296.632 |
+        | UUDU       |       209.69 |      249.401 |      296.632 |      249.401 |      296.632 |
+        | UUDD       |       209.69 |      249.401 |      296.632 |      249.401 |      209.69  |
+        | UDUU       |       209.69 |      249.401 |      209.69  |      249.401 |      296.632 |
+        | UDUD       |       209.69 |      249.401 |      209.69  |      249.401 |      209.69  |
+        | UDDU       |       209.69 |      249.401 |      209.69  |      176.302 |      209.69  |
+        | UDDD       |       209.69 |      249.401 |      209.69  |      176.302 |      148.23  |
+        | DUUU       |       209.69 |      176.302 |      209.69  |      249.401 |      296.632 |
+        | DUUD       |       209.69 |      176.302 |      209.69  |      249.401 |      209.69  |
+        | DUDU       |       209.69 |      176.302 |      209.69  |      176.302 |      209.69  |
+        | DUDD       |       209.69 |      176.302 |      209.69  |      176.302 |      148.23  |
+        | DDUU       |       209.69 |      176.302 |      148.23  |      176.302 |      209.69  |
+        | DDUD       |       209.69 |      176.302 |      148.23  |      176.302 |      148.23  |
+        | DDDU       |       209.69 |      176.302 |      148.23  |      124.628 |      148.23  |
+        | DDDD       |       209.69 |      176.302 |      148.23  |      124.628 |      104.784 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1661,8 +1704,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -1716,7 +1759,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -1986,8 +2029,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -2041,7 +2084,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2142,8 +2185,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -2197,7 +2240,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2303,8 +2346,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             simulations (int, optional): The number of simulated stock price paths. Defaults to 10,000.
             time_steps (int, optional): The number of time steps used to build each simulated path. Defaults to 100.
             seed (int | None, optional): The seed used to initialize the random number generator, ensuring
@@ -2368,7 +2411,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2499,8 +2542,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -2554,7 +2597,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
             barrier = stock_price.loc[ticker] * barrier_percentage
 
@@ -2657,8 +2700,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -2712,7 +2755,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2924,11 +2967,10 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
-        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
-        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
-        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
-        and for an earlier start date it also includes the days of that year after it.
+        By default the stock price, risk free rate, dividend yield and volatility of the most recent date are used;
+        changing the start date prices the option as of that date instead. The volatility is the annualized standard
+        deviation of the daily returns over the year before that date and the dividend yield the dividends of that
+        year relative to the price, so an earlier start date only uses what was known on that date.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -2941,8 +2983,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3079,11 +3121,10 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
-        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
-        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
-        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
-        and for an earlier start date it also includes the days of that year after it.
+        By default the stock price, risk free rate, dividend yield and volatility of the most recent date are used;
+        changing the start date prices the option as of that date instead. The volatility is the annualized standard
+        deviation of the daily returns over the year before that date and the dividend yield the dividends of that
+        year relative to the price, so an earlier start date only uses what was known on that date.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -3096,8 +3137,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3302,8 +3343,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3332,18 +3373,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0027 |       0.0119 |       0.0256 |       0.0412 |       0.0571 |       0.0726 |       0.0873 |       0.1011 |
-        |            295 |            0 |       0.0002 |       0.0023 |       0.0071 |       0.0144 |       0.0233 |       0.0331 |       0.0434 |       0.0537 |
-        |            300 |            0 |       0      |       0.0003 |       0.0016 |       0.0043 |       0.0084 |       0.0135 |       0.0196 |       0.0262 |
-        |            305 |            0 |       0      |       0      |       0.0003 |       0.0011 |       0.0026 |       0.005  |       0.0081 |       0.0118 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.0016 |       0.003  |       0.0049 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |       0.001  |       0.0019 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |       0.0007 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |            0 |       0.0027 |       0.0117 |       0.0253 |       0.0407 |       0.0565 |       0.0719 |       0.0866 |       0.1004 |       0.1133 |       0.1254 |       0.1367 |       0.1472 |       0.1571 |       0.1664 |       0.1751 |       0.1833 |       0.191  |       0.1984 |       0.2053 |       0.2119 |       0.2182 |       0.2242 |       0.2299 |       0.2353 |       0.2405 |       0.2455 |       0.2503 |       0.2549 |
+        |            295 |            0 |       0.0002 |       0.0022 |       0.007  |       0.0142 |       0.023  |       0.0327 |       0.0429 |       0.0531 |       0.0633 |       0.0732 |       0.0828 |       0.0921 |       0.101  |       0.1096 |       0.1178 |       0.1256 |       0.1332 |       0.1404 |       0.1473 |       0.1539 |       0.1603 |       0.1664 |       0.1723 |       0.178  |       0.1835 |       0.1887 |       0.1938 |       0.1987 |
+        |            300 |            0 |       0      |       0.0003 |       0.0016 |       0.0042 |       0.0082 |       0.0133 |       0.0193 |       0.0259 |       0.0328 |       0.04   |       0.0472 |       0.0545 |       0.0617 |       0.0688 |       0.0758 |       0.0826 |       0.0893 |       0.0958 |       0.1021 |       0.1083 |       0.1142 |       0.12   |       0.1257 |       0.1311 |       0.1364 |       0.1416 |       0.1466 |       0.1514 |
+        |            305 |            0 |       0      |       0      |       0.0003 |       0.0011 |       0.0026 |       0.0049 |       0.0079 |       0.0116 |       0.0158 |       0.0204 |       0.0254 |       0.0305 |       0.0359 |       0.0413 |       0.0467 |       0.0522 |       0.0577 |       0.0631 |       0.0685 |       0.0738 |       0.079  |       0.0841 |       0.0891 |       0.0941 |       0.0989 |       0.1037 |       0.1084 |       0.1129 |
+        |            310 |            0 |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.0016 |       0.003  |       0.0048 |       0.0071 |       0.0098 |       0.0129 |       0.0162 |       0.0198 |       0.0236 |       0.0276 |       0.0317 |       0.0359 |       0.0401 |       0.0444 |       0.0487 |       0.053  |       0.0573 |       0.0616 |       0.0658 |       0.07   |       0.0742 |       0.0783 |       0.0824 |
+        |            315 |            0 |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |       0.001  |       0.0018 |       0.003  |       0.0044 |       0.0062 |       0.0082 |       0.0105 |       0.013  |       0.0157 |       0.0185 |       0.0215 |       0.0247 |       0.0279 |       0.0312 |       0.0346 |       0.038  |       0.0414 |       0.0449 |       0.0484 |       0.0519 |       0.0554 |       0.0589 |
+        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |       0.0007 |       0.0012 |       0.0019 |       0.0028 |       0.0039 |       0.0053 |       0.0068 |       0.0085 |       0.0104 |       0.0125 |       0.0147 |       0.017  |       0.0194 |       0.0219 |       0.0245 |       0.0272 |       0.0299 |       0.0327 |       0.0355 |       0.0384 |       0.0412 |
+        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |       0.0008 |       0.0012 |       0.0018 |       0.0025 |       0.0034 |       0.0045 |       0.0057 |       0.007  |       0.0085 |       0.01   |       0.0117 |       0.0135 |       0.0154 |       0.0174 |       0.0195 |       0.0216 |       0.0238 |       0.026  |       0.0283 |
+        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0003 |       0.0005 |       0.0008 |       0.0012 |       0.0017 |       0.0023 |       0.003  |       0.0038 |       0.0047 |       0.0058 |       0.0069 |       0.0082 |       0.0095 |       0.0109 |       0.0124 |       0.014  |       0.0156 |       0.0173 |       0.0191 |
+        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0008 |       0.0011 |       0.0015 |       0.002  |       0.0026 |       0.0032 |       0.004  |       0.0048 |       0.0057 |       0.0067 |       0.0077 |       0.0088 |       0.01   |       0.0113 |       0.0126 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3378,7 +3419,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -3476,8 +3517,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option dual delta. Defaults to False which means
             it will calculate the call option dual delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3506,18 +3547,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |           -0 |      -0.0025 |      -0.011  |      -0.0237 |      -0.0379 |      -0.0524 |      -0.0665 |      -0.0798 |      -0.0923 |
-        |            295 |           -0 |      -0.0002 |      -0.0021 |      -0.0065 |      -0.0131 |      -0.0211 |      -0.0299 |      -0.0391 |      -0.0483 |
-        |            300 |           -0 |      -0      |      -0.0003 |      -0.0014 |      -0.0038 |      -0.0074 |      -0.0121 |      -0.0174 |      -0.0232 |
-        |            305 |           -0 |      -0      |      -0      |      -0.0003 |      -0.001  |      -0.0023 |      -0.0044 |      -0.0071 |      -0.0103 |
-        |            310 |           -0 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0006 |      -0.0014 |      -0.0026 |      -0.0042 |
-        |            315 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0004 |      -0.0009 |      -0.0016 |
-        |            320 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0006 |
-        |            325 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |
-        |            330 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
-        |            335 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |           -0 |      -0.0025 |      -0.0109 |      -0.0233 |      -0.0375 |      -0.0519 |      -0.0659 |      -0.0792 |      -0.0916 |      -0.1032 |      -0.114  |      -0.1241 |      -0.1334 |      -0.1421 |      -0.1503 |      -0.1579 |      -0.165  |      -0.1718 |      -0.1781 |      -0.1841 |      -0.1897 |      -0.195  |      -0.2001 |      -0.2049 |      -0.2095 |      -0.2139 |      -0.218  |      -0.222  |      -0.2258 |
+        |            295 |           -0 |      -0.0002 |      -0.002  |      -0.0063 |      -0.0128 |      -0.0208 |      -0.0295 |      -0.0386 |      -0.0478 |      -0.0568 |      -0.0656 |      -0.0741 |      -0.0823 |      -0.0901 |      -0.0976 |      -0.1047 |      -0.1116 |      -0.1181 |      -0.1243 |      -0.1303 |      -0.1359 |      -0.1414 |      -0.1466 |      -0.1516 |      -0.1564 |      -0.161  |      -0.1654 |      -0.1696 |      -0.1737 |
+        |            300 |           -0 |      -0      |      -0.0003 |      -0.0014 |      -0.0037 |      -0.0073 |      -0.0118 |      -0.0171 |      -0.0229 |      -0.029  |      -0.0353 |      -0.0417 |      -0.048  |      -0.0543 |      -0.0604 |      -0.0665 |      -0.0724 |      -0.0781 |      -0.0837 |      -0.0891 |      -0.0943 |      -0.0994 |      -0.1043 |      -0.109  |      -0.1136 |      -0.1181 |      -0.1224 |      -0.1266 |      -0.1306 |
+        |            305 |           -0 |      -0      |      -0      |      -0.0003 |      -0.0009 |      -0.0023 |      -0.0043 |      -0.0069 |      -0.0101 |      -0.0138 |      -0.0178 |      -0.0221 |      -0.0265 |      -0.0311 |      -0.0357 |      -0.0404 |      -0.0451 |      -0.0497 |      -0.0543 |      -0.0589 |      -0.0634 |      -0.0677 |      -0.0721 |      -0.0763 |      -0.0804 |      -0.0845 |      -0.0884 |      -0.0923 |      -0.0961 |
+        |            310 |           -0 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0006 |      -0.0014 |      -0.0026 |      -0.0041 |      -0.0061 |      -0.0084 |      -0.011  |      -0.0139 |      -0.017  |      -0.0202 |      -0.0235 |      -0.027  |      -0.0305 |      -0.0341 |      -0.0377 |      -0.0413 |      -0.0448 |      -0.0484 |      -0.052  |      -0.0555 |      -0.059  |      -0.0624 |      -0.0658 |      -0.0692 |
+        |            315 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0009 |      -0.0016 |      -0.0025 |      -0.0037 |      -0.0052 |      -0.0069 |      -0.0088 |      -0.0109 |      -0.0132 |      -0.0156 |      -0.0181 |      -0.0207 |      -0.0233 |      -0.0261 |      -0.0288 |      -0.0317 |      -0.0345 |      -0.0374 |      -0.0402 |      -0.0431 |      -0.0459 |      -0.0488 |
+        |            320 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0005 |      -0.001  |      -0.0016 |      -0.0023 |      -0.0033 |      -0.0044 |      -0.0057 |      -0.0071 |      -0.0086 |      -0.0103 |      -0.0121 |      -0.014  |      -0.016  |      -0.018  |      -0.0202 |      -0.0223 |      -0.0245 |      -0.0268 |      -0.0291 |      -0.0314 |      -0.0337 |
+        |            325 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |      -0.0004 |      -0.0006 |      -0.001  |      -0.0015 |      -0.0021 |      -0.0028 |      -0.0037 |      -0.0046 |      -0.0057 |      -0.0069 |      -0.0082 |      -0.0095 |      -0.011  |      -0.0125 |      -0.0141 |      -0.0158 |      -0.0175 |      -0.0192 |      -0.021  |      -0.0228 |
+        |            330 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0001 |      -0.0002 |      -0.0004 |      -0.0006 |      -0.0009 |      -0.0013 |      -0.0018 |      -0.0024 |      -0.0031 |      -0.0038 |      -0.0046 |      -0.0055 |      -0.0065 |      -0.0076 |      -0.0087 |      -0.0099 |      -0.0111 |      -0.0124 |      -0.0138 |      -0.0152 |
+        |            335 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |      -0.0003 |      -0.0004 |      -0.0006 |      -0.0009 |      -0.0012 |      -0.0016 |      -0.002  |      -0.0026 |      -0.0031 |      -0.0038 |      -0.0045 |      -0.0053 |      -0.0061 |      -0.007  |      -0.0079 |      -0.0089 |      -0.0099 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3552,7 +3593,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -3660,8 +3701,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -3688,18 +3729,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0017 |       0.0076 |       0.0169 |       0.028  |       0.0398 |       0.0518 |       0.0637 |       0.0753 |
-        |            295 |            0 |       0.0002 |       0.0017 |       0.0056 |       0.0116 |       0.0191 |       0.0277 |       0.0369 |       0.0465 |
-        |            300 |            0 |       0      |       0.0003 |       0.0015 |       0.004  |       0.0079 |       0.013  |       0.0191 |       0.0259 |
-        |            305 |            0 |       0      |       0      |       0.0003 |       0.0012 |       0.0028 |       0.0054 |       0.0089 |       0.0131 |
-        |            310 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0009 |       0.002  |       0.0037 |       0.0061 |
-        |            315 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0007 |       0.0014 |       0.0026 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0005 |       0.001  |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |            0 |       0.0017 |       0.0075 |       0.0167 |       0.0277 |       0.0395 |       0.0515 |       0.0633 |       0.0749 |       0.0862 |       0.0971 |       0.1076 |       0.1178 |       0.1276 |       0.1372 |       0.1464 |       0.1553 |       0.1639 |       0.1723 |       0.1805 |       0.1884 |       0.1961 |       0.2037 |       0.211  |       0.2182 |       0.2252 |       0.232  |       0.2387 |       0.2453 |
+        |            295 |            0 |       0.0002 |       0.0017 |       0.0055 |       0.0114 |       0.0189 |       0.0274 |       0.0366 |       0.0461 |       0.0557 |       0.0654 |       0.075  |       0.0845 |       0.0939 |       0.1031 |       0.1121 |       0.1209 |       0.1295 |       0.1379 |       0.1462 |       0.1543 |       0.1622 |       0.1699 |       0.1775 |       0.1849 |       0.1921 |       0.1992 |       0.2062 |       0.2131 |
+        |            300 |            0 |       0      |       0.0003 |       0.0014 |       0.0039 |       0.0078 |       0.0128 |       0.0188 |       0.0256 |       0.0329 |       0.0405 |       0.0484 |       0.0565 |       0.0647 |       0.0728 |       0.081  |       0.0891 |       0.0972 |       0.1052 |       0.1131 |       0.1209 |       0.1286 |       0.1362 |       0.1436 |       0.151  |       0.1582 |       0.1654 |       0.1724 |       0.1793 |
+        |            305 |            0 |       0      |       0      |       0.0003 |       0.0011 |       0.0028 |       0.0053 |       0.0087 |       0.0129 |       0.0178 |       0.0232 |       0.0291 |       0.0353 |       0.0418 |       0.0486 |       0.0555 |       0.0625 |       0.0695 |       0.0766 |       0.0838 |       0.0909 |       0.098  |       0.1051 |       0.1121 |       0.1191 |       0.126  |       0.1329 |       0.1397 |       0.1464 |
+        |            310 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0009 |       0.0019 |       0.0036 |       0.0059 |       0.0089 |       0.0123 |       0.0163 |       0.0207 |       0.0255 |       0.0307 |       0.0361 |       0.0417 |       0.0475 |       0.0534 |       0.0595 |       0.0657 |       0.0719 |       0.0782 |       0.0845 |       0.0908 |       0.0972 |       0.1035 |       0.1099 |       0.1162 |
+        |            315 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0006 |       0.0014 |       0.0025 |       0.0041 |       0.0061 |       0.0086 |       0.0114 |       0.0147 |       0.0184 |       0.0223 |       0.0266 |       0.031  |       0.0358 |       0.0407 |       0.0457 |       0.0509 |       0.0562 |       0.0617 |       0.0672 |       0.0727 |       0.0783 |       0.084  |       0.0897 |
+        |            320 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0005 |       0.001  |       0.0017 |       0.0028 |       0.0042 |       0.006  |       0.0081 |       0.0105 |       0.0132 |       0.0162 |       0.0195 |       0.023  |       0.0267 |       0.0307 |       0.0348 |       0.0391 |       0.0436 |       0.0482 |       0.0529 |       0.0577 |       0.0625 |       0.0675 |
+        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0003 |       0.0007 |       0.0012 |       0.002  |       0.0029 |       0.0042 |       0.0057 |       0.0074 |       0.0095 |       0.0117 |       0.0142 |       0.017  |       0.0199 |       0.0231 |       0.0264 |       0.0299 |       0.0336 |       0.0374 |       0.0413 |       0.0454 |       0.0495 |
+        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |       0.0005 |       0.0009 |       0.0014 |       0.0021 |       0.003  |       0.004  |       0.0053 |       0.0068 |       0.0085 |       0.0104 |       0.0125 |       0.0148 |       0.0173 |       0.02   |       0.0228 |       0.0258 |       0.0289 |       0.0321 |       0.0355 |
+        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |       0.0006 |       0.001  |       0.0015 |       0.0021 |       0.0029 |       0.0038 |       0.0049 |       0.0062 |       0.0076 |       0.0093 |       0.011  |       0.013  |       0.0151 |       0.0173 |       0.0197 |       0.0223 |       0.0249 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3734,7 +3775,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -3843,8 +3884,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option theta. Defaults to False which means
             it will calculate the call option theta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3873,18 +3914,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.0004 |      -0.0138 |      -0.0417 |      -0.0695 |      -0.0922 |      -0.1094 |      -0.1223 |      -0.1318 |      -0.1388 |
-        |            295 |      -0      |      -0.0015 |      -0.0095 |      -0.023  |      -0.0381 |      -0.0525 |      -0.0653 |      -0.0762 |      -0.0854 |
-        |            300 |      -0      |      -0.0001 |      -0.0016 |      -0.0061 |      -0.0131 |      -0.0217 |      -0.0306 |      -0.0393 |      -0.0475 |
-        |            305 |      -0      |      -0      |      -0.0002 |      -0.0013 |      -0.0038 |      -0.0077 |      -0.0127 |      -0.0182 |      -0.024  |
-        |            310 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0009 |      -0.0024 |      -0.0047 |      -0.0076 |      -0.0111 |
-        |            315 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0007 |      -0.0015 |      -0.0029 |      -0.0047 |
-        |            320 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0005 |      -0.001  |      -0.0018 |
-        |            325 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0007 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |      -0.0004 |      -0.0135 |      -0.041  |      -0.0685 |      -0.091  |      -0.1083 |      -0.1211 |      -0.1306 |      -0.1376 |      -0.1427 |      -0.1464 |      -0.149  |      -0.1508 |      -0.1519 |      -0.1526 |      -0.1529 |      -0.1529 |      -0.1526 |      -0.1522 |      -0.1516 |      -0.151  |      -0.1502 |      -0.1494 |      -0.1485 |      -0.1476 |      -0.1466 |      -0.1457 |      -0.1447 |      -0.1437 |
+        |            295 |      -0      |      -0.0014 |      -0.0092 |      -0.0225 |      -0.0374 |      -0.0517 |      -0.0644 |      -0.0753 |      -0.0844 |      -0.092  |      -0.0983 |      -0.1035 |      -0.1078 |      -0.1114 |      -0.1143 |      -0.1166 |      -0.1186 |      -0.1201 |      -0.1214 |      -0.1223 |      -0.1231 |      -0.1237 |      -0.1241 |      -0.1243 |      -0.1245 |      -0.1246 |      -0.1245 |      -0.1244 |      -0.1242 |
+        |            300 |      -0      |      -0.0001 |      -0.0015 |      -0.0059 |      -0.0128 |      -0.0212 |      -0.0301 |      -0.0387 |      -0.0468 |      -0.0542 |      -0.0608 |      -0.0667 |      -0.0719 |      -0.0765 |      -0.0805 |      -0.0841 |      -0.0872 |      -0.0899 |      -0.0923 |      -0.0943 |      -0.0961 |      -0.0977 |      -0.0991 |      -0.1003 |      -0.1013 |      -0.1022 |      -0.103  |      -0.1036 |      -0.1042 |
+        |            305 |      -0      |      -0      |      -0.0002 |      -0.0012 |      -0.0037 |      -0.0075 |      -0.0124 |      -0.0179 |      -0.0236 |      -0.0292 |      -0.0347 |      -0.04   |      -0.0449 |      -0.0494 |      -0.0536 |      -0.0574 |      -0.0609 |      -0.0641 |      -0.067  |      -0.0697 |      -0.0721 |      -0.0743 |      -0.0762 |      -0.078  |      -0.0797 |      -0.0811 |      -0.0825 |      -0.0837 |      -0.0848 |
+        |            310 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0009 |      -0.0023 |      -0.0045 |      -0.0074 |      -0.0108 |      -0.0145 |      -0.0184 |      -0.0224 |      -0.0263 |      -0.0301 |      -0.0338 |      -0.0373 |      -0.0406 |      -0.0437 |      -0.0466 |      -0.0494 |      -0.052  |      -0.0544 |      -0.0566 |      -0.0587 |      -0.0606 |      -0.0624 |      -0.0641 |      -0.0656 |      -0.0671 |
+        |            315 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0006 |      -0.0015 |      -0.0028 |      -0.0046 |      -0.0067 |      -0.0091 |      -0.0117 |      -0.0145 |      -0.0173 |      -0.0202 |      -0.023  |      -0.0258 |      -0.0285 |      -0.0312 |      -0.0337 |      -0.0361 |      -0.0384 |      -0.0406 |      -0.0427 |      -0.0447 |      -0.0466 |      -0.0484 |      -0.0501 |      -0.0517 |
+        |            320 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0004 |      -0.001  |      -0.0018 |      -0.0029 |      -0.0042 |      -0.0058 |      -0.0075 |      -0.0095 |      -0.0115 |      -0.0136 |      -0.0157 |      -0.0179 |      -0.02   |      -0.0221 |      -0.0242 |      -0.0263 |      -0.0282 |      -0.0302 |      -0.032  |      -0.0338 |      -0.0355 |      -0.0372 |      -0.0388 |
+        |            325 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0006 |      -0.0011 |      -0.0018 |      -0.0027 |      -0.0037 |      -0.0049 |      -0.0062 |      -0.0077 |      -0.0092 |      -0.0108 |      -0.0124 |      -0.014  |      -0.0157 |      -0.0174 |      -0.019  |      -0.0207 |      -0.0223 |      -0.0239 |      -0.0254 |      -0.027  |      -0.0284 |
+        |            330 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |      -0.0004 |      -0.0007 |      -0.0012 |      -0.0017 |      -0.0024 |      -0.0032 |      -0.0041 |      -0.0052 |      -0.0062 |      -0.0074 |      -0.0086 |      -0.0099 |      -0.0111 |      -0.0125 |      -0.0138 |      -0.0151 |      -0.0164 |      -0.0178 |      -0.0191 |      -0.0204 |
+        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0001 |      -0.0003 |      -0.0005 |      -0.0008 |      -0.0011 |      -0.0016 |      -0.0022 |      -0.0028 |      -0.0035 |      -0.0043 |      -0.0051 |      -0.006  |      -0.0069 |      -0.0079 |      -0.0089 |      -0.01   |      -0.011  |      -0.0121 |      -0.0132 |      -0.0143 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3919,7 +3960,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4023,8 +4064,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option rho. Defaults to False which means
             it will calculate the call option rho.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -4053,18 +4094,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.004  |       0.0263 |       0.0752 |       0.1507 |       0.25   |       0.3698 |       0.5073 |       0.6599 |
-        |            295 |            0 |       0.0004 |       0.005  |       0.0209 |       0.0528 |       0.1022 |       0.1692 |       0.2526 |       0.3512 |
-        |            300 |            0 |       0      |       0.0007 |       0.0047 |       0.0158 |       0.0367 |       0.0693 |       0.1144 |       0.1719 |
-        |            305 |            0 |       0      |       0.0001 |       0.0009 |       0.004  |       0.0116 |       0.0255 |       0.0472 |       0.0776 |
-        |            310 |            0 |       0      |       0      |       0.0001 |       0.0009 |       0.0032 |       0.0085 |       0.0178 |       0.0323 |
-        |            315 |            0 |       0      |       0      |       0      |       0.0002 |       0.0008 |       0.0025 |       0.0061 |       0.0125 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.002  |       0.0045 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0006 |       0.0015 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |            0 |       0.0039 |       0.0259 |       0.0742 |       0.149  |       0.2476 |       0.3667 |       0.5034 |       0.6552 |       0.8202 |       0.9965 |       1.1827 |       1.3778 |       1.5808 |       1.7908 |       2.0071 |       2.2291 |       2.4563 |       2.6883 |       2.9247 |       3.1651 |       3.4092 |       3.6568 |       3.9075 |       4.1613 |       4.4178 |       4.677  |       4.9386 |       5.2026 |
+        |            295 |            0 |       0.0003 |       0.0049 |       0.0205 |       0.0519 |       0.1008 |       0.1671 |       0.2498 |       0.3477 |       0.4593 |       0.5835 |       0.7189 |       0.8646 |       1.0197 |       1.1832 |       1.3545 |       1.533  |       1.7179 |       1.909  |       2.1056 |       2.3074 |       2.514  |       2.7251 |       2.9404 |       3.1596 |       3.3825 |       3.6089 |       3.8386 |       4.0713 |
+        |            300 |            0 |       0      |       0.0007 |       0.0046 |       0.0154 |       0.036  |       0.0682 |       0.1127 |       0.1696 |       0.2387 |       0.3193 |       0.411  |       0.5129 |       0.6246 |       0.7452 |       0.8743 |       1.0112 |       1.1554 |       1.3065 |       1.464  |       1.6276 |       1.7968 |       1.9712 |       2.1507 |       2.3349 |       2.5235 |       2.7164 |       2.9132 |       3.1137 |
+        |            305 |            0 |       0      |       0.0001 |       0.0009 |       0.0039 |       0.0113 |       0.025  |       0.0463 |       0.0762 |       0.1152 |       0.1636 |       0.2213 |       0.288  |       0.3637 |       0.4479 |       0.5402 |       0.6403 |       0.7479 |       0.8626 |       0.9839 |       1.1117 |       1.2455 |       1.385  |       1.5301 |       1.6803 |       1.8355 |       1.9954 |       2.1598 |       2.3285 |
+        |            310 |            0 |       0      |       0      |       0.0001 |       0.0009 |       0.0031 |       0.0082 |       0.0174 |       0.0316 |       0.0518 |       0.0786 |       0.1124 |       0.1533 |       0.2016 |       0.2572 |       0.3199 |       0.3897 |       0.4664 |       0.5498 |       0.6397 |       0.7358 |       0.838  |       0.9459 |       1.0595 |       1.1784 |       1.3025 |       1.4315 |       1.5653 |       1.7037 |
+        |            315 |            0 |       0      |       0      |       0      |       0.0002 |       0.0008 |       0.0025 |       0.006  |       0.0121 |       0.0217 |       0.0355 |       0.0539 |       0.0775 |       0.1065 |       0.1413 |       0.1818 |       0.2282 |       0.2805 |       0.3387 |       0.4027 |       0.4724 |       0.5477 |       0.6285 |       0.7146 |       0.8059 |       0.9023 |       1.0036 |       1.1096 |       1.2203 |
+        |            320 |            0 |       0      |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.0019 |       0.0043 |       0.0085 |       0.0151 |       0.0245 |       0.0373 |       0.0538 |       0.0744 |       0.0993 |       0.1288 |       0.1629 |       0.2019 |       0.2458 |       0.2945 |       0.3481 |       0.4066 |       0.4699 |       0.538  |       0.6107 |       0.6881 |       0.77   |       0.8563 |
+        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |       0.0014 |       0.0031 |       0.0061 |       0.0106 |       0.0171 |       0.026  |       0.0376 |       0.0522 |       0.0701 |       0.0915 |       0.1166 |       0.1455 |       0.1784 |       0.2153 |       0.2564 |       0.3015 |       0.3508 |       0.4042 |       0.4617 |       0.5233 |       0.589  |
+        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0011 |       0.0023 |       0.0043 |       0.0075 |       0.012  |       0.0182 |       0.0264 |       0.0368 |       0.0497 |       0.0653 |       0.0837 |       0.1052 |       0.1298 |       0.1577 |       0.1889 |       0.2236 |       0.2617 |       0.3034 |       0.3487 |       0.3974 |
+        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0008 |       0.0017 |       0.0031 |       0.0053 |       0.0085 |       0.0129 |       0.0187 |       0.0262 |       0.0355 |       0.0468 |       0.0604 |       0.0763 |       0.0947 |       0.1157 |       0.1394 |       0.166  |       0.1954 |       0.2279 |       0.2633 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4099,7 +4140,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4199,8 +4240,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option epsilon. Defaults to False which means
             it will calculate the call option epsilon.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -4229,18 +4270,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |           -0 |      -0.0041 |      -0.0266 |      -0.0761 |      -0.153  |      -0.2544 |      -0.3773 |      -0.5186 |      -0.6759 |
-        |            295 |           -0 |      -0.0004 |      -0.005  |      -0.0211 |      -0.0535 |      -0.1038 |      -0.1722 |      -0.2576 |      -0.3588 |
-        |            300 |           -0 |      -0      |      -0.0007 |      -0.0048 |      -0.0159 |      -0.0372 |      -0.0704 |      -0.1164 |      -0.1753 |
-        |            305 |           -0 |      -0      |      -0.0001 |      -0.0009 |      -0.0041 |      -0.0117 |      -0.0259 |      -0.0479 |      -0.0789 |
-        |            310 |           -0 |      -0      |      -0      |      -0.0001 |      -0.0009 |      -0.0033 |      -0.0086 |      -0.018  |      -0.0328 |
-        |            315 |           -0 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0008 |      -0.0026 |      -0.0062 |      -0.0127 |
-        |            320 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0007 |      -0.002  |      -0.0045 |
-        |            325 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0006 |      -0.0015 |
-        |            330 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0005 |
-        |            335 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |           -0 |      -0.004  |      -0.0261 |      -0.0751 |      -0.1513 |      -0.2519 |      -0.374  |      -0.5145 |      -0.6711 |      -0.8416 |      -1.0244 |      -1.2181 |      -1.4215 |      -1.6336 |      -1.8536 |      -2.0808 |      -2.3145 |      -2.5543 |      -2.7997 |      -3.0503 |      -3.3056 |      -3.5655 |      -3.8296 |      -4.0977 |      -4.3695 |      -4.6449 |      -4.9236 |      -5.2055 |      -5.4904 |
+        |            295 |           -0 |      -0.0003 |      -0.0049 |      -0.0207 |      -0.0526 |      -0.1024 |      -0.1701 |      -0.2547 |      -0.3552 |      -0.4701 |      -0.5981 |      -0.7382 |      -0.8893 |      -1.0505 |      -1.2209 |      -1.3998 |      -1.5865 |      -1.7805 |      -1.9813 |      -2.1884 |      -2.4014 |      -2.6199 |      -2.8436 |      -3.0723 |      -3.3055 |      -3.5431 |      -3.7849 |      -4.0306 |      -4.2801 |
+        |            300 |           -0 |      -0      |      -0.0007 |      -0.0047 |      -0.0156 |      -0.0365 |      -0.0692 |      -0.1146 |      -0.1729 |      -0.2437 |      -0.3266 |      -0.421  |      -0.5263 |      -0.6418 |      -0.7669 |      -0.901  |      -1.0436 |      -1.1941 |      -1.3521 |      -1.5171 |      -1.6888 |      -1.8667 |      -2.0506 |      -2.24   |      -2.4349 |      -2.6347 |      -2.8394 |      -3.0487 |      -3.2624 |
+        |            305 |           -0 |      -0      |      -0.0001 |      -0.0009 |      -0.004  |      -0.0115 |      -0.0253 |      -0.047  |      -0.0775 |      -0.1174 |      -0.167  |      -0.2262 |      -0.2949 |      -0.3729 |      -0.4598 |      -0.5554 |      -0.6592 |      -0.771  |      -0.8904 |      -1.0169 |      -1.1504 |      -1.2905 |      -1.4368 |      -1.5892 |      -1.7473 |      -1.9109 |      -2.0798 |      -2.2537 |      -2.4324 |
+        |            310 |           -0 |      -0      |      -0      |      -0.0001 |      -0.0009 |      -0.0032 |      -0.0083 |      -0.0176 |      -0.0321 |      -0.0527 |      -0.0801 |      -0.1147 |      -0.1567 |      -0.2063 |      -0.2635 |      -0.3282 |      -0.4004 |      -0.4798 |      -0.5663 |      -0.6597 |      -0.7597 |      -0.8662 |      -0.9789 |      -1.0977 |      -1.2223 |      -1.3525 |      -1.4882 |      -1.629  |      -1.775  |
+        |            315 |           -0 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0008 |      -0.0025 |      -0.006  |      -0.0123 |      -0.0221 |      -0.0361 |      -0.055  |      -0.0791 |      -0.1089 |      -0.1445 |      -0.1862 |      -0.234  |      -0.288  |      -0.3482 |      -0.4145 |      -0.4868 |      -0.565  |      -0.649  |      -0.7388 |      -0.8341 |      -0.9349 |      -1.0409 |      -1.1521 |      -1.2684 |
+        |            320 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0007 |      -0.0019 |      -0.0044 |      -0.0087 |      -0.0153 |      -0.0249 |      -0.038  |      -0.0549 |      -0.0759 |      -0.1015 |      -0.1318 |      -0.167  |      -0.2072 |      -0.2525 |      -0.3029 |      -0.3584 |      -0.4191 |      -0.4849 |      -0.5557 |      -0.6315 |      -0.7122 |      -0.7978 |      -0.8881 |
+        |            325 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0006 |      -0.0015 |      -0.0032 |      -0.0062 |      -0.0107 |      -0.0174 |      -0.0264 |      -0.0383 |      -0.0533 |      -0.0716 |      -0.0936 |      -0.1195 |      -0.1493 |      -0.1832 |      -0.2214 |      -0.2638 |      -0.3106 |      -0.3617 |      -0.4172 |      -0.477  |      -0.5412 |      -0.6097 |
+        |            330 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0011 |      -0.0023 |      -0.0044 |      -0.0076 |      -0.0122 |      -0.0186 |      -0.027  |      -0.0376 |      -0.0508 |      -0.0668 |      -0.0858 |      -0.1078 |      -0.1332 |      -0.162  |      -0.1943 |      -0.2302 |      -0.2697 |      -0.313  |      -0.36   |      -0.4107 |
+        |            335 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0008 |      -0.0017 |      -0.0032 |      -0.0054 |      -0.0087 |      -0.0132 |      -0.0191 |      -0.0267 |      -0.0363 |      -0.0479 |      -0.0618 |      -0.0782 |      -0.0971 |      -0.1188 |      -0.1433 |      -0.1708 |      -0.2013 |      -0.2349 |      -0.2716 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4275,7 +4316,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4377,8 +4418,8 @@ class Options:
             30 days.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
             means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the year before it relative to the price).
             put_option (bool, optional): Whether to calculate the put option lambda. Defaults to False which means
             it will calculate the call option lambda.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -4407,18 +4448,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      258.394 |      139.654 |      99.1523 |      78.4369 |      65.7343 |      57.0891 |      50.7916 |      45.9798 |      42.1704 |
-        |            295 |      313.218 |      165.83  |     116.034  |      90.7777 |      75.4041 |      65.0088 |      57.4801 |      51.7573 |      47.2479 |
-        |            300 |      368.224 |      192.315 |     133.19   |     103.35   |      85.2695 |      73.0955 |      64.3129 |      57.6609 |      52.4367 |
-        |            305 |      423.035 |      218.886 |     150.47   |     116.045  |      95.2489 |      81.2854 |      71.2387 |      63.6482 |      57.7011 |
-        |            310 |      477.435 |      245.396 |     167.771  |     128.787  |     105.282  |      89.53   |      78.2174 |      69.6858 |      63.0127 |
-        |            315 |      531.3   |      271.755 |     185.023  |     141.52   |     115.324  |      97.7925 |      85.2182 |      75.7472 |      68.3487 |
-        |            320 |      584.56  |      297.902 |     202.178  |     154.205  |     125.343  |     106.045  |      92.2175 |      81.8122 |      73.6913 |
-        |            325 |      637.175 |      323.8   |     219.202  |     166.813  |     135.315  |     114.268  |      99.1974 |      87.8648 |      79.0265 |
-        |            330 |      689.124 |      349.421 |     236.074  |     179.325  |     145.222  |     122.445  |     106.144  |      93.893  |      84.3433 |
-        |            335 |      740.398 |      374.753 |     252.778  |     191.727  |     155.051  |     130.565  |     113.048  |      99.8874 |      89.6332 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |      259.73  |      140.338 |      99.6198 |      78.796  |      66.0284 |      57.3396 |      51.0108 |      46.1754 |      42.3476 |      39.2335 |      36.6443 |      34.4532 |      32.5717 |      30.936  |      29.499  |      28.225  |      27.0866 |      26.0622 |      25.1347 |      24.2903 |      23.5178 |      22.8079 |      22.1529 |      21.5464 |      20.9827 |      20.4574 |      19.9664 |      19.5062 |      19.0739 |
+        |            295 |      314.881 |      166.673 |     116.605  |      91.2131 |      75.7582 |      65.3085 |      57.7409 |      51.9889 |      47.4568 |      43.7853 |      40.7447 |      38.1809 |      35.9867 |      34.0851 |      32.4193 |      30.9465 |      29.6338 |      28.4554 |      27.3909 |      26.4239 |      25.541  |      24.7312 |      23.9854 |      23.296  |      22.6565 |      22.0614 |      21.506  |      20.9863 |      20.4988 |
+        |            300 |      370.212 |      193.319 |     133.866  |     103.862  |      85.6843 |      73.4452 |      64.6161 |      57.9292 |      52.6778 |      48.4368 |      44.9344 |      41.9892 |      39.4749 |      37.3009 |      35.4008 |      33.7243 |      32.2329 |      30.8967 |      29.6918 |      28.5992 |      27.6031 |      26.691  |      25.8523 |      25.078  |      24.3607 |      23.6942 |      23.0729 |      22.4922 |      21.9481 |
+        |            305 |      425.343 |      220.047 |     151.25   |     116.635  |      95.7249 |      81.6855 |      71.5846 |      63.9536 |      57.9749 |      53.1572 |      49.1871 |      45.8551 |      43.0159 |      40.5655 |      38.4273 |      36.5438 |      34.871  |      33.3744 |      32.0267 |      30.8062 |      29.6952 |      28.679  |      27.7456 |      26.885  |      26.0886 |      25.3493 |      24.661  |      24.0183 |      23.4166 |
+        |            310 |      480.059 |      246.715 |     168.655  |     129.454  |     105.819  |      89.9805 |      78.6061 |      70.0283 |      63.3193 |      57.9219 |      53.481  |      49.7594 |      46.5928 |      43.8636 |      41.4853 |      39.3929 |      37.5367 |      35.878  |      34.3862 |      33.0365 |      31.8091 |      30.6876 |      29.6586 |      28.7106 |      27.8342 |      27.0213 |      26.2651 |      25.5596 |      24.8997 |
+        |            315 |      534.236 |      273.229 |     186.009  |     142.263  |     115.922  |      98.2932 |      85.6496 |      76.1268 |      68.6881 |      62.7108 |      57.7985 |      53.6867 |      50.1918 |      47.1828 |      44.5633 |      42.2611 |      40.2207 |      38.3991 |      36.7621 |      35.2825 |      33.938  |      32.7106 |      31.5852 |      30.5493 |      29.5923 |      28.7053 |      27.8807 |      27.1119 |      26.3933 |
+        |            320 |      587.804 |      299.529 |     203.266  |     155.024  |     126.001  |     106.596  |      92.6914 |      82.2287 |      74.0633 |      67.5081 |      62.1256 |      57.6241 |      53.8013 |      50.5126 |      47.652  |      45.1398 |      42.915  |      40.9302 |      39.1479 |      37.538  |      36.0762 |      34.7425 |      33.5204 |      32.3962 |      31.3583 |      30.3969 |      29.5036 |      28.6713 |      27.8938 |
+        |            325 |      640.721 |      325.576 |     220.39   |     167.707  |     136.032  |     114.868  |      99.7134 |      88.318  |      79.4308 |      72.3011 |      66.451  |      61.5616 |      57.4121 |      53.8447 |      50.7436 |      48.0219 |      45.6131 |      43.4653 |      41.5378 |      39.7977 |      38.2186 |      36.7786 |      35.4599 |      34.2474 |      33.1285 |      32.0926 |      31.1306 |      30.2347 |      29.3981 |
+        |            330 |      692.967 |      351.347 |     237.361  |     180.293  |     145.998  |     123.094  |     106.702  |      94.3825 |      84.7798 |      77.0801 |      70.7656 |      65.4908 |      61.0167 |      57.1721 |      53.8317 |      50.9015 |      48.3093 |      45.9993 |      43.927  |      42.0572 |      40.361  |      38.8151 |      37.3999 |      36.0992 |      34.8995 |      33.7893 |      32.7586 |      31.7991 |      30.9035 |
+        |            335 |      744.535 |      376.825 |     254.162  |     192.768  |     155.885  |     131.262  |     113.647  |     100.413  |      90.1015 |      81.8372 |      75.0623 |      69.4054 |      64.609  |      60.4892 |      56.9112 |      53.7737 |      50.9994 |      48.5279 |      46.3117 |      44.3127 |      42.5001 |      40.8486 |      39.3373 |      37.9489 |      36.6686 |      35.4843 |      34.3852 |      33.3623 |      32.4079 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4453,7 +4494,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4536,11 +4577,10 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
-        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
-        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
-        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
-        and for an earlier start date it also includes the days of that year after it.
+        By default the stock price, risk free rate, dividend yield and volatility of the most recent date are used;
+        changing the start date prices the option as of that date instead. The volatility is the annualized standard
+        deviation of the daily returns over the year before that date and the dividend yield the dividends of that
+        year relative to the price, so an earlier start date only uses what was known on that date.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -4789,18 +4829,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0013 |       0.0039 |       0.0065 |       0.0086 |       0.0101 |       0.0113 |       0.0122 |       0.0128 |
-        |            295 |            0 |       0.0001 |       0.0009 |       0.0021 |       0.0035 |       0.0049 |       0.0061 |       0.0071 |       0.0079 |
-        |            300 |            0 |       0      |       0.0001 |       0.0006 |       0.0012 |       0.002  |       0.0028 |       0.0036 |       0.0044 |
-        |            305 |            0 |       0      |       0      |       0.0001 |       0.0004 |       0.0007 |       0.0012 |       0.0017 |       0.0022 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |       0.0007 |       0.001  |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0003 |       0.0004 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |            0 |       0.0013 |       0.0038 |       0.0064 |       0.0085 |       0.0101 |       0.0113 |       0.0121 |       0.0128 |       0.0132 |       0.0135 |       0.0137 |       0.0139 |       0.014  |       0.014  |       0.014  |       0.014  |       0.014  |       0.0139 |       0.0138 |       0.0137 |       0.0137 |       0.0136 |       0.0135 |       0.0134 |       0.0133 |       0.0132 |       0.0131 |       0.013  |
+        |            295 |            0 |       0.0001 |       0.0009 |       0.0021 |       0.0035 |       0.0048 |       0.006  |       0.007  |       0.0078 |       0.0085 |       0.0091 |       0.0096 |       0.01   |       0.0103 |       0.0105 |       0.0107 |       0.0109 |       0.011  |       0.0111 |       0.0112 |       0.0113 |       0.0113 |       0.0113 |       0.0113 |       0.0113 |       0.0113 |       0.0113 |       0.0113 |       0.0113 |
+        |            300 |            0 |       0      |       0.0001 |       0.0006 |       0.0012 |       0.002  |       0.0028 |       0.0036 |       0.0044 |       0.005  |       0.0056 |       0.0062 |       0.0067 |       0.0071 |       0.0074 |       0.0078 |       0.008  |       0.0083 |       0.0085 |       0.0087 |       0.0088 |       0.009  |       0.0091 |       0.0092 |       0.0093 |       0.0093 |       0.0094 |       0.0094 |       0.0095 |
+        |            305 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0007 |       0.0012 |       0.0017 |       0.0022 |       0.0027 |       0.0032 |       0.0037 |       0.0042 |       0.0046 |       0.005  |       0.0053 |       0.0056 |       0.0059 |       0.0062 |       0.0064 |       0.0066 |       0.0068 |       0.007  |       0.0072 |       0.0073 |       0.0074 |       0.0075 |       0.0076 |       0.0077 |
+        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |       0.0007 |       0.001  |       0.0014 |       0.0017 |       0.0021 |       0.0024 |       0.0028 |       0.0031 |       0.0035 |       0.0038 |       0.004  |       0.0043 |       0.0046 |       0.0048 |       0.005  |       0.0052 |       0.0054 |       0.0056 |       0.0057 |       0.0059 |       0.006  |       0.0061 |
+        |            315 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0003 |       0.0004 |       0.0006 |       0.0008 |       0.0011 |       0.0013 |       0.0016 |       0.0019 |       0.0021 |       0.0024 |       0.0026 |       0.0029 |       0.0031 |       0.0033 |       0.0035 |       0.0037 |       0.0039 |       0.0041 |       0.0043 |       0.0044 |       0.0046 |       0.0047 |
+        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0007 |       0.0009 |       0.0011 |       0.0013 |       0.0015 |       0.0017 |       0.0019 |       0.002  |       0.0022 |       0.0024 |       0.0026 |       0.0028 |       0.003  |       0.0031 |       0.0033 |       0.0034 |       0.0036 |
+        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0003 |       0.0003 |       0.0005 |       0.0006 |       0.0007 |       0.0009 |       0.001  |       0.0011 |       0.0013 |       0.0015 |       0.0016 |       0.0018 |       0.0019 |       0.0021 |       0.0022 |       0.0023 |       0.0025 |       0.0026 |
+        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.001  |       0.0012 |       0.0013 |       0.0014 |       0.0015 |       0.0016 |       0.0018 |       0.0019 |
+        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.001  |       0.0011 |       0.0012 |       0.0013 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4835,7 +4875,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4957,18 +4997,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0011 |       0.0034 |       0.0057 |       0.0075 |       0.0089 |       0.0099 |       0.0106 |       0.0112 |
-        |            295 |            0 |       0.0001 |       0.0007 |       0.0018 |       0.003  |       0.0041 |       0.0051 |       0.006  |       0.0067 |
-        |            300 |            0 |       0      |       0.0001 |       0.0005 |       0.001  |       0.0016 |       0.0023 |       0.003  |       0.0036 |
-        |            305 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0009 |       0.0013 |       0.0018 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0008 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |            0 |       0.0011 |       0.0034 |       0.0056 |       0.0074 |       0.0088 |       0.0098 |       0.0106 |       0.0111 |       0.0115 |       0.0118 |       0.012  |       0.0121 |       0.0122 |       0.0122 |       0.0122 |       0.0122 |       0.0122 |       0.0121 |       0.0121 |       0.012  |       0.0119 |       0.0119 |       0.0118 |       0.0117 |       0.0116 |       0.0115 |       0.0114 |       0.0113 |
+        |            295 |            0 |       0.0001 |       0.0007 |       0.0018 |       0.003  |       0.0041 |       0.0051 |       0.0059 |       0.0066 |       0.0072 |       0.0077 |       0.0081 |       0.0084 |       0.0087 |       0.0089 |       0.0091 |       0.0092 |       0.0093 |       0.0094 |       0.0095 |       0.0095 |       0.0095 |       0.0096 |       0.0096 |       0.0096 |       0.0096 |       0.0095 |       0.0095 |       0.0095 |
+        |            300 |            0 |       0      |       0.0001 |       0.0005 |       0.001  |       0.0016 |       0.0023 |       0.0029 |       0.0036 |       0.0041 |       0.0046 |       0.0051 |       0.0054 |       0.0058 |       0.0061 |       0.0063 |       0.0066 |       0.0068 |       0.0069 |       0.0071 |       0.0072 |       0.0073 |       0.0074 |       0.0075 |       0.0076 |       0.0076 |       0.0077 |       0.0077 |       0.0077 |
+        |            305 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0009 |       0.0013 |       0.0017 |       0.0022 |       0.0026 |       0.0029 |       0.0033 |       0.0036 |       0.0039 |       0.0042 |       0.0044 |       0.0047 |       0.0049 |       0.0051 |       0.0052 |       0.0054 |       0.0055 |       0.0057 |       0.0058 |       0.0059 |       0.006  |       0.006  |       0.0061 |
+        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0008 |       0.001  |       0.0013 |       0.0016 |       0.0019 |       0.0021 |       0.0024 |       0.0026 |       0.0029 |       0.0031 |       0.0033 |       0.0035 |       0.0037 |       0.0038 |       0.004  |       0.0041 |       0.0043 |       0.0044 |       0.0045 |       0.0046 |       0.0047 |
+        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0006 |       0.0008 |       0.001  |       0.0012 |       0.0014 |       0.0016 |       0.0018 |       0.002  |       0.0021 |       0.0023 |       0.0025 |       0.0026 |       0.0028 |       0.0029 |       0.003  |       0.0032 |       0.0033 |       0.0034 |       0.0035 |
+        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0008 |       0.0009 |       0.001  |       0.0012 |       0.0013 |       0.0015 |       0.0016 |       0.0017 |       0.0019 |       0.002  |       0.0021 |       0.0022 |       0.0023 |       0.0025 |       0.0026 |
+        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.001  |       0.0011 |       0.0012 |       0.0013 |       0.0014 |       0.0015 |       0.0016 |       0.0017 |       0.0018 |
+        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0005 |       0.0005 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.0009 |       0.001  |       0.0011 |       0.0012 |       0.0013 |
+        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |       0.0006 |       0.0007 |       0.0007 |       0.0008 |       0.0009 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5003,7 +5043,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5129,18 +5169,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |        0.002 |       0.0727 |       0.2189 |       0.3641 |       0.482  |       0.5714 |       0.6378 |       0.6864 |       0.7219 |
-        |            295 |        0     |       0.0098 |       0.0625 |       0.1511 |       0.2501 |       0.3443 |       0.4275 |       0.4984 |       0.5577 |
-        |            300 |        0     |       0.0008 |       0.0126 |       0.0477 |       0.1035 |       0.1705 |       0.2407 |       0.3089 |       0.3725 |
-        |            305 |        0     |       0      |       0.0019 |       0.0118 |       0.035  |       0.0709 |       0.1162 |       0.1667 |       0.2193 |
-        |            310 |        0     |       0      |       0.0002 |       0.0023 |       0.0098 |       0.0252 |       0.0488 |       0.0795 |       0.1153 |
-        |            315 |        0     |       0      |       0      |       0.0004 |       0.0023 |       0.0077 |       0.018  |       0.0338 |       0.0547 |
-        |            320 |        0     |       0      |       0      |       0      |       0.0005 |       0.0021 |       0.0059 |       0.0129 |       0.0236 |
-        |            325 |        0     |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0017 |       0.0045 |       0.0093 |
-        |            330 |        0     |       0      |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0014 |       0.0034 |
-        |            335 |        0     |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0011 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |        0.002 |       0.0715 |       0.2168 |       0.3621 |       0.4803 |       0.5703 |       0.6372 |       0.6864 |       0.7223 |       0.7482 |       0.7667 |       0.7796 |       0.7882 |       0.7935 |       0.7963 |       0.7971 |       0.7964 |       0.7945 |       0.7918 |       0.7883 |       0.7842 |       0.7797 |       0.7749 |       0.7699 |       0.7647 |       0.7594 |       0.754  |       0.7485 |       0.743  |
+        |            295 |        0     |       0.0096 |       0.0614 |       0.1493 |       0.248  |       0.3422 |       0.4255 |       0.4967 |       0.5564 |       0.6059 |       0.6467 |       0.6804 |       0.7079 |       0.7305 |       0.7488 |       0.7637 |       0.7757 |       0.7853 |       0.7928 |       0.7986 |       0.803  |       0.8061 |       0.8082 |       0.8095 |       0.81   |       0.8098 |       0.8091 |       0.808  |       0.8064 |
+        |            300 |        0     |       0.0008 |       0.0123 |       0.0468 |       0.102  |       0.1686 |       0.2385 |       0.3067 |       0.3703 |       0.4283 |       0.4802 |       0.5263 |       0.5669 |       0.6026 |       0.6339 |       0.6612 |       0.685  |       0.7058 |       0.7239 |       0.7396 |       0.7533 |       0.7651 |       0.7753 |       0.7841 |       0.7916 |       0.798  |       0.8034 |       0.808  |       0.8118 |
+        |            305 |        0     |       0      |       0.0018 |       0.0115 |       0.0342 |       0.0697 |       0.1146 |       0.1648 |       0.2171 |       0.2693 |       0.3197 |       0.3674 |       0.412  |       0.4534 |       0.4913 |       0.5261 |       0.5578 |       0.5866 |       0.6127 |       0.6365 |       0.6579 |       0.6774 |       0.695  |       0.7108 |       0.7252 |       0.7381 |       0.7498 |       0.7603 |       0.7698 |
+        |            310 |        0     |       0      |       0.0002 |       0.0022 |       0.0095 |       0.0246 |       0.0478 |       0.0781 |       0.1137 |       0.1525 |       0.1932 |       0.2343 |       0.275  |       0.3146 |       0.3527 |       0.389  |       0.4233 |       0.4556 |       0.4859 |       0.5142 |       0.5407 |       0.5652 |       0.5881 |       0.6093 |       0.629  |       0.6472 |       0.6641 |       0.6798 |       0.6942 |
+        |            315 |        0     |       0      |       0      |       0.0004 |       0.0022 |       0.0075 |       0.0176 |       0.033  |       0.0536 |       0.0786 |       0.1069 |       0.1376 |       0.1699 |       0.203  |       0.2363 |       0.2693 |       0.3017 |       0.3332 |       0.3637 |       0.393  |       0.421  |       0.4477 |       0.4731 |       0.4972 |       0.52   |       0.5416 |       0.562  |       0.5813 |       0.5995 |
+        |            320 |        0     |       0      |       0      |       0      |       0.0004 |       0.002  |       0.0057 |       0.0126 |       0.023  |       0.0371 |       0.0546 |       0.075  |       0.0979 |       0.1226 |       0.1487 |       0.1757 |       0.2032 |       0.2308 |       0.2584 |       0.2856 |       0.3123 |       0.3383 |       0.3637 |       0.3883 |       0.412  |       0.4348 |       0.4568 |       0.4778 |       0.498  |
+        |            325 |        0     |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0017 |       0.0043 |       0.009  |       0.0161 |       0.0258 |       0.0381 |       0.0528 |       0.0697 |       0.0883 |       0.1085 |       0.1299 |       0.1521 |       0.175  |       0.1982 |       0.2216 |       0.245  |       0.2683 |       0.2913 |       0.3139 |       0.3361 |       0.3578 |       0.379  |       0.3995 |
+        |            330 |        0     |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0014 |       0.0033 |       0.0065 |       0.0114 |       0.0182 |       0.0268 |       0.0374 |       0.0497 |       0.0637 |       0.0791 |       0.0957 |       0.1134 |       0.1319 |       0.151  |       0.1706 |       0.1905 |       0.2107 |       0.2309 |       0.251  |       0.2711 |       0.2909 |       0.3105 |
+        |            335 |        0     |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0011 |       0.0024 |       0.0047 |       0.0081 |       0.0129 |       0.019  |       0.0266 |       0.0357 |       0.0461 |       0.0577 |       0.0705 |       0.0844 |       0.0991 |       0.1145 |       0.1307 |       0.1473 |       0.1643 |       0.1816 |       0.1991 |       0.2167 |       0.2343 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5175,7 +5215,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5307,18 +5347,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.1219 |      -2.1684 |      -4.3673 |      -5.466  |      -5.8053 |      -5.7531 |      -5.52   |      -5.214  |      -4.8883 |
-        |            295 |      -0.0018 |      -0.2932 |      -1.2452 |      -2.2622 |      -3.0038 |      -3.4539 |      -3.6845 |      -3.7674 |      -3.7563 |
-        |            300 |      -0      |      -0.0241 |      -0.2509 |      -0.7139 |      -1.2405 |      -1.7063 |      -2.0685 |      -2.3276 |      -2.5    |
-        |            305 |      -0      |      -0.0012 |      -0.0368 |      -0.1762 |      -0.4184 |      -0.7087 |      -0.9966 |      -1.2536 |      -1.4681 |
-        |            310 |      -0      |      -0      |      -0.004  |      -0.0347 |      -0.1172 |      -0.2513 |      -0.4181 |      -0.5965 |      -0.7705 |
-        |            315 |      -0      |      -0      |      -0.0003 |      -0.0055 |      -0.0276 |      -0.077  |      -0.1544 |      -0.2533 |      -0.3648 |
-        |            320 |      -0      |      -0      |      -0      |      -0.0007 |      -0.0056 |      -0.0206 |      -0.0506 |      -0.0968 |      -0.1571 |
-        |            325 |      -0      |      -0      |      -0      |      -0.0001 |      -0.001  |      -0.0048 |      -0.0149 |      -0.0335 |      -0.0619 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.001  |      -0.0039 |      -0.0106 |      -0.0225 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0009 |      -0.0031 |      -0.0075 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |      -0.1169 |      -2.1261 |      -4.3136 |      -5.4185 |      -5.7674 |      -5.7237 |      -5.4974 |      -5.1966 |      -4.8748 |      -4.5581 |      -4.2584 |      -3.9804 |      -3.7252 |      -3.4923 |      -3.2801 |      -3.087  |      -2.911  |      -2.7505 |      -2.6038 |      -2.4694 |      -2.3462 |      -2.2329 |      -2.1284 |      -2.032  |      -1.9428 |      -1.86   |      -1.7831 |      -1.7115 |      -1.6447 |
+        |            295 |      -0.0016 |      -0.2838 |      -1.2195 |      -2.2283 |      -2.969  |      -3.4217 |      -3.6561 |      -3.7429 |      -3.7353 |      -3.6694 |      -3.5691 |      -3.4496 |      -3.3208 |      -3.1891 |      -3.0583 |      -2.9308 |      -2.808  |      -2.6908 |      -2.5794 |      -2.4739 |      -2.3743 |      -2.2803 |      -2.1917 |      -2.1082 |      -2.0295 |      -1.9554 |      -1.8855 |      -1.8195 |      -1.7571 |
+        |            300 |      -0      |      -0.0229 |      -0.2432 |      -0.6978 |      -1.2186 |      -1.6817 |      -2.0435 |      -2.3036 |      -2.4775 |      -2.5838 |      -2.6388 |      -2.6562 |      -2.6463 |      -2.6169 |      -2.5741 |      -2.522  |      -2.4639 |      -2.4022 |      -2.3385 |      -2.2741 |      -2.2099 |      -2.1466 |      -2.0845 |      -2.0241 |      -1.9654 |      -1.9086 |      -1.8539 |      -1.8011 |      -1.7503 |
+        |            305 |      -0      |      -0.0012 |      -0.0352 |      -0.1707 |      -0.4081 |      -0.6943 |      -0.9796 |      -1.2351 |      -1.4491 |      -1.6201 |      -1.7514 |      -1.8484 |      -1.9166 |      -1.9613 |      -1.9872 |      -1.9981 |      -1.9971 |      -1.9869 |      -1.9695 |      -1.9466 |      -1.9196 |      -1.8895 |      -1.8573 |      -1.8235 |      -1.7888 |      -1.7535 |      -1.718  |      -1.6825 |      -1.6473 |
+        |            310 |      -0      |      -0      |      -0.0038 |      -0.0333 |      -0.1134 |      -0.2445 |      -0.4086 |      -0.5847 |      -0.7571 |      -0.9158 |      -1.0559 |      -1.1757 |      -1.2757 |      -1.3572 |      -1.4221 |      -1.4726 |      -1.5105 |      -1.5377 |      -1.5559 |      -1.5665 |      -1.5708 |      -1.5699 |      -1.5646 |      -1.5557 |      -1.5439 |      -1.5297 |      -1.5137 |      -1.4961 |      -1.4774 |
+        |            315 |      -0      |      -0      |      -0.0003 |      -0.0052 |      -0.0265 |      -0.0744 |      -0.1499 |      -0.247  |      -0.3567 |      -0.471  |      -0.5833 |      -0.6895 |      -0.7868 |      -0.874  |      -0.9507 |      -1.0171 |      -1.0739 |      -1.1216 |      -1.1612 |      -1.1934 |      -1.2192 |      -1.2392 |      -1.2542 |      -1.2648 |      -1.2716 |      -1.2751 |      -1.2758 |      -1.274  |      -1.2701 |
+        |            320 |      -0      |      -0      |      -0      |      -0.0007 |      -0.0053 |      -0.0197 |      -0.0488 |      -0.0938 |      -0.1528 |      -0.222  |      -0.2974 |      -0.3752 |      -0.4524 |      -0.5269 |      -0.5972 |      -0.6622 |      -0.7216 |      -0.7752 |      -0.8229 |      -0.8651 |      -0.902  |      -0.934  |      -0.9615 |      -0.9848 |      -1.0043 |      -1.0204 |      -1.0334 |      -1.0437 |      -1.0515 |
+        |            325 |      -0      |      -0      |      -0      |      -0.0001 |      -0.0009 |      -0.0046 |      -0.0142 |      -0.0323 |      -0.0599 |      -0.0965 |      -0.1407 |      -0.1905 |      -0.2439 |      -0.299  |      -0.3542 |      -0.4083 |      -0.4605 |      -0.5099 |      -0.5563 |      -0.5993 |      -0.6388 |      -0.6749 |      -0.7076 |      -0.7371 |      -0.7634 |      -0.7868 |      -0.8074 |      -0.8255 |      -0.8411 |
+        |            330 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0009 |      -0.0037 |      -0.0101 |      -0.0216 |      -0.0389 |      -0.0621 |      -0.0907 |      -0.1238 |      -0.1603 |      -0.1992 |      -0.2394 |      -0.28   |      -0.3204 |      -0.3599 |      -0.398  |      -0.4345 |      -0.4691 |      -0.5016 |      -0.532  |      -0.5602 |      -0.5863 |      -0.6102 |      -0.6321 |      -0.6521 |
+        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0009 |      -0.0029 |      -0.0072 |      -0.0146 |      -0.0257 |      -0.0406 |      -0.0594 |      -0.0815 |      -0.1066 |      -0.1339 |      -0.1629 |      -0.1929 |      -0.2235 |      -0.2542 |      -0.2847 |      -0.3144 |      -0.3434 |      -0.3712 |      -0.3979 |      -0.4233 |      -0.4473 |      -0.4699 |      -0.4911 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5353,7 +5393,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5479,18 +5519,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       0.1147 |       4.0503 |      12.1539 |      20.1454 |      26.5649 |      31.3784 |      34.8886 |      37.4084 |      39.19   |
-        |            295 |       0.0021 |       0.6886 |       4.3631 |      10.5122 |      17.3543 |      23.8166 |      29.4816 |      34.2668 |      38.2294 |
-        |            300 |       0      |       0.0679 |       1.0569 |       3.9921 |       8.6324 |      14.1844 |      19.971  |      25.5686 |      30.756  |
-        |            305 |       0      |       0.0041 |       0.1806 |       1.1491 |       3.3979 |       6.8791 |      11.2436 |      16.1003 |      21.1301 |
-        |            310 |       0      |       0.0002 |       0.0225 |       0.2578 |       1.086  |       2.7837 |       5.3854 |       8.7516 |      12.6739 |
-        |            315 |       0      |       0      |       0.0021 |       0.046  |       0.2872 |       0.9566 |       2.2315 |       4.1727 |       6.7401 |
-        |            320 |       0      |       0      |       0.0001 |       0.0067 |       0.0638 |       0.283  |       0.8102 |       1.7664 |       3.2153 |
-        |            325 |       0      |       0      |       0      |       0.0008 |       0.0121 |       0.0729 |       0.2604 |       0.6704 |       1.3886 |
-        |            330 |       0      |       0      |       0      |       0.0001 |       0.002  |       0.0165 |       0.0748 |       0.23   |       0.5471 |
-        |            335 |       0      |       0      |       0      |       0      |       0.0003 |       0.0033 |       0.0193 |       0.0718 |       0.1979 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |       0.1106 |       3.9945 |      12.0759 |      20.0912 |      26.5537 |      31.4133 |      34.9663 |      37.5235 |      39.3371 |      40.5971 |      41.4434 |      41.9789 |      42.2794 |      42.401  |      42.3861 |      42.2665 |      42.0665 |      41.8047 |      41.4956 |      41.1505 |      40.7782 |      40.3856 |      39.9782 |      39.5604 |      39.1357 |      38.7069 |      38.2761 |      37.8451 |      37.4153 |
+        |            295 |       0.0019 |       0.6705 |       4.2981 |      10.4165 |      17.257  |      23.7391 |      29.4357 |      34.2577 |      38.2579 |      41.538  |      44.2065 |      46.3638 |      48.0967 |      49.4781 |      50.5683 |      51.4171 |      52.065  |      52.5457 |      52.8867 |      53.1106 |      53.2363 |      53.2795 |      53.2531 |      53.168  |      53.0335 |      52.8572 |      52.6456 |      52.4043 |      52.1379 |
+        |            300 |       0      |       0.0651 |       1.0306 |       3.9253 |       8.5308 |      14.0649 |      19.8507 |      25.4611 |      30.6704 |      35.3821 |      39.574  |      43.2638 |      46.4878 |      49.2902 |      51.7163 |      53.8092 |      55.6089 |      57.1509 |      58.4671 |      59.5853 |      60.5299 |      61.3222 |      61.9808 |      62.5217 |      62.9591 |      63.3053 |      63.571  |      63.7656 |      63.8974 |
+        |            305 |       0      |       0.0039 |       0.1741 |       1.1199 |       3.3339 |       6.7804 |      11.1184 |      15.96   |      20.9861 |      25.9698 |      30.7646 |      35.2845 |      39.4853 |      43.3504 |      46.881  |      50.0885 |      52.9907 |      55.6081 |      57.9626 |      60.0756 |      61.9682 |      63.6599 |      65.1689 |      66.5122 |      67.7051 |      68.7616 |      69.6943 |      70.5148 |      71.2334 |
+        |            310 |       0      |       0.0001 |       0.0214 |       0.2487 |       1.057  |       2.7253 |       5.2945 |       8.6312 |      12.5303 |      16.7846 |      21.2163 |      25.6861 |      30.0916 |      34.3614 |      38.4486 |      42.3243 |      45.9733 |      49.3898 |      52.5747 |      55.5336 |      58.2749 |      60.8086 |      63.1459 |      65.2986 |      67.2782 |      69.0961 |      70.7634 |      72.2905 |      73.6875 |
+        |            315 |       0      |       0      |       0.002  |       0.0439 |       0.2771 |       0.9296 |       2.1797 |       4.0921 |       6.6303 |       9.6974 |      13.1721 |      16.9329 |      20.8705 |      24.8927 |      28.9257 |      32.912  |      36.8088 |      40.5848 |      44.2187 |      47.6962 |      51.0093 |      54.1542 |      57.1303 |      59.9396 |      62.586  |      65.0744 |      67.4106 |      69.601  |      71.6522 |
+        |            320 |       0      |       0      |       0.0001 |       0.0063 |       0.061  |       0.2728 |       0.7859 |       1.7217 |       3.1456 |       5.0649 |       7.4429 |      10.2165 |      13.311  |      16.6504 |      20.1633 |      23.7862 |      27.4647 |      31.1537 |      34.8162 |      38.4232 |      41.9521 |      45.3855 |      48.7111 |      51.9199 |      55.0062 |      57.9667 |      60.8    |      63.5062 |      66.0866 |
+        |            325 |       0      |       0      |       0      |       0.0007 |       0.0114 |       0.0697 |       0.2507 |       0.6491 |       1.3505 |       2.4127 |       3.8604 |       5.6884 |       7.8699 |      10.3641 |      13.1235 |      16.0981 |      19.2396 |      22.5032 |      25.8485 |      29.2401 |      32.6477 |      36.0456 |      39.4126 |      42.7311 |      45.9873 |      49.1699 |      52.2705 |      55.2827 |      58.2018 |
+        |            330 |       0      |       0      |       0      |       0.0001 |       0.0018 |       0.0156 |       0.0714 |       0.2211 |       0.5287 |       1.0559 |       1.8507 |       2.9423 |       4.3412 |       6.0412 |       8.0242 |      10.2637 |      12.7281 |      15.3842 |      18.1983 |      21.1381 |      24.1736 |      27.2773 |      30.4246 |      33.5938 |      36.766  |      39.925  |      43.0569 |      46.1502 |      49.195  |
+        |            335 |       0      |       0      |       0      |       0      |       0.0003 |       0.0031 |       0.0183 |       0.0685 |       0.1899 |       0.4271 |       0.8248 |       1.4218 |       2.2463 |       3.3148 |       4.6326 |       6.1951 |       7.9904 |      10.001  |      12.2059 |      14.5823 |      17.1064 |      19.7549 |      22.5052 |      25.3361 |      28.2279 |      31.1627 |      34.1243 |      37.0982 |      40.0718 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5525,7 +5565,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5653,18 +5693,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       0.0015 |       0.107  |       0.4814 |       1.0633 |       1.7516 |       2.4813 |       3.2167 |       3.9394 |       4.6401 |
-        |            295 |       0      |       0.0145 |       0.1379 |       0.4427 |       0.9131 |       1.5031 |       2.1696 |       2.8806 |       3.6137 |
-        |            300 |       0      |       0.0012 |       0.0279 |       0.1403 |       0.3789 |       0.7469 |       1.2264 |       1.7937 |       2.4263 |
-        |            305 |       0      |       0.0001 |       0.0041 |       0.0347 |       0.1283 |       0.3115 |       0.5938 |       0.9714 |       1.4337 |
-        |            310 |       0      |       0      |       0.0004 |       0.0068 |       0.036  |       0.1108 |       0.25   |       0.4641 |       0.7559 |
-        |            315 |       0      |       0      |       0      |       0.0011 |       0.0085 |       0.034  |       0.0925 |       0.1977 |       0.3592 |
-        |            320 |       0      |       0      |       0      |       0.0001 |       0.0017 |       0.0091 |       0.0304 |       0.0758 |       0.1551 |
-        |            325 |       0      |       0      |       0      |       0      |       0.0003 |       0.0021 |       0.0089 |       0.0263 |       0.0613 |
-        |            330 |       0      |       0      |       0      |       0      |       0      |       0.0004 |       0.0024 |       0.0083 |       0.0223 |
-        |            335 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0006 |       0.0024 |       0.0075 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |       0.0015 |       0.1052 |       0.477  |       1.0574 |       1.7458 |       2.4768 |       3.2145 |       3.9399 |       4.6437 |       5.3216 |       5.9721 |       6.5951 |       7.1913 |       7.7619 |       8.3083 |       8.8316 |       9.3334 |       9.8148 |      10.2771 |      10.7214 |      11.1487 |      11.56   |      11.9561 |      12.338  |      12.7062 |      13.0616 |      13.4047 |      13.7362 |      14.0565 |
+        |            295 |       0      |       0.0141 |       0.1354 |       0.4374 |       0.9054 |       1.4938 |       2.16   |       2.8715 |       3.6058 |       4.3478 |       5.0873 |       5.8177 |       6.5348 |       7.236  |       7.9198 |       8.5853 |       9.2322 |       9.8606 |      10.4708 |      11.0631 |      11.638  |      12.196  |      12.7377 |      13.2638 |      13.7746 |      14.2709 |      14.7532 |      15.222  |      15.6777 |
+        |            300 |       0      |       0.0011 |       0.0271 |       0.1375 |       0.3734 |       0.7385 |       1.2155 |       1.781  |       2.4125 |       3.0911 |       3.8014 |       4.5318 |       5.2731 |       6.0186 |       6.763  |       7.5027 |       8.2349 |       8.9573 |       9.6687 |      10.3679 |      11.0544 |      11.7275 |      12.3871 |      13.0331 |      13.6655 |      14.2843 |      14.8898 |      15.4822 |      16.0616 |
+        |            305 |       0      |       0.0001 |       0.0039 |       0.0337 |       0.1255 |       0.3061 |       0.5855 |       0.9601 |       1.4198 |       1.9514 |       2.542  |       3.1794 |       3.853  |       4.5539 |       5.2747 |       6.0092 |       6.7523 |       7.4999 |       8.2488 |       8.9963 |       9.7403 |      10.4789 |      11.2109 |      11.9352 |      12.651  |      13.3576 |      14.0545 |      14.7414 |      15.418  |
+        |            310 |       0      |       0      |       0.0004 |       0.0066 |       0.035  |       0.1081 |       0.245  |       0.4564 |       0.7451 |       1.1087 |       1.5411 |       2.0347 |       2.5815 |       3.1736 |       3.8035 |       4.4647 |       5.1511 |       5.8576 |       6.5796 |       7.3134 |       8.0556 |       8.8034 |       9.5543 |      10.3064 |      11.0578 |      11.8072 |      12.5532 |      13.295  |      14.0315 |
+        |            315 |       0      |       0      |       0      |       0.001  |       0.0082 |       0.033  |       0.0901 |       0.1933 |       0.3523 |       0.5724 |       0.855  |       1.1988 |       1.6002 |       2.0548 |       2.5576 |       3.1032 |       3.6864 |       4.3025 |       4.9468 |       5.6151 |       6.3036 |       7.0089 |       7.7281 |       8.4582 |       9.1971 |       9.9425 |      10.6926 |      11.4457 |      12.2004 |
+        |            320 |       0      |       0      |       0      |       0.0001 |       0.0016 |       0.0088 |       0.0294 |       0.0736 |       0.1513 |       0.2706 |       0.4374 |       0.6548 |       0.9239 |       1.2443 |       1.6141 |       2.0305 |       2.4904 |       2.9903 |       3.5267 |       4.0958 |       4.6944 |       5.3191 |       5.9668 |       6.6347 |       7.3201 |       8.0207 |       8.734  |       9.4583 |      10.1915 |
+        |            325 |       0      |       0      |       0      |       0      |       0.0003 |       0.002  |       0.0086 |       0.0254 |       0.0594 |       0.1179 |       0.2075 |       0.3335 |       0.4997 |       0.7085 |       0.961  |       1.2571 |       1.596  |       1.976  |       2.3953 |       2.8516 |       3.3423 |       3.865  |       4.4171 |       4.996  |       5.5995 |       6.225  |       6.8705 |       7.5338 |       8.213  |
+        |            330 |       0      |       0      |       0      |       0      |       0      |       0.0004 |       0.0023 |       0.008  |       0.0215 |       0.0476 |       0.0918 |       0.1591 |       0.2543 |       0.381  |       0.5421 |       0.7394 |       0.9741 |       1.2464 |       1.5559 |       1.902  |       2.2834 |       2.6987 |       3.1462 |       3.6242 |       4.1308 |       4.6641 |       5.2224 |       5.8036 |       6.4061 |
+        |            335 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0023 |       0.0072 |       0.0179 |       0.038  |       0.0714 |       0.1222 |       0.1942 |       0.2908 |       0.4147 |       0.5682 |       0.7529 |       0.9697 |       1.2192 |       1.5015 |       1.8161 |       2.1626 |       2.54   |       2.9472 |       3.3831 |       3.8463 |       4.3355 |       4.8493 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5699,7 +5739,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5831,18 +5871,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.0002 |      -0.0037 |      -0.0079 |      -0.0104 |      -0.0116 |      -0.012  |      -0.012  |      -0.0118 |      -0.0115 |
-        |            295 |      -0      |      -0.0006 |      -0.0027 |      -0.005  |      -0.0069 |      -0.0081 |      -0.0089 |      -0.0094 |      -0.0096 |
-        |            300 |      -0      |      -0.0001 |      -0.0006 |      -0.0018 |      -0.0032 |      -0.0045 |      -0.0056 |      -0.0065 |      -0.0071 |
-        |            305 |      -0      |      -0      |      -0.0001 |      -0.0005 |      -0.0012 |      -0.0021 |      -0.003  |      -0.0039 |      -0.0046 |
-        |            310 |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0008 |      -0.0014 |      -0.002  |      -0.0027 |
-        |            315 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0006 |      -0.0009 |      -0.0014 |
-        |            320 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |      -0.0004 |      -0.0006 |
-        |            325 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0001 |      -0.0003 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |      -0.0002 |      -0.0037 |      -0.0078 |      -0.0103 |      -0.0115 |      -0.0119 |      -0.0119 |      -0.0117 |      -0.0114 |      -0.0111 |      -0.0107 |      -0.0104 |      -0.01   |      -0.0097 |      -0.0094 |      -0.0091 |      -0.0088 |      -0.0085 |      -0.0083 |      -0.008  |      -0.0078 |      -0.0076 |      -0.0074 |      -0.0073 |      -0.0071 |      -0.0069 |      -0.0068 |      -0.0066 |      -0.0065 |
+        |            295 |      -0      |      -0.0006 |      -0.0026 |      -0.0049 |      -0.0068 |      -0.0081 |      -0.0089 |      -0.0094 |      -0.0096 |      -0.0097 |      -0.0097 |      -0.0096 |      -0.0094 |      -0.0093 |      -0.0091 |      -0.0089 |      -0.0087 |      -0.0085 |      -0.0083 |      -0.0082 |      -0.008  |      -0.0078 |      -0.0076 |      -0.0075 |      -0.0073 |      -0.0072 |      -0.007  |      -0.0069 |      -0.0068 |
+        |            300 |      -0      |      -0.0001 |      -0.0006 |      -0.0018 |      -0.0032 |      -0.0045 |      -0.0056 |      -0.0064 |      -0.007  |      -0.0075 |      -0.0078 |      -0.008  |      -0.0081 |      -0.0082 |      -0.0082 |      -0.0082 |      -0.0081 |      -0.008  |      -0.0079 |      -0.0078 |      -0.0077 |      -0.0076 |      -0.0075 |      -0.0074 |      -0.0073 |      -0.0072 |      -0.0071 |      -0.007  |      -0.0069 |
+        |            305 |      -0      |      -0      |      -0.0001 |      -0.0005 |      -0.0012 |      -0.0021 |      -0.003  |      -0.0038 |      -0.0046 |      -0.0052 |      -0.0057 |      -0.0061 |      -0.0064 |      -0.0066 |      -0.0068 |      -0.0069 |      -0.007  |      -0.0071 |      -0.0071 |      -0.0071 |      -0.0071 |      -0.0071 |      -0.0071 |      -0.007  |      -0.007  |      -0.0069 |      -0.0068 |      -0.0068 |      -0.0067 |
+        |            310 |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0008 |      -0.0014 |      -0.002  |      -0.0026 |      -0.0032 |      -0.0037 |      -0.0042 |      -0.0046 |      -0.005  |      -0.0053 |      -0.0055 |      -0.0057 |      -0.0059 |      -0.006  |      -0.0061 |      -0.0062 |      -0.0063 |      -0.0063 |      -0.0063 |      -0.0063 |      -0.0063 |      -0.0063 |      -0.0063 |      -0.0063 |
+        |            315 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0006 |      -0.0009 |      -0.0013 |      -0.0018 |      -0.0022 |      -0.0027 |      -0.0031 |      -0.0035 |      -0.0038 |      -0.0041 |      -0.0044 |      -0.0046 |      -0.0048 |      -0.005  |      -0.0051 |      -0.0053 |      -0.0054 |      -0.0055 |      -0.0055 |      -0.0056 |      -0.0056 |      -0.0057 |      -0.0057 |
+        |            320 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |      -0.0004 |      -0.0006 |      -0.0009 |      -0.0012 |      -0.0016 |      -0.0019 |      -0.0022 |      -0.0026 |      -0.0029 |      -0.0031 |      -0.0034 |      -0.0036 |      -0.0039 |      -0.0041 |      -0.0042 |      -0.0044 |      -0.0045 |      -0.0046 |      -0.0047 |      -0.0048 |      -0.0049 |      -0.005  |
+        |            325 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0001 |      -0.0003 |      -0.0004 |      -0.0006 |      -0.0009 |      -0.0011 |      -0.0014 |      -0.0016 |      -0.0019 |      -0.0021 |      -0.0024 |      -0.0026 |      -0.0028 |      -0.0031 |      -0.0032 |      -0.0034 |      -0.0036 |      -0.0037 |      -0.0039 |      -0.004  |      -0.0041 |      -0.0042 |
+        |            330 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |      -0.0003 |      -0.0004 |      -0.0006 |      -0.0008 |      -0.001  |      -0.0012 |      -0.0014 |      -0.0016 |      -0.0018 |      -0.002  |      -0.0022 |      -0.0024 |      -0.0026 |      -0.0027 |      -0.0029 |      -0.0031 |      -0.0032 |      -0.0033 |      -0.0034 |
+        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0001 |      -0.0002 |      -0.0003 |      -0.0004 |      -0.0006 |      -0.0007 |      -0.0009 |      -0.001  |      -0.0012 |      -0.0014 |      -0.0015 |      -0.0017 |      -0.0019 |      -0.002  |      -0.0022 |      -0.0023 |      -0.0025 |      -0.0026 |      -0.0027 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5877,7 +5917,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5999,18 +6039,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0011 |       0.0034 |       0.0057 |       0.0075 |       0.0089 |       0.0099 |       0.0106 |       0.0112 |
-        |            295 |            0 |       0.0001 |       0.0007 |       0.0018 |       0.003  |       0.0041 |       0.0051 |       0.006  |       0.0067 |
-        |            300 |            0 |       0      |       0.0001 |       0.0005 |       0.001  |       0.0016 |       0.0023 |       0.003  |       0.0036 |
-        |            305 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0009 |       0.0013 |       0.0018 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0008 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |            0 |       0.0011 |       0.0034 |       0.0056 |       0.0074 |       0.0088 |       0.0098 |       0.0106 |       0.0111 |       0.0115 |       0.0118 |       0.012  |       0.0121 |       0.0122 |       0.0122 |       0.0122 |       0.0122 |       0.0122 |       0.0121 |       0.0121 |       0.012  |       0.0119 |       0.0119 |       0.0118 |       0.0117 |       0.0116 |       0.0115 |       0.0114 |       0.0113 |
+        |            295 |            0 |       0.0001 |       0.0007 |       0.0018 |       0.003  |       0.0041 |       0.0051 |       0.0059 |       0.0066 |       0.0072 |       0.0077 |       0.0081 |       0.0084 |       0.0087 |       0.0089 |       0.0091 |       0.0092 |       0.0093 |       0.0094 |       0.0095 |       0.0095 |       0.0095 |       0.0096 |       0.0096 |       0.0096 |       0.0096 |       0.0095 |       0.0095 |       0.0095 |
+        |            300 |            0 |       0      |       0.0001 |       0.0005 |       0.001  |       0.0016 |       0.0023 |       0.0029 |       0.0036 |       0.0041 |       0.0046 |       0.0051 |       0.0054 |       0.0058 |       0.0061 |       0.0063 |       0.0066 |       0.0068 |       0.0069 |       0.0071 |       0.0072 |       0.0073 |       0.0074 |       0.0075 |       0.0076 |       0.0076 |       0.0077 |       0.0077 |       0.0077 |
+        |            305 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0009 |       0.0013 |       0.0017 |       0.0022 |       0.0026 |       0.0029 |       0.0033 |       0.0036 |       0.0039 |       0.0042 |       0.0044 |       0.0047 |       0.0049 |       0.0051 |       0.0052 |       0.0054 |       0.0055 |       0.0057 |       0.0058 |       0.0059 |       0.006  |       0.006  |       0.0061 |
+        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0008 |       0.001  |       0.0013 |       0.0016 |       0.0019 |       0.0021 |       0.0024 |       0.0026 |       0.0029 |       0.0031 |       0.0033 |       0.0035 |       0.0037 |       0.0038 |       0.004  |       0.0041 |       0.0043 |       0.0044 |       0.0045 |       0.0046 |       0.0047 |
+        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0006 |       0.0008 |       0.001  |       0.0012 |       0.0014 |       0.0016 |       0.0018 |       0.002  |       0.0021 |       0.0023 |       0.0025 |       0.0026 |       0.0028 |       0.0029 |       0.003  |       0.0032 |       0.0033 |       0.0034 |       0.0035 |
+        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0008 |       0.0009 |       0.001  |       0.0012 |       0.0013 |       0.0015 |       0.0016 |       0.0017 |       0.0019 |       0.002  |       0.0021 |       0.0022 |       0.0023 |       0.0025 |       0.0026 |
+        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.001  |       0.0011 |       0.0012 |       0.0013 |       0.0014 |       0.0015 |       0.0016 |       0.0017 |       0.0018 |
+        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0005 |       0.0005 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.0009 |       0.001  |       0.0011 |       0.0012 |       0.0013 |
+        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |       0.0006 |       0.0007 |       0.0007 |       0.0008 |       0.0009 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6045,7 +6085,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6115,11 +6155,10 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent stock price, risk free rate and dividend yield are used. Changing the start date
-        changes the stock price and the risk free rate, while the dividend yield stays the most recent one. The
-        volatility is the annualized standard deviation of the daily returns in the calendar year of the start date
-        (year to date for the most recent date), so in the first weeks of a year it rests on only a few observations,
-        and for an earlier start date it also includes the days of that year after it.
+        By default the stock price, risk free rate, dividend yield and volatility of the most recent date are used;
+        changing the start date prices the option as of that date instead. The volatility is the annualized standard
+        deviation of the daily returns over the year before that date and the dividend yield the dividends of that
+        year relative to the price, so an earlier start date only uses what was known on that date.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -6328,18 +6367,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0005 |       0.0011 |       0.0013 |       0.0014 |       0.0014 |       0.0013 |       0.0012 |       0.0011 |
-        |            295 |            0 |       0.0001 |       0.0003 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.0009 |       0.0009 |
-        |            300 |            0 |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0006 |
-        |            305 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0004 |
-        |            310 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0002 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |            0 |       0.0005 |       0.0011 |       0.0013 |       0.0014 |       0.0014 |       0.0013 |       0.0012 |       0.0011 |       0.001  |       0.001  |       0.0009 |       0.0008 |       0.0008 |       0.0007 |       0.0007 |       0.0006 |       0.0006 |       0.0005 |       0.0005 |       0.0005 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |
+        |            295 |            0 |       0.0001 |       0.0003 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.0009 |       0.0009 |       0.0009 |       0.0008 |       0.0008 |       0.0008 |       0.0007 |       0.0007 |       0.0007 |       0.0006 |       0.0006 |       0.0006 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0003 |
+        |            300 |            0 |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0006 |       0.0006 |       0.0006 |       0.0006 |       0.0006 |       0.0006 |       0.0006 |       0.0006 |       0.0006 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |
+        |            305 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0005 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0003 |
+        |            310 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0004 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |
+        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |       0.0003 |
+        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |
+        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |       0.0002 |
+        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0002 |
+        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |       0.0001 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6374,7 +6413,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6500,18 +6539,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       0.0016 |       0.027  |       0.0499 |       0.057  |       0.0548 |       0.0487 |       0.0413 |       0.034  |       0.0272 |
-        |            295 |       0      |       0.0048 |       0.0195 |       0.0336 |       0.0421 |       0.0456 |       0.0457 |       0.0437 |       0.0406 |
-        |            300 |       0      |       0.0005 |       0.0049 |       0.0135 |       0.0226 |       0.0299 |       0.0348 |       0.0376 |       0.0387 |
-        |            305 |       0      |       0      |       0.0009 |       0.004  |       0.0093 |       0.0153 |       0.0209 |       0.0255 |       0.029  |
-        |            310 |       0      |       0      |       0.0001 |       0.0009 |       0.003  |       0.0064 |       0.0104 |       0.0145 |       0.0183 |
-        |            315 |       0      |       0      |       0      |       0.0002 |       0.0008 |       0.0022 |       0.0044 |       0.0071 |       0.0101 |
-        |            320 |       0      |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.0016 |       0.0031 |       0.0049 |
-        |            325 |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |       0.0012 |       0.0022 |
-        |            330 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0004 |       0.0009 |
-        |            335 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |       0.0016 |       0.0267 |       0.0498 |       0.0572 |       0.0551 |       0.0491 |       0.0418 |       0.0344 |       0.0276 |       0.0215 |       0.016  |       0.0112 |       0.007  |       0.0033 |       0.0001 |      -0.0028 |      -0.0053 |      -0.0075 |      -0.0094 |      -0.0111 |      -0.0127 |      -0.014  |      -0.0152 |      -0.0163 |      -0.0173 |      -0.0181 |      -0.0189 |      -0.0196 |      -0.0202 |
+        |            295 |       0      |       0.0047 |       0.0193 |       0.0334 |       0.0421 |       0.0457 |       0.0459 |       0.044  |       0.0409 |       0.0373 |       0.0335 |       0.0296 |       0.026  |       0.0225 |       0.0192 |       0.0161 |       0.0133 |       0.0107 |       0.0083 |       0.0061 |       0.0041 |       0.0023 |       0.0006 |      -0.001  |      -0.0025 |      -0.0038 |      -0.005  |      -0.0061 |      -0.0072 |
+        |            300 |       0      |       0.0005 |       0.0048 |       0.0133 |       0.0224 |       0.0298 |       0.0348 |       0.0376 |       0.0388 |       0.0387 |       0.0377 |       0.0362 |       0.0342 |       0.0321 |       0.0299 |       0.0276 |       0.0253 |       0.0231 |       0.021  |       0.0189 |       0.0169 |       0.0151 |       0.0133 |       0.0116 |       0.01   |       0.0085 |       0.0071 |       0.0058 |       0.0045 |
+        |            305 |       0      |       0      |       0.0008 |       0.0039 |       0.0091 |       0.0151 |       0.0208 |       0.0254 |       0.0289 |       0.0314 |       0.0329 |       0.0336 |       0.0337 |       0.0333 |       0.0326 |       0.0316 |       0.0304 |       0.0291 |       0.0277 |       0.0262 |       0.0248 |       0.0233 |       0.0218 |       0.0204 |       0.019  |       0.0176 |       0.0163 |       0.015  |       0.0138 |
+        |            310 |       0      |       0      |       0.0001 |       0.0009 |       0.003  |       0.0063 |       0.0103 |       0.0144 |       0.0182 |       0.0215 |       0.0243 |       0.0264 |       0.0279 |       0.029  |       0.0296 |       0.0299 |       0.0298 |       0.0296 |       0.0291 |       0.0285 |       0.0277 |       0.0269 |       0.026  |       0.025  |       0.0241 |       0.023  |       0.022  |       0.021  |       0.02   |
+        |            315 |       0      |       0      |       0      |       0.0002 |       0.0008 |       0.0022 |       0.0043 |       0.007  |       0.01   |       0.0129 |       0.0157 |       0.0182 |       0.0204 |       0.0223 |       0.0238 |       0.0249 |       0.0258 |       0.0264 |       0.0268 |       0.0269 |       0.0269 |       0.0268 |       0.0265 |       0.0261 |       0.0257 |       0.0251 |       0.0245 |       0.0239 |       0.0232 |
+        |            320 |       0      |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.0016 |       0.003  |       0.0048 |       0.0069 |       0.0092 |       0.0114 |       0.0135 |       0.0155 |       0.0173 |       0.0189 |       0.0202 |       0.0214 |       0.0224 |       0.0231 |       0.0237 |       0.0241 |       0.0244 |       0.0246 |       0.0246 |       0.0245 |       0.0244 |       0.0242 |       0.0239 |
+        |            325 |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |       0.0012 |       0.0021 |       0.0034 |       0.0049 |       0.0065 |       0.0082 |       0.0099 |       0.0116 |       0.0132 |       0.0147 |       0.0161 |       0.0173 |       0.0184 |       0.0193 |       0.0201 |       0.0208 |       0.0214 |       0.0218 |       0.0222 |       0.0224 |       0.0226 |       0.0227 |
+        |            330 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0008 |       0.0015 |       0.0024 |       0.0034 |       0.0046 |       0.0059 |       0.0073 |       0.0086 |       0.01   |       0.0113 |       0.0126 |       0.0137 |       0.0148 |       0.0158 |       0.0167 |       0.0175 |       0.0182 |       0.0188 |       0.0194 |       0.0198 |       0.0202 |
+        |            335 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0011 |       0.0017 |       0.0024 |       0.0033 |       0.0043 |       0.0053 |       0.0064 |       0.0075 |       0.0086 |       0.0097 |       0.0108 |       0.0118 |       0.0127 |       0.0136 |       0.0144 |       0.0152 |       0.0159 |       0.0165 |       0.0171 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6546,7 +6585,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6676,18 +6715,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.0976 |      -0.8053 |      -0.9984 |      -0.8599 |      -0.6654 |      -0.496  |      -0.3642 |      -0.2651 |      -0.1912 |
-        |            295 |      -0.0018 |      -0.144  |      -0.3886 |      -0.5035 |      -0.5074 |      -0.46   |      -0.3968 |      -0.3338 |      -0.2772 |
-        |            300 |      -0      |      -0.0146 |      -0.098  |      -0.2022 |      -0.2714 |      -0.3002 |      -0.3005 |      -0.2847 |      -0.2613 |
-        |            305 |      -0      |      -0.0009 |      -0.0171 |      -0.0601 |      -0.1113 |      -0.1531 |      -0.1797 |      -0.1926 |      -0.195  |
-        |            310 |      -0      |      -0      |      -0.0022 |      -0.0137 |      -0.0365 |      -0.0639 |      -0.0893 |      -0.1093 |      -0.1229 |
-        |            315 |      -0      |      -0      |      -0.0002 |      -0.0025 |      -0.0098 |      -0.0224 |      -0.0379 |      -0.0536 |      -0.0675 |
-        |            320 |      -0      |      -0      |      -0      |      -0.0004 |      -0.0022 |      -0.0067 |      -0.014  |      -0.0231 |      -0.0329 |
-        |            325 |      -0      |      -0      |      -0      |      -0      |      -0.0004 |      -0.0018 |      -0.0046 |      -0.0089 |      -0.0145 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0013 |      -0.0031 |      -0.0058 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.001  |      -0.0021 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |      -0.0941 |      -0.7948 |      -0.9931 |      -0.859  |      -0.6666 |      -0.4981 |      -0.3665 |      -0.2674 |      -0.1933 |      -0.1379 |      -0.0962 |      -0.0647 |      -0.0406 |      -0.0221 |      -0.0079 |       0.0031 |       0.0117 |       0.0183 |       0.0234 |       0.0274 |       0.0305 |       0.0328 |       0.0345 |       0.0358 |       0.0367 |       0.0373 |       0.0377 |       0.0378 |       0.0378 |
+        |            295 |      -0.0017 |      -0.1403 |      -0.3831 |      -0.4994 |      -0.5052 |      -0.4592 |      -0.3969 |      -0.3345 |      -0.2782 |      -0.2296 |      -0.1886 |      -0.1545 |      -0.1261 |      -0.1025 |      -0.0829 |      -0.0665 |      -0.0529 |      -0.0415 |      -0.0319 |      -0.0238 |      -0.017  |      -0.0113 |      -0.0064 |      -0.0022 |       0.0013 |       0.0043 |       0.0068 |       0.009  |       0.0108 |
+        |            300 |      -0      |      -0.014  |      -0.0956 |      -0.1989 |      -0.2685 |      -0.2979 |      -0.299  |      -0.2839 |      -0.2609 |      -0.2351 |      -0.2092 |      -0.1847 |      -0.1622 |      -0.142  |      -0.124  |      -0.108  |      -0.094  |      -0.0817 |      -0.0708 |      -0.0613 |      -0.0529 |      -0.0455 |      -0.039  |      -0.0333 |      -0.0282 |      -0.0238 |      -0.0198 |      -0.0163 |      -0.0132 |
+        |            305 |      -0      |      -0.0008 |      -0.0165 |      -0.0586 |      -0.1092 |      -0.151  |      -0.1779 |      -0.191  |      -0.1939 |      -0.1897 |      -0.1811 |      -0.1701 |      -0.158  |      -0.1455 |      -0.1333 |      -0.1216 |      -0.1106 |      -0.1003 |      -0.0909 |      -0.0822 |      -0.0743 |      -0.0671 |      -0.0605 |      -0.0545 |      -0.0491 |      -0.0441 |      -0.0396 |      -0.0356 |      -0.0319 |
+        |            310 |      -0      |      -0      |      -0.0021 |      -0.0133 |      -0.0355 |      -0.0626 |      -0.0879 |      -0.1078 |      -0.1216 |      -0.1296 |      -0.133  |      -0.1329 |      -0.1302 |      -0.1258 |      -0.1203 |      -0.114  |      -0.1075 |      -0.1009 |      -0.0944 |      -0.088  |      -0.0819 |      -0.0761 |      -0.0706 |      -0.0654 |      -0.0606 |      -0.056  |      -0.0518 |      -0.0479 |      -0.0442 |
+        |            315 |      -0      |      -0      |      -0.0002 |      -0.0024 |      -0.0095 |      -0.0218 |      -0.037  |      -0.0526 |      -0.0664 |      -0.0777 |      -0.086  |      -0.0917 |      -0.0949 |      -0.0963 |      -0.096  |      -0.0946 |      -0.0924 |      -0.0895 |      -0.0861 |      -0.0825 |      -0.0788 |      -0.075  |      -0.0712 |      -0.0674 |      -0.0637 |      -0.0602 |      -0.0568 |      -0.0535 |      -0.0504 |
+        |            320 |      -0      |      -0      |      -0      |      -0.0003 |      -0.0021 |      -0.0065 |      -0.0136 |      -0.0226 |      -0.0322 |      -0.0416 |      -0.05   |      -0.057  |      -0.0626 |      -0.0668 |      -0.0697 |      -0.0714 |      -0.0722 |      -0.0722 |      -0.0716 |      -0.0705 |      -0.0689 |      -0.0671 |      -0.0651 |      -0.0629 |      -0.0606 |      -0.0583 |      -0.0559 |      -0.0536 |      -0.0513 |
+        |            325 |      -0      |      -0      |      -0      |      -0      |      -0.0004 |      -0.0017 |      -0.0044 |      -0.0086 |      -0.0141 |      -0.0202 |      -0.0264 |      -0.0325 |      -0.0379 |      -0.0427 |      -0.0467 |      -0.0499 |      -0.0523 |      -0.0541 |      -0.0552 |      -0.0558 |      -0.056  |      -0.0558 |      -0.0553 |      -0.0545 |      -0.0535 |      -0.0523 |      -0.0511 |      -0.0497 |      -0.0483 |
+        |            330 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0013 |      -0.003  |      -0.0056 |      -0.0089 |      -0.0129 |      -0.0171 |      -0.0213 |      -0.0254 |      -0.0291 |      -0.0325 |      -0.0355 |      -0.0379 |      -0.04   |      -0.0416 |      -0.0428 |      -0.0437 |      -0.0442 |      -0.0445 |      -0.0445 |      -0.0443 |      -0.0439 |      -0.0434 |      -0.0428 |
+        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0009 |      -0.002  |      -0.0037 |      -0.0058 |      -0.0084 |      -0.0112 |      -0.0141 |      -0.0171 |      -0.02   |      -0.0227 |      -0.0252 |      -0.0274 |      -0.0293 |      -0.031  |      -0.0324 |      -0.0336 |      -0.0345 |      -0.0352 |      -0.0356 |      -0.0359 |      -0.0361 |      -0.0361 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6722,7 +6761,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6849,18 +6888,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       4.4479 |      59.5728 |      81.1739 |      53.6643 |       6.762  |     -42.4233 |     -87.2163 |    -125.733  |    -157.986  |
-        |            295 |       0.1375 |      19.5947 |      69.0758 |     100.071  |      99.471  |      76.366  |      41.3441 |       1.6829 |     -38.3689 |
-        |            300 |       0.0014 |       3.0559 |      28.3789 |      70.9546 |     106.42   |     123.366  |     121.898  |     106.326  |      81.3579 |
-        |            305 |       0      |       0.2627 |       7.1602 |      31.4362 |      67.9124 |     103.693  |     130.022  |     143.805  |     145.467  |
-        |            310 |       0      |       0.0135 |       1.2162 |       9.8489 |      31.1181 |      62.0504 |      95.5641 |     125.461  |     148.082  |
-        |            315 |       0      |       0.0004 |       0.1464 |       2.3133 |      10.9951 |      28.9922 |      54.9184 |      84.8689 |     114.693  |
-        |            320 |       0      |       0      |       0.0129 |       0.4222 |       3.1152 |      11.062  |      26.0298 |      47.5385 |      73.4872 |
-        |            325 |       0      |       0      |       0.0009 |       0.0614 |       0.7262 |       3.5422 |      10.4864 |      22.8123 |      40.5143 |
-        |            330 |       0      |       0      |       0      |       0.0073 |       0.1419 |       0.9702 |       3.6628 |       9.5798 |      19.6698 |
-        |            335 |       0      |       0      |       0      |       0.0007 |       0.0236 |       0.2306 |       1.1254 |       3.5734 |       8.5425 |
+        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |   2026-01-10 |   2026-01-11 |   2026-01-12 |   2026-01-13 |   2026-01-14 |   2026-01-15 |   2026-01-16 |   2026-01-17 |   2026-01-18 |   2026-01-19 |   2026-01-20 |   2026-01-21 |   2026-01-22 |   2026-01-23 |   2026-01-24 |   2026-01-25 |   2026-01-26 |   2026-01-27 |   2026-01-28 |   2026-01-29 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        |            290 |       4.333  |      59.4712 |      82.0031 |      55.0813 |       8.2795 |     -41.1001 |     -86.2254 |    -125.122  |    -157.756  |    -184.773  |    -206.985  |    -225.172  |    -240.019  |    -252.101  |    -261.897  |    -269.798  |    -276.125  |    -281.138  |    -285.053  |    -288.047  |    -290.266  |    -291.832  |    -292.844  |    -293.387  |    -293.533  |    -293.34   |    -292.858  |    -292.131  |    -291.195  |
+        |            295 |       0.1305 |      19.2791 |      68.8654 |     100.582  |     100.716  |      78.0883 |      43.2729 |       3.6086 |     -36.5881 |     -75.0146 |    -110.572  |    -142.844  |    -171.785  |    -197.541  |    -220.35   |    -240.48   |    -258.203  |    -273.781  |    -287.451  |    -299.43   |    -309.912  |    -319.068  |    -327.048  |    -333.988  |    -340.003  |    -345.197  |    -349.66   |    -353.473  |    -356.706  |
+        |            300 |       0.0013 |       2.9589 |      27.9645 |      70.5814 |     106.543  |     124.16   |     123.314  |     108.216  |      83.553  |      53.1876 |      19.9486 |     -14.221  |     -48.0467 |     -80.7293 |    -111.796  |    -140.996  |    -168.221  |    -193.459  |    -216.755  |    -238.191  |    -257.869  |    -275.9    |    -292.399  |    -307.477  |    -321.243  |    -333.801  |    -345.247  |    -355.671  |    -365.155  |
+        |            305 |       0      |       0.2498 |       6.9678 |      30.9594 |      67.3902 |     103.46   |     130.3    |     144.674  |     146.902  |     138.886  |     122.942  |     101.254  |      75.6642 |      47.6403 |      18.3071 |     -11.4963 |     -41.1591 |     -70.2468 |     -98.46   |    -125.6    |    -151.543  |    -176.222  |    -199.607  |    -221.7    |    -242.521  |    -262.106  |    -280.499  |    -297.75   |    -313.912  |
+        |            310 |       0      |       0.0125 |       1.1673 |       9.5967 |      30.6046 |      61.4209 |      95.0555 |     125.284  |     148.372  |     162.837  |     168.689  |     166.753  |     158.203  |     144.286  |     126.179  |     104.923  |      81.401  |      56.3454 |      30.3484 |       3.8826 |     -22.6802 |     -49.0519 |     -75.0126 |    -100.397  |    -125.086  |    -148.992  |    -172.059  |    -194.25   |    -215.546  |
+        |            315 |       0      |       0.0004 |       0.1384 |       2.2283 |      10.712  |      28.4653 |      54.2284 |      84.1758 |     114.17   |     140.987  |     162.613  |     178.088  |     187.218  |     190.294  |     187.883  |     180.678  |     169.406  |     154.768  |     137.41   |     117.91   |      96.771  |      74.4262 |      51.2422 |      27.5266 |       3.5347 |     -20.5232 |     -44.4757 |     -68.1843 |     -91.5383 |
+        |            320 |       0      |       0      |       0.012  |       0.4016 |       3.0045 |      10.768  |      25.5093 |      46.8292 |      72.6907 |     100.465  |     127.701  |     152.488  |     173.539  |     190.123  |     201.946  |     209.029  |     211.601  |     210.021  |     204.71   |     196.117  |     184.686  |     170.842  |     154.978  |     137.453  |     118.588  |      98.6673 |      77.9409 |      56.6258 |      34.9098 |
+        |            325 |       0      |       0      |       0.0008 |       0.0576 |       0.6928 |       3.4168 |      10.1954 |      22.3132 |      39.8171 |      61.6926 |      86.3458 |     112.053  |     137.254  |     160.694  |     181.461  |     198.96   |     212.866  |     223.063  |     229.591  |     232.601  |     232.314  |     228.995  |     222.931  |     214.415  |     203.733  |     191.163  |     176.962  |     161.372  |     144.613  |
+        |            330 |       0      |       0      |       0      |       0.0067 |       0.1338 |       0.9268 |       3.5314 |       9.3008 |      19.2021 |      33.4916 |      51.7358 |      73.024  |      96.2174 |     120.151  |     143.766  |     166.178  |     186.7    |     204.837  |     220.267  |     232.809  |     242.4    |     249.065  |     252.893  |     254.022  |     252.62   |     248.875  |     242.981  |     235.138  |     225.541  |
+        |            335 |       0      |       0      |       0      |       0.0006 |       0.022  |       0.2181 |       1.0755 |       3.4424 |       8.2812 |      16.343  |      27.9646 |      43.0355 |      61.0818 |      81.3964 |     103.167  |     125.576  |     147.867  |     169.389  |     189.605  |     208.1    |     224.572  |     238.816  |     250.714  |     260.216  |     267.33   |     272.105  |     274.625  |     274.995  |     273.339  |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6895,7 +6934,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.

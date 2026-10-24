@@ -13,7 +13,6 @@ from financetoolkit.portfolio import (
     portfolio_model,
 )
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
-from financetoolkit.risk import risk_model
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
@@ -75,9 +74,11 @@ class Portfolio:
 
         - weights, e.g. {"VTI": 0.6, "BND": 0.4} or "VTI:0.6, BND:0.4": a model portfolio that
           invests `initial_value` on `start_date` and is rebalanced to these weights. It trades
-          at the dividend-adjusted closing prices, the prices the positions are valued at, so
-          it is a total return backtest with every dividend reinvested and its weights equal
-          the targets on every rebalancing date;
+          at the closing prices, the prices the positions are valued at. The dividends are
+          collected as cash and reinvested on the next rebalancing date, when the portfolio is
+          brought back to its weights with the value of the holdings plus that cash, so it is
+          a total-return backtest and its weights equal the targets on every rebalancing date.
+          Holdings and transactions receive their dividends as cash that is not reinvested;
         - holdings, e.g. {"AAPL": 10, "MSFT": 5}: the number of shares, bought at the closing
           price of `start_date`;
         - transactions: a DataFrame, CSV or Excel file with one row per trade and the columns
@@ -248,9 +249,10 @@ class Portfolio:
         self._monthly_benchmark_data: pd.DataFrame = pd.DataFrame()
         self._quarterly_benchmark_data: pd.DataFrame = pd.DataFrame()
         self._yearly_benchmark_data: pd.DataFrame = pd.DataFrame()
-        self._benchmark_prices: pd.DataFrame = pd.DataFrame()
         self._benchmark_specific_prices: pd.Series = pd.Series()
+        self._benchmark_transaction_dividends: pd.Series = pd.Series()
         self._benchmark_prices_per_ticker: pd.DataFrame = pd.DataFrame()
+        self._benchmark_dividends_per_ticker: pd.DataFrame = pd.DataFrame()
         self._latest_benchmark_price: pd.Series = pd.Series()
         self._portfolio_volatilities: pd.Series = pd.Series()
         self._portfolio_beta: pd.Series = pd.Series()
@@ -329,9 +331,13 @@ class Portfolio:
             return {}
         if statistics is None or statistics.empty or "Currency" not in statistics.index:
             return {}
+        currencies = statistics.loc["Currency"]
+        # A single ticker comes back as one column, which gives a single value.
+        if not isinstance(currencies, pd.Series):
+            currencies = pd.Series({toolkit._tickers[0]: currencies})
         return {
             str(ticker): str(currency)
-            for ticker, currency in statistics.loc["Currency"].items()
+            for ticker, currency in currencies.items()
             if isinstance(currency, str) and len(currency) == 3  # noqa: PLR2004
         }
 
@@ -400,6 +406,96 @@ class Portfolio:
             ticker: statistics.get(ticker) or fallback.get(ticker) for ticker in tickers
         }
         return {ticker: currency for ticker, currency in currencies.items() if currency}
+
+    def _benchmark_currencies(
+        self, benchmark_ticker: str
+    ) -> tuple[str | None, dict[str, str]]:
+        """
+        The currency the benchmark is quoted in and per ticker the currency of its transactions,
+        or no currencies when the transactions have no currency.
+        """
+        if (
+            not self._currency_column
+            or self._currency_column not in self._portfolio_dataset.columns
+        ):
+            return None, {}
+
+        ticker_currencies = {
+            str(ticker): str(currency)
+            for (_, ticker), currency in self._portfolio_dataset[
+                self._currency_column
+            ].items()
+            if isinstance(currency, str) and currency
+        }
+
+        benchmark_currencies = (
+            self._ticker_currencies(self._benchmark_toolkit)
+            if self._benchmark_toolkit
+            else {}
+        )
+        benchmark_currency = benchmark_currencies.get(benchmark_ticker) or (
+            next(iter(benchmark_currencies.values()))
+            if len(benchmark_currencies) == 1
+            else None
+        )
+
+        return benchmark_currency, ticker_currencies
+
+    def _values_at_transactions(self, daily_values: pd.DataFrame) -> pd.Series:
+        """
+        The value of every transaction's ticker on the transaction's date, from daily values with
+        one column per ticker on the dates of the historical data. A transaction on a date without
+        a price, such as a weekend, takes the first following trading day, the day its position
+        starts on, and a transaction after the last date is NaN.
+        """
+        dates = self._daily_historical_data.index
+        locations = dates.get_indexer(
+            self._portfolio_dataset.index.get_level_values(0), method="backfill"
+        )
+        tickers = self._portfolio_dataset.index.get_level_values(1)
+
+        values = [
+            (
+                float(daily_values[ticker].iloc[location])
+                if location != -1 and ticker in daily_values.columns
+                else float("nan")
+            )
+            for location, ticker in zip(locations, tickers, strict=True)
+        ]
+
+        return pd.Series(values, index=self._portfolio_dataset.index, dtype=float)
+
+    def _cumulative_dividends(self) -> pd.DataFrame:
+        """The cumulative cash dividends per unit of every ticker on the dates of the historical data."""
+        if "Dividends" not in self._daily_historical_data.columns.get_level_values(0):
+            return pd.DataFrame(
+                0.0, index=self._daily_historical_data.index, columns=self._tickers
+            )
+
+        return (
+            self._daily_historical_data["Dividends"]
+            .reindex(columns=self._tickers)
+            .astype(float)
+            .fillna(0.0)
+            .cumsum()
+        )
+
+    def _dividends_since_transactions(
+        self, cumulative_dividends: pd.DataFrame
+    ) -> pd.Series:
+        """
+        The dividends per unit paid between every transaction and the latest date, from cumulative
+        dividends per unit with one column per ticker. A unit bought on an ex-dividend date does
+        not receive that dividend, so the cumulative figure of the transaction date is subtracted.
+        """
+        latest = cumulative_dividends.iloc[-1]
+        at_transactions = self._values_at_transactions(cumulative_dividends)
+        tickers = self._portfolio_dataset.index.get_level_values(1)
+
+        return pd.Series(
+            latest.reindex(tickers).to_numpy() - at_transactions.to_numpy(),
+            index=self._portfolio_dataset.index,
+        )
 
     def _build_portfolio(
         self,
@@ -485,9 +581,18 @@ class Portfolio:
 
         start = start_date or (today - pd.DateOffset(years=10)).strftime("%Y-%m-%d")
         toolkit = self._price_toolkit(definition.tickers, start)
-        prices = toolkit.get_historical_data(period="daily")["Adj Close"]
+        # The transactions are made at the traded close, the price positions are valued at, and the dividends are reinvested on every rebalancing date.  # noqa: E501
+        historical_data = toolkit.get_historical_data(period="daily")
+        prices = historical_data["Close"]
         if isinstance(prices, pd.Series):
             prices = prices.to_frame(definition.tickers[0])
+        dividends = (
+            historical_data["Dividends"]
+            if "Dividends" in historical_data.columns.get_level_values(0)
+            else None
+        )
+        if isinstance(dividends, pd.Series):
+            dividends = dividends.to_frame(definition.tickers[0])
 
         currencies = self._quoted_currencies(
             toolkit,
@@ -513,6 +618,7 @@ class Portfolio:
                 portfolio_model.get_exchange_rate_tickers(currencies, base_currency),
                 start,
             ),
+            dividends=dividends,
         )
 
     def _complete_transactions(
@@ -1045,18 +1151,31 @@ class Portfolio:
 
         Notes:
             - The benchmark data is retrieved in daily, weekly, monthly, quarterly, and yearly periods.
-            - If a specific date in the benchmark data does not exist, the method uses the previous available value.
-            - The benchmark prices are aligned with the portfolio's data, using a backfill method for missing dates.
+            - The daily data is aligned to the dates of the portfolio's historical data. A date without a
+            benchmark quote, such as a holiday of the benchmark's exchange, carries the previous quote
+            forward with a return of zero, and the Return and Cumulative Return are calculated again from
+            the aligned Adj Close. Volume and dividends on a date missing from the portfolio's dates are
+            added to the next date.
+            - A transaction on a date without a price, such as a weekend, is matched with the benchmark's
+            closing price of the first following trading day, the same day its position starts on.
+            - When the transactions are in another currency than the benchmark, the benchmark's prices and
+            dividends are converted to the currency of the transactions with the daily exchange rate, so
+            the benchmark buys the same amount of money as the transaction. The returned data and the
+            weekly to yearly data are in the currency most of the portfolio's tickers are traded in.
             - The method updates several internal attributes:
                 - `self._daily_benchmark_data`: Daily benchmark data.
                 - `self._weekly_benchmark_data`: Weekly benchmark data.
                 - `self._monthly_benchmark_data`: Monthly benchmark data.
                 - `self._quarterly_benchmark_data`: Quarterly benchmark data.
                 - `self._yearly_benchmark_data`: Yearly benchmark data.
-                - `self._benchmark_prices`: Adjusted close prices for the benchmark.
-                - `self._benchmark_prices_per_ticker`: Benchmark prices for each ticker.
-                - `self._latest_benchmark_price`: The latest available benchmark price.
-                - `self._benchmark_specific_prices`: The specific benchmark price for each portfolio transaction.
+                - `self._benchmark_prices_per_ticker`: The daily benchmark closing price in the currency of
+                each ticker.
+                - `self._benchmark_dividends_per_ticker`: The cumulative benchmark dividends per unit in the
+                currency of each ticker.
+                - `self._latest_benchmark_price`: The latest available benchmark closing price per ticker.
+                - `self._benchmark_specific_prices`: The benchmark closing price for each portfolio transaction.
+                - `self._benchmark_transaction_dividends`: The cumulative benchmark dividends per unit up to
+                each portfolio transaction.
 
         As an example:
 
@@ -1070,18 +1189,18 @@ class Portfolio:
 
         Which returns:
 
-        |            |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Cumulative Return |
-        |:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|---------:|--------------------:|
-        | 2026-09-24 | 7666.99 | 7719.01 | 7662.57 | 7704.13 |     7704.13 | 5.31639e+09 |           0 |  -0.0002 |              5.3446 |
-        | 2026-09-25 | 7709.86 | 7752.07 | 7693.08 | 7743.41 |     7743.41 | 4.49918e+09 |           0 |   0.0051 |              5.3719 |
-        | 2026-09-28 | 7721.7  | 7724.15 | 7666.6  | 7683.69 |     7683.69 | 5.12971e+09 |           0 |  -0.0077 |              5.3305 |
-        | 2026-09-29 | 7699.6  | 7699.6  | 7653.55 | 7670.84 |     7670.84 | 5.02359e+09 |           0 |  -0.0017 |              5.3215 |
-        | 2026-09-30 | 7688.99 | 7722.88 | 7651.54 | 7651.54 |     7651.54 | 4.27655e+09 |           0 |  -0.0025 |              5.3082 |
-        | 2026-10-01 | 7666.47 | 7684.75 | 7616.78 | 7666.45 |     7666.45 | 5.7838e+09  |           0 |   0.0019 |              5.3185 |
-        | 2026-10-02 | 7726.24 | 7754.67 | 7700.51 | 7722.72 |     7722.72 | 5.27743e+09 |           0 |   0.0073 |              5.3575 |
-        | 2026-10-05 | 7730.86 | 7794.35 | 7727.59 | 7773.95 |     7773.95 | 5.8409e+09  |           0 |   0.0066 |              5.3931 |
-        | 2026-10-06 | 7805.96 | 7844.52 | 7805.96 | 7818.93 |     7818.93 | 5.01965e+09 |           0 |   0.0058 |              5.4243 |
-        | 2026-10-07 | 7792.98 | 7807.02 | 7763.34 | 7801.77 |     7801.77 | 5.11115e+09 |           0 |  -0.0022 |              5.4124 |
+        | Date       |    Open |    High |     Low |   Close |   Adj Close |      Volume |   Dividends |       Return |   Cumulative Return |
+        |:-----------|--------:|--------:|--------:|--------:|------------:|------------:|------------:|-------------:|--------------------:|
+        | 2026-09-24 | 7666.99 | 7719.01 | 7662.57 | 7704.13 |     7704.13 | 5.31639e+09 |           0 | -0.000246547 |             5.34463 |
+        | 2026-09-25 | 7709.86 | 7752.07 | 7693.08 | 7743.41 |     7743.41 | 4.49918e+09 |           0 |  0.0050986   |             5.37188 |
+        | 2026-09-28 | 7721.7  | 7724.15 | 7666.6  | 7683.69 |     7683.69 | 5.12971e+09 |           0 | -0.0077124   |             5.33045 |
+        | 2026-09-29 | 7699.6  | 7699.6  | 7653.55 | 7670.84 |     7670.84 | 5.02359e+09 |           0 | -0.00167239  |             5.32154 |
+        | 2026-09-30 | 7688.99 | 7722.88 | 7651.54 | 7651.54 |     7651.54 | 4.27655e+09 |           0 | -0.002516    |             5.30815 |
+        | 2026-10-01 | 7666.47 | 7684.75 | 7616.78 | 7666.45 |     7666.45 | 5.7838e+09  |           0 |  0.00194865  |             5.31849 |
+        | 2026-10-02 | 7726.24 | 7754.67 | 7700.51 | 7722.72 |     7722.72 | 5.27743e+09 |           0 |  0.00733977  |             5.35753 |
+        | 2026-10-05 | 7730.86 | 7794.35 | 7727.59 | 7773.95 |     7773.95 | 5.8409e+09  |           0 |  0.00663367  |             5.39307 |
+        | 2026-10-06 | 7805.96 | 7844.52 | 7805.96 | 7818.93 |     7818.93 | 5.01965e+09 |           0 |  0.00578599  |             5.42428 |
+        | 2026-10-07 | 7792.98 | 7807.02 | 7763.34 | 7801.77 |     7801.77 | 5.11115e+09 |           0 | -0.0021947   |             5.41237 |
         """
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
@@ -1109,66 +1228,122 @@ class Portfolio:
                 use_cached_data=self._use_cached_data,
             )
 
-        # Reindex the benchmark data to the dates of the historical dataset so that they are matched up.
-        self._daily_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="daily"
-        ).reindex(self._daily_historical_data.index, method="backfill")
-
-        self._weekly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="weekly"
-        )
-        self._monthly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="monthly"
-        )
-        self._quarterly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="quarterly"
-        )
-        self._yearly_benchmark_data = self._benchmark_toolkit.get_historical_data(
-            period="yearly"
+        benchmark_name = self._benchmark_tickers[self._original_tickers[0]]
+        benchmark_currency, ticker_currencies = self._benchmark_currencies(
+            benchmark_name
         )
 
-        # A date missing for the benchmark falls back to the previous value.
-        self._benchmark_prices = self._daily_benchmark_data["Adj Close"].iloc[
-            self._daily_benchmark_data["Adj Close"].index.get_indexer(
-                self._portfolio_dataset.index.get_level_values(0), method="backfill"
-            )
-        ]
-
-        # Reindexed onto the portfolio dates so the two line up again.
-        self._benchmark_prices.index = self._portfolio_dataset.index
-
-        self._benchmark_prices = self._benchmark_prices.sort_index()
-
-        benchmark_specific_prices = []
-        benchmark_latest_price = {}
-        benchmark_prices_per_ticker = pd.DataFrame(
-            columns=self._tickers, index=self._daily_benchmark_data.index
+        # The benchmark is bought with the money of each transaction, so its prices are expressed in the currency of the transactions; otherwise a transaction in euros would buy units priced in dollars.  # noqa: E501
+        conversions = (
+            {
+                currency
+                for currency in ticker_currencies.values()
+                if portfolio_model.get_price_unit(currency)
+                != portfolio_model.get_price_unit(benchmark_currency)
+            }
+            if benchmark_currency
+            else set()
         )
-
-        for date, ticker in self._portfolio_dataset.index:
-            original_ticker = self._original_ticker_combinations[ticker]
-            benchmark_ticker = self._benchmark_tickers[original_ticker]
-
-            # Report the benchmark price once even with several orders on the same day.
-            benchmark_specific_price = self._benchmark_prices.loc[(date, ticker)]
-
-            if isinstance(benchmark_specific_price, float):
-                benchmark_specific_prices.append(pd.Series(benchmark_specific_price))
-            else:
-                benchmark_specific_prices.append(
-                    benchmark_specific_price.drop_duplicates()
+        exchange_rates = self._get_exchange_rates(
+            [
+                rate_ticker
+                for currency in conversions
+                if (
+                    rate_ticker := portfolio_model.get_exchange_rate_ticker(
+                        currency, str(benchmark_currency)
+                    )
                 )
+            ],
+            self._start_date,
+        )
 
-            benchmark_latest_price[ticker] = self._daily_benchmark_data[
-                "Adj Close"
-            ].iloc[-1]
-            benchmark_prices_per_ticker[ticker] = self._daily_benchmark_data[
-                "Adj Close"
-            ]
+        def convert(data: pd.DataFrame, currency: str | None) -> pd.DataFrame:
+            if data.empty or currency not in conversions:
+                return data
+            data = data.copy()
+            data.columns = pd.MultiIndex.from_product([data.columns, [benchmark_name]])
+            data = portfolio_model.convert_historical_data(
+                data,
+                {benchmark_name: (str(benchmark_currency), str(currency))},
+                exchange_rates,
+                self._cfg["adjustments"]["currency_adjustment_columns"],
+            )
+            return data.droplevel(1, axis=1)
 
-        self._benchmark_specific_prices = pd.concat(benchmark_specific_prices)
-        self._latest_benchmark_price = pd.Series(benchmark_latest_price)
-        self._benchmark_prices_per_ticker = benchmark_prices_per_ticker
+        def benchmark_period(period: str) -> pd.DataFrame:
+            data = self._benchmark_toolkit.get_historical_data(period=period)  # type: ignore[union-attr]
+            # A single benchmark can come back with the ticker as a second column level.
+            if data.columns.nlevels > 1:
+                data = data.droplevel(1, axis=1)
+            return data
+
+        if ticker_currencies and not benchmark_currency:
+            logger.warning(
+                "Could not determine the currency of the benchmark %s, so its prices are "
+                "left unconverted and assumed to be in the currency of the transactions.",
+                benchmark_name,
+            )
+
+        main_currency = (
+            pd.Series(list(ticker_currencies.values())).mode().iloc[0]
+            if ticker_currencies
+            else None
+        )
+
+        daily_benchmark_data = benchmark_period("daily")
+
+        # Aligned with carried-forward prices: filling a missing date with the next quote would copy that day's return onto the earlier date as well and price it with information from the future.  # noqa: E501
+        aligned_by_currency = {
+            main_currency: portfolio_model.align_benchmark_data(
+                convert(daily_benchmark_data, main_currency),
+                self._daily_historical_data.index,
+            )
+        }
+        self._daily_benchmark_data = aligned_by_currency[main_currency]
+
+        self._weekly_benchmark_data = convert(benchmark_period("weekly"), main_currency)
+        self._monthly_benchmark_data = convert(
+            benchmark_period("monthly"), main_currency
+        )
+        self._quarterly_benchmark_data = convert(
+            benchmark_period("quarterly"), main_currency
+        )
+        self._yearly_benchmark_data = convert(benchmark_period("yearly"), main_currency)
+
+        benchmark_closes = {}
+        benchmark_dividends = {}
+        for ticker in self._tickers:
+            currency = ticker_currencies.get(ticker, main_currency)
+            if currency not in aligned_by_currency:
+                aligned_by_currency[currency] = portfolio_model.align_benchmark_data(
+                    convert(daily_benchmark_data, currency),
+                    self._daily_historical_data.index,
+                )
+            aligned = aligned_by_currency[currency]
+            benchmark_closes[ticker] = aligned["Close"]
+            benchmark_dividends[ticker] = (
+                aligned["Dividends"].astype(float).fillna(0.0).cumsum()
+                if "Dividends" in aligned
+                else pd.Series(0.0, index=aligned.index)
+            )
+
+        self._benchmark_prices_per_ticker = pd.DataFrame(
+            benchmark_closes, index=self._daily_benchmark_data.index
+        )
+        self._benchmark_dividends_per_ticker = pd.DataFrame(
+            benchmark_dividends, index=self._daily_benchmark_data.index
+        )
+
+        # The benchmark is bought at the traded close, the same basis as the transactions, and receives its dividends as cash.  # noqa: E501
+        self._benchmark_specific_prices = self._values_at_transactions(
+            self._benchmark_prices_per_ticker
+        )
+        self._benchmark_transaction_dividends = self._values_at_transactions(
+            self._benchmark_dividends_per_ticker
+        )
+        self._latest_benchmark_price = self._benchmark_prices_per_ticker.ffill().iloc[
+            -1
+        ]
 
         return self._daily_benchmark_data
 
@@ -1220,7 +1395,8 @@ class Portfolio:
             - If any currency mismatch is found between the portfolio's transaction and historical data,
               a warning message is displayed.
             - The method rounds the data according to the specified or default rounding precision.
-            - The latest adjusted price is also captured and available in the `self._latest_price` attribute.
+            - The latest closing price of every ticker, carried forward over a holiday of its exchange, is
+            also captured and available in the `self._latest_price` attribute.
             - If currency conversions are applied, a warning is displayed when mismatches between transaction and
               historical data currencies are found (e.g., for ISIN codes).
 
@@ -1376,7 +1552,8 @@ class Portfolio:
             )
         )
 
-        self._latest_price = self._daily_historical_data["Adj Close"].iloc[-1]
+        # Positions are valued at the traded close, the basis of the transaction prices; a ticker whose exchange is closed on the last date keeps its previous close.  # noqa: E501
+        self._latest_price = self._daily_historical_data["Close"].ffill().iloc[-1]
 
         if currency_conversions and self._definition is not None:
             logger.info(
@@ -1410,16 +1587,18 @@ class Portfolio:
         - Invested Amount: the cumulative capital deployed over time, i.e. the value of every buy plus
         the absolute transaction costs. Sale proceeds are not netted off.
         - Realized Proceeds: the cumulative cash received from selling units of the asset over time.
-        - Current Value: the value of the position still held, marked at the dividend-adjusted closing
-        price of that day.
+        - Dividends: the cumulative cash dividends received over time, i.e. on every ex-dividend date the
+        units held at the previous close times the dividend per unit.
+        - Current Value: the market value of the position still held, marked at the closing price of that day.
         - Cumulative Return: the total return on the capital deployed, i.e.
-        (Current Value + Realized Proceeds - Invested Amount) / Invested Amount.
+        (Current Value + Realized Proceeds + Dividends - Invested Amount) / Invested Amount. It is NaN
+        before the first purchase, when no capital has been deployed yet.
         - Invested Weight: the weight of the asset in the portfolio based on the invested amount over time.
         - Current Weight: the weight of the asset in the portfolio based on the current value over time.
 
-        Positions are marked at the adjusted closing price, so the cumulative return is a total return
-        that includes reinvested dividends. The historical "Current Value" is therefore a total-return
-        equivalent value rather than the price quoted on that date; the two coincide on the latest date.
+        Positions are marked at the traded closing price, the basis of the transaction prices, and the
+        dividends are added as cash when they are paid, so the cumulative return is a total return and
+        "Current Value" is the market value quoted on that date.
 
         A transaction booked on a day without a price, such as a weekend or an exchange holiday, is
         carried forward to the first following day that does have one.
@@ -1541,29 +1720,36 @@ class Portfolio:
         absolute transaction costs. Sale proceeds are deliberately not netted off, because a
         denominator that shrinks with every profitable sale inflates the reported return and flips
         its sign once more cash has come out than went in.
-        - Latest Price: The latest available price of the asset obtained from historical data.
+        - Latest Price: The latest closing price of the asset obtained from historical data.
         - Latest Value: The market value of the position still held, i.e. Volume times Latest Price.
+        - Dividends: The cash dividends received on the units held on every ex-dividend date.
         - Return: The total return on the capital deployed, i.e. Return Value divided by Invested.
-        This covers realized and unrealized results together and is NaN when nothing was invested.
-        - Return Value: The absolute profit or loss, i.e. Latest Value plus all sale proceeds minus
-        Invested. This equals realized PnL plus unrealized PnL minus the transaction costs, where the
-        realized PnL is the figure reported by get_transactions_overview.
+        This covers realized and unrealized results and the dividends together and is NaN when nothing
+        was invested.
+        - Return Value: The absolute profit or loss, i.e. Latest Value plus all sale proceeds plus
+        Dividends minus Invested. This equals realized PnL plus unrealized PnL plus dividends minus the
+        transaction costs, where the realized PnL is the figure reported by get_transactions_overview.
         - Benchmark Return: The return the identical cash flows would have produced in the benchmark.
-        Every transaction buys or sells benchmark units for the exact cash amount of that transaction
-        on that date, so the comparison is matched in money rather than in share count.
-        - Volatility: The annualized volatility of the asset over the most recent year, calculated via the
-        Risk module (risk_model.get_volatility). For the aggregated "Portfolio" row, this is derived from
-        the full covariance matrix of the underlying asset returns (Var_p = w^T * Cov * w, Markowitz, 1952)
+        Every transaction buys or sells benchmark units at the benchmark's closing price for the exact
+        cash amount of that transaction on that date, so the comparison is matched in money rather than
+        in share count, and the benchmark's dividends are received as cash as well.
+        - Volatility: The annualized volatility of the asset's daily returns over the most recent 252
+        trading days. For the aggregated "Portfolio" row, this is derived from the full covariance matrix
+        of the underlying asset returns over the same days (Var_p = w^T * Cov * w, Markowitz, 1952)
         rather than a weighted average of individual volatilities, since the latter ignores diversification
         from imperfectly correlated assets.
-        - Benchmark Volatility: The annualized volatility of the asset's benchmark over the most recent year,
-        calculated via the Risk module (risk_model.get_volatility).
+        - Benchmark Volatility: The annualized volatility of the benchmark's daily returns over the most
+        recent 252 trading days.
         - Alpha: The alpha is based on the difference between the asset's return and the benchmark return.
-        - Beta: The beta is based on the asset's return and the benchmark return. It measures the asset's volatility
-        compared to the benchmark. A beta >1 indicates that the asset is more volatile than the benchmark and a beta <1
-        indicates that the asset is less volatile than the benchmark.
+        - Beta: The beta of the asset's daily returns against the benchmark's over the most recent 252
+        trading days, the window of the Volatility column. A beta >1 indicates that the asset is more
+        volatile than the benchmark and a beta <1 indicates that the asset is less volatile than the benchmark.
         - Weight: The weight of the asset in the portfolio based on the latest market value and the total
         market value of the portfolio.
+
+        Positions are valued at the traded closing price, the basis of the transaction prices, and dividends
+        are added as cash, for the asset and the benchmark alike, so Return and Benchmark Return are total
+        returns on the same basis.
 
         No inventory method (FIFO, LIFO or average cost) is applied here: "Return" measures the result of
         every unit of currency put into the position rather than the basis of the units that happen to
@@ -1615,18 +1801,18 @@ class Portfolio:
 
         Which returns:
 
-        | Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |     Latest Value |   Return |   Return Value |   Benchmark Return |   Volatility |   Benchmark Volatility |   Alpha |   Beta |   Weight |
-        |:-------------|---------:|--------:|---------:|-----------:|---------------:|-----------------:|---------:|---------------:|-------------------:|-------------:|-----------------------:|--------:|-------:|---------:|
-        | MPWR         |      116 |     -27 | 246.737  |   30128.9  |       1425.98  | 165414           |   4.5041 |     135705     |             0.7868 |       0.571  |                 0.1304 |  3.7173 | 1.831  |   0.1491 |
-        | MSFT         |      105 |     -11 |  39.7562 |    4384.18 |        529.76  |  55624.8         |  11.7117 |      51346.2   |             3.1773 |       0.3593 |                 0.1304 |  8.5344 | 1.1728 |   0.0501 |
-        | NFLX         |      114 |     -32 | 131.32   |   16446.9  |         69.7   |   7945.8         |  -0.3883 |      -6386.76  |             1.4756 |       0.3693 |                 0.1304 | -1.864  | 1.0748 |   0.0072 |
-        | NVDA         |       69 |     -27 |   2.1316 |     199.66 |        237.47  |  16385.4         |  81.2212 |      16216.6   |             1.0756 |       0.378  |                 0.1304 | 80.1456 | 1.8295 |   0.0148 |
-        | OXY          |       27 |     -15 |  37.5907 |    1443.45 |         58.21  |   1571.67        |   0.3352 |        483.812 |             2.5002 |       0.3739 |                 0.1304 | -2.165  | 1.1471 |   0.0014 |
-        | SKY          |      126 |     -23 |  18.1967 |    2497.75 |         81.03  |  10209.8         |   3.1659 |       7907.64  |             4.9302 |       0.4426 |                 0.1304 | -1.7643 | 1.4039 |   0.0092 |
-        | VOO          |       77 |     -12 | 236.365  |   18684.8  |        714.34  |  55004.2         |   1.9603 |      36627.7   |             1.6199 |       0.13   |                 0.1304 |  0.3403 | 0.9961 |   0.0496 |
-        | VSS          |       98 |     -21 |  77.1834 |    8433.99 |        154.53  |  15143.9         |   0.8902 |       7507.8   |             2.2382 |       0.1807 |                 0.1304 | -1.348  | 0.7908 |   0.0136 |
-        | WMT          |       92 |     -18 |  17.4419 |    1779.63 |        108.16  |   9950.72        |   4.6578 |       8289.19  |             3.3052 |       0.2712 |                 0.1304 |  1.3526 | 0.4865 |   0.009  |
-        | Portfolio    |     2142 |    -532 |  57.823  |  139539    |        518.001 |      1.10956e+06 |   7.0216 |     979783     |             1.7376 |       0.3071 |                 0.1304 |  5.284  | 1.3986 |   1      |
+        | Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Dividends |   Return |   Return Value |   Benchmark Return |   Volatility |   Benchmark Volatility |   Alpha |    Beta |   Weight |
+        |:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|------------:|---------:|---------------:|-------------------:|-------------:|-----------------------:|--------:|--------:|---------:|
+        | MPWR         |      116 |     -27 | 250.893  |  30636     |       1140.12  |      132254    |    3301.39  |   3.4394 |      105369    |             0.7644 |       0.5485 |                 0.1274 |  2.675  |  2.5783 |   0.1365 |
+        | MSFT         |      105 |     -11 |  50.1726 |   5529.99  |        524.51  |       55073.6  |    3367.52  |   9.5947 |       53058.8  |             3.3786 |       0.3292 |                 0.1274 |  6.2161 |  1.0354 |   0.0569 |
+        | NFLX         |      114 |     -32 |  13.0791 |   1666.89  |         65.85  |        7506.9  |       0     |   3.6304 |        6051.53 |             1.3813 |       0.3572 |                 0.1274 |  2.2491 |  0.2488 |   0.0077 |
+        | NVDA         |       69 |     -27 |   2.1717 |    202.909 |        210.96  |       14556.2  |      49.646 |  71.138  |       14434.5  |             1.0556 |       0.3761 |                 0.1274 | 70.0824 |  1.9435 |   0.015  |
+        | OXY          |       27 |     -15 |  52.3833 |   2005.56  |         64.17  |        1732.59 |     876.077 |   0.5181 |        1039    |             2.7097 |       0.3494 |                 0.1274 | -2.1916 | -0.7819 |   0.0018 |
+        | SKY          |      126 |     -23 |  24.4134 |   3343.23  |         78.92  |        9943.92 |     901.062 |   2.3234 |        7767.74 |             4.8301 |       0.4542 |                 0.1274 | -2.5067 |  1.0893 |   0.0103 |
+        | VOO          |       77 |     -12 | 256.027  |  20238.2   |        698.58  |       53790.7  |    3863.3   |   1.867  |       37784.6  |             1.6782 |       0.1268 |                 0.1274 |  0.1888 |  0.9928 |   0.0555 |
+        | VSS          |       98 |     -21 |  94.9125 |  10366.5   |        149.35  |       14636.3  |    3122.51  |   0.8093 |        8390.01 |             2.4396 |       0.1664 |                 0.1274 | -1.6303 |  1.0607 |   0.0151 |
+        | WMT          |       92 |     -18 |  22.2477 |   2265.02  |        119.89  |       11029.9  |     965.758 |   4.37   |        9898.01 |             3.409  |       0.2626 |                 0.1274 |  0.9609 | -0.0971 |   0.0114 |
+        | Portfolio    |     2142 |    -532 |  55.8595 | 134818     |        452.235 |      968688    |   35730.9   |   6.5145 |      878276    |             1.8581 |       0.2752 |                 0.1274 |  4.6564 |  1.7913 |   1      |
         """
         if self._weekly_historical_data.empty:
             self.collect_historical_data()
@@ -1640,13 +1826,14 @@ class Portfolio:
             if self._daily_historical_data.empty:
                 return pd.DataFrame()
 
+        # A trailing year of 252 trading days for the volatility and the beta alike, rather than the current calendar year, which holds only a few returns early in January.  # noqa: E501
         if self._portfolio_volatilities.empty:
-            asset_volatility = risk_model.get_volatility(
-                self._daily_historical_data["Return"], "yearly"
-            ).iloc[-1]
-            benchmark_volatility = risk_model.get_volatility(
-                self._daily_benchmark_data["Return"], "yearly"
-            ).iloc[-1]
+            asset_volatility = overview_model.calculate_trailing_volatility(
+                self._daily_historical_data["Return"]
+            )
+            benchmark_volatility = overview_model.calculate_trailing_volatility(
+                self._daily_benchmark_data["Return"]
+            )
 
             self._portfolio_volatilities = pd.concat(
                 [
@@ -1656,36 +1843,12 @@ class Portfolio:
             )
 
         if self._portfolio_beta.empty:
-            # Calculate daily returns for portfolio tickers and benchmark
-            portfolio_returns = (
-                self._daily_historical_data["Adj Close"].pct_change().dropna()
-            )
-            benchmark_returns = (
-                self._daily_benchmark_data["Adj Close"].pct_change().dropna()
+            self._portfolio_beta = overview_model.calculate_trailing_beta(
+                self._daily_historical_data["Return"],
+                self._daily_benchmark_data["Return"],
             )
 
-            # Align dates between portfolio and benchmark returns
-            common_dates = portfolio_returns.index.intersection(benchmark_returns.index)
-            portfolio_returns = portfolio_returns.loc[common_dates]
-            benchmark_returns = benchmark_returns.loc[common_dates]
-
-            # Compute beta for each portfolio ticker against the benchmark; the covariance and the variance are taken over the same non-missing sample, since a ticker with a shorter history would otherwise be divided by a variance measured over a longer window than its own covariance.
-            betas = {}
-            for ticker in portfolio_returns.columns:
-                paired_returns = pd.concat(
-                    [portfolio_returns[ticker], benchmark_returns], axis=1
-                ).dropna()
-
-                if paired_returns.empty:
-                    betas[ticker] = float("nan")
-                    continue
-
-                cov = paired_returns.iloc[:, 0].cov(paired_returns.iloc[:, 1])
-                var = paired_returns.iloc[:, 1].var()
-                beta = cov / var if var else float("nan")
-                betas[ticker] = beta
-
-            self._portfolio_beta = pd.Series(betas)
+        cumulative_dividends = self._cumulative_dividends()
 
         try:
             self._portfolio_overview = overview_model.create_portfolio_overview(
@@ -1700,6 +1863,11 @@ class Portfolio:
                 betas=self._portfolio_beta,
                 include_portfolio=include_portfolio,
                 asset_returns=self._daily_historical_data["Return"],
+                # The dividends per unit paid after every transaction up to the latest date.
+                dividends=self._dividends_since_transactions(cumulative_dividends),
+                benchmark_dividends=self._dividends_since_transactions(
+                    self._benchmark_dividends_per_ticker
+                ),
             )
         except ValueError as error:
             raise ValueError(f"Failed to create portfolio overview: {error}") from error
@@ -1765,18 +1933,18 @@ class Portfolio:
 
         Which returns:
 
-        |                                                    |   Volume |   Costs |   Invested Amount |   Realized Proceeds |   Current Value |   Invested Weight |   Current Weight |   Return |
-        |:---------------------------------------------------|---------:|--------:|------------------:|--------------------:|----------------:|------------------:|-----------------:|---------:|
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'META') |       15 |      -1 |           4796.75 |              0      |        10819.6  |            0.0344 |           0.0098 |   1.2556 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'MPWR') |      116 |     -27 |          30128.9  |            419.755  |       165414    |            0.2159 |           0.1491 |   4.5041 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'MSFT') |      105 |     -11 |           4384.18 |            105.59   |        55624.8  |            0.0314 |           0.0501 |  11.7117 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'NFLX') |      114 |     -32 |          16446.9  |           2114.39   |         7945.8  |            0.1179 |           0.0072 |  -0.3883 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'NVDA') |       69 |     -27 |            199.66 |             30.8599 |        16385.4  |            0.0014 |           0.0148 |  81.2212 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'OXY')  |       27 |     -15 |           1443.45 |            355.587  |         1571.67 |            0.0103 |           0.0014 |   0.3352 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'SKY')  |      126 |     -23 |           2497.75 |            195.613  |        10209.8  |            0.0179 |           0.0092 |   3.1659 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'VOO')  |       77 |     -12 |          18684.8  |            308.375  |        55004.2  |            0.1339 |           0.0496 |   1.9603 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'VSS')  |       98 |     -21 |           8433.99 |            797.842  |        15143.9  |            0.0604 |           0.0136 |   0.8902 |
-        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'WMT')  |       92 |     -18 |           1779.63 |            118.103  |         9950.72 |            0.0128 |           0.009  |   4.6578 |
+        |                                                    |   Volume |   Costs |   Invested Amount |   Realized Proceeds |   Dividends |   Current Value |   Invested Weight |   Current Weight |   Return |
+        |:---------------------------------------------------|---------:|--------:|------------------:|--------------------:|------------:|----------------:|------------------:|-----------------:|---------:|
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'META') |       15 |      -1 |          4813.61  |               0     |      81.125 |        10780    |            0.0357 |           0.0099 |   1.2563 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'MPWR') |      116 |     -27 |         30636     |             449.4   |    3301.39  |       160810    |            0.2272 |           0.147  |   4.3715 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'MSFT') |      105 |     -11 |          5529.99  |             147.7   |    3367.52  |        56182.3  |            0.041  |           0.0513 |   9.7952 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'NFLX') |      114 |     -32 |          1666.89  |             211.515 |       0     |         8014.2  |            0.0124 |           0.0073 |   3.9348 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'NVDA') |       69 |     -27 |           202.909 |              31.547 |      49.646 |        15820.3  |            0.0015 |           0.0145 |  77.3678 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'OXY')  |       27 |     -15 |          2005.56  |             435.898 |     876.077 |         1622.97 |            0.0149 |           0.0015 |   0.4634 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'SKY')  |      126 |     -23 |          3343.23  |             265.99  |     901.062 |        10033.4  |            0.0248 |           0.0092 |   2.3502 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'VOO')  |       77 |     -12 |         20238.2   |             368.76  |    3863.3   |        55100.4  |            0.1501 |           0.0504 |   1.9317 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'VSS')  |       98 |     -21 |         10366.5   |             997.66  |    3122.51  |        15201.8  |            0.0769 |           0.0139 |   0.8639 |
+        | (Period('2026-10-05/2026-10-11', 'W-SUN'), 'WMT')  |       92 |     -18 |          2265.02  |             167.39  |     965.758 |        10244.2  |            0.0168 |           0.0094 |   4.0231 |
         """
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
@@ -1891,10 +2059,14 @@ class Portfolio:
               restarts at zero for the next ticker rather than carrying across the portfolio.
             - Transaction costs are deliberately excluded from the PnL. They are carried by the
               invested amount instead, so a cost is never counted in two places. The identity
-              Return Value = realized PnL + unrealized PnL - transaction costs therefore ties this
-              output back to get_portfolio_overview exactly.
+              Return Value = realized PnL + unrealized PnL + dividends - transaction costs therefore ties
+              this output back to get_portfolio_overview exactly.
             - "Invested Amount" is per transaction and is negative on a sell, since it is the cash
               movement of that one transaction rather than the capital deployed in the position.
+            - "Current Value" values the units of a buy at the latest closing price and "Dividends" holds
+              the cash dividends paid on them since the transaction, so "% Return" and "Return" are total
+              returns of the units bought. A sell has no current value, dividends or return; its result
+              is the PnL.
             - If no rounding is provided, the rounding precision specified in the configuration is used.
 
         As an example:
@@ -1909,18 +2081,18 @@ class Portfolio:
 
         Which returns:
 
-        |                                      | Name   |    Price |   Volume |   Costs | Currency   |   Invested Amount |   Current Value |   % Return |    Return |   PnL |   Cumulative PnL |
-        |:-------------------------------------|:-------|---------:|---------:|--------:|:-----------|------------------:|----------------:|-----------:|----------:|------:|-----------------:|
-        | (Period('2024-02-01', 'D'), 'GOOGL') | GOOGL  | 140.041  |       14 |       0 | USD        |          1960.57  |         4907    |     1.5028 | 2946.43   |     0 |           0      |
-        | (Period('2024-02-12', 'D'), 'BAC')   | BAC    |  33.0126 |        5 |      -3 | USD        |           168.063 |          267.6  |     0.5923 |   99.5368 |     0 |          56.8807 |
-        | (Period('2024-02-22', 'D'), 'MCHI')  | MCHI   |  38.4963 |        7 |      -1 | USD        |           270.474 |          361.48 |     0.3365 |   91.0058 |     0 |          -4.77   |
-        | (Period('2024-03-12', 'D'), 'MPWR')  | MPWR   | 727.32   |       11 |       0 | USD        |          8000.52  |        15685.8  |     0.9606 | 7685.26   |     0 |         376.706  |
-        | (Period('2024-05-14', 'D'), 'CAMT')  | CAMT   |  94.4243 |        4 |       0 | USD        |           377.697 |          608.8  |     0.6119 |  231.103  |     0 |          99.4194 |
-        | (Period('2024-06-11', 'D'), 'META')  | META   | 505.574  |        8 |       0 | USD        |          4044.59  |         5770.48 |     0.4267 | 1725.89   |     0 |           0      |
-        | (Period('2024-06-18', 'D'), 'MPWR')  | MPWR   | 847.6    |       14 |      -1 | USD        |         11867.4   |        19963.7  |     0.6822 | 8096.32   |     0 |         376.706  |
-        | (Period('2024-07-30', 'D'), 'AMD')   | AMD    | 139.57   |        3 |       0 | USD        |           418.711 |         1937.58 |     3.6275 | 1518.87   |     0 |           9.795  |
-        | (Period('2024-10-25', 'D'), 'MCHI')  | MCHI   |  48.8436 |        6 |       0 | USD        |           293.062 |          309.84 |     0.0573 |   16.7783 |     0 |          -4.77   |
-        | (Period('2024-11-13', 'D'), 'VOO')   | VOO    | 552.136  |       11 |       0 | USD        |          6073.5   |         7857.74 |     0.2938 | 1784.24   |     0 |         131.082  |
+        |                                      | Name   |   Price |   Volume |   Costs | Currency   |   Invested Amount |   Current Value |   Dividends |   % Return |    Return |   PnL |   Cumulative PnL |
+        |:-------------------------------------|:-------|--------:|---------:|--------:|:-----------|------------------:|----------------:|------------:|-----------:|----------:|------:|-----------------:|
+        | (Period('2024-02-01', 'D'), 'GOOGL') | GOOGL  |  141.16 |       14 |       0 | USD        |           1976.24 |         4482.94 |     29.12   |     1.2832 | 2535.82   |     0 |           0      |
+        | (Period('2024-02-12', 'D'), 'BAC')   | BAC    |   33.62 |        5 |      -3 | USD        |            171.1  |          252.8  |     14.8    |     0.564  |   96.5    |     0 |          22.7994 |
+        | (Period('2024-02-22', 'D'), 'MCHI')  | MCHI   |   39.77 |        7 |      -1 | USD        |            279.39 |          343    |     18.9952 |     0.2957 |   82.6052 |     0 |         -19.26   |
+        | (Period('2024-03-12', 'D'), 'MPWR')  | MPWR   |  736.55 |       11 |       0 | USD        |           8102.05 |        12541.3  |    189.64   |     0.5713 | 4628.91   |     0 |         399.48   |
+        | (Period('2024-05-14', 'D'), 'CAMT')  | CAMT   |   94.11 |        4 |       0 | USD        |            376.44 |          484.64 |      0      |     0.2874 |  108.2    |     0 |         102.7    |
+        | (Period('2024-06-11', 'D'), 'META')  | META   |  507.47 |        8 |       0 | USD        |           4059.76 |         5140.96 |     41.4    |     0.2765 | 1122.6    |     0 |           0      |
+        | (Period('2024-06-18', 'D'), 'MPWR')  | MPWR   |  852.56 |       14 |      -1 | USD        |          11936.8  |        15961.7  |    223.86   |     0.3559 | 4248.7    |     0 |         399.48   |
+        | (Period('2024-07-30', 'D'), 'AMD')   | AMD    |  138.44 |        3 |       0 | USD        |            415.32 |         1550.37 |      0      |     2.733  | 1135.05   |     0 |          13.3825 |
+        | (Period('2024-10-25', 'D'), 'MCHI')  | MCHI   |   49.85 |        6 |       0 | USD        |            299.1  |          294    |     15.138  |     0.0336 |   10.038  |     0 |         -19.26   |
+        | (Period('2024-11-13', 'D'), 'VOO')   | VOO    |  549.03 |       11 |       0 | USD        |           6039.33 |         7684.38 |    159.099  |     0.2987 | 1804.15   |     0 |         140.84   |
         """
         pnl_method = pnl_method.upper()
 
@@ -1947,6 +2119,9 @@ class Portfolio:
                 portfolio_price=self._portfolio_dataset[self._price_column],
                 portfolio_costs=self._portfolio_dataset[self._costs_column],
                 latest_returns=self._latest_price.loc[self._tickers],
+                dividends=self._dividends_since_transactions(
+                    self._cumulative_dividends()
+                ),
             )
         except ValueError as error:
             raise ValueError(
@@ -2006,11 +2181,26 @@ class Portfolio:
         """
         Calculate transaction performance metrics for a specified period.
 
-        This method calculates various transaction performance metrics, such as returns,
-        costs, and benchmarks, for the specified period. The calculation is based on
-        historical price data for the corresponding period, including both the portfolio
-        and benchmark datasets. It provides an overview of how the portfolio's transactions
-        have performed in comparison to the benchmark over the given period.
+        This method calculates per asset and period how the units bought in that period performed
+        up to the end of the period, next to the return the identical purchases would have made in
+        the benchmark. The following columns are included:
+
+        - Volume: the net volume traded in the period, i.e. buys minus sells.
+        - Price: the volume-weighted average price paid for the units bought in the period.
+        - Costs: the transaction costs of the period, of buys and sells.
+        - Invested Amount: the value of the units bought plus the costs of those buys.
+        - Realized Proceeds: the cash received from sales in the period.
+        - Current Value: the units bought in the period at the closing price at the end of the period.
+        - Dividends: the cash dividends those units received up to the end of the period.
+        - Return: (Current Value + Dividends - Invested Amount) / Invested Amount, NaN in a period
+        without purchases.
+        - Benchmark Return: the same return for benchmark units bought with the same money on the
+        same dates, dividends included.
+        - Alpha: Return minus Benchmark Return.
+
+        Sales are reported but left out of the return: the units sold in a period were usually bought
+        in an earlier one, and their proceeds would credit this period's purchases with the gains of
+        earlier ones. Units are valued at the traded closing price and receive their dividends as cash.
 
         Args:
             period (str | None): The time period for which transaction performance metrics
@@ -2034,8 +2224,8 @@ class Portfolio:
               'weekly', 'daily') for calculating transaction performance metrics.
             - If no period is provided, it defaults to 'quarterly' or 'yearly' based on the
               configuration.
-            - The method uses historical price data from the specified period and benchmarks
-              to calculate the metrics.
+            - The end-of-period prices and dividends are taken from the daily data, in the currency of
+              each ticker's transactions for the asset and the benchmark alike.
             - If no rounding is specified, the rounding precision from the configuration is used.
 
         As an example:
@@ -2050,18 +2240,18 @@ class Portfolio:
 
         Which returns:
 
-        |                                      |   Volume |    Price |   Costs |   Invested Amount |   Realized Proceeds |   Current Value |   Return |   Benchmark Return |   Alpha |
-        |:-------------------------------------|---------:|---------:|--------:|------------------:|--------------------:|----------------:|---------:|-------------------:|--------:|
-        | (Period('2023Q4', 'Q-DEC'), 'MCHI')  |       15 |  41.0726 |      -3 |           619.088 |                   0 |         580.2   |  -0.0628 |             0.0853 | -0.1481 |
-        | (Period('2024Q1', 'Q-DEC'), 'BAC')   |        5 |  33.0126 |      -3 |           168.063 |                   0 |         179.111 |   0.0657 |             0.0276 |  0.0381 |
-        | (Period('2024Q1', 'Q-DEC'), 'GOOGL') |       14 | 140.041  |       0 |          1960.57  |                   0 |        2093.1   |   0.0676 |             0.071  | -0.0034 |
-        | (Period('2024Q1', 'Q-DEC'), 'MCHI')  |        7 |  38.4963 |      -1 |           270.474 |                   0 |         264.04  |  -0.0238 |             0.0291 | -0.0529 |
-        | (Period('2024Q1', 'Q-DEC'), 'MPWR')  |       11 | 727.32   |       0 |          8000.52  |                   0 |        7316.99  |  -0.0854 |             0.0153 | -0.1007 |
-        | (Period('2024Q2', 'Q-DEC'), 'CAMT')  |        4 |  94.4243 |       0 |           377.697 |                   0 |         500.96  |   0.3264 |             0.0407 |  0.2856 |
-        | (Period('2024Q2', 'Q-DEC'), 'META')  |        8 | 505.574  |       0 |          4044.59  |                   0 |        4003.68  |  -0.0101 |             0.0158 | -0.026  |
-        | (Period('2024Q2', 'Q-DEC'), 'MPWR')  |       14 | 847.6    |      -1 |         11867.4   |                   0 |       11313.1   |  -0.0467 |            -0.0049 | -0.0418 |
-        | (Period('2024Q4', 'Q-DEC'), 'MCHI')  |        6 |  48.8436 |       0 |           293.062 |                   0 |         273.24  |  -0.0676 |             0.0127 | -0.0803 |
-        | (Period('2024Q4', 'Q-DEC'), 'VOO')   |       11 | 552.136  |       0 |          6073.5   |                   0 |        5804.48  |  -0.0443 |            -0.0173 | -0.027  |
+        |                                      |   Volume |   Price |   Costs |   Invested Amount |   Realized Proceeds |   Current Value |   Dividends |   Return |   Benchmark Return |   Alpha |
+        |:-------------------------------------|---------:|--------:|--------:|------------------:|--------------------:|----------------:|------------:|---------:|-------------------:|--------:|
+        | (Period('2023Q4', 'Q-DEC'), 'MCHI')  |       15 |   43.29 |      -3 |            652.35 |                   0 |          611.1  |     14.9115 |  -0.0404 |             0.0856 | -0.1259 |
+        | (Period('2024Q1', 'Q-DEC'), 'BAC')   |        5 |   33.62 |      -3 |            171.1  |                   0 |          189.6  |      1.2    |   0.1151 |             0.028  |  0.0872 |
+        | (Period('2024Q1', 'Q-DEC'), 'GOOGL') |       14 |  141.16 |       0 |           1976.24 |                   0 |         2113.02 |      0      |   0.0692 |             0.071  | -0.0018 |
+        | (Period('2024Q1', 'Q-DEC'), 'MCHI')  |        7 |   39.77 |      -1 |            279.39 |                   0 |          278.11 |      0      |  -0.0046 |             0.0292 | -0.0338 |
+        | (Period('2024Q1', 'Q-DEC'), 'MPWR')  |       11 |  736.55 |       0 |           8102.05 |                   0 |         7451.62 |     13.75   |  -0.0786 |             0.0153 | -0.0939 |
+        | (Period('2024Q2', 'Q-DEC'), 'CAMT')  |        4 |   94.11 |       0 |            376.44 |                   0 |          500.96 |      0      |   0.3308 |             0.0407 |  0.29   |
+        | (Period('2024Q2', 'Q-DEC'), 'META')  |        8 |  507.47 |       0 |           4059.76 |                   0 |         4033.76 |      4      |  -0.0054 |             0.0158 | -0.0213 |
+        | (Period('2024Q2', 'Q-DEC'), 'MPWR')  |       14 |  852.56 |      -1 |          11936.8  |                   0 |        11503.5  |     17.5    |  -0.0348 |            -0.0049 | -0.0299 |
+        | (Period('2024Q4', 'Q-DEC'), 'MCHI')  |        6 |   49.85 |       0 |            299.1  |                   0 |          281.16 |      5.3466 |  -0.0421 |             0.0127 | -0.0548 |
+        | (Period('2024Q4', 'Q-DEC'), 'VOO')   |       11 |  549.03 |       0 |           6039.33 |                   0 |         5926.91 |     19.1235 |  -0.0154 |            -0.0173 |  0.0019 |
         """
         if not period:
             period = "quarterly" if self._quarterly else "yearly"
@@ -2085,47 +2275,55 @@ class Portfolio:
 
         period_string = period.lower()
 
-        if period_string == "yearly":
-            historical_dataset = self._yearly_historical_data["Adj Close"]
-            benchmark_dataset = self._yearly_benchmark_data["Adj Close"]
-            period_symbol = "Y"
-        elif period_string == "quarterly":
-            historical_dataset = self._quarterly_historical_data["Adj Close"]
-            benchmark_dataset = self._quarterly_benchmark_data["Adj Close"]
-            period_symbol = "Q"
-        elif period_string == "monthly":
-            historical_dataset = self._monthly_historical_data["Adj Close"]
-            benchmark_dataset = self._monthly_benchmark_data["Adj Close"]
-            period_symbol = "M"
-        elif period_string == "weekly":
-            historical_dataset = self._weekly_historical_data["Adj Close"]
-            benchmark_dataset = self._weekly_benchmark_data["Adj Close"]
-            period_symbol = "W"
-        elif period_string == "daily":
-            historical_dataset = self._daily_historical_data["Adj Close"]
-            benchmark_dataset = self._daily_benchmark_data["Adj Close"]
-            period_symbol = "D"
-        else:
+        period_symbols = {
+            "yearly": "Y",
+            "quarterly": "Q",
+            "monthly": "M",
+            "weekly": "W",
+            "daily": "D",
+        }
+
+        if period_string not in period_symbols:
             raise ValueError(
                 "Please provide a valid period. This can be "
                 "'yearly', 'quarterly', 'monthly', 'weekly', "
                 "or 'daily'"
             )
 
+        period_symbol = period_symbols[period_string]
+
+        def end_of_period(daily_values: pd.DataFrame) -> pd.DataFrame:
+            # The last value of every period, from the daily data so the asset and the benchmark are both in the currency of each ticker's transactions.  # noqa: E501
+            return daily_values.groupby(
+                to_period_index(daily_values.index).asfreq(period_symbol)
+            ).last()
+
+        cumulative_dividends = self._cumulative_dividends()
+
         try:
-            self._transactions_performance = (
-                overview_model.create_transactions_performance(
-                    portfolio_dataset=self._portfolio_dataset,
-                    ticker_column=self._ticker_column,
-                    date_column=self._date_column,
-                    volume_column=self._volume_column,
-                    price_column=self._price_column,
-                    costs_column=self._costs_column,
-                    period_prices=historical_dataset,
-                    period_string=period_symbol,
-                    benchmark_specific_prices=self._benchmark_specific_prices,
-                    benchmark_period_prices=benchmark_dataset,
-                )
+            self._transactions_performance = overview_model.create_transactions_performance(
+                portfolio_dataset=self._portfolio_dataset,
+                ticker_column=self._ticker_column,
+                date_column=self._date_column,
+                volume_column=self._volume_column,
+                price_column=self._price_column,
+                costs_column=self._costs_column,
+                period_prices=end_of_period(
+                    self._daily_historical_data["Close"].reindex(columns=self._tickers)
+                ),
+                period_string=period_symbol,
+                benchmark_specific_prices=self._benchmark_specific_prices,
+                benchmark_period_prices=end_of_period(
+                    self._benchmark_prices_per_ticker
+                ),
+                period_dividends=end_of_period(cumulative_dividends),
+                transaction_dividends=self._values_at_transactions(
+                    cumulative_dividends
+                ),
+                benchmark_period_dividends=end_of_period(
+                    self._benchmark_dividends_per_ticker
+                ),
+                benchmark_transaction_dividends=self._benchmark_transaction_dividends,
             )
         except ValueError as error:
             raise ValueError(
@@ -2155,8 +2353,9 @@ class Portfolio:
         sale, rather than the result of the assets alone.
 
         The cash flows are every purchase (money in, including costs), every sale (money
-        out, after costs) and the latest value of the positions still held, on the last
-        date of the historical data.
+        out, after costs), every cash dividend received (money out, on its ex-dividend date)
+        and the latest value of the positions still held, on the last date of the
+        historical data.
 
         For more information, see the following book:
 
@@ -2171,8 +2370,8 @@ class Portfolio:
 
         Returns:
             pd.DataFrame: Per position and for the Portfolio, the money Invested, the money
-            Received from sales, the Latest Value, the First Transaction date and the
-            annualized Money-Weighted Return.
+            Received from sales, the Dividends received, the Latest Value, the First
+            Transaction date and the annualized Money-Weighted Return.
 
         As an example:
 
@@ -2186,35 +2385,35 @@ class Portfolio:
 
         Which returns:
 
-        |           |   Invested |   Received |   Latest Value | First Transaction   |   Money-Weighted Return |
-        |:----------|-----------:|-----------:|---------------:|:--------------------|------------------------:|
-        | ASML      |   4978.04  |   654.97   |      202762    | 2000-01-07          |                  0.2222 |
-        | SKY       |   2493.75  |   191.613  |        9943.92 | 2000-01-10          |                  0.0672 |
-        | AMZN      |   5040.91  |   193.453  |       28768    | 2000-01-28          |                  0.2056 |
-        | FIX       |   1756.57  |    13.9346 |      141625    | 2000-02-23          |                  0.2589 |
-        | MSFT      |   4384.18  |   105.59   |       55073.6  | 2000-02-28          |                  0.1467 |
-        | AMD       |   2395.23  |  1436.45   |       40309.6  | 2000-04-27          |                  0.146  |
-        | AAPL      |   5623.11  |   256.328  |       47639    | 2000-05-08          |                  0.2752 |
-        | FICO      |   4833.33  |   567.728  |       94576    | 2000-06-01          |                  0.1665 |
-        | BAC       |   1844.25  |   207.442  |        4044.8  | 2000-11-16          |                  0.0635 |
-        | ALGN      |   9863.99  |   323.464  |       12515.3  | 2001-09-18          |                  0.0341 |
-        | CWST      |   1368.73  |    92.2423 |        6149.43 | 2001-10-15          |                  0.1342 |
-        | OXY       |   1432.45  |   344.587  |        1732.59 | 2001-11-16          |                  0.0299 |
-        | WMT       |   1775.63  |   114.103  |       11029.9  | 2001-12-28          |                  0.1336 |
-        | CAMT      |    540.11  |   100.214  |        5088.72 | 2002-08-07          |                  0.2836 |
-        | NVDA      |    198.199 |    29.3991 |       14556.2  | 2002-09-20          |                  0.3254 |
-        | NFLX      |  16441.9   |  2109.39   |        7506.9  | 2002-11-18          |                 -0.0903 |
-        | GOOGL     |   4648.02  |   359.815  |       46750.7  | 2004-08-24          |                  0.2192 |
-        | MPWR      |  30125.9   |   416.755  |      132254    | 2005-09-16          |                  0.2752 |
-        | BLDR      |   1685.06  |   122.395  |        2728.8  | 2006-12-22          |                  0.0993 |
-        | VSS       |   8431.99  |   795.842  |       14636.3  | 2009-06-05          |                  0.0727 |
-        | AVGO      |   1562.27  |   135.036  |       21230.9  | 2009-11-02          |                  0.351  |
-        | MCHI      |   2681.91  |   114.678  |        2646    | 2011-04-26          |                  0.005  |
-        | VOO       |  18684.8   |   308.375  |       53790.7  | 2011-12-20          |                  0.1494 |
-        | META      |   4796.75  |     0      |        9639.3  | 2012-06-20          |                  0.1913 |
-        | KHC       |    572.97  |   207.675  |         223.2  | 2017-03-07          |                 -0.0607 |
-        | EMXC      |   1270     |   454.169  |        1467.36 | 2019-05-03          |                  0.0886 |
-        | Portfolio | 139430     |  9655.65   |      968688    | 2000-01-07          |                  0.1772 |
+        |           |   Invested |   Received |   Dividends |   Latest Value | First Transaction   |   Money-Weighted Return |
+        |:----------|-----------:|-----------:|------------:|---------------:|:--------------------|------------------------:|
+        | ASML      |   6348.35  |    736.149 |    8610.47  |      202762    | 2000-01-07          |                  0.2123 |
+        | SKY       |   3339.23  |    261.99  |     901.062 |        9943.92 | 2000-01-10          |                  0.0652 |
+        | AMZN      |   5042.91  |    192.851 |       0     |       28768    | 2000-01-28          |                  0.2054 |
+        | FIX       |   1976.93  |     18.43  |    1294.06  |      141625    | 2000-02-23          |                  0.2513 |
+        | MSFT      |   5529.99  |    147.7   |    3367.52  |       55073.6  | 2000-02-28          |                  0.1359 |
+        | AMD       |   2384.36  |   1431.84  |       0     |       40309.6  | 2000-04-27          |                  0.1462 |
+        | AAPL      |   5750.96  |    266.963 |    1246.48  |       47639    | 2000-05-08          |                  0.2784 |
+        | FICO      |   4917.94  |    576.42  |     102.122 |       94576    | 2000-06-01          |                  0.1659 |
+        | BAC       |   2401.58  |    303.8   |     888.08  |        4044.8  | 2000-11-16          |                  0.0672 |
+        | ALGN      |   9918     |    324.77  |       0     |       12515.3  | 2001-09-18          |                  0.0334 |
+        | CWST      |   1373.89  |     91.95  |       0     |        6149.43 | 2001-10-15          |                  0.1339 |
+        | OXY       |   1994.56  |    424.898 |     876.077 |        1732.59 | 2001-11-16          |                  0.0404 |
+        | WMT       |   2261.02  |    163.39  |     965.758 |       11029.9  | 2001-12-28          |                  0.1285 |
+        | CAMT      |    546.73  |    104.06  |      67.87  |        5088.72 | 2002-08-07          |                  0.2856 |
+        | NVDA      |    201.303 |     29.941 |      49.646 |       14556.2  | 2002-09-20          |                  0.3245 |
+        | NFLX      |   1662.85  |    207.478 |       0     |        7506.9  | 2002-11-18          |                  0.207  |
+        | GOOGL     |   4668.1   |    359.26  |     304.08  |       46750.7  | 2004-08-24          |                  0.2196 |
+        | MPWR      |  30633     |    446.4   |    3301.39  |      132254    | 2005-09-16          |                  0.2745 |
+        | BLDR      |   1682.82  |    121.254 |       0     |        2728.8  | 2006-12-22          |                  0.1004 |
+        | VSS       |  10364.5   |    995.66  |    3122.51  |       14636.3  | 2009-06-05          |                  0.0765 |
+        | AVGO      |   1568.81  |    134.64  |    6096.41  |       21230.9  | 2009-11-02          |                  0.5773 |
+        | MCHI      |   2965.43  |    139.96  |     336.097 |        2646    | 2011-04-26          |                  0.0093 |
+        | VOO       |  20238.2   |    368.76  |    3863.3   |       53790.7  | 2011-12-20          |                  0.1506 |
+        | META      |   4813.61  |      0     |      81.125 |        9639.3  | 2012-06-20          |                  0.1931 |
+        | KHC       |    722.41  |    242.21  |     108.25  |         223.2  | 2017-03-07          |                 -0.0525 |
+        | EMXC      |   1403.3   |    477.33  |     148.616 |        1467.36 | 2019-05-03          |                  0.0893 |
+        | Portfolio | 134711     |   8568.1   |   35730.9   |      968688    | 2000-01-07          |                  0.1763 |
         """
         # Imported here: the attribution model is only needed for this calculation.
         from financetoolkit.portfolio import attribution_model  # noqa: PLC0415
@@ -2245,6 +2444,17 @@ class Portfolio:
             str(self._daily_historical_data.index.get_level_values(0).max())
         )
 
+        # The dividends received per day follow from the cumulative dividends of the positions, dated on the ex-dividend date.  # noqa: E501
+        positions_dividends = self.get_positions_overview()["Dividends"]
+        daily_dividends = positions_dividends.diff().fillna(positions_dividends)
+        daily_dividends.index = pd.to_datetime(
+            to_period_index(daily_dividends.index).to_timestamp()
+        )
+        dividend_flows: dict[str, pd.Series] = {
+            str(ticker): values[values != 0]
+            for ticker, values in daily_dividends.items()
+        }
+
         rows = {}
         latest_values: dict[str, float] = {}
         identifiers = transactions.index.get_level_values("Identifier")
@@ -2254,6 +2464,11 @@ class Portfolio:
             )
             dates = pd.to_datetime(selected.index.get_level_values("Date").astype(str))
             cash_flows = pd.Series(selected.to_numpy(), index=dates)
+            dividends = (
+                pd.concat(list(dividend_flows.values()))
+                if identifier == "Portfolio" and dividend_flows
+                else dividend_flows.get(str(identifier), pd.Series(dtype=float))
+            )
             # The value still held follows from the same transactions: their net volume
             # at the latest price.
             if identifier == "Portfolio":
@@ -2270,7 +2485,7 @@ class Portfolio:
                 latest_value = net_volume * latest_price
                 latest_values[identifier] = latest_value
             all_flows = pd.concat(
-                [cash_flows, pd.Series([latest_value], index=[last_date])]
+                [cash_flows, dividends, pd.Series([latest_value], index=[last_date])]
             )
             try:
                 money_weighted = attribution_model.get_money_weighted_return(all_flows)
@@ -2280,13 +2495,20 @@ class Portfolio:
             rows[identifier] = {
                 "Invested": float(-cash_flows[cash_flows < 0].sum()),
                 "Received": float(cash_flows[cash_flows > 0].sum()),
+                "Dividends": float(dividends.sum()),
                 "Latest Value": latest_value,
                 "First Transaction": dates.min().strftime("%Y-%m-%d"),
                 "Money-Weighted Return": money_weighted,
             }
 
         result = pd.DataFrame(rows).T
-        numeric = ["Invested", "Received", "Latest Value", "Money-Weighted Return"]
+        numeric = [
+            "Invested",
+            "Received",
+            "Dividends",
+            "Latest Value",
+            "Money-Weighted Return",
+        ]
         result[numeric] = result[numeric].astype(float)
 
         return apply_rounding(

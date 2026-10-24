@@ -45,34 +45,48 @@ def create_transactions_overview(
     portfolio_price: pd.Series,
     portfolio_costs: pd.Series,
     latest_returns: pd.Series,
+    dividends: pd.Series | None = None,
 ):
     """
     Generate a detailed overview of transaction performance for individual assets in a portfolio.
 
     This function calculates key performance metrics for each asset in the portfolio, including:
     - "Invested Amount": The initial investment made for each asset, accounting for transaction costs.
-    - "Current Value": The current value of the asset based on the latest returns.
-    - "% Return": The percentage change in value from the invested amount to the current value.
-    - "Return": The absolute change in value from the invested amount to the current value.
+    - "Current Value": The current market value of the units bought, at the latest closing price.
+    - "Dividends": The cash dividends the units bought have received since the transaction.
+    - "% Return": The total return of the units bought, dividends included.
+    - "Return": The absolute profit or loss of the units bought, dividends included.
 
     Args:
         portfolio_volume (pd.Series): A Series containing the number of units (volumes) of each asset in the portfolio.
         portfolio_price (pd.Series): A Series containing the purchase price per unit for each asset.
         portfolio_costs (pd.Series): A Series containing the transaction costs associated with each asset.
-        latest_returns (pd.Series): A Series containing the most recent market value per unit for each asset.
+        latest_returns (pd.Series): A Series containing the latest closing price per unit for each asset,
+            indexed by ticker.
+        dividends (pd.Series | None, optional): The cash dividends per unit paid between each transaction
+            and the latest date, aligned with `portfolio_volume`. Defaults to None, which means no dividends.
 
     Returns:
         pd.DataFrame: A DataFrame with the following columns for each asset:
             - "Invested Amount": The total cost of acquiring the asset, including transaction costs.
-            - "Current Value": The current total value of the asset in the portfolio.
-            - "% Return": The percentage return on investment.
-            - "Return": The absolute profit or loss.
+            - "Current Value": The current market value of the units bought.
+            - "Dividends": The cash dividends received on the units bought.
+            - "% Return": The percentage return on investment, dividends included.
+            - "Return": The absolute profit or loss, dividends included.
 
             The DataFrame is indexed by the asset tickers from the `portfolio_volume` index.
-            Missing or invalid values are replaced with 0.0.
+            Missing or invalid values are replaced with 0.0. Sell transactions have no current
+            value, dividends or return, since their result is the realized PnL instead.
     """
+    dividends_per_unit = (
+        np.zeros(len(portfolio_volume))
+        if dividends is None
+        else np.nan_to_num(np.asarray(dividends, dtype=float))
+    )
+
     invested_amount = []
     current_value = []
+    dividends_received = []
     percentage_return = []
     value_return = []
 
@@ -82,26 +96,100 @@ def create_transactions_overview(
             portfolio_costs.iloc[row]
         )
 
-        recent_value = (
-            portfolio_volume.iloc[row] * latest_returns.loc[ticker]
-            if portfolio_volume.iloc[row] > 0
-            else np.nan
-        )
+        if portfolio_volume.iloc[row] > 0:
+            # The units are valued at the traded close and their dividends are added as cash, so the return is a total return on the same basis as the price that was paid.  # noqa: E501
+            recent_value = portfolio_volume.iloc[row] * latest_returns.loc[ticker]
+            received = portfolio_volume.iloc[row] * dividends_per_unit[row]
+        else:
+            recent_value = np.nan
+            received = np.nan
 
         invested_amount.append(bought_value)
         current_value.append(recent_value)
-        percentage_return.append((recent_value / bought_value) - 1)
-        value_return.append(recent_value - bought_value)
+        dividends_received.append(received)
+        percentage_return.append(((recent_value + received) / bought_value) - 1)
+        value_return.append(recent_value + received - bought_value)
 
     new_columns = pd.DataFrame(
-        [invested_amount, current_value, percentage_return, value_return],
+        [
+            invested_amount,
+            current_value,
+            dividends_received,
+            percentage_return,
+            value_return,
+        ],
         columns=portfolio_volume.index,
-        index=["Invested Amount", "Current Value", "% Return", "Return"],
+        index=["Invested Amount", "Current Value", "Dividends", "% Return", "Return"],
     ).T
 
     new_columns = new_columns.fillna(0.0)
 
     return new_columns
+
+
+def calculate_trailing_volatility(
+    returns: pd.Series | pd.DataFrame, window: int = TRADING_DAYS_PER_YEAR
+) -> float | pd.Series:
+    """
+    Calculate the annualized volatility over the most recent trading days.
+
+    The volatility is the standard deviation of the last `window` daily returns, multiplied by
+    the square root of 252 trading days. A trailing window always holds a full year of returns,
+    whereas the current calendar year holds only a handful of returns early in January.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): Daily returns, one column per asset.
+        window (int, optional): The number of most recent trading days to use. Defaults to 252.
+
+    Returns:
+        float | pd.Series: The annualized volatility, per column for a DataFrame.
+    """
+    recent_returns = returns.iloc[-window:]
+
+    return recent_returns.std() * np.sqrt(TRADING_DAYS_PER_YEAR)
+
+
+def calculate_trailing_beta(
+    asset_returns: pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window: int = TRADING_DAYS_PER_YEAR,
+) -> pd.Series:
+    """
+    Calculate the beta of every asset against the benchmark over the most recent trading days,
+    i.e. Cov(R_i, R_m) / Var(R_m) over the last `window` daily returns.
+
+    The covariance and the variance are taken over the same non-missing sample per asset, since
+    an asset with a shorter history would otherwise be divided by a variance measured over a
+    longer window than its own covariance. The window equals the one of
+    `calculate_trailing_volatility`, so the Volatility and Beta columns describe the same year.
+
+    Args:
+        asset_returns (pd.DataFrame): Daily returns, one column per asset.
+        benchmark_returns (pd.Series): Daily returns of the benchmark.
+        window (int, optional): The number of most recent trading days to use. Defaults to 252.
+
+    Returns:
+        pd.Series: The beta of every asset, NaN when the asset and the benchmark share no returns.
+    """
+    common_dates = asset_returns.index.intersection(benchmark_returns.index)
+    recent_assets = asset_returns.loc[common_dates].iloc[-window:]
+    recent_benchmark = benchmark_returns.loc[common_dates].iloc[-window:]
+
+    betas = {}
+    for ticker in recent_assets.columns:
+        paired_returns = pd.concat(
+            [recent_assets[ticker], recent_benchmark], axis=1
+        ).dropna()
+
+        if len(paired_returns) < 2:  # noqa: PLR2004
+            betas[ticker] = float("nan")
+            continue
+
+        covariance = paired_returns.iloc[:, 0].cov(paired_returns.iloc[:, 1])
+        variance = paired_returns.iloc[:, 1].var()
+        betas[ticker] = covariance / variance if variance else float("nan")
+
+    return pd.Series(betas, dtype=float)
 
 
 def _calculate_portfolio_volatility(
@@ -127,9 +215,9 @@ def _calculate_portfolio_volatility(
         fallback_volatilities (pd.Series): Individual annualized asset volatilities, indexed by
             ticker. Used only when `asset_returns` is not available, as a documented approximation.
         asset_returns (pd.DataFrame | None): Daily returns for each asset, indexed by date/period,
-            with one column per ticker. When available, the most recent calendar year of returns is
-            used to build the covariance matrix, consistent with how individual asset volatilities
-            are annualized elsewhere (see risk_model.get_volatility with period="yearly").
+            with one column per ticker. When available, the most recent 252 trading days of returns
+            are used to build the covariance matrix, the same window as the individual asset
+            volatilities (see `calculate_trailing_volatility`).
 
     Returns:
         float: The annualized portfolio volatility (standard deviation).
@@ -140,9 +228,8 @@ def _calculate_portfolio_volatility(
     if asset_returns is not None and not asset_returns.empty:
         returns_for_covariance = asset_returns.reindex(columns=weights.index)
 
-        # The most recent calendar year, matching the individual Volatility column.
-        periods = to_period_index(returns_for_covariance.index).asfreq("Y")
-        recent_returns = returns_for_covariance[periods == periods[-1]]
+        # The most recent 252 trading days, matching the individual Volatility column.
+        recent_returns = returns_for_covariance.iloc[-TRADING_DAYS_PER_YEAR:]
 
         # Columns that are entirely missing would propagate NaNs across the matrix.
         recent_returns = recent_returns.dropna(axis=1, how="all")
@@ -176,6 +263,8 @@ def create_portfolio_overview(
     betas: pd.Series,
     include_portfolio: bool = True,
     asset_returns: pd.DataFrame | None = None,
+    dividends: pd.Series | None = None,
+    benchmark_dividends: pd.Series | None = None,
 ):
     """
     Generate a comprehensive overview of portfolio positions and related performance metrics.
@@ -189,9 +278,13 @@ def create_portfolio_overview(
         portfolio_volume (pd.Series): A Series containing the number of units (volumes) held for each asset.
         portfolio_price (pd.Series): A Series containing the purchase price per unit for each asset.
         portfolio_costs (pd.Series): A Series containing transaction costs for each asset.
-        latest_returns (pd.Series): A Series containing the latest market prices for each asset.
-        benchmark_prices (pd.Series): A Series containing historical benchmark prices for comparison.
-        benchmark_latest_prices (pd.Series): A Series containing the latest benchmark prices for each asset.
+        latest_returns (pd.Series): A Series containing the latest closing price for each asset.
+        benchmark_prices (pd.Series): The closing price of the benchmark on the date of every transaction,
+            aligned with `portfolio_volume`.
+        benchmark_latest_prices (pd.Series): A Series containing the latest benchmark closing price for each asset.
+        volatilities (pd.Series): The annualized volatility of every asset and, under "Benchmark", of the
+            benchmark.
+        betas (pd.Series): The beta of every asset against the benchmark.
         include_portfolio (bool): A flag indicating whether to include an aggregated portfolio summary row.
             Defaults to True.
         asset_returns (pd.DataFrame | None, optional): Daily returns for each portfolio ticker, indexed by
@@ -201,6 +294,12 @@ def create_portfolio_overview(
             volatility falls back to a weighted average of individual asset volatilities, which
             ignores cross-asset correlation and therefore overstates true portfolio volatility unless
             all assets are perfectly correlated. Defaults to None.
+        dividends (pd.Series | None, optional): The cash dividends per unit of the asset paid between the
+            date of every transaction and the latest date, aligned with `portfolio_volume`. Defaults to
+            None, which means no dividends.
+        benchmark_dividends (pd.Series | None, optional): The cash dividends per unit of the benchmark paid
+            between the date of every transaction and the latest date, aligned with `portfolio_volume`.
+            Defaults to None, which means no dividends.
 
     Returns:
         pd.DataFrame: A DataFrame containing the following metrics for each asset:
@@ -213,14 +312,16 @@ def create_portfolio_overview(
               and always represents money that was actually put in.
             - "Latest Price": The most recent market price per unit.
             - "Latest Value": The market value of the position still held (Volume * Latest Price).
+            - "Dividends": The cash dividends received on the units held on every ex-dividend date.
             - "Return": The total return on capital deployed, i.e. Return Value / Invested. This
-              includes both realized and unrealized results.
+              includes realized and unrealized results and the dividends received.
             - "Return Value": The absolute profit or loss, i.e. Latest Value plus all sale proceeds
-              minus Invested. This equals realized PnL + unrealized PnL - transaction costs.
+              plus Dividends minus Invested. This equals realized PnL + unrealized PnL + dividends -
+              transaction costs.
             - "Benchmark Return": The return the identical cash flows would have produced in the
               benchmark, i.e. every buy and sell is replicated in benchmark units at the benchmark
-              price of that transaction date, and the resulting position is valued at the latest
-              benchmark price.
+              closing price of that transaction date, and the resulting position is valued at the
+              latest benchmark closing price plus the benchmark dividends it received.
             - "Alpha": The difference between asset return and benchmark return.
             - "Weight": The proportion of the asset's current market value relative to the total
               current market value of the portfolio.
@@ -233,8 +334,13 @@ def create_portfolio_overview(
           FIFO, LIFO nor average cost is applied here because "Return" measures the result of every
           euro put into the position, not the basis of the units that happen to remain. The inventory
           methods are used for the realized PnL in `create_profit_and_loss_overview`.
-        - The decomposition Return Value = realized PnL + unrealized PnL - transaction costs holds
-          exactly, where realized PnL is the FIFO/LIFO/average figure of
+        - Positions are valued at the traded closing price, the basis of the transaction prices, and
+          dividends are added as cash when they are paid rather than reinvested. Valuing them at the
+          dividend-adjusted closing price instead would mark units bought at a traded price against a
+          back-adjusted price and understate every return by the dividends paid after the purchase.
+          The asset and the benchmark are treated identically, so "Alpha" compares like with like.
+        - The decomposition Return Value = realized PnL + unrealized PnL + dividends - transaction
+          costs holds exactly, where realized PnL is the FIFO/LIFO/average figure of
           `create_profit_and_loss_overview` and unrealized PnL is the remaining position marked to
           the latest price against its own basis. Transaction costs appear once, inside "Invested",
           and are deliberately not also deducted from the realized PnL.
@@ -281,6 +387,17 @@ def create_portfolio_overview(
     portfolio_overview["Benchmark Volume"] = (
         transaction_value / benchmark_prices.to_numpy()
     )
+    # Every transaction adds or removes units that receive (or no longer receive) the dividends paid after its date, so the dividends of the position are the volume-weighted sum of the dividends per unit since each transaction.  # noqa: E501
+    portfolio_overview["Dividends"] = portfolio_volume * (
+        0.0 if dividends is None else np.nan_to_num(np.asarray(dividends, dtype=float))
+    )
+    portfolio_overview["Benchmark Dividends"] = portfolio_overview[
+        "Benchmark Volume"
+    ] * (
+        0.0
+        if benchmark_dividends is None
+        else np.nan_to_num(np.asarray(benchmark_dividends, dtype=float))
+    )
 
     portfolio_overview_grouped = portfolio_overview.groupby(
         "Identifier", observed=True
@@ -293,6 +410,8 @@ def create_portfolio_overview(
             "Proceeds": "sum",
             "Invested": "sum",
             "Benchmark Volume": "sum",
+            "Dividends": "sum",
+            "Benchmark Dividends": "sum",
         }
     )
 
@@ -322,11 +441,13 @@ def create_portfolio_overview(
 
     benchmark_latest_value = (
         portfolio_overview_grouped["Benchmark Volume"] * benchmark_latest_prices
+        + portfolio_overview_grouped["Benchmark Dividends"]
     )
 
     portfolio_overview_grouped["Return Value"] = (
         portfolio_overview_grouped["Latest Value"]
         + portfolio_overview_grouped["Proceeds"]
+        + portfolio_overview_grouped["Dividends"]
         - portfolio_overview_grouped["Invested"]
     )
     portfolio_overview_grouped["Return"] = _safe_divide(
@@ -364,6 +485,7 @@ def create_portfolio_overview(
         proceeds = totals["Proceeds"]
         invested = totals["Invested"]
         latest_value = totals["Latest Value"]
+        dividends_received = totals["Dividends"]
         benchmark_latest_value_sum = benchmark_latest_value.sum()
 
         portfolio_volatility = _calculate_portfolio_volatility(
@@ -375,7 +497,7 @@ def create_portfolio_overview(
             portfolio_overview_grouped["Beta"] * portfolio_overview_grouped["Weight"]
         )
 
-        return_value = latest_value + proceeds - invested
+        return_value = latest_value + proceeds + dividends_received - invested
 
         portfolio_summary = {
             "Volume": vol,
@@ -388,6 +510,8 @@ def create_portfolio_overview(
             "Benchmark Volume": totals["Benchmark Volume"],
             "Latest Price": latest_value / vol if vol else np.nan,
             "Latest Value": latest_value,
+            "Dividends": dividends_received,
+            "Benchmark Dividends": totals["Benchmark Dividends"],
             "Return Value": return_value,
             "Return": return_value / invested if invested > 0 else np.nan,
             "Benchmark Return": (
@@ -417,6 +541,7 @@ def create_portfolio_overview(
             "Invested",
             "Latest Price",
             "Latest Value",
+            "Dividends",
             "Return",
             "Return Value",
             "Benchmark Return",
@@ -431,6 +556,35 @@ def create_portfolio_overview(
     return portfolio_overview_grouped
 
 
+def _lookup_period_values(
+    period_values: pd.DataFrame | pd.Series | None,
+    periods: pd.PeriodIndex,
+    tickers: pd.Index,
+) -> np.ndarray:
+    """
+    The value of every (period, ticker) pair in a frame with one row per period and one column
+    per ticker, or in a Series with one value per period. A pair that is not available, such as a
+    transaction that predates the ticker's price history, is NaN rather than an error.
+    """
+    values = np.full(len(periods), np.nan)
+
+    if period_values is None:
+        return values
+
+    for row, (period, ticker) in enumerate(zip(periods, tickers, strict=True)):
+        try:
+            value = (
+                period_values.loc[period, ticker]
+                if isinstance(period_values, pd.DataFrame)
+                else period_values.loc[period]
+            )
+        except KeyError:
+            continue
+        values[row] = float(value)
+
+    return values
+
+
 def create_transactions_performance(
     portfolio_dataset: pd.DataFrame,
     ticker_column: str,
@@ -441,14 +595,18 @@ def create_transactions_performance(
     period_prices: pd.DataFrame,
     period_string: str,
     benchmark_specific_prices: pd.Series,
-    benchmark_period_prices: pd.DataFrame,
+    benchmark_period_prices: pd.DataFrame | pd.Series,
+    period_dividends: pd.DataFrame | None = None,
+    transaction_dividends: pd.Series | None = None,
+    benchmark_period_dividends: pd.DataFrame | pd.Series | None = None,
+    benchmark_transaction_dividends: pd.Series | None = None,
 ):
     """
-    Calculate transaction performance metrics over a specified period.
+    Calculate the performance of the units bought in every period up to the end of that period.
 
-    This function computes detailed transaction performance metrics for portfolio assets,
-    including returns, invested amounts, current values, and benchmarks. The metrics
-    are calculated based on historical data for the specified period.
+    This function computes per asset and period the capital deployed in the units bought in that
+    period, their value and dividends at the end of the period and the return on them, next to
+    the return the identical purchases would have made in the benchmark.
 
     Args:
         portfolio_dataset (pd.DataFrame): A DataFrame containing portfolio transaction details,
@@ -458,74 +616,123 @@ def create_transactions_performance(
         volume_column (str): The name of the column representing transaction volumes in `portfolio_dataset`.
         price_column (str): The name of the column representing transaction prices in `portfolio_dataset`.
         costs_column (str): The name of the column representing transaction costs in `portfolio_dataset`.
-        period_prices (pd.DataFrame): A DataFrame containing historical price data for assets during
-            the specified period, indexed by date and asset ticker.
+        period_prices (pd.DataFrame): The closing price of every asset at the end of every period, one
+            row per period and one column per ticker.
         period_string (str): The time period for grouping transactions. Supported values are
-            'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'.
-        benchmark_specific_prices (pd.Series): A Series containing specific benchmark prices for
-            assets, aligned with the `portfolio_dataset`.
-        benchmark_period_prices (pd.DataFrame): A DataFrame containing historical benchmark prices
-            for the specified period, indexed by date.
+            'Y', 'Q', 'M', 'W' or 'D'.
+        benchmark_specific_prices (pd.Series): The closing price of the benchmark on the date of every
+            transaction, aligned with `portfolio_dataset`.
+        benchmark_period_prices (pd.DataFrame | pd.Series): The closing price of the benchmark at the end
+            of every period, as a Series or, when the benchmark is expressed in the currency of each
+            ticker, as a DataFrame with one column per ticker.
+        period_dividends (pd.DataFrame | None, optional): The cumulative dividends per unit of every asset
+            at the end of every period, shaped as `period_prices`. Defaults to None, which means no
+            dividends.
+        transaction_dividends (pd.Series | None, optional): The cumulative dividends per unit of the asset
+            up to and including the date of every transaction, aligned with `portfolio_dataset`.
+            Defaults to None, which means no dividends.
+        benchmark_period_dividends (pd.DataFrame | pd.Series | None, optional): The cumulative dividends
+            per unit of the benchmark at the end of every period, shaped as `benchmark_period_prices`.
+            Defaults to None, which means no dividends.
+        benchmark_transaction_dividends (pd.Series | None, optional): The cumulative dividends per unit
+            of the benchmark up to and including the date of every transaction, aligned with
+            `portfolio_dataset`. Defaults to None, which means no dividends.
 
     Returns:
         pd.DataFrame: A DataFrame containing the following metrics for each asset and period:
             - "Volume": Net transaction volume during the period, i.e. buys minus sells.
             - "Price": The volume-weighted average price paid for the units bought during the period.
-            - "Costs": Total transaction costs during the period.
+            - "Costs": Total transaction costs during the period, of buys and sells.
             - "Invested Amount": The capital deployed during the period, i.e. the value of every buy
-              plus the absolute transaction costs. Sale proceeds are not netted off.
+              plus the absolute transaction costs of those buys.
             - "Realized Proceeds": The cash received from sales during the period.
-            - "Current Value": The value of the net position at the end-of-period price.
-            - "Return": The total return on the capital deployed during the period, i.e.
-              (Current Value + Realized Proceeds - Invested Amount) / Invested Amount.
-            - "Benchmark Return": The return the identical cash flows would have produced in the
-              benchmark over the same window.
+            - "Current Value": The value of the units bought during the period at the closing price
+              at the end of the period.
+            - "Dividends": The cash dividends those units received up to the end of the period.
+            - "Return": The total return on the units bought during the period, i.e.
+              (Current Value + Dividends - Invested Amount) / Invested Amount.
+            - "Benchmark Return": The return the identical purchases would have produced in the
+              benchmark over the same window, dividends included.
             - "Alpha": The difference between the asset return and benchmark return.
 
     Raises:
         ValueError: If an unsupported value is provided for `period_string`.
 
     Notes:
-        - The function aligns transaction data with the specified period frequencies
-          using the `date_column`.
+        - "Return" follows the units bought in the period only. Sales are reported in "Realized
+          Proceeds" but left out of the return, because the units sold in a period were usually
+          bought in an earlier one; their proceeds would credit the purchases of this period with
+          the gains of earlier ones.
+        - The costs of sales are reported in "Costs" but not in "Invested Amount", since they are no
+          part of what the units bought in the period cost.
+        - Units are valued at the traded closing price, the basis of the transaction prices, and the
+          dividends paid on them are added as cash. A unit bought on an ex-dividend date does not
+          receive that dividend.
         - The invested amount is the sum of volume times price per transaction rather than the summed
           volume times the average price, because the latter is only equal when every transaction in
           the period is of the same size.
-        - The benchmark is dollar-matched: each transaction buys or sells benchmark units for the
-          exact cash amount of that transaction on that date, which makes "Alpha" a like-for-like
-          comparison rather than a comparison of equal share counts.
+        - The benchmark is dollar-matched: each purchase buys benchmark units for the exact cash
+          amount of that transaction on that date, which makes "Alpha" a like-for-like comparison
+          rather than a comparison of equal share counts.
         - "Return" is NaN for a period in which nothing was bought, since there is no capital
           deployed in that period to earn a return on.
-        - The "Benchmark Price" column is excluded from the final output as it is used only
-          for intermediate calculations.
     """
-    # A copy is taken because the caller's transaction dataset is reused elsewhere and must not silently gain a "Benchmark Price" column.  # noqa: E501
-    portfolio_dataset = portfolio_dataset.copy()
-    portfolio_dataset["Benchmark Price"] = benchmark_specific_prices.to_numpy()
-
-    period_performance = portfolio_dataset.reset_index()
-
-    period_performance = period_performance.set_index([date_column, ticker_column])
+    period_performance = portfolio_dataset.reset_index().set_index(
+        [date_column, ticker_column]
+    )
 
     transaction_volume = period_performance[volume_column]
     transaction_value = transaction_volume * period_performance[price_column]
-
-    period_performance["Buy Volume"] = transaction_volume.where(
-        transaction_volume > 0, 0.0
-    )
-    period_performance["Buy Value"] = transaction_value.where(
-        transaction_volume > 0, 0.0
-    )
-    period_performance["Realized Proceeds"] = (-transaction_value).where(
-        transaction_volume < 0, 0.0
-    )
-    period_performance["Benchmark Volume"] = (
-        transaction_value / period_performance["Benchmark Price"]
-    )
+    bought = transaction_volume > 0
 
     dates = to_period_index(
         period_performance.index.get_level_values(date_column)
     ).asfreq(period_string)
+    tickers = period_performance.index.get_level_values(ticker_column)
+
+    def per_transaction(values: pd.Series | None) -> np.ndarray:
+        # The cumulative dividends up to a missing date are unknown, which is no dividend at all rather than a missing return.  # noqa: E501
+        if values is None:
+            return np.zeros(len(period_performance))
+        return np.nan_to_num(np.asarray(values, dtype=float))
+
+    end_prices = _lookup_period_values(period_prices, dates, tickers)
+    end_dividends = np.nan_to_num(
+        _lookup_period_values(period_dividends, dates, tickers)
+    )
+    benchmark_end_prices = _lookup_period_values(
+        benchmark_period_prices, dates, tickers
+    )
+    benchmark_end_dividends = np.nan_to_num(
+        _lookup_period_values(benchmark_period_dividends, dates, tickers)
+    )
+
+    buy_volume = transaction_volume.where(bought, 0.0)
+    buy_value = transaction_value.where(bought, 0.0)
+    benchmark_volume = buy_value / np.asarray(benchmark_specific_prices, dtype=float)
+
+    period_performance["Buy Volume"] = buy_volume
+    period_performance["Buy Value"] = buy_value
+    period_performance["Buy Costs"] = (
+        period_performance[costs_column].abs().where(bought, 0.0)
+    )
+    period_performance["Realized Proceeds"] = (-transaction_value).where(
+        transaction_volume < 0, 0.0
+    )
+    # Sales carry no value here, so a missing end-of-period price on a sale leaves the purchases intact.
+    period_performance["Current Value"] = (buy_volume * end_prices).where(bought, 0.0)
+    # A unit receives every dividend with an ex-date after the day it was bought, up to the end of the period.  # noqa: E501
+    period_performance["Dividends"] = buy_volume * (
+        end_dividends - per_transaction(transaction_dividends)
+    )
+    period_performance["Benchmark Value"] = (
+        benchmark_volume
+        * (
+            benchmark_end_prices
+            + benchmark_end_dividends
+            - per_transaction(benchmark_transaction_dividends)
+        )
+    ).where(bought, 0.0)
 
     period_performance_grouped = period_performance.groupby(
         [dates, ticker_column], observed=True
@@ -535,8 +742,11 @@ def create_transactions_performance(
             costs_column: "sum",
             "Buy Volume": "sum",
             "Buy Value": "sum",
+            "Buy Costs": "sum",
             "Realized Proceeds": "sum",
-            "Benchmark Volume": "sum",
+            "Current Value": lambda values: values.sum(min_count=1),
+            "Dividends": "sum",
+            "Benchmark Value": lambda values: values.sum(min_count=1),
         }
     )
 
@@ -549,45 +759,23 @@ def create_transactions_performance(
         ),
     )
 
-    period_performance_grouped["Invested Amount"] = period_performance_grouped[
-        "Buy Value"
-    ] + abs(period_performance_grouped[costs_column])
-
-    last_prices = []
-    last_benchmark_prices = []
-
-    for period in period_performance_grouped.index:
-        # A transaction predating the ticker's price history is unknown, not an error.
-        try:
-            last_prices.append(period_prices.loc[period[0], period[1]])
-        except KeyError:
-            last_prices.append(np.nan)
-        try:
-            last_benchmark_prices.append(benchmark_period_prices.loc[period[0]])
-        except KeyError:
-            last_benchmark_prices.append(np.nan)
-
-    period_performance_grouped["Current Value"] = (
-        period_performance_grouped[volume_column] * last_prices
+    period_performance_grouped["Invested Amount"] = (
+        period_performance_grouped["Buy Value"]
+        + period_performance_grouped["Buy Costs"]
     )
 
-    # A period in which nothing was bought deployed no capital, so there is no return to report on it even though the absolute costs would form a non-zero denominator.  # noqa: E501
+    # A period in which nothing was bought deployed no capital, so there is no return to report on it.
     bought_in_period = period_performance_grouped["Buy Value"] > 0
 
     period_performance_grouped["Return"] = _safe_divide(
         period_performance_grouped["Current Value"]
-        + period_performance_grouped["Realized Proceeds"]
+        + period_performance_grouped["Dividends"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
     ).where(bought_in_period)
 
-    end_of_period_benchmark_value = (
-        period_performance_grouped["Benchmark Volume"] * last_benchmark_prices
-    )
-
     period_performance_grouped["Benchmark Return"] = _safe_divide(
-        end_of_period_benchmark_value
-        + period_performance_grouped["Realized Proceeds"]
+        period_performance_grouped["Benchmark Value"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
     ).where(bought_in_period)
@@ -595,11 +783,6 @@ def create_transactions_performance(
     period_performance_grouped["Alpha"] = (
         period_performance_grouped["Return"]
         - period_performance_grouped["Benchmark Return"]
-    )
-
-    # Dropping the intermediate columns since they have no meaning in the current layout
-    period_performance_grouped = period_performance_grouped.drop(
-        columns=["Buy Volume", "Buy Value", "Benchmark Volume"]
     )
 
     return period_performance_grouped[
@@ -610,6 +793,7 @@ def create_transactions_performance(
             "Invested Amount",
             "Realized Proceeds",
             "Current Value",
+            "Dividends",
             "Return",
             "Benchmark Return",
             "Alpha",
@@ -639,8 +823,9 @@ def create_positions_overview(
             i.e. the dates on which a price is available.
         portfolio_dataset (pd.DataFrame): The dataset containing portfolio transactions, indexed by
             date and ticker, with columns such as 'Volume', 'Price' and 'Costs'.
-        historical_prices (pd.DataFrame): The historical prices of the assets, containing an
-            'Adj Close' column used for calculating the 'Current Value' of positions.
+        historical_prices (pd.DataFrame): The daily historical data of the assets, containing a
+            'Close' column used for the 'Current Value' of positions and, optionally, a 'Dividends'
+            column with the cash dividend per unit on every ex-dividend date.
         volume_column (str): The name of the column holding the transaction volume. Defaults to "Volume".
         price_column (str): The name of the column holding the transaction price. Defaults to "Price".
         costs_column (str): The name of the column holding the transaction costs. Defaults to "Costs".
@@ -652,10 +837,12 @@ def create_positions_overview(
             - "Invested Amount": The cumulative capital deployed, i.e. the value of every buy plus the
               absolute transaction costs. Sale proceeds are not netted off.
             - "Realized Proceeds": The cumulative cash received from selling units of each asset.
+            - "Dividends": The cumulative cash dividends received, i.e. on every ex-dividend date the
+              units held at the previous close times the dividend per unit.
             - "Current Value": The market value of the position still held, i.e. Volume times the
-              adjusted closing price on that date.
+              closing price on that date.
             - "Cumulative Return": The total return on capital deployed, i.e.
-              (Current Value + Realized Proceeds - Invested Amount) / Invested Amount.
+              (Current Value + Realized Proceeds + Dividends - Invested Amount) / Invested Amount.
             - "Invested Weight": The weight of each asset relative to the total capital deployed
               across the portfolio.
             - "Current Weight": The weight of each asset relative to the total current market value
@@ -665,12 +852,15 @@ def create_positions_overview(
         - Transactions dated on a day without a price, such as a weekend or an exchange holiday, are
           carried forward to the first following date that does have a price. Aligning them on the
           date itself would drop the transaction from every position metric without any warning.
-        - Positions are marked at the adjusted closing price rather than the raw closing price, so
-          "Cumulative Return" is a total return that includes reinvested dividends. As a consequence
-          the historical "Current Value" is a total-return equivalent value rather than the market
-          value quoted on that date; the two coincide on the most recent date.
+        - Positions are marked at the traded closing price, the basis of the transaction prices, and
+          dividends are added as cash when they are paid, so "Cumulative Return" is a total return
+          and "Current Value" is the market value quoted on that date. Marking units bought at a
+          traded price at the dividend-adjusted closing price instead would understate the return by
+          every dividend paid after the purchase.
+        - A missing closing price, such as on a holiday of the asset's exchange, is carried forward
+          from the previous trading day, so the position keeps its value rather than dropping to zero.
         - "Cumulative Return" is NaN before the first purchase, since a return against zero deployed
-          capital is undefined.
+          capital is undefined. Every other column is zero before the first purchase.
         - The weights are normalized based on the total invested amount and current value across all
           positions in the portfolio.
     """
@@ -722,10 +912,36 @@ def create_positions_overview(
 
         positions[column] = positions[column].astype(float).fillna(0.0).cumsum()
 
-    positions["Current Value"] = positions["Volume"] * historical_prices["Adj Close"]
+    closing_prices = (
+        historical_prices["Close"]
+        .reindex(index=price_dates, columns=portfolio_tickers)
+        .astype(float)
+        .ffill()
+    )
+
+    if "Dividends" in historical_prices.columns.get_level_values(0):
+        dividends_per_unit = (
+            historical_prices["Dividends"]
+            .reindex(index=price_dates, columns=portfolio_tickers)
+            .astype(float)
+            .fillna(0.0)
+        )
+    else:
+        dividends_per_unit = pd.DataFrame(
+            0.0, index=price_dates, columns=portfolio_tickers
+        )
+
+    # A dividend goes to whoever held the units at the close before the ex-dividend date, so a purchase on the ex-date itself does not receive it and a sale on that date still does.  # noqa: E501
+    positions["Dividends"] = (
+        (positions["Volume"].shift(1).fillna(0.0) * dividends_per_unit)
+        .fillna(0.0)
+        .cumsum()
+    )
+    positions["Current Value"] = positions["Volume"] * closing_prices
     positions["Cumulative Return"] = _safe_divide(
         positions["Current Value"]
         + positions["Realized Proceeds"]
+        + positions["Dividends"]
         - positions["Invested Amount"],
         positions["Invested Amount"],
     )
@@ -738,7 +954,11 @@ def create_positions_overview(
 
     positions_df = pd.concat(positions, axis=1).replace([np.inf, -np.inf], np.nan)
 
-    return positions_df.fillna(0)
+    # The return stays NaN before the first purchase, since there is no capital to measure it against.
+    other_columns = positions_df.columns.get_level_values(0) != "Cumulative Return"
+    positions_df.loc[:, other_columns] = positions_df.loc[:, other_columns].fillna(0.0)
+
+    return positions_df
 
 
 def create_portfolio_performance(
@@ -756,8 +976,8 @@ def create_portfolio_performance(
 
     Args:
         positions_dataset (pd.DataFrame): The dataset containing portfolio positions, typically with multi-level
-            indices (date and ticker). It includes columns like 'Volume', 'Costs', 'Invested Amount', 'Current Value',
-            'Invested Weight', and 'Current Weight'.
+            indices (date and ticker). It includes columns like 'Volume', 'Costs', 'Invested Amount',
+            'Realized Proceeds', 'Dividends', 'Current Value', 'Invested Weight', and 'Current Weight'.
         date_column (str): The name of the column representing the dates in `positions_dataset`.
         ticker_column (str): The name of the column representing the tickers in `positions_dataset`.
         period_string (str): The time period for which portfolio performance metrics should be calculated. This can be
@@ -770,11 +990,12 @@ def create_portfolio_performance(
             - 'Costs': The cumulative transaction costs at the end of the period.
             - 'Invested Amount': The cumulative capital deployed in each asset at the end of the period.
             - 'Realized Proceeds': The cumulative cash received from sales at the end of the period.
+            - 'Dividends': The cumulative cash dividends received at the end of the period.
             - 'Current Value': The market value of each asset at the end of the period.
             - 'Invested Weight': The proportion of the portfolio invested in each asset.
             - 'Current Weight': The proportion of the portfolio's current value allocated to each asset.
             - 'Return': The total return on capital deployed, i.e.
-              (Current Value + Realized Proceeds - Invested Amount) / Invested Amount.
+              (Current Value + Realized Proceeds + Dividends - Invested Amount) / Invested Amount.
 
     Raises:
         ValueError: If an invalid or unsupported `period_string` is provided.
@@ -794,23 +1015,35 @@ def create_portfolio_performance(
     )
     tickers = positions_dataset_stacked.index.get_level_values(ticker_column)
 
+    columns = [
+        column
+        for column in [
+            "Volume",
+            "Costs",
+            "Invested Amount",
+            "Realized Proceeds",
+            "Dividends",
+            "Current Value",
+            "Invested Weight",
+            "Current Weight",
+        ]
+        if column in positions_dataset_stacked.columns
+    ]
+
     positions_dataset_grouped = positions_dataset_stacked.groupby(
         [dates, tickers], observed=True
-    ).agg(
-        {
-            "Volume": "last",
-            "Costs": "last",
-            "Invested Amount": "last",
-            "Realized Proceeds": "last",
-            "Current Value": "last",
-            "Invested Weight": "last",
-            "Current Weight": "last",
-        }
+    ).agg(dict.fromkeys(columns, "last"))
+
+    dividends_received = (
+        positions_dataset_grouped["Dividends"]
+        if "Dividends" in positions_dataset_grouped.columns
+        else 0.0
     )
 
     positions_dataset_grouped["Return"] = _safe_divide(
         positions_dataset_grouped["Current Value"]
         + positions_dataset_grouped["Realized Proceeds"]
+        + dividends_received
         - positions_dataset_grouped["Invested Amount"],
         positions_dataset_grouped["Invested Amount"],
     )

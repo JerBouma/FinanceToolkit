@@ -207,3 +207,37 @@ def test_the_presets_have_prices_in_their_own_currency():
         }
         assert currencies["IEGA.AS"] == "EUR"
         assert currencies["IGLT.L"] == "GBP"
+
+
+def test_build_transactions_reinvests_the_dividends_on_rebalancing():
+    """Flat prices and one dividend of 5 per share: the yearly rebalancing invests the cash."""
+    dates = pd.bdate_range("2022-01-03", "2023-12-29")
+    prices = pd.DataFrame({"A": 100.0, "B": 100.0}, index=dates)
+    dividends = pd.DataFrame({"A": 0.0, "B": 0.0}, index=dates)
+    dividends.loc[pd.Timestamp("2022-06-01"), "A"] = 5.0
+    definition = PortfolioDefinition.from_weights(
+        {"A": 0.5, "B": 0.5}, rebalancing="yearly"
+    )
+
+    transactions = definition_model.build_transactions(
+        definition, prices, initial_value=10000.0, currency="USD", dividends=dividends
+    )
+
+    # 50 shares of A received 250 of cash, reinvested half in A and half in B.
+    rebalanced = transactions[transactions["Date"] == "2022-12-30"]
+    assert rebalanced["Volume"].tolist() == pytest.approx([1.25, 1.25])
+    assert (rebalanced["Price"] * rebalanced["Volume"]).sum() == pytest.approx(250.0)
+
+
+def test_build_transactions_without_dividends_keeps_the_value():
+    dates = pd.bdate_range("2022-01-03", "2023-12-29")
+    prices = pd.DataFrame({"A": 100.0, "B": 100.0}, index=dates)
+    definition = PortfolioDefinition.from_weights(
+        {"A": 0.5, "B": 0.5}, rebalancing="yearly"
+    )
+
+    transactions = definition_model.build_transactions(
+        definition, prices, initial_value=10000.0, currency="USD"
+    )
+
+    assert len(transactions) == 2

@@ -668,3 +668,78 @@ def convert_historical_data(
             )
 
     return historical_data
+
+
+def align_benchmark_data(benchmark_data: pd.DataFrame, dates: pd.Index) -> pd.DataFrame:
+    """
+    Daily benchmark data aligned to the dates of the portfolio's historical data.
+
+    Prices (Open, High, Low, Close, Adj Close and any other level) on a date without a benchmark
+    quote, such as a holiday of the benchmark's exchange, are carried forward from the previous
+    quote. Flows (Volume and Dividends) on a benchmark date that is missing from `dates` are
+    added to the first following date, so no dividend is lost. Return and Cumulative Return are
+    calculated again from the aligned Adj Close: a carried-forward price is a return of zero.
+
+    Filling a missing date with the next quote instead would copy that day's price and return
+    onto the earlier date, counting the return twice and pricing a day with information from
+    the future.
+
+    Args:
+        benchmark_data (pd.DataFrame): The daily historical data of one benchmark, one column per
+            field (e.g. Close, Adj Close, Dividends, Return).
+        dates (pd.Index): The dates to align to, e.g. those of the portfolio's historical data.
+
+    Returns:
+        pd.DataFrame: The benchmark data on `dates`, with the columns of `benchmark_data`.
+    """
+    if benchmark_data.empty:
+        return benchmark_data.reindex(dates)
+
+    benchmark_data = benchmark_data.sort_index()
+    benchmark_data = benchmark_data[~benchmark_data.index.duplicated(keep="first")]
+    dates = pd.Index(dates)
+
+    flow_columns = [
+        column for column in ["Volume", "Dividends"] if column in benchmark_data
+    ]
+    return_columns = [
+        column for column in ["Return", "Cumulative Return"] if column in benchmark_data
+    ]
+    level_columns = [
+        column
+        for column in benchmark_data.columns
+        if column not in flow_columns + return_columns
+    ]
+
+    aligned = (
+        benchmark_data[level_columns]
+        .reindex(dates.union(benchmark_data.index))
+        .ffill()
+        .reindex(dates)
+    )
+
+    # Every benchmark date maps to the first portfolio date on or after it.
+    locations = dates.get_indexer(benchmark_data.index, method="bfill")
+    matched = locations != -1
+    for column in flow_columns:
+        aligned[column] = (
+            benchmark_data[column]
+            .astype(float)
+            .fillna(0.0)[matched]
+            .groupby(dates[locations[matched]])
+            .sum()
+            .reindex(dates, fill_value=0.0)
+        )
+
+    if "Adj Close" in aligned:
+        adjusted_close = aligned["Adj Close"]
+        first = adjusted_close.first_valid_index()
+        if "Return" in return_columns:
+            returns = adjusted_close.pct_change()
+            if first is not None:
+                returns.loc[first] = 0.0
+            aligned["Return"] = returns
+        if "Cumulative Return" in return_columns and first is not None:
+            aligned["Cumulative Return"] = adjusted_close / adjusted_close.loc[first]
+
+    return aligned.reindex(columns=benchmark_data.columns)

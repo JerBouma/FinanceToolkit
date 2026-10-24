@@ -358,6 +358,7 @@ def build_transactions(
     years_offset: float = 0.0,
     currency: str | None = None,
     exchange_rates: pd.DataFrame | None = None,
+    dividends: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     The transactions that invest a portfolio definition: the purchase of every holding on
@@ -370,10 +371,17 @@ def build_transactions(
     converted to the portfolio's currency (pence to pounds included) with the exchange rate
     of each day, and every transaction is recorded in that currency.
 
+    The dividends paid on the holdings are collected as cash and reinvested on the next
+    rebalancing date: the portfolio is rebalanced to its target weights with the value of
+    the holdings plus that cash, so the transactions form a total-return backtest. A
+    dividend goes to the shares held at the close before its ex-dividend date. The cash
+    collected after the last rebalancing date stays cash, as does all of it for a
+    portfolio that is never rebalanced.
+
     Args:
         definition (PortfolioDefinition): The portfolio.
-        prices (pd.DataFrame): The daily (adjusted) prices, one column per ticker, each in
-            the currency the ticker is quoted in.
+        prices (pd.DataFrame): The daily closing prices the transactions are made at, one
+            column per ticker, each in the currency the ticker is quoted in.
         currencies (dict[str, str] | None, optional): The currency each ticker is quoted
             in, e.g. {"IGLT.L": "GBP"}. Defaults to None, the currency of each holding or
             otherwise the portfolio's currency.
@@ -387,6 +395,9 @@ def build_transactions(
         exchange_rates (pd.DataFrame | None, optional): The daily exchange rates to convert
             the prices with, one column per rate such as USDGBP=X (the pounds per dollar).
             Defaults to None, for a portfolio whose holdings all trade in its currency.
+        dividends (pd.DataFrame | None, optional): The cash dividend per share on every
+            ex-dividend date, laid out as `prices` and in the same currencies. Defaults to
+            None, for a portfolio without dividends to reinvest.
 
     Returns:
         pd.DataFrame: The transactions with Date, Identifier, Name, Price, Volume, Costs and
@@ -435,6 +446,27 @@ def build_transactions(
     if complete.empty:
         raise ValueError("The holdings have no day on which all of them have a price.")
 
+    # The cumulative dividends per share in the portfolio's currency on every trading day, so the dividends between two rebalancing dates are a difference; a dividend on a day without a complete set of prices counts on the next complete day.  # noqa: E501
+    if dividends is not None:
+        dividends = dividends.reindex(columns=tickers).astype(float).fillna(0.0)
+        dividends.index = (
+            pd.PeriodIndex(dividends.index, freq="D")
+            if not isinstance(dividends.index, pd.PeriodIndex)
+            else dividends.index
+        )
+        dividends = portfolio_model.convert_prices(
+            dividends, known_currencies, base_currency, exchange_rates
+        ).fillna(0.0)
+        cumulative_dividends = (
+            dividends.cumsum()
+            .reindex(dividends.index.union(complete.index))
+            .ffill()
+            .reindex(complete.index)
+            .fillna(0.0)
+        )
+    else:
+        cumulative_dividends = pd.DataFrame(0.0, index=complete.index, columns=tickers)
+
     start = complete.index[0]
     frequency = REBALANCING_FREQUENCIES[definition.rebalancing]
     if frequency:
@@ -476,11 +508,22 @@ def build_transactions(
 
     trade(start, definition.weights_at(years_offset), initial_value)
 
+    last_trade = start
     for date in rebalance_dates:
-        value = sum(
+        # The dividends since the previous trade went to the shares held in between and are reinvested now.  # noqa: E501
+        cash = sum(
+            shares[ticker]
+            * float(
+                cumulative_dividends.loc[date, ticker]
+                - cumulative_dividends.loc[last_trade, ticker]
+            )
+            for ticker in tickers
+        )
+        value = cash + sum(
             shares[ticker] * float(complete.loc[date, ticker]) for ticker in tickers
         )
         years = (date.to_timestamp() - start.to_timestamp()).days / 365.25
         trade(date, definition.weights_at(years + years_offset), value)
+        last_trade = date
 
     return pd.DataFrame(rows)

@@ -192,14 +192,14 @@ def test_a_portfolio_in_two_currencies_is_valued_in_one(monkeypatch):
     value = first["Price"] * first["Volume"]
     assert (value / value.sum()).to_dict() == pytest.approx({"AAPL": 0.5, "MSFT": 0.5})
     assert first.loc["MSFT", "Price"] == pytest.approx(
-        float(prices.loc[first_day, ("Adj Close", "MSFT")]) / 100 / 0.8
+        float(prices.loc[first_day, ("Close", "MSFT")]) / 100 / 0.8
     )
 
     # The historical data is converted with the same rates, so the price of every
     # transaction is the converted price of its day and the returns are in dollars.
     historical = weighted.collect_historical_data()
     for (day, ticker), price in dataset["Price"].items():
-        assert float(historical.loc[day, ("Adj Close", ticker)]) == pytest.approx(
+        assert float(historical.loc[day, ("Close", ticker)]) == pytest.approx(
             price, rel=1e-4
         )
     rate_change = historical.index[400]
@@ -228,3 +228,73 @@ def test_money_weighted_return_treats_costs_as_paid_whatever_their_sign():
 
     assert (original <= 0).all()
     pd.testing.assert_frame_equal(positive, expected)
+
+
+def test_the_benchmark_is_converted_to_the_currency_of_the_transactions(monkeypatch):
+    prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    rates = pd.Series([0.8] * 400 + [0.75] * (len(prices) - 400), index=prices.index)
+    monkeypatch.setattr(Portfolio, "_price_toolkit", _offline_price_toolkit)
+    monkeypatch.setattr(
+        Portfolio,
+        "_ticker_currencies",
+        lambda self, toolkit: {"AAPL": "USD", "MSFT": "USD", "^GSPC": "USD"},
+    )
+    monkeypatch.setattr(
+        Portfolio,
+        "_get_exchange_rates",
+        lambda self, rate_tickers, start_date: pd.DataFrame(
+            {rate_ticker: rates for rate_ticker in rate_tickers}
+        ),
+    )
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.DataFrame(),
+    )
+
+    weighted = Portfolio(
+        weights="AAPL:0.5, MSFT:0.5", rebalancing="yearly", currency="GBP"
+    )
+    weighted._benchmark_tickers = dict.fromkeys(weighted._original_tickers, "^GSPC")
+    weighted._benchmark_toolkit = Toolkit(
+        tickers=["^GSPC"],
+        historical=prices.xs("Benchmark", level=1, axis=1, drop_level=False).rename(
+            columns={"Benchmark": "^GSPC"}, level=1
+        ),
+        benchmark_ticker=None,
+        start_date="2019-12-31",
+        sleep_timer=False,
+    )
+
+    weighted.collect_historical_data()
+    benchmark = weighted.collect_benchmark_historical_data()
+
+    close = prices[("Close", "Benchmark")]
+    converted = weighted._benchmark_prices_per_ticker["AAPL"]
+    assert float(converted.iloc[0]) == pytest.approx(float(close.iloc[0]) / 0.8)
+    assert float(converted.iloc[-1]) == pytest.approx(float(close.iloc[-1]) / 0.75)
+    assert float(benchmark["Close"].iloc[-1]) == pytest.approx(
+        float(close.iloc[-1]) / 0.75
+    )
+    # The return on the day the rate moves includes the currency move.
+    adjusted = prices[("Adj Close", "Benchmark")]
+    assert float(benchmark["Return"].iloc[400]) == pytest.approx(
+        (float(adjusted.iloc[400]) / 0.75) / (float(adjusted.iloc[399]) / 0.8) - 1,
+        rel=1e-6,
+    )
+    assert float(weighted._yearly_benchmark_data["Close"].iloc[-1]) == pytest.approx(
+        float(close.iloc[-1]) / 0.75
+    )
+
+
+def test_the_portfolio_overview_adds_up_with_dividends():
+    overview = portfolio.get_portfolio_overview(rounding=None)
+
+    assert "Dividends" in overview.columns
+    assert (overview["Dividends"] >= 0).all()
+    assert overview.loc["Portfolio", "Dividends"] > 0
+    return_value = (
+        overview["Latest Value"] + overview["Dividends"] - overview["Invested"]
+    )
+    # Return Value also holds the sale proceeds, which are never negative.
+    assert (overview["Return Value"] >= return_value - 1e-6).all()

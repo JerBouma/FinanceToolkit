@@ -334,3 +334,33 @@ def test_convert_historical_data_recalculates_the_returns():
     assert converted[("Cumulative Return", "VOD.L")].tolist() == pytest.approx(
         [1, 1.6, 1.76]
     )
+
+
+def test_benchmark_data_is_aligned_with_carried_forward_prices():
+    """A missing benchmark date carries the previous quote with a zero return; a dividend on a date
+    the portfolio lacks moves to the next date, so nothing is counted twice or lost."""
+    from financetoolkit.portfolio.portfolio_model import (  # noqa: PLC0415
+        align_benchmark_data,
+    )
+
+    benchmark = pd.DataFrame(
+        {
+            "Close": [10.0, 11.0, 12.0, 13.0],
+            "Adj Close": [10.0, 11.0, 12.0, 13.0],
+            "Dividends": [0.0, 0.5, 0.0, 0.0],
+            "Return": [0.0, 0.1, 0.0909, 0.0833],
+        },
+        index=pd.PeriodIndex(
+            ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-08"], freq="D"
+        ),
+    )
+    dates = pd.PeriodIndex(
+        ["2024-01-02", "2024-01-04", "2024-01-05", "2024-01-08"], freq="D"
+    )
+
+    aligned = align_benchmark_data(benchmark, dates)
+
+    assert list(aligned.columns) == list(benchmark.columns)
+    assert aligned["Close"].tolist() == [10.0, 12.0, 12.0, 13.0]
+    assert aligned["Dividends"].tolist() == [0.0, 0.5, 0.0, 0.0]
+    assert aligned["Return"].tolist() == pytest.approx([0.0, 0.2, 0.0, 13 / 12 - 1])

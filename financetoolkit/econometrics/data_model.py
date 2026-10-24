@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import datetime
+
 import numpy as np
 import pandas as pd
 
@@ -17,11 +19,40 @@ LEVEL_COLUMNS = ("Adj Close", "Close", "Level")
 CHANGE_COLUMNS = ("Return", "Change")
 
 
+def _to_daily_period(value: object) -> pd.Period:
+    """
+    Converts one date, period, string or number into a daily period, see _to_daily_periods.
+
+    Args:
+        value (object): The date.
+
+    Returns:
+        pd.Period: The date as a daily period.
+    """
+    if isinstance(value, pd.Period):
+        return value.asfreq("D", how="end")
+    if isinstance(value, datetime.date | np.datetime64):
+        return pd.Period(pd.Timestamp(value), "D")
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    # A string or number names the period it is written as: "2020" (or 2020) a year,
+    # "2020Q1" a quarter, "2020-01" a month and "2020-01-15" a day. Read as that period
+    # and taken at its last day, a year written as text meets the same year as a yearly
+    # period (December 31) instead of landing on January 1 next to it.
+    try:
+        return pd.Period(str(value)).asfreq("D", how="end")
+    except (ValueError, TypeError):
+        return pd.Period(pd.to_datetime(str(value), format="mixed"), "D")
+
+
 def _to_daily_periods(index: pd.Index) -> pd.PeriodIndex:
     """
-    Converts dates, periods or date strings into daily periods. A monthly, quarterly or
-    yearly period becomes its last day, so that the period it covers stays the same when
-    the data is resampled.
+    Converts dates, periods, date strings or years into daily periods. A monthly,
+    quarterly or yearly period becomes its last day, so that the period it covers stays
+    the same when the data is resampled; a year, quarter or month written as text or a
+    number ("2020", 2020, "2020Q1", "2020-01") is read as that period and becomes its last
+    day as well. An index that mixes them, such as yearly ratios combined with daily
+    prices, is converted value by value.
 
     Args:
         index (pd.Index): The dates.
@@ -33,7 +64,7 @@ def _to_daily_periods(index: pd.Index) -> pd.PeriodIndex:
         return index.asfreq("D", how="end")
     if isinstance(index, pd.DatetimeIndex):
         return index.to_period("D")
-    return pd.DatetimeIndex(pd.to_datetime(index.astype(str))).to_period("D")
+    return pd.PeriodIndex([_to_daily_period(value) for value in index], freq="D")
 
 
 def looks_like_dates(index: pd.Index) -> bool:
@@ -113,7 +144,10 @@ def to_series_frame(data: pd.DataFrame | pd.Series | dict) -> pd.DataFrame:
     frame.index = _to_daily_periods(frame.index)
     frame = frame.apply(pd.to_numeric, errors="coerce")
     frame = frame.loc[:, frame.notna().any()]
-    frame = frame[~frame.index.duplicated(keep="last")].sort_index()
+    # Rows that land on the same day are merged per series (the last value each has), as a
+    # yearly ratio on December 31 next to a daily price of that day are two rows with one
+    # value each; keeping only the last row would drop the ratio.
+    frame = frame.groupby(level=0, sort=True).last()
     frame.index.name = None
 
     if frame.empty:
@@ -124,7 +158,10 @@ def to_series_frame(data: pd.DataFrame | pd.Series | dict) -> pd.DataFrame:
 
 def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
     """
-    The change of every series from one observation to the next.
+    The change of every series from one observation to the next. Every series is taken
+    at its own observations, so a monthly series next to a daily one gets its monthly
+    changes, and a series that is not observed on a holiday gets the change over the gap
+    rather than none.
 
     Args:
         levels (pd.DataFrame): The series.
@@ -133,19 +170,27 @@ def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
             zero or negative) or "none" (the series are changes already).
 
     Returns:
-        pd.DataFrame: The changes; the first observation of each series is NaN.
+        pd.DataFrame: The changes at the dates of the levels; the first observation of each
+        series, and every date it is not observed, is NaN.
     """
-    if changes == "percentage":
-        return levels.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan)
-    if changes == "log":
-        return np.log(levels.where(levels > 0)).diff()
-    if changes == "difference":
-        return levels.diff()
+    if changes not in CHANGES:
+        raise ValueError(
+            f"The changes must be one of {', '.join(CHANGES)}, not {changes!r}."
+        )
     if changes == "none":
         return levels
-    raise ValueError(
-        f"The changes must be one of {', '.join(CHANGES)}, not {changes!r}."
-    )
+
+    def change(column: pd.Series) -> pd.Series:
+        # Row by row on the shared dates, every change next to a missing value is NaN: a
+        # monthly series among daily ones would have no changes at all.
+        observed = column.dropna()
+        if changes == "percentage":
+            return observed.pct_change().replace([np.inf, -np.inf], np.nan)
+        if changes == "log":
+            return np.log(observed.where(observed > 0)).diff()
+        return observed.diff()
+
+    return levels.apply(change).reindex(levels.index)
 
 
 def build_historical_data(

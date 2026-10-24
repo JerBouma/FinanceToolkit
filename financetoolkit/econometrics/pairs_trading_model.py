@@ -38,7 +38,11 @@ def get_signals(
     """
     The position in the spread that z-score rules give: short the spread (-1) once the
     z-score rises above the entry threshold, long (+1) once it falls below minus the
-    threshold, and flat again once it is back within the exit threshold.
+    threshold, and flat again once it crosses the exit threshold on its way back: a short
+    position closes once the z-score falls below the exit threshold, a long one once it
+    rises above minus the exit threshold. A z-score that jumps past the band in one step
+    still closes the position, and when it lands beyond the entry threshold on the other
+    side the position reverses at once.
 
     Args:
         z_score (pd.Series): The z-score of the spread.
@@ -48,19 +52,28 @@ def get_signals(
     Returns:
         pd.Series: The position per date: -1, 0 or 1.
     """
+    if not exit_ < entry:
+        raise ValueError(
+            f"The exit threshold ({exit_}) must lie below the entry threshold ({entry}), "
+            "or a position would close on the date it opens."
+        )
     position = 0
     positions = []
     for value in z_score.to_numpy(dtype=float):
         if np.isnan(value):
             positions.append(position)
             continue
+        # Exiting on a crossing rather than on |z| < exit, so a z-score that jumps from
+        # above the band to below it (2.5 to -0.7) is not held as a short indefinitely.
+        if (position == -1 and value < exit_) or (position == 1 and value > -exit_):
+            position = 0
+        # A flat position, including one just closed, opens on the entry rule, so the
+        # position on every date is the one the rules give for that date's z-score.
         if position == 0:
             if value > entry:
                 position = -1
             elif value < -entry:
                 position = 1
-        elif abs(value) < exit_:
-            position = 0
         positions.append(position)
     return pd.Series(positions, index=z_score.index, name="Signal")
 
@@ -80,8 +93,11 @@ def get_pairs_trading(
     position the z-score rules give, the half-life of the spread and the Engle-Granger
     test of whether the two prices are cointegrated at all.
 
-    The hedge ratio is estimated on the whole sample, so the full-sample z-score looks
-    ahead; a rolling window gives the z-score as it would have been known at the time.
+    The hedge ratio and intercept are estimated on the whole sample, so the spread, and
+    with it every z-score and signal, uses information from after its date. A rolling
+    window only makes the mean and standard deviation of the z-score backward-looking; a
+    backtest without look-ahead estimates the hedge ratio on a formation period and trades
+    in the period after it.
 
     For more information, see the following papers:
 
@@ -138,8 +154,9 @@ def get_pairs_trading(
         "Cointegration P-Value": float(cointegration["P-Value"]),
         "Z-Score": float(z_score.iloc[-1]),
         "Signal": float(signals.iloc[-1]),
+        # Every new position counts, including a reversal from short to long at once.
         "Number of Trades": float(
-            ((signals != 0) & (signals.shift(fill_value=0) == 0)).sum()
+            ((signals != 0) & (signals != signals.shift(fill_value=0))).sum()
         ),
     }
     return series, summary

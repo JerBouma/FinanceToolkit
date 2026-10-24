@@ -81,3 +81,33 @@ def test_new_methods_on_the_toolkit(econometrics_module):
         "Z-Score",
         "Signal",
     ]
+
+
+def test_standalone_mixed_monthly_and_daily_series():
+    rng = np.random.default_rng(1)
+    days = pd.bdate_range("2023-01-02", "2025-12-31")
+    daily = pd.Series(
+        100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(days)))), days, name="Daily"
+    )
+    months = pd.date_range("2020-01-31", periods=72, freq="ME")
+    monthly = pd.Series(
+        100 + np.cumsum(rng.normal(0, 1, 72)) + np.r_[np.zeros(36), np.full(36, 15.0)],
+        months,
+        name="Monthly",
+    )
+    econometrics = Econometrics(data={"Daily": daily, "Monthly": monthly})
+
+    # Every series is tested on its own observations, not only on the dates both share.
+    jarque_bera = econometrics.get_jarque_bera_test()
+    assert jarque_bera.loc["P-Value"].notna().all()
+    adf = econometrics.get_augmented_dickey_fuller(column="Level", max_lag=0)
+    assert adf.loc["Observations", "Daily"] == len(days) - 1
+    assert adf.loc["Observations", "Monthly"] == 71  # noqa: PLR2004
+
+    breaks = econometrics.get_structural_breaks(column="Level", breaks=1)
+    assert breaks.loc[("Monthly", 1), "Observations"] == pytest.approx(36, abs=3)
+    assert breaks.loc["Daily", "Observations"].sum() == len(days)
+
+    regimes = econometrics.get_markov_regime_switching(probabilities=True)
+    assert regimes["Daily"].dropna().shape[0] == len(days) - 1
+    assert regimes["Monthly"].dropna().shape[0] == 71  # noqa: PLR2004

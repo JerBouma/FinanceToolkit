@@ -682,19 +682,45 @@ class Econometrics:
 
         return self._data_cache[key]
 
+    def _get_series_column(self, period: str, column: str) -> pd.DataFrame:
+        """
+        The (period, column) slice with every series at its own observations: only the
+        dates without any value are dropped, unlike `_get_price_column`, which keeps the
+        dates all series share. It serves the methods that analyze one series (or one pair)
+        at a time, whose models drop the missing values per series (or pair), so a series
+        observed at other dates -- a monthly series next to a daily one, an asset listed
+        later, another holiday calendar -- does not cut the others down to the shared dates.
+        """
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        key = ("series", period, column)
+
+        if key not in self._data_cache:
+            self._data_cache[key] = self._historical_data[period][column].dropna(
+                how="all"
+            )
+
+        return self._data_cache[key]
+
     def _get_returns(self, period: str, within_period: bool) -> pd.DataFrame:
         """
         The Return slice the diagnostic tests run on, memoized per (period,
-        within_period) pair -- see `_data_cache` in `__init__`.
+        within_period) pair -- see `_data_cache` in `__init__`. Every test runs per series
+        and drops the missing values of that series, so every series keeps its own
+        observations (see `_get_series_column`).
         """
+        if not within_period:
+            return self._get_series_column(period, "Return")
+
         key = ("returns", period, within_period)
 
         if key not in self._data_cache:
-            self._data_cache[key] = (
-                self._within_historical_data[period]["Return"]
-                if within_period
-                else self._historical_data[period]["Return"]
-            ).dropna()
+            self._data_cache[key] = self._within_historical_data[period][
+                "Return"
+            ].dropna()
 
         return self._data_cache[key]
 
@@ -881,7 +907,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
         result = pd.DataFrame(
@@ -980,7 +1006,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
         result = pd.DataFrame(
@@ -1074,7 +1100,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
         result = pd.DataFrame(
@@ -1184,7 +1210,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
         result = pd.DataFrame(
@@ -5649,9 +5675,17 @@ class Econometrics:
         likely in today, how persistent each regime is and how long it lasts on average.
 
         The regimes are ordered from the lowest to the highest volatility, so Regime 1 is
-        the calmest. The expected duration of a regime is 1 / (1 - p), with p the
-        probability of staying in it, in periods. The share is the part of the periods in
-        which the regime was the most likely one.
+        the calmest. With switching_variance=False all regimes share one volatility, and
+        they are ordered from the lowest to the highest mean instead, so Regime 1 is the
+        one with the lowest mean. The expected duration of a regime is 1 / (1 - p), with p
+        the probability of staying in it, in periods. The share is the part of the periods
+        in which the regime was the most likely one.
+
+        The likelihood of a mixture of regimes has local optima, so the model is fitted from
+        its default starting values and from the best of 20 random perturbations of them,
+        and the fit with the highest likelihood is kept. The random perturbations come from
+        NumPy's global random state, so when competing optima are close, repeated calls can
+        differ slightly; call np.random.seed beforehand for results that can be reproduced.
 
         For more information, see the following paper:
 
@@ -5714,7 +5748,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         data = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
         fits = {
@@ -5754,7 +5788,14 @@ class Econometrics:
         the break dates that minimize the sum of squared residuals around a mean per segment
         are found exactly (by dynamic programming), and the number of breaks is chosen by the
         Bayesian information criterion. Every segment covers at least a share of the
-        observations, so a break is not fitted to a few outliers.
+        observations (the integer part of that share times the number of observations, as
+        in Bai and Perron), so a break is not fitted to a few outliers.
+
+        The BIC works well for series without serial correlation, such as returns, but tends
+        to choose too many breaks when the series is serially correlated (Bai and Perron,
+        2003), as levels such as inflation or interest rates are: a persistent swing then
+        looks like a shift in the mean. For such series, compare the segments for a few
+        values of breaks rather than relying on the chosen number alone.
 
         Breaks show when a series changed character, such as the regimes of inflation or of
         interest rates, or a change in the average return of an asset. Unlike the Chow test,
@@ -5814,7 +5855,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         data = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
         result = pd.concat(
@@ -5849,7 +5890,14 @@ class Econometrics:
         step every period; how large those steps are, and how much noise surrounds the
         regression, is estimated by maximum likelihood. A beta that drifts, such as a stock
         becoming more sensitive to the market, shows up without choosing the window of a
-        rolling regression, and every estimate uses only the information up to its date.
+        rolling regression, while a beta that is constant stays flat.
+
+        Every alpha and beta is the filtered estimate, updated with the observations up to
+        its date only. The three variances that set how fast the estimates adapt are
+        estimated on the whole sample, however, so the path is not entirely what would have
+        been known at the time. The filter starts without prior knowledge of the
+        coefficients, so the first date (or the first few, when the independent series
+        starts with zeros) cannot separate the alpha from the beta and is NaN.
 
         By default every asset is regressed on the Benchmark of the Toolkit (or, with
         standalone data, on the second series).
@@ -5875,7 +5923,7 @@ class Econometrics:
 
         Returns:
             pd.DataFrame: Per date and asset the Alpha, the Beta and the standard error of
-            the beta.
+            the beta, NaN on the first date(s) where they are not yet identified.
 
         As an example:
 
@@ -5898,14 +5946,15 @@ class Econometrics:
 
         | Date    |   AAPL |   MSFT |
         |:--------|-------:|-------:|
-        | 2016-02 | 1.2707 | 1.5822 |
-        | 2018-02 | 1.1428 | 1.3182 |
-        | 2020-02 | 1.3201 | 1.115  |
-        | 2022-02 | 1.2498 | 0.9852 |
-        | 2024-02 | 1.2527 | 0.9521 |
+        | 2016-02 | 1.2708 | 1.5813 |
+        | 2018-02 | 1.1427 | 1.3183 |
+        | 2020-02 | 1.3197 | 1.1153 |
+        | 2022-02 | 1.2496 | 0.9853 |
+        | 2024-02 | 1.2526 | 0.9525 |
         """
         period = period if period else "daily"
-        data = self._get_price_column(period, column)
+        # Every pair is aligned on its own common dates by the model.
+        data = self._get_series_column(period, column)
 
         tickers = list(data.columns)
         if independent_ticker is None:
@@ -6022,8 +6071,10 @@ class Econometrics:
         | 2025   |        0.4898 |       0.2032 |       0.117  |
         """
         period = period if period else "daily"
+        # The model aligns the assets on the dates they share, after the Benchmark is left
+        # out, so the Benchmark's own gaps do not shorten the sample when it is excluded.
         data = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_series_column(period, column), include_benchmark=include_benchmark
         )
 
         correlations, estimates = state_space_model.get_dcc_garch(data)
@@ -6054,17 +6105,26 @@ class Econometrics:
         Calculate the statistics of trading the spread between every pair of assets. The
         hedge ratio follows from regressing one log price on the other; what remains is the
         spread, and when the two are cointegrated the spread reverts to its mean. Its
-        z-score says how far it is from that mean in standard deviations, and the classic
-        rules (Gatev, Goetzmann and Rouwenhorst, 2006) trade on it: short the spread (sell
-        the first asset, buy the hedge ratio of the second) once the z-score rises above the
-        entry threshold, buy it once it falls below minus the threshold, and close the
-        position once it is back within the exit threshold. The half-life says how many
-        periods the spread takes to close half its gap to the mean.
+        z-score says how far it is from that mean in standard deviations, and threshold
+        rules trade on it: short the spread (sell the first asset, buy the hedge ratio of
+        the second) once the z-score rises above the entry threshold, buy it once it falls
+        below minus the threshold, and close the position once the z-score crosses the exit
+        threshold on its way back (below it for a short, above minus it for a long). A
+        z-score that jumps past the band in one period still closes the position, and one
+        that lands beyond the entry threshold on the other side reverses it. The half-life
+        says how many periods the spread takes to close half its gap to the mean.
 
-        The hedge ratio is estimated on the whole period, so the full-sample z-score looks
-        ahead; a rolling window gives the z-score as it would have been known at the time.
-        The Engle-Granger p-value says whether there is a mean-reverting relationship to
-        trade at all (below 0.05).
+        Gatev, Goetzmann and Rouwenhorst (2006) open a position when the normalized prices
+        of a pair drift two standard deviations (of their formation period) apart and close
+        it when the prices cross, which is an exit threshold of 0; closing at 0.5 is a
+        common variant that takes profits before the spread is fully back at its mean.
+
+        The hedge ratio and intercept are estimated on the whole period, so the spread, and
+        with it every z-score and signal, uses information from after its date. A rolling
+        window only makes the mean and standard deviation of the z-score backward-looking;
+        a backtest without look-ahead estimates the hedge ratio on a formation period and
+        trades in the period after it. The Engle-Granger p-value says whether there is a
+        mean-reverting relationship to trade at all (below 0.05).
 
         For more information, see the following papers:
 
@@ -6085,7 +6145,8 @@ class Econometrics:
                 None, which uses the full sample.
             entry_z_score (float, optional): The z-score at which a position is opened.
                 Defaults to 2.0.
-            exit_z_score (float, optional): The z-score at which it is closed. Defaults to 0.5.
+            exit_z_score (float, optional): The z-score whose crossing on the way back closes
+                a position (0 closes when the spread is back at its mean). Defaults to 0.5.
             log_prices (bool, optional): Whether to use log prices, so the hedge ratio is an
                 elasticity. Defaults to True.
             time_series (bool, optional): Whether to return the Spread, Z-Score and Signal
@@ -6098,8 +6159,8 @@ class Econometrics:
         Returns:
             pd.DataFrame: Per pair the Hedge Ratio, Intercept, Half-Life (in periods),
             Cointegration P-Value, the latest Z-Score and Signal (1 long, -1 short, 0 flat)
-            and the Number of Trades; or, with time_series=True, the Spread, Z-Score and
-            Signal per date.
+            and the Number of Trades (positions opened, a reversal counting as a new one);
+            or, with time_series=True, the Spread, Z-Score and Signal per date.
 
         As an example:
 
@@ -6120,10 +6181,11 @@ class Econometrics:
 
         |               |   Hedge Ratio |   Intercept |   Half-Life |   Cointegration P-Value |   Z-Score |   Signal |   Number of Trades |
         |:--------------|--------------:|------------:|------------:|------------------------:|----------:|---------:|-------------------:|
-        | ('KO', 'PEP') |        0.8685 |     -0.3098 |     290.448 |                  0.8345 |     0.684 |        0 |                 41 |
+        | ('KO', 'PEP') |        0.8685 |     -0.3098 |     290.448 |                  0.8345 |     0.684 |        0 |                 42 |
         """
         period = period if period else "daily"
-        prices = self._get_price_column(period, column)
+        # Every pair is aligned on its own common dates by the model.
+        prices = self._get_series_column(period, column)
 
         fits = {
             (ticker_a, ticker_b): pairs_trading_model.get_pairs_trading(

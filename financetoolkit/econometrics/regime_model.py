@@ -24,6 +24,10 @@ def get_markov_regime_switching(
     The regimes are ordered from the lowest to the highest volatility (or mean, without a
     switching variance).
 
+    The random search for starting values draws from NumPy's global random state (the
+    statsmodels search takes no seed), so when competing optima are close, repeated fits
+    can differ slightly; np.random.seed beforehand makes them reproducible.
+
     For more information, see the following paper:
 
     - Hamilton, J.D. (1989). "A New Approach to the Economic Analysis of Nonstationary Time
@@ -53,7 +57,9 @@ def get_markov_regime_switching(
         trend="c",
         switching_variance=switching_variance,
     )
-    # Several starting points, as the likelihood of a mixture has local optima.
+    # Several starting points, as the likelihood of a mixture has local optima. The global
+    # random state is deliberately left alone: reseeding it here would change the random
+    # numbers of everything else the caller runs.
     fits = []
     for search in (0, 20):
         # A starting point that does not converge is one of several, so its warning is
@@ -130,8 +136,12 @@ def get_structural_breaks(
     every number of breaks the break dates that minimize the sum of squared residuals of a
     mean per segment are found exactly by dynamic programming, and the number of breaks is
     chosen by the Bayesian information criterion (unless given). Every segment covers at
-    least a share of the observations (the trimming), so a break is not fitted to a few
-    outliers.
+    least a share of the observations (the trimming h = [εT], the integer part as in Bai
+    and Perron), so a break is not fitted to a few outliers.
+
+    The BIC suits series without serial correlation; with serially correlated series,
+    such as the level of inflation, it tends to choose too many breaks (Bai and Perron,
+    2003), so the segments for a few fixed numbers of breaks are worth comparing then.
 
     For more information, see the following papers:
 
@@ -155,7 +165,10 @@ def get_structural_breaks(
     values = series.dropna()
     data = values.to_numpy(dtype=float)
     n = len(data)
-    h = max(int(np.ceil(minimum_segment * n)), 2)
+    # The trimming h = [εT] of Bai and Perron: the integer part, with at least two
+    # observations so every segment has a standard deviation. Rounding to nine decimals
+    # first keeps 0.29 * 100 (28.999999999999996 in floating point) at 29.
+    h = max(int(round(minimum_segment * n, 9)), 2)
     most = min(max_breaks if breaks is None else breaks, n // h - 1)
     if most < 0 or (breaks is not None and breaks > most):
         raise ValueError(

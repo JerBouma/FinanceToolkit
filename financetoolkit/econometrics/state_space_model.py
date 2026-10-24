@@ -62,8 +62,14 @@ def get_time_varying_beta(
     Estimate a regression whose alpha and beta drift over time, with the Kalman filter:
     every period the coefficients take a random step, and the size of those steps and of
     the noise around the regression are estimated by maximum likelihood. Unlike a rolling
-    regression there is no window to choose, and each estimate uses all information up to
-    that date (the filtered estimate), so it can be used as it would have been known.
+    regression there is no window to choose. Each alpha and beta is the filtered estimate,
+    updated with the observations up to its date only; the three variances that set how
+    fast the estimates adapt are estimated on the whole sample, so the path is not fully
+    what would have been known at the time.
+
+    The model starts without prior knowledge of the coefficients (an exact diffuse
+    initialization), so the first observations only pin them down together: the dates
+    before both are identified (normally just the first) are NaN.
 
     For more information, see the following book:
 
@@ -82,24 +88,46 @@ def get_time_varying_beta(
     if len(data) < 30:  # noqa: PLR2004
         raise ValueError("At least 30 observations are needed for a time-varying beta.")
 
-    model = _TimeVaryingRegression(
-        data.iloc[:, 0].to_numpy(dtype=float), data.iloc[:, 1].to_numpy(dtype=float)
-    )
+    y = data.iloc[:, 0].to_numpy(dtype=float)
+    x = data.iloc[:, 1].to_numpy(dtype=float)
+    scale_y, scale_x = float(np.std(y)), float(np.std(x))
+    if not scale_y > 0 or not scale_x > 0:
+        raise ValueError("A time-varying beta needs series that vary over time.")
+
+    # The model is fitted to the standardized series and scaled back afterwards. With daily
+    # returns the variances span orders of magnitude (an observation variance near 1e-4, a
+    # beta variance near 0), and on that scale the optimizer reports convergence after a few
+    # steps with the beta variance still at its starting value, far from the maximum of the
+    # likelihood, which makes a constant beta wander. Scaling only changes the units:
+    # y / s_y = α_t / s_y + (β_t s_x / s_y) x / s_x + ε_t / s_y.
+    model = _TimeVaryingRegression(y / scale_y, x / scale_x)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         fit = model.fit(disp=False, maxiter=200)
     filtered = np.asarray(fit.filtered_state)
     covariance = np.asarray(fit.filtered_state_cov)
+    beta_scale = scale_y / scale_x
 
     result = pd.DataFrame(
         {
-            "Alpha": filtered[0],
-            "Beta": filtered[1],
-            "Beta Standard Error": np.sqrt(np.maximum(covariance[1, 1], 0)),
+            "Alpha": filtered[0] * scale_y,
+            "Beta": filtered[1] * beta_scale,
+            "Beta Standard Error": np.sqrt(np.maximum(covariance[1, 1], 0))
+            * beta_scale,
         },
         index=data.index,
     )
-    variances = dict(zip(model.param_names, np.asarray(fit.params), strict=True))
+    # During the diffuse period the filtered covariance holds only its finite part, so the
+    # unidentified first estimates would come with a misleadingly small standard error. The
+    # filtered estimate becomes identified at the last diffuse observation.
+    result.iloc[: max(fit.filter_results.nobs_diffuse - 1, 0)] = np.nan
+
+    observation, alpha, beta = np.asarray(fit.params)
+    variances = {
+        "observation variance": float(observation * scale_y**2),
+        "alpha variance": float(alpha * scale_y**2),
+        "beta variance": float(beta * beta_scale**2),
+    }
     return result, variances
 
 

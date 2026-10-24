@@ -3651,12 +3651,19 @@ class Performance:
 
         The formula is as follows:
 
-            - CGR = (Final Value / Initial Value) ^ (1 / Number of Periods) — 1
+            - Years = (Last Date - First Date) / 365.25 days
+            - CAGR = (Final Value / Initial Value) ^ (1 / Years) - 1
+            - Period Rate = (1 + CAGR) ^ (1 / Periods per Year) - 1
 
-        Every rate covers the same span, from the first to the last close between the start and
-        end date. The number of periods follows from the trading days in between, with 252
-        trading days, 52 weeks, 12 months and 4 quarters to a year, so the rates are consistent
-        with each other: compounding the daily rate over 252 days gives the annual rate.
+        The CAGR is measured on calendar time: each asset from its own first to its own last
+        close between the start and end date, with the years in between counted in calendar
+        days. The rate thereby does not depend on how often an asset trades, so a stock (which
+        trades on weekdays) and a cryptocurrency (which trades every day) in the same Toolkit
+        are measured over the same years, and an asset without a close on the first or last
+        date of the range is measured over the dates it has. The quarterly, monthly, weekly and
+        daily rates follow from the CAGR with 4 quarters, 12 months, 52 weeks and 252 trading
+        days to a year, so the rates are consistent with each other: (1 + CDGR) ^ 252 equals
+        1 + CAGR.
 
         Also known as: CAGR, compound annual growth rate, annualized return.
 
@@ -3692,23 +3699,26 @@ class Performance:
 
         |                                       |   AAPL |   TSLA |   Benchmark |
         |:--------------------------------------|-------:|-------:|------------:|
-        | Compound Annual Growth Rate (CAGR)    | 0.1672 | 0.1314 |      0.1472 |
-        | Compound Quarterly Growth Rate (CQGR) | 0.0394 | 0.0314 |      0.0349 |
-        | Compound Monthly Growth Rate (CMGR)   | 0.013  | 0.0103 |      0.0115 |
+        | Compound Annual Growth Rate (CAGR)    | 0.1667 | 0.1311 |      0.1469 |
+        | Compound Quarterly Growth Rate (CQGR) | 0.0393 | 0.0313 |      0.0348 |
+        | Compound Monthly Growth Rate (CMGR)   | 0.0129 | 0.0103 |      0.0115 |
         | Compound Weekly Growth Rate (CWGR)    | 0.003  | 0.0024 |      0.0026 |
         | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0005 |
         """
         compound_growth_rates = {}
 
-        # Every rate covers the same span, from the first to the last close of the range,
-        # measured in trading days, so that (1 + CDGR) ^ 252 equals 1 + CAGR.
         prices = (
             self._historical_data["daily"]
             .loc[:, "Adj Close"]
             .loc[self._start_date : self._end_date]
         )
-        trading_days = len(prices) - 1
 
+        # On calendar time and per asset: the rows of the daily data are the union of every ticker's trading days, so counting rows would stretch the years of a stock by the weekends a cryptocurrency in the same Toolkit trades on, and a ticker without a close on the first or last row would get no rate at all.  # noqa: E501
+        compound_annual_growth_rate = performance_model.get_compound_annual_growth_rate(
+            prices
+        )
+
+        # The shorter periods are the CAGR converted geometrically, so that (1 + CDGR) ^ 252 equals 1 + CAGR.  # noqa: E501
         for period, label in [
             ("yearly", "Compound Annual Growth Rate (CAGR)"),
             ("quarterly", "Compound Quarterly Growth Rate (CQGR)"),
@@ -3716,13 +3726,8 @@ class Performance:
             ("weekly", "Compound Weekly Growth Rate (CWGR)"),
             ("daily", "Compound Daily Growth Rate (CDGR)"),
         ]:
-            compound_growth_rates[label] = (
-                performance_model.get_compound_growth_rate(
-                    prices,
-                    trading_days * PERIODS_PER_YEAR[period] / PERIODS_PER_YEAR["daily"],
-                )
-                if trading_days > 0
-                else pd.Series(float("nan"), index=prices.columns)
+            compound_growth_rates[label] = convert_annualized_rate_to_period(
+                compound_annual_growth_rate, period
             )
 
         compound_growth_rate = pd.DataFrame(compound_growth_rates).T

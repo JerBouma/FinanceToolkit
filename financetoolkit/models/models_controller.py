@@ -807,32 +807,46 @@ class Models:
         risk_free_rate: pd.Series,
         benchmark_returns: pd.Series,
         market_risk_premium: float | None,
+        trailing: int | None = None,
     ) -> tuple[pd.Series, pd.Series]:
         """
-        The risk-free rate and the expected market return per period for the Cost of Equity.
-        The market return is the risk-free rate plus the market risk premium, by default the
-        benchmark's average return above the risk-free rate over every period of the data,
-        so that the Cost of Equity does not follow the market up and down from year to year.
+        The risk-free rate and the expected market return for the Cost of Equity, over the
+        span of the flows it is compared with. The market return is the risk-free rate plus
+        the market risk premium, by default the benchmark's average return above the
+        risk-free rate over every period of the data, so that the Cost of Equity does not
+        follow the market up and down from year to year.
+
         With quarterly data the annual yield and premium are divided by four, matching the
-        quarterly returns and costs of debt.
+        quarterly returns and costs of debt. With `trailing` set, the flows (Net Income,
+        Interest Expense, NOPAT) are sums over that many periods, so the rates are the
+        per-period rates times `trailing`: with quarterly data and a trailing 4 quarters,
+        the annual rates that belong to trailing twelve month flows.
 
         Args:
             risk_free_rate (pd.Series): The annual risk-free yield per period.
             benchmark_returns (pd.Series): The benchmark's return per period.
             market_risk_premium (float | None): An annual premium to use instead.
+            trailing (int | None, optional): The number of periods the flows are summed
+                over. Defaults to None, which is a single period.
 
         Returns:
             tuple[pd.Series, pd.Series]: The risk-free rate and the expected market return,
-            both per period.
+            both over the span of the flows.
         """
         periods_per_year = 4 if self._quarterly else 1
+        span = trailing if trailing else 1
+
         risk_free_rate = risk_free_rate / periods_per_year
         premium = (
             (benchmark_returns - risk_free_rate).mean()
             if market_risk_premium is None
             else market_risk_premium / periods_per_year
         )
-        return risk_free_rate, risk_free_rate + premium
+
+        # Scaled after the premium is averaged, which compares per-period benchmark returns with the per-period rate.  # noqa: E501
+        risk_free_rate = risk_free_rate * span
+
+        return risk_free_rate, risk_free_rate + premium * span
 
     def get_weighted_average_cost_of_capital(
         self,
@@ -921,6 +935,9 @@ class Models:
         return above the risk-free rate over every period of the data (set `market_risk_premium` to use
         another premium, e.g. an implied equity risk premium). Beta is estimated from the period's daily
         returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
+        - With `trailing` set, the Interest Expense is summed over the trailing periods, so the Cost of
+        Debt covers that span, and the risk-free rate and premium of the Cost of Equity are the per-period
+        rates times `trailing`. With quarterly data and trailing=4, every rate is an annual rate.
         - The Market Value of Debt is approximated as the Total Debt.
 
         As an example:
@@ -980,8 +997,9 @@ class Models:
         benchmark_returns = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
         ].loc[begin:end, "Return"][self._benchmark_name]
+        # The Cost of Equity covers the span of the flows: a trailing sum of Interest Expense is the cost of debt over that span.  # noqa: E501
         risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
-            risk_free_rate, benchmark_returns, market_risk_premium
+            risk_free_rate, benchmark_returns, market_risk_premium, trailing
         )
 
         if trailing:
@@ -1161,7 +1179,8 @@ class Models:
         Ratios module.
         - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
         with the market risk premium given by `market_risk_premium` (by default the benchmark's
-        average return above the risk-free rate over the data).
+        average return above the risk-free rate over the data) and the same `trailing`, so that it
+        covers the span of the NOPAT (an annual rate for trailing=4 with quarterly data).
 
         As an example:
 
@@ -2342,7 +2361,9 @@ class Models:
         - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM), as in
         `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta times
         the market risk premium, by default the benchmark's average return above the risk-free
-        rate over the data (see `market_risk_premium`).
+        rate over the data (see `market_risk_premium`). It covers the span of the Net Income: a
+        quarter with quarterly data, and the per-period rate times `trailing` when the Net Income
+        is a trailing sum (an annual rate for trailing twelve months, trailing=4 with quarterly data).
         - The Book Value of Equity is approximated as the average of Total Shareholder Equity
         minus Preferred Stock over the current and prior period, excluding preferred equity
         since Residual Income (like Net Income) belongs to common equity holders only.
@@ -2424,8 +2445,9 @@ class Models:
         benchmark_returns = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
         ].loc[begin:end, "Return"][self._benchmark_name]
+        # The Cost of Equity covers the span of the trailing Net Income it is charged against.
         risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
-            risk_free_rate, benchmark_returns, market_risk_premium
+            risk_free_rate, benchmark_returns, market_risk_premium, trailing
         )
 
         cost_of_equity = wacc_model.get_cost_of_equity(
@@ -4572,6 +4594,9 @@ class Models:
         instead, which blends in the (typically lower, tax-shielded) cost of debt and therefore
         generally understates PVGO. Prefer comparing PVGO across companies, or over time for the same
         company, over reading absolute levels literally.
+        - The Weighted Average Cost of Capital uses the same `trailing` as the Earnings per Share, so
+        both cover the same span (with quarterly data, a quarter without `trailing` and a year with
+        trailing=4).
         - When the Earnings per Share is negative, the no-growth value is negative and the PVGO
         exceeds the share price, which has no meaningful interpretation.
 

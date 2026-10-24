@@ -19,6 +19,10 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 # Number of deterministic Sobol starting points a GARCH-family fit tries, in addition to the domain-informed initial guess.  # noqa: E501
 N_MULTI_START_POINTS = 32
 
+# The GARCH and GJR-GARCH recursions start from a backcast: an exponentially weighted average of the first squared returns, with the same window and decay as the arch package (Kevin Sheppard), so the fitted parameters agree with it.  # noqa: E501
+BACKCAST_OBSERVATIONS = 75
+BACKCAST_DECAY = 0.94
+
 
 def _fit_multi_start(
     wrapper_func,
@@ -127,6 +131,40 @@ def _fit_multi_start(
     return best_x
 
 
+def get_backcast(returns: np.ndarray) -> float:
+    """
+    Calculates the backcast the GARCH and GJR-GARCH variance recursions start from: an
+    exponentially weighted average (decay 0.94) of the first 75 squared returns, with the
+    first return weighted most.
+
+    The recursion needs a variance and a squared return for the period before the first
+    observation. Starting from the first squared return alone makes every fitted
+    parameter depend on the size of that single return: a small one starts the recursion
+    far below the true variance, the likelihood then prefers a lower persistence (beta)
+    to forget that start quickly, and the estimates are biased. An average of the first
+    returns is a far steadier estimate of the variance at the start of the sample. The
+    window and decay are those of the arch package, so the fitted parameters agree with
+    it.
+
+    For more information, see:
+
+    - Bollerslev, T. (1986). "Generalized Autoregressive Conditional Heteroskedasticity."
+    Journal of Econometrics, 31(3), 307-327.
+    - Sheppard, K. arch: Autoregressive Conditional Heteroskedasticity models in Python,
+    https://arch.readthedocs.io
+
+    Args:
+        returns (np.ndarray): A np.ndarray of returns.
+
+    Returns:
+        float: The backcast, a variance in the units of the squared returns.
+    """
+    window = min(BACKCAST_OBSERVATIONS, len(returns))
+    decay_weights = BACKCAST_DECAY ** np.arange(window)
+
+    return float(np.sum(returns[:window] ** 2 * decay_weights / decay_weights.sum()))
+
+
 def _linear_variance_recursion(
     driver: np.ndarray, persistence: float, first_variance: float, time_steps: int
 ) -> np.ndarray:
@@ -180,9 +218,9 @@ def garch_log_maximization(
     # Compute GARCH values using a vectorized function
     garch = get_garch(returns, weights_array, t, p=p, q=q)
 
-    # garch[i] is built from returns[i - 1], so it pairs with returns[i] itself.
-    u = returns[1:t]
-    v = garch[1:t]
+    # garch[i] is built from returns[i - 1] (garch[0] from the backcast), so it pairs with returns[i] itself and every observation, the first included, enters the likelihood.  # noqa: E501
+    u = returns[:t]
+    v = garch[:t]
 
     # Use np.sum to calculate the sum of the log-likelihood
     result = -np.sum(-np.log(v) - u**2 / v)
@@ -253,6 +291,9 @@ def get_garch(
 
     GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
     instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
+
+    The recursion starts from the backcast (see `get_backcast`), which stands in for both the squared return and the
+    variance before the first observation: sigma2[0] = omega + (alpha + beta) * backcast.
 
     More information can be found in:
     - https://en.wikipedia.org/wiki/Autoregressive_conditional_heteroskedasticity#GARCH
@@ -327,13 +368,16 @@ def get_garch(
 
         omega, alpha, beta = weights[0], weights[1], weights[2]
 
+        # The first step treats the squared return and the variance before the sample as the backcast, as the arch package does, see get_backcast.  # noqa: E501
+        first_variance = omega + (alpha + beta) * get_backcast(returns)
+
         # sigma2[i] = omega + alpha * returns[i - 1] ** 2 + beta * sigma2[i - 1] is a
         # first-order linear recursion, which lfilter computes in compiled code with the
         # same operations in the same order as the loop it replaces.
         return _linear_variance_recursion(
             omega + alpha * returns[: time_steps - 1] ** 2,
             beta,
-            returns[0] ** 2,
+            first_variance,
             time_steps,
         )
 
@@ -447,8 +491,9 @@ def gjr_garch_log_maximization(
 
     garch = get_gjr_garch(returns, weights_array, t, p=p, q=q)
 
-    u = returns[1:t]
-    v = garch[1:t]
+    # Every observation, the first included, enters the likelihood, see garch_log_maximization.
+    u = returns[:t]
+    v = garch[:t]
 
     return -np.sum(-np.log(v) - u**2 / v)
 
@@ -522,6 +567,10 @@ def get_gjr_garch(
     - sigma_t^2 = omega + (alpha + gamma * 1[u_(t-1) < 0]) * u_(t-1)^2 + beta * sigma_(t-1)^2
 
     A positive gamma indicates the presence of a leverage effect.
+
+    The recursion starts from the backcast (see `get_backcast`) for the squared return and the variance
+    before the first observation, with the indicator at its expectation of one half:
+    sigma2[0] = omega + (alpha + gamma / 2 + beta) * backcast.
 
     For more information about the method, see the following paper:
 
@@ -597,11 +646,14 @@ def get_gjr_garch(
         lagged = returns[: time_steps - 1]
         indicator = np.where(lagged < 0, 1.0, 0.0)
 
+        # The first step uses the backcast for the squared return and the variance before the sample, with the leverage term at its expectation (a negative shock half of the time), as the arch package does.  # noqa: E501
+        first_variance = omega + (alpha + gamma / 2 + beta) * get_backcast(returns)
+
         # A first-order linear recursion like GARCH, see _linear_variance_recursion.
         return _linear_variance_recursion(
             omega + (alpha + gamma * indicator) * lagged**2,
             beta,
-            returns[0] ** 2,
+            first_variance,
             time_steps,
         )
 
@@ -721,8 +773,8 @@ def egarch_log_maximization(
 
     garch = get_egarch(returns, weights_array, t, p=p, q=q)
 
-    u = returns[1:t]
-    v = garch[1:t]
+    u = returns[:t]
+    v = garch[:t]
 
     return -np.sum(-np.log(v) - u**2 / v)
 
@@ -787,6 +839,8 @@ def get_egarch(
     Where `z = u / sigma` is the standardized shock and `E|z| = sqrt(2 / pi)` under the
     assumption of standard normal innovations. A negative gamma indicates the presence
     of a leverage effect (negative shocks raise volatility by more than positive ones).
+    The recursion starts from the logarithm of the backcast (see get_backcast), as the
+    arch package does, and every observation enters the likelihood.
 
     For more information about the method, see the following paper:
 
@@ -866,7 +920,10 @@ def get_egarch(
         # likelihood, evaluated thousands of times per fit, the bulk of an EGARCH fit.
         lagged = returns[: time_steps - 1].tolist()
         sigma2 = [0.0] * time_steps
-        log_variance = math.log(float(returns[0]) ** 2 + 1e-12)
+        # The first step starts from the backcast (see get_backcast) with the shock terms
+        # at their expected value of zero, as the arch package does.
+        log_variance = omega + beta * math.log(get_backcast(returns) + 1e-12)
+        log_variance = min(max(log_variance, -20.0), 20.0)
         sigma2[0] = math.exp(log_variance)
 
         for i, previous_return in enumerate(lagged, start=1):

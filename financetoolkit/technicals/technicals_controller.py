@@ -15,6 +15,7 @@ from financetoolkit.technicals import (
 )
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
     PERIODS_PER_YEAR,
     apply_rounding,
     calculate_growth,
@@ -406,6 +407,12 @@ class Technicals:
         adjusted by the same factor, Adj Close / Close, so that a bounded indicator stays within
         its bounds and a range is not distorted around ex-dividend days.
 
+        The factor changes on every ex-dividend date, so the open, high and low of a week,
+        month, quarter or year are taken from the adjusted daily prices (the first open, the
+        highest high and the lowest low) rather than adjusted with the factor at the end of
+        the period. The latter would overstate an open before an ex-dividend date within the
+        period by that dividend's yield.
+
         Args:
             period (str): The period, e.g. "daily".
             close_column (str): The close the indicator uses.
@@ -422,13 +429,42 @@ class Technicals:
         key = ("consistent", period)
         if key not in self._consistent_data:
             factor = historical_data["Adj Close"] / historical_data["Close"]
+            adjusted = {
+                column: historical_data[column] * factor
+                for column in ("Open", "High", "Low")
+                if column in columns
+            }
+
+            daily_data = self._historical_data.get("daily", pd.DataFrame())
+            if (
+                period in PERIOD_TRANSLATION
+                and not daily_data.empty
+                and isinstance(daily_data.index, pd.PeriodIndex)
+                and "Close" in daily_data.columns.get_level_values(0)
+            ):
+                daily_adjusted = self._get_historical_data("daily", close_column)
+                dates = daily_adjusted.index.asfreq(PERIOD_TRANSLATION[period])
+                for column, aggregation in (
+                    ("Open", "first"),
+                    ("High", "max"),
+                    ("Low", "min"),
+                ):
+                    if column in adjusted:
+                        # A period the daily data does not cover keeps the end-of-period factor.
+                        adjusted[column] = (
+                            daily_adjusted[column]
+                            .groupby(dates)
+                            .agg(aggregation)
+                            .reindex(
+                                index=historical_data.index,
+                                columns=adjusted[column].columns,
+                            )
+                            .combine_first(adjusted[column])
+                        )
+
             self._consistent_data[key] = pd.concat(
                 {
-                    column: (
-                        historical_data[column] * factor
-                        if column in ("Open", "High", "Low")
-                        else historical_data[column]
-                    )
+                    column: adjusted.get(column, historical_data[column])
                     for column in columns.unique()
                 },
                 axis=1,

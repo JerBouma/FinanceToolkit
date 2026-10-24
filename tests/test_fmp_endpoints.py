@@ -728,3 +728,34 @@ def test_yahoo_finance_symbols_are_requested_as_financial_modeling_prep_writes_t
     )
 
     assert "symbols=AAPL,EURUSD,BTCUSD&" in requested[0]
+
+
+def test_dividends_are_split_adjusted_like_the_prices(responses):
+    canned, _ = responses
+    dates = ["2020-08-06", "2020-08-07", "2020-11-05", "2020-11-06"]
+    canned["historical-price-eod/full"] = [
+        {
+            "date": date,
+            "open": 110.0,
+            "high": 111.0,
+            "low": 109.0,
+            "close": 110.0,
+            "volume": 1,
+        }
+        for date in dates
+    ]
+    canned["historical-price-eod/dividend-adjusted"] = [
+        {"date": date, "adjClose": 110.0} for date in dates
+    ]
+    # Apple's 2020 dividends: 0.82 as paid before the 4-for-1 split, 0.205 per share today.
+    canned["dividends"] = [
+        {"date": "2020-11-06", "dividend": 0.205, "adjDividend": 0.205},
+        {"date": "2020-08-07", "dividend": 0.82, "adjDividend": 0.205},
+    ]
+
+    historical = fmp_model.get_historical_data(
+        "AAPL", "key", start="2020-08-06", end="2020-11-06", sleep_timer=False
+    )
+
+    assert historical.loc["2020-08-07", "Dividends"] == pytest.approx(0.205)
+    assert historical.loc["2020-11-06", "Dividends"] == pytest.approx(0.205)

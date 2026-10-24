@@ -619,7 +619,12 @@ def get_historical_data(
                         ~dividends_df.index.duplicated(keep="first")
                     ]
 
-                    historical_data["Dividends"] = dividends_df["dividend"]
+                    # The prices are split-adjusted, so the dividends are too: "dividend"
+                    # is the amount as paid, which before a 4-for-1 split is four times
+                    # the dividend per share of today.
+                    historical_data["Dividends"] = dividends_df[
+                        ("adjDividend" if "adjDividend" in dividends_df else "dividend")
+                    ]
                 else:
                     historical_data["Dividends"] = 0
             except KeyError:

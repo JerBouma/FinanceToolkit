@@ -218,6 +218,80 @@ def _get_cboe_option_chain(
     )
 
 
+# The trailing window of the dividend yield, and the history a ticker needs before a full window is available.  # noqa: E501
+DIVIDEND_YIELD_WINDOW = "365D"
+DIVIDEND_YIELD_DAYS = 365
+
+
+def get_trailing_dividend_yield(
+    close: pd.DataFrame, adjusted_close: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Calculates the trailing dividend yield on every date: the dividends per share that went
+    ex-dividend in the 365 days up to and including that date, divided by the close of that
+    date. This is the dividend yield q of the Black-Scholes model on a pricing date, built
+    only from what was known on that date.
+
+    The dividends are recovered from the dividend adjustment of the prices rather than taken
+    from a list of dividends per share. The adjusted close is the close multiplied by a factor
+    f = Adj Close / Close that rises by each dividend on its ex-date: the close before the
+    ex-date is scaled down by (1 - Dividend / Close before the ex-date). The dividend of a date
+    therefore follows as:
+
+        - Dividend_t = (1 - f_(t-1) / f_t) * Close_(t-1)
+        - Dividend Yield_t = SUM(Dividend over the 365 days up to t) / Close_t
+
+    Because the close and the adjusted close are split-adjusted alike, the factor and so the
+    recovered dividends are in the units of today's shares, which a list of dividends per
+    share as paid at the time is not. The daily changes are summed with their sign: prices
+    rounded to the cent move the factor by a few hundredths of a percent from day to day,
+    which cancels in a sum over a year but would add up to a yield of several tenths of a
+    percent if only the increases were kept.
+
+    A date without a full year of history before it (the first year of a ticker's prices)
+    takes the yield of the first date that has one. That yield includes dividends paid after
+    the date, so within the first year the yield is not limited to what was known at the time.
+
+    Args:
+        close (pd.DataFrame): The daily (split-adjusted) close per ticker, with a
+            DatetimeIndex or a daily PeriodIndex.
+        adjusted_close (pd.DataFrame): The daily close adjusted for dividends and splits,
+            shaped like `close`.
+
+    Returns:
+        pd.DataFrame: The trailing dividend yield as a decimal, shaped like `close`. Dates
+        after a ticker's last close are NaN.
+    """
+    index = close.index
+    dates = index.to_timestamp() if isinstance(index, pd.PeriodIndex) else index
+
+    # Carried forward so a date without a price (between two trading days) moves the
+    # dividend to the next trading day instead of losing it.
+    filled_close = close.ffill()
+    adjustment = (adjusted_close / close).ffill()
+
+    dividends = (1 - adjustment.shift(1) / adjustment) * filled_close.shift(1)
+    trailing_dividends = (
+        dividends.set_axis(dates).rolling(DIVIDEND_YIELD_WINDOW).sum().set_axis(index)
+    )
+
+    dividend_yield = trailing_dividends / close
+
+    # A window of a full year only exists from a year after a ticker's first close.
+    first_dates = pd.Series(
+        [dates[close[column].notna().to_numpy()].min() for column in close.columns],
+        index=close.columns,
+    )
+    full_year = pd.DataFrame(
+        dates.to_numpy()[:, None]
+        >= (first_dates + pd.Timedelta(days=DIVIDEND_YIELD_DAYS)).to_numpy()[None, :],
+        index=index,
+        columns=close.columns,
+    )
+
+    return dividend_yield.where(full_year).clip(lower=0).bfill().where(close.notna())
+
+
 def get_monte_carlo_option_price(
     stock_price: float,
     strike_price: float,

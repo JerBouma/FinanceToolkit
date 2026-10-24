@@ -642,3 +642,29 @@ def test_a_factor_file_is_downloaded_once_per_session(monkeypatch):
     assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
     assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
     assert downloads == ["https://example.com/f.zip"]
+
+
+def test_get_compound_annual_growth_rate_uses_calendar_time():
+    # A price that doubles over two calendar years grows by sqrt(2) - 1 a year, whether it
+    # is observed every day (a cryptocurrency) or on weekdays only (a stock).
+    every_day = pd.date_range("2020-01-01", "2022-01-01", freq="D")
+    weekdays = every_day[every_day.dayofweek < 5]  # noqa: PLR2004
+    years = (every_day[-1] - every_day[0]).days / 365.25
+
+    crypto = pd.Series(np.linspace(100, 200, len(every_day)), index=every_day)
+    stock = pd.Series(np.linspace(50, 100, len(weekdays)), index=weekdays)
+
+    # The union calendar leaves the stock without a price on the weekends, the last day
+    # (a Saturday) included, so it is measured from its own first to its own last close.
+    prices = pd.concat({"Crypto": crypto, "Stock": stock}, axis=1)
+    prices.index = prices.index.to_period("D")
+
+    cagr = performance_model.get_compound_annual_growth_rate(prices)
+
+    assert cagr["Crypto"] == pytest.approx(2 ** (1 / years) - 1)
+    stock_years = (weekdays[-1] - weekdays[0]).days / 365.25
+    assert cagr["Stock"] == pytest.approx(2 ** (1 / stock_years) - 1)
+    assert cagr["Stock"] == pytest.approx(0.4142, abs=1e-3)
+
+    # A single price spans no time, so it has no growth rate.
+    assert np.isnan(performance_model.get_compound_annual_growth_rate(crypto.iloc[:1]))

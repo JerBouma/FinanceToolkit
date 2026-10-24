@@ -193,8 +193,8 @@ class Ratios:
         Calculates and collects all ratios based on the provided data.
 
         Args:
-            include_dividends (bool, optional): Whether to include dividends in the calculations.
-                Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income in the
+                earnings-based ratios. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for the calculation.
                 Defaults to True.
             days (int, optional): The number of days to use for the calculation. Defaults to 365.
@@ -7803,7 +7803,8 @@ class Ratios:
         Calculates and collects all Valuation Ratios based on the provided data.
 
         Args:
-            include_dividends (bool, optional): Whether to include dividends in the calculations. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income in the
+                earnings-based ratios. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -8262,7 +8263,8 @@ class Ratios:
 
         Args:
             show_daily (bool, optional): Whether to show daily data. Defaults to False.
-            include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
+                Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -8385,7 +8387,8 @@ class Ratios:
         Args:
             use_ebitda_growth_rate (bool, optional): Whether to use EBITDA growth rate for the calculation.
                 Defaults to False.
-            include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income, in both
+                the P/E and the EPS growth (not in the EBITDA growth). Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10353,7 +10356,8 @@ class Ratios:
 
         Args:
             show_daily (bool, optional): Whether to show daily data. Defaults to False.
-            include_dividends (bool, optional): Whether to include dividends in the calculation. Defaults to False.
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
+                Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.

@@ -1993,6 +1993,60 @@ def get_compound_growth_rate(
     return (prices.iloc[-1] / prices.iloc[0]) ** (1 / periods) - 1
 
 
+# The average length of a year in days, leap years included, to express calendar time in years.
+DAYS_PER_YEAR = 365.25
+
+
+def get_compound_annual_growth_rate(
+    prices: pd.Series | pd.DataFrame,
+) -> float | pd.Series:
+    """
+    Calculate the Compound Annual Growth Rate (CAGR) of a price series on calendar time.
+
+    The CAGR is the constant annual rate that grows the first price into the last one over
+    the time between them. That time is measured in calendar days rather than in rows, so
+    the rate does not depend on how often a price is observed: an asset that trades every
+    day (such as a cryptocurrency) and one that trades on weekdays only, observed over the
+    same dates, are measured over the same number of years.
+
+    The formula is as follows:
+
+        - Years = (Last Date - First Date) / 365.25 days
+        - CAGR = (Last Price / First Price) ^ (1 / Years) - 1
+
+    Each column is measured on its own first and last observation, so a ticker without a
+    price on the first or last date of a shared calendar (a weekend for a stock next to a
+    cryptocurrency, or a later listing) still gets the rate over the dates it has.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): Series or DataFrame of prices with a
+        DatetimeIndex or PeriodIndex, ordered from oldest to newest.
+
+    Returns:
+        float | pd.Series: The CAGR, as a float if `prices` is a Series and as a Series
+        (one value per column) if `prices` is a DataFrame. A series with fewer than two
+        prices, or whose prices fall on a single date, returns NaN.
+    """
+    if isinstance(prices, pd.DataFrame):
+        return prices.apply(get_compound_annual_growth_rate).astype(float)
+
+    observed = prices.dropna()
+
+    if len(observed) < 2:  # noqa: PLR2004
+        return float("nan")
+
+    dates = observed.index
+    if isinstance(dates, pd.PeriodIndex):
+        dates = dates.to_timestamp()
+
+    years = (dates[-1] - dates[0]).days / DAYS_PER_YEAR
+
+    if years <= 0:
+        return float("nan")
+
+    return float((observed.iloc[-1] / observed.iloc[0]) ** (1 / years) - 1)
+
+
 def get_returns(
     returns: pd.Series | pd.DataFrame,
     period: str,

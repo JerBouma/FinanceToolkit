@@ -123,10 +123,6 @@ def test_the_largest_holdings_of_a_fund(unrounded_toolkit):
     assert list(toolkit.etf.get_holdings(limit=-2).index) == ["A", "D"]
     assert len(toolkit.etf.get_holdings()) == 4  # noqa: PLR2004
 
-    # The method of the Toolkit itself still answers, with a deprecation warning.
-    with pytest.warns(DeprecationWarning, match="toolkit.etf.get_holdings"):
-        assert list(toolkit.get_etf_holdings(limit=2).index) == ["B", "C"]
-
 
 def test_the_key_maturities_of_the_eiopa_curve(monkeypatch):
     from financetoolkit.fixedincome import eiopa_model

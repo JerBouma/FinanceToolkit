@@ -3855,59 +3855,6 @@ class Toolkit:
 
         return getattr(self, attribute)
 
-    def get_etf_holdings(
-        self,
-        overwrite: bool = False,
-        show_columns: list[str] | None = None,
-        limit: int | None = None,
-    ):
-        """
-        Deprecated: use `toolkit.etf.get_holdings()`, which takes the same arguments.
-        """
-        warnings.warn(
-            "get_etf_holdings is deprecated, use toolkit.etf.get_holdings instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.etf.get_holdings(
-            overwrite=overwrite, show_columns=show_columns, limit=limit
-        )
-
-    def get_etf_information(self, overwrite: bool = False):
-        """
-        Deprecated: use `toolkit.etf.get_information()`, which takes the same arguments.
-        """
-        warnings.warn(
-            "get_etf_information is deprecated, use toolkit.etf.get_information instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.etf.get_information(overwrite=overwrite)
-
-    def get_etf_country_weightings(self, overwrite: bool = False):
-        """
-        Deprecated: use `toolkit.etf.get_country_weightings()`, which takes the same arguments.
-        """
-        warnings.warn(
-            "get_etf_country_weightings is deprecated, use "
-            "toolkit.etf.get_country_weightings instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.etf.get_country_weightings(overwrite=overwrite)
-
-    def get_etf_sector_weightings(self, overwrite: bool = False):
-        """
-        Deprecated: use `toolkit.etf.get_sector_weightings()`, which takes the same arguments.
-        """
-        warnings.warn(
-            "get_etf_sector_weightings is deprecated, use "
-            "toolkit.etf.get_sector_weightings instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.etf.get_sector_weightings(overwrite=overwrite)
-
     def get_earnings_call_transcripts(
         self,
         latest: bool = True,

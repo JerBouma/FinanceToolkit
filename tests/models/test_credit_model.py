@@ -47,3 +47,17 @@ def test_synthetic_rating():
     assert credit_model.get_synthetic_rating(2.0, table) == ("BBB", 0.01)
     assert credit_model.get_synthetic_rating(float("inf"), table) == ("AAA", 0.004)
     assert credit_model.get_synthetic_rating(float("nan"), table)[0] == ""
+
+
+def test_synthetic_rating_clips_to_the_table():
+    table = pd.DataFrame(
+        {
+            "Lower": [-10, 1, 3],
+            "Upper": [0.999, 2.999, 100000],
+            "Rating": ["D", "BBB", "AAA"],
+            "Default Spread": [0.19, 0.01, 0.004],
+        }
+    )
+    # A coverage below the lowest bound (a large operating loss) is the worst rating.
+    assert credit_model.get_synthetic_rating(-50.0, table) == ("D", 0.19)
+    assert credit_model.get_synthetic_rating(1e9, table) == ("AAA", 0.004)

@@ -4939,10 +4939,14 @@ class Models:
         )
 
     def _period_prices(self) -> pd.DataFrame:
-        """The share price at the end of every statement period, per ticker."""
+        """
+        The share price at the end of every statement period, per ticker, as traded (adjusted
+        for splits, not for dividends): a market value is the shares outstanding at the
+        price paid then, which the dividend-adjusted price understates for past periods.
+        """
         columns = self._balance_sheet_statement.columns
         prices = self._historical_data["quarterly" if self._quarterly else "yearly"][
-            "Adj Close"
+            "Close"
         ]
         prices = prices.reindex(columns=self._tickers)
         prices.index = prices.index.asfreq(columns.freq)
@@ -4954,8 +4958,8 @@ class Models:
         return float(values.iloc[-1]) if not values.empty else float("nan")
 
     def _latest_price(self, ticker: str) -> float:
-        """The latest daily share price of a ticker."""
-        prices = self._historical_data["daily"]["Adj Close"][ticker].dropna()
+        """The latest daily share price of a ticker, as traded."""
+        prices = self._historical_data["daily"]["Close"][ticker].dropna()
         return float(prices.iloc[-1]) if not prices.empty else float("nan")
 
     def _per_ticker(
@@ -4970,15 +4974,21 @@ class Models:
         return dict.fromkeys(self._tickers, None if value is None else float(value))
 
     def _resolve_wacc(
-        self, weighted_average_cost_of_capital: float | dict[str, float] | None
+        self,
+        weighted_average_cost_of_capital: float | dict[str, float] | None,
+        trailing: int | None = None,
     ) -> dict[str, float]:
-        """The discount rate per ticker: as given, otherwise the latest calculated WACC."""
+        """
+        The discount rate per ticker: as given, otherwise the latest calculated WACC, with
+        its flows (such as the interest expense) summed over `trailing` periods so that on
+        quarterly data it is built from a year of them.
+        """
         rates = self._per_ticker(
             weighted_average_cost_of_capital, "weighted average cost of capital"
         )
         if any(rate is None for rate in rates.values()):
             calculated = self.get_weighted_average_cost_of_capital(
-                show_full_results=False
+                show_full_results=False, trailing=trailing
             )
             for ticker in self._tickers:
                 if rates[ticker] is None:
@@ -5038,12 +5048,15 @@ class Models:
                 projection periods, one number or a number per ticker. Defaults to 0.025.
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The discount rate, one number or a number per ticker. Defaults to None,
-                which uses the latest Weighted Average Cost of Capital of each company.
+                which uses the latest Weighted Average Cost of Capital of each company,
+                calculated over the same `trailing` periods.
             periods (int, optional): The number of projection periods. Defaults to 5.
             cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow" or
                 "Operating Cash Flow". Defaults to "Free Cash Flow".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
-                4 quarters) instead of taking the latest one. Defaults to None.
+                4 quarters) instead of taking the latest one. Defaults to None, which sums
+                the last 4 quarters (a trailing twelve months) for quarterly data and takes
+                the latest year otherwise, as the projection periods are years.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
 
@@ -5051,11 +5064,14 @@ class Models:
             pd.DataFrame: Per ticker the Share Price, the Cash Flow used, the Weighted
             Average Cost of Capital, the Perpetual Growth Rate, the Implied Growth Rate and,
             for comparison, the Historical Growth Rate (the compound annual growth of the
-            cash flow over the reported periods).
+            cash flow as used, so summed over `trailing` periods where set, from the first
+            to the latest reported period).
 
         Notes:
         - A negative cash flow, or a discount rate at or below the perpetual growth rate,
           has no implied growth rate and gives NaN.
+        - The Historical Growth Rate counts four quarters as a year with quarterly data and
+          is NaN when the first or latest cash flow is not positive.
 
         As an example:
 
@@ -5076,9 +5092,9 @@ class Models:
 
         |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate |
         |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|
-        | AAPL |       271.122 |  9.8767e+10 |                               0.09 |                   0.025 |                0.27   |                   0.0613 |
-        | MSFT |       480.571 |  7.1611e+10 |                               0.09 |                   0.025 |                0.3253 |                   0.0962 |
-        | NVDA |       186.065 |  9.6676e+10 |                               0.09 |                   0.025 |                0.3023 |                   0.8313 |
+        | AAPL |        271.86 |  9.8767e+10 |                               0.09 |                   0.025 |                0.2708 |                   0.0613 |
+        | MSFT |        483.62 |  7.1611e+10 |                               0.09 |                   0.025 |                0.3271 |                   0.0962 |
+        | NVDA |        186.5  |  9.6676e+10 |                               0.09 |                   0.025 |                0.3029 |                   0.8313 |
         """
         if cash_flow_type not in ["Free Cash Flow", "Operating Cash Flow"]:
             raise ValueError(
@@ -5086,19 +5102,23 @@ class Models:
             )
 
         perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        # The projection periods and the growth rates are yearly, so a quarterly cash flow is
+        # summed into a year rather than projected as if it were one.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
+        periods_per_year = 4 if self._quarterly else 1
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital, trailing)
         cash_flows = self._rows(self._cash_flow_statement, cash_flow_type)
 
         rows = {}
         for ticker in self._tickers:
             history = cash_flows.loc[ticker].dropna()
+            if trailing:
+                history = history.rolling(trailing).sum().dropna()
             if history.empty:
                 continue
-            cash_flow = (
-                float(history.iloc[-trailing:].sum())
-                if trailing
-                else float(history.iloc[-1])
-            )
+            cash_flow = float(history.iloc[-1])
             share_price = self._latest_price(ticker)
             implied = intrinsic_model.get_implied_growth_rate(
                 share_price=share_price,
@@ -5116,7 +5136,7 @@ class Models:
                 ),
                 periods=periods,
             )
-            years = len(history) - 1
+            years = (len(history) - 1) / periods_per_year
             first, last = float(history.iloc[0]), float(history.iloc[-1])
             historical = (
                 (last / first) ** (1 / years) - 1
@@ -5141,14 +5161,15 @@ class Models:
         self,
         weighted_average_cost_of_capital: float | dict[str, float] | None = None,
         periods: int = 5,
+        trailing: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Earnings Power Value (EPV), the value of a company's current earnings
         if they never grew. Bruce Greenwald uses it to separate what is known (today's
         earnings power) from what is speculative (growth): the operating margin is averaged
-        over several periods and applied to the latest revenue, taxed, and capitalized at
-        the cost of capital.
+        over several years and applied to the latest yearly revenue, taxed, and capitalized
+        at the cost of capital.
 
             - Normalized Operating Income = Average Operating Margin * Latest Revenue
             - NOPAT = Normalized Operating Income * (1 - Average Tax Rate)
@@ -5168,9 +5189,15 @@ class Models:
         Args:
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The discount rate, one number or a number per ticker. Defaults to None,
-                which uses the latest Weighted Average Cost of Capital of each company.
+                which uses the latest Weighted Average Cost of Capital of each company,
+                calculated over the same `trailing` periods.
             periods (int, optional): The number of periods the operating margin and tax rate
-                are averaged over. Defaults to 5.
+                are averaged over; with `trailing`, the number of trailing sums, `trailing`
+                periods apart so that they do not overlap. Defaults to 5.
+            trailing (int | None, optional): Sum the revenue, operating income, taxes and
+                income before tax over this many periods (e.g. 4 quarters), so that the
+                margin is applied to a year of revenue. Defaults to None, which uses 4 (a
+                trailing twelve months) for quarterly data and the yearly figures otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
 
@@ -5183,6 +5210,9 @@ class Models:
         Notes:
         - Maintenance capital expenditure is assumed to equal depreciation, so operating
           income stands in for the cash the business could pay out without shrinking.
+        - With quarterly data and the default trailing twelve months, the margins of the
+          last five years are averaged and applied to the revenue of the last four quarters,
+          as with yearly data.
 
         As an example:
 
@@ -5203,22 +5233,34 @@ class Models:
 
         |      |   Average Operating Margin |   Normalized Operating Income |   Tax Rate |   Normalized NOPAT |   Weighted Average Cost of Capital |   Earnings Power Value |   Equity Value |   Earnings Power Value per Share |   Share Price |   Price to EPV |
         |:-----|---------------------------:|------------------------------:|-----------:|-------------------:|-----------------------------------:|-----------------------:|---------------:|---------------------------------:|--------------:|---------------:|
-        | AAPL |                     0.3067 |                   1.27656e+11 |     0.1679 |        1.06229e+11 |                               0.08 |            1.32786e+12 |    1.25141e+12 |                          83.4015 |       271.122 |         3.2508 |
-        | KO   |                     0.2534 |                   1.21476e+10 |     0.1861 |        9.88662e+09 |                               0.08 |            1.23583e+11 |    8.66388e+10 |                          20.0878 |        68.58  |         3.414  |
-        | MSFT |                     0.4314 |                   1.2153e+11  |     0.1636 |        1.01652e+11 |                               0.08 |            1.27066e+12 |    1.18871e+12 |                         159.238  |       480.571 |         3.0179 |
+        | AAPL |                     0.3067 |                   1.27656e+11 |     0.1679 |        1.06229e+11 |                               0.08 |            1.32786e+12 |    1.25141e+12 |                          83.4015 |        271.86 |         3.2597 |
+        | KO   |                     0.2534 |                   1.21476e+10 |     0.1861 |        9.88662e+09 |                               0.08 |            1.23583e+11 |    8.66388e+10 |                          20.0878 |         69.91 |         3.4802 |
+        | MSFT |                     0.4314 |                   1.2153e+11  |     0.1636 |        1.01652e+11 |                               0.08 |            1.27066e+12 |    1.18871e+12 |                         159.238  |        483.62 |         3.0371 |
         """
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
-        revenue = self._rows(self._income_statement, "Revenue")
-        operating_income = self._rows(self._income_statement, "Operating Income")
-        taxes = self._rows(self._income_statement, "Income Tax Expense")
-        income_before_tax = self._rows(self._income_statement, "Income Before Tax")
+        # The NOPAT is capitalized as a yearly amount, so quarterly figures are summed into a
+        # year (a trailing twelve months) before the margin is applied to the revenue.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital, trailing)
+
+        def summed(row: str) -> pd.DataFrame:
+            frame = self._rows(self._income_statement, row)
+            return frame.T.rolling(trailing).sum().T if trailing else frame
+
+        revenue = summed("Revenue")
+        operating_income = summed("Operating Income")
+        taxes = summed("Income Tax Expense")
+        income_before_tax = summed("Income Before Tax")
 
         rows = {}
         for ticker in self._tickers:
             reported = (
                 revenue.loc[ticker].notna() & operating_income.loc[ticker].notna()
             )
-            columns = revenue.columns[reported][-periods:]
+            # Every `trailing`-th sum counted back from the latest, so that the averaged
+            # margins cover separate years instead of overlapping twelve-month windows.
+            columns = revenue.columns[reported][::-1][:: trailing or 1][:periods][::-1]
             if columns.empty:
                 continue
             result = intrinsic_model.get_earnings_power_value(
@@ -5270,6 +5312,7 @@ class Models:
         periods: int = 5,
         simulations: int = 10000,
         cash_flow_type: str = "Free Cash Flow",
+        trailing: int | None = None,
         seed: int | None = 0,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -5303,13 +5346,18 @@ class Models:
                 Defaults to 0.005.
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The expected discount rate. Defaults to None, which uses the latest Weighted
-                Average Cost of Capital of each company.
+                Average Cost of Capital of each company, calculated over the same `trailing`
+                periods.
             weighted_average_cost_of_capital_volatility (float, optional): Its standard
                 deviation. Defaults to 0.01.
             periods (int, optional): The number of projection periods. Defaults to 5.
             simulations (int, optional): The number of simulations. Defaults to 10,000.
             cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow" or
                 "Operating Cash Flow". Defaults to "Free Cash Flow".
+            trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
+                4 quarters) instead of taking the latest one. Defaults to None, which sums
+                the last 4 quarters (a trailing twelve months) for quarterly data and takes
+                the latest year otherwise, as the projection periods are years.
             seed (int | None, optional): The seed of the random numbers, so that results
                 can be reproduced. Defaults to 0; None gives different draws every time.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -5341,8 +5389,8 @@ class Models:
 
         |      |    Mean |   Standard Deviation |   5th Percentile |   25th Percentile |   50th Percentile |   75th Percentile |   95th Percentile |   Share Price |   Probability Undervalued |
         |:-----|--------:|---------------------:|-----------------:|------------------:|------------------:|------------------:|------------------:|--------------:|--------------------------:|
-        | AAPL | 130.65  |              28.0739 |          94.6441 |           111.402 |           126.183 |           144.853 |           181.963 |       271.122 |                    0.0018 |
-        | MSFT | 186.851 |              40.9136 |         134.378  |           158.799 |           180.342 |           207.549 |           261.633 |       480.571 |                    0.0003 |
+        | AAPL | 130.65  |              28.0739 |          94.6441 |           111.402 |           126.183 |           144.853 |           181.963 |        271.86 |                    0.0018 |
+        | MSFT | 186.851 |              40.9136 |         134.378  |           158.799 |           180.342 |           207.549 |           261.633 |        483.62 |                    0.0003 |
         """
         if cash_flow_type not in ["Free Cash Flow", "Operating Cash Flow"]:
             raise ValueError(
@@ -5351,12 +5399,18 @@ class Models:
 
         growth = self._per_ticker(growth_rate, "growth rate")
         perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        # The growth rates are yearly, so a quarterly cash flow is summed into a year.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
+        wacc = self._resolve_wacc(weighted_average_cost_of_capital, trailing)
         cash_flows = self._rows(self._cash_flow_statement, cash_flow_type)
 
         rows = {}
         for ticker in self._tickers:
             history = cash_flows.loc[ticker].dropna()
+            if trailing:
+                history = history.rolling(trailing).sum().dropna()
             if history.empty:
                 continue
             values = intrinsic_model.get_monte_carlo_intrinsic_value(
@@ -5423,6 +5477,11 @@ class Models:
         default is the number of standard deviations the asset value is above the default
         point; it reacts to the share price immediately, long before a rating changes.
 
+        The risk free rate is the Toolkit's (the 10-year Treasury yield unless set otherwise
+        with `risk_free_rate`) at every period end, where Vassalou and Xing (2004) and
+        Bharath and Shumway (2008) use the one-year rate for a one-year horizon; the
+        difference moves the distance to default only slightly.
+
         For more information, see the following papers:
 
         - Merton, R.C. (1974). "On the Pricing of Corporate Debt: The Risk Structure of
@@ -5430,6 +5489,8 @@ class Models:
         - Crosbie, P. and Bohn, J. (2003). "Modeling Default Risk." Moody's KMV.
         - Vassalou, M. and Xing, Y. (2004). "Default Risk in Equity Returns." The Journal of
           Finance, 59(2), 831-868.
+        - Bharath, S.T. and Shumway, T. (2008). "Forecasting Default with the Merton Distance
+          to Default Model." The Review of Financial Studies, 21(3), 1339-1369.
 
         Also known as: KMV model, structural credit model, expected default frequency.
 
@@ -5471,13 +5532,13 @@ class Models:
 
         |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----------------------|------------:|------------:|------------:|------------:|------------:|
-        | Equity Value           | 6.18816e+10 | 3.5564e+10  | 4.15011e+10 | 3.58673e+10 | 5.04935e+10 |
+        | Equity Value           | 8.37862e+10 | 4.66828e+10 | 4.92598e+10 | 3.98079e+10 | 5.22045e+10 |
         | Equity Volatility      | 0.4163      | 0.491       | 0.355       | 0.36        | 0.3319      |
         | Default Point          | 9.3892e+10  | 9.45665e+10 | 9.945e+10   | 1.07294e+11 | 1.1133e+11  |
-        | Asset Value            | 1.5436e+11  | 1.26487e+11 | 1.37175e+11 | 1.38366e+11 | 1.57286e+11 |
-        | Asset Volatility       | 0.167       | 0.1391      | 0.1074      | 0.0934      | 0.1066      |
-        | Distance to Default    | 2.9835      | 2.3004      | 3.3002      | 3.1665      | 3.5797      |
-        | Probability of Default | 0.0014      | 0.0107      | 0.0005      | 0.0008      | 0.0002      |
+        | Asset Value            | 1.76267e+11 | 1.3761e+11  | 1.44934e+11 | 1.42307e+11 | 1.58997e+11 |
+        | Asset Volatility       | 0.1979      | 0.1675      | 0.1207      | 0.1008      | 0.109       |
+        | Distance to Default    | 3.1592      | 2.3878      | 3.3814      | 3.2062      | 3.5969      |
+        | Probability of Default | 0.0008      | 0.0085      | 0.0004      | 0.0007      | 0.0002      |
         """
         prices = self._period_prices()
         shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
@@ -5604,8 +5665,10 @@ class Models:
             Spread, Risk Free Rate and Pre-tax Cost of Debt.
 
         Notes:
-        - A company without interest expense gets the best rating; its coverage ratio, which
-          is infinite, shows as NaN.
+        - A company that reports an interest expense of zero gets the best rating; its
+          coverage ratio, which is infinite, shows as NaN. A period without a reported
+          interest expense gets no rating.
+        - A coverage ratio below the lowest bound of the table gets the worst rating.
         - The market capitalization is compared with five billion in the reporting
           currency; for companies that do not report in US dollars, pass the firm type.
 
@@ -5658,8 +5721,13 @@ class Models:
 
         ebit = self._rows(self._income_statement, "Operating Income")
         interest = self._rows(self._income_statement, "Interest Expense").abs()
-        coverage = (ebit / interest.where(interest > 0)).where(ebit.notna())
-        coverage = coverage.where(interest > 0, float("inf")).where(ebit.notna())
+        # Only a reported interest expense of zero means there is nothing to cover (an
+        # infinite ratio, the best rating); a missing one leaves the ratio unknown.
+        coverage = (
+            (ebit / interest.where(interest > 0))
+            .mask(interest == 0, float("inf"))
+            .where(ebit.notna())
+        )
 
         market_cap = self._period_prices() * self._rows(
             self._income_statement, "Weighted Average Shares Diluted"
@@ -5744,6 +5812,18 @@ class Models:
         Equity and on Invested Capital, Revenue Growth, the Debt-to-Equity ratio and the
         Dividend Yield, all of the latest fiscal year.
 
+        The Peer Mean of the four valuation multiples is the harmonic mean of the positive
+        values, the standard average of multiples: the arithmetic mean is dominated by
+        peers with earnings (or book value, or sales) close to zero, and a negative multiple
+        says nothing about the price paid. The other metrics use the arithmetic mean.
+
+        For more information, see the following papers:
+
+        - Baker, M. and Ruback, R.S. (1999). "Estimating Industry Multiples." Working paper,
+          Harvard University.
+        - Liu, J., Nissim, D. and Thomas, J. (2002). "Equity Valuation Using Multiples."
+          Journal of Accounting Research, 40(1), 135-172.
+
         Also known as: comparable companies analysis, comps, relative valuation, peer
         group analysis.
 
@@ -5757,7 +5837,8 @@ class Models:
 
         Returns:
             pd.DataFrame: Per ticker and metric the Company value, the Peer Median and Peer
-            Mean, the Percentile (0 to 1) and the number of Peers with a value.
+            Mean (harmonic for the valuation multiples), the Percentile (0 to 1) and the
+            number of Peers with a value.
 
         Notes:
         - A high percentile is not always good: for valuation ratios it means expensive,
@@ -5783,10 +5864,10 @@ class Models:
 
         |                                        |   Company |   Peer Median |   Peer Mean |   Percentile |   Peers |
         |:---------------------------------------|----------:|--------------:|------------:|-------------:|--------:|
-        | ('MSFT', 'Price-to-Earnings')          |   29.2276 |       30.5776 |     33.6282 |          0.5 |      10 |
-        | ('MSFT', 'EV-to-EBITDA')               |   20.7309 |       19.8087 |     22.6758 |          0.5 |      10 |
-        | ('MSFT', 'Price-to-Book')              |    8.8365 |        7.2576 |      8.103  |          0.6 |      10 |
-        | ('MSFT', 'Price-to-Sales')             |   11.7803 |        6.1724 |      6.0304 |          0.9 |      10 |
+        | ('MSFT', 'Price-to-Earnings')          |   29.2276 |       30.5776 |     27.5171 |          0.5 |      10 |
+        | ('MSFT', 'EV-to-EBITDA')               |   20.7309 |       19.8087 |     17.9245 |          0.5 |      10 |
+        | ('MSFT', 'Price-to-Book')              |    8.8365 |        7.2576 |      6.1536 |          0.6 |      10 |
+        | ('MSFT', 'Price-to-Sales')             |   11.7803 |        6.1724 |      4.2807 |          0.9 |      10 |
         | ('MSFT', 'Gross Margin')               |    0.6794 |        0.6242 |      0.6164 |          0.6 |      10 |
         | ('MSFT', 'Operating Margin')           |    0.4678 |        0.1998 |      0.2226 |          1   |      10 |
         | ('MSFT', 'Net Profit Margin')          |    0.4031 |        0.1682 |      0.187  |          1   |      10 |
@@ -5805,15 +5886,17 @@ class Models:
         )
 
     def _score_inputs(self, trailing: int | None) -> dict[str, pd.DataFrame]:
-        """The statement rows the quality and manipulation scores use, per ticker."""
+        """
+        The statement rows the quality and manipulation scores use, per ticker. With
+        `trailing`, the flows are summed over that many periods (4 quarters give a trailing
+        twelve months) while the balance sheet items stay as reported at the period end, so
+        that compared `trailing` periods back they give the change over the year and the
+        assets at its start, as in the yearly statements the scores were estimated on.
+        """
 
         def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
             frame = self._rows(statement, row)
             return frame.T.rolling(trailing).sum().T if trailing else frame
-
-        def stock(row: str) -> pd.DataFrame:
-            frame = self._rows(self._balance_sheet_statement, row)
-            return frame.T.rolling(trailing).mean().T if trailing else frame
 
         balance_rows = [
             "Total Assets",
@@ -5830,6 +5913,7 @@ class Models:
             "Accounts Receivable",
             "Inventory",
             "Property, Plant and Equipment",
+            "Gross Property, Plant and Equipment",
             "Other Current Assets",
             "Tax Payables",
             "Total Debt",
@@ -5849,9 +5933,12 @@ class Models:
             "Capital Expenditure",
             "Cash Flow from Investing",
             "Long Term Debt Issued",
+            "Gross Long Term Debt Issued",
             "Common Stock Issued",
         ]
-        inputs = {row: stock(row) for row in balance_rows}
+        inputs = {
+            row: self._rows(self._balance_sheet_statement, row) for row in balance_rows
+        }
         inputs.update({row: flow(self._income_statement, row) for row in income_rows})
         inputs.update({row: flow(self._cash_flow_statement, row) for row in cash_rows})
         return inputs
@@ -5903,8 +5990,10 @@ class Models:
         Args:
             diluted (bool, optional): Whether to use the diluted share count for the market
                 capitalization. Defaults to True.
-            trailing (int | None, optional): Sum the income over this many periods (e.g. 4
-                quarters). Defaults to None.
+            trailing (int | None, optional): Sum the operating income over this many
+                periods (e.g. 4 quarters, a trailing twelve months). The enterprise value and
+                the capital are taken at the period end. Defaults to None, which is 4 for
+                quarterly data (a year of operating income) and 1 otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (list[str] | None, optional): The periods to show. Defaults to None,
@@ -5939,6 +6028,11 @@ class Models:
         | META  |      1 |      2 |      2 |      4 |      2 |
         | MSFT  |      5 |      4 |      4 |      2 |      1 |
         """
+        # The scores were estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
         inputs = self._score_inputs(trailing)
         shares = self._rows(
             self._income_statement,
@@ -5967,7 +6061,7 @@ class Models:
     @handle_errors
     def get_mohanram_g_score(
         self,
-        variance_periods: int = 4,
+        variance_periods: int = 5,
         trailing: int | None = None,
         rounding: int | None = None,
         show_columns: list[str] | None = None,
@@ -5986,6 +6080,12 @@ class Models:
           and advertising (G8, selling and marketing expenses) relative to assets above the
           median, as these investments depress current earnings.
 
+        As in the paper, the return on assets, the cash flow return on assets and the three
+        intensities are scaled by the total assets at the start of the year, the variances
+        are taken over the past five years with at least three available, and a signal
+        that cannot be calculated for a company (a missing item, or too short a history)
+        scores 0.
+
         For more information, see the following paper:
 
         - Mohanram, P.S. (2005). "Separating Winners from Losers among Low Book-to-Market
@@ -5995,10 +6095,18 @@ class Models:
         Also known as: G-Score, growth stock score.
 
         Args:
-            variance_periods (int, optional): The number of periods the variances of G4 and
-                G5 are calculated over. Defaults to 4.
+            variance_periods (int, optional): The number of yearly values the variances of
+                G4 (return on assets) and G5 (revenue growth) are calculated over, of which at
+                least three (or all, when fewer are asked for) must be available. With
+                `trailing` the values are `trailing` periods apart (one a year with 4
+                quarters); without it, one per period. Defaults to 5, the five years of the
+                paper.
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
-                quarters). Defaults to None.
+                quarters, a trailing twelve months) and compare with the values `trailing`
+                periods back, so that with quarterly data every change is year over year.
+                Balance sheet items are taken at the period end. Defaults to None, which is
+                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
+                compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (list[str] | None, optional): The periods to show. Defaults to None,
@@ -6010,6 +6118,10 @@ class Models:
         Notes:
         - The paper compares with industry medians; here the medians are those of the
           tickers given, so pass a peer group of the same industry.
+        - The variances need three yearly values and revenue growth needs the year before
+          the first, so the first G-Score is in the fourth year of statements (with
+          quarterly data, the sixteenth quarter). A company with a shorter history than its
+          peers scores 0 on G4 and G5.
 
         As an example:
 
@@ -6028,16 +6140,22 @@ class Models:
 
         Which returns:
 
-        |       |   2024 |   2025 |
-        |:------|-------:|-------:|
-        | AAPL  |      4 |      4 |
-        | ADBE  |      5 |      6 |
-        | GOOGL |      4 |      6 |
-        | META  |      5 |      4 |
-        | MSFT  |      5 |      3 |
-        | NVDA  |      3 |      2 |
+        |       |   2023 |   2024 |   2025 |
+        |:------|-------:|-------:|-------:|
+        | AAPL  |      4 |      4 |      3 |
+        | ADBE  |      5 |      5 |      5 |
+        | GOOGL |      4 |      4 |      6 |
+        | META  |      6 |      5 |      4 |
+        | MSFT  |      4 |      5 |      4 |
+        | NVDA  |      3 |      3 |      3 |
         """
+        # The scores were estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
         inputs = self._score_inputs(trailing)
+        lag = trailing or 1
         results = quality_model.get_mohanram_g_score(
             net_income=inputs["Net Income"],
             operating_cash_flow=inputs["Operating Cash Flow"],
@@ -6047,9 +6165,16 @@ class Models:
             capital_expenditure=inputs["Capital Expenditure"],
             selling_and_marketing=inputs["Selling and Marketing Expenses"],
             variance_periods=variance_periods,
+            lag=lag,
+        )
+        # Signals that cannot be calculated score 0, so the periods in which the variance of
+        # revenue growth is not available for any company (the first trailing sums, plus the
+        # minimum number of growth rates a year apart) are left out instead of shown as 0.
+        first_columns = (lag - 1 if trailing else 0) + lag * min(
+            quality_model.MOHANRAM_MINIMUM_VARIANCE_PERIODS, variance_periods
         )
         return self._finish_score(
-            results, rounding, show_columns, first_columns=variance_periods
+            results, rounding, show_columns, first_columns=first_columns
         )
 
     @handle_errors
@@ -6066,10 +6191,10 @@ class Models:
 
         - Accrual quality: RSST accruals (the change in non-cash working capital,
           non-current operating assets and financial assets), the changes in receivables and
-          inventory, and the share of soft assets (assets other than cash and property,
-          plant and equipment).
+          inventory, and the share of soft assets (assets other than cash and short-term
+          investments and net property, plant and equipment).
         - Performance: the change in cash sales and in return on assets.
-        - Incentives: whether the company issued debt or equity.
+        - Incentives: whether the company issued long-term debt or stock.
 
             Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables + 1.191
             ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales - 0.932 ΔROA + 1.029 Issuance
@@ -6088,7 +6213,11 @@ class Models:
 
         Args:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
-                quarters). Defaults to None.
+                quarters, a trailing twelve months) and compare with the values `trailing`
+                periods back, so that with quarterly data every change is year over year.
+                Balance sheet items are taken at the period end. Defaults to None, which is
+                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
+                compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (list[str] | None, optional): The periods to show. Defaults to None,
@@ -6097,6 +6226,13 @@ class Models:
         Returns:
             pd.DataFrame: Per ticker and period the seven inputs, the Predicted Value, the
             Probability of Misstatement and the F-Score.
+
+        Notes:
+        - The paper counts the gross issuance of long-term debt. Where the statements only
+          report the net issuance (issuance minus repayments), as Financial Modeling Prep's
+          do, a company that issued debt but repaid more counts as not issuing.
+        - The model was estimated on yearly statements, so with quarterly data the flows
+          are summed over the trailing twelve months by default.
 
         As an example:
 
@@ -6117,18 +6253,23 @@ class Models:
 
         |      |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|
-        | AAPL | 0.4851 | 0.4674 | 0.5005 | 0.4672 |
-        | MSFT | 1.3248 | 1.1194 | 1.2686 | 1.059  |
+        | AAPL | 0.4226 | 0.3916 | 0.4136 | 0.4214 |
+        | MSFT | 0.811  | 0.7759 | 1.018  | 0.8628 |
         | SMCI | 2.8035 | 0.6471 | 6.128  | 0.8275 |
         """
+        # The scores were estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
         inputs = self._score_inputs(trailing)
+        lag = trailing or 1
         results = quality_model.get_dechow_f_score(
             total_assets=inputs["Total Assets"],
             current_assets=inputs["Total Current Assets"],
             current_liabilities=inputs["Total Current Liabilities"],
             total_liabilities=inputs["Total Liabilities"],
             cash_and_short_term_investments=inputs["Cash and Short Term Investments"],
-            cash_and_cash_equivalents=inputs["Cash and Cash Equivalents"],
             short_term_investments=inputs["Short Term Investments"],
             long_term_investments=inputs["Long Term Investments"],
             short_term_debt=inputs["Short Term Debt"],
@@ -6139,11 +6280,20 @@ class Models:
             property_plant_and_equipment=inputs["Property, Plant and Equipment"],
             revenue=inputs["Revenue"],
             net_income=inputs["Net Income"],
-            debt_issued=inputs["Long Term Debt Issued"],
+            # The gross issuance where the statements report it (Yahoo Finance's do), the
+            # net issuance otherwise.
+            debt_issued=inputs["Gross Long Term Debt Issued"].fillna(
+                inputs["Long Term Debt Issued"]
+            ),
             stock_issued=inputs["Common Stock Issued"],
+            lag=lag,
         )
-        # The changes and averages need two periods before the first full score.
-        return self._finish_score(results, rounding, show_columns, first_columns=2)
+        # The change in return on assets compares with the return a year back, which uses
+        # the assets of the year before that, so the first full score is two years in.
+        first_columns = 2 * lag
+        return self._finish_score(
+            results, rounding, show_columns, first_columns=first_columns
+        )
 
     @handle_errors
     def get_montier_c_score(
@@ -6160,8 +6310,8 @@ class Models:
         - Rising days sales outstanding: receivables growing faster than sales.
         - Rising days sales of inventory: inventory growing faster than cost of sales.
         - Rising other current assets relative to revenue, a place to park costs.
-        - Falling depreciation relative to property, plant and equipment, which flatters
-          earnings.
+        - Falling depreciation relative to gross property, plant and equipment, which
+          flatters earnings.
         - Total asset growth above 10%, typical of serial acquirers.
 
         Montier found that companies scoring 5 or 6 underperformed the market markedly.
@@ -6175,7 +6325,11 @@ class Models:
 
         Args:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
-                quarters). Defaults to None.
+                quarters, a trailing twelve months) and compare with the values `trailing`
+                periods back, so that with quarterly data every change is year over year.
+                Balance sheet items are taken at the period end. Defaults to None, which is
+                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
+                compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (list[str] | None, optional): The periods to show. Defaults to None,
@@ -6183,6 +6337,11 @@ class Models:
 
         Returns:
             pd.DataFrame: Per ticker and period the six signals and the C-Score.
+
+        Notes:
+        - Gross property, plant and equipment is reported by Yahoo Finance but not by
+          Financial Modeling Prep; for a company without it, depreciation is compared with
+          the net amount, whose ratio also rises as the assets age and so can hide a decline.
 
         As an example:
 
@@ -6207,7 +6366,20 @@ class Models:
         | MSFT |      5 |      2 |      5 |      3 |      2 |
         | SMCI |      3 |      5 |      2 |      5 |      2 |
         """
+        # The scores were estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
         inputs = self._score_inputs(trailing)
+        lag = trailing or 1
+        # Montier measures depreciation against gross fixed assets. A company whose
+        # statements have no gross amount uses the net amount in every period, as switching
+        # between the two would show a change that is not there.
+        gross = inputs["Gross Property, Plant and Equipment"]
+        fixed_assets = gross.where(
+            gross.notna().any(axis=1), inputs["Property, Plant and Equipment"], axis=0
+        )
         results = quality_model.get_montier_c_score(
             net_income=inputs["Net Income"],
             operating_cash_flow=inputs["Operating Cash Flow"],
@@ -6217,10 +6389,15 @@ class Models:
             cost_of_goods_sold=inputs["Cost of Goods Sold"],
             other_current_assets=inputs["Other Current Assets"],
             depreciation_and_amortization=inputs["Depreciation and Amortization"],
-            property_plant_and_equipment=inputs["Property, Plant and Equipment"],
+            property_plant_and_equipment=fixed_assets,
             total_assets=inputs["Total Assets"],
+            lag=lag,
         )
-        return self._finish_score(results, rounding, show_columns)
+        # The signs compare a full trailing sum with the one a year back.
+        first_columns = (lag - 1 if trailing else 0) + lag
+        return self._finish_score(
+            results, rounding, show_columns, first_columns=first_columns
+        )
 
     @handle_errors
     def get_accruals_ratio(
@@ -6231,9 +6408,10 @@ class Models:
     ) -> pd.DataFrame:
         """
         Calculate the accruals ratios: the part of earnings that is not backed by cash,
-        relative to average total assets. Richard Sloan showed that earnings driven by
-        accruals are less persistent than cash earnings and that companies with high
-        accruals earn lower future returns (the accrual anomaly).
+        relative to the average of the total assets at the start and the end of the year.
+        Richard Sloan showed that earnings driven by accruals are less persistent than cash
+        earnings and that companies with high accruals earn lower future returns (the
+        accrual anomaly).
 
             - Balance Sheet Accruals Ratio = [(ΔCurrent Assets - ΔCash) - (ΔCurrent
               Liabilities - ΔShort-term Debt - ΔTaxes Payable) - Depreciation] / Average
@@ -6241,9 +6419,14 @@ class Models:
             - Cash Flow Accruals Ratio = (Net Income - Cash Flow from Operations - Cash Flow
               from Investing) / Average Total Assets
 
-        The cash flow version avoids the distortion of acquisitions and divestments, which
-        change the balance sheet without being accruals. Values near zero or negative are a
-        sign of high earnings quality.
+        The balance sheet version is Sloan's (1996). The cash flow version, earnings minus
+        free cash flow, takes the accruals from the cash flow statement instead: Hribar and
+        Collins (2002) showed that balance sheet changes misstate accruals when a company
+        acquires, divests or discontinues operations (their own measure is earnings before
+        extraordinary items minus cash flow from operations), and subtracting the investing
+        cash flow as well counts the investment in long-term operating assets as an
+        accrual, as the broad accruals of Richardson, Sloan, Soliman and Tuna (2005) do.
+        Values near zero or negative are a sign of high earnings quality.
 
         For more information, see the following papers:
 
@@ -6251,12 +6434,19 @@ class Models:
           Cash Flows about Future Earnings?" The Accounting Review, 71(3), 289-315.
         - Hribar, P. and Collins, D.W. (2002). "Errors in Estimating Accruals: Implications
           for Empirical Research." Journal of Accounting Research, 40(1), 105-134.
+        - Richardson, S.A., Sloan, R.G., Soliman, M.T. and Tuna, I. (2005). "Accrual
+          Reliability, Earnings Persistence and Stock Prices." Journal of Accounting and
+          Economics, 39(3), 437-485.
 
         Also known as: Sloan ratio, accrual ratio, earnings quality ratio.
 
         Args:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
-                quarters). Defaults to None.
+                quarters, a trailing twelve months) and compare with the values `trailing`
+                periods back, so that with quarterly data every change is year over year.
+                Balance sheet items are taken at the period end. Defaults to None, which is
+                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
+                compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (list[str] | None, optional): The periods to show. Defaults to None,
@@ -6290,6 +6480,11 @@ class Models:
         | ('MSFT', 'Balance Sheet Accruals Ratio') | -0.0687 | -0.1109 | -0.0683 | -0.1017 | -0.0735 |
         | ('MSFT', 'Cash Flow Accruals Ratio')     |  0.0381 |  0.0401 |  0.0192 |  0.144  |  0.0677 |
         """
+        # The scores were estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
         inputs = self._score_inputs(trailing)
         results = quality_model.get_accruals_ratios(
             current_assets=inputs["Total Current Assets"],
@@ -6302,5 +6497,9 @@ class Models:
             operating_cash_flow=inputs["Operating Cash Flow"],
             investing_cash_flow=inputs["Cash Flow from Investing"],
             total_assets=inputs["Total Assets"],
+            lag=trailing or 1,
         )
-        return self._finish_score(results, rounding, show_columns)
+        # The balance sheet changes look a year back, by when the trailing sums are complete.
+        return self._finish_score(
+            results, rounding, show_columns, first_columns=trailing or 1
+        )

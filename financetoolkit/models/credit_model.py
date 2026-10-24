@@ -128,7 +128,8 @@ def get_synthetic_rating(
 
     Args:
         interest_coverage_ratio (float): The interest coverage ratio. Infinity (no interest
-            expense) maps to the best rating.
+            expense) maps to the best rating; a ratio below the table's lowest bound maps to
+            the worst.
         rating_table (pd.DataFrame): The table of one firm type, with the Lower and Upper
             bound of the ratio, the Rating and the Default Spread per rating.
 
@@ -139,7 +140,15 @@ def get_synthetic_rating(
         return "", np.nan
 
     table = rating_table.sort_values("Lower")
-    ratio = min(interest_coverage_ratio, float(table["Upper"].max()))
+    # Clipped to the table's range, as a ratio outside it (a large operating loss, or no
+    # interest expense at all) belongs to the worst or best rating.
+    ratio = float(
+        np.clip(
+            interest_coverage_ratio,
+            float(table["Lower"].min()),
+            float(table["Upper"].max()),
+        )
+    )
     match = table[table["Lower"] <= ratio].iloc[-1]
 
     return str(match["Rating"]), float(match["Default Spread"])

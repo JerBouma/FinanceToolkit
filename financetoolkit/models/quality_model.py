@@ -24,27 +24,58 @@ DECHOW_UNCONDITIONAL_PROBABILITY = 0.0037
 # Montier counts total asset growth above ten percent as a warning sign.
 MONTIER_ASSET_GROWTH = 0.10
 
+# Mohanram measures the variability of the return on assets and of sales growth over the past
+# five years and requires at least three of them.
+MOHANRAM_VARIANCE_PERIODS = 5
+MOHANRAM_MINIMUM_VARIANCE_PERIODS = 3
 
-def _previous(frame: pd.DataFrame) -> pd.DataFrame:
-    """The value of the previous period (frames are tickers by periods)."""
-    return frame.shift(1, axis=1)
+# Every comparison below is made `lag` periods back. The models were estimated on yearly
+# statements, so with quarterly flows summed over the trailing twelve months the lag is 4: a
+# change is then year over year, between sums that do not overlap, instead of quarter over
+# quarter, where three of the four quarters cancel out and the change is a quarter of its size.
 
 
-def _average(frame: pd.DataFrame) -> pd.DataFrame:
-    """The average of the current and previous period."""
-    return (frame + _previous(frame)) / 2
+def _previous(frame: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
+    """The value `lag` periods back (frames are tickers by periods)."""
+    return frame.shift(lag, axis=1)
 
 
-def _increased(frame: pd.DataFrame) -> pd.DataFrame:
-    """1 where the value rose from the previous period, 0 where not, NaN where unknown."""
-    previous = _previous(frame)
+def _change(frame: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
+    """The change from the value `lag` periods back."""
+    return frame - _previous(frame, lag)
+
+
+def _average(frame: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
+    """The average of the current value and the value `lag` periods back."""
+    return (frame + _previous(frame, lag)) / 2
+
+
+def _increased(frame: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
+    """1 where the value rose from `lag` periods back, 0 where not, NaN where unknown."""
+    previous = _previous(frame, lag)
     return (frame > previous).astype(float).where(frame.notna() & previous.notna())
 
 
-def _decreased(frame: pd.DataFrame) -> pd.DataFrame:
-    """1 where the value fell from the previous period, 0 where not, NaN where unknown."""
-    previous = _previous(frame)
+def _decreased(frame: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
+    """1 where the value fell from `lag` periods back, 0 where not, NaN where unknown."""
+    previous = _previous(frame, lag)
     return (frame < previous).astype(float).where(frame.notna() & previous.notna())
+
+
+def _variance(
+    frame: pd.DataFrame, periods: int, lag: int, min_periods: int
+) -> pd.DataFrame:
+    """
+    The variance of the latest `periods` values `lag` periods apart, NaN when fewer than
+    `min_periods` of them are available. With a lag of 1 this is a rolling variance; with
+    quarterly trailing-twelve-month values and a lag of 4 it takes one value per year.
+    """
+    observations = pd.concat(
+        [_previous(frame, period * lag) for period in range(periods)],
+        keys=range(periods),
+    )
+    grouped = observations.groupby(level=1, sort=False)
+    return grouped.var().where(grouped.count() >= min_periods).reindex(frame.index)
 
 
 def get_magic_formula(
@@ -97,7 +128,8 @@ def get_mohanram_g_score(
     research_and_development: pd.DataFrame,
     capital_expenditure: pd.DataFrame,
     selling_and_marketing: pd.DataFrame,
-    variance_periods: int = 4,
+    variance_periods: int = MOHANRAM_VARIANCE_PERIODS,
+    lag: int = 1,
 ) -> dict[str, pd.DataFrame]:
     """
     Mohanram's G-Score for growth (low book-to-market) companies: eight signals, each 1
@@ -112,53 +144,77 @@ def get_mohanram_g_score(
     - G7: capital expenditure to assets above the median.
     - G8: advertising (selling and marketing) to assets above the median.
 
+    As in the paper, net income, cash flow from operations, research and development,
+    capital expenditure and advertising are scaled by the total assets at the beginning of
+    the period, the variances use the past five yearly values of which at least three must
+    be available, and a signal that cannot be calculated for a company (a missing item, or
+    too short a history for the variances) scores 0 rather than leaving the G-Score empty.
+
     Args:
         net_income (pd.DataFrame): Net income per ticker (rows) and period (columns).
         operating_cash_flow (pd.DataFrame): Cash flow from operations.
         total_assets (pd.DataFrame): Total assets.
         revenue (pd.DataFrame): Revenue.
         research_and_development (pd.DataFrame): Research and development expenses.
-        capital_expenditure (pd.DataFrame): Capital expenditure (as a positive amount).
+        capital_expenditure (pd.DataFrame): Capital expenditure (the sign is ignored).
         selling_and_marketing (pd.DataFrame): Selling and marketing expenses.
-        variance_periods (int, optional): The number of periods the variances are
-            calculated over. Defaults to 4.
+        variance_periods (int, optional): The number of values, `lag` periods apart, the
+            variances of G4 and G5 are calculated over. At least three of them must be
+            available (all of them when fewer than three are asked for). Defaults to 5.
+        lag (int, optional): The number of periods back that a comparison is made, one
+            year: 1 for yearly statements and 4 for quarterly flows summed over the trailing
+            twelve months. The beginning assets, the revenue growth and the values in the
+            variances are this many periods apart. Defaults to 1.
 
     Returns:
         dict[str, pd.DataFrame]: The eight signals and the G-Score (0 to 8).
-    """
-    assets = _average(total_assets)
-    return_on_assets = net_income / assets
-    cash_flow_return = operating_cash_flow / assets
-    revenue_growth = revenue / _previous(revenue) - 1
 
+    Raises:
+        ValueError: When variance_periods is below 2, as a variance needs two values.
+    """
+    if variance_periods <= 1:
+        raise ValueError("The variances need at least two periods.")
+
+    beginning_assets = _previous(total_assets, lag)
+    return_on_assets = net_income / beginning_assets
+    revenue_growth = revenue / _previous(revenue, lag) - 1
+    minimum_periods = min(MOHANRAM_MINIMUM_VARIANCE_PERIODS, variance_periods)
+
+    # A missing value compares as False, which gives the 0 the paper assigns to a signal that
+    # cannot be calculated; the median is that of the tickers with a value.
     def above_median(frame: pd.DataFrame) -> pd.DataFrame:
-        median = frame.median(axis=0)
-        return (frame > median).astype(float).where(frame.notna())
+        return (frame > frame.median(axis=0)).astype(float)
 
     def below_median(frame: pd.DataFrame) -> pd.DataFrame:
-        median = frame.median(axis=0)
-        return (frame < median).astype(float).where(frame.notna())
+        return (frame < frame.median(axis=0)).astype(float)
 
     signals = {
         "G1 Return on Assets": above_median(return_on_assets),
-        "G2 Cash Flow Return on Assets": above_median(cash_flow_return),
-        "G3 Cash Flow above Net Income": (operating_cash_flow > net_income)
-        .astype(float)
-        .where(operating_cash_flow.notna() & net_income.notna()),
+        "G2 Cash Flow Return on Assets": above_median(
+            operating_cash_flow / beginning_assets
+        ),
+        "G3 Cash Flow above Net Income": (operating_cash_flow > net_income).astype(
+            float
+        ),
         "G4 Earnings Variability": below_median(
-            return_on_assets.T.rolling(variance_periods).var().T
+            _variance(return_on_assets, variance_periods, lag, minimum_periods)
         ),
         "G5 Growth Variability": below_median(
-            revenue_growth.T.rolling(variance_periods).var().T
+            _variance(revenue_growth, variance_periods, lag, minimum_periods)
         ),
         "G6 Research and Development Intensity": above_median(
-            research_and_development / assets
+            research_and_development / beginning_assets
         ),
         "G7 Capital Expenditure Intensity": above_median(
-            capital_expenditure.abs() / assets
+            capital_expenditure.abs() / beginning_assets
         ),
-        "G8 Advertising Intensity": above_median(selling_and_marketing / assets),
+        "G8 Advertising Intensity": above_median(
+            selling_and_marketing / beginning_assets
+        ),
     }
+    # Only a period without a balance sheet has no score at all.
+    reported = total_assets.notna()
+    signals = {name: signal.where(reported) for name, signal in signals.items()}
     signals["G-Score"] = sum(signals.values())
 
     return signals
@@ -170,7 +226,6 @@ def get_dechow_f_score(
     current_liabilities: pd.DataFrame,
     total_liabilities: pd.DataFrame,
     cash_and_short_term_investments: pd.DataFrame,
-    cash_and_cash_equivalents: pd.DataFrame,
     short_term_investments: pd.DataFrame,
     long_term_investments: pd.DataFrame,
     short_term_debt: pd.DataFrame,
@@ -183,6 +238,7 @@ def get_dechow_f_score(
     net_income: pd.DataFrame,
     debt_issued: pd.DataFrame,
     stock_issued: pd.DataFrame,
+    lag: int = 1,
 ) -> dict[str, pd.DataFrame]:
     """
     The Dechow F-Score (Model 1 of Dechow, Ge, Larson and Sloan, 2011), the probability of
@@ -196,6 +252,11 @@ def get_dechow_f_score(
                           - 0.932 ΔROA + 1.029 Issuance
         Probability = e^PV / (1 + e^PV),  F-Score = Probability / 0.0037
 
+    The accruals and changes are scaled by average total assets, soft assets are total
+    assets minus net property, plant and equipment and cash and short-term investments
+    (Compustat AT - PPENT - CHE) as a share of total assets, and Issuance is 1 when the
+    company issued long-term debt or stock during the period (DLTIS > 0 or SSTK > 0).
+
     An F-Score above 1 means a higher than average risk of misstatement; above 2.45 the
     risk is high.
 
@@ -205,7 +266,6 @@ def get_dechow_f_score(
         current_liabilities (pd.DataFrame): Total current liabilities.
         total_liabilities (pd.DataFrame): Total liabilities.
         cash_and_short_term_investments (pd.DataFrame): Cash and short-term investments.
-        cash_and_cash_equivalents (pd.DataFrame): Cash and cash equivalents.
         short_term_investments (pd.DataFrame): Short-term investments.
         long_term_investments (pd.DataFrame): Long-term investments.
         short_term_debt (pd.DataFrame): Short-term debt.
@@ -216,14 +276,19 @@ def get_dechow_f_score(
         property_plant_and_equipment (pd.DataFrame): Net property, plant and equipment.
         revenue (pd.DataFrame): Revenue.
         net_income (pd.DataFrame): Net income.
-        debt_issued (pd.DataFrame): Long-term debt issued.
-        stock_issued (pd.DataFrame): Common stock issued.
+        debt_issued (pd.DataFrame): Long-term debt issued, gross of repayments. When only
+            the net issuance (issuance minus repayments) is available, a company that
+            issued debt but repaid more counts as not issuing.
+        stock_issued (pd.DataFrame): Stock issued, gross of repurchases.
+        lag (int, optional): The number of periods back that a change and the average
+            total assets are measured, one year: 1 for yearly statements and 4 for
+            quarterly flows summed over the trailing twelve months. Defaults to 1.
 
     Returns:
         dict[str, pd.DataFrame]: The seven inputs, the Predicted Value, the Probability and
         the F-Score.
     """
-    average_assets = _average(total_assets)
+    average_assets = _average(total_assets, lag)
     fill = lambda frame: frame.fillna(0)  # noqa: E731
 
     working_capital = (current_assets - cash_and_short_term_investments) - (
@@ -236,25 +301,28 @@ def get_dechow_f_score(
         fill(long_term_debt) + fill(short_term_debt) + fill(preferred_stock)
     )
 
-    def change(frame: pd.DataFrame) -> pd.DataFrame:
-        return frame - _previous(frame)
-
-    cash_sales = revenue - change(accounts_receivable)
+    cash_sales = revenue - _change(accounts_receivable, lag)
     return_on_assets = net_income / average_assets
 
     inputs = {
         "RSST Accruals": (
-            change(working_capital) + change(non_current_operating) + change(financial)
+            _change(working_capital, lag)
+            + _change(non_current_operating, lag)
+            + _change(financial, lag)
         )
         / average_assets,
-        "Change in Receivables": change(accounts_receivable) / average_assets,
-        "Change in Inventory": change(fill(inventory)) / average_assets,
+        "Change in Receivables": _change(accounts_receivable, lag) / average_assets,
+        "Change in Inventory": _change(fill(inventory), lag) / average_assets,
+        # The paper's "cash and cash equivalent" is Compustat item 1, which is cash and
+        # short-term investments (CHE), as in its working capital definition.
         "Soft Assets": (
-            total_assets - property_plant_and_equipment - cash_and_cash_equivalents
+            total_assets
+            - property_plant_and_equipment
+            - cash_and_short_term_investments
         )
         / total_assets,
-        "Change in Cash Sales": cash_sales / _previous(cash_sales) - 1,
-        "Change in Return on Assets": change(return_on_assets),
+        "Change in Cash Sales": cash_sales / _previous(cash_sales, lag) - 1,
+        "Change in Return on Assets": _change(return_on_assets, lag),
         "Actual Issuance": ((fill(debt_issued) > 0) | (fill(stock_issued) > 0))
         .astype(float)
         .where(total_assets.notna()),
@@ -284,6 +352,7 @@ def get_montier_c_score(
     depreciation_and_amortization: pd.DataFrame,
     property_plant_and_equipment: pd.DataFrame,
     total_assets: pd.DataFrame,
+    lag: int = 1,
 ) -> dict[str, pd.DataFrame]:
     """
     Montier's C-Score ("cooking the books"): six warning signs of earnings manipulation,
@@ -293,7 +362,7 @@ def get_montier_c_score(
     - Rising days sales outstanding (receivables growing faster than sales).
     - Rising days sales of inventory (inventory growing faster than cost of sales).
     - Rising other current assets relative to revenue.
-    - Falling depreciation relative to property, plant and equipment.
+    - Falling depreciation relative to gross property, plant and equipment.
     - Total asset growth above 10% (acquisitive growth).
 
     Args:
@@ -305,22 +374,32 @@ def get_montier_c_score(
         cost_of_goods_sold (pd.DataFrame): Cost of goods sold.
         other_current_assets (pd.DataFrame): Other current assets.
         depreciation_and_amortization (pd.DataFrame): Depreciation and amortization.
-        property_plant_and_equipment (pd.DataFrame): Net property, plant and equipment.
+        property_plant_and_equipment (pd.DataFrame): Gross property, plant and equipment,
+            Montier's measure. Net property, plant and equipment can stand in when the gross
+            amount is not reported, although the ratio to the net amount also rises as the
+            assets age, which can hide a decline in the depreciation rate.
         total_assets (pd.DataFrame): Total assets.
+        lag (int, optional): The number of periods back that every sign compares with,
+            one year: 1 for yearly statements and 4 for quarterly flows summed over the
+            trailing twelve months. Defaults to 1.
 
     Returns:
         dict[str, pd.DataFrame]: The six signals and the C-Score.
     """
-    previous_assets = _previous(total_assets)
+    previous_assets = _previous(total_assets, lag)
     signals = {
-        "Net Income to Cash Flow Gap": _increased(net_income - operating_cash_flow),
-        "Days Sales Outstanding": _increased(accounts_receivable / revenue),
-        "Days Sales of Inventory": _increased(
-            inventory.where(inventory > 0) / cost_of_goods_sold
+        "Net Income to Cash Flow Gap": _increased(
+            net_income - operating_cash_flow, lag
         ),
-        "Other Current Assets to Revenue": _increased(other_current_assets / revenue),
+        "Days Sales Outstanding": _increased(accounts_receivable / revenue, lag),
+        "Days Sales of Inventory": _increased(
+            inventory.where(inventory > 0) / cost_of_goods_sold, lag
+        ),
+        "Other Current Assets to Revenue": _increased(
+            other_current_assets / revenue, lag
+        ),
         "Depreciation to Fixed Assets": _decreased(
-            depreciation_and_amortization / property_plant_and_equipment
+            depreciation_and_amortization / property_plant_and_equipment, lag
         ),
         "Total Asset Growth": (
             total_assets / previous_assets - 1 > MONTIER_ASSET_GROWTH
@@ -350,17 +429,25 @@ def get_accruals_ratios(
     operating_cash_flow: pd.DataFrame,
     investing_cash_flow: pd.DataFrame,
     total_assets: pd.DataFrame,
+    lag: int = 1,
 ) -> dict[str, pd.DataFrame]:
     """
-    The accruals ratios: the part of earnings that is not backed by cash, scaled by average
-    total assets. Sloan (1996) showed that companies with high accruals have less
-    persistent earnings and lower future returns.
+    The accruals ratios: the part of earnings that is not backed by cash, scaled by the
+    average of the total assets at the start and the end of the period. Sloan (1996)
+    showed that companies with high accruals have less persistent earnings and lower
+    future returns.
 
     - Balance Sheet Accruals Ratio (Sloan, 1996): [(ΔCurrent Assets - ΔCash) - (ΔCurrent
-      Liabilities - ΔShort-term Debt - ΔTaxes Payable) - Depreciation] / Average Assets.
-    - Cash Flow Accruals Ratio (Hribar and Collins, 2002): (Net Income - Cash Flow from
-      Operations - Cash Flow from Investing) / Average Assets, which avoids the distortions
-      of acquisitions and divestments in balance sheet changes.
+      Liabilities - ΔShort-term Debt - ΔTaxes Payable) - Depreciation] / Average Total
+      Assets.
+    - Cash Flow Accruals Ratio: (Net Income - Cash Flow from Operations - Cash Flow from
+      Investing) / Average Total Assets, earnings minus free cash flow, taken from the cash
+      flow statement. Hribar and Collins (2002) showed that accruals derived from balance
+      sheet changes contain errors when a company acquires, divests or discontinues
+      operations; they measure accruals as earnings before extraordinary items minus cash
+      flow from operations. Subtracting the investing cash flow as well also counts the
+      investment in long-term operating assets as an accrual, as the broad accruals of
+      Richardson, Sloan, Soliman and Tuna (2005) do.
 
     Args:
         current_assets (pd.DataFrame): Total current assets per ticker (rows) and period.
@@ -373,16 +460,18 @@ def get_accruals_ratios(
         operating_cash_flow (pd.DataFrame): Cash flow from operations.
         investing_cash_flow (pd.DataFrame): Cash flow from investing.
         total_assets (pd.DataFrame): Total assets.
+        lag (int, optional): The number of periods back that the balance sheet changes and
+            the average total assets are measured, one year: 1 for yearly statements and 4
+            for quarterly flows summed over the trailing twelve months. Defaults to 1.
 
     Returns:
         dict[str, pd.DataFrame]: The Balance Sheet Accruals Ratio and the Cash Flow Accruals
         Ratio.
     """
-    average_assets = _average(total_assets)
+    average_assets = _average(total_assets, lag)
 
     def change(frame: pd.DataFrame) -> pd.DataFrame:
-        filled = frame.fillna(0)
-        return filled - _previous(filled)
+        return _change(frame.fillna(0), lag)
 
     balance_sheet_accruals = (
         (change(current_assets) - change(cash_and_cash_equivalents))

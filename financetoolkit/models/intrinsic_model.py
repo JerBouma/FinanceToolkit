@@ -580,6 +580,8 @@ def get_earnings_power_value(
     average operating margin over the given periods to the latest revenue, which smooths out
     a single good or bad year. Comparing it with the market value shows how much of the
     price rests on growth: a price far above the EPV requires growth that creates value.
+    The NOPAT is capitalized as a yearly amount, so every period should cover a year (for
+    quarterly statements, the sum of four quarters).
 
     For more information, see the following book:
 
@@ -587,7 +589,7 @@ def get_earnings_power_value(
       Investing: From Graham to Buffett and Beyond." Wiley.
 
     Args:
-        revenue (pd.Series): The revenue over the normalization periods.
+        revenue (pd.Series): The revenue over the normalization periods, each a year.
         operating_income (pd.Series): The operating income over the same periods.
         income_tax_expense (pd.Series): The income tax expense over the same periods.
         income_before_tax (pd.Series): The income before tax over the same periods.

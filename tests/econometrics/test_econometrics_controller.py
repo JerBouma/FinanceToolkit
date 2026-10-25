@@ -779,6 +779,14 @@ def test_get_event_study_default_ticker(recorder, econometrics_module):
     )
 
 
+def test_get_fixed_effects_names_a_factor_that_is_not_loaded(
+    econometrics_module, monkeypatch
+):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="SPY are not among the loaded tickers"):
+        econometrics_module.get_fixed_effects(independent_tickers="SPY")
+
+
 def test_pair_tables_are_rounded(econometrics_module):
     # Each pair's row mixes numbers and a boolean, which left object columns that the
     # rounding skipped.

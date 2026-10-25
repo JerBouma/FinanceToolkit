@@ -888,6 +888,71 @@ def test_a_period_defaults_to_the_highest_frequency_available():
     assert quarterly._default_period("yearly", "daily") == "yearly"
 
 
+def test_quarterly_oecd_indicators_default_to_quarterly_data(monkeypatch):
+    from financetoolkit import Economics  # noqa: PLC0415
+    from financetoolkit.economics import economics_controller  # noqa: PLC0415
+
+    requested = {}
+
+    def fake(name):
+        def fetch(quarterly=None, **kwargs):
+            requested[name] = quarterly
+            index = pd.period_range("2023Q1", periods=2, freq="Q")
+            return pd.DataFrame({"Netherlands": [100.0, 101.0]}, index=index)
+
+        return fetch
+
+    for name in (
+        "get_house_prices",
+        "get_rent_prices",
+        "get_household_savings_rate",
+        "get_household_debt_to_income_ratio",
+    ):
+        monkeypatch.setattr(economics_controller.oecd_model, name, fake(name))
+
+    economics = Economics(start_date="2023-01-01", use_cached_data=False)
+
+    # Without arguments, the quarterly OECD data, also for house prices whose default
+    # source, the Global Macro Database, is yearly only.
+    economics.get_house_prices()
+    economics.get_rent_prices()
+    economics.get_household_savings_rate()
+    economics.get_household_debt_to_income_ratio()
+    assert requested == {
+        "get_house_prices": True,
+        "get_rent_prices": True,
+        "get_household_savings_rate": True,
+        "get_household_debt_to_income_ratio": True,
+    }
+
+    # An explicit quarterly=False still asks for the annual data.
+    economics.get_rent_prices(quarterly=False)
+    assert requested["get_rent_prices"] is False
+
+
+def test_the_government_bond_yield_defaults_to_monthly(monkeypatch):
+    from financetoolkit import FixedIncome  # noqa: PLC0415
+    from financetoolkit.fixedincome import fixedincome_controller  # noqa: PLC0415
+
+    requested = []
+
+    def fetch(period="", **kwargs):
+        requested.append(period)
+        index = pd.period_range("2023-01", periods=2, freq="M")
+        return pd.DataFrame({"Netherlands": [0.03, 0.031]}, index=index)
+
+    monkeypatch.setattr(
+        fixedincome_controller.oecd_model, "get_long_term_interest_rate", fetch
+    )
+
+    FixedIncome(start_date="2023-01-01").get_government_bond_yield()
+    # The MCP server creates the class with quarterly=False, which must not mean yearly.
+    FixedIncome(start_date="2023-01-01", quarterly=False).get_government_bond_yield()
+    FixedIncome(start_date="2023-01-01", quarterly=True).get_government_bond_yield()
+
+    assert requested == ["monthly", "monthly", "quarterly"]
+
+
 def test_bis_commercial_property_leaves_out_dwellings_land_and_real_prices(monkeypatch):
     text = (
         "FREQ,REF_AREA,COVERED_AREA,RE_TYPE,RE_VINTAGE,COMPILING_ORG,PRICED_UNIT,ADJUST_CODED,TIME_PERIOD,OBS_VALUE\n"

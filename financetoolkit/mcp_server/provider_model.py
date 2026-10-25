@@ -751,7 +751,7 @@ class ToolkitProvider:
     def call_econometrics_with_data(
         method_name: str,
         data: pd.DataFrame,
-        changes: str = "percentage",
+        changes: str | None = "percentage",
         **method_kwargs: Any,
     ) -> Any:
         """
@@ -761,8 +761,9 @@ class ToolkitProvider:
         Args:
             method_name (str): The Econometrics method, e.g. "get_ols".
             data (pd.DataFrame): The series, a column each, by date.
-            changes (str, optional): How their changes are calculated, see
-                Econometrics. Defaults to "percentage".
+            changes (str | None, optional): How their changes are calculated, see
+                Econometrics (None for series that are changes already). Defaults to
+                "percentage".
             **method_kwargs (Any): The arguments of the method.
 
         Returns:

@@ -4180,12 +4180,13 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            quarterly (bool | None, optional): Whether to return the quarterly data (from the OECD) or the annual
-                data. Defaults to None, which falls back to the quarterly setting of the Economics class.
+            quarterly (bool | None, optional): Whether to return the quarterly data (True) or the
+                annual data (False). Defaults to None, which returns the quarterly data, the
+                highest frequency the OECD publishes.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data or the nominal data.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB),
-                which is annual. Defaults to None, which uses the GMDB unless quarterly data is asked for (the
-                gmdb_source set on the Economics class is True by default).
+                which is annual. Defaults to None, which uses the OECD for quarterly data and the GMDB for
+                annual data; asking for the GMDB together with quarterly data logs a warning.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4230,7 +4231,8 @@ class Economics:
         | 2022 | 121.069 |       150.691 |   145.71  |
         | 2023 | 119.632 |       145.341 |   141.362 |
         """
-        quarterly = quarterly if quarterly is not None else self._quarterly
+        # Quarterly is the highest frequency these indicators are published at.
+        quarterly = True if quarterly is None else quarterly
         source_chosen = gmdb_source is not None
         gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
 
@@ -4305,7 +4307,9 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
+            quarterly (bool | None, optional): Whether to return the quarterly data (True) or the
+                annual data (False). Defaults to None, which returns the quarterly data, the
+                highest frequency the OECD publishes.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4344,7 +4348,8 @@ class Economics:
         | 2022 |  221.217 |         129.426 |          110.897 |
         | 2023 |  405.025 |         139.72  |          117.271 |
         """
-        quarterly = quarterly if quarterly is not None else self._quarterly
+        # Quarterly is the highest frequency these indicators are published at.
+        quarterly = True if quarterly is None else quarterly
 
         rent_prices = oecd_model.get_rent_prices(
             quarterly=quarterly, start_date=self._start_date, end_date=self._end_date
@@ -4403,7 +4408,9 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
+            quarterly (bool | None, optional): Whether to return the quarterly data (True) or the
+                annual data (False). Defaults to None, which returns the quarterly data, the
+                highest frequency the OECD publishes.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4441,7 +4448,8 @@ class Economics:
         | 2021 |          0.1707 |    0.2199 |
         | 2022 |          0.0981 |    0.189  |
         """
-        quarterly = quarterly if quarterly is not None else self._quarterly
+        # Quarterly is the highest frequency these indicators are published at.
+        quarterly = True if quarterly is None else quarterly
 
         household_savings_rate = oecd_model.get_household_savings_rate(
             quarterly=quarterly,
@@ -4498,7 +4506,9 @@ class Economics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            quarterly (bool | None, optional): Whether to return the quarterly data or the annual data.
+            quarterly (bool | None, optional): Whether to return the quarterly data (True) or the
+                annual data (False). Defaults to None, which returns the quarterly data, the
+                highest frequency the OECD publishes.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data.
@@ -4536,7 +4546,8 @@ class Economics:
         | 2021 |          0.9625 |      1.9168 |
         | 2022 |          1.0163 |      1.9253 |
         """
-        quarterly = quarterly if quarterly is not None else self._quarterly
+        # Quarterly is the highest frequency these indicators are published at.
+        quarterly = True if quarterly is None else quarterly
 
         household_debt_to_income_ratio = oecd_model.get_household_debt_to_income_ratio(
             quarterly=quarterly,
@@ -9420,7 +9431,7 @@ class Economics:
     def get_asset_class_proxies(
         self,
         asset_classes: list[str] | str | None = None,
-        period: str = "monthly",
+        period: str = "daily",
         returns: bool = True,
         rolling: int | None = None,
         standardize: bool = False,
@@ -9463,7 +9474,7 @@ class Economics:
                 "Private Credit", "Real Estate", "Investment Grade Credit" and "High Yield
                 Credit". Defaults to None, which includes all of them.
             period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "monthly".
+                Defaults to "daily".
             returns (bool, optional): Whether to return the total return per period instead
                 of the dividend-adjusted price. Defaults to True.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
@@ -9484,7 +9495,8 @@ class Economics:
         economics = Economics(start_date='2026-04-01', end_date='2026-09-30')
 
         economics.get_asset_class_proxies(
-            asset_classes=['Private Equity', 'Infrastructure', 'Hedge Funds', 'Private Credit']
+            asset_classes=['Private Equity', 'Infrastructure', 'Hedge Funds', 'Private Credit'],
+            period='monthly',
         )
         ```
 

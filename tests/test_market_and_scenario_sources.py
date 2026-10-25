@@ -618,7 +618,9 @@ def test_asset_class_proxies_are_period_returns(monkeypatch):
 
     proxies = Economics(
         start_date="2026-08-01", end_date="2026-09-30"
-    ).get_asset_class_proxies(asset_classes=["Private Equity", "Infrastructure"])
+    ).get_asset_class_proxies(
+        asset_classes=["Private Equity", "Infrastructure"], period="monthly"
+    )
 
     assert requested == [["PSP", "IGF"]]
     assert proxies.loc[pd.Period("2026-08", "M"), "Private Equity"] == pytest.approx(

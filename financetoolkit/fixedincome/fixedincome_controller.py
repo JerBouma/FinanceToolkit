@@ -71,6 +71,15 @@ TREASURY_MATURITIES = {
 }
 
 
+# Each maturity label unit as (days or months it spans, those per year): days and weeks count calendar days of a 365-day year. Multiplying first and dividing last keeps 36M exactly 3.0 and 1W exactly 7/365 years.  # noqa: E501
+MATURITY_UNITS: dict[str, tuple[int, int]] = {
+    "D": (1, 365),
+    "W": (7, 365),
+    "M": (1, 12),
+    "Y": (1, 1),
+}
+
+
 def _split_values(values: list | tuple | str | None) -> list | None:
     """
     Splits a comma-separated string, as the MCP server passes a list, into its values.
@@ -86,15 +95,6 @@ def _split_values(values: list | tuple | str | None) -> list | None:
     if isinstance(values, str):
         return [value.strip() for value in values.split(",") if value.strip()]
     return list(values)
-
-
-# Each maturity label unit as (days or months it spans, those per year): days and weeks count calendar days of a 365-day year. Multiplying first and dividing last keeps 36M exactly 3.0 and 1W exactly 7/365 years.  # noqa: E501
-MATURITY_UNITS: dict[str, tuple[int, int]] = {
-    "D": (1, 365),
-    "W": (7, 365),
-    "M": (1, 12),
-    "Y": (1, 1),
-}
 
 
 def _maturity_in_months(label: str) -> float:
@@ -272,7 +272,7 @@ class FixedIncome:
         self,
         start_date: str | None = None,
         end_date: str | None = None,
-        quarterly: bool = True,
+        quarterly: bool | None = None,
         rounding: int | None = 4,
         fred_api_key: str = FRED_API_KEY,
         api_key: str = "",
@@ -285,7 +285,8 @@ class FixedIncome:
         Args:
             start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
-            quarterly (bool, optional): Whether to return the data quarterly. Defaults to True.
+            quarterly (bool | None, optional): Whether to return quarterly data where a method is
+                not given a period. Defaults to None, which returns the highest frequency available.
             rounding (int | None, optional): The number of decimals to round the results to, or None to skip rounding. Defaults to 4.
             fred_api_key (str, optional): A FRED API key used to retrieve ICE BofA bond index data
                 (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
@@ -2471,8 +2472,8 @@ class FixedIncome:
             short_term (bool, optional): Whether to return the short-term interest rate. Defaults to False.
                 This means that the long-term interest rate will be returned.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which uses quarterly data when the FixedIncome class was initialized
-                with quarterly=True and yearly data otherwise.
+                Defaults to None, which returns the monthly data (quarterly when the class was
+                created with quarterly=True).
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -2512,7 +2513,7 @@ class FixedIncome:
         period = (
             period
             if period is not None
-            else "quarterly" if self._quarterly else "yearly"
+            else "quarterly" if self._quarterly else "monthly"
         )
 
         if short_term:

@@ -1157,7 +1157,7 @@ class Toolkit:
         When the Toolkit comes from a Portfolio (`Portfolio.toolkit`), the methods that take
         weights use the Portfolio's latest weights by default.
 
-        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio
+        See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization
 
         As an example:
 

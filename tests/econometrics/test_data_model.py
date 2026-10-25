@@ -70,7 +70,7 @@ def test_data_without_dates_or_with_duplicate_names():
         ("percentage", 0.1),
         ("log", np.log(1.1)),
         ("difference", 10.0),
-        ("none", 110.0),
+        (None, 110.0),
     ],
 )
 def test_changes(changes, expected):
@@ -190,3 +190,11 @@ def test_percentage_changes_divide_by_the_absolute_previous_value():
     assert changes.iloc[3] == pytest.approx(-1.0)
     # A change from zero has no relative size.
     assert np.isnan(changes.iloc[4])
+
+
+def test_changes_none_keeps_the_series_as_they_are():
+    levels = pd.DataFrame({"A": [0.01, -0.02, 0.03]})
+
+    assert data_model.get_changes(levels, None).equals(levels)
+    with pytest.raises(ValueError, match="or None"):
+        data_model.get_changes(levels, "none")

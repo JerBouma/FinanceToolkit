@@ -74,7 +74,7 @@ class Econometrics:
         start_date: str | None = None,
         end_date: str | None = None,
         data: pd.DataFrame | pd.Series | dict | None = None,
-        changes: str = "percentage",
+        changes: str | None = "percentage",
     ):
         """
         Initializes the Econometrics Controller Class, either with the historical data of a
@@ -108,9 +108,9 @@ class Econometrics:
             end_date (str | None, optional): The end date to use for the calculations. Defaults to None.
             data (pd.DataFrame | pd.Series | dict | None, optional): Any data to analyze instead
                 of the Toolkit's prices, with a series per column. Defaults to None.
-            changes (str, optional): How the changes ("Return") of the data are calculated:
+            changes (str | None, optional): How the changes ("Return") of the data are calculated:
                 "percentage" (relative changes, as returns), "log", "difference" (first
-                differences, for rates and ratios that can be zero or negative) or "none"
+                differences, for rates and ratios that can be zero or negative) or None
                 (the data are changes already). The percentage change divides by the
                 absolute previous value, so a negative series that rises has a positive
                 change. Defaults to "percentage".
@@ -4734,6 +4734,15 @@ class Econometrics:
                 else list(independent_tickers)
             )
 
+            # The factor is read from the loaded data, so it has to be one of its tickers.
+            missing = [ticker for ticker in independent_tickers if ticker not in prices]
+            if missing:
+                raise ValueError(
+                    f"independent_tickers {', '.join(missing)} are not among the loaded "
+                    "tickers: add them to the tickers, or use 'Benchmark' for the "
+                    "benchmark."
+                )
+
             if dependent_tickers is None:
                 dependent_tickers = [
                     ticker
@@ -6335,12 +6344,12 @@ class Econometrics:
         | Regime 1 Mean                   |  0.009  |  0.0065 |
         | Regime 1 Volatility             |  0.0236 |  0.0217 |
         | Regime 1 Probability of Staying |  0.917  |  0.9528 |
-        | Regime 1 Expected Duration      | 12.0486 | 21.191  |
+        | Regime 1 Expected Duration      | 12.0479 | 21.194  |
         | Regime 1 Share                  |  0.5436 |  0.6411 |
         | Regime 2 Mean                   |  0.0006 |  0.0021 |
         | Regime 2 Volatility             |  0.0488 |  0.0455 |
-        | Regime 2 Probability of Staying |  0.91   |  0.9208 |
-        | Regime 2 Expected Duration      | 11.1109 | 12.6319 |
+        | Regime 2 Probability of Staying |  0.91   |  0.9209 |
+        | Regime 2 Expected Duration      | 11.1105 | 12.6346 |
         | Regime 2 Share                  |  0.4564 |  0.3589 |
         | Current Regime                  |  1      |  1      |
         | Current Regime Probability      |  0.8877 |  0.8087 |

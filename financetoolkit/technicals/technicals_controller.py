@@ -494,7 +494,7 @@ class Technicals:
         closed lower, 0 otherwise), so it measures how persistently that ticker has been rising
         or falling.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - McClellan Oscillator = EMA(Advance/Decline Signal, short_ema_window) — EMA(Advance/Decline
           Signal, long_ema_window)
@@ -615,7 +615,7 @@ class Technicals:
         on an unchanged day. It feeds the McClellan Oscillator; get_trin and
         get_new_highs_new_lows measure breadth across all tickers.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Signal = +1 if Close(t) > Close(t-1), -1 if Close(t) < Close(t-1), else 0
 
@@ -725,7 +725,7 @@ class Technicals:
         It accumulates the volume on up days and subtracts the volume on down days. The resulting OBV line provides
         insights into the buying and selling pressure behind price movements.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - OBV = Previous OBV + Volume if Close > Previous Close, Previous OBV — Volume if Close < Previous Close,
           and Previous OBV otherwise.
@@ -841,7 +841,7 @@ class Technicals:
         into or out of an asset. It takes into account both price and volume information to identify
         whether an asset is being accumulated (bought) or distributed (sold) by investors.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
         - Money Flow Volume = Money Flow Multiplier * Volume
@@ -965,7 +965,7 @@ class Technicals:
         to help identify potential trends and reversals in the market. It is calculated as the
         difference between the 3-day and 10-day Accumulation/Distribution Line.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Chaikin Oscillator = EMA(short-window ADL) — EMA(long-window ADL)
 
@@ -1089,7 +1089,7 @@ class Technicals:
         (accumulation) is dominating over the window, while sustained readings below zero
         indicate selling pressure (distribution).
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
         - Money Flow Volume = Money Flow Multiplier * Volume
@@ -1221,7 +1221,7 @@ class Technicals:
         little volume. The raw daily reading is smoothed with a Simple Moving Average to
         reduce noise.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Distance Moved = (High(t) + Low(t)) / 2 — (High(t-1) + Low(t-1)) / 2
         - Box Ratio = (Volume / volume_divisor) / (High — Low)
@@ -1354,7 +1354,7 @@ class Technicals:
         specifically on those days isolates informed trading from the noise of high-volume,
         crowd-driven days.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) < Volume(t-1)
         - Index(t) = Index(t-1) otherwise
@@ -1481,7 +1481,7 @@ class Technicals:
         (crowd-driven) days, which is traditionally read as tracking less-informed,
         sentiment-driven trading.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) > Volume(t-1)
         - Index(t) = Index(t-1) otherwise
@@ -1861,7 +1861,7 @@ class Technicals:
         direction of money flowing in and out of a security by considering both price
         and volume.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - MFI = 100 — (100 / (1 + (positive_money_flow / negative_money_flow)))
 
@@ -1978,7 +1978,7 @@ class Technicals:
         The Williams %R is a momentum indicator that measures the level of the close price
         relative to the high-low range over a certain number of periods.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Williams %R = (Highest High — Close) / (Highest High — Lowest Low) * —100
 
@@ -2094,7 +2094,7 @@ class Technicals:
         The Aroon Indicator is an oscillator that measures the strength of a trend and the
         likelihood of its continuation or reversal.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Aroon Up = ((Number of periods) — (Number of periods since highest high)) / (Number of periods) * 100
 
@@ -2217,7 +2217,7 @@ class Technicals:
         The Commodity Channel Index is an oscillator that measures the current price level
         relative to an average price level over a specified period.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - CCI = (Typical Price — SMA(Typical Price)) / (constant * Mean Deviation)
 
@@ -2344,7 +2344,7 @@ class Technicals:
         period closes relative to its open with the period's full high-low range: in an uptrend
         prices tend to close above their open, in a downtrend below it.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Numerator = (Close — Open) smoothed with the symmetric weights 1, 2, 2, 1 over the
           current and three prior periods, divided by 6
@@ -2478,7 +2478,7 @@ class Technicals:
 
         The Force Index is an indicator that measures the strength behind price movements.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Raw Force Index = (Close — Close(1)) * Volume
         - Force Index = EMA(Raw Force Index, window)
@@ -2596,7 +2596,7 @@ class Technicals:
         The Ultimate Oscillator is a momentum oscillator that combines short-term, mid-term,
         and long-term price momentum into a single value.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Average(i) = Sum(Buying Pressure, window_i) / Sum(True Range, window_i)
         - Ultimate Oscillator = 100 * [(4 * Average_1) + (2 * Average_2) + Average_3] / 7
@@ -2726,7 +2726,7 @@ class Technicals:
         The Percentage Price Oscillator (PPO) is a momentum oscillator that measures the
         difference between two moving averages as a percentage of the longer moving average.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - PPO = ((Short-term EMA — Long-term EMA) / Long-term EMA) * 100
 
@@ -2847,7 +2847,7 @@ class Technicals:
         The Detrended Price Oscillator (DPO) is an indicator that helps identify short-term cycles
         by removing longer-term trends from prices.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Displacement = floor(Number of Periods / 2) + 1
         - DPO = Close(t — Displacement) — SMA(Close, Number of Periods)(t)
@@ -2962,7 +2962,7 @@ class Technicals:
         The Average Directional Index (ADX) is an indicator that measures the strength of a trend,
         whether it's an uptrend or a downtrend.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - ADX = Wilder's Smoothed Moving Average of DX, where DX = 100 * |+DI — -DI| / (+DI + -DI)
 
@@ -3091,7 +3091,7 @@ class Technicals:
         The Chande Momentum Oscillator is an indicator that measures the momentum of a price
         series and identifies overbought and oversold conditions.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - CMO = 100 * ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change)
             + (Sum of Downward Change)), bounded between -100 and 100.
@@ -3207,7 +3207,7 @@ class Technicals:
         defines support and resistance, identifies trend direction, gauges momentum, and provides
         trading signals.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Conversion Line = (Highest High + Lowest Low) / 2, over conversion_window periods
         - Base Line = (Highest High + Lowest Low) / 2, over base_window periods
@@ -3357,7 +3357,7 @@ class Technicals:
         relative to the high-low range over a set number of periods. It consists of the %K line
         (fast) and the %D line (slow).
 
-        The formula is a follows:
+        The formula is as follows:
 
         - %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low))
         - %D = SMA(%K, smooth_window)
@@ -3512,7 +3512,7 @@ class Technicals:
         that shows the relationship between two moving averages of a security's price. It consists
         of the MACD line and its signal line; their difference is the MACD histogram.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - MACD Line = EMA(Close, short_window) — EMA(Close, long_window)
         - Signal Line = EMA(MACD Line, signal_window)
@@ -3647,7 +3647,7 @@ class Technicals:
         change of price movements. It ranges from 0 to 100 and is used to identify overbought or
         oversold conditions in an asset's price.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - RSI = 100 — (100 / (1 + RS))
 
@@ -3764,7 +3764,7 @@ class Technicals:
         The Balance of Power (BOP) indicator measures the strength of buyers versus sellers
         in the market. It relates the price change to the change in the asset's trading range.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - BOP = (Close — Open) / (High — Low)
 
@@ -3882,7 +3882,7 @@ class Technicals:
         and low, rather than the closing price). It was developed by Bill Williams as part of
         his broader "Trading Chaos" collection of momentum indicators.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Median Price = (High + Low) / 2
         - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
@@ -4013,7 +4013,7 @@ class Technicals:
         crossovers signal potential trend changes: VI+ above VI- suggests an uptrend is in
         control, VI- above VI+ suggests a downtrend is in control.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - VM+ = |High(t) — Low(t-1)|
         - VM- = |Low(t) — High(t-1)|
@@ -4146,7 +4146,7 @@ class Technicals:
         how far the high extends above the EMA (buying pressure), while Bear Power captures how
         far the low extends below the EMA (selling pressure).
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Bull Power = High — EMA(Close, window)
         - Bear Power = Low — EMA(Close, window)
@@ -4280,7 +4280,7 @@ class Technicals:
         `window` periods ago (upward momentum), while negative values indicate price is
         lower (downward momentum).
 
-        The formula is a follows:
+        The formula is as follows:
 
         - ROC = (Close(t) / Close(t - window) — 1) * 100
 
@@ -4401,7 +4401,7 @@ class Technicals:
         efficiently in one direction, the index is low (near 0), signalling a trending
         market.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) — Min(Low, window)) ) / log10(window)
 
@@ -4535,7 +4535,7 @@ class Technicals:
         is used to spot crossovers, in the same way the MACD line is compared to its signal
         line.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - RCMA(i) = SMA(ROC(Close, roc_windows[i]), sma_windows[i])
         - KST = Sum(RCMA(i) * weights[i]) for i = 1..4
@@ -4871,7 +4871,7 @@ class Technicals:
         The Moving Average (MA) is a commonly used technical indicator that smooths out
         price data by calculating the average price over a specified number of periods.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - MA = (Sum of Prices) / (Number of Prices)
 
@@ -4984,7 +4984,7 @@ class Technicals:
         EMA is a technical indicator that gives more weight to recent price data,
         providing a smoothed moving average that reacts faster to price changes.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - First EMA = SMA(Close, Window), on the Window-th period
         - EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
@@ -5103,7 +5103,7 @@ class Technicals:
         DEMA is a technical indicator that attempts to reduce the lag from traditional
         moving averages by using a combination of two exponential moving averages.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - EMA1 = EMA(Close, Window)
         - EMA2 = EMA(EMA1, Window)
@@ -5221,7 +5221,7 @@ class Technicals:
         exponentially smoothed moving average. It helps identify overbought and oversold conditions
         in a market.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - EMA1 = EMA(Close, Window)
         - EMA2 = EMA(EMA1, Window)
@@ -5343,7 +5343,7 @@ class Technicals:
         calculated as the moving average plus and minus a specified number of standard deviations,
         respectively.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Middle Band = SMA(Close, Window)
         - Upper Band = Middle Band + (Num Std Dev * Std Dev)
@@ -5479,7 +5479,7 @@ class Technicals:
         The Triangular Moving Average (TMA) is a smoothed version of the Simple Moving Average (SMA)
         that uses multiple SMAs to reduce noise and provide a smoother trendline.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - For an odd window: Sub-window Length = (Window + 1) / 2, applied for both passes.
         - For an even window: the two passes use different sub-window lengths, Window / 2
@@ -5595,7 +5595,7 @@ class Technicals:
         increasing weight to more recent prices, making it more responsive to recent
         price changes than a Simple Moving Average.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - WMA = (Sum of (Price * Weight)) / (Sum of Weights)
 
@@ -5710,7 +5710,7 @@ class Technicals:
         of half the window length, a WMA of the full window length, and a further WMA
         over the square root of the window length.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Raw HMA = (2 * WMA(Close, Window / 2)) — WMA(Close, Window)
         - HMA = WMA(Raw HMA, sqrt(Window))
@@ -5832,7 +5832,7 @@ class Technicals:
         close to 0 and KAMA flattens out, behaving like a slow EMA — reducing whipsaw signals
         in choppy markets while still reacting quickly during strong trends.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Change = |Close(t) — Close(t - window)|
         - Volatility = Sum(|Close(i) — Close(i - 1)|, window)
@@ -5966,7 +5966,7 @@ class Technicals:
         by its traded volume over a rolling window, giving a more volume-informed view of
         the average price than a plain moving average.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Typical Price = (High + Low + Close) / 3
         - VWAP = Sum(Typical Price * Volume, Window) / Sum(Volume, Window)
@@ -6102,7 +6102,7 @@ class Technicals:
         The acceleration factor increases as the trend extends, causing the SAR to
         converge towards price over time.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Uptrend SAR = Prior SAR + AF * (Extreme Point — Prior SAR)
         - Downtrend SAR = Prior SAR — AF * (Prior SAR — Extreme Point)
@@ -6227,7 +6227,7 @@ class Technicals:
         prices and are used to identify potential support and resistance levels for
         the current period.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Pivot Point = (Previous High + Previous Low + Previous Close) / 3
         - Resistance 1 = (2 * Pivot Point) — Previous Low
@@ -6371,6 +6371,17 @@ class Technicals:
         The function groups these similar peaks and valleys together to identify key resistance and
         support levels.
 
+        The formula is as follows:
+
+        - Peak (t) = Close (t) if Close (t) > every Close within `window` periods before and after t (14 by default)
+        - Valley (t) = Close (t) if Close (t) < every Close within `window` periods before and after t
+        - Level = (Existing Level + Peak or Valley) / 2 if |Peak or Valley - Existing Level| / |Existing Level| <
+          Sensitivity (0.05 by default), otherwise a new level at the Peak or Valley
+        - Resistance (t) = the most recent level from the peaks published up to t, and Support (t) the same for
+          the valleys, with each level published `window` periods after its peak or valley (when it is confirmed)
+
+        Where Close is the `close_column`, the Adj Close by default (the Close for intraday data).
+
         Also known as: support levels, resistance levels, pivot points.
 
         Args:
@@ -6512,7 +6523,7 @@ class Technicals:
         minimum low over the specified `window`, and the retracement levels are derived from
         that high/low pair.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Uptrend (retracing down from the high): Level = High — Ratio * (High — Low)
         - Downtrend (retracing up from the low): Level = Low + Ratio * (High — Low)
@@ -6843,7 +6854,7 @@ class Technicals:
         between the high and low prices and the previous closing price. It provides insights
         into the price movement of an asset.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
 
@@ -6962,7 +6973,7 @@ class Technicals:
         into the potential price range of an asset, which can help traders and investors make
         more informed decisions.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
         - ATR = Wilder's Smoothed Moving Average of TR over `window` periods
@@ -7102,7 +7113,7 @@ class Technicals:
         Supertrend both a trend filter (the flip direction signals a trend change) and a
         trailing stop-loss level.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Basic Upper Band = (High + Low) / 2 + multiplier * ATR(window)
         - Basic Lower Band = (High + Low) / 2 — multiplier * ATR(window)
@@ -7248,7 +7259,7 @@ class Technicals:
         (EMA) of the closing prices, and an upper and a lower line a multiple of the Average True
         Range (ATR) above and below it.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Middle Line = EMA(Close, window)
         - Upper Line = Middle Line + atr_multiplier * ATR(atr_window)
@@ -7381,7 +7392,7 @@ class Technicals:
         *preceding* the current one, with the middle line being the average of the two. They
         are used to identify breakouts and the overall volatility of the price range.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - Upper Channel = Highest High over Window, ending one period ago
         - Lower Channel = Lowest Low over Window, ending one period ago
@@ -7514,6 +7525,17 @@ class Technicals:
         (252 for daily, 52 for weekly and 12 for monthly data). For each
         window, the cone reports the minimum, the 10th, 25th, 50th, 75th and 90th percentiles,
         the maximum and the most recent value of that realized volatility series.
+
+        The formula is as follows:
+
+        - Log Return (t) = ln(Close (t) / Close (t-1))
+        - Realized Volatility (t, Window) = Sample Standard Deviation (ddof=1) of the Log Returns over the last
+          Window periods * √(Periods per Year)
+        - Cone (Window) = Min, 10th, 25th, 50th (Median), 75th and 90th Percentile, Max and Current (latest) value
+          of Realized Volatility (t, Window) over the full history, for each window (10, 20, 30, 60, 90 and 120
+          by default)
+
+        Where Close is the `close_column`, the Adj Close by default (the Close for intraday data).
 
         Options traders compare implied volatility with the cone at the matching horizon:
         implied volatility near the top of the historical range for that window suggests
@@ -7648,7 +7670,7 @@ class Technicals:
         reading is broadcast to every ticker column so it lines up with the other
         breadth indicators.
 
-        The formula is a follows:
+        The formula is as follows:
 
         - TRIN = (Advancing Issues / Declining Issues) / (Advancing Volume / Declining Volume)
 
@@ -7772,18 +7794,18 @@ class Technicals:
         standardize: bool = False,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the New Highs — New Lows for a given price series.
+        Calculate the New Highs - New Lows for a given price series.
 
-        New Highs — New Lows measures the number of tickers reaching a new high over
+        New Highs - New Lows measures the number of tickers reaching a new high over
         the specified window minus the number of tickers reaching a new low over the
         same window. It is a market-wide breadth reading computed across all tickers in
         the Toolkit instance (excluding the synthetic "Portfolio" and "Benchmark"
         columns), and the resulting single reading is broadcast to every ticker column
         so it lines up with the other breadth indicators.
 
-        The formula is a follows:
+        The formula is as follows:
 
-        - New Highs — New Lows = (Number of tickers at a window-period high) — (Number of tickers at a window-period low)
+        - New Highs - New Lows = (Number of tickers at a window-period high) - (Number of tickers at a window-period low)
 
         The reading counts tickers at a high or low of the lookback window, so it needs a broad
         universe and a history of at least one window before the start of the period of interest:
@@ -7811,11 +7833,11 @@ class Technicals:
                 values. Defaults to False.
 
         Returns:
-            pd.Series or pd.DataFrame: New Highs — New Lows values.
+            pd.Series or pd.DataFrame: New Highs - New Lows values.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
-          the New Highs — New Lows across all tickers in the Toolkit instance.
+          the New Highs - New Lows across all tickers in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 

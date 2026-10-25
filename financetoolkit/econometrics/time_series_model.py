@@ -75,7 +75,12 @@ def get_arima_forecast(
     a moving-average (MA) component that regresses it on the past `q` forecast errors:
 
     - Let `y'_t` be `series` differenced `d` times. Then:
-    - y'_t = c + SUM_{i=1}^{p}(phi_i * y'_(t-i)) + SUM_{j=1}^{q}(theta_j * e_(t-j)) + e_t
+    - y'_t - mu = SUM_{i=1}^{p}(phi_i * (y'_(t-i) - mu)) + SUM_{j=1}^{q}(theta_j * e_(t-j)) + e_t
+
+    Where `mu` is the mean (d = 0) or drift (d >= 1) of `y'_t`, the form statsmodels
+    estimates, so the reported constant is `mu` itself; the regression intercept of
+    the equivalent form `y'_t = c + SUM(phi_i * y'_(t-i)) + ...` is
+    `c = mu * (1 - SUM(phi_i))`.
 
     Estimated by exact Maximum Likelihood via the Kalman filter (a state-space
     representation of the ARMA recursion), which correctly handles the MA component's
@@ -93,12 +98,12 @@ def get_arima_forecast(
         q (int): The moving-average order.
         forecast_steps (int, optional): The number of periods ahead to forecast.
         Defaults to 1.
-        include_constant (bool, optional): Whether to estimate a free intercept `c`
-        (defaults to True). For `d >= 1` and no `include_constant`, `c` is fixed at 0
+        include_constant (bool, optional): Whether to estimate the mean/drift `mu`
+        (defaults to True). Without `include_constant`, `mu` is fixed at 0
         rather than estimated -- appropriate when the differenced series is not
         expected to have a nonzero mean/drift (the common case for `d >= 1`; leaving
         `include_constant=True` on a truly zero-drift differenced series lets small-
-        sample noise in the estimated `c` compound into a spuriously trending
+        sample noise in the estimated `mu` compound into a spuriously trending
         multi-step forecast, since each step's drift accumulates).
         max_iterations (int, optional): The maximum number of Maximum Likelihood
         optimizer iterations. Defaults to 1000.
@@ -851,8 +856,9 @@ def get_vecm_forecast(
     re-derived, since that function already contains this codebase's verified
     rank-testing machinery. Given the rank, `alpha`, `beta` and the `Gamma_i`
     short-run matrices are then jointly estimated by `statsmodels.tsa.vector_ar.vecm.VECM`
-    (with `deterministic="co"`, a constant restricted to lie in the cointegrating
-    relation, matching the `det_order=0` convention used for rank determination).
+    (with `deterministic="co"`, an unrestricted constant outside the cointegrating
+    relation, matching the unrestricted constant of the `det_order=0` Johansen test
+    used for rank determination).
 
     Forecasts are produced on the levels scale via the fitted model's own multi-step
     forecast recursion.

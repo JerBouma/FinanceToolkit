@@ -780,3 +780,29 @@ def test_get_returns_keeps_periods_without_data_missing():
     assert np.isnan(cumulative.loc[pd.Period("2023Q1", "Q"), "B"])
     assert cumulative.loc[pd.Period("2023Q2", "Q"), "B"] == pytest.approx(1 + expected)
     assert quarterly["A"].notna().all()
+
+
+def test_get_win_rate_leaves_out_days_without_both_returns():
+    asset = pd.DataFrame(
+        {
+            "A": [0.02, np.nan, 0.01, -0.01, 0.03],
+            "B": [np.nan, np.nan, np.nan, np.nan, np.nan],
+        }
+    )
+    benchmark = pd.Series([0.01, 0.01, 0.02, np.nan, 0.01], name="Benchmark")
+
+    win_rate = performance_model.get_win_rate(asset, benchmark)
+
+    # Days 2 (no asset return) and 4 (no benchmark return) count neither as win nor loss.
+    assert win_rate["A"] == pytest.approx(2 / 3)
+    # Without a single comparable day there is no win rate, not a win rate of 0.
+    assert np.isnan(win_rate["B"])
+    assert performance_model.get_win_rate(asset["A"], benchmark) == pytest.approx(2 / 3)
+
+    # Within periods, each period counts only its own comparable days.
+    index = pd.MultiIndex.from_product([["2023", "2024"], range(5)])
+    stacked = pd.concat([asset, asset]).set_index(index)
+    stacked_benchmark = pd.concat([benchmark, benchmark]).set_axis(index)
+    per_period = performance_model.get_win_rate(stacked, stacked_benchmark)
+    assert per_period["A"].tolist() == pytest.approx([2 / 3, 2 / 3])
+    assert per_period["B"].isna().all()

@@ -17,7 +17,7 @@ def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     window, used both as a standalone trend-following signal (e.g. price crossing above or
     below the average) and as a building block for many other indicators in this module.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - SMA = Mean(Close, window)
 
@@ -49,11 +49,11 @@ def get_exponential_moving_average(
     is, so that it reacts to new price information faster than a Simple Moving Average of
     the same window while still smoothing out noise.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Smoothing Factor (alpha) = 2 / (window + 1)
     - First EMA = SMA(Close, window), on the window-th period
-    - EMA(t) = alpha * Close(t) + (1 — alpha) * EMA(t-1)
+    - EMA(t) = alpha * Close(t) + (1 - alpha) * EMA(t-1)
 
     Also known as: EMA.
 
@@ -106,11 +106,11 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     the first, subtracting it out (after doubling the first) removes much of the delay a
     plain EMA of the same window would have.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - EMA1 = EMA(Close, window)
     - EMA2 = EMA(EMA1, window)
-    - DEMA = 2 * EMA1 — EMA2
+    - DEMA = 2 * EMA1 - EMA2
 
     Also known as: DEMA.
 
@@ -143,12 +143,12 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
     fluctuations have already been smoothed away, the result oscillates around zero mainly
     in response to genuine trend changes.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - EMA1 = EMA(Close, window)
     - EMA2 = EMA(EMA1, window)
     - EMA3 = EMA(EMA2, window)
-    - Trix = ((EMA3(t) — EMA3(t-1)) / EMA3(t-1)) * 100
+    - Trix = ((EMA3(t) - EMA3(t-1)) / EMA3(t-1)) * 100
 
     Also known as: TRIX, Triple Exponential Average.
 
@@ -181,7 +181,7 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     least, which reduces the impact of outliers and short-term fluctuations more than a
     single SMA of the same overall length.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - For an odd window: Sub-window Length = (window + 1) / 2, applied for both passes.
     - For an even window: the two passes use different sub-window lengths, window / 2
@@ -222,7 +222,7 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     prices within the window, making it more responsive to recent price changes than
     a Simple Moving Average while remaining smoother than an Exponential Moving Average.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - WMA = Sum(Price(i) * i, i = 1..window) / Sum(i, i = 1..window), where i = 1 is the
       oldest price in the window and i = window is the most recent
@@ -293,14 +293,14 @@ def get_kaufman_adaptive_moving_average(
     and KAMA flattens out, behaving like a slow EMA — reducing whipsaw signals in choppy
     markets while still reacting quickly during strong trends.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Change = |Close(t) — Close(t - window)|
-    - Volatility = Sum(|Close(i) — Close(i - 1)|, window)
+    - Change = |Close(t) - Close(t - window)|
+    - Volatility = Sum(|Close(i) - Close(i - 1)|, window)
     - Efficiency Ratio (ER) = Change / Volatility, and 1 when Volatility ≤ Change (flat prices)
     - Fastest SC = 2 / (fast_window + 1), Slowest SC = 2 / (slow_window + 1)
-    - Smoothing Constant (SC) = [ER * (Fastest SC — Slowest SC) + Slowest SC]^2
-    - KAMA(t) = KAMA(t-1) + SC * (Close(t) — KAMA(t-1))
+    - Smoothing Constant (SC) = [ER * (Fastest SC - Slowest SC) + Slowest SC]^2
+    - KAMA(t) = KAMA(t-1) + SC * (Close(t) - KAMA(t-1))
 
     Also known as: KAMA, Kaufman's Adaptive Moving Average.
 
@@ -390,9 +390,9 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
     while improving smoothing, by combining a WMA of half the window length, a WMA of
     the full window length, and a further WMA over the square root of the window length.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Raw HMA = 2 * WMA(Close, window / 2) — WMA(Close, window)
+    - Raw HMA = 2 * WMA(Close, window / 2) - WMA(Close, window)
     - HMA = WMA(Raw HMA, sqrt(window))
 
     Also known as: HMA.
@@ -430,7 +430,7 @@ def get_volume_weighted_average_price(
     filled at or better than VWAP is generally considered to have avoided excess market
     impact.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Typical Price = (High + Low + Close) / 3
     - VWAP = Sum(Typical Price * Volume, window) / Sum(Volume, window)
@@ -552,15 +552,15 @@ def get_pivot_points(
     and are used to identify potential support and resistance levels for the current
     period. This is the "floor trader" (classic) variant.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Pivot Point (P) = (Previous High + Previous Low + Previous Close) / 3
-    - Resistance 1 = (2 * P) — Previous Low
-    - Support 1 = (2 * P) — Previous High
-    - Resistance 2 = P + (Previous High — Previous Low)
-    - Support 2 = P — (Previous High — Previous Low)
-    - Resistance 3 = Previous High + 2 * (P — Previous Low)
-    - Support 3 = Previous Low — 2 * (Previous High — P)
+    - Resistance 1 = (2 * P) - Previous Low
+    - Support 1 = (2 * P) - Previous High
+    - Resistance 2 = P + (Previous High - Previous Low)
+    - Support 2 = P - (Previous High - Previous Low)
+    - Resistance 3 = Previous High + 2 * (P - Previous Low)
+    - Support 3 = Previous Low - 2 * (Previous High - P)
 
     Also known as: floor pivots, classic pivot points, standard pivot points.
 
@@ -755,10 +755,10 @@ def get_fibonacci_retracement_levels(
     caller — so that a full set of retracement levels is produced for every date rather than
     for a single, hand-picked swing.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Uptrend (retracing down from the high): Level = High — Ratio * (High — Low)
-    - Downtrend (retracing up from the low): Level = Low + Ratio * (High — Low)
+    - Uptrend (retracing down from the high): Level = High - Ratio * (High - Low)
+    - Downtrend (retracing up from the low): Level = Low + Ratio * (High - Low)
 
     Also known as: Fibonacci retracement, Fib levels, retracement levels.
 

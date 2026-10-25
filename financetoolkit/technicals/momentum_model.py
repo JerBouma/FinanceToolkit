@@ -36,12 +36,12 @@ def get_money_flow_index(
     rose from the prior period) against down days ("negative money flow"), then applies the
     same RSI-style transform to turn that ratio into a bounded 0-100 oscillator.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Typical Price = (High + Low + Close) / 3
     - Raw Money Flow = Typical Price * Volume
     - Money Ratio = Sum(Positive Raw Money Flow, window) / Sum(Negative Raw Money Flow, window)
-    - MFI = 100 — (100 / (1 + Money Ratio))
+    - MFI = 100 - (100 / (1 + Money Ratio))
 
     Also known as: MFI, volume-weighted RSI.
 
@@ -100,9 +100,9 @@ def get_williams_percent_r(
     highest high) down to -100 (close at the window's lowest low). It is mathematically a
     rescaled mirror image of the Fast Stochastic %K.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - %R = —((Highest High — Close) / (Highest High — Lowest Low)) * 100
+    - %R = -((Highest High - Close) / (Highest High - Lowest Low)) * 100
 
     Also known as: %R, Williams %R.
 
@@ -136,14 +136,14 @@ def get_aroon_indicator(
     means the extreme (high or low) occurred on the current period; the reading decays
     linearly toward 0 the longer ago the extreme occurred within the window.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Periods Since High = number of periods between the current period and the most recent
       highest high over the current period plus the previous `window` periods (0 if the
       current period is itself the highest high, `window` if the oldest period in the
       lookback is)
-    - Aroon Up = ((window — Periods Since High) / window) * 100
-    - Aroon Down = ((window — Periods Since Low) / window) * 100, defined analogously using
+    - Aroon Up = ((window - Periods Since High) / window) * 100
+    - Aroon Down = ((window - Periods Since Low) / window) * 100, defined analogously using
       the lowest low
 
     Also known as: Aroon Up, Aroon Down.
@@ -207,11 +207,11 @@ def get_commodity_channel_index(
     deviation). The 0.015 constant is chosen so that roughly 70-80% of CCI values fall within
     the +/-100 band, which is why those levels are conventionally read as overbought/oversold.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Typical Price = (High + Low + Close) / 3
-    - Mean Deviation = Mean(|Typical Price — SMA(Typical Price, window)|, window)
-    - CCI = (Typical Price — SMA(Typical Price, window)) / (constant * Mean Deviation)
+    - Mean Deviation = Mean(|Typical Price - SMA(Typical Price, window)|, window)
+    - CCI = (Typical Price - SMA(Typical Price, window)) / (constant * Mean Deviation)
 
     Also known as: CCI.
 
@@ -265,12 +265,12 @@ def get_relative_vigor_index(
     the same 4-period weighting to the RVI itself, and crossovers of the two lines are the
     usual trigger.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Numerator = [(Close — Open) + 2 * (Close(t-1) — Open(t-1)) + 2 * (Close(t-2) —
-      Open(t-2)) + (Close(t-3) — Open(t-3))] / 6
-    - Denominator = [(High — Low) + 2 * (High(t-1) — Low(t-1)) + 2 * (High(t-2) — Low(t-2))
-      + (High(t-3) — Low(t-3))] / 6
+    - Numerator = [(Close - Open) + 2 * (Close(t-1) - Open(t-1)) + 2 * (Close(t-2) -
+      Open(t-2)) + (Close(t-3) - Open(t-3))] / 6
+    - Denominator = [(High - Low) + 2 * (High(t-1) - Low(t-1)) + 2 * (High(t-2) - Low(t-2))
+      + (High(t-3) - Low(t-3))] / 6
     - RVI = SMA(Numerator, window) / SMA(Denominator, window)
     - Signal Line = [RVI + 2 * RVI(t-1) + 2 * RVI(t-2) + RVI(t-3)] / 6
 
@@ -332,9 +332,9 @@ def get_force_index(
     use a short window (2 periods) to time entries and a longer window (13 periods) to
     gauge the underlying trend.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Raw Force Index = (Close(t) — Close(t-1)) * Volume(t)
+    - Raw Force Index = (Close(t) - Close(t-1)) * Volume(t)
     - Force Index = EMA(Raw Force Index, window)
 
     Also known as: FI, Elder's Force Index.
@@ -373,10 +373,10 @@ def get_ultimate_oscillator(
     signals that single-period oscillators are prone to, by requiring some agreement across
     multiple timeframes.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Buying Pressure = Close — Min(Low, Previous Close)
-    - True Range = Max[(High — Low), |High — Previous Close|, |Low — Previous Close|]
+    - Buying Pressure = Close - Min(Low, Previous Close)
+    - True Range = Max[(High - Low), |High - Previous Close|, |Low - Previous Close|]
     - Average(i) = Sum(Buying Pressure, window_i) / Sum(True Range, window_i)
     - Ultimate Oscillator = 100 * [(4 * Average_1) + (2 * Average_2) + Average_3] / (4 + 2 + 1)
 
@@ -440,9 +440,9 @@ def get_percentage_price_oscillator(
     difference. This makes readings comparable across securities trading at very different
     price levels, which the raw MACD line cannot do.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - PPO = ((EMA(Close, short_window) — EMA(Close, long_window)) / EMA(Close, long_window)) * 100
+    - PPO = ((EMA(Close, short_window) - EMA(Close, long_window)) / EMA(Close, long_window)) * 100
 
     The conventional parameters are 12 and 26 periods, as for MACD. A signal line, if
     wanted, is the 9-period EMA of the PPO (`get_exponential_moving_average(ppo, 9)`), and
@@ -485,10 +485,10 @@ def get_detrended_price_oscillator(
     behind the current bar, comparing today's average to the price from that same point in
     the past effectively centers the average on the historical price it is being compared to.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Displacement = floor(window / 2) + 1
-    - DPO = Close(t — Displacement) — Moving Average(t)
+    - DPO = Close(t - Displacement) - Moving Average(t)
 
     Note that, unlike most oscillators, the moving average itself is *not* shifted — only the
     close price is looked up further back in time.
@@ -541,14 +541,14 @@ def get_average_directional_index(
     Simple Moving Average — substituting a plain SMA is one of the most common mistakes when
     re-implementing this indicator, and produces materially different values.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - +DM = High(t) — High(t-1), where positive and greater than —(Low(t) — Low(t-1)), else 0
-    - -DM = Low(t-1) — Low(t), where positive and greater than (High(t) — High(t-1)), else 0
-    - True Range = Max[(High — Low), |High — Previous Close|, |Low — Previous Close|]
+    - +DM = High(t) - High(t-1), where positive and greater than -(Low(t) - Low(t-1)), else 0
+    - -DM = Low(t-1) - Low(t), where positive and greater than (High(t) - High(t-1)), else 0
+    - True Range = Max[(High - Low), |High - Previous Close|, |Low - Previous Close|]
     - +DI = 100 * Wilder's MA(+DM, window) / Wilder's MA(True Range, window)
     - -DI = 100 * Wilder's MA(-DM, window) / Wilder's MA(True Range, window)
-    - DX = 100 * |+DI — -DI| / (+DI + -DI)
+    - DX = 100 * |+DI - -DI| / (+DI + -DI)
     - ADX = Wilder's MA(DX, window)
 
     Also known as: ADX, Average Directional Index.
@@ -618,9 +618,9 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
     range symmetrically from -100 to +100 (and, unlike RSI, uses a plain sum rather than
     Wilder's smoothing).
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - CMO = 100 * (Sum(Up Changes, window) — Sum(Down Changes, window)) / (Sum(Up Changes,
+    - CMO = 100 * (Sum(Up Changes, window) - Sum(Down Changes, window)) / (Sum(Up Changes,
       window) + Sum(Down Changes, window))
 
     Also known as: CMO.
@@ -662,7 +662,7 @@ def get_ichimoku_cloud(
     rather than an average of closing prices, so every line sits in the middle of the range
     price actually traded over that window.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Conversion Line (Tenkan-sen) = (Max(High, conversion_window) + Min(Low,
       conversion_window)) / 2
@@ -745,9 +745,9 @@ def get_stochastic_oscillator(
     the range (and near the low in a downtrend). %D is a moving average of %K used as a
     signal line for crossovers, the same role the signal line plays for MACD.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - %K = ((Close — Lowest Low) / (Highest High — Lowest Low)) * 100
+    - %K = ((Close - Lowest Low) / (Highest High - Lowest Low)) * 100
     - %D = SMA(%K, smooth_window)
 
     This is the "Fast Stochastic" formulation (raw %K smoothed once to produce %D). The "Slow
@@ -789,9 +789,9 @@ def get_moving_average_convergence_divergence(
     Moving Average of price. The MACD line crossing above/below its own EMA-based signal line
     is the classic trigger for a trend-following signal.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - MACD Line = EMA(Close, short_window) — EMA(Close, long_window)
+    - MACD Line = EMA(Close, short_window) - EMA(Close, long_window)
     - Signal Line = EMA(MACD Line, signal_window)
 
     Also known as: MACD.
@@ -838,12 +838,12 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
     of the most common mistakes when re-implementing RSI, and produces materially different
     values, particularly in trending markets.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Average Gain = Wilder's MA(Upward Changes, window)
     - Average Loss = Wilder's MA(Downward Changes, window)
     - RS = Average Gain / Average Loss
-    - RSI = 100 — (100 / (1 + RS))
+    - RSI = 100 - (100 / (1 + RS))
 
     Also known as: RSI.
 
@@ -890,9 +890,9 @@ def get_balance_of_power(
     It considers the relationship between the closing price and the trading range (high - low) of each period.
     BOP values above zero suggest bullish buying pressure, while values below zero suggest bearish selling pressure.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - BOP = (Close — Open) / (High — Low)
+    - BOP = (Close - Open) / (High - Low)
 
     Also known as: BOP.
 
@@ -935,10 +935,10 @@ def get_awesome_oscillator(
     rather than the closing price). It was developed by Bill Williams as part of his broader
     "Trading Chaos" collection of momentum indicators.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Median Price = (High + Low) / 2
-    - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
+    - AO = SMA(Median Price, short_window) - SMA(Median Price, long_window)
 
     Also known as: AO, Bill Williams Awesome Oscillator.
 
@@ -986,10 +986,10 @@ def get_vortex_indicator(
     signal potential trend changes: VI+ above VI- suggests an uptrend is in control, VI- above
     VI+ suggests a downtrend is in control.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - VM+ = |High(t) — Low(t-1)|
-    - VM- = |Low(t) — High(t-1)|
+    - VM+ = |High(t) - Low(t-1)|
+    - VM- = |Low(t) - High(t-1)|
     - VI+ = Sum(VM+, window) / Sum(True Range, window)
     - VI- = Sum(VM-, window) / Sum(True Range, window)
 
@@ -1043,10 +1043,10 @@ def get_elder_ray_index(
     the high extends above the EMA (buying pressure), while Bear Power captures how far the low
     extends below the EMA (selling pressure).
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Bull Power = High — EMA(Close, window)
-    - Bear Power = Low — EMA(Close, window)
+    - Bull Power = High - EMA(Close, window)
+    - Bear Power = Low - EMA(Close, window)
 
     Also known as: Elder Ray, Bull Power, Bear Power.
 
@@ -1086,11 +1086,11 @@ def get_rate_of_change(
     oscillates around zero: positive values indicate price is higher than `window` periods
     ago (upward momentum), while negative values indicate price is lower (downward momentum).
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - ROC = (Close(t) / Close(t - window) — 1) * 100
+    - ROC = (Close(t) / Close(t - window) - 1) * 100
 
-    Also known as: ROC, Price Rate of Change, momentum (in its unscaled form Close(t) —
+    Also known as: ROC, Price Rate of Change, momentum (in its unscaled form Close(t) -
     Close(t - window)).
 
     Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York
@@ -1130,9 +1130,9 @@ def get_choppiness_index(
     signalling a choppy, range-bound market. When price travels efficiently in one direction,
     the index is low (near 0), signalling a trending market.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) — Min(Low, window)) ) / log10(window)
+    - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) - Min(Low, window)) ) / log10(window)
 
     Also known as: CHOP, Choppiness Index.
 
@@ -1196,7 +1196,7 @@ def get_know_sure_thing(
     A signal line (a Simple Moving Average of the KST itself) is used to spot crossovers, in
     the same way the MACD line is compared to its signal line.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - RCMA(i) = SMA(ROC(Close, roc_windows[i]), sma_windows[i])
     - KST = Sum(RCMA(i) * weights[i]) for i = 1..4

@@ -905,12 +905,14 @@ def get_key_rate_duration(
     the same amount, key rate duration measures the bond's price sensitivity to a shock
     at a single tenor of the curve (e.g. only the 5-year point), while every other point
     on the curve is left unchanged. Because the bond's cash flows are discounted using
-    linear interpolation between the curve's tenors, a shock at one tenor tapers off
-    linearly towards the neighboring tenors and has no effect beyond them. Summing the
-    key rate durations across every tenor on the curve approximately reproduces the
-    bond's effective (parallel-shift) duration, but key rate duration additionally
-    reveals which segment of the curve the bond's price is most exposed to — information
-    that is essential for constructing curve-neutral hedges or identifying "twist" risk.
+    linear interpolation between the curve's tenors, a shock at an inner tenor tapers off
+    linearly towards the neighboring tenors and has no effect beyond them. The curve is
+    held flat beyond its first and last tenors, so a shock at the first tenor moves every
+    cash flow paid before it in full (and a shock at the last tenor every cash flow paid
+    after it). Summing the key rate durations across every tenor on the curve
+    approximately reproduces the bond's effective (parallel-shift) duration, but key
+    rate duration additionally reveals which segment of the curve the bond's price is
+    most exposed to — information that is essential for constructing curve-neutral hedges or identifying "twist" risk.
 
     Also known as: partial duration, rate-specific duration.
 

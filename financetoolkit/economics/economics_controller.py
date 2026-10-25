@@ -206,7 +206,7 @@ class Economics:
         self._gmdb_datasets: dict[bool, pd.DataFrame] = {}
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
-        self._fred_api_key: str = fred_api_key
+        self._fred_api_key: str = validation_model.resolve_fred_api_key(fred_api_key)
 
     def _get_gmdb_dataset(self, gmdb_forecasts: bool = False) -> pd.DataFrame:
         """
@@ -643,6 +643,15 @@ class Economics:
         National Statistics for the United Kingdom and the OECD Quarterly National Accounts
         for every other country, including the United States and Japan.
 
+        The growth is the source's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - GDP Growth (quarter on quarter) = Real GDP (t) / Real GDP (t-1) - 1
+        - GDP Growth (year over year) = Real GDP (t) / Real GDP (t-4) - 1
+
+        Where Real GDP is the seasonally and calendar adjusted GDP in chain-linked volumes.
+
         The growth is expressed as a decimal fraction (0.006 for 0.6%).
 
         Also known as: GDP growth, real GDP growth, economic growth, quarter-on-quarter
@@ -951,13 +960,14 @@ class Economics:
         (GDP) divided by the total population of a country, which gives an indication of the
         average economic output (and by extension, living standard) per person.
 
-        Formula:
+        This uses the Global Macro Database's own precomputed per-capita series (the source's figure)
+        rather than dividing GDP by population manually, which avoids subtle mismatches that can arise
+        from differences in population coverage or timing between the two underlying series.
 
-            Real GDP per Capita = Real Gross Domestic Product / Population
+        The formula is as follows:
 
-        This uses the Global Macro Database's own precomputed per-capita series rather than
-        dividing GDP by population manually, which avoids subtle mismatches that can arise from
-        differences in population coverage or timing between the two underlying series.
+        - Real GDP per Capita = Real Gross Domestic Product / Population, in national currency at constant
+          prices, or in US dollars as converted by the Global Macro Database when usd=True
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -1057,9 +1067,11 @@ class Economics:
         The output gap therefore complements indicators such as the Inflation Rate and
         Unemployment Rate as a measure of where an economy sits within the business cycle.
 
-        Formula:
+        The output gap is the OECD's own estimate (the source's figure, divided by 100 here).
 
-            Output Gap = (Actual GDP - Potential GDP) / Potential GDP
+        The formula is as follows:
+
+        - Output Gap = (Actual GDP - Potential GDP) / Potential GDP, with both GDP measures in real terms
 
         This data is only available on a yearly basis, since the OECD Economic Outlook is
         published as a set of annual projections and estimates.
@@ -1281,6 +1293,14 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.8100 for 81.00% of GDP).
 
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Consumption to GDP Ratio = Final Consumption Expenditure / Nominal GDP, with the total (households, the
+          non-profit institutions serving them and the government), household or government part selected with
+          `component` ("total" by default)
+
         Also known as: consumption share of GDP.
 
         Args:
@@ -1470,6 +1490,13 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.2248 for 22.48% of GDP).
 
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Investment to GDP Ratio = Gross Capital Formation / Nominal GDP, with Gross Capital Formation = Gross Fixed
+          Capital Formation + Change in Inventories
+
         Also known as: investment rate.
 
         Args:
@@ -1649,6 +1676,12 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.2179 for 21.79% of GDP).
+
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Fixed Investment to GDP Ratio = Gross Fixed Capital Formation / Nominal GDP
 
         Also known as: investment to GDP ratio.
 
@@ -1833,6 +1866,12 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.1016 for 10.16% of GDP).
+
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Exports to GDP Ratio = Exports of Goods and Services / Nominal GDP
 
         Also known as: exports to GDP ratio, trade openness.
 
@@ -2023,6 +2062,12 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (0.1213 for 12.13% of GDP).
 
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Imports to GDP Ratio = Imports of Goods and Services / Nominal GDP
+
         Also known as: imports to GDP ratio.
 
         Args:
@@ -2117,9 +2162,10 @@ class Economics:
         while a negative trade balance (a "trade deficit") means a country imports more than it
         exports.
 
-        Formula:
+        The formula is as follows:
 
-            Trade Balance = Exports - Imports
+        - Trade Balance = Exports of Goods and Services - Imports of Goods and Services, both the Global Macro
+          Database's figures in millions of national currency (or of US dollars when usd=True)
 
         The balance is annual and expressed in millions of national currency, with a negative
         value marking a trade deficit and a positive value a surplus.
@@ -2316,6 +2362,13 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (-0.0211 for -2.11% of GDP).
 
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Current Account Balance to GDP Ratio = (Exports - Imports of Goods and Services + Net Primary Income + Net
+          Secondary Income) / Nominal GDP
+
         Also known as: current account to GDP.
 
         Args:
@@ -2508,6 +2561,13 @@ class Economics:
 
         The ratio is expressed as a decimal fraction (1.3173 for 131.73% of GDP).
 
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Government Debt to GDP Ratio = Gross Government Debt / Nominal GDP,
+          using the level of government selected with `level` ("consolidated" by default)
+
         Also known as: debt-to-GDP ratio, fiscal sustainability.
 
         Args:
@@ -2689,6 +2749,13 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.3104 for 31.04% of GDP).
+
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Government Revenue to GDP Ratio = Government Revenue / Nominal GDP,
+          using the level of government selected with `level` ("consolidated" by default)
 
         Also known as: revenue to GDP ratio.
 
@@ -2875,6 +2942,13 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.1022 for 10.22% of GDP).
+
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Government Tax Revenue to GDP Ratio = Government Tax Revenue / Nominal GDP,
+          using the level of government selected with `level` ("consolidated" by default)
 
         Also known as: tax burden, tax to GDP ratio.
 
@@ -3064,6 +3138,13 @@ class Economics:
         variable can be found within https://www.globalmacrodata.com/documentation.html
 
         The ratio is expressed as a decimal fraction (0.3708 for 37.08% of GDP).
+
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Government Expenditure to GDP Ratio = Government Expenditure / Nominal GDP,
+          using the level of government selected with `level` ("consolidated" by default)
 
         Also known as: government spending to GDP.
 
@@ -3261,6 +3342,13 @@ class Economics:
         The series is signed as a fiscal balance rather than as a deficit, and expressed as a
         decimal fraction of GDP: -0.07068 means a deficit of 7.068% of GDP, and a positive
         value is a surplus.
+
+        The ratio is the Global Macro Database's own figure, published in percent and divided by 100 here.
+
+        The formula is as follows:
+
+        - Government Deficit to GDP Ratio = (Government Revenue - Government Expenditure) / Nominal GDP,
+          using the level of government selected with `level` ("consolidated" by default)
 
         Also known as: deficit-to-GDP, fiscal balance.
 
@@ -3608,6 +3696,14 @@ class Economics:
 
         The result is a decimal fraction (0.041166 for 4.1166%), like every other rate in the
         Finance Toolkit.
+
+        The rates are the sources' own figures (published in percent and divided by 100 here),
+        except for Japan, which is calculated from the Statistics Bureau of Japan's CPI.
+
+        The formula is as follows:
+
+        - Monthly Inflation Rate (t) = CPI (t) / CPI (t-12 months) - 1, the annual rate of change for every month
+        - Yearly Inflation Rate (t) = CPI (t) / CPI (t-1 year) - 1, the Global Macro Database's annual figure
 
         Headline inflation is what most central banks target, usually at 2% a year, but they
         read it together with core inflation, which excludes energy and food, to see past
@@ -5540,9 +5636,11 @@ class Economics:
         borrowing (or the true return earned on savings) once the erosion of purchasing power
         by inflation is taken into account.
 
-        Formula (Fisher equation, approximation):
+        The formula is as follows (the Fisher equation, approximation):
 
-            Real Interest Rate = Nominal Interest Rate - Inflation Rate
+        - Real Interest Rate (year) = Nominal Interest Rate (year) - Inflation Rate (year), with the nominal rate the
+          annual Long Term Interest Rate by default (rate_type="long_term") and the inflation rate the Global Macro
+          Database's annual CPI inflation
 
         The nominal interest rate is either the Long Term Interest Rate (the 10-year government
         bond yield) or the Short Term Interest Rate (the 3-month money market rate), selected via
@@ -5693,9 +5791,10 @@ class Economics:
         and the Short Term Interest Rate (the 3-month money market rate), and summarizes the
         overall shape of the yield curve in a single number.
 
-        Formula:
+        The formula is as follows:
 
-            Yield Curve Slope = Long Term Interest Rate - Short Term Interest Rate
+        - Yield Curve Slope (t) = Long Term Interest Rate (t) - Short Term Interest Rate (t), both from the OECD at
+          the requested frequency (monthly by default), or both annual from the Global Macro Database
 
         A positive (upward-sloping) yield curve is the historical norm and reflects investors
         demanding a premium for locking up money for longer. A negative (inverted) yield curve,
@@ -5714,7 +5813,11 @@ class Economics:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
                 Defaults to None, which is quarterly when the Economics class was initialized with
                 quarterly=True and monthly otherwise.
-            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
+            gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB),
+                which is annual. Defaults to None, which uses the GMDB only for yearly data and only when the
+                gmdb_source set on the Economics class is True (its default); monthly and quarterly data, or
+                gmdb_source=False on the class, come from the OECD. True uses the GMDB whatever the period,
+                False always the OECD.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -6189,9 +6292,11 @@ class Economics:
         economic ills that are most directly and visibly felt by households: unemployment and
         rising prices.
 
-        Formula:
+        The formula is as follows:
 
-            Misery Index = Unemployment Rate + Inflation Rate
+        - Misery Index (year) = Unemployment Rate (year) + Inflation Rate (year), with the annual unemployment rate
+          from the Global Macro Database (or the OECD with gmdb_source=False) and the Global Macro Database's annual
+          CPI inflation
 
         The Unemployment Rate and Inflation Rate are both retrieved as annual decimal fractions
         (0.05 for 5%) whichever source is used, so they line up directly for the addition and
@@ -6312,6 +6417,13 @@ class Economics:
         comparable across countries, for the total economy and on an annual basis. It is a
         level rather than an index, so a value of 61.36 means 61.36 PPP-converted US dollars
         of GDP produced per hour worked.
+
+        The level is the OECD's own figure (the source's calculation).
+
+        The formula is as follows:
+
+        - Labour Productivity = Real GDP (constant prices, PPP-converted US dollars) / Total Hours Worked by all
+          persons engaged in production
 
         See definition: https://data.oecd.org/lprdty/gdp-per-hour-worked.htm
 

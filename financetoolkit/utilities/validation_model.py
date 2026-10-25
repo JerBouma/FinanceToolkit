@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import os
 import re
 from collections import Counter
 from datetime import datetime
@@ -45,6 +46,36 @@ def resolve_api_key(api_key: str | None) -> str | None:
         return ""
 
     return api_key
+
+
+# The FRED keys the documentation examples use; receiving one verbatim means it was never replaced.
+PLACEHOLDER_FRED_API_KEYS = {"FRED_API_KEY", "FRED_KEY", "your_fred_api_key"}
+
+
+def resolve_fred_api_key(fred_api_key: str | None) -> str:
+    """
+    Replaces a documentation placeholder FRED API key with the FRED_API_KEY environment
+    variable (empty when it is not set). FRED would otherwise answer the placeholder with
+    a generic 400 error.
+
+    Args:
+        fred_api_key (str | None): The FRED API key as passed by the user.
+
+    Returns:
+        str: The FRED API key, or the environment variable when a placeholder was passed.
+    """
+    if (
+        isinstance(fred_api_key, str)
+        and fred_api_key.strip() in PLACEHOLDER_FRED_API_KEYS
+    ):
+        logger.info(
+            "The fred_api_key '%s' is a placeholder from the documentation examples, so the "
+            "FRED_API_KEY environment variable is used instead.",
+            fred_api_key.strip(),
+        )
+        return os.environ.get("FRED_API_KEY", "")
+
+    return fred_api_key or ""
 
 
 def validate_toolkit_parameters(

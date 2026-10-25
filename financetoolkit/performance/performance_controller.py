@@ -825,6 +825,12 @@ class Performance:
         However, since the results are closely related and tend to point into the same direction it could
         be fine to use correlations as well depending on the level of accuracy required.
 
+        The formula is as follows:
+
+        - Excess Return = Daily Asset Return - Daily Risk Free Rate (RF)
+        - Factor Asset Correlation = Pearson Correlation (Daily Excess Return, Daily Factor Return), using the
+          daily Fama and French 5 Factor returns within each period (e.g. each year)
+
         Also known as: factor exposure, asset correlations.
 
         Args:
@@ -958,6 +964,11 @@ class Performance:
             high investment stocks.
 
         Optionally, it is also possible to see the correlation between the risk-free rate and each factor.
+
+        The formula is as follows:
+
+        - Factor Correlation = Pearson Correlation (Daily Factor A Return, Daily Factor B Return), using the
+          daily Fama and French 5 Factor returns within each period (e.g. each year)
 
         Also known as: factor model correlations.
 
@@ -1436,10 +1447,14 @@ class Performance:
             - Value Premium (HML): The historical excess return of value stocks over growth stocks.
             - Momentum (MOM): The historical excess return of prior winner stocks over prior loser stocks.
 
-        The model performs a Multi Linear Regression on all four factors and defines the regression
-        parameters for each asset over time based on its exposure to these factors:
+        The model performs a Multi Linear Regression (ordinary least squares) on all four factors and defines
+        the regression parameters for each asset over time based on its exposure to these factors.
 
-            - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML + Beta4 * MOM + Residuals
+        The formula is as follows:
+
+        - Excess Return = Daily Asset Return - Daily Risk Free Rate (RF, from the Fama and French dataset)
+        - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML + Beta4 * MOM + Residuals,
+          fitted on the daily returns within each period (e.g. each quarter)
 
         For more information about the method, see the following paper:
 
@@ -2398,7 +2413,7 @@ class Performance:
 
         The formula is as follows:
 
-        - Ulcer Performance Index = (Period Return — Risk-Free Rate) / Ulcer Index
+        - Ulcer Performance Index = (Period Return - Risk-Free Rate) / Ulcer Index
         - Ulcer Index = SQRT(MEAN(Drawdown^2)), with each day's drawdown measured from the highest value of the
         trailing `rolling` days within the period
 
@@ -3372,8 +3387,17 @@ class Performance:
         """
         Calculate the Win Rate of an investment portfolio or asset's returns.
 
-        The Win Rate is the percentage of periods in which the asset's return exceeds the
+        The Win Rate is the share of days within each period in which the asset's return exceeds the
         benchmark's return.
+
+        The formula is as follows:
+
+        - Win Rate = Number of Days with Asset Return > Benchmark Return / Number of Days with both an Asset
+          and a Benchmark Return, using the daily returns within each period (e.g. each year), as a decimal
+          (0.55 = 55%)
+
+        Days on which the asset or the benchmark has no return are left out of both counts rather than
+        counted as losses.
 
         Also known as: batting average.
 
@@ -3415,7 +3439,7 @@ class Performance:
 
         | Date   |   AAPL |   MSFT |   GOOGL |
         |:-------|-------:|-------:|--------:|
-        | 2021   | 0.4921 | 0.5119 |  0.5278 |
+        | 2021   | 0.494  | 0.5139 |  0.5299 |
         | 2022   | 0.4781 | 0.4582 |  0.4502 |
         | 2023   | 0.576  | 0.512  |  0.524  |
         | 2024   | 0.5    | 0.4881 |  0.5317 |
@@ -3461,6 +3485,15 @@ class Performance:
         Kappa Ratio with order=2.
 
         Note that this already subtracts the Risk Free Rate.
+
+        The formula is as follows:
+
+        - Daily Excess Return = Daily Return - Daily Risk Free Rate, with Daily Risk Free Rate =
+          (1 + Annual Risk Free Rate)^(1/252) - 1
+        - Lower Partial Moment (LPM) = MEAN(MAX(-Daily Excess Return, 0)^Order), averaged over all days in the
+          period (days with a non-negative excess return count as 0)
+        - Kappa Ratio = MEAN(Daily Excess Return) / LPM^(1/Order), per period and not annualized, with Order
+          defaulting to 3
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
@@ -3846,14 +3879,13 @@ class Performance:
         based on the daily historical returns.
 
         The period Return is obtained by compounding the daily returns within each
-        period, following the formula:
+        period. If cumulative is set to True, the period returns within the selected date
+        range are compounded further into a cumulative return (growth of 1) instead.
 
-            - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
+        The formula is as follows:
 
-        If cumulative is set to True, the period returns within the selected date range
-        are compounded further into a cumulative return (growth of 1) instead:
-
-            - Cumulative Return = (1 + Period Return 1) * (1 + Period Return 2) * ... * (1 + Period Return N)
+        - Period Return = ((1 + Daily Return 1) * (1 + Daily Return 2) * ... * (1 + Daily Return N)) - 1
+        - Cumulative Return = (1 + Period Return 1) * (1 + Period Return 2) * ... * (1 + Period Return N)
 
         The compounding starts at 1 at the beginning of the date range, so the first value
         is 1 plus the return of the first period.
@@ -3954,12 +3986,17 @@ class Performance:
         Calculate the Excess Return of an investment portfolio or asset for a given period
         based on the daily historical returns.
 
-        The Excess Return is defined as the period Return minus the risk free rate.
+        The Excess Return is defined as the period Return minus the risk free rate earned over
+        that period. If cumulative is set to True, the excess returns within the selected date
+        range are compounded further into a cumulative excess return (growth of 1) instead.
 
-        If cumulative is set to True, the excess returns within the selected date range
-        are compounded further into a cumulative excess return (growth of 1) instead:
+        The formula is as follows:
 
-            - Cumulative Excess Return = (1 + Excess Return 1) * (1 + Excess Return 2) * ... * (1 + Excess Return N)
+        - Period Return = ((1 + Daily Return 1) * (1 + Daily Return 2) * ... * (1 + Daily Return N)) - 1
+        - Period Risk Free Rate = (1 + Average Annual Risk Free Rate)^(1 / Periods per Year) - 1, with the
+          average taken over the daily Treasury yields within the period
+        - Excess Return = Period Return - Period Risk Free Rate
+        - Cumulative Excess Return = (1 + Excess Return 1) * (1 + Excess Return 2) * ... * (1 + Excess Return N)
 
         The compounding starts at 1 at the beginning of the date range, so the first value
         is 1 plus the excess return of the first period.
@@ -4072,6 +4109,12 @@ class Performance:
         work. Correlations between risky assets tend to rise in sell-offs, so a matrix estimated over a calm
         stretch understates how much assets fall together when it matters.
 
+        The formula is as follows:
+
+        - Correlation (A, B) = Covariance (Return A, Return B) / (Standard Deviation A * Standard Deviation B),
+          the Pearson correlation of the period returns (e.g. monthly) within the Toolkit's date range, using
+          the overlapping (pairwise complete) observations of each pair
+
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
                 to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
@@ -4133,6 +4176,12 @@ class Performance:
         computes the covariance between every pair of assets at once. This is a
         prerequisite for portfolio variance calculations and any mean-variance
         optimization work.
+
+        The formula is as follows:
+
+        - Covariance (A, B) = SUM((Return A - Mean Return A) * (Return B - Mean Return B)) / (N - 1), the sample
+          covariance (ddof=1) of the period returns (e.g. monthly) within the Toolkit's date range, per period
+          and not annualized, using the overlapping (pairwise complete) observations of each pair
 
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults

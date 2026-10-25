@@ -1799,7 +1799,13 @@ def get_win_rate(
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Win Rate, i.e. the percentage of periods in which the asset's return
-    exceeds the benchmark's return.
+    exceeds the benchmark's return. Periods in which either return is missing are left out
+    of both the wins and the number of periods.
+
+    The formula is as follows:
+
+        - Win Rate = Number of Periods with Asset Return > Benchmark Return / Number of Periods
+          with both an Asset and a Benchmark Return
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1808,20 +1814,27 @@ def get_win_rate(
     Returns:
         pd.Series | pd.DataFrame: Win Rate values.
     """
+
+    def win_share(
+        asset: pd.Series | pd.DataFrame, benchmark: pd.Series
+    ) -> pd.Series | float:
+        # A comparison with a missing return is False, which would count a day without a quote as a loss; mask those days so the mean only covers days on which both returns exist.  # noqa: E501
+        wins = asset.gt(benchmark, axis=0).astype(float)
+
+        return wins.where(asset.notna()).where(benchmark.notna(), axis=0).mean()
+
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             combination = pd.concat([asset_returns, benchmark_returns], axis=1)
 
             return combination.groupby(level=0).apply(
-                lambda x: x[asset_returns.columns]
-                .gt(x[benchmark_returns.name], axis=0)
-                .mean()
+                lambda x: win_share(x[asset_returns.columns], x[benchmark_returns.name])
             )
 
-        return asset_returns.gt(benchmark_returns, axis=0).mean()
+        return win_share(asset_returns, benchmark_returns)
 
     if isinstance(asset_returns, pd.Series):
-        return (asset_returns > benchmark_returns).mean()
+        return win_share(asset_returns, benchmark_returns)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 

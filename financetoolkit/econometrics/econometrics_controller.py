@@ -104,9 +104,10 @@ class Econometrics:
         # slices are treated as read-only by every caller, so sharing them is safe.
         self._data_cache: dict[tuple, pd.DataFrame] = {}
 
-        # Within Return Calculations
-        daily_historical_data = self._historical_data["daily"].copy().fillna(0)
-        intraday_historical_data = self._historical_data["intraday"].copy().fillna(0)
+        # Within Return Calculations. Missing returns stay NaN (not 0), so a ticker
+        # without data in part of a period is not treated as flat there.
+        daily_historical_data = self._historical_data["daily"].copy()
+        intraday_historical_data = self._historical_data["intraday"].copy()
 
         daily_historical_data.index = pd.DatetimeIndex(
             daily_historical_data.to_timestamp().index
@@ -142,6 +143,13 @@ class Econometrics:
         volatility clustering, and a GARCH-family model is an appropriate choice for
         it. A high p-value suggests fitting GARCH would not be meaningful, since there
         is no detectable time-varying volatility to model.
+
+        The formula is as follows:
+
+        - εₜ = rₜ - mean(r), the returns of `period` demeaned by their sample mean
+        - Auxiliary regression: εₜ² = a₀ + Σ(i=1..q) aᵢ·εₜ₋ᵢ² + uₜ, with q = `lags` (5 by default)
+        - ARCH-LM = (T - q)·R², chi-squared with q degrees of freedom, where T - q is the number of
+          observations in the auxiliary regression
 
         For more information about the method, see the following paper:
 
@@ -189,7 +197,7 @@ class Econometrics:
 
         |                   |   BTCUSD |   ^GSPC |   EURUSD |
         |:------------------|---------:|--------:|---------:|
-        | ARCH-LM Statistic |  53.9533 | 165.389 |  67.7588 |
+        | ARCH-LM Statistic |  55.2071 | 165.389 |  67.7588 |
         | P-Value           |   0      |   0     |   0      |
         """
         period = period if period else "daily"
@@ -237,6 +245,12 @@ class Econometrics:
         p-value) indicates that returns are not normally distributed, which is
         relevant when choosing between e.g. gaussian and Student-T based Value at Risk
         models.
+
+        The formula is as follows:
+
+        - JB = (n / 6)·(S² + (K - 3)² / 4), chi-squared with 2 degrees of freedom
+        - S = m₃ / m₂^(3/2) and K = m₄ / m₂², with mₖ = (1 / n)·Σ(rₜ - mean(r))ᵏ the (biased) central
+          moments of the returns of `period`
 
         For more information about the method, see the following paper:
 
@@ -332,6 +346,13 @@ class Econometrics:
         both as a standalone diagnostic (e.g. to check whether a return series follows a random
         walk) and as a residual diagnostic after fitting a model (e.g. checking that GARCH
         residuals are no longer autocorrelated).
+
+        The formula is as follows:
+
+        - Q = n·(n + 2)·Σ(k=1..h) ρₖ² / (n - k), chi-squared with h degrees of freedom, h = `lags` (10 by
+          default)
+        - ρₖ = Σ(t=k+1..n) (rₜ - mean(r))·(rₜ₋ₖ - mean(r)) / Σ(t=1..n) (rₜ - mean(r))², the sample
+          autocorrelation of the returns of `period` at lag k
 
         For more information about the method, see the following paper:
 
@@ -433,6 +454,13 @@ class Econometrics:
         Lo and MacKinlay's heteroskedasticity-robust statistic is the usual choice for daily
         data. `get_arch_lm_test` shows whether a series has that volatility clustering.
 
+        The formula is as follows:
+
+        - VR(q) = Var(rₜ + rₜ₋₁ + ... + rₜ₋q₊₁) / (q·Var(rₜ)), with overlapping q-period sums and sample
+          variances (ddof=1), q = 2 by default
+        - z = (VR(q) - 1) / √φ(q), with φ(q) = 2·(2q - 1)·(q - 1) / (3q·n)
+        - P-Value = 2·(1 - Φ(|z|)), with Φ the standard normal CDF
+
         For more information about the method, see the following paper:
 
         - Lo, A.W., & MacKinlay, A.C. (1988). "Stock Market Prices Do Not Follow Random
@@ -530,6 +558,13 @@ class Econometrics:
         change) drags the path away from zero; the test statistic is the maximum
         absolute value of that path.
 
+        The formula is as follows:
+
+        - êₜ = rₜ - mean(r), the OLS residuals of the constant-mean model rₜ = μ + eₜ
+        - CUSUM = max over k of |Σ(t=1..k) êₜ| / (σ̂·√n), with σ̂² = Σêₜ² / (n - 1)
+        - P-Value = P(sup|B(s)| > CUSUM) for a Brownian Bridge B (the Kolmogorov distribution), with
+          stability rejected when the p-value is below 0.05
+
         For more information about the method, see the following paper:
 
         - Ploberger, W., & Kramer, W. (1992). "The CUSUM Test with OLS Residuals."
@@ -613,23 +648,36 @@ class Econometrics:
             result, rounding if rounding is not None else self._rounding
         )
 
-    def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
+    def _get_price_column(
+        self, period: str, column: str, per_ticker: bool = False
+    ) -> pd.DataFrame:
+        """
+        The `column` slice of `period`, memoized -- see `_data_cache` in `__init__`.
+        Methods that combine tickers date by date (regressions, VAR, cointegration)
+        keep only the dates every ticker has. Per-ticker statistics pass
+        `per_ticker=True` and only lose the dates no ticker has, so each ticker keeps
+        its own history and the calculation drops its own missing values.
+        """
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
 
-        key = ("column", period, column)
+        key = ("column", period, column, per_ticker)
 
         if key not in self._data_cache:
-            self._data_cache[key] = self._historical_data[period][column].dropna()
+            self._data_cache[key] = self._historical_data[period][column].dropna(
+                how="all" if per_ticker else "any"
+            )
 
         return self._data_cache[key]
 
     def _get_returns(self, period: str, within_period: bool) -> pd.DataFrame:
         """
         The Return slice the diagnostic tests run on, memoized per (period,
-        within_period) pair -- see `_data_cache` in `__init__`.
+        within_period) pair -- see `_data_cache` in `__init__`. Only the dates no
+        ticker has are dropped: every test runs per ticker on its own non-missing
+        returns, so a younger ticker does not shorten an older ticker's history.
         """
         key = ("returns", period, within_period)
 
@@ -638,7 +686,7 @@ class Econometrics:
                 self._within_historical_data[period]["Return"]
                 if within_period
                 else self._historical_data[period]["Return"]
-            ).dropna()
+            ).dropna(how="all")
 
         return self._data_cache[key]
 
@@ -766,6 +814,14 @@ class Econometrics:
         stationary. This is a standard first step before modeling a price series or spread
         with mean-reverting methods, since those methods assume stationarity.
 
+        The formula is as follows:
+
+        - ΔYₜ = α + γ·Yₜ₋₁ + Σ(i=1..p) δᵢ·ΔYₜ₋ᵢ + εₜ, with Yₜ the `column` level (Adj Close by default)
+          and regression="c" (the default); "ct" adds a trend β·t and "n" drops α
+        - ADF = γ̂ / SE(γ̂), compared with MacKinnon (1994, 2010) critical values and p-values
+        - p = the number of lags that minimises the AIC, searched from 0 up to `max_lag`, which defaults to
+          min(ceil(12·(n / 100)^(1/4)), (n - 5) // 3)
+
         For more information about the method, see the following paper:
 
         - Dickey, D.A. and Fuller, W.A. (1979). "Distribution of the Estimators for
@@ -812,20 +868,21 @@ class Econometrics:
 
         Which returns:
 
-        |                       |      EURUSD |      USDJPY |      GBPUSD |
-        |:----------------------|------------:|------------:|------------:|
-        | ADF Statistic         |   -1.83568  |   -1.70039  |   -1.8101   |
-        | P-Value               |    0.362896 |    0.430912 |    0.375458 |
-        | Lags Used             |    5        |    0        |    2        |
-        | Observations          | 1345        | 1350        | 1348        |
-        | Critical Value 1%     |   -3.43522  |   -3.4352   |   -3.43521  |
-        | Critical Value 5%     |   -2.86369  |   -2.86368  |   -2.86369  |
-        | Critical Value 10%    |   -2.56792  |   -2.56791  |   -2.56791  |
-        | Reject Unit Root (5%) |    0        |    0        |    0        |
+        |                       |      EURUSD |     USDJPY |      GBPUSD |
+        |:----------------------|------------:|-----------:|------------:|
+        | ADF Statistic         |   -1.83568  |   -1.68762 |   -1.81162  |
+        | P-Value               |    0.362896 |    0.4375  |    0.374708 |
+        | Lags Used             |    5        |    0       |    2        |
+        | Observations          | 1345        | 1351       | 1349        |
+        | Critical Value 1%     |   -3.43522  |   -3.4352  |   -3.43521  |
+        | Critical Value 5%     |   -2.86369  |   -2.86368 |   -2.86368  |
+        | Critical Value 10%    |   -2.56792  |   -2.56791 |   -2.56791  |
+        | Reject Unit Root (5%) |    0        |    0       |    0        |
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_price_column(period, column, per_ticker=True),
+            include_benchmark=include_benchmark,
         )
 
         result = pd.DataFrame(
@@ -861,6 +918,17 @@ class Econometrics:
         standard practice to triangulate a confident conclusion -- ADF rejecting a unit root
         and KPSS failing to reject stationarity together give a confident stationarity
         conclusion, while the two tests disagreeing flags an ambiguous case.
+
+        The formula is as follows:
+
+        - Yₜ = α + eₜ fitted by OLS on the `column` level (Adj Close by default), with regression="c"
+          (the default); "ct" adds a trend β·t
+        - Sₜ = Σ(i=1..t) êᵢ
+        - KPSS = Σ(t=1..n) Sₜ² / (n²·λ²)
+        - λ² = (1 / n)·Σêₜ² + (2 / n)·Σ(s=1..l) (1 - s / (l + 1))·Σ(t=s+1..n) êₜ·êₜ₋ₛ, with l = `lags` or,
+          by default, the Hobijn, Franses and Ooms (2004) automatic bandwidth
+        - The p-value is interpolated from the KPSS (1992) critical value table, so it is bounded
+          between 0.01 and 0.10
 
         For more information about the method, see the following paper:
 
@@ -912,10 +980,10 @@ class Econometrics:
 
         |                          |      ^GSPC |      ^N225 |
         |:-------------------------|-----------:|-----------:|
-        | KPSS Statistic           |    4.72819 |    4.79639 |
+        | KPSS Statistic           |    4.73448 |    4.79639 |
         | P-Value                  |    0.01    |    0.01    |
         | Lags Used                |   21       |   21       |
-        | Observations             | 1298       | 1298       |
+        | Observations             | 1299       | 1298       |
         | Critical Value 1%        |    0.739   |    0.739   |
         | Critical Value 2.5%      |    0.574   |    0.574   |
         | Critical Value 5%        |    0.463   |    0.463   |
@@ -924,7 +992,8 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_price_column(period, column, per_ticker=True),
+            include_benchmark=include_benchmark,
         )
 
         result = pd.DataFrame(
@@ -959,6 +1028,17 @@ class Econometrics:
         nonparametrically via a Newey-West long-run variance estimate, rather than by adding
         lagged-difference terms to the regression as ADF does. PP and ADF should broadly agree
         on the same series since they test the same null with different correction methods.
+
+        The formula is as follows:
+
+        - Yₜ = α + ρ·Yₜ₋₁ + uₜ fitted by OLS on the `column` level (Adj Close by default), with
+          regression="c" (the default); "ct" adds a trend β·t
+        - t_ρ = (ρ̂ - 1) / SE(ρ̂), γ₀ = Σûₜ² / n and s² = Σûₜ² / (n - k), with k the number of coefficients
+        - λ² = γ₀ + 2·Σ(j=1..l) (1 - j / (l + 1))·γⱼ, with γⱼ = (1 / n)·Σ(t=j+1..n) ûₜ·ûₜ₋ⱼ and l = `lags`,
+          which defaults to int(12·(n / 100)^(1/4))
+        - Z_t = √(γ₀ / λ²)·t_ρ - (λ² - γ₀) / (2·λ·s)·n·SE(ρ̂)
+        - The unit root is rejected at 5% when Z_t is below the MacKinnon (1996) asymptotic critical value
+          (-2.86 for "c", -3.41 for "ct"); no p-value is reported
 
         For more information about the method, see the following paper:
 
@@ -1018,7 +1098,8 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_price_column(period, column, per_ticker=True),
+            include_benchmark=include_benchmark,
         )
 
         result = pd.DataFrame(
@@ -1060,6 +1141,17 @@ class Econometrics:
         the ADF regression and choosing, for each asset, the break date that is most
         favorable to the stationary alternative -- which is why it needs its own
         (more negative) critical values rather than the ordinary ADF ones.
+
+        The formula is as follows:
+
+        - ΔYₜ = μ + θ·DUₜ + β·t + α·Yₜ₋₁ + Σ(i=1..p) cᵢ·ΔYₜ₋ᵢ + εₜ, with Yₜ the `column` level (Adj Close
+          by default) and DUₜ = 1 after the break date T_B and 0 before it (regression="c", the default)
+        - regression="t" replaces θ·DUₜ by a trend break γ·DTₜ, with DTₜ = t - T_B after the break and 0
+          before it, and regression="ct" includes both
+        - ZA = min over T_B of α̂ / SE(α̂), searching every break date outside the first and last `trim`
+          (15% by default) of the sample
+        - p = the number of lags that minimises the AIC, up to `max_lag` (same default as
+          `get_augmented_dickey_fuller`)
 
         For more information about the method, see the following papers:
 
@@ -1128,7 +1220,8 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column), include_benchmark=include_benchmark
+            self._get_price_column(period, column, per_ticker=True),
+            include_benchmark=include_benchmark,
         )
 
         result = pd.DataFrame(
@@ -1170,6 +1263,16 @@ class Econometrics:
         is usually tested again on a later sample before it is relied on. The result depends
         on which ticker is the dependent one, so the two orderings can disagree;
         `get_johansen_cointegration` tests the pair without that choice.
+
+        The formula is as follows:
+
+        - Step 1: Aₜ = α + β·Bₜ + uₜ, the OLS regression of the dependent on the independent `column`
+          level (Adj Close by default)
+        - Step 2: Δûₜ = γ·ûₜ₋₁ + Σ(i=1..p) δᵢ·Δûₜ₋ᵢ + εₜ, an ADF regression without constant on the residuals
+        - EG = γ̂ / SE(γ̂), compared with the MacKinnon (1994, 2010) cointegration critical values and
+          p-values for two variables
+        - p = the number of lags that minimises the AIC, up to `max_lag` (same default as
+          `get_augmented_dickey_fuller`)
 
         For more information about the method, see the following paper:
 
@@ -1271,6 +1374,18 @@ class Econometrics:
         independent stationary combinations exist among the `N` individually non-stationary
         price series.
 
+        The formula is as follows:
+
+        - ΔYₜ = Π·Yₜ₋₁ + Σ(i=1..k) Γᵢ·ΔYₜ₋ᵢ + μ + εₜ, with Yₜ the vector of `column` levels (Adj Close by
+          default), k = `k_ar_diff` (1 by default) and the deterministic term μ set by `det_order`: none
+          (-1), an unrestricted constant μ₀ (0, the default) or μ₀ plus a linear trend restricted to the
+          cointegrating relation (1), Johansen's cases 1, 3 and 4
+        - λ₁ ≥ ... ≥ λ_N: the eigenvalues of the reduced-rank regression of ΔYₜ on Yₜ₋₁, both corrected for
+          the lagged differences and μ
+        - Trace(r) = -T·Σ(i=r+1..N) ln(1 - λᵢ)
+        - Max-Eigenvalue(r) = -T·ln(1 - λᵣ₊₁)
+        - Each statistic rejects "rank ≤ r" at the 5% level when it exceeds its 95% critical value
+
         For more information about the method, see the following papers:
 
         - Johansen, S. (1988). "Statistical Analysis of Cointegration Vectors." Journal of
@@ -1284,10 +1399,10 @@ class Econometrics:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            det_order (int, optional): Which deterministic term to include: -1 (none), 0 (a
-            constant, restricted to lie in the cointegrating relation) or 1 (a linear trend
-            restricted to the cointegrating relation, alongside an unrestricted constant in
-            the short-run dynamics). Defaults to 0.
+            det_order (int, optional): Which deterministic term to include: -1 (none), 0 (an
+            unrestricted constant, so the levels may drift linearly) or 1 (a linear trend
+            restricted to the cointegrating relation, alongside an unrestricted constant).
+            Defaults to 0.
             k_ar_diff (int, optional): The number of lagged first differences to include as
             short-run dynamics. Defaults to 1.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
@@ -1366,6 +1481,15 @@ class Econometrics:
         later already contains news the other only prices the next day, so it appears to
         predict it. The result also depends on `max_lag`, so it is usually checked at a few
         lag lengths, and across many pairs some significant results arise by chance alone.
+
+        The formula is as follows:
+
+        - Restricted: Aₜ = c + Σ(i=1..p) aᵢ·Aₜ₋ᵢ + eₜ
+        - Unrestricted: Aₜ = c + Σ(i=1..p) aᵢ·Aₜ₋ᵢ + Σ(i=1..p) bᵢ·Bₜ₋ᵢ + uₜ
+        - F = ((RSS_r - RSS_u) / p) / (RSS_u / (T - 2p - 1)), F-distributed with (p, T - 2p - 1) degrees
+          of freedom
+        - A is the dependent and B the independent ticker's `column` (Return by default), p = `max_lag`
+          (5 by default) and T the number of observations after the lags
 
         For more information about the method, see the following paper:
 
@@ -1470,6 +1594,18 @@ class Econometrics:
         a proxy, while the absolute-error loss can rank them the wrong way round, so
         `loss="squared"` is the safer choice. A negative statistic favors `method_a`.
 
+        The formula is as follows:
+
+        - Realized Variance: rₜ²
+        - EWMA forecast ("ewma"): σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², with λ = `lambda_` (0.94 by default), so
+          the forecast for t uses returns up to t - 1
+        - Rolling forecast ("rolling"): the sample variance (ddof=1) of the `window_size` (22 by default)
+          returns up to t - 1
+        - dₜ = L(rₜ² - f_a,ₜ) - L(rₜ² - f_b,ₜ), with L(e) = e² (loss="squared") or |e| (loss="absolute")
+        - DM = mean(d) / √(γ₀ / n)·√((n - 1) / n), with γ₀ = (1 / n)·Σ(dₜ - mean(d))² and the Harvey,
+          Leybourne and Newbold (1997) correction for a one-step horizon
+        - P-Value = 2·P(T > |DM|) for a Student-t distribution with n - 1 degrees of freedom
+
         For more information about the method, see the following papers:
 
         - Diebold, F.X., & Mariano, R.S. (1995). "Comparing Predictive Accuracy."
@@ -1502,9 +1638,10 @@ class Econometrics:
             favors `method_a`) and the number of observations used, per asset.
 
         Notes:
-        - Both forecasts are lagged by one period (i.e. use only information available up to, and
-        including, the prior period) before being compared to the realized squared return, so this is a
-        genuinely out-of-sample forecast comparison rather than an in-sample fit comparison.
+        - Both forecasts for period t use only the returns up to, and including, period t - 1, so this
+        is a genuinely out-of-sample forecast comparison rather than an in-sample fit comparison.
+        - Each asset uses its own return history, so an asset with a shorter history does not shorten
+        the comparison of the others.
         - Like `Risk.get_var_backtest`, this is calculated over the full return history rather than the
         `within_period` slices used elsewhere in this module, since the rolling/EWMA forecasts need more
         history than a single sub-period provides.
@@ -1528,8 +1665,8 @@ class Econometrics:
 
         |                           |       XOM |       CVX |      SHEL |        BP |
         |:--------------------------|----------:|----------:|----------:|----------:|
-        | Diebold-Mariano Statistic |   -2.8128 |   -2.2451 |   -0.3298 |   -0.1563 |
-        | P-Value                   |    0.005  |    0.0249 |    0.7416 |    0.8758 |
+        | Diebold-Mariano Statistic |   -3.9115 |   -4.9425 |   -1.8262 |   -1.3358 |
+        | P-Value                   |    0.0001 |    0      |    0.0681 |    0.1818 |
         | Mean Loss Differential    |    0      |    0      |    0      |    0      |
         | Observations              | 1232      | 1232      | 1232      | 1232      |
         """
@@ -1544,7 +1681,7 @@ class Econometrics:
             )
 
         returns = self._filter_benchmark(
-            self._historical_data[period]["Return"].dropna(),
+            self._historical_data[period]["Return"].dropna(how="all"),
             include_benchmark=include_benchmark,
         )
 
@@ -1583,9 +1720,16 @@ class Econometrics:
         `independent_tickers`, using the selected `column` (returns by default) of each ticker.
 
         OLS estimates the coefficients that minimise the sum of squared residuals, i.e. the
-        line (or plane) that best explains the dependent ticker from the independent tickers:
+        line (or plane) that best explains the dependent ticker from the independent tickers.
 
-        - beta_hat = (X'X)^-1 X'y
+        The formula is as follows:
+
+        - β̂ = (X'X)⁻¹X'y, with y the dependent ticker's `column` (Return by default) and X the
+          independent tickers' `column` plus a constant column (add_constant=True)
+        - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (cov_type="nonrobust"); "HC0" to "HC3",
+          "cluster" and "HAC" (Newey-West with `maxlags`) use statsmodels' sandwich estimators
+        - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
+        - R² = 1 - e'e / Σ(yₜ - mean(y))²
 
         Each coefficient is the expected change in `dependent_ticker` for a one-unit change in
         that independent ticker, holding the others fixed, and the intercept is what remains
@@ -1720,9 +1864,14 @@ class Econometrics:
         or estimable structure, `Var(e_i) = sigma^2 / w_i`, OLS remains unbiased but is no
         longer the most efficient estimator. WLS restores efficiency by minimising the
         weighted sum of squared residuals, so noisier observations (low weight) count less
-        than precise ones (high weight):
+        than precise ones (high weight).
 
-        - beta_hat = (X'WX)^-1 X'Wy, with W = diag(weights)
+        The formula is as follows:
+
+        - β̂ = (X'WX)⁻¹X'Wy, with W = diag(weights), the same as OLS of √wₜ·yₜ on √wₜ·xₜ
+        - Cov(β̂) = σ̂²·(X'WX)⁻¹, with σ̂² = Σwₜ·eₜ² / (n - k) (cov_type="nonrobust")
+        - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
+          `column` plus a constant, on the dates where the returns and `weights` all have data
 
         With equal weights WLS reduces to OLS. A typical use is down-weighting periods of
         high volatility, so that a few turbulent periods do not dominate the estimated
@@ -1838,9 +1987,14 @@ class Econometrics:
         GLS generalises WLS to an arbitrary error covariance matrix `Var(e) = sigma^2 * Omega`.
         Where WLS only corrects for heteroskedasticity (a diagonal `Omega`), GLS also
         corrects for correlation between the errors of different observations, such as the
-        autocorrelation that is common in financial time series (a non-diagonal `Omega`):
+        autocorrelation that is common in financial time series (a non-diagonal `Omega`).
 
-        - beta_hat = (X' Omega^-1 X)^-1 X' Omega^-1 y
+        The formula is as follows:
+
+        - β̂ = (X'Ω⁻¹X)⁻¹X'Ω⁻¹y
+        - Cov(β̂) = σ̂²·(X'Ω⁻¹X)⁻¹, with σ̂² = e'Ω⁻¹e / (n - k)
+        - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
+          `column` plus a constant (add_constant=True)
 
         Under a correctly specified `Omega` this is the most efficient linear unbiased
         estimator. Note that `omega` must be supplied, for example from a fitted AR(1) error
@@ -1944,9 +2098,15 @@ class Econometrics:
 
         The dependent variable is turned into a binary outcome (1 when the return is
         positive, 0 otherwise) and the model estimates the probability of that outcome
-        through the logistic (sigmoid) function, which maps any value onto the 0 to 1 range:
+        through the logistic (sigmoid) function, which maps any value onto the 0 to 1 range.
 
-        - P(y = 1 | x) = 1 / (1 + e^(-x'beta))
+        The formula is as follows:
+
+        - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
+        - P(yₜ = 1 | xₜ) = 1 / (1 + exp(-xₜ'β)), with xₜ the independent tickers' `column` plus a
+          constant
+        - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Logit)
+        - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
 
         The model is fitted by Maximum Likelihood. Coefficients are log-odds: a one-unit
         increase in an independent ticker changes the log-odds of a positive return by that
@@ -2058,9 +2218,14 @@ class Econometrics:
         As with `get_logistic_regression`, the dependent variable is turned into a binary
         outcome (1 when the return is positive, 0 otherwise). The probability of that outcome
         is modelled through the standard normal cumulative distribution function instead of
-        the logistic function:
+        the logistic function.
 
-        - P(y = 1 | x) = Phi(x'beta)
+        The formula is as follows:
+
+        - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
+        - P(yₜ = 1 | xₜ) = Φ(xₜ'β), with xₜ the independent tickers' `column` plus a constant
+        - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Probit)
+        - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
 
         Where `Phi` is the standard normal CDF. The model is fitted by Maximum Likelihood. A
         positive coefficient means a higher probability of a positive return, but the size of
@@ -2165,9 +2330,17 @@ class Econometrics:
         Where OLS estimates how the average (conditional mean) of the dependent ticker depends
         on the independent tickers, Quantile Regression estimates how a chosen quantile of it
         does. It minimises an asymmetric ("pinball") loss that is smallest at the conditional
-        `tau`-quantile:
+        `tau`-quantile.
 
-        - minimise SUM(tau * max(r_t, 0) + (1 - tau) * max(-r_t, 0)), with r_t = y_t - x_t'beta
+        The formula is as follows:
+
+        - β̂(τ) = argmin Σ(τ·max(uₜ, 0) + (1 - τ)·max(-uₜ, 0)), with uₜ = yₜ - xₜ'β and τ = `tau` (0.5
+          by default)
+        - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
+          `column` plus a constant (add_constant=True)
+        - SE(β̂): statsmodels' kernel sandwich estimator (Epanechnikov kernel, Hall-Sheather bandwidth),
+          or, when `n_bootstrap` > 0, the standard deviation (ddof=1) of β̂ over `n_bootstrap`
+          resampled-pairs fits
 
         With `tau = 0.5` this is the median regression, which is far less sensitive to
         outliers than OLS. Fitting at several quantiles (e.g. 0.05, 0.5 and 0.95) shows how
@@ -2280,10 +2453,17 @@ class Econometrics:
         2. Cross-sectional pass (per period): regress that period's returns of all assets on
         those betas, which gives one estimate of each factor's risk premium per period.
 
-        - First pass: R_i,t = alpha_i + beta_i' * F_t + e_i,t, for each asset i
-        - Second pass: R_i,t = gamma_0,t + gamma_t' * beta_i + u_i,t, for each period t
+        The formula is as follows:
+
+        - First pass: R_i,t = alpha_i + beta_i' * F_t + e_i,t, for each asset i, over the full sample
+        - Second pass: R_i,t = gamma_0,t + gamma_t' * beta_i + u_i,t, for each period t (gamma_0,t only
+          with add_constant=True)
         - Risk premium: gamma_hat = mean_t(gamma_t)
-        - Standard error: SE(gamma_hat) = std_t(gamma_t) / sqrt(T)
+        - Standard error: SE(gamma_hat) = std_t(gamma_t) / sqrt(T), with ddof=1
+        - t = gamma_hat / SE(gamma_hat), with p-values from a Student-t distribution with T - 1 degrees
+          of freedom
+        - R are the asset tickers' `column` (Return by default) and F the factor tickers' `column`
+          (the Benchmark by default)
 
         The risk premium is the average of the per-period estimates, and its standard error
         comes from how much those estimates vary over time. That is the method's key
@@ -2442,12 +2622,19 @@ class Econometrics:
         the same mean, against the two-sided alternative that the means differ. Applied to
         returns it answers whether one asset has had a genuinely different average return
         than another, or whether the difference could be down to chance. By default this is
-        Welch's t-test, which does not assume the two tickers have the same variance:
+        Welch's t-test, which does not assume the two tickers have the same variance.
 
-        - t = (mean_a - mean_b) / sqrt(s_a^2 / n_a + s_b^2 / n_b)
+        The formula is as follows:
 
-        With degrees of freedom from the Welch-Satterthwaite equation. Setting
-        `equal_variance=True` pools the two variances instead (Student's t-test), which is
+        - Welch (the default): t = (mean_a - mean_b) / sqrt(s_a^2 / n_a + s_b^2 / n_b)
+        - Welch-Satterthwaite: df = (s_a^2 / n_a + s_b^2 / n_b)^2 / ((s_a^2 / n_a)^2 / (n_a - 1)
+          + (s_b^2 / n_b)^2 / (n_b - 1))
+        - Student (equal_variance=True): t = (mean_a - mean_b) / (s_p·sqrt(1 / n_a + 1 / n_b)), with
+          s_p^2 = ((n_a - 1)·s_a^2 + (n_b - 1)·s_b^2) / (n_a + n_b - 2) and df = n_a + n_b - 2
+        - s_a^2 and s_b^2 are sample variances (ddof=1) of the two tickers' `column` (Return by
+          default), with a two-sided p-value
+
+        Setting `equal_variance=True` pools the two variances instead (Student's t-test), which is
         slightly more powerful but only valid when the variances are truly equal. Welch's
         version is the safer default since assets rarely share the same volatility. A low
         p-value (e.g. below 0.05) means the difference in means is statistically
@@ -2507,7 +2694,7 @@ class Econometrics:
         | ('ORCL', 'SAP')  |        0.6326 |              2210.92 |    0.5271 |   0.0012 |   0.0007 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
+        returns = self._get_price_column(period, column, per_ticker=True)
 
         rows = {
             (ticker_a, ticker_b): hypothesis_testing_model.get_two_sample_t_test(
@@ -2547,9 +2734,13 @@ class Econometrics:
         `restricted_independent_tickers` and an "unrestricted" one that adds the extra
         tickers. The test checks the null hypothesis that the `q` extra tickers are jointly
         zero, i.e. that adding them does not explain the dependent ticker any better, by
-        comparing how much the Residual Sum of Squares (RSS) drops when they are added:
+        comparing how much the Residual Sum of Squares (RSS) drops when they are added.
+
+        The formula is as follows:
 
         - F = ((RSS_restricted - RSS_unrestricted) / q) / (RSS_unrestricted / (n - k_unrestricted))
+        - Both models are OLS regressions of the dependent ticker's `column` (Return by default),
+          with a constant when add_constant=True
 
         Where `q = k_unrestricted - k_restricted` is the number of added regressors, `n` the
         number of observations and `k_unrestricted` the number of parameters of the larger
@@ -2649,9 +2840,13 @@ class Econometrics:
         `dependent_ticker` are fitted internally and the null hypothesis is that the `q` extra
         tickers are jointly zero. Instead of an F-statistic, the two models are compared
         through the ratio of their likelihoods, which for linear models with normal errors
-        reduces to a function of the two Residual Sums of Squares (RSS):
+        reduces to a function of the two Residual Sums of Squares (RSS).
 
-        - LR = n * ln(RSS_restricted / RSS_unrestricted)
+        The formula is as follows:
+
+        - LR = -2·(ln L_restricted - ln L_unrestricted) = n * ln(RSS_restricted / RSS_unrestricted)
+        - Both models are OLS regressions of the dependent ticker's `column` (Return by default),
+          with a constant when add_constant=True
 
         Under the null this is asymptotically chi-squared distributed with `q` degrees of
         freedom. Where the F-test is exact in small samples under the classical assumptions,
@@ -2756,9 +2951,14 @@ class Econometrics:
         (zero by default). This generalises the t-test reported for each coefficient to
         combinations of coefficients, for example that two coefficients are jointly zero,
         that a coefficient equals a specific value (such as a beta of exactly 1), or that two
-        tickers have the same coefficient:
+        tickers have the same coefficient.
+
+        The formula is as follows:
 
         - W = (R @ beta_hat - r)' @ (R @ Cov(beta_hat) @ R')^-1 @ (R @ beta_hat - r)
+        - F = W / q, F-distributed with (q, n - k) degrees of freedom
+        - beta_hat and the classical Cov(beta_hat) = σ̂²·(X'X)⁻¹ come from the OLS regression of the
+          dependent ticker's `column` (Return by default), with a constant when add_constant=True
 
         Which is asymptotically chi-squared distributed with `q` degrees of freedom. `W / q`
         is reported alongside it as an F-statistic for small samples; for a single
@@ -2897,6 +3097,15 @@ class Econometrics:
         endogenous and that the OLS estimate is unreliable. The test is only as good as the
         instruments: they must be correlated with `suspect_ticker` but not with the error term.
 
+        The formula is as follows:
+
+        - Stage 1: Xₜ = π₀ + π'Zₜ + δ'Wₜ + vₜ, the OLS regression of `suspect_ticker` (X) on a constant,
+          the instruments (Z) and `other_independent_tickers` (W), keeping the residuals v̂ₜ
+        - Stage 2: yₜ = β₀ + β₁·Xₜ + ρ·v̂ₜ + γ'Wₜ + εₜ, the OLS regression of `dependent_ticker` (y)
+        - t = ρ̂ / SE(ρ̂), with the classical OLS standard error and a Student-t distribution with n - k
+          degrees of freedom; endogeneity is flagged when the p-value is below 0.05
+        - All variables are the tickers' `column` (Return by default)
+
         For more information about the method, see the following papers:
 
         - Wu, D-M. (1973). "Alternative Tests of Independence Between Stochastic Regressors
@@ -3032,9 +3241,13 @@ class Econometrics:
         (homoskedasticity). The test regresses the squared residuals of the regression on the
         original independent tickers and checks whether they explain any of the residual
         variance, by testing whether the R-squared of that auxiliary regression is
-        significantly different from zero:
+        significantly different from zero.
 
-        - LM = n * R^2_auxiliary
+        The formula is as follows:
+
+        - Auxiliary regression: e_t^2 = a_0 + a' * x_t + v_t, with e_t the OLS residuals and x_t the
+          independent tickers' `column` (Return by default)
+        - LM = n * R^2_auxiliary (Koenker's studentized form, the statsmodels default)
 
         Which is asymptotically chi-squared distributed with `k - 1` degrees of freedom under
         the null hypothesis of homoskedasticity, where `k` is the number of parameters of the
@@ -3130,13 +3343,16 @@ class Econometrics:
 
         A more general version of `get_breusch_pagan_test`. Instead of regressing the squared
         residuals on only the original independent tickers, the auxiliary regression uses
-        each ticker, its square and every pairwise cross-product:
+        each ticker, its square and every pairwise cross-product.
+
+        The formula is as follows:
 
         - e_t^2 = a_0 + SUM_i(a_i * x_it) + SUM_i(b_i * x_it^2) + SUM_{i<j}(c_ij * x_it * x_jt) + v_t
+        - LM = n * R^2_auxiliary, chi-squared with as many degrees of freedom as the auxiliary
+          regression has terms besides a_0
+        - e_t are the OLS residuals and x_it the independent tickers' `column` (Return by default)
 
-        The test statistic is `LM = n * R^2_auxiliary`, chi-squared distributed with degrees of
-        freedom equal to the number of terms in the auxiliary regression, under the null
-        hypothesis of homoskedasticity (constant residual variance). A low p-value means the
+        The null hypothesis is homoskedasticity (constant residual variance). A low p-value means the
         regression's standard errors are unreliable and a robust `cov_type` should be used.
         Because it also detects non-linear patterns in the residual variance, White's test
         makes fewer assumptions than Breusch-Pagan, at the cost of power when there are many
@@ -3227,9 +3443,15 @@ class Econometrics:
 
         OLS standard errors assume that the residuals of consecutive periods are
         uncorrelated. The Durbin-Watson statistic compares each residual with the one before
-        it:
+        it.
+
+        The formula is as follows:
 
         - DW = SUM_{t=2}^{n}((e_t - e_(t-1))^2) / SUM_{t=1}^{n}(e_t^2)
+        - e_t are the residuals of the OLS regression of the dependent ticker's `column` (Return by
+          default) on the independent tickers' `column`
+        - Interpretation: DW < 1.5 positive autocorrelation likely, DW > 2.5 negative autocorrelation
+          likely, otherwise no strong evidence
 
         The statistic ranges from 0 to 4. A value near 2 means no first-order
         autocorrelation; values below 2 point to positive autocorrelation (consecutive
@@ -3332,9 +3554,13 @@ class Econometrics:
         not bias regression coefficients but inflates their standard errors. Individual
         coefficients can then look insignificant, and swing wildly between samples, even when
         the regressors jointly explain the dependent variable well. VIF measures this for
-        each ticker by regressing it on all the other tickers:
+        each ticker by regressing it on all the other tickers.
+
+        The formula is as follows:
 
         - VIF_i = 1 / (1 - R^2_i)
+        - R^2_i is the R-squared of the OLS regression of ticker i's `column` (Return by default) on a
+          constant and every other ticker's `column`
 
         Where `R^2_i` is the R-squared of regressing ticker `i` on all other tickers. A VIF of
         1 means the ticker is uncorrelated with the others; a VIF of `V` means the variance of
@@ -3418,8 +3644,12 @@ class Econometrics:
         missing piece. RESET tests for this by adding powers of the fitted values (`fitted^2`,
         ..., `fitted^power`) to the regression and checking whether they are jointly
         significant with an F-test that compares the original (restricted) and augmented
-        (unrestricted) model:
+        (unrestricted) model.
 
+        The formula is as follows:
+
+        - Augmented model: y_t = x_t' * beta + SUM_{j=2}^{power}(gamma_j * yhat_t^j) + u_t, with yhat_t
+          the fitted values of the original OLS regression and `power` = 3 by default
         - F = ((RSS_r - RSS_u) / q) / (RSS_u / (n - k_u))
 
         Where `RSS_r` and `RSS_u` are the residual sums of squares of both models, `q` is the
@@ -3521,9 +3751,13 @@ class Econometrics:
         The sample is split at `break_date` into a "before" and "after" period, a regression
         is fitted on each part separately and on the full sample, and an F-test checks whether
         allowing the coefficients to differ between the two periods significantly reduces the
-        residual sum of squares:
+        residual sum of squares.
+
+        The formula is as follows:
 
         - F = ((RSS_pooled - (RSS_1 + RSS_2)) / k) / ((RSS_1 + RSS_2) / (n - 2k))
+        - The second sub-period starts at the first date on or after `break_date`, and `k` includes
+          the constant when add_constant=True
 
         Where `RSS_pooled` is the residual sum of squares of the full-sample regression,
         `RSS_1` and `RSS_2` those of the two sub-periods, `k` the number of parameters and `n`
@@ -3663,6 +3897,15 @@ class Econometrics:
         `dependent_ticker`, if at all, THROUGH `endogenous_ticker`) allows recovering a
         cleaner estimate of the causal pass-through.
 
+        The formula is as follows:
+
+        - Z = [1, exogenous tickers, instruments] and X = [1, exogenous tickers, endogenous tickers], all
+          in `column` (Return by default), the constant only with add_constant=True
+        - Stage 1: X̂ = Z(Z'Z)⁻¹Z'X, the fitted values of each endogenous ticker regressed on Z
+        - Stage 2: β̂ = (X̂'X)⁻¹X̂'y
+        - Cov(β̂) = σ̂²·(X̂'X̂)⁻¹, with σ̂² = Σ(yₜ - xₜ'β̂)² / (n - k) (linearmodels IV2SLS with
+          cov_type="unadjusted" and debiased=True)
+
         Args:
             dependent_ticker (str): The dependent (predicted) asset.
             endogenous_ticker (str | list[str]): The endogenous regressor asset(s) --
@@ -3783,13 +4026,21 @@ class Econometrics:
         tickers. The estimate rests on parallel trends, so the first check is whether both
         groups moved alike before the event.
 
+        The formula is as follows:
+
+        - yᵢₜ = β₀ + β₁·Treatedᵢ + β₂·Postₜ + δ·(Treatedᵢ × Postₜ) + εᵢₜ, fitted by OLS with classical
+          standard errors on the stacked (ticker, date) panel of `column` (Return by default)
+        - Treatedᵢ = 1 for `treated_tickers`, Postₜ = 1 on or after `treatment_date`
+        - δ̂ = (mean(y_treated,post) - mean(y_treated,pre)) - (mean(y_control,post) - mean(y_control,pre))
+
         Args:
             treated_tickers (str | list[str]): The asset(s) subject to the event/treatment.
             treatment_date (str): The date the event/treatment occurs, in the same format
             accepted by `pd.Timestamp`. Observations on or after this date are `Post = 1`.
             control_tickers (str | list[str] | None, optional): The untreated comparison
-            asset(s). Defaults to None, which uses every ticker (and "Benchmark", if
-            present) NOT in `treated_tickers`.
+            asset(s). Defaults to None, which uses every ticker NOT in `treated_tickers`,
+            excluding "Benchmark" (pass `control_tickers="Benchmark"` to use the benchmark as
+            the control group).
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to use as the outcome.
@@ -3833,7 +4084,7 @@ class Econometrics:
         | Treated x Post |       -0.0246 |       0.0511 |       -0.4817 |    0.6309 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
+        returns = self._get_price_column(period, column, per_ticker=True)
 
         treated_tickers = (
             [treated_tickers] if isinstance(treated_tickers, str) else treated_tickers
@@ -3841,7 +4092,9 @@ class Econometrics:
 
         if control_tickers is None:
             control_tickers = [
-                ticker for ticker in returns.columns if ticker not in treated_tickers
+                ticker
+                for ticker in self._get_tickers()
+                if ticker not in treated_tickers
             ]
         elif isinstance(control_tickers, str):
             control_tickers = [control_tickers]
@@ -3916,6 +4169,16 @@ class Econometrics:
         local linear regressions of `dependent_ticker`'s return on the (cutoff-centered)
         `running_variable_ticker` value, one on each side of `cutoff`, and reports the
         gap between the two fitted lines exactly at the cutoff.
+
+        The formula is as follows:
+
+        - x̃ₜ = xₜ - cutoff, keeping the observations with |x̃ₜ| < h, where xₜ is the running ticker's
+          `column` (Return by default) and h = `bandwidth`, or half the range of xₜ by default
+        - Each side (x̃ₜ < 0 and x̃ₜ ≥ 0): yₜ = a + b·x̃ₜ + eₜ, fitted by OLS (kernel="uniform", the
+          default) or by WLS with weights 1 - |x̃ₜ| / h (kernel="triangular")
+        - Discontinuity = a_right - a_left, with SE = √(SE(a_right)² + SE(a_left)²)
+        - t = Discontinuity / SE, with a Student-t distribution on the two sides' residual degrees of
+          freedom combined
 
         Args:
             dependent_ticker (str): The outcome asset.
@@ -4018,6 +4281,18 @@ class Econometrics:
         otherwise be -- comparing only periods that LOOK similar on `covariate_tickers`
         (to control for the possibility that `treatment_ticker` tends to move on the
         same periods/regimes that also independently affect `dependent_ticker`)?"
+
+        The formula is as follows:
+
+        - Dₜ = 1 if the treatment ticker's `column` (Return by default) is above `treatment_threshold`
+          (0 by default), else 0
+        - e(xₜ) = 1 / (1 + exp(-xₜ'β)), a logit of Dₜ on the covariate tickers (plus a constant)
+        - Matching on ℓₜ = ln(e / (1 - e)): each treated period, in order, takes the nearest unmatched
+          control period (one-to-one, without replacement) if |ℓ_treated - ℓ_control| ≤ caliper, which
+          defaults to 0.2 × the standard deviation (ddof=1) of ℓ
+        - ATT = (1 / m)·Σ(y_treated - y_control) over the m matched pairs
+        - SE = std(y_treated - y_control, ddof=1) / √m, with a Student-t distribution with m - 1 degrees
+          of freedom
 
         Args:
             dependent_ticker (str): The outcome asset.
@@ -4122,12 +4397,19 @@ class Econometrics:
         control builds one from the data: a weighted average of unaffected "donor" tickers,
         with weights chosen so it tracks the treated ticker as closely as possible before the
         event. If that pre-event fit is good, the synthetic control's path after the event
-        estimates what would have happened without it, and the gap is the estimated effect:
+        estimates what would have happened without it, and the gap is the estimated effect.
+
+        The formula is as follows:
 
         - Weights: w* = argmin_w ||treated_pre - donors_pre @ w||^2, subject to w >= 0 and
-        sum(w) = 1
+          sum(w) = 1 (SLSQP), with pre the dates before `treatment_period`
         - Synthetic control: synthetic_t = donors_t @ w*, for every period t
         - Treatment effect: gap_t = treated_t - synthetic_t, for every post-event period t
+        - Average Treatment Effect = mean of gap_t over the post-event periods
+        - RMSPE ratio = sqrt(mean(gap_post^2)) / sqrt(mean(gap_pre^2))
+        - P-Value = the share of the treated ticker's and every placebo donor's RMSPE ratios that are at
+          least the treated ticker's ratio
+        - All series are the tickers' `column` (Return by default)
 
         Unlike difference-in-differences, this does not require the treated and comparison
         units to follow parallel trends, as the synthetic control is built to match the
@@ -4409,6 +4691,14 @@ class Econometrics:
         mean. See `panel_data_model.get_fixed_effects` for the full formula and
         references.
 
+        The formula is as follows:
+
+        - ỹᵢₜ = yᵢₜ - mean_t(yᵢₜ) and x̃ᵢₜ = xᵢₜ - mean_t(xᵢₜ) (entity_effects=True, the default);
+          time_effects=True also removes each date's mean (two-way fixed effects)
+        - β̂_FE = (X̃'X̃)⁻¹X̃'ỹ, without a separate constant (linearmodels PanelOLS, unadjusted covariance)
+        - Entity Effect: αᵢ = mean_t(yᵢₜ - xᵢₜ'β̂_FE); Time Effect: λₜ = mean_i(yᵢₜ - xᵢₜ'β̂_FE)
+        - yᵢₜ is each dependent ticker's `column` (Return by default)
+
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
@@ -4527,6 +4817,14 @@ class Econometrics:
         Fixed Effects if entity effects are indeed uncorrelated with the
         regressor(s) (see `get_hausman_test` to check that assumption).
 
+        The formula is as follows:
+
+        - θᵢ = 1 - √(σ²_ε / (σ²_ε + Tᵢ·σ²_u)), with the Swamy-Arora estimates of the idiosyncratic (σ²_ε)
+          and entity (σ²_u) variance components
+        - y*ᵢₜ = yᵢₜ - θᵢ·mean_t(yᵢₜ) and x*ᵢₜ = xᵢₜ - θᵢ·mean_t(xᵢₜ), the constant becoming 1 - θᵢ
+        - β̂_RE = OLS of y* on x* (linearmodels RandomEffects), with yᵢₜ each dependent ticker's `column`
+          (Return by default)
+
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
@@ -4627,6 +4925,14 @@ class Econometrics:
         `independent_tickers`/`independent_column` shape the panel, and why
         `independent_column` is generally the more reliable choice here).
 
+        The formula is as follows:
+
+        - H = (β̂_FE - β̂_RE)'·[Var(β̂_FE) - Var(β̂_RE)]⁻¹·(β̂_FE - β̂_RE), over the k slope coefficients
+          the two models share (a pseudo-inverse when the difference is singular, and H floored at 0)
+        - H is chi-squared with k degrees of freedom; Random Effects is rejected when the p-value is
+          below 0.05
+        - β̂_FE comes from `get_fixed_effects` with entity effects only and β̂_RE from `get_random_effects`
+
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
@@ -4720,6 +5026,14 @@ class Econometrics:
         result -- see `time_series_model.get_arima_forecast` for the full formula,
         estimation method (exact Maximum Likelihood via the Kalman filter) and its
         practical caveats.
+
+        The formula is as follows:
+
+        - y'ₜ = ΔᵈYₜ, the `column` level (Adj Close by default) differenced d times (d = 1 by default)
+        - y'ₜ - μ = Σ(i=1..p) φᵢ·(y'ₜ₋ᵢ - μ) + εₜ + Σ(j=1..q) θⱼ·εₜ₋ⱼ, with p = q = 1 by default and μ the
+          mean (d = 0) or drift (d ≥ 1) of y'ₜ when include_constant=True, and μ = 0 otherwise
+        - Fitted by exact Maximum Likelihood via the Kalman filter (statsmodels ARIMA)
+        - Forecast: the conditional mean E[Y_T+h | Y_1..Y_T] for h = 1..`forecast_steps`, in levels
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -4822,9 +5136,14 @@ class Econometrics:
         A VAR models several series jointly: each ticker's value is regressed on `lags` past
         values of all tickers, including its own. Each asset's future can therefore depend on
         its own history and on the history of the others, without deciding in advance which
-        one drives which:
+        one drives which.
 
-        - Y_t = c + SUM_{l=1}^{lags}(Phi_l * Y_(t-l)) + e_t
+        The formula is as follows:
+
+        - Y_t = c + SUM_{l=1}^{lags}(Phi_l * Y_(t-l)) + e_t, with Y_t every ticker's `column` (Return by
+          default) and `lags` = 1 by default
+        - Each equation is an OLS regression on a constant and the `lags` lagged values of all tickers
+        - Forecast: Yhat_(T+h) = c + SUM_{l=1}^{lags}(Phi_l * Yhat_(T+h-l)), with Yhat_s = Y_s for s <= T
 
         Where `Y_t` holds the values of all tickers at time `t` and each `Phi_l` is a matrix of
         coefficients. Because every equation has the same regressors, the model is estimated
@@ -4934,9 +5253,11 @@ class Econometrics:
     ) -> pd.DataFrame:
         """
         Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance
-        and trace out the Impulse Response Function (IRF) -- how a one-standard-
-        deviation shock to each ticker propagates through the whole system over
-        `periods` periods ahead.
+        and trace out the Impulse Response Function (IRF) -- how a shock to each
+        ticker propagates through the whole system over `periods` periods ahead. The
+        shock is one standard deviation of the orthogonalized innovation when
+        `orthogonalized=True` (the default) and a unit shock to the reduced-form
+        residual when `orthogonalized=False`.
 
         Also known as: IRF.
 
@@ -4945,6 +5266,15 @@ class Econometrics:
         ticker (including itself) -- see `time_series_model.get_impulse_response_function`
         for the full formula, the Cholesky-orthogonalization used to identify the
         shocks, and why the ordering of tickers is an identifying assumption.
+
+        The formula is as follows:
+
+        - Ψ₀ = I and Ψₙ = Σ(l=1..min(n, p)) Φₗ·Ψₙ₋ₗ, the moving-average matrices of the VAR(p) fitted on
+          every ticker's `column` (Return by default), p = `lags` (1 by default)
+        - Σᵤ = Û'Û / (T - k·p - 1) = P·P', with P the lower-triangular Cholesky factor
+        - Θₙ = Ψₙ·P (orthogonalized=True, a one-standard-deviation shock) or Θₙ = Ψₙ
+          (orthogonalized=False, a unit reduced-form shock)
+        - Response of ticker i, n periods after a shock to ticker j: Θₙ[i, j], for n = 0..`periods`
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -5057,6 +5387,13 @@ class Econometrics:
         classic signature of a ticker that is initially self-driven but increasingly
         explained by the rest of the system over time.
 
+        The formula is as follows:
+
+        - Θₙ = Ψₙ·P, the orthogonalized moving-average matrices of `get_impulse_response_function`, from
+          a VAR(p) on every ticker's `column` (Return by default), p = `lags` (1 by default)
+        - Share of ticker j's shock in ticker i's h-step forecast error variance:
+          ωᵢⱼ(h) = Σ(n=0..h-1) Θₙ[i, j]² / Σ(m=1..k) Σ(n=0..h-1) Θₙ[i, m]², for h = 1..`periods`
+
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
@@ -5161,6 +5498,15 @@ class Econometrics:
         `time_series_model.get_vecm_forecast` for the full formula, estimation method
         and verification notes.
 
+        The formula is as follows:
+
+        - Rank r = the number of leading Johansen trace statistics (det_order=0, `k_ar_diff` lags) that
+          exceed their critical value at `significance` (5% by default); r = 0 raises an error
+        - ΔYₜ = α·β'·Yₜ₋₁ + Σ(i=1..k) Γᵢ·ΔYₜ₋ᵢ + c + εₜ, with Yₜ every ticker's `column` level (Adj Close by
+          default), k = `k_ar_diff` (1 by default) and c a constant outside the cointegrating relation
+          (statsmodels VECM with deterministic="co"), fitted by Maximum Likelihood
+        - Forecast: the fitted recursion run forward `forecast_steps` periods, in levels
+
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
@@ -5251,8 +5597,7 @@ class Econometrics:
 
         Also known as: RMSD (Root Mean Squared Deviation).
 
-        See `forecast_evaluation_model.get_rmse` for the formula. This controller
-        method compares two ASSETS' series directly, treating one as a naive
+        This controller method compares two ASSETS' series directly, treating one as a naive
         "forecast" proxy for the other -- a simple, tracking-error style measure of
         how closely two series move together in absolute deviation terms (e.g. a
         portfolio versus a benchmark, or one asset as a naive stand-in forecast for
@@ -5265,6 +5610,11 @@ class Econometrics:
         Deviation of the return differences, which leaves out their average, while the RMSE
         includes it. The RMSE is per period, so a daily figure is usually multiplied by the
         square root of 252 to annualize it.
+
+        The formula is as follows:
+
+        - RMSE = √((1 / n)·Σ(aₜ - bₜ)²), with aₜ and bₜ the two tickers' `column` (Return by default) on
+          the n dates where both have data
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -5303,7 +5653,7 @@ class Econometrics:
         | ('VOO', 'Benchmark') | 0.001  |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
+        returns = self._get_price_column(period, column, per_ticker=True)
 
         values = {
             (ticker_a, ticker_b): forecast_evaluation_model.get_rmse(
@@ -5339,9 +5689,12 @@ class Econometrics:
         Calculate the Mean Absolute Error (MAE) between every unordered pair of tickers'
         series in the Toolkit instance.
 
-        MAE is the average absolute difference between two series:
+        MAE is the average absolute difference between two series.
 
-        - MAE = mean(|actual_t - forecast_t|)
+        The formula is as follows:
+
+        - MAE = (1 / n)·Σ|aₜ - bₜ|, with aₜ and bₜ the two tickers' `column` (Return by default) on the
+          n dates where both have data
 
         It is expressed in the units of the series itself (e.g. a return difference) and
         answers "how far apart are the two series in a typical period". Every difference counts
@@ -5393,7 +5746,7 @@ class Econometrics:
         | ('IAU', 'GLDM') | 0.0003 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
+        returns = self._get_price_column(period, column, per_ticker=True)
 
         values = {
             (ticker_a, ticker_b): forecast_evaluation_model.get_mae(
@@ -5455,6 +5808,15 @@ class Econometrics:
           (`lags` controls the VAR order, defaulting to every other ticker in the
           Toolkit instance if not given); only that ticker's own forecast column
           is scored against its holdout.
+
+        The formula is as follows:
+
+        - Training sample: the first int(`train_fraction`·n) observations (80% by default) of the
+          `column` level (Adj Close by default); the remaining H observations are the holdout
+        - Ŷₜ: the H-step forecast of the model fitted on the training sample only, an ARIMA(p, d, q)
+          (model="arima", ARIMA(1, 1, 1) by default) or a VAR(`lags`) on the ticker and `other_tickers`
+          (model="var")
+        - RMSE = √((1 / H)·Σ(Yₜ - Ŷₜ)²) and MAE = (1 / H)·Σ|Yₜ - Ŷₜ|, over the holdout
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -5616,6 +5978,16 @@ class Econometrics:
         window, so a single event is weak evidence; studies average the CARs of many events
         of the same kind.
 
+        The formula is as follows:
+
+        - Market model: Rₜ = α + β·R_m,t + εₜ, fitted by OLS on the daily `column` (Return by default) of
+          the ticker and the Benchmark over the `estimation_window` (250) trading days that end
+          `gap_days` (30) trading days before the event
+        - ARₜ = Rₜ - (α̂ + β̂·R_m,t), for t = -`pre_event_days` .. +`post_event_days` (10 and 10)
+        - CAR = Σ ARₜ over the L = `pre_event_days` + `post_event_days` + 1 event-window days
+        - t = CAR / √(L·σ̂²), with σ̂² = Σε̂ₜ² / (N - 2) over the N estimation-window days and a Student-t
+          distribution with N - 2 degrees of freedom
+
         Also known as: CAR analysis, abnormal returns analysis, market model event
         study.
 
@@ -5675,10 +6047,14 @@ class Econometrics:
         | Beta                           |   2.0781 |
         | Estimation Window Observations | 250      |
         """
-        # Not `_get_price_column`: its daily branch checks intraday for emptiness.
-        returns = self._historical_data["daily"][column].dropna()
-
         dependent_ticker = dependent_ticker or self._get_tickers()[0]
+
+        # The windows count trading days of the dependent ticker and the Benchmark
+        # together, so only their common dates are kept: another ticker's missing
+        # dates do not shorten or shift the estimation and event windows.
+        returns = self._get_price_column("daily", column, per_ticker=True)[
+            [dependent_ticker, BENCHMARK_TICKER]
+        ].dropna()
 
         result = event_study_model.get_event_study(
             returns=returns[dependent_ticker],

@@ -943,3 +943,22 @@ def test_real_interest_rate_and_misery_index_line_up_oecd_and_gmdb_names(monkeyp
     assert sorted(real_rate.columns) == ["Germany", "Russian Federation"]
     assert real_rate.loc["2023", "Russian Federation"] == pytest.approx(0.05)
     assert misery.loc["2022", "Russian Federation"] == pytest.approx(0.23)
+
+
+def test_an_unpublished_bis_period_is_no_data(monkeypatch):
+    def not_published(url, timeout):
+        response = requests.Response()
+        response.status_code = 404
+        raise requests.HTTPError(response=response)
+
+    monkeypatch.setattr(bis_model, "get_request", not_published)
+    assert bis_model.request_csv("https://stats.bis.org/x", timeout=1) == ""
+
+    def unavailable(url, timeout):
+        response = requests.Response()
+        response.status_code = 503
+        raise requests.HTTPError(response=response)
+
+    monkeypatch.setattr(bis_model, "get_request", unavailable)
+    with pytest.raises(requests.HTTPError):
+        bis_model.request_csv("https://stats.bis.org/x", timeout=1)

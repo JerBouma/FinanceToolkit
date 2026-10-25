@@ -9039,11 +9039,12 @@ class Ratios:
 
         The formula is as follows:
 
-            Forward P/E = Stock Price / Estimated EPS Average
+        - Forward P/E = Latest Stock Price / Estimated EPS Average
 
-        On quarterly data the estimated EPS of a period is the sum of the estimates of that
-        quarter and the next three, so the ratio compares the price with a year of estimated
-        earnings, as it does with yearly data.
+        Where the latest stock price is the most recent traded close, used for every estimate period. On
+        quarterly data the estimated EPS of a period is the sum of the estimates of that quarter and the
+        next three, so the ratio compares the price with a year of estimated earnings, as it does with
+        yearly data.
 
         The forward P/E is the standard valuation multiple in equity research because prices
         look ahead, but it rests on consensus estimates, which tend to be revised as results

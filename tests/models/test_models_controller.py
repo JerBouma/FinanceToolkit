@@ -553,3 +553,136 @@ def test_wacc_with_a_period_missing_from_the_balance_sheet():
 
     assert not wacc.empty
     assert wacc.loc[("AAPL", "Weighted Average Cost of Capital"), "2020"] > 0
+
+
+def _use_quarterly_statements(models_module, monkeypatch, quarters=10):
+    """Swap in ten quarters of statements built from the yearly ones, with a different
+    scale per quarter so consecutive quarters and quarters a year apart differ."""
+    import numpy as np
+    import pandas as pd
+
+    columns = pd.period_range("2020Q1", periods=quarters, freq="Q")
+    factors = 1 + 0.1 * np.sin(np.arange(quarters) * 1.3) + 0.02 * np.arange(quarters)
+
+    def to_quarterly(statement):
+        values = np.column_stack(
+            [
+                statement.iloc[:, quarter % statement.shape[1]].to_numpy(dtype=float)
+                * factor
+                for quarter, factor in enumerate(factors)
+            ]
+        )
+        # Scale the rows differently as well, so ratios of two items change over time.
+        row_scale = 1 + 0.03 * np.cos(
+            np.outer(np.arange(len(statement)), np.arange(quarters))
+        )
+        return pd.DataFrame(values * row_scale, index=statement.index, columns=columns)
+
+    for name in [
+        "_balance_sheet_statement",
+        "_income_statement",
+        "_cash_flow_statement",
+    ]:
+        monkeypatch.setattr(
+            models_module, name, to_quarterly(getattr(models_module, name))
+        )
+    monkeypatch.setattr(models_module, "_quarterly", True)
+
+
+def test_piotroski_score_compares_quarters_year_over_year(models_module, monkeypatch):
+    yearly = models_module.get_piotroski_score()
+    # On yearly data the change-based criteria compare with the previous column.
+    balance = models_module._balance_sheet_statement
+    current_ratio = (
+        balance.loc[:, "Total Current Assets", :]
+        / balance.loc[:, "Total Current Liabilities", :]
+    )
+    for ticker in models_module._tickers:
+        for period in yearly.columns:
+            assert yearly.loc[
+                (ticker, "Change in Current Ratio Criteria"), period
+            ] == int(
+                current_ratio.loc[ticker, period]
+                > current_ratio.loc[ticker, period - 1]
+            )
+
+    _use_quarterly_statements(models_module, monkeypatch)
+    quarterly = models_module.get_piotroski_score()
+    balance = models_module._balance_sheet_statement
+    income = models_module._income_statement
+    current_ratio = (
+        balance.loc[:, "Total Current Assets", :]
+        / balance.loc[:, "Total Current Liabilities", :]
+    )
+    gross_margin = (
+        income.loc[:, "Revenue", :] - income.loc[:, "Cost of Goods Sold", :]
+    ) / income.loc[:, "Revenue", :]
+
+    # One quarter for the beginning total assets plus four for the year-over-year comparison.
+    assert list(quarterly.columns) == list(balance.columns[5:])
+    for ticker in models_module._tickers:
+        for period in quarterly.columns:
+            scores = quarterly.loc[ticker, period]
+            assert scores["Change in Current Ratio Criteria"] == int(
+                current_ratio.loc[ticker, period]
+                > current_ratio.loc[ticker, period - 4]
+            )
+            assert scores["Gross Margin Criteria"] == int(
+                gross_margin.loc[ticker, period] > gross_margin.loc[ticker, period - 4]
+            )
+
+
+def test_piotroski_score_trailing_uses_the_balances_a_year_apart(
+    models_module, monkeypatch
+):
+    _use_quarterly_statements(models_module, monkeypatch)
+    piotroski = models_module.get_piotroski_score(trailing=4)
+    balance = models_module._balance_sheet_statement
+    income = models_module._income_statement
+
+    total_assets = balance.loc[:, "Total Assets", :]
+    beginning_assets = total_assets.shift(4, axis=1)
+    leverage = balance.loc[:, "Long Term Debt", :] / (
+        (beginning_assets + total_assets) / 2
+    )
+    return_on_assets = (
+        income.loc[:, "Net Income", :].T.rolling(4).sum().T / beginning_assets
+    )
+
+    assert not piotroski.empty
+    for ticker in models_module._tickers:
+        for period in piotroski.columns:
+            scores = piotroski.loc[ticker, period]
+            assert scores["Return on Assets Criteria"] == int(
+                return_on_assets.loc[ticker, period] > 0
+            )
+            assert scores["Change in Leverage Criteria"] == int(
+                leverage.loc[ticker, period] < leverage.loc[ticker, period - 4]
+            )
+
+
+def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeypatch):
+    import pandas as pd
+
+    yearly = models_module.get_beneish_m_score(rounding=10)
+    revenue = models_module._income_statement.loc[:, "Revenue", :]
+    pd.testing.assert_frame_equal(
+        yearly.xs("Sales Growth Index", level=1).dropna(axis=1, how="all"),
+        (revenue / revenue.shift(1, axis=1)).round(10).dropna(axis=1, how="all"),
+        check_names=False,
+    )
+
+    _use_quarterly_statements(models_module, monkeypatch)
+    quarterly = models_module.get_beneish_m_score(rounding=10)
+    revenue = models_module._income_statement.loc[:, "Revenue", :]
+    expected = (revenue / revenue.shift(4, axis=1)).round(10)
+
+    pd.testing.assert_frame_equal(
+        quarterly.xs("Sales Growth Index", level=1),
+        expected.loc[:, quarterly.columns],
+        check_names=False,
+    )
+    # The first year has nothing to compare with.
+    m_score = quarterly.xs("Beneish M-Score", level=1)
+    assert m_score.loc[:, : revenue.columns[3]].isna().all().all()
+    assert m_score.loc[:, revenue.columns[4] :].notna().all().all()

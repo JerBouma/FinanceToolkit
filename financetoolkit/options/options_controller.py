@@ -1795,13 +1795,16 @@ class Options:
 
         Put-Call Parity states that, for European options sharing the same strike price
         and time to expiration, the following relationship must hold in order to prevent
-        arbitrage:
+        arbitrage: C - P = S * e^(-q * t) - K * e^(-r * t).
 
-        - C - P = S * e^(-q * t) - K * e^(-r * t)
+        The formula is as follows:
 
-        Where C is the call option price, P is the put option price, S is the stock
-        price, K is the strike price, r is the risk-free rate, q is the dividend yield
-        and t is the time to expiration.
+        - Parity Gap = (C - P) - (S * e^(-q * t) - K * e^(-r * t))
+
+        Where C is the Black-Scholes call option price, P is the Black-Scholes put option
+        price, S is the stock price, K is the strike price, r is the continuously compounded
+        risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)) and t is
+        the time to expiration in years (days / 365).
 
         This method computes the Black-Scholes call and put price for each ticker,
         strike price and time to expiration and then calculates the parity gap, i.e. the
@@ -2164,23 +2167,24 @@ class Options:
 
         A binary option pays out a fixed amount if the option expires in-the-money and
         nothing otherwise. Two variants are supported through the ``option_type``
-        parameter:
+        parameter: "cash-or-nothing" (the default) pays a fixed cash amount and
+        "asset-or-nothing" pays the value of the underlying asset if the option expires
+        in-the-money.
 
-        - "cash-or-nothing": pays a fixed cash amount if the option expires
-          in-the-money.
+        The formula is as follows:
 
-            - Call = cash_payout * e^(—r * t) * N(d2)
-            - Put = cash_payout * e^(—r * t) * N(—d2)
+        - d1 = (ln(S / K) + (r - q + σ² / 2) * t) / (σ * √t)
+        - d2 = d1 - σ * √t
+        - Cash-or-Nothing Call = Cash Payout * e^(-r * t) * N(d2), with Cash Payout defaulting to 1
+        - Cash-or-Nothing Put = Cash Payout * e^(-r * t) * N(-d2)
+        - Asset-or-Nothing Call = S * e^(-q * t) * N(d1)
+        - Asset-or-Nothing Put = S * e^(-q * t) * N(-d1)
 
-        - "asset-or-nothing": pays the value of the underlying asset if the option
-          expires in-the-money.
-
-            - Call = S * e^(—q * t) * N(d1)
-            - Put = S * e^(—q * t) * N(—d1)
-
-        Where S is the stock price, r is the risk-free rate, q is the dividend yield, t
-        is the time to expiration, N(d1) is the cumulative normal distribution of d1 and
-        N(d2) is the cumulative normal distribution of d2.
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, r is the continuously compounded risk-free rate, q is the continuous dividend
+        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
+        of the daily returns over the trailing 252 trading days times √252), t is the time to
+        expiration in years (days / 365) and N is the cumulative standard normal distribution.
 
         Also known as: digital option, all-or-nothing option, cash-or-nothing option,
         asset-or-nothing option.
@@ -2358,24 +2362,31 @@ class Options:
         model instead derives a closed-form approximation by assuming the early-exercise
         boundary is flat in steps: once the stock price crosses the trigger price,
         immediate exercise is assumed optimal. The option's life is split at
-        t1 = ½(√5 — 1) * T into two periods, each with its own flat trigger price, which
+        t1 = ½(√5 - 1) * T into two periods, each with its own flat trigger price, which
         brings the price closer to the exact American value than a single flat trigger.
 
-        The trigger prices (call, cost of carry b = r - q smaller than r) are:
+        The formula is as follows (for a call, with cost of carry b = r - q smaller than r):
 
-        - β = (0.5 — b / σ²) + sqrt((b / σ² — 0.5)² + 2r / σ²)
-        - B∞ = β / (β — 1) * K
-        - B0 = max(K, r / (r — b) * K)
-        - h(t) = —(b * t + 2σ√t) * K² / ((B∞ — B0) * B0)
-        - I(t) = B0 + (B∞ — B0) * (1 — e^h(t)),  with I1 = I(t1) and I2 = I(T)
+        - β = (0.5 - b / σ²) + √((b / σ² - 0.5)² + 2r / σ²)
+        - B∞ = β / (β - 1) * K
+        - B0 = MAX(K, r / (r - b) * K)
+        - h(t) = -(b * t + 2σ√t) * K² / ((B∞ - B0) * B0)
+        - I(t) = B0 + (B∞ - B0) * (1 - e^h(t)), with I1 = I(t1) and I2 = I(T)
+        - Call = MAX(Approximation, European Black-Scholes Call, MAX(S - K, 0)), where the Approximation is
+          S - K when S ≥ I2 and otherwise combines univariate (first period) and bivariate (both periods)
+          normal terms, see ``black_scholes_model.get_bjerksund_stensland``
+        - Put (S, K, T, r, b, σ) = Call (K, S, T, r - b, -b, σ), the put-call transformation
 
-        If S ≥ I2, immediate exercise is optimal and the value is S — K. Otherwise the
-        value combines univariate (first period) and bivariate (both periods) normal
-        terms, see ``black_scholes_model.get_bjerksund_stensland``. When b ≥ r early
-        exercise of a call is never optimal and the value is the Black-Scholes price.
-        American puts are priced through the put-call transformation
-        AmericanPut(S, K, T, r, b, σ) = AmericanCall(K, S, T, r — b, —b, σ). At zero days
-        to expiration the value is the exercise value.
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, r is the continuously compounded risk-free rate, q is the continuous dividend
+        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
+        of the daily returns over the trailing 252 trading days times √252) and T is the time
+        to expiration in years (days / 365).
+
+        When b ≥ r early exercise of a call is not optimal and the value is the Black-Scholes
+        price (floored at the exercise value). Where the boundary I2 falls to or below the
+        strike, a 1,000-step binomial tree prices the option instead. At zero days to
+        expiration the value is the exercise value.
 
         See: Bjerksund, P., & Stensland, G. (2002), "Closed Form Valuation of American
         Options", Working paper, NHH, as presented in Haug, E. G. (2007), "The Complete
@@ -2551,15 +2562,22 @@ class Options:
         The Monte Carlo method prices an option by simulating a large number of possible
         future paths for the underlying stock price under the risk-neutral measure,
         computing the option's payoff at expiration for each simulated path, and then
-        discounting the average payoff back to the present:
+        discounting the average payoff back to the present.
 
-        - S(t + Δt) = S(t) * e^((r — q — σ²/2) * Δt + σ * √Δt * Z)
-        - Call Price = e^(—r * T) * mean(max(S(T) — K, 0))
-        - Put Price = e^(—r * T) * mean(max(K — S(T), 0))
+        The formula is as follows:
 
-        Where S(t) is the stock price at time t, r is the risk-free rate, q is the
-        dividend yield, σ is the volatility, Δt is the length of a single time step and
-        Z is a standard normal random variable.
+        - Δt = T / Time Steps, with Time Steps defaulting to 100
+        - S(t + Δt) = S(t) * e^((r - q - σ² / 2) * Δt + σ * √Δt * Z)
+        - Call Price = e^(-r * T) * MEAN(MAX(S(T) - K, 0)), averaged over the simulated paths (10,000 by default)
+        - Put Price = e^(-r * T) * MEAN(MAX(K - S(T), 0))
+        - Standard Error = Sample Standard Deviation (ddof=1) of the Discounted Payoffs / √Simulations
+
+        Where S(t) is the stock price at time t (starting from the traded close on the pricing
+        date), K is the strike price, r is the continuously compounded risk-free rate, q is the
+        continuous dividend yield (ln(1 + dividend yield)), σ is the annualized volatility (the
+        standard deviation of the daily returns over the trailing 252 trading days times √252),
+        T is the time to expiration in years (days / 365) and Z is a standard normal random
+        variable.
 
         All strike prices of an expiry are priced on the same simulated paths (common
         random numbers), which keeps the prices consistent across strikes and means the
@@ -2788,6 +2806,35 @@ class Options:
         ``barrier_percentage``, e.g. a value of 0.9 sets the barrier at 90% of the
         current stock price (a sensible default for a down barrier).
 
+        The formula is as follows (Reiner & Rubinstein, 1991, in the notation of Haug, 2007):
+
+        - H = Barrier Percentage * S, with Barrier Percentage defaulting to 0.9
+        - b = r - q, μ = (b - σ² / 2) / σ², λ = √(μ² + 2r / σ²), φ = 1 for a call and -1 for a put, η = 1 for a
+          down barrier and -1 for an up barrier
+        - x1 = ln(S / K) / (σ√T) + (1 + μ)σ√T, x2 = ln(S / H) / (σ√T) + (1 + μ)σ√T
+        - y1 = ln(H² / (S * K)) / (σ√T) + (1 + μ)σ√T, y2 = ln(H / S) / (σ√T) + (1 + μ)σ√T
+        - z = ln(H / S) / (σ√T) + λσ√T
+        - A = φS * e^((b - r)T) * N(φx1) - φK * e^(-rT) * N(φx1 - φσ√T), and B the same with x2 in place of x1
+        - C = φS * e^((b - r)T) * (H / S)^(2(μ + 1)) * N(ηy1) - φK * e^(-rT) * (H / S)^(2μ) * N(ηy1 - ησ√T),
+          and D the same with y2 in place of y1
+        - E = Rebate * e^(-rT) * (N(ηx2 - ησ√T) - (H / S)^(2μ) * N(ηy2 - ησ√T))
+        - F = Rebate * ((H / S)^(μ + λ) * N(ηz) + (H / S)^(μ - λ) * N(ηz - 2ηλσ√T))
+        - Down-and-Out Call (the default) = A - C + F if K > H, else B - D + F
+        - Down-and-In Call = C + E if K > H, else A - B + D + E
+        - Up-and-Out Call = F if K > H, else A - B + C - D + F
+        - Up-and-In Call = A + E if K > H, else B - C + D + E
+        - Down-and-Out Put = A - B + C - D + F if K > H, else F
+        - Down-and-In Put = B - C + D + E if K > H, else A + E
+        - Up-and-Out Put = B - D + F if K > H, else A - C + F
+        - Up-and-In Put = A - B + D + E if K > H, else C + E
+
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, H is the barrier, r is the continuously compounded risk-free rate, q is the
+        continuous dividend yield (ln(1 + dividend yield)), σ is the annualized volatility (the
+        standard deviation of the daily returns over the trailing 252 trading days times √252),
+        T is the time to expiration in years (days / 365), N is the cumulative standard normal
+        distribution and the Rebate defaults to 0.
+
         A useful identity is in-out parity: without a rebate, a knock-in option plus its
         corresponding knock-out option (same direction and barrier) equals the price of
         the equivalent vanilla Black-Scholes option, since the underlying either does or
@@ -2998,19 +3045,22 @@ class Options:
         reduces variance). This prices the continuously sampled geometric-average Asian
         option only; the arithmetic-average version has no closed form and is not
         offered. The geometric-average version has a closed-form solution based on an
-        adjusted volatility and cost of carry:
+        adjusted volatility and cost of carry.
+
+        The formula is as follows:
 
         - σ_A = σ / √3
-        - b_A = 0.5 * (b — σ²/6), where b = r — q is the cost of carry
-        - d1 = (ln(S / K) + (b_A + σ_A²/2) * t) / (σ_A * √t)
-        - d2 = d1 — σ_A * √t
-        - Call Price = S * e^((b_A — r) * t) * N(d1) — K * e^(—r * t) * N(d2)
-        - Put Price = K * e^(—r * t) * N(—d2) — S * e^((b_A — r) * t) * N(—d1)
+        - b_A = 0.5 * (b - σ² / 6), where b = r - q is the cost of carry
+        - d1 = (ln(S / K) + (b_A + σ_A² / 2) * t) / (σ_A * √t)
+        - d2 = d1 - σ_A * √t
+        - Call Price = S * e^((b_A - r) * t) * N(d1) - K * e^(-r * t) * N(d2)
+        - Put Price = K * e^(-r * t) * N(-d2) - S * e^((b_A - r) * t) * N(-d1)
 
-        Where S is the stock price, K is the strike price, r is the risk-free rate, q is
-        the dividend yield, σ is the volatility, t is the time to expiration, N(d1) is
-        the cumulative normal distribution of d1 and N(d2) is the cumulative normal
-        distribution of d2.
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, r is the continuously compounded risk-free rate, q is the continuous dividend
+        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
+        of the daily returns over the trailing 252 trading days times √252), t is the time to
+        expiration in years (days / 365) and N is the cumulative standard normal distribution.
 
         Also known as: geometric Asian option, average rate option, average price
         option.
@@ -3190,6 +3240,17 @@ class Options:
         - Protective put: long stock + long put.
         - Iron condor: short put + long put (lower strikes) + short call + long call
           (higher strikes).
+
+        The formula is as follows, for each stock price at expiration S(T) and one unit per leg:
+
+        - Call Leg Value = MAX(S(T) - K, 0)
+        - Put Leg Value = MAX(K - S(T), 0)
+        - Stock Leg Value = S(T)
+        - Leg P&L = Leg Value - Premium for a long leg, Premium - Leg Value for a short leg
+        - Strategy P&L = SUM(Leg P&L) over all legs
+
+        Where K is the leg's strike price and the premium is the price paid (long) or received
+        (short) for the leg, or the entry price of a stock leg. The P&L is not discounted.
 
         Also known as: option strategy payoff diagram, P&L profile.
 

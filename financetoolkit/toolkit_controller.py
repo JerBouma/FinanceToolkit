@@ -280,7 +280,7 @@ class Toolkit:
         api_key = validation_model.resolve_api_key(api_key)
 
         self._api_key = api_key
-        self._fred_api_key = fred_api_key
+        self._fred_api_key = validation_model.resolve_fred_api_key(fred_api_key)
         self._risk_free_rate = risk_free_rate
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers

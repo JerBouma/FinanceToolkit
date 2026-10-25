@@ -497,10 +497,15 @@ class Models:
             within three months, such as money market funds and Treasury bills.
             - Short Term Investments: The marketable securities that are not cash equivalents.
 
-        The Enterprise Value is calculated as the sum of Market Cap, Debt, Preferred Equity,
-        Minority Interest, minus Cash and Cash Equivalents and Short Term Investments. Cash and
-        marketable securities are deducted together (Damodaran), the same Enterprise Value as
-        toolkit.ratios.get_enterprise_value returns.
+        Cash and marketable securities are deducted together (Damodaran), the same Enterprise Value
+        as toolkit.ratios.get_enterprise_value returns.
+
+        The formula is as follows:
+
+        - Market Capitalization = Share Price * Weighted Average Shares Diluted (Weighted Average Shares
+          when diluted=False), with the share price the traded close at the end of each quarter or year
+        - Enterprise Value = Market Capitalization + Total Debt + Preferred Equity + Minority Interest -
+          Cash and Cash Equivalents - Short Term Investments
 
         This breakdown is displayed in a DataFrame for each company and includes the option to show growth values as well.
 
@@ -2877,6 +2882,29 @@ class Models:
         the Asset Turnover are scaled by the total assets at the beginning of the period, while the
         leverage signal divides long-term debt by the average of the beginning and ending total assets.
 
+        The formula is as follows, where (t-1) is the same period a year earlier (the previous column on
+        yearly data, four quarters back on quarterly data, so quarterly comparisons are year over year) and
+        Beginning Total Assets are the total assets at the end of the previous period (`trailing` periods back
+        when set, one year earlier with trailing=4 on quarterly data):
+
+        - Return on Assets (ROA) = Net Income / Beginning Total Assets
+        - Return on Assets Criteria = 1 if ROA > 0, else 0
+        - Operating Cashflow Criteria = 1 if Operating Cash Flow > 0, else 0
+        - Change in Return on Assets Criteria = 1 if ROA (t) > ROA (t-1), else 0
+        - Accruals Criteria = 1 if Operating Cash Flow / Beginning Total Assets > ROA, else 0
+        - Average Total Assets = (Beginning Total Assets + Total Assets) / 2
+        - Change in Leverage Criteria = 1 if Long Term Debt / Average Total Assets is lower than in (t-1), else 0
+        - Change in Current Ratio Criteria = 1 if Total Current Assets / Total Current Liabilities is higher than
+          in (t-1), else 0
+        - Number of Shares Criteria = 1 if Common Stock Issued = 0, else 0
+        - Gross Margin Criteria = 1 if (Revenue - Cost of Goods Sold) / Revenue is higher than in (t-1), else 0
+        - Asset Turnover Criteria = 1 if Revenue / Beginning Total Assets is higher than in (t-1), else 0
+        - Piotroski Score = SUM of the nine criteria (0 to 9)
+
+        With `trailing`, the flows (net income, operating cash flow, revenue, cost of goods sold and common stock
+        issued) are summed over the trailing periods, while the balance sheet items (total assets, long term debt,
+        current assets and current liabilities) are taken at the end of each period.
+
         Please see Piotroski, Joseph D. "Value Investing: The Use of Historical Financial Statement
         Information to Separate Winners from Losers." Journal of Accounting Research, Vol. 38,
         Supplement, 2000, pp. 1-41.
@@ -2919,14 +2947,9 @@ class Models:
         """
         piotroski_score = {}
 
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
+        # Every change-based criterion compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the signal.  # noqa: E501
+        comparison_lag = 4 if self._quarterly else 1
+
         net_income = (
             self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
             if trailing
@@ -2961,36 +2984,17 @@ class Models:
             if trailing
             else self._cash_flow_statement.loc[:, "Common Stock Issued", :]
         )
-        long_term_debt = (
-            self._balance_sheet_statement.loc[:, "Long Term Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Long Term Debt", :]
-        )
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-        )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-        )
+        # Piotroski (2000) takes the balance sheet items at the fiscal period end, so they stay point in time while the flows above cover the trailing window.  # noqa: E501
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+        long_term_debt = self._balance_sheet_statement.loc[:, "Long Term Debt", :]
+        current_assets = self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_liabilities = self._balance_sheet_statement.loc[
+            :, "Total Current Liabilities", :
+        ]
 
-        # Piotroski (2000) scales ROA, CFO, accruals and asset turnover by beginning-of-year total assets and only the leverage signal by average total assets. With a trailing window the beginning of the window lies `trailing` periods back.  # noqa: E501
-        beginning_total_assets = self._balance_sheet_statement.loc[
-            :, "Total Assets", :
-        ].shift(trailing if trailing else 1, axis=1)
-        average_total_assets = total_assets.T.rolling(2).mean().T
+        # Piotroski (2000) scales ROA, CFO, accruals and asset turnover by the total assets at the beginning of the window the flows cover (the previous period's closing balance, or that of `trailing` periods back, one year earlier with trailing=4 on quarterly data) and the leverage signal by the average of that beginning and the ending balance.  # noqa: E501
+        beginning_total_assets = total_assets.shift(trailing or 1, axis=1)
+        average_total_assets = (beginning_total_assets + total_assets) / 2
 
         piotroski_score["Return on Assets Criteria"] = (
             piotroski_model.get_return_on_assets_criteria(
@@ -3009,6 +3013,7 @@ class Models:
             piotroski_model.get_change_in_return_on_asset_criteria(
                 net_income=net_income,
                 beginning_total_assets=beginning_total_assets,
+                lag=comparison_lag,
             )
         )
 
@@ -3023,6 +3028,7 @@ class Models:
             piotroski_model.get_change_in_leverage_criteria(
                 long_term_debt=long_term_debt,
                 average_total_assets=average_total_assets,
+                lag=comparison_lag,
             )
         )
 
@@ -3030,6 +3036,7 @@ class Models:
             piotroski_model.get_change_in_current_ratio_criteria(
                 current_assets=current_assets,
                 current_liabilities=current_liabilities,
+                lag=comparison_lag,
             )
         )
 
@@ -3043,6 +3050,7 @@ class Models:
             piotroski_model.get_gross_margin_criteria(
                 revenue=revenue,
                 cost_of_goods_sold=cost_of_goods_sold,
+                lag=comparison_lag,
             )
         )
 
@@ -3050,6 +3058,7 @@ class Models:
             piotroski_model.get_asset_turnover_ratio_criteria(
                 sales=revenue,
                 beginning_total_assets=beginning_total_assets,
+                lag=comparison_lag,
             )
         )
 
@@ -3074,6 +3083,7 @@ class Models:
         # Every criterion is a boolean comparison, so a period for which the statements have not been reported yet compares NaN against a number, evaluates to False and scores a perfect zero — the worst possible F-Score — rather than being reported as missing. Mask those periods out; must cover every field feeding any of the nine criteria, not just ROA/CFO/accruals.  # noqa: E501
         reported = (
             total_assets.notna()
+            & beginning_total_assets.notna()
             & net_income.notna()
             & operating_cashflow.notna()
             & long_term_debt.notna()
@@ -3084,8 +3094,8 @@ class Models:
             & common_stock_issued.notna()
         )
 
-        # Five criteria compare against the previous period; require it reported too, or NaN > x resolves False.
-        reported_previous_period = reported.shift(1, axis=1)
+        # Five criteria compare against the same period a year earlier; require it reported too, or NaN > x resolves False.  # noqa: E501
+        reported_previous_period = reported.shift(comparison_lag, axis=1)
         change_based_criteria = {
             "Change in Return on Assets Criteria",
             "Change in Leverage Criteria",
@@ -3120,10 +3130,10 @@ class Models:
 
         piotroski_results = piotroski_results.astype(float).where(full_mask)
 
-        piotroski_results = piotroski_results.dropna(axis=1, how="all")
-
-        # Two columns are lost rather than one. The beginning and averaged total assets already make the first period NaN, so the criteria that compare against the previous period only become meaningful from the third period onwards. Keeping the second column would silently score those criteria 0 even when they improved.  # noqa: E501
-        piotroski_results = piotroski_results[piotroski_results.columns[2:]]
+        # Keep only the periods with a score for at least one ticker. The beginning total assets make the first period (or `trailing` periods) incomplete and the change-based criteria need the period a year earlier complete as well, so a period with only the level criteria is dropped rather than reported without a score.  # noqa: E501
+        piotroski_results = piotroski_results.loc[
+            :, piotroski_results.xs("Piotroski Score", level=1).notna().any()
+        ]
 
         # The F-Score is a count of satisfied criteria, so report it as such whenever every remaining period is fully reported and the float cast above is no longer needed  # noqa: E501
         if not piotroski_results.isna().to_numpy().any():
@@ -3149,21 +3159,26 @@ class Models:
         has manipulated its earnings. It is a natural companion to the Altman Z-Score and Piotroski
         F-Score, using the same normalized financial statements as its input.
 
-        The formula is as follows:
+        The formula is as follows, where (t-1) is the same period a year earlier (the previous column on yearly
+        data, four quarters back on quarterly data, so quarterly comparisons are year over year):
 
-            M-Score = -4.84 + 0.92 * DSRI + 0.528 * GMI + 0.404 * AQI + 0.892 * SGI + 0.115 * DEPI
-            - 0.172 * SGAI + 4.679 * TATA - 0.327 * LVGI
+        - DSRI (Days Sales in Receivables Index) = (Net Receivables / Revenue) (t) / (Net Receivables / Revenue) (t-1)
+        - GMI (Gross Margin Index) = Gross Margin (t-1) / Gross Margin (t), with Gross Margin = (Revenue - Cost of
+          Goods Sold) / Revenue
+        - AQI (Asset Quality Index) = Asset Quality (t) / Asset Quality (t-1), with Asset Quality = 1 - (Total
+          Current Assets + Property, Plant and Equipment) / Total Assets
+        - SGI (Sales Growth Index) = Revenue (t) / Revenue (t-1)
+        - DEPI (Depreciation Index) = Depreciation Rate (t-1) / Depreciation Rate (t), with Depreciation Rate =
+          Depreciation and Amortization / (Depreciation and Amortization + Property, Plant and Equipment)
+        - SGAI (SG&A Expenses Index) = (SG&A Expenses / Revenue) (t) / (SG&A Expenses / Revenue) (t-1)
+        - LVGI (Leverage Index) = Leverage (t) / Leverage (t-1), with Leverage = (Total Current Liabilities + Long
+          Term Debt) / Total Assets
+        - TATA (Total Accruals to Total Assets) = (Net Income - Operating Cash Flow) / Total Assets
+        - M-Score = -4.84 + 0.92 * DSRI + 0.528 * GMI + 0.404 * AQI + 0.892 * SGI + 0.115 * DEPI - 0.172 * SGAI +
+          4.679 * TATA - 0.327 * LVGI
 
-        The eight variables are:
-
-            - DSRI: Days Sales in Receivables Index
-            - GMI: Gross Margin Index
-            - AQI: Asset Quality Index
-            - SGI: Sales Growth Index
-            - DEPI: Depreciation Index
-            - SGAI: Selling, General and Administrative Expenses Index
-            - TATA: Total Accruals to Total Assets
-            - LVGI: Leverage Index
+        With `trailing`, the flows are summed over the trailing periods, while the balance sheet items are taken
+        at the end of each period.
 
         The -1.78 threshold belongs to this eight-variable model; the five-variable version uses -2.22.
         Fast-growing companies are flagged more often because sales growth itself raises the score, and the
@@ -3191,8 +3206,8 @@ class Models:
         manipulator. A M-Score lower than -1.78 suggests the company is unlikely to be a manipulator.
         - As with the Altman Z-Score and Piotroski F-Score, this is a probabilistic, not a
         definitive, indicator and should be combined with further fundamental analysis.
-        - Every component compares the current period to the prior period, so the very first
-        period in the results will always be NaN.
+        - Every index compares the current period with the same period a year earlier, so the first
+        year of the results (one period on yearly data, four on quarterly data) has no M-Score.
         - Total Accruals are Net Income minus Cash Flow from Operations, the cash flow form of
         Beneish, Lee and Nichols (2013), rather than the balance sheet form of Beneish (1999).
         - The Depreciation Index uses Depreciation and Amortization, since statements report the two
@@ -3229,14 +3244,11 @@ class Models:
         """
         beneish_m_score = {}
 
-        net_receivables = (
-            self._balance_sheet_statement.loc[:, "Net Receivables", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Net Receivables", :]
-        )
+        # Every index compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the score.  # noqa: E501
+        comparison_lag = 4 if self._quarterly else 1
+
+        # Beneish (1999) takes the balance sheet items at the fiscal period end, so they stay point in time while the flows cover the trailing window.  # noqa: E501
+        net_receivables = self._balance_sheet_statement.loc[:, "Net Receivables", :]
         revenue = (
             self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
             if trailing
@@ -3250,32 +3262,13 @@ class Models:
             if trailing
             else self._income_statement.loc[:, "Cost of Goods Sold", :]
         )
-        total_current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-        )
-        property_plant_and_equipment = (
-            self._balance_sheet_statement.loc[:, "Property, Plant and Equipment", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[
-                :, "Property, Plant and Equipment", :
-            ]
-        )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
+        total_current_assets = self._balance_sheet_statement.loc[
+            :, "Total Current Assets", :
+        ]
+        property_plant_and_equipment = self._balance_sheet_statement.loc[
+            :, "Property, Plant and Equipment", :
+        ]
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
         depreciation_and_amortization = (
             self._income_statement.loc[:, "Depreciation and Amortization", :]
             .T.rolling(trailing)
@@ -3296,22 +3289,10 @@ class Models:
                 :, "Selling, General and Administrative Expenses", :
             ]
         )
-        total_current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-        )
-        long_term_debt = (
-            self._balance_sheet_statement.loc[:, "Long Term Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Long Term Debt", :]
-        )
+        total_current_liabilities = self._balance_sheet_statement.loc[
+            :, "Total Current Liabilities", :
+        ]
+        long_term_debt = self._balance_sheet_statement.loc[:, "Long Term Debt", :]
         net_income = (
             self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
             if trailing
@@ -3330,27 +3311,32 @@ class Models:
             beneish_model.get_days_sales_in_receivables_index(
                 net_receivables=net_receivables,
                 revenue=revenue,
+                lag=comparison_lag,
             )
         )
 
         beneish_m_score["Gross Margin Index"] = beneish_model.get_gross_margin_index(
             revenue=revenue,
             cost_of_goods_sold=cost_of_goods_sold,
+            lag=comparison_lag,
         )
 
         beneish_m_score["Asset Quality Index"] = beneish_model.get_asset_quality_index(
             total_current_assets=total_current_assets,
             property_plant_and_equipment=property_plant_and_equipment,
             total_assets=total_assets,
+            lag=comparison_lag,
         )
 
         beneish_m_score["Sales Growth Index"] = beneish_model.get_sales_growth_index(
             revenue=revenue,
+            lag=comparison_lag,
         )
 
         beneish_m_score["Depreciation Index"] = beneish_model.get_depreciation_index(
             depreciation_and_amortization=depreciation_and_amortization,
             property_plant_and_equipment=property_plant_and_equipment,
+            lag=comparison_lag,
         )
 
         beneish_m_score["SGA Expenses Index"] = (
@@ -3359,6 +3345,7 @@ class Models:
                     selling_general_and_administrative_expenses
                 ),
                 revenue=revenue,
+                lag=comparison_lag,
             )
         )
 
@@ -3366,6 +3353,7 @@ class Models:
             total_current_liabilities=total_current_liabilities,
             long_term_debt=long_term_debt,
             total_assets=total_assets,
+            lag=comparison_lag,
         )
 
         beneish_m_score["Total Accruals to Total Assets"] = (
@@ -4241,20 +4229,19 @@ class Models:
 
         The formula is as follows:
 
-            H-Score = 5.528 * V1 + 0.212 * V2 + 0.073 * V3 + 1.270 * V4 - 0.120 * V5
-            + 2.335 * V6 + 0.575 * V7 + 1.083 * V8 + 0.894 * V9 - 6.075
+        - V1 = Retained Earnings / Total Assets
+        - V2 = Revenue / Total Assets
+        - V3 = Income Before Tax (EBT) / Total Equity
+        - V4 = Operating Cash Flow / Total Liabilities
+        - V5 = Total Debt / Total Assets
+        - V6 = Total Current Liabilities / Total Assets
+        - V7 = ln(Total Assets - Goodwill and Intangible Assets)
+        - V8 = (Total Current Assets - Total Current Liabilities) / Total Liabilities
+        - V9 = ln(EBIT / Interest Expense), with EBIT the reported Operating Income
+        - H-Score = 5.528 * V1 + 0.212 * V2 + 0.073 * V3 + 1.270 * V4 - 0.120 * V5 + 2.335 * V6 + 0.575 * V7 +
+          1.083 * V8 + 0.894 * V9 - 6.075
 
-        The nine variables are:
-
-            - V1: Retained Earnings to Total Assets
-            - V2: Sales to Total Assets
-            - V3: EBT to Total Equity
-            - V4: Cash Flow (Operating Cash Flow) to Total Liabilities
-            - V5: Total Debt to Total Assets
-            - V6: Current Liabilities to Total Assets
-            - V7: Log of Tangible Total Assets (Total Assets less Goodwill and Intangible Assets)
-            - V8: Working Capital to Total Liabilities
-            - V9: Log of EBIT to Interest Expense
+        With `trailing`, the flows are summed and the balance sheet items averaged over the trailing periods.
 
         The Fulmer H-Score can be interpreted as follows:
 

@@ -5,6 +5,7 @@ __docformat__ = "google"
 import io
 
 import pandas as pd
+import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import (
@@ -17,6 +18,23 @@ from financetoolkit.utilities.requests_model import get_request
 # Version 2 of the BIS SDMX API, asking for the latest version of every dataflow (~), so
 # that a new version of a dataset does not break the request.
 BASE_URL = "https://stats.bis.org/api/v2/data/dataflow/BIS/"
+
+# The HTTP status the BIS answers for a period without published data.
+NOT_FOUND = 404
+
+
+def request_csv(url: str, timeout: int) -> str:
+    """
+    Request a BIS dataset as CSV. The BIS answers a period it has not published yet (such as
+    the current month) with a 404 rather than an empty body, so that counts as no data and
+    the cached history is served without an error.
+    """
+    try:
+        return get_request(url, timeout=timeout).text
+    except requests.HTTPError as error:
+        if error.response is not None and error.response.status_code == NOT_FOUND:
+            return ""
+        raise
 
 
 def get_central_bank_policy_rate(start_date: str, end_date: str) -> pd.DataFrame:
@@ -40,17 +58,17 @@ def get_central_bank_policy_rate(start_date: str, end_date: str) -> pd.DataFrame
     description = "central bank policy rates"
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_CBPOL/~/D.?format=csv&detail=dataonly"
             f"&startPeriod={fetch_start}&endPeriod={fetch_end}",
             timeout=300,
         )
 
         # A range without observations is answered with an empty body.
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(data, {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}, description)
 
         data = data[data["REF_AREA"].isin(COUNTRY_CODES.keys())]
@@ -98,16 +116,16 @@ def get_consumer_prices(measure: str, start_date: str, end_date: str) -> pd.Data
     description = "BIS consumer prices"
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_LONG_CPI/~/M..{unit}?format=csv&detail=dataonly"
             f"&startPeriod={fetch_start[:7]}&endPeriod={fetch_end[:7]}",
             timeout=120,
         )
 
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(data, {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}, description)
 
         data = data[data["REF_AREA"].isin(COUNTRY_CODES.keys())]
@@ -163,16 +181,16 @@ def get_exchange_rates(
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         period_start = fetch_start if code == "D" else fetch_start[:7]
         period_end = fetch_end if code == "D" else fetch_end[:7]
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_XRU/~/{code}...{collection if code == 'M' else ''}?format=csv"
             f"&detail=dataonly&startPeriod={period_start}&endPeriod={period_end}",
             timeout=300,
         )
 
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(data, {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}, description)
 
         data = data[data["REF_AREA"].isin(COUNTRY_CODES.keys())]
@@ -227,7 +245,7 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
     description = "commercial property prices"
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_CPP/~/Q.......?format=csv&detail=dataonly"
             # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
@@ -235,10 +253,10 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
             timeout=120,
         )
 
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(
             data,
             {"REF_AREA", "COVERED_AREA", "RE_TYPE", "TIME_PERIOD", "OBS_VALUE"},

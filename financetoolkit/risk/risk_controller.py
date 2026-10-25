@@ -496,6 +496,26 @@ class Risk:
         period and confidence level. Scaling a daily VaR to a longer horizon with the square root of time
         assumes independent returns, which tends to understate risk when volatility clusters.
 
+        The formula is as follows (with the default distribution="historic" and alpha=0.05):
+
+        - VaR = Quantile(Returns, alpha)
+
+        The quantile interpolates linearly between the two nearest returns and the VaR is reported as a return
+        (negative for a loss). With `rolling`, the same quantile is taken over each trailing window of `rolling`
+        returns. The other distributions replace the empirical quantile with:
+
+        - Gaussian VaR = Mean + z * Std
+        - Cornish-Fisher VaR = Mean + z_cf * Std
+        - z_cf = z + (z^2 - 1) * S / 6 + (z^3 - 3 * z) * K / 24 - (2 * z^3 - 5 * z) * S^2 / 36
+        - Student-T VaR = Location + Scale * t_v^-1(alpha)
+        - EVT VaR = -(u + (Scale_GPD / xi) * ((alpha / p)^(-xi) - 1))
+
+        Where z is the standard normal quantile at alpha, Std the sample standard deviation (ddof=1), S the
+        sample skewness and K the sample excess kurtosis. The Student-T degrees of freedom v, Location and Scale
+        are fitted by maximum likelihood. For "evt", u is the loss at `threshold_percentile`, xi and Scale_GPD the
+        shape and scale of the Generalized Pareto Distribution fitted to the losses above it and p the fraction of
+        losses above it.
+
         Also known as: VaR, maximum expected loss, portfolio loss risk.
 
         Args:
@@ -663,6 +683,26 @@ class Risk:
         single extreme day can move it a lot; a longer window or a parametric distribution gives a steadier
         figure.
 
+        The formula is as follows (with the default distribution="historic" and alpha=0.05):
+
+        - CVaR = Mean(Returns | Returns <= VaR)
+        - VaR = Quantile(Returns, alpha)
+
+        The quantile interpolates linearly and the CVaR is reported as a return (negative for a loss). The other
+        distributions use closed forms, with Std the sample standard deviation (ddof=1) and z_alpha the standard
+        normal quantile at alpha:
+
+        - Gaussian CVaR = Mean - Std * pdf(z_alpha) / alpha
+        - Student-T CVaR = Location - Scale * (v + t^2) / (v - 1) * pdf_v(t) / alpha, with t = t_v^-1(1 - alpha)
+        - Laplace CVaR = Mean - b * (1 - ln(2 * alpha)), with b = Std / √2
+        - Logistic CVaR = Mean - s * ln((1 - alpha)^(1 - 1 / alpha) / alpha), with s = Std * √3 / π
+        - Cornish-Fisher CVaR = Mean of (Mean + z_cf(p) * Std) over 1,000 evenly spaced p in (0, alpha)
+        - EVT CVaR = -(VaR_loss + Scale_GPD - xi * u) / (1 - xi)
+
+        Where the Student-T v, Location and Scale are fitted by maximum likelihood (NaN for v <= 1), z_cf is the
+        Cornish-Fisher quantile of `get_value_at_risk`, and u, xi, Scale_GPD and VaR_loss are the loss threshold,
+        the fitted Generalized Pareto shape and scale and the EVT VaR as a positive loss (NaN for xi >= 1).
+
         Also known as: CVaR, expected shortfall, ES, tail risk.
 
         Args:
@@ -824,9 +864,14 @@ class Risk:
         associated with an investment and helps investors make informed decisions about risk tolerance.
 
         The EVaR is calculated under the assumption that returns are normally distributed, for which the
-        Chernoff bound has the closed form Mean - Standard Deviation * SQRT(-2 * ln(alpha)), where alpha is
-        the tail probability (0.05 for the 95% confidence level) and the standard deviation is the sample
-        standard deviation. It is an upper bound of the gaussian VaR and CVaR at the same confidence level.
+        Chernoff bound has a closed form.
+
+        The formula is as follows (with the default alpha=0.05):
+
+        - EVaR = Mean - Std * √(-2 * ln(alpha))
+
+        Where alpha is the tail probability (0.05 for the 95% confidence level) and Std the sample standard
+        deviation (ddof=1). It is an upper bound of the gaussian VaR and CVaR at the same confidence level.
         Since it only uses the mean and the standard deviation of the returns, it does not reflect their
         skewness or fat tails, and at high confidence levels it can be less severe than the historical CVaR
         of an asset with heavy tails.
@@ -953,6 +998,16 @@ class Risk:
         distribution, giving insight into the depth of the most severe drawdowns an investment portfolio or
         asset could experience.
 
+        The formula is as follows (with the default alpha=0.05):
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - DaR = Quantile(Drawdown, alpha)
+        - CDaR = Mean(Drawdown | Drawdown <= DaR)
+
+        Every period counts towards the drawdown distribution, including those at a high (a drawdown of 0), the
+        quantile interpolates linearly, and Wealth starts at 1, so a decline from the start of the window counts.
+
         Also known as: CDaR.
 
         Args:
@@ -1078,9 +1133,14 @@ class Risk:
         Calculate the Tail Ratio of an investment portfolio or asset's returns.
 
         The Tail Ratio compares the size of the right (gain) tail to the left (loss) tail of the
-        return distribution, calculated as the absolute value of the (1 - alpha)-th percentile of
-        returns divided by the absolute value of the alpha-th percentile of returns. A Tail Ratio
-        above 1 indicates that best-case gains outsize worst-case losses.
+        return distribution. A Tail Ratio above 1 indicates that best-case gains outsize worst-case
+        losses.
+
+        The formula is as follows (with the default alpha=0.05):
+
+        - Tail Ratio = |Quantile(Returns, 1 - alpha)| / |Quantile(Returns, alpha)|
+
+        The quantiles interpolate linearly, and a left-tail quantile of 0 gives NaN.
 
         Also known as: gain-to-pain tail ratio.
 
@@ -1210,6 +1270,15 @@ class Risk:
         `get_maximum_drawdown_duration` and `get_maximum_drawdown_recovery_time`), and it underlies
         return-to-risk ratios such as the Calmar ratio.
 
+        The formula is as follows:
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - Maximum Drawdown = min(Drawdown(t))
+
+        Wealth starts at 1, so a decline from the start of the window counts as well, and the result is a
+        negative decimal (0 when the value never fell below a previous high).
+
         Also known as: max drawdown, peak-to-trough decline.
 
         Args:
@@ -1324,6 +1393,14 @@ class Risk:
         The Maximum Drawdown Duration is the number of periods between the peak and the lowest point
         of the largest drawdown, giving insight into how long the worst loss of value took to unfold.
 
+        The formula is as follows:
+
+        - Maximum Drawdown Duration = t(trough) - t(peak)
+
+        Where t(trough) is the period of the lowest Drawdown (see `get_maximum_drawdown`) and t(peak) the last
+        period at or before it in which Wealth stood at the high that drawdown is measured from. When that high is
+        the starting value of 1, t(peak) is the period before the first return.
+
         Also known as: drawdown length.
 
         Args:
@@ -1433,8 +1510,15 @@ class Risk:
         Calculate the Maximum Drawdown Recovery Time of an investment portfolio or asset's returns.
 
         The Maximum Drawdown Recovery Time is the number of periods it takes for the cumulative return
-        to reach a new high after the lowest point of the largest drawdown. If the drawdown has not yet been
-        recovered from within the selected period, this returns NaN.
+        to climb back to its previous peak after the lowest point of the largest drawdown. If the drawdown has not
+        yet been recovered from within the selected period, this returns NaN.
+
+        The formula is as follows:
+
+        - Maximum Drawdown Recovery Time = t(recovery) - t(trough)
+
+        Where t(trough) is the period of the lowest Drawdown (see `get_maximum_drawdown`) and t(recovery) the first
+        period at or after it in which Wealth is back at or above the high that drawdown is measured from.
 
         Also known as: time to recovery, drawdown recovery.
 
@@ -1554,9 +1638,13 @@ class Risk:
         because it focuses on the depth and duration of drawdowns rather than the dispersion of
         returns.
 
-        The formula is as follows:
+        The formula is as follows (with the default rolling=14):
 
-        Ulcer Index = SQRT(SUM[((Pn - Highest High) / Highest High)^2] / n)
+        - Ulcer Index = √(Σ ((Wealth(t) - Highest High(t)) / Highest High(t))^2 / n)
+
+        Where Wealth(t) compounds the daily returns within each period from a starting value of 1, Highest
+        High(t) is the highest Wealth over the trailing 14 observations (the starting value of 1 included
+        while fewer are available) and n is the number of daily returns in the period.
 
         Martin measures every drawdown from the highest value so far (`rolling=None`); the default
         trailing 14-period high is the variant StockCharts popularised. While fewer than `rolling`
@@ -1670,6 +1758,16 @@ class Risk:
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
         models.
 
+        The formula is as follows:
+
+        - sigma_t^2 = Omega + Alpha * r_(t-1)^2 + Beta * sigma_(t-1)^2
+        - sigma_1^2 = Omega + (Alpha + Beta) * Backcast
+
+        Where r_t are the returns (not demeaned) and the Backcast is an exponentially weighted average (decay
+        0.94) of the first 75 squared returns. Omega, Alpha and Beta maximize the Gaussian log-likelihood, i.e.
+        minimize Σ (ln sigma_t^2 + r_t^2 / sigma_t^2), under Omega, Alpha, Beta > 0 and Alpha + Beta < 1 (see
+        `get_garch_parameters`).
+
         Also known as: GARCH, volatility clustering, conditional heteroscedasticity.
 
         Args:
@@ -1782,9 +1880,14 @@ class Risk:
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
         models.
 
-        The forecasting with GARCH is done with the following formula:
+        The formula is as follows:
 
-        - sigma_l ** 2 + (sigma_t ** 2 - sigma_l ** 2) * (alpha + beta) ** (t - 1)
+        - sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Beta)^(h - 1)
+        - sigma_L^2 = Omega / (1 - Alpha - Beta)
+
+        Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step,
+        sigma_(n+1)^2 the one-step-ahead variance of the fitted GARCH(1, 1) recursion (see `get_garch`) and
+        sigma_L^2 the long-run variance.
 
         For more information about the method, see the following book:
 
@@ -1914,13 +2017,16 @@ class Risk:
         Omega, Alpha and Beta parameters for each asset.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is a stochastic model
-        for time series, used to model volatility clustering. A GARCH(1, 1) model expresses the
-        conditional variance sigma_t^2 as:
+        for time series, used to model volatility clustering.
 
-        - sigma_t^2 = Omega + Alpha * u_(t-1)^2 + Beta * sigma_(t-1)^2
+        The formula is as follows:
 
-        With the constraints Omega, Alpha, Beta > 0 and Alpha + Beta < 1. The parameters are
-        estimated by maximizing the GARCH log-likelihood with L-BFGS-B, started from a
+        - sigma_t^2 = Omega + Alpha * r_(t-1)^2 + Beta * sigma_(t-1)^2
+        - Log-Likelihood = -Σ (ln sigma_t^2 + r_t^2 / sigma_t^2) (up to constants)
+
+        Where r_t are the returns (not demeaned), with the constraints Omega, Alpha, Beta > 0 and
+        Alpha + Beta < 1. The parameters are estimated by maximizing the Gaussian log-likelihood with
+        L-BFGS-B, started from a
         domain-informed initial guess and from 32 points of a Sobol sequence, and the best fit is
         finished with Nelder-Mead. The search runs on the parameters scaled to their bounds, as
         Omega (of the order of a daily variance) and Alpha and Beta differ by orders of magnitude.
@@ -2036,6 +2142,15 @@ class Risk:
         between the Expected Value and the Volatility of the Nominal Excess Return on
         Stocks." The Journal of Finance, 48(5), 1779-1801.
 
+        The formula is as follows:
+
+        - sigma_t^2 = Omega + (Alpha + Gamma * I_(t-1)) * r_(t-1)^2 + Beta * sigma_(t-1)^2
+        - sigma_1^2 = Omega + (Alpha + Gamma / 2 + Beta) * Backcast
+
+        Where r_t are the returns (not demeaned), I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise, and the Backcast
+        is the same as in `get_garch`. The parameters maximize the Gaussian log-likelihood under
+        Alpha + Gamma / 2 + Beta < 1 and Alpha + Gamma >= 0 (see `get_gjr_garch_parameters`).
+
         Also known as: GJR-GARCH, threshold GARCH, TGARCH.
 
         Args:
@@ -2145,6 +2260,16 @@ class Risk:
     ):
         """
         Calculates sigma_2 forecasts based on the GJR-GARCH model.
+
+        The formula is as follows:
+
+        - sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Gamma / 2 + Beta)^(h - 1)
+        - sigma_L^2 = Omega / (1 - Alpha - Gamma / 2 - Beta)
+
+        Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step and
+        sigma_(n+1)^2 the one-step-ahead variance of the fitted GJR-GARCH(1, 1, 1) recursion (see
+        `get_gjr_garch`). The leverage term enters at its expectation, Gamma / 2, as a negative shock is as
+        likely as a positive one.
 
         For more information about the method, see the following paper:
 
@@ -2279,6 +2404,14 @@ class Risk:
         raise volatility by more than positive ones of the same size), which symmetric
         GARCH cannot represent.
 
+        The formula is as follows:
+
+        - sigma_t^2 = Omega + (Alpha + Gamma * I_(t-1)) * r_(t-1)^2 + Beta * sigma_(t-1)^2
+        - Log-Likelihood = -Σ (ln sigma_t^2 + r_t^2 / sigma_t^2) (up to constants)
+
+        Where r_t are the returns (not demeaned) and I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise. The
+        log-likelihood is maximized under Alpha + Gamma / 2 + Beta < 1 and Alpha + Gamma >= 0.
+
         The variance recursion starts from a backcast, an exponentially weighted average
         (decay 0.94) of the first 75 squared returns, with the leverage term at its expectation
         (Gamma / 2) for the period before the first observation, and every observation enters
@@ -2387,6 +2520,16 @@ class Risk:
 
         - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
         Approach." Econometrica, 59(2), 347-370.
+
+        The formula is as follows:
+
+        - ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2
+        - z_t = r_t / sigma_t
+        - ln sigma_1^2 = Omega + Beta * ln(Backcast)
+
+        Where r_t are the returns (not demeaned), √(2 / π) is the expected |z| of a standard normal shock, the
+        log variance is kept within [-20, 20] and the Backcast is the same as in `get_garch`. The parameters
+        maximize the Gaussian log-likelihood with |Beta| < 1 (see `get_egarch_parameters`).
 
         Also known as: exponential GARCH, log-GARCH.
 
@@ -2511,6 +2654,17 @@ class Risk:
     ):
         """
         Calculates sigma_2 forecasts based on the EGARCH model.
+
+        The formula is as follows:
+
+        - ln sigma_(n+h)^2 = L + Beta^(h - 1) * (ln sigma_(n+1)^2 - L)
+        - L = Omega / (1 - Beta)
+        - sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
+
+        Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step and
+        sigma_(n+1)^2 the one-step-ahead variance of the fitted EGARCH(1, 1) recursion (see `get_egarch`). The
+        shock terms drop out at their expectation of zero, so the forecast is the exponential of the expected
+        log variance.
 
         For more information about the method, see the following paper:
 
@@ -2642,6 +2796,15 @@ class Risk:
 
         A negative Gamma indicates the presence of a leverage effect (negative shocks
         raise volatility by more than positive ones of the same size).
+
+        The formula is as follows:
+
+        - ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2
+        - Log-Likelihood = -Σ (ln sigma_t^2 + r_t^2 / sigma_t^2) (up to constants)
+
+        Where r_t are the returns (not demeaned) and z_t = r_t / sigma_t. The log-likelihood is maximized with
+        Omega in [-15, 5], Alpha and Gamma in [-1, 1] and |Beta| < 1, starting the recursion from
+        ln sigma_1^2 = Omega + Beta * ln(Backcast), with the Backcast of `get_garch_parameters`.
 
         For more information about the method, see the following paper:
 
@@ -2784,6 +2947,16 @@ class Risk:
         Financial Markets: Diagnostics, Models, and Financial Implications." Review of
         Financial Studies, 17(2), 581-610.
 
+        The formula is as follows (with the default method="empirical" and q=0.95):
+
+        - Upper Tail Dependence = #(A > Q_A(q) and B > Q_B(q)) / #(A > Q_A(q))
+        - Lower Tail Dependence = #(A <= Q_A(1 - q) and B <= Q_B(1 - q)) / #(A <= Q_A(1 - q))
+
+        Where A and B are the values of `ticker_a` and `ticker_b` on their common dates and Q_A and Q_B their
+        empirical quantiles. With method="gaussian" both coefficients are 0 (1 only for a correlation of exactly
+        1), and with method="student-t" both are 2 * t_(v+1)(-√((v + 1) * (1 - rho) / (1 + rho))), with v = `dof`,
+        rho the Pearson correlation and t_(v+1) the Student-T distribution function.
+
         Also known as: tail dependence, extremal dependence coefficient.
 
         Args:
@@ -2888,6 +3061,21 @@ class Risk:
         See `get_best_fitting_copula` to compare all five by AIC on the same
         pair of assets, and see `get_copula_simulation` to draw joint scenarios
         from the fitted copula.
+
+        The formula is as follows:
+
+        - u_i = Rank(A_i) / (n + 1), v_i = Rank(B_i) / (n + 1)
+        - Gaussian Rho = Correlation(Φ^-1(u), Φ^-1(v))
+        - Student-T Rho = sin(π * Kendall's Tau / 2)
+        - Theta (and the Student-T Degrees of Freedom) = argmax Σ ln c(u_i, v_i)
+        - AIC = 2 * k - 2 * Log-Likelihood
+
+        Where A and B are the values of the two assets on their n common dates, c is the copula density and k
+        the number of fitted parameters (2 for the Student-T, 1 otherwise). The search bounds are [2.05, 60] for
+        the Degrees of Freedom and, for Theta, [0.0001, 100] (Clayton), [1, 50] (Gumbel) and [-50, 50] (Frank).
+        The implied tail dependence is 2^(-1 / Theta) in the lower tail for Clayton, 2 - 2^(1 / Theta) in the
+        upper tail for Gumbel, 2 * t_(v+1)(-√((v + 1) * (1 - Rho) / (1 + Rho))) in both tails for the Student-T
+        and 0 otherwise.
 
         For more information about the method, see:
 
@@ -3020,6 +3208,17 @@ class Risk:
         dependence, for the "student-t", "clayton" and "gumbel" families -- rather
         than the (typically understated) joint crash risk a plain multivariate
         gaussian simulation would produce.
+
+        The formula is as follows (with the default copula="gaussian" and empirical_margins=True):
+
+        - (Z1, Z2) ~ N(0, [[1, Rho], [Rho, 1]])
+        - U = Φ(Z1), V = Φ(Z2)
+        - Simulated Return A = Quantile(A, U), Simulated Return B = Quantile(B, V)
+
+        Where Rho is fitted as in `get_copula_parameters` and Quantile is the empirical quantile (linear
+        interpolation) of each asset's own history. The Student-T copula scales (Z1, Z2) by √(v / W), with
+        W ~ χ²(v), and maps them with the Student-T distribution function; the Clayton, Gumbel and Frank copulas
+        draw U and T uniformly and solve C(V | U) = T for V.
 
         Also known as: copula Monte Carlo, dependence simulation, scenario
         generation.
@@ -3195,6 +3394,13 @@ class Risk:
         When `ticker_a`/`ticker_b` are not given, every unique pair among the
         Toolkit's tickers is compared instead.
 
+        The formula is as follows:
+
+        - AIC = 2 * k - 2 * Log-Likelihood
+
+        Where the Log-Likelihood is that of each family fitted as in `get_copula_parameters` and k the number of
+        fitted parameters (2 for the Student-T copula, 1 for the others).
+
         Also known as: copula selection, copula comparison.
 
         Args:
@@ -3353,6 +3559,16 @@ class Risk:
         quantile, it needs several years of daily data, and the result is a statement about
         co-movement in the tails, not about causality.
 
+        The formula is as follows (with the default alpha=0.05):
+
+        - Quantile_alpha(A | B) = Intercept + Slope * B
+        - CoVaR = Intercept + Slope * VaR_B
+        - Delta-CoVaR = Slope * (VaR_B - Median(B))
+
+        Where A are the values of `ticker` and B those of `conditioning_ticker` on their common dates, the
+        Intercept and Slope come from a linear quantile regression at quantile alpha (minimizing the check
+        loss) and VaR_B is the empirical alpha-quantile of B.
+
         For more information about the method, see the following paper:
 
         - Adrian, T., & Brunnermeier, M.K. (2016). "CoVaR." American Economic Review,
@@ -3462,11 +3678,21 @@ class Risk:
         Marginal VaR instead measures how much the *portfolio's* VaR would change for
         an infinitesimal increase in a given asset's portfolio weight — i.e. the
         sensitivity of portfolio risk to each holding, not the risk of the holding on
-        its own:
+        its own.
+
+        The formula is as follows (with the default distribution="historic"):
 
         - Portfolio Return = SUM(weight_i * Return_i)
         - Beta_i = Cov(Return_i, Portfolio Return) / Var(Portfolio Return)
         - Marginal VaR_i = Beta_i * Portfolio VaR
+
+        Where the weights are normalized to sum to 1, the covariance and variance are sample estimates
+        (ddof=1) on the dates all assets have a return, and Portfolio VaR is the VaR of the portfolio return
+        under `distribution` (see `get_value_at_risk`). The beta-based sensitivity is exact for a zero-mean
+        elliptical distribution and an approximation otherwise; distribution="gaussian" uses the exact
+        derivative instead, with z_alpha the standard normal quantile at alpha:
+
+        - Gaussian Marginal VaR_i = Mean_i + z_alpha * Cov(Return_i, Portfolio Return) / Std(Portfolio Return)
 
         An asset with Beta_i > 1 contributes disproportionately to portfolio risk,
         while Beta_i < 1 (and especially Beta_i < 0) indicates a diversifying holding.
@@ -3562,10 +3788,16 @@ class Risk:
 
         Component VaR allocates total portfolio VaR across its constituent assets,
         such that the allocations sum exactly back to the portfolio VaR — an "Euler"
-        (or "fully consistent") risk decomposition:
+        (or "fully consistent") risk decomposition.
 
-        - Component VaR_i = weight_i * Marginal VaR_i    (see `get_marginal_value_at_risk`)
+        The formula is as follows (with the default distribution="historic"):
+
+        - Component VaR_i = weight_i * Marginal VaR_i
         - SUM(Component VaR_i) = Portfolio VaR
+
+        Where the weights are normalized to sum to 1 and Marginal VaR_i is that of
+        `get_marginal_value_at_risk`: Beta_i * Portfolio VaR by default, or the exact derivative with
+        distribution="gaussian".
 
         Where Marginal VaR measures each asset's risk *sensitivity*, Component VaR
         measures its actual *contribution* in the same units as portfolio VaR, making
@@ -3689,6 +3921,18 @@ class Risk:
         Christoffersen's test detects, are the usual failure of historical VaR when
         volatility rises.
 
+        The formula is as follows (with the default distribution="historic", alpha=0.05 and window_size=252):
+
+        - VaR_t = Quantile(Return_(t-252), ..., Return_(t-1); alpha)
+        - Breach_t = 1 if Return_t < VaR_t, else 0
+        - Kupiec Statistic = -2 * ln[(1 - alpha)^(n - x) * alpha^x / ((1 - x / n)^(n - x) * (x / n)^x)]
+        - Christoffersen Statistic = -2 * ln[L(pi) / L(pi_01, pi_11)]
+
+        Where n is the number of out-of-sample VaR estimates and x the number of breaches. L(pi) is the
+        likelihood of the breach sequence with a single breach probability pi, and L(pi_01, pi_11) that of a
+        first-order Markov chain in which the breach probability depends on whether the previous period was a
+        breach. Both statistics are compared with a χ² distribution with one degree of freedom for the p-value.
+
         For more information about the methods, see the following papers:
 
         - Kupiec, P.H. (1995). "Techniques for Verifying the Accuracy of Risk
@@ -3699,7 +3943,7 @@ class Risk:
         Also known as: VaR validation, VaR backtest, POF test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily", since `window_size` is expressed in return observations of this frequency
             (252 only means "about one year" when `period` is daily).
             distribution (str, optional): The distribution to use for the rolling VaR estimates, one of
@@ -3803,6 +4047,17 @@ class Risk:
         (and VaR) path and compares the actual loss on each breach day to the CVaR
         that was supposed to describe the average loss on such days.
 
+        The formula is as follows (with the default distribution="historic", alpha=0.05 and window_size=252):
+
+        - Z2 = Σ (Return_t * Breach_t / CVaR_t) / (n * alpha) - 1
+        - P-Value = 1 - Φ(Z2 / Standard Error)
+
+        Where VaR_t and CVaR_t are estimated from the 252 returns before t (see `get_var_backtest`), Breach_t is
+        1 if Return_t < VaR_t and 0 otherwise, n is the number of estimates and the Standard Error is the sample
+        standard deviation (ddof=1) of Z2 over `n_bootstrap` paired bootstrap resamples. Returns and CVaR are
+        both negative, so Z2 is about 0 for a well-calibrated model and positive when the realized tail losses
+        exceed the CVaR (the opposite sign of the paper, which counts losses as positive).
+
         For more information about the method, see the following paper:
 
         - Acerbi, C., & Szekely, B. (2014). "Back-Testing Expected Shortfall." RISK
@@ -3811,7 +4066,7 @@ class Risk:
         Also known as: Acerbi-Szekely test, ES backtest, Z2 test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, quarterly, or yearly).
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily", since `window_size` is expressed in return observations of this frequency.
             distribution (str, optional): The distribution to use for the rolling VaR/CVaR estimates,
             one of "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
@@ -3913,6 +4168,13 @@ class Risk:
         to understand the potential risk and return characteristics of an investment, aiding in the assessment
         of the distribution's tails and potential outliers. It provides a means to gauge the level of
         skew in returns, enabling more informed investment decisions and risk management strategies.
+
+        The formula is as follows:
+
+        - Skewness = n / ((n - 1) * (n - 2)) * Σ ((Return - Mean) / Std)^3
+
+        Where n is the number of returns and Std the sample standard deviation (ddof=1), which is the
+        bias-adjusted sample skewness (G1) of pandas and Excel's SKEW.
 
         Also known as: return distribution asymmetry, tail skew.
 
@@ -4047,6 +4309,16 @@ class Risk:
         gap) can push it above 10, so a high value often reflects one event rather than a persistently
         fat-tailed distribution.
 
+        The formula is as follows (with the default fisher=False):
+
+        - Kurtosis = Excess Kurtosis + 3
+        - Excess Kurtosis = n(n + 1) / ((n - 1)(n - 2)(n - 3)) * Σ z^4 - 3(n - 1)^2 / ((n - 2)(n - 3))
+        - z = (Return - Mean) / Std
+
+        Where n is the number of returns and Std the sample standard deviation (ddof=1), which is the
+        bias-adjusted sample excess kurtosis (G2) of pandas and Excel's KURT. With fisher=True the Excess
+        Kurtosis is returned.
+
         Also known as: tail heaviness, fat tails, leptokurtosis.
 
         Args:
@@ -4176,6 +4448,16 @@ class Risk:
         stable, since a small `k` is noisy and a large `k` pulls in the center of the
         distribution.
 
+        The formula is as follows (with the default tail="left" and k=0.1):
+
+        - Hill Shape (xi) = (1 / k) * Σ (ln X_(i) - ln X_(k+1)) for i = 1, ..., k
+        - Hill Tail Index = 1 / xi
+        - Standard Error = Hill Tail Index / √k
+
+        Where X_(1) >= X_(2) >= ... are the strictly positive losses (the negated returns, or the returns
+        themselves for tail="right") sorted from large to small, and k is the number of order statistics used:
+        int(0.1 * the number of positive losses) by default, or `k` itself when it is an integer.
+
         For more information about the method, see the following paper:
 
         - Hill, B.M. (1975). "A Simple General Approach to Inference About the Tail of
@@ -4273,8 +4555,13 @@ class Risk:
         Variance indicates more variability in the returns, while a lower Variance suggests
         that the returns are closer to the mean.
 
-        The daily Variance is scaled to the given period by multiplying it with the number
-        of trading days within that period (e.g. 252 / 52 for weekly).
+        The formula is as follows:
+
+        - Variance = Var(Daily Returns within the period) * Trading Days per Period
+
+        Where Var is the sample variance (ddof=1) and the trading days per period are 252 / 52 (weekly),
+        252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). With `rolling`, the result is the sample
+        variance of the last `rolling` returns of the chosen period itself, without scaling.
 
         Also known as: dispersion, spread.
 
@@ -4392,9 +4679,24 @@ class Risk:
         drift-independent and accounts for overnight jumps, which makes it the most
         statistically efficient of the range-based estimators implemented here.
 
-        In every case the daily Volatility is scaled to the given period by multiplying the
-        underlying Variance with the number of trading days within that period (e.g. 252 / 52
-        for weekly).
+        The formula is as follows (with the default method="close_to_close"):
+
+        - Volatility = Std(Daily Returns within the period) * √(Trading Days per Period)
+
+        Where Std is the sample standard deviation (ddof=1) and the trading days per period are 252 / 52
+        (weekly), 252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). The range-based estimators
+        take the square root of a daily variance and scale it the same way, with H, L, O and C the daily
+        High, Low, Open and Close, C_(-1) the previous Close, Mean the average and Var the sample variance
+        (ddof=1) over the days in the period:
+
+        - Parkinson Variance = Mean(ln(H / L)^2) / (4 * ln 2)
+        - Garman-Klass Variance = Mean(0.5 * ln(H / L)^2 - (2 * ln 2 - 1) * ln(C / O)^2)
+        - Rogers-Satchell Variance = Mean(ln(H / C) * ln(H / O) + ln(L / C) * ln(L / O))
+        - Yang-Zhang Variance = Var(ln(O / C_(-1))) + k * Var(ln(C / O)) + (1 - k) * Rogers-Satchell Variance
+        - k = 0.34 / (1.34 + (n + 1) / (n - 1)), with n the number of days in the period
+
+        With `rolling`, the result is the sample standard deviation of the last `rolling` returns of the
+        chosen period itself, without scaling.
 
         Also known as: standard deviation of returns. The range-based estimators are also known
         as Parkinson's range-based or high-low Volatility, Garman-Klass range-based Volatility,
@@ -4564,6 +4866,17 @@ class Risk:
         which is more statistically efficient since it uses the daily trading range
         rather than only the close-to-close move.
 
+        The formula is as follows (with the default estimator="squared_return", weekly_window=5,
+        monthly_window=22 and horizon=1):
+
+        - RV_t = Return_t^2
+        - RV^w_t = Mean(RV_(t-4), ..., RV_t) and RV^m_t = Mean(RV_(t-21), ..., RV_t)
+        - Forecast of RV_(t+1) = b_0 + b_d * RV_t + b_w * RV^w_t + b_m * RV^m_t
+
+        Where b_0, b_d, b_w and b_m are estimated once by ordinary least squares over each asset's full
+        history, and the forecast of RV_(t+1) is shown at date t. The range-based estimators replace RV_t with
+        the daily Parkinson, Garman-Klass or Rogers-Satchell variance term (see `get_volatility`).
+
         For more information about the method, see the following paper:
 
         - Corsi, F. (2009). "A Simple Approximate Long-Memory Model of Realized
@@ -4713,6 +5026,13 @@ class Risk:
         - Amihud, Y. (2002). "Illiquidity and Stock Returns: Cross-Section and
         Time-Series Effects." Journal of Financial Markets, 5(1), 31-56.
 
+        The formula is as follows (with the default scale of 1,000,000):
+
+        - Amihud Illiquidity = Mean(|Return_t| / (Close_t * Volume_t)) * 1,000,000
+
+        Where the mean runs over the periods of the chosen frequency (within each period with `within_period`),
+        and periods without dollar volume are skipped.
+
         Also known as: Amihud illiquidity ratio, ILLIQ, price impact ratio.
 
         Args:
@@ -4849,6 +5169,14 @@ class Risk:
         - Roll, R. (1984). "A Simple Implicit Measure of the Effective Bid-Ask Spread
         in an Efficient Market." The Journal of Finance, 39(4), 1127-1139.
 
+        The formula is as follows:
+
+        - Roll Spread = 2 * √(-Cov(ΔP_t, ΔP_(t-1)))
+        - Relative Roll Spread = Roll Spread / Mean(P)
+
+        Where P is the Close price, ΔP_t = P_t - P_(t-1) and Cov the sample autocovariance (ddof=1) of
+        consecutive price changes; a covariance of zero or above gives NaN.
+
         Also known as: Roll's implied spread, Roll measure.
 
         Args:
@@ -4938,6 +5266,15 @@ class Risk:
 
         Excess Volatility is the Volatility of the Excess Return, i.e. the daily return minus
         the risk free rate, scaled to the given period in the same way as the Volatility.
+
+        The formula is as follows:
+
+        - Excess Volatility = Std(Daily Return - Daily Risk Free Rate) * √(Trading Days per Period)
+
+        Where Std is the sample standard deviation (ddof=1) over the days within the period, the annualized risk
+        free rate is converted to a daily rate, and the trading days per period are 252 / 52 (weekly), 252 / 12
+        (monthly), 252 / 4 (quarterly) or 252 (yearly). With `rolling`, the result is the sample standard
+        deviation of the last `rolling` excess returns of the chosen period itself, without scaling.
 
         Also known as: standard deviation of excess returns.
 
@@ -5041,10 +5378,17 @@ class Risk:
         """
         Calculate the Downside Deviation of an investment portfolio or asset's returns.
 
-        The Downside Deviation, also known as semi-deviation, is the standard deviation of only the
-        returns that fall below a minimum acceptable return (MAR), isolating the volatility of negative
-        outcomes from the volatility of the overall return distribution. It underlies risk-adjusted
+        The Downside Deviation, also known as semi-deviation, measures the dispersion of the returns
+        below a minimum acceptable return (MAR), isolating the volatility of negative outcomes from the
+        volatility of the overall return distribution. It underlies risk-adjusted
         return measures such as the Sortino Ratio and the Omega Ratio.
+
+        The formula is as follows (with the default minimum_acceptable_return of 0):
+
+        - Downside Deviation = √(Σ min(Return_t - MAR, 0)^2 / n)
+
+        Where n is the number of all returns, so returns above the MAR count as a shortfall of zero rather than
+        being left out.
 
         Also known as: semi-deviation, downside risk, downside volatility.
 
@@ -5172,6 +5516,12 @@ class Risk:
         Variance and Volatility, it does not square the deviations, making it less sensitive to
         outliers.
 
+        The formula is as follows:
+
+        - Mean Absolute Deviation = Σ |Return_t - Mean| / n
+
+        Where the returns are the n daily returns within each period, without scaling to the period length.
+
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
                 to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
@@ -5267,6 +5617,13 @@ class Risk:
         negative, so for returns it is best read over periods with a positive mean, or replaced by a
         Sharpe ratio, which is its inverse with the risk-free rate subtracted.
 
+        The formula is as follows:
+
+        - Coefficient of Variation = Std(Daily Returns) / Mean(Daily Returns)
+
+        Where both are taken over the daily returns within each period, with Std the sample standard deviation
+        (ddof=1), without scaling to the period length.
+
         Also known as: relative standard deviation.
 
         Args:
@@ -5361,6 +5718,10 @@ class Risk:
         The formula is as follows:
 
         - EWMA Variance(t) = lambda * EWMA Variance(t-1) + (1 - lambda) * Return(t-1) ** 2
+        - EWMA Volatility(t) = √(EWMA Variance(t))
+
+        Where lambda is 0.94 by default and Return(t-1) the previous daily return, so the value on a day only
+        uses the returns before it. The recursion starts from the first squared return.
 
         With the RiskMetrics decay factor of 0.94, about 70% of the weight sits on the last 20 trading
         days, so EWMA Volatility reacts within days to a market shock and falls back almost as quickly.
@@ -5450,6 +5811,13 @@ class Risk:
         volatility clustering (as opposed to a trading-signal use case, which is why this
         lives in the Risk module rather than Technicals).
 
+        The formula is as follows:
+
+        - ACF(k) = Σ (r_t - Mean) * (r_(t+k) - Mean) / Σ (r_t - Mean)^2
+
+        Where r_t are the n daily returns (missing values dropped), the numerator runs over t = 1, ..., n - k,
+        the denominator over all n returns, and k = 1, ..., `lags` (10 by default).
+
         Args:
             lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -5520,6 +5888,14 @@ class Risk:
         For liquid stocks the estimate is usually close to 0.5, and with lags of at most
         `max_lag` days it describes short-term behaviour only; a value of 0.45 or 0.55 over a
         few years is within estimation noise rather than evidence of a tradable pattern.
+
+        The formula is as follows (with the default max_lag=20):
+
+        - sigma(tau) = Std(ln P_(t+tau) - ln P_t)
+        - ln sigma(tau) = c + H * ln tau, fitted by least squares over tau = 2, ..., 20
+
+        Where P is the daily adjusted close, Std the population standard deviation (ddof=0) of the lagged log
+        price differences and H, the slope, the Hurst Exponent.
 
         Args:
             max_lag (int, optional): The maximum lag, included, to use when estimating the exponent:

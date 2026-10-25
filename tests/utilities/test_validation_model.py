@@ -134,3 +134,15 @@ def test_fixedincome_treats_the_placeholder_as_no_key():
     from financetoolkit import FixedIncome
 
     assert FixedIncome(api_key="FINANCIAL_MODELING_PREP_KEY")._api_key == ""
+
+
+@pytest.mark.parametrize(
+    "placeholder", ["FRED_API_KEY", "FRED_KEY", "your_fred_api_key"]
+)
+def test_a_placeholder_fred_key_falls_back_to_the_environment(monkeypatch, placeholder):
+    monkeypatch.setenv("FRED_API_KEY", "from-environment")
+    assert validation_model.resolve_fred_api_key(placeholder) == "from-environment"
+    assert validation_model.resolve_fred_api_key("actual-key") == "actual-key"
+
+    monkeypatch.delenv("FRED_API_KEY")
+    assert validation_model.resolve_fred_api_key(placeholder) == ""

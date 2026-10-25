@@ -289,7 +289,7 @@ class FixedIncome:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
         self._rounding: int | None = rounding
-        self._fred_api_key = fred_api_key
+        self._fred_api_key = validation_model.resolve_fred_api_key(fred_api_key)
         # A copied documentation example passes the placeholder key, treated as no key at all.
         self._api_key = validation_model.resolve_api_key(api_key)
         # The data retrieved from external sources is cached, see use_cached_data.
@@ -362,6 +362,25 @@ class FixedIncome:
             - Prices between coupon dates: the present value is the clean (quoted) price, while the
                 durations, DV01 and convexity are sensitivities of the full (dirty) price; on a coupon
                 date the two prices coincide.
+
+        The formula is as follows:
+
+        - PV(t) = Cash Flow(t) / (1 + YTM / Frequency)^(Frequency * t), with each coupon equal to Par Value *
+          Coupon Rate / Frequency and the par value repaid with the last coupon
+        - Dirty Price = SUM(PV(t)), over the remaining payment times t in years (fractional between coupon dates)
+        - Present Value = Dirty Price - Accrued Interest, the clean price (see `get_present_value`)
+        - Current Yield = Par Value * Coupon Rate / Present Value
+        - Effective Yield = (1 + Coupon Rate / Frequency)^Frequency - 1
+        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
+        - Modified Duration = Macaulay's Duration / (1 + YTM / Frequency)
+        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
+        - Dollar Duration = Modified Duration * Dirty Price / 100
+        - DV01 = (Present Value(YTM - 0.0001) - Present Value(YTM + 0.0001)) / 2
+        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price *
+          0.0001^2)
+
+        Where YTM is the yield to maturity, a nominal annual rate compounded `frequency` times a year (0.08 and
+        annual by default). The Effective Yield restates the coupon rate, not the yield to maturity.
 
         These statistics can be used to evaluate the bond's performance as opposed to other bonds or to estimate the bond's
         sensitivity to changes in interest rates to be able to apply a hedging strategy.
@@ -520,17 +539,24 @@ class FixedIncome:
     ):
         """
         Calculates the bond prices for different coupon rates and years to maturity. The bond price is the present value of the bond's
-        future cash flows, which includes the coupon payments and the par value of the bond at maturity. The bond price is calculated
-        using the following formula:
+        future cash flows, which includes the coupon payments and the par value of the bond at maturity.
 
-        - Bond Price = (C / r) * (1 — (1 + r)^-n) + F / (1 + r)^n
+        The formula is as follows:
+
+        - Dirty Price = SUM(C / (1 + r)^(t_i)) + F / (1 + r)^(t_n), over the remaining coupons i = 1, ..., n
+        - Accrued Interest = C * a
+        - Bond Price = Dirty Price - Accrued Interest, the clean price
 
         where:
 
-        - C = Coupon payment per period
-        - r = Yield to maturity per period
-        - n = Number of periods
+        - C = Coupon payment per period, Par Value * Coupon Rate / Frequency
+        - r = Yield to maturity per period, Yield to Maturity / Frequency (a nominal annual rate compounded
+          `frequency` times a year, 0.08 and annual by default)
+        - a = Elapsed fraction of the current coupon period, in periods of equal length (30/360), 0 on a coupon date
+        - t_i = i - a, the time of the i-th cash flow in coupon periods, so t_n = Years to Maturity * Frequency
         - F = Face value of the bond
+
+        On a coupon date this is Bond Price = (C / r) * (1 - (1 + r)^-n) + F / (1 + r)^n.
 
         The bond price is used to determine the fair value of the bond and to compare the bond's price to its market price to determine
         if the bond is overvalued or undervalued.
@@ -659,6 +685,18 @@ class FixedIncome:
         same as the dollar duration, the price value of a basis point (PVBP) or the dollar value of a 0.01% change (DV01), which are
         all expressed as a currency amount instead. The dollar duration is available through this method via `duration_type='dollar'`
         and the DV01 is calculated separately, see `collect_bond_statistics`.
+
+        The formula is as follows (the default is the modified duration):
+
+        - PV(t) = Cash Flow(t) / (1 + YTM / Frequency)^(Frequency * t), with each coupon equal to Par Value *
+          Coupon Rate / Frequency and the par value repaid with the last coupon
+        - Dirty Price = SUM(PV(t)), over the remaining payment times t in years (fractional between coupon dates)
+        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
+        - Modified Duration = Macaulay's Duration / (1 + YTM / Frequency)
+        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
+        - Dollar Duration = Modified Duration * Dirty Price / 100
+
+        Where YTM is the yield to maturity (compounded at the coupon frequency, 0.08 and annual by default).
 
         Modified duration is the first estimate of interest rate risk: a modified duration of 7 means the price falls by
         about 7% if the yield rises by one percentage point. The estimate worsens for larger moves, which convexity corrects
@@ -814,16 +852,20 @@ class FixedIncome:
         discount rate that equates the present value of the bond's cash flows to its market price. The yield to maturity is used to
         estimate the bond's return and to compare the bond's return to other investments.
 
-        The yield to maturity is calculated using the following formula:
+        The formula is as follows, solved for r:
 
-        - Bond Price = (C / r) * (1 — (1 + r)^-n) + F / (1 + r)^n
+        - Bond Price = SUM(C / (1 + r)^(t_i)) + F / (1 + r)^(t_n) - C * a, over the remaining coupons i = 1, ..., n
+        - Yield to Maturity = r * Frequency
 
         where:
 
-        - C = Coupon payment per period
+        - C = Coupon payment per period, Par Value * Coupon Rate / Frequency
         - r = Yield to maturity per period
-        - n = Number of periods
+        - a = Elapsed fraction of the current coupon period, in periods of equal length (30/360), 0 on a coupon date
+        - t_i = i - a, the time of the i-th cash flow in coupon periods, so t_n = Years to Maturity * Frequency
         - F = Face value of the bond
+
+        The Bond Price is the clean price, the dirty price minus the accrued coupon C * a, as in `get_present_value`.
 
         The goal is to find the yield to maturity that satisfies the equation above. This is done using the secant method
         which is an iterative method that converges to the root of a function. The bond price is read as a clean (quoted)
@@ -964,16 +1006,19 @@ class FixedIncome:
         spot curve, so `near_maturity` and `far_maturity` do not need to coincide
         exactly with a maturity present in `spot_rates`.
 
-        The forward rate is calculated using the following formula:
+        The formula is as follows:
 
         - Forward Rate = ((1 + r2)^t2 / (1 + r1)^t1)^(1 / (t2 - t1)) - 1
 
         where:
 
-        - r1 = Spot rate at the near maturity
+        - r1 = Spot rate at the near maturity, interpolated linearly from the curve
         - t1 = Near maturity, in years
-        - r2 = Spot rate at the far maturity
+        - r2 = Spot rate at the far maturity, interpolated linearly from the curve
         - t2 = Far maturity, in years
+
+        The spot rates are read as effective annual (annually compounded) rates and the forward rate is
+        annually compounded as well.
 
         Also known as: implied forward rate, forward-forward rate.
 
@@ -1079,18 +1124,19 @@ class FixedIncome:
         opposed to the theoretical spot curve which is usually bootstrapped rather than
         directly observed.
 
-        The par yield is calculated using the following formula:
+        The formula is as follows:
 
-        - Par Yield = frequency * (1 - DF(n)) / SUM(DF(k))
+        - DF(t) = 1 / (1 + Spot Rate(t / Frequency) / Frequency)^t, the discount factor of a cash flow after t
+          coupon periods
+        - Par Yield = Frequency * (1 - DF(t_n)) / (SUM(DF(t_i)) - a), over the remaining coupons i = 1, ..., n
 
-        where DF(k) = 1 / (1 + spot_rate(k / frequency) / frequency)^k is the discount
-        factor for the cash flow at period k, spot_rate(t) is obtained by interpolating
-        the spot curve at time t (in years), and n = years_to_maturity * frequency is
-        the number of coupon periods. The spot rates are read as nominal annual rates
-        compounded `frequency` times per year. For a maturity between coupon dates each
-        cash flow is discounted over its fractional number of periods and the par yield
-        is the coupon at which the clean price, without accrued interest, equals par
-        (see `yieldcurve_model.get_par_yield`).
+        where Spot Rate(τ) is the spot curve interpolated linearly at τ years and read as a nominal annual rate
+        compounded `frequency` times a year (annual by default), a is the elapsed fraction of the current coupon
+        period (0 on a coupon date) and t_i = i - a is the time of the i-th coupon in periods, so t_n =
+        Years to Maturity * Frequency. On a coupon date this is the textbook Frequency * (1 - DF(n)) / SUM(DF(k));
+        for a maturity between coupon dates the par yield is the coupon at which the clean price, without accrued
+        interest, equals par (see `yieldcurve_model.get_par_yield`). The par yield is a nominal annual coupon rate
+        paid `frequency` times a year.
 
         Also known as: par rate, par coupon rate.
 
@@ -1182,9 +1228,12 @@ class FixedIncome:
         curve, so `long_maturity` and `short_maturity` do not need to coincide exactly
         with a maturity present in `spot_rates`.
 
-        The yield curve spread is calculated using the following formula:
+        The formula is as follows:
 
         - Yield Curve Spread = Long-Term Yield - Short-Term Yield
+
+        Where both yields are interpolated linearly from the curve and subtracted as given, in the
+        compounding of the curve passed.
 
         Also known as: term spread, yield curve slope.
 
@@ -1286,9 +1335,12 @@ class FixedIncome:
         curves, so `maturity` does not need to coincide exactly with a maturity present
         in `nominal_rates` or `real_rates`.
 
-        The breakeven inflation rate is calculated using the following formula:
+        The formula is as follows:
 
         - Breakeven Inflation Rate = Nominal Yield - Real Yield
+
+        Where both yields are interpolated linearly from their curves and subtracted as given, in the
+        compounding of the curves passed (the simple difference, not (1 + Nominal) / (1 + Real) - 1).
 
         The breakeven rate is often read as the market's expected inflation, but it also
         contains an inflation risk premium, which raises it, and a liquidity premium on
@@ -1408,6 +1460,15 @@ class FixedIncome:
 
         The Z-spread is found iteratively using the secant method, in the same way that
         `get_yield_to_maturity` solves for the yield to maturity.
+
+        The formula is as follows, solved for the Z-Spread:
+
+        - Clean Price = SUM(Cash Flow(t) / (1 + (Spot Rate(t) + Z-Spread) / Frequency)^(Frequency * t)) - Accrued Interest
+
+        Where each coupon is Par Value * Coupon Rate / Frequency, the par value is repaid with the
+        last coupon, t is each remaining payment time in years and Spot Rate(t) is the benchmark
+        spot rate (compounded at the coupon frequency) interpolated linearly between the curve's
+        maturities and held flat beyond its first and last maturity.
 
         The Z-spread depends on the benchmark curve: against the government curve it measures
         credit and liquidity risk together, against the swap curve mostly the credit risk
@@ -1533,15 +1594,18 @@ class FixedIncome:
         restates the discount yield on a basis that is comparable to coupon-bearing
         bonds and notes.
 
-        The bond-equivalent yield is calculated using the following formula:
+        The formula is as follows:
 
-        - BEY = 365 * Discount Yield / (360 - Days to Maturity * Discount Yield)
+        - BEY = 365 * Discount Yield / (360 - Days to Maturity * Discount Yield), for 182.5 days or less
+        - Price = 1 - Discount Yield * Days to Maturity / 360, per unit of face value
+        - BEY = (-2t + 2 * SQRT(t^2 - (2t - 1) * (1 - 1 / Price))) / (2t - 1), with t = Days to Maturity / 365,
+          for more than 182.5 days
 
-        for a bill with half a year or less remaining. Beyond that an equivalent coupon-bearing
-        note would have paid a coupon at the six month point, so the U.S. Treasury's semi-annually
-        compounded solution (31 CFR 356, Appendix B) is used instead — see
-        `bond_model.get_bond_equivalent_yield`. Applying the simple formula to a 52-week bill
-        instead overstates its yield by roughly seven basis points.
+        A bill with half a year or less remaining takes the simple restatement onto the purchase price and a
+        365-day year. Beyond that an equivalent coupon-bearing note would have paid a coupon at the six month
+        point, so the U.S. Treasury's semi-annually compounded solution (31 CFR 356, Appendix B) is used instead,
+        see `bond_model.get_bond_equivalent_yield`. Applying the simple formula to a 52-week bill instead
+        overstates its yield by roughly seven basis points.
 
         Also known as: BEY, coupon-equivalent yield, investment rate.
 
@@ -1644,8 +1708,10 @@ class FixedIncome:
         rate duration measures the bond's price sensitivity to a shock at a single
         tenor of the curve while every other point is held fixed. Because cash flows
         are discounted using linear interpolation between the curve's tenors, a shock
-        at one tenor tapers off towards its neighboring tenors and has no effect beyond
-        them.
+        at an inner tenor tapers off towards its neighboring tenors and has no effect
+        beyond them. The curve is held flat beyond its first and last tenors, so a shock
+        at the first tenor moves every cash flow paid before it in full (and a shock at
+        the last tenor every cash flow paid after it).
 
         Summing the key rate durations across every tenor of the curve approximately
         reproduces the bond's effective (parallel-shift) duration, but key rate
@@ -1659,6 +1725,16 @@ class FixedIncome:
         shock at one maturity tapers off to its neighbours, the profile also depends on
         which maturities the curve contains: the same bond shows different key rate
         durations on a curve with more or fewer points.
+
+        The formula is as follows:
+
+        - Dirty Price = SUM(Cash Flow(t) / (1 + Spot Rate(t) / Frequency)^(Frequency * t))
+        - Key Rate Duration = -(Dirty Price(Key Rate + Δy) - Dirty Price(Key Rate - Δy)) / (2 * Dirty Price * Δy)
+
+        Where each coupon is Par Value * Coupon Rate / Frequency, the par value is repaid with the
+        last coupon, t is each remaining payment time in years, Spot Rate(t) is the spot rate
+        (compounded at the coupon frequency) interpolated linearly between the curve's maturities
+        and Δy is the shock applied to the key rate only (1 basis point by default).
 
         Also known as: partial duration, rate-specific duration.
 
@@ -1783,9 +1859,16 @@ class FixedIncome:
         This method calls `get_modified_duration` and `get_convexity` from
         `bond_model.py` directly rather than recomputing them.
 
-        The Taylor approximation is calculated using the following formula:
+        The formula is as follows:
 
+        - Modified Duration = SUM(t * PV(t)) / Dirty Price / (1 + YTM / Frequency), see `get_duration`
+        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price *
+          0.0001^2)
         - %ΔPrice ≈ -Modified Duration * Δy + 0.5 * Convexity * Δy^2
+
+        Where YTM is the yield to maturity, a nominal annual rate compounded `frequency` times a year (0.08 and
+        annual by default), Δy is the yield change (0.01 by default) and %ΔPrice is the change of the full
+        (dirty) price as a decimal, which on a coupon date equals the clean price `get_present_value` returns.
 
         Also known as: duration-convexity approximation, second-order price approximation.
 
@@ -1937,6 +2020,23 @@ class FixedIncome:
         Black's model is undefined at a zero or negative forward or strike rate because it takes
         the logarithm of their ratio, and raises rather than returning a silent NaN in that case.
         Use the Bachelier model for the negative rates seen in the euro area and Japan.
+
+        The formula is as follows (Black's model and a receiver swaption are the defaults):
+
+        - Annuity = (1 / Payment Frequency) * SUM(e^(-r * t_i)), over the swap's payment times t_i = T + i /
+          Payment Frequency for i = 1, ..., Tenor * Payment Frequency (the tenor defaults to T)
+        - Black d1 = (ln(F / K) + σ² * T / 2) / (σ * √T), d2 = d1 - σ * √T, with σ the lognormal volatility
+        - Black Payer Payoff = F * N(d1) - K * N(d2)
+        - Black Receiver Payoff = K * N(-d2) - F * N(-d1)
+        - Bachelier d = (F - K) / (σ_N * √T), with σ_N the normal volatility
+        - Bachelier Payer Payoff = (F - K) * N(d) + σ_N * √T * n(d)
+        - Bachelier Receiver Payoff = (K - F) * N(-d) + σ_N * √T * n(-d)
+        - Swaption Price = Notional * Annuity * Payoff
+
+        Where F is the forward swap rate, K is the strike rate, T is the years to maturity (expiry)
+        of the option, r is the continuously compounded risk-free rate (the forward rate when not
+        given), N is the cumulative standard normal distribution and n its density. A volatility
+        quoted on the other basis is converted with σ_N = σ * F.
 
         Also known as: bond derivative pricing, fixed income derivative, swaption pricing.
 
@@ -3099,6 +3199,11 @@ class FixedIncome:
         of which FRED only carries the last three years, this spread covers four decades, long
         enough to calibrate how credit spreads behave through several business cycles.
 
+        The formula is as follows:
+
+        - HQM Spread (maturity) = HQM Corporate Par Yield (maturity) - Treasury Constant Maturity Yield (maturity),
+          both monthly averages, for 2, 5, 10 and 30 years
+
         The data comes from FRED, so a free FRED API key is required. The spreads are returned
         as decimal fractions (0.0079 for 0.79 percentage points).
 
@@ -3377,6 +3482,11 @@ class FixedIncome:
         default within the period and is the measure to calibrate default rates on. With include_withdrawals=True they are a separate "Withdrawals" column, and
         with probabilities=False the counts are returned instead.
 
+        The formula is as follows (probabilities=True, the default):
+
+        - Transition Probability (from, to) = Count (from, to) / SUM(Count (from, every end category)), with
+          the end categories the ratings and default, plus "Withdrawals" only when include_withdrawals=True
+
         A single year's matrix rests on few observations in the top and bottom rows: an AAA
         row with few issuers is often 100% stable one year and shows a downgrade the next.
         Credit models therefore use the average over many years, or a longer horizon, and
@@ -3645,6 +3755,14 @@ class FixedIncome:
 
         Monthly values are the averages over the month, as Moody's publishes them; weekly
         values are the yields on the last day of each week (weeks end on Friday).
+
+        The formula is as follows (spread=True only):
+
+        - Aaa = Aaa Yield - 10-Year Treasury Yield, and Baa likewise
+        - Baa - Aaa = Baa Yield - Aaa Yield
+
+        Monthly spreads subtract the monthly average 10-year Treasury constant maturity yield; daily
+        spreads are the ones FRED publishes against the daily 10-year yield.
 
         The data comes from FRED, so a free FRED API key is required. The yields and spreads
         are returned as decimal fractions (0.0675 for 6.75%).
@@ -3960,8 +4078,10 @@ class FixedIncome:
         get_eiopa_risk_free_rate it completes the market inputs of the standard formula's
         market risk module.
 
-        The "Type 1 Equity Charge" (equities listed in the EEA or OECD) is 39% plus the
-        adjustment and the "Type 2 Equity Charge" (other equities) 49% plus the adjustment.
+        The formula is as follows:
+
+        - Type 1 Equity Charge = 0.39 + Symmetric Adjustment, for equities listed in the EEA or OECD
+        - Type 2 Equity Charge = 0.49 + Symmetric Adjustment, for other equities
         Every value is a decimal fraction (0.0771 for 7.71%). No API key is needed. Weekly
         and monthly periods take the value on the last day of each period, which is the
         value insurers apply at that reporting date.

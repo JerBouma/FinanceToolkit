@@ -80,6 +80,7 @@ def get_operating_cashflow_criteria(
 def get_change_in_return_on_asset_criteria(
     net_income: pd.DataFrame,
     beginning_total_assets: pd.DataFrame,
+    lag: int = 1,
 ) -> pd.DataFrame:
     """
     Calculates the change in the return on assets (F_dROA) criteria for the Piotroski F-Score
@@ -93,16 +94,18 @@ def get_change_in_return_on_asset_criteria(
 
         - Return on Assets (ROA) = Net Income / Total Assets (beginning of period)
         - Change in Return on Assets Criteria = Return on Assets (ROA, t) > Return on Assets
-        (ROA, t-1)
+        (ROA, t-lag)
 
     Args:
         net_income (pd.DataFrame): The net income of the company for the period.
         beginning_total_assets (pd.DataFrame): The total assets of the company at the
         beginning of the period.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.DataFrame: A boolean value indicating whether the ROA has increased
-        compared to the previous period.
+        compared to `lag` periods earlier.
 
     """
     return_on_assets = profitability_model.get_return_on_assets(
@@ -110,7 +113,7 @@ def get_change_in_return_on_asset_criteria(
     )
 
     change_in_return_on_assets_criteria = return_on_assets > return_on_assets.shift(
-        1, axis=1
+        lag, axis=1
     )
 
     return change_in_return_on_assets_criteria
@@ -163,6 +166,7 @@ def get_accruals_criteria(
 def get_change_in_leverage_criteria(
     long_term_debt: pd.DataFrame,
     average_total_assets: pd.DataFrame,
+    lag: int = 1,
 ) -> pd.DataFrame:
     """
     Calculate the change in leverage criteria (F_dLEVER) for the Piotroski F-Score model.
@@ -176,17 +180,19 @@ def get_change_in_leverage_criteria(
     The formula is as follows:
 
         - Leverage Ratio = Long Term Debt / Average Total Assets
-        - Change in Leverage Criteria = Leverage Ratio (t) < Leverage Ratio (t-1)
+        - Change in Leverage Criteria = Leverage Ratio (t) < Leverage Ratio (t-lag)
 
     Args:
         long_term_debt (pd.DataFrame): The total long term debt of a company, which
         can be a float or a time-series.
         average_total_assets (pd.DataFrame): The average total assets of a company
         over the beginning and the end of the period, which can be a float or a time-series.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.DataFrame: A boolean criteria indicating whether the leverage ratio
-        decreased compared to the previous period (True for decrease, False for increase or no change).
+        decreased compared to `lag` periods earlier (True for decrease, False for increase or no change).
 
     Notes:
     - A True value in the criteria indicates a decrease in long-term leverage (the favourable signal,
@@ -201,7 +207,7 @@ def get_change_in_leverage_criteria(
         total_debt=long_term_debt, total_assets=average_total_assets
     )
 
-    debt_ratio_criteria = debt_ratio < debt_ratio.shift(1, axis=1)
+    debt_ratio_criteria = debt_ratio < debt_ratio.shift(lag, axis=1)
 
     return debt_ratio_criteria
 
@@ -209,6 +215,7 @@ def get_change_in_leverage_criteria(
 def get_change_in_current_ratio_criteria(
     current_assets: pd.DataFrame,
     current_liabilities: pd.DataFrame,
+    lag: int = 1,
 ) -> pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Current Ratio over time.
@@ -219,17 +226,19 @@ def get_change_in_current_ratio_criteria(
     The formula is as follows:
 
         - Current Ratio = Current Assets / Current Liabilities
-        - Current Ratio Criteria = Current Ratio > Current Ratio Shifted
+        - Current Ratio Criteria = Current Ratio (t) > Current Ratio (t-lag)
 
     Args:
         current_assets (pd.DataFrame): The current assets of a company, which can
         be a time-series.
         current_liabilities (pd.DataFrame): The current liabilities of a company, which
         can be a time-series.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.DataFrame: A boolean criteria indicating whether the Current Ratio increased compared
-        to the previous period (True for increase, False for decrease or no change).
+        to `lag` periods earlier (True for increase, False for decrease or no change).
 
     Notes:
     - A True value in the criteria indicates an improvement in liquidity, while a False value
@@ -240,7 +249,7 @@ def get_change_in_current_ratio_criteria(
         current_assets=current_assets, current_liabilities=current_liabilities
     )
 
-    current_ratio_criteria = current_ratio > current_ratio.shift(1, axis=1)
+    current_ratio_criteria = current_ratio > current_ratio.shift(lag, axis=1)
 
     return current_ratio_criteria
 
@@ -285,6 +294,7 @@ def get_number_of_shares_criteria(
 def get_gross_margin_criteria(
     revenue: pd.DataFrame,
     cost_of_goods_sold: pd.DataFrame,
+    lag: int = 1,
 ) -> pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Gross Margin over time.
@@ -292,13 +302,20 @@ def get_gross_margin_criteria(
     The Gross Margin is a key profitability metric that measures the difference between a company's revenue and
     the cost of goods sold. It reflects the profitability of a company's core operations.
 
+    The formula is as follows:
+
+        - Gross Margin = (Revenue - Cost of Goods Sold) / Revenue
+        - Gross Margin Criteria = Gross Margin (t) > Gross Margin (t-lag)
+
     Args:
         revenue (pd.DataFrame): The revenue generated by a company, which can be a time-series.
         cost_of_goods_sold (pd.DataFrame): The cost of goods sold by a company, which can be a time-series.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.DataFrame: A boolean criteria indicating whether the Gross Margin increased compared to the
-        previous period (True for increase, False for decrease or no change).
+        period `lag` periods earlier (True for increase, False for decrease or no change).
 
     Notes:
     - A True value in the criteria indicates an improvement in profitability, while a False value
@@ -309,7 +326,7 @@ def get_gross_margin_criteria(
         revenue=revenue, cost_of_goods_sold=cost_of_goods_sold
     )
 
-    gross_margin_criteria = gross_margin > gross_margin.shift(1, axis=1)
+    gross_margin_criteria = gross_margin > gross_margin.shift(lag, axis=1)
 
     return gross_margin_criteria
 
@@ -317,6 +334,7 @@ def get_gross_margin_criteria(
 def get_asset_turnover_ratio_criteria(
     sales: pd.DataFrame,
     beginning_total_assets: pd.DataFrame,
+    lag: int = 1,
 ) -> pd.DataFrame:
     """
     Calculate criteria for evaluating changes in the Asset Turnover Ratio over time.
@@ -328,17 +346,19 @@ def get_asset_turnover_ratio_criteria(
     The formula is as follows:
 
         - Asset Turnover Ratio = Sales / Total Assets (beginning of period)
-        - Asset Turnover Criteria = Asset Turnover Ratio (t) > Asset Turnover Ratio (t-1)
+        - Asset Turnover Criteria = Asset Turnover Ratio (t) > Asset Turnover Ratio (t-lag)
 
     Args:
         sales (pd.DataFrame): The sales or revenue generated by a company, which can
         be a time-series or DataFrame.
         beginning_total_assets (pd.DataFrame): The total assets of a company at the beginning
         of the period, which can be a time-series or DataFrame.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.DataFrame: A boolean criteria indicating whether the Asset Turnover Ratio increased compared to the
-        previous period (True for increase, False for decrease or no change).
+        period `lag` periods earlier (True for increase, False for decrease or no change).
 
     Notes:
     - A True value in the criteria suggests improved asset utilization and efficiency, while a False value
@@ -350,7 +370,7 @@ def get_asset_turnover_ratio_criteria(
     )
 
     asset_turnover_ratio_criteria = asset_turnover_ratio > asset_turnover_ratio.shift(
-        1, axis=1
+        lag, axis=1
     )
 
     return asset_turnover_ratio_criteria

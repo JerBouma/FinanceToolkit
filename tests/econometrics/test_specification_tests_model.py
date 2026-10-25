@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from financetoolkit.econometrics import regression_model, specification_tests_model
 
@@ -319,3 +320,41 @@ def test_get_chow_test_insufficient_observations_in_subsample():
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass
+
+
+def test_get_breusch_pagan_and_white_without_constant_use_centered_auxiliary_regression():
+    rng = np.random.default_rng(7)
+    n = 400
+    x1 = rng.uniform(1, 5, n)
+    x2 = rng.standard_normal(n)
+    y = 2 * x1 - 0.5 * x2 + rng.standard_normal(n) * x1
+    result = regression_model.get_ols(
+        y, pd.DataFrame({"A": x1, "B": x2}), add_constant=False
+    )
+
+    # Koenker's LM = n·R² of e² on a constant and the regressors, with 2 degrees of freedom.
+    squared_residuals = np.asarray(result["residuals"]) ** 2
+    auxiliary = np.column_stack([np.ones(n), x1, x2])
+    fitted = auxiliary @ np.linalg.lstsq(auxiliary, squared_residuals, rcond=None)[0]
+    r_squared = 1 - np.sum((squared_residuals - fitted) ** 2) / np.sum(
+        (squared_residuals - squared_residuals.mean()) ** 2
+    )
+    expected_lm = n * r_squared
+
+    bp_result = specification_tests_model.get_breusch_pagan_test(result)
+    assert np.isclose(bp_result["Breusch-Pagan Statistic"], expected_lm, rtol=1e-10)
+    assert np.isclose(bp_result["P-Value"], stats.chi2.sf(expected_lm, 2), rtol=1e-10)
+
+    # White's auxiliary regression: constant, levels, squares and the cross-product (5 df).
+    white_design = np.column_stack([np.ones(n), x1, x2, x1**2, x1 * x2, x2**2])
+    fitted = (
+        white_design @ np.linalg.lstsq(white_design, squared_residuals, rcond=None)[0]
+    )
+    white_lm = n * (
+        1
+        - np.sum((squared_residuals - fitted) ** 2)
+        / np.sum((squared_residuals - squared_residuals.mean()) ** 2)
+    )
+    white_result = specification_tests_model.get_white_test(result)
+    assert np.isclose(white_result["White Statistic"], white_lm, rtol=1e-10)
+    assert np.isclose(white_result["P-Value"], stats.chi2.sf(white_lm, 5), rtol=1e-10)

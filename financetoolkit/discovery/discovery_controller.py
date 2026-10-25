@@ -889,6 +889,54 @@ class Discovery:
 
         return index_list
 
+    def get_index_constituents(self, index: str = "S&P 500") -> pd.DataFrame:
+        """
+        Returns the current constituents of an index (the S&P 500, the NASDAQ 100 or the Dow
+        Jones Industrial Average) with their sector, sub-sector, headquarters, the date they were
+        added, CIK and founding year. The symbols make a Toolkit of the whole index, for example
+        to measure market breadth from every constituent (`toolkit.technicals.get_market_breadth`)
+        or to rank them by relative strength.
+
+        These are today's members only. Breadth, relative strength or returns of past dates
+        computed from them leave out the companies that were removed from the index since,
+        often after falling behind, so the history is biased towards the survivors
+        (survivorship bias), the more so the further back it goes.
+
+        Also known as: index members, index constituents, S&P 500 components.
+
+        Args:
+            index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
+                "S&P 500".
+
+        Returns:
+            pd.DataFrame: The constituents, indexed by symbol.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        constituents = discovery.get_index_constituents("Dow Jones")
+
+        constituents[["Name", "Sector", "Date Added"]].head()
+        ```
+
+        Which returns:
+
+        | Symbol   | Name                       | Sector             | Date Added   |
+        |:---------|:---------------------------|:-------------------|:-------------|
+        | AAPL     | Apple Inc.                 | Technology         | 2015-03-19   |
+        | AMGN     | Amgen Inc.                 | Healthcare         | 2020-08-31   |
+        | AMZN     | Amazon.com, Inc.amazon.com | Consumer Cyclical  | 2024-02-26   |
+        | AXP      | American Express Company   | Financial Services | 1982-08-30   |
+        | BA       | The Boeing Company         | Industrials        | 1987-03-12   |
+        """
+        return discovery_model.get_index_constituents(
+            api_key=self._api_key, index=index, user_subscription=self._fmp_plan
+        )
+
     def get_stock_news(
         self,
         pages: int = 1,

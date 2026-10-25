@@ -268,3 +268,28 @@ def test_free_float_of_all_stocks_is_a_decimal(monkeypatch):
     shares_float = discovery_model.get_stock_shares_float(api_key="KEY")
 
     assert shares_float.loc["INDI", "Free Float"] == pytest.approx(0.98543)
+
+
+def test_index_constituents(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame(
+            {
+                "symbol": ["MSFT", "AAPL"],
+                "name": ["Microsoft", "Apple"],
+                "sector": ["Technology"] * 2,
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    constituents = discovery_model.get_index_constituents(
+        api_key="KEY", index="Dow Jones"
+    )
+
+    assert "dowjones-constituent" in requested[0]
+    assert list(constituents.index) == ["AAPL", "MSFT"]
+    with pytest.raises(ValueError, match="not available"):
+        discovery_model.get_index_constituents(api_key="KEY", index="DAX")

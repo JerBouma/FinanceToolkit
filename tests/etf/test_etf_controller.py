@@ -283,3 +283,34 @@ def test_a_nav_date_on_a_weekend_is_reported_as_its_close(etf):
     with_information(etf, Updated_At=updated.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
     assert etf.get_profile().loc["NAV Date", "AAA"] == friday.strftime("%Y-%m-%d")
+
+
+def test_a_nav_after_the_last_close_keeps_its_date_without_a_premium(etf):
+    close = etf._historical()["Close"]["AAA"]
+    # The NAV is struck on the trading day after the last close the prices hold.
+    nav_day = close.index[-1].to_timestamp() + pd.offsets.BDay(1)
+    updated = (
+        (nav_day + pd.Timedelta(hours=20))
+        .tz_localize("America/New_York")
+        .tz_convert("UTC")
+    )
+    with_information(etf, Updated_At=updated.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+    profile = etf.get_profile()
+
+    assert profile.loc["NAV Date", "AAA"] == nav_day.strftime("%Y-%m-%d")
+    assert pd.isna(profile.loc["Premium/Discount", "AAA"])
+
+
+def test_a_fund_missing_from_the_holdings_is_nan(etf):
+    holdings = etf._fund_data_function("holdings").drop(index="BBB", level=0)
+    information = etf._fund_data_function("information")
+    datasets = {"information": information, "holdings": holdings}
+    etf._fund_data_function = lambda dataset, overwrite=False: datasets[dataset]
+
+    concentration = etf.get_concentration()
+    overlap = etf.get_overlap()
+
+    assert concentration["BBB"].drop("Largest Holding").isna().all()
+    assert concentration.loc["Number of Holdings", "AAA"] == 3  # noqa: PLR2004
+    assert overlap["BBB"].isna().all() and overlap.loc["BBB"].isna().all()

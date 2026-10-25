@@ -162,7 +162,10 @@ class ETF:
             fund_weights = fund_weights.groupby(level=0).sum().dropna()
             # Short positions and derivatives with a negative weight do not add to exposure.
             weights[fund] = fund_weights[fund_weights > 0]
-        return weights
+        # A fund missing from the holdings has no weights, so its results are NaN.
+        return {
+            fund: weights.get(fund, pd.Series(dtype=float)) for fund in self._funds()
+        }
 
     @staticmethod
     def _sorted_weightings(weightings: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -523,9 +526,13 @@ class ETF:
                 and (nav_date - before.index[-1].to_timestamp()).days <= NAV_PRICE_DAYS
                 else float("nan")
             )
-            if pd.notna(close_at_nav):
-                # A weekend or holiday date from the 16 hours is reported as its close.
-                nav_date = before.index[-1].to_timestamp()
+            if pd.notna(close_at_nav) and before.index[-1].to_timestamp() != nav_date:
+                if nav_date.dayofweek >= 5 or dates.max() > nav_date:  # noqa: PLR2004
+                    # A weekend or holiday date from the 16 hours is reported as its close.
+                    nav_date = before.index[-1].to_timestamp()
+                else:
+                    # The prices end before the NAV date, so its close is not known yet.
+                    close_at_nav = float("nan")
             premium = self._premium(
                 fund, close_at_nav, nav, info.get("NAV Currency"), currencies.get(fund)
             )

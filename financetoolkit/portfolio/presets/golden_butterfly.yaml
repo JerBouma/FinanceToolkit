@@ -1,0 +1,35 @@
+# Duration, iShares TLT 14.63y (2026-10-06) https://www.ishares.com/us/products/239454/ishares-20-year-treasury-bond-etf
+name: Golden Butterfly
+aliases: ["Butterfly", "Portfolio Charts"]
+description: "Equal fifths of US stocks, US small-cap value stocks, long-term Treasuries, short-term Treasuries and gold."
+source:
+  text: "Portfolio Charts, Golden Butterfly, allocation at the top of the page: 20% each in US large-cap blend stocks, US small-cap value stocks, US long-term Treasuries, US short-term Treasuries and gold."
+  link: "https://portfoliocharts.com/portfolios/golden-butterfly-portfolio/"
+rebalancing: yearly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.2
+    asset_class: Equity
+    currency: USD
+  - ticker: VBR
+    name: Vanguard Small-Cap Value ETF
+    weight: 0.2
+    asset_class: Equity
+    currency: USD
+  - ticker: TLT
+    name: iShares 20+ Year Treasury Bond ETF
+    weight: 0.2
+    asset_class: Fixed Income
+    currency: USD
+    duration: 14.63
+  - ticker: SHY
+    name: iShares 1-3 Year Treasury Bond ETF
+    weight: 0.2
+    asset_class: Fixed Income
+    currency: USD
+  - ticker: GLD
+    name: SPDR Gold Shares
+    weight: 0.2
+    asset_class: Commodity
+    currency: USD

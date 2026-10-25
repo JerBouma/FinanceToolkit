@@ -1,0 +1,24 @@
+# JUDGEMENT: 85/15 keeps the risky end at the top of his range, since small-cap and growth stocks are far tamer than options.
+name: Barbell
+aliases: ["Taleb", "Antifragile"]
+description: "Nassim Taleb's barbell: 85% Treasury bills and 15% small-cap and growth stocks, nothing in between."
+source:
+  text: "Taleb (2007), The Black Swan: 85-90% in extremely safe instruments such as Treasury bills and the remaining 10-15% in highly leveraged speculative bets such as options (page not verified)."
+  link: "https://www.goodreads.com/notes/11507565-the-black-swan/66052655-greg-sikora/aa2b5b54-81ad-44d0-b65d-1bd4996eae04"
+rebalancing: yearly
+holdings:
+  - ticker: BIL
+    name: SPDR Bloomberg 1-3 Month T-Bill ETF
+    weight: 0.85
+    asset_class: Cash
+    currency: USD
+  - ticker: VB
+    name: Vanguard Small-Cap ETF
+    weight: 0.075
+    asset_class: Equity
+    currency: USD
+  - ticker: VUG
+    name: Vanguard Growth ETF
+    weight: 0.075
+    asset_class: Equity
+    currency: USD

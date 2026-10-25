@@ -7,7 +7,12 @@ import pandas as pd
 import pytest
 
 from financetoolkit.portfolio.portfolio_model import (
+    convert_historical_data,
+    convert_prices,
     format_portfolio_dataset,
+    get_base_currency,
+    get_exchange_rate_ticker,
+    get_price_unit,
     read_portfolio_dataset,
 )
 
@@ -206,3 +211,156 @@ def test_read_portfolio_dataset_edge_cases():
             )
 
     os.unlink(tmp.name)
+
+
+def test_currency_codes_keep_the_case_of_fractional_units():
+    """GBp is pence and GBP pounds, so only the major currencies are written in capitals."""
+    data = pd.DataFrame(
+        {
+            "Date": ["2023-01-01", "2023-01-02", "2023-01-03"],
+            "Name": ["Vodafone", "Apple Inc", "Naspers"],
+            "Ticker": ["VOD.L", "AAPL", "NPN.JO"],
+            "Price": [70.0, 150.0, 3000.0],
+            "Volume": [100, 50, 10],
+            "Currency": ["GBp", "usd", "ZAc"],
+            "Costs": [1.0, 2.0, 3.0],
+        }
+    )
+
+    dataset = format_portfolio_dataset(
+        dataset=data,
+        date_columns=["Date"],
+        date_format_options=["%Y-%m-%d"],
+        name_columns=["Name"],
+        tickers_columns=["Ticker"],
+        price_columns=["Price"],
+        volume_columns=["Volume"],
+        currency_columns=["Currency"],
+        costs_columns=["Costs"],
+        column_mapping={
+            "date": "Date",
+            "name": "Name",
+            "identifier": "Ticker",
+            "price": "Price",
+            "volume": "Volume",
+            "currency": "Currency",
+            "costs": "Costs",
+        },
+    )[0]
+
+    assert dataset["Currency"].tolist() == ["GBp", "USD", "ZAc"]
+
+
+def test_price_units_and_exchange_rates():
+    assert get_price_unit("GBp") == ("GBP", 100)
+    assert get_price_unit("GBX") == ("GBP", 100)
+    assert get_price_unit("ILA") == ("ILS", 100)
+    assert get_price_unit("eur") == ("EUR", 1)
+
+    assert get_exchange_rate_ticker("USD", "GBp") == "USDGBP=X"
+    assert get_exchange_rate_ticker("USD", "EUR") == "USDEUR=X"
+    # Pence and pounds are one currency: a factor of 100, no exchange rate.
+    assert get_exchange_rate_ticker("GBP", "GBp") is None
+    assert get_exchange_rate_ticker("USD", "USD") is None
+
+    assert (
+        get_base_currency(
+            {"VTI": "USD", "IEGA.AS": "EUR", "IGLT.L": "GBP"},
+            {"VTI": 0.1, "IEGA.AS": 0.5, "IGLT.L": 0.4},
+        )
+        == "EUR"
+    )
+    assert get_base_currency({}, {"VTI": 1.0}) == "USD"
+
+
+def test_convert_prices_divides_by_the_units_and_the_rate_of_the_day():
+    days = pd.period_range("2023-01-02", "2023-01-06", freq="D")
+    prices = pd.DataFrame(
+        {"AAPL": 150.0, "VOD.L": 70.0, "IGLT.L": 10.0, "BARC.L": 200.0}, index=days
+    )
+    # No rate on the third day: the rate of the day before applies.
+    rates = pd.DataFrame(
+        {"USDGBP=X": [0.8, 0.8, None, 0.5, 0.5]}, index=days, dtype=float
+    )
+
+    converted = convert_prices(
+        prices,
+        {"AAPL": "USD", "VOD.L": "GBp", "IGLT.L": "GBP", "BARC.L": "GBX"},
+        "USD",
+        rates,
+    )
+
+    assert converted["AAPL"].tolist() == pytest.approx([150.0] * 5)
+    assert converted["VOD.L"].tolist() == pytest.approx([0.875, 0.875, 0.875, 1.4, 1.4])
+    assert converted["IGLT.L"].tolist() == pytest.approx([12.5, 12.5, 12.5, 20, 20])
+    assert converted["BARC.L"].tolist() == pytest.approx([2.5, 2.5, 2.5, 4, 4])
+
+    # A price in pence valued in pounds needs no exchange rate.
+    assert convert_prices(prices[["VOD.L"]], {"VOD.L": "GBp"}, "GBP")[
+        "VOD.L"
+    ].tolist() == pytest.approx([0.7] * 5)
+
+    with pytest.raises(ValueError, match="USDEUR=X"):
+        convert_prices(prices[["AAPL"]], {"AAPL": "EUR"}, "USD", rates)
+
+
+def test_convert_historical_data_recalculates_the_returns():
+    days = pd.period_range("2023-01-02", "2023-01-04", freq="D")
+    columns = pd.MultiIndex.from_product(
+        [["Close", "Adj Close", "Dividends", "Return", "Cumulative Return"], ["VOD.L"]]
+    )
+    historical = pd.DataFrame(
+        [
+            [100.0, 100.0, 0.0, 0.0, 1.0],
+            [100.0, 100.0, 5.0, 0.0, 1.0],
+            [110.0, 110.0, 0.0, 0.1, 1.1],
+        ],
+        index=days,
+        columns=columns,
+    )
+    rates = pd.DataFrame({"USDGBP=X": [0.8, 0.5, 0.5]}, index=days)
+
+    converted = convert_historical_data(
+        historical,
+        {"VOD.L": ("GBp", "USD")},
+        rates,
+        ["Close", "Adj Close", "Dividends"],
+    )
+
+    assert converted[("Adj Close", "VOD.L")].tolist() == pytest.approx([1.25, 2, 2.2])
+    assert converted[("Dividends", "VOD.L")].tolist() == pytest.approx([0, 0.1, 0])
+    # In dollars the stock rose with the pound as well as in price.
+    assert converted[("Return", "VOD.L")].iloc[1:].tolist() == pytest.approx([0.6, 0.1])
+    assert converted[("Cumulative Return", "VOD.L")].tolist() == pytest.approx(
+        [1, 1.6, 1.76]
+    )
+
+
+def test_benchmark_data_is_aligned_with_carried_forward_prices():
+    """A missing benchmark date carries the previous quote with a zero return; a dividend on a date
+    the portfolio lacks moves to the next date, so nothing is counted twice or lost."""
+    from financetoolkit.portfolio.portfolio_model import (  # noqa: PLC0415
+        align_benchmark_data,
+    )
+
+    benchmark = pd.DataFrame(
+        {
+            "Close": [10.0, 11.0, 12.0, 13.0],
+            "Adj Close": [10.0, 11.0, 12.0, 13.0],
+            "Dividends": [0.0, 0.5, 0.0, 0.0],
+            "Return": [0.0, 0.1, 0.0909, 0.0833],
+        },
+        index=pd.PeriodIndex(
+            ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-08"], freq="D"
+        ),
+    )
+    dates = pd.PeriodIndex(
+        ["2024-01-02", "2024-01-04", "2024-01-05", "2024-01-08"], freq="D"
+    )
+
+    aligned = align_benchmark_data(benchmark, dates)
+
+    assert list(aligned.columns) == list(benchmark.columns)
+    assert aligned["Close"].tolist() == [10.0, 12.0, 12.0, 13.0]
+    assert aligned["Dividends"].tolist() == [0.0, 0.5, 0.0, 0.0]
+    assert aligned["Return"].tolist() == pytest.approx([0.0, 0.2, 0.0, 13 / 12 - 1])

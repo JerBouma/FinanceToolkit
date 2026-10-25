@@ -744,3 +744,21 @@ def test_the_model_free_volatility_extrapolates_a_short_target(option_market):
     assert result["Near-Term Expiration"] == near["Near-Term Expiration"]
     assert result["Next-Term Expiration"] == near["Next-Term Expiration"]
     assert result["Model-Free Implied Volatility"] > 0
+
+
+def test_an_expiry_without_a_chain_leaves_the_other_tickers(option_market, monkeypatch):
+    module, _ = option_market
+    good, bad = module._tickers[:2]
+    expiry_inputs = module._expiry_inputs
+
+    def without_chain(ticker, expiration_date):
+        inputs = expiry_inputs(ticker, expiration_date)
+        return (
+            (pd.DataFrame(), pd.DataFrame(), *inputs[2:]) if ticker == bad else inputs
+        )
+
+    monkeypatch.setattr(module, "_expiry_inputs", without_chain)
+
+    with pytest.raises(ValueError, match=f"{bad} has no option chain"):
+        module._model_free_volatility(bad, days=30)
+    assert not module._model_free_volatility(good, days=30).empty

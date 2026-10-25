@@ -7597,6 +7597,9 @@ class Options:
         terms = {}
         for label, date in (("Near-Term", near), ("Next-Term", next_term)):
             calls, puts, _, time, rate, _ = self._expiry_inputs(ticker, date)
+            # A ValueError reaches the per-ticker warning, so the other tickers still answer.
+            if calls.empty or puts.empty:
+                raise ValueError(f"{ticker} has no option chain for {date}.")
             variance, forward = market_metrics_model.get_model_free_variance(
                 calls, puts, time, rate
             )

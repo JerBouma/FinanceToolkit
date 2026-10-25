@@ -179,13 +179,12 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Name             | Currency   | Exchange                       | Exchange Code   |
-        |:---------|:-----------------|:-----------|:-------------------------------|:----------------|
-        | MVCO     | Metavesco, Inc.  | USD        | Other OTC                      | OTC             |
-        | MTCR     | Metacrine, Inc.  | USD        | NASDAQ Capital Market          | NASDAQ          |
-        | MEVRUSD  | Metaverse VR USD | USD        | CCC                            | CRYPTO          |
-        | MCAPUSD  | Meta Capital USD | USD        | CCC                            | CRYPTO          |
-        | MLX.AX   | Metals X Limited | AUD        | Australian Securities Exchange | ASX             |
+        | Symbol   | Name             | Currency   | Exchange              | Exchange Code   |
+        |:---------|:-----------------|:-----------|:----------------------|:----------------|
+        | MVCO     | Metavesco, Inc.  | USD        | Other OTC             | OTC             |
+        | MTCR     | Metacrine, Inc.  | USD        | NASDAQ Capital Market | NASDAQ          |
+        | MEVRUSD  | Metaverse VR USD | USD        | CCC                   | CRYPTO          |
+        | MCAPUSD  | Meta Capital USD | USD        | CCC                   | CRYPTO          |
 
         """
         if search_method not in ["symbol", "name", "cik", "cusip", "isin"]:
@@ -250,9 +249,9 @@ class Discovery:
         Also known as: filter stocks, financial criteria screener.
 
         Args:
-            market_cap_higher (int): The minimum market capitalization of the stock, in the
-                currency of the listing rather than in millions.
-            market_cap_lower (int): The maximum market capitalization of the stock.
+            market_cap_higher (int): The minimum market capitalization of the stock in US dollars
+                (not in millions), e.g. 1_000_000_000 for $1 billion.
+            market_cap_lower (int): The maximum market capitalization of the stock in US dollars.
             price_higher (int): The minimum price of the stock.
             price_lower (int): The maximum price of the stock.
             beta_higher (int): The minimum beta of the stock.
@@ -304,33 +303,27 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Name                                         |   Market Cap | Sector             | Industry                            |   Beta |   Price |   Dividend |   Volume | Exchange                | Exchange Code   | Country   |
-        |:---------|:---------------------------------------------|-------------:|:-------------------|:------------------------------------|-------:|--------:|-----------:|---------:|:------------------------|:----------------|:----------|
-        | JCI      | Johnson Controls International plc           |  94453267417 | Basic Materials    | Construction Materials              | 1.28   |  155.93 |     1.6    |  1850585 | New York Stock Exchange | NYSE            | IE        |
-        | WPM.TO   | Wheaton Precious Metals Corp.                |  86465416946 | Basic Materials    | Gold                                | 1.242  |  190.4  |     1.0425 |   666411 | Toronto Stock Exchange  | TSX             | CA        |
-        | ODFL     | Old Dominion Freight Line, Inc.              |  36521310178 | Industrials        | Trucking                            | 1.204  |  175.61 |     1.15   |  1668932 | NASDAQ Global Select    | NASDAQ          | US        |
-        | EXPD     | Expeditors International of Washington, Inc. |  24961462350 | Industrials        | Integrated Freight & Logistics      | 1.064  |  190.85 |     1.58   |   832787 | New York Stock Exchange | NYSE            | US        |
-        | IHG      | InterContinental Hotels Group PLC            |  23623790857 | Consumer Cyclical  | Travel Lodging                      | 1.028  |  159.9  |     1.231  |   118360 | New York Stock Exchange | NYSE            | GB        |
-        | FTT.TO   | Finning International Inc.                   |  13927322149 | Industrials        | Industrial - Distribution           | 1.206  |  106.67 |     1.256  |   391781 | Toronto Stock Exchange  | TSX             | CA        |
-        | TOL      | Toll Brothers, Inc.                          |  12512028060 | Consumer Cyclical  | Residential Construction            | 1.302  |  133.86 |     1.02   |  1075161 | New York Stock Exchange | NYSE            | US        |
-        | ALB      | Albemarle Corporation                        |  12117785390 | Basic Materials    | Chemicals - Specialty               | 1.359  |  102.75 |     1.625  |  1930624 | New York Stock Exchange | NYSE            | US        |
-        | RRX      | Regal Rexnord Corporation                    |  10928726799 | Industrials        | Industrial - Machinery              | 1.069  |  164.17 |     1.4    |  1223281 | New York Stock Exchange | NYSE            | US        |
-        | TFII     | TFI International Inc.                       |   9234383550 | Industrials        | Trucking                            | 1.474  |  112.35 |     1.88   |   395535 | New York Stock Exchange | NYSE            | CA        |
-        | AVT      | Avnet, Inc.                                  |   8409929025 | Technology         | Technology Distributors             | 1.082  |  102.53 |     1.42   |   875063 | NASDAQ Global Select    | NASDAQ          | US        |
-        | TKR      | The Timken Company                           |   7985612995 | Industrials        | Manufacturing - Tools & Accessories | 1.183  |  114.91 |     1.42   |   765869 | New York Stock Exchange | NYSE            | US        |
-        | AGCO     | AGCO Corporation                             |   7643963439 | Industrials        | Agricultural - Machinery            | 1.074  |  109.15 |     1.18   |  1202778 | New York Stock Exchange | NYSE            | US        |
-        | SSD      | Simpson Manufacturing Co., Inc.              |   7043699726 | Basic Materials    | Construction Materials              | 1.318  |  171.22 |     1.18   |   358330 | New York Stock Exchange | NYSE            | US        |
-        | VCTR     | Victory Capital Holdings, Inc.               |   6994104206 | Financial Services | Asset Management                    | 1.134  |  111.85 |     1.98   |   621512 | NASDAQ Global Select    | NASDAQ          | US        |
-        | AWI      | Armstrong World Industries, Inc.             |   6860101916 | Basic Materials    | Construction Materials              | 1.158  |  162.32 |     1.356  |   411142 | New York Stock Exchange | NYSE            | US        |
-        | JCOM     | Ziff Davis, Inc.                             |   6750661252 | Technology         | Software - Infrastructure           | 1.0328 |  142.84 |     1.76   |   355657 | NASDAQ Global Select    | NASDAQ          | US        |
-        | ENS      | EnerSys                                      |   6652878434 | Industrials        | Electrical Equipment & Parts        | 1.186  |  182.49 |     1.075  |   494854 | New York Stock Exchange | NYSE            | US        |
-        | CAKE     | The Cheesecake Factory Incorporated          |   5315840946 | Consumer Cyclical  | Restaurants                         | 1.037  |  106.99 |     1.17   |   867736 | NASDAQ Global Select    | NASDAQ          | US        |
-        | EXP      | Eagle Materials Inc.                         |   5138116938 | Basic Materials    | Construction Materials              | 1.335  |  167.5  |     1      |   614728 | New York Stock Exchange | NYSE            | US        |
-        | SIG      | Signet Jewelers Limited                      |   4065914724 | Consumer Cyclical  | Luxury Goods                        | 1.105  |  103.38 |     1.34   |   600993 | New York Stock Exchange | NYSE            | BM        |
-        | HCI      | HCI Group, Inc.                              |   2383572598 | Financial Services | Insurance - Property & Casualty     | 1.048  |  186.73 |     1.6    |   148652 | New York Stock Exchange | NYSE            | US        |
-        | MCRI     | Monarch Casino & Resort, Inc.                |   2117901825 | Consumer Cyclical  | Gambling, Resorts & Casinos         | 1.405  |  118.17 |     1.2    |   249420 | NASDAQ Global Select    | NASDAQ          | US        |
-        | ALG      | Alamo Group Inc.                             |   1909327953 | Industrials        | Industrial - Machinery              | 1.078  |  156.91 |     1.32   |   112409 | New York Stock Exchange | NYSE            | US        |
-        | OPY      | Oppenheimer Holdings Inc.                    |   1254113226 | Financial Services | Financial - Capital Markets         | 1.096  |  118.22 |     1.76   |   116502 | New York Stock Exchange | NYSE            | US        |
+        | Symbol   | Name                                         |   Market Cap | Sector             | Industry                            |   Beta |   Price |   Dividend |   Volume |   avgVolume | Exchange                | Exchange Code   | Country   | Currency   |   Market Cap (USD) |
+        |:---------|:---------------------------------------------|-------------:|:-------------------|:------------------------------------|-------:|--------:|-----------:|---------:|------------:|:------------------------|:----------------|:----------|:-----------|-------------------:|
+        | WPM.TO   | Wheaton Precious Metals Corp.                |  7.68348e+10 | Basic Materials    | Gold                                | 1.243  |  169.18 |     1.0425 |   549294 |      784311 | Toronto Stock Exchange  | TSX             | CA        | CAD        |        5.48769e+10 |
+        | ODFL     | Old Dominion Freight Line, Inc.              |  3.79958e+10 | Industrials        | Trucking                            | 1.204  |  182.7  |     1.15   |  1993098 |     1766126 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        3.79958e+10 |
+        | EXPD     | Expeditors International of Washington, Inc. |  2.55055e+10 | Industrials        | Integrated Freight & Logistics      | 1.064  |  196.21 |     1.58   |   989988 |     1040746 | New York Stock Exchange | NYSE            | US        | USD        |        2.55055e+10 |
+        | IHG      | InterContinental Hotels Group PLC            |  2.37383e+10 | Consumer Cyclical  | Travel Lodging                      | 1.028  |  162.4  |     1.231  |   333742 |      219735 | New York Stock Exchange | NYSE            | GB        | USD        |        2.37383e+10 |
+        | TOL      | Toll Brothers, Inc.                          |  1.28914e+10 | Consumer Cyclical  | Residential Construction            | 1.302  |  139.9  |     1.03   |   996905 |      996604 | New York Stock Exchange | NYSE            | US        | USD        |        1.28914e+10 |
+        | RRX      | Regal Rexnord Corporation                    |  9.84697e+09 | Industrials        | Industrial - Machinery              | 1.069  |  147.92 |     1.4    |   833290 |     1254610 | New York Stock Exchange | NYSE            | US        | USD        |        9.84697e+09 |
+        | TFII     | TFI International Inc.                       |  9.24671e+09 | Industrials        | Trucking                            | 1.469  |  112.5  |     1.88   |   217798 |      316092 | New York Stock Exchange | NYSE            | CA        | USD        |        9.24671e+09 |
+        | TKR      | The Timken Company                           |  7.57622e+09 | Industrials        | Manufacturing - Tools & Accessories | 1.183  |  109.33 |     1.42   |   836982 |      921212 | New York Stock Exchange | NYSE            | US        | USD        |        7.57622e+09 |
+        | SSD      | Simpson Manufacturing Co., Inc.              |  7.55594e+09 | Basic Materials    | Construction Materials              | 1.318  |  184.36 |     1.18   |   489272 |      287909 | New York Stock Exchange | NYSE            | US        | USD        |        7.55594e+09 |
+        | AGCO     | AGCO Corporation                             |  7.43037e+09 | Industrials        | Agricultural - Machinery            | 1.074  |  106.1  |     1.18   |   574467 |     1028668 | New York Stock Exchange | NYSE            | US        | USD        |        7.43037e+09 |
+        | AWI      | Armstrong World Industries, Inc.             |  7.10776e+09 | Basic Materials    | Construction Materials              | 1.158  |  168.18 |     1.356  |   432292 |      400187 | New York Stock Exchange | NYSE            | US        | USD        |        7.10776e+09 |
+        | JCOM     | Ziff Davis, Inc.                             |  6.75066e+09 | Technology         | Software - Infrastructure           | 1.0328 |  142.84 |     1.76   |   355657 |      357547 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        6.75066e+09 |
+        | VCTR     | Victory Capital Holdings, Inc.               |  6.61843e+09 | Financial Services | Asset Management                    | 1.133  |  107.6  |     1.98   |   379475 |      645526 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        6.61843e+09 |
+        | ENS      | EnerSys                                      |  5.98971e+09 | Industrials        | Electrical Equipment & Parts        | 1.186  |  166.08 |     1.075  |   374598 |      537471 | New York Stock Exchange | NYSE            | US        | USD        |        5.98971e+09 |
+        | CAKE     | The Cheesecake Factory Incorporated          |  5.39256e+09 | Consumer Cyclical  | Restaurants                         | 1.037  |  108.37 |     1.17   |  1802234 |     1574028 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        5.39256e+09 |
+        | EXP      | Eagle Materials Inc.                         |  5.35929e+09 | Basic Materials    | Construction Materials              | 1.335  |  174.71 |     1      |   432955 |      442898 | New York Stock Exchange | NYSE            | US        | USD        |        5.35929e+09 |
+        | SIG      | Signet Jewelers Limited                      |  4.49001e+09 | Consumer Cyclical  | Luxury Goods                        | 1.104  |  117.18 |     1.37   |   860622 |      862382 | New York Stock Exchange | NYSE            | BM        | USD        |        4.49001e+09 |
+        | MCRI     | Monarch Casino & Resort, Inc.                |  2.01951e+09 | Consumer Cyclical  | Gambling, Resorts & Casinos         | 1.405  |  112.68 |     1.2    |   142490 |      156229 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        2.01951e+09 |
+        | ALG      | Alamo Group Inc.                             |  1.77915e+09 | Industrials        | Industrial - Machinery              | 1.078  |  146.18 |     1.36   |   208708 |      169615 | New York Stock Exchange | NYSE            | US        | USD        |        1.77915e+09 |
 
         """
         _validate_arguments(limit=limit)
@@ -382,18 +375,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Name                                 |
-        |:---------|:-------------------------------------|
-        | DS-PD    | Drive Shack Inc.                     |
-        | DS.TO    | Dividend Select 15 Corp.             |
-        | DS2P.L   | L&G DAX Daily 2x Short UCITS ETF EUR |
-        | DSAC     | Daedalus Special Acquisition Corp.   |
-        | DSACU    | Daedalus Special Acquisition Corp.   |
-        | DSACW    | Daedalus Special Acquisition Corp.   |
-        | DSAI.CN  | DeepSpatial Inc.                     |
-        | DSAIF    | DeepSpatial Inc.                     |
-        | DSAQ     | Direct Selling Acquisition Corp.     |
-        | DSAQ-UN  | Direct Selling Acquisition Corp.     |
+        | Symbol        | Name                                             |
+        |:--------------|:-------------------------------------------------|
+        | DRNYX         | BNY Mellon New York Tax Exempt Bond Fund, Inc.   |
+        | DRNZ          | REX Drone ETF                                    |
+        | DRO.AX        | DroneShield Limited                              |
+        | DROCX         | Diamond Hill Research Opportunities Fund Class C |
+        | DROME.AT      | Dromeas S.A.                                     |
+        | DRON.DE       | Defiance Drone UCITS ETF USD                     |
+        | DRON.L        | Defiance Drone UCITS ETF USD                     |
+        | DRONACHRYA.BO | Droneacharya Aerial Innovation                   |
+        | DRONE.NS      | Drone Destination Ltd.                           |
+        | DROOF         | Deliveroo plc                                    |
         """
 
         stock_list = discovery_model.get_stock_list(
@@ -406,7 +399,8 @@ class Discovery:
         """
         Returns the shares float for each company. The shares float is the number of shares
         available for trading for each company. It also includes the number of shares
-        outstanding and the date.
+        outstanding and the date. The free float is the share of the outstanding shares that
+        is available for trading, as a decimal (0.85 is 85%).
 
         Returns:
             pd.DataFrame: A dataframe with the shares float for each company.
@@ -425,18 +419,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol        | Date                |   Free Float |   Float Shares |   Outstanding Shares |
-        |:--------------|:--------------------|-------------:|---------------:|---------------------:|
-        | INDI          | 2026-10-07 22:37:55 |      98.543  |    2.0821e+08  |          2.11289e+08 |
-        | INDI.L        | 2026-08-04 14:04:36 |      17.345  |    3.17368e+07 |          1.82974e+08 |
-        | INDIACEM.BO   | 2026-10-08 04:02:55 |      16.9962 |    5.26707e+07 |          3.09897e+08 |
-        | INDIACEM.NS   | 2026-10-08 04:22:30 |      16.9962 |    5.26707e+07 |          3.09897e+08 |
-        | INDIAGLYCO.BO | 2026-10-07 22:54:30 |      35.1773 |    2.35782e+07 |          6.70268e+07 |
-        | INDIAGLYCO.NS | 2026-10-07 20:18:30 |      35.531  |    2.38153e+07 |          6.70268e+07 |
-        | INDIAHOME.BO  | 2026-10-07 22:47:20 |      11.1708 |    1.59539e+06 |          1.42818e+07 |
-        | INDIAHOMES.BO | 2026-10-08 04:07:13 |      89.4614 |    3.56129e+08 |          3.98081e+08 |
-        | INDIAMART.BO  | 2026-10-07 23:11:10 |      41.9782 |    2.5247e+07  |          6.01431e+07 |
-        | INDIAMART.NS  | 2026-10-07 22:38:20 |      41.9782 |    2.5247e+07  |          6.01431e+07 |
+        | Symbol   | Date                |   Free Float |   Float Shares |   Outstanding Shares |
+        |:---------|:--------------------|-------------:|---------------:|---------------------:|
+        | IMFP     | NaT                 |     0        |    0           |          2.11197e+06 |
+        | IMG      | 2026-08-02 20:04:15 |     0.813132 |    7.30965e+06 |          8.9895e+06  |
+        | IMG.TO   | 2026-10-24 09:52:25 |     0.997654 |    5.6966e+08  |          5.71e+08    |
+        | IMGI     | NaT                 |     0        |    0           |          1.19912e+10 |
+        | IMGN     | NaT                 |     0.887214 |    2.47847e+08 |          2.79354e+08 |
+        | IMGP.L   | 2026-10-23 22:27:50 |     0.980184 |    3.62615e+07 |          3.69946e+07 |
+        | IMGX     | NaT                 |     0        |    0           |          6.42041e+09 |
+        | IMH      | 2026-08-05 02:12:51 |     0.57308  |    2.09569e+07 |          3.65689e+07 |
+        | IMH.BK   | 2026-10-24 08:24:50 |     0.247494 |    5.86566e+07 |          2.37002e+08 |
+        | IMHC     | NaT                 |     0.217776 |    4.5493e+07  |          2.08898e+08 |
 
         """
 
@@ -447,14 +441,17 @@ class Discovery:
         return stock_shares_float
 
     def get_sectors_performance(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
         Returns the historical performance of every sector, one column per sector.
 
-        The values are the average percentage change of the companies in that sector on that
-        date, so 1.25 means +1.25% and not +125%. One API call is made per sector because the
-        combined endpoint this used to read was retired and now answers with an empty response.
+        The values are the average change of the companies in that sector listed on an
+        exchange (NASDAQ by default) on that date, as a decimal (0.0125 is +1.25%). One API call
+        is made per sector.
 
         Without a date range the API hands back only the earliest days it holds, so the
         last year up to today is retrieved unless `start_date` and `end_date` say otherwise.
@@ -464,6 +461,8 @@ class Discovery:
                 Defaults to a year ago.
             end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
                 Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with the sectors performance for each sector.
@@ -482,13 +481,13 @@ class Discovery:
 
         Which returns:
 
-        | Date       |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |   Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |   Utilities |
-        |:-----------|------------------:|-------------------------:|--------------------:|---------------------:|---------:|---------------------:|-------------:|--------------:|--------------:|-------------:|------------:|
-        | 2024-02-26 |           -2.0728 |                  -1.454  |              0.7303 |               0.324  |  -0.1413 |              -0.0491 |       2.7031 |       -1.2333 |        0.4945 |       0.2893 |     -1.5214 |
-        | 2024-02-27 |            2.8956 |                   1.0041 |             -0.7125 |               0.1136 |   2.5373 |               3.0268 |       9.1978 |       -0.5179 |        0.7542 |       0.0419 |      4.6884 |
-        | 2024-02-28 |            4.343  |                  -0.8573 |             -0.9692 |              -0.0826 |  -3.6163 |               1.8261 |      -0.9719 |        1.0113 |       -0.2592 |      -0.6251 |      1.6461 |
-        | 2024-02-29 |           -1.3336 |                   0.7907 |              1.2483 |               3.4536 |   0.6259 |              -0.5633 |      -1.4379 |       -4.1022 |        1.7541 |       1.2096 |      9.9286 |
-        | 2024-03-01 |            0.8526 |                   0.0092 |              1.5435 |              -3.7427 |   1.399  |              -0.8531 |       2.544  |        0.1322 |        0.1964 |       1.6327 |     -2.0912 |
+        | Date       |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |      Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |    Utilities |
+        |:-----------|------------------:|-------------------------:|--------------------:|---------------------:|------------:|---------------------:|-------------:|--------------:|--------------:|-------------:|-------------:|
+        | 2026-10-19 |       0.00875661  |              -0.00107542 |          0.022757   |           0.00868844 | -0.00464467 |          -0.00881873 |  0.000189793 |   -0.00922967 |   -0.017014   |  -0.00402035 | -0.0337457   |
+        | 2026-10-20 |      -0.000397105 |              -0.00517301 |          0.00326353 |          -0.0077103  | -0.00762765 |           0.0113436  |  0.0203693   |    0.0078808  |    0.0143695  |   0.00333534 |  0.000870726 |
+        | 2026-10-21 |       0.00524548  |              -0.00377267 |          0.00255038 |           0.00805013 | -0.00226659 |           0.00122279 |  0.0128648   |   -0.00171778 |   -0.010997   |   0.0036553  |  0.00699986  |
+        | 2026-10-22 |       0.0158222   |              -0.0267501  |         -0.0112764  |           0.0126416  | -0.019561   |           0.0161104  |  0.00804433  |   -0.0265981  |   -0.0313195  |  -0.0187846  | -0.024581    |
+        | 2026-10-23 |      -0.00121107  |               0.00150168 |         -0.00270255 |          -0.0133687  |  0.0308545  |           0.0101811  | -0.00300935  |    0.00179638 |    0.00460377 |   0.00759818 | -0.00308007  |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -497,6 +496,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return sectors_performance
@@ -504,7 +504,8 @@ class Discovery:
     def get_biggest_gainers(self) -> pd.DataFrame:
         """
         Returns the biggest gainers for the day. This includes the symbol, the name,
-        the price, the change and the change percentage.
+        the price, the change and the change percentage. The change percentage ("Change %")
+        is a decimal (0.0125 is +1.25%).
 
         Returns:
             pd.DataFrame: A dataframe with the biggest gainers for the day.
@@ -523,18 +524,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   |   Price | Name                                 |   Change |   Change % | Exchange   |
-        |:---------|--------:|:-------------------------------------|---------:|-----------:|:-----------|
-        | CCAQU    | 19.49   | Collective Acquisition Corp.         |   8.81   |    82.4906 | NASDAQ     |
-        | BIYA     |  2.3    | Baiya International Group Inc.       |   0.935  |    68.4982 | NASDAQ     |
-        | ALISU    | 16.65   | Calisa Acquisition Corp Units        |   5.84   |    54.0241 | NASDAQ     |
-        | AMPGZ    |  0.18   | Amplitech Group, Inc. Series B Right |   0.055  |    44      | NASDAQ     |
-        | BSP      | 41.07   | Bending Spoons S.p.A.                |   8      |    24.1911 | NASDAQ     |
-        | ALPXR    |  0.1911 | Alpex Acquisition Corp. Rt           |   0.0311 |    19.4375 | NASDAQ     |
-        | CANG     |  3.58   | Cango Inc.                           |   0.56   |    18.5431 | NYSE       |
-        | CCG      |  5.77   | Cheche Group Inc.                    |   0.8    |    16.0966 | NASDAQ     |
-        | AIFU     | 12.85   | AIFU Inc.                            |   1.67   |    14.9374 | NASDAQ     |
-        | AMBR     |  2.28   | Amber International Holding Ltd      |   0.29   |    14.5729 | NASDAQ     |
+        | Symbol   |   Price | Name                           |   Change |   Change % | Exchange   |
+        |:---------|--------:|:-------------------------------|---------:|-----------:|:-----------|
+        | AIOK     | 12.02   | AI OKTO Corp.                  |   7.77   |   1.82824  | NASDAQ     |
+        | CLRO     |  3.25   | ClearOne, Inc.                 |   1.33   |   0.692708 | NASDAQ     |
+        | LYCA     | 30      | Lycia Therapeutics Inc.        |  12      |   0.666667 | NASDAQ     |
+        | BOLT     |  6.27   | Bolt Biotherapeutics, Inc.     |   2.08   |   0.49642  | NASDAQ     |
+        | MYND     |  0.24   | Mynd.ai, Inc.                  |   0.0772 |   0.474201 | AMEX       |
+        | ESLA     |  0.985  | Estrella Immunopharma, Inc.    |   0.2582 |   0.355256 | NASDAQ     |
+        | GPUS     |  0.1689 | Hyperscale Data, Inc.          |   0.0429 |   0.340476 | AMEX       |
+        | JYD      |  1.83   | Jayud Global Logistics Limited |   0.45   |   0.326087 | NASDAQ     |
+        | HTCO     |  1.53   | High-Trend International Group |   0.36   |   0.307692 | NASDAQ     |
+        | IMC      |  8.99   | IMC Rare Earths Ltd            |   1.99   |   0.284286 | AMEX       |
         """
         biggest_gainers = discovery_model.get_biggest_gainers(
             api_key=self._api_key, user_subscription=self._fmp_plan
@@ -545,7 +546,8 @@ class Discovery:
     def get_biggest_losers(self) -> pd.DataFrame:
         """
         Returns the biggest losers for the day. This includes the symbol, the name,
-        the price, the change and the change percentage.
+        the price, the change and the change percentage. The change percentage ("Change %")
+        is a decimal (0.0125 is +1.25%).
 
         Returns:
             pd.DataFrame: A dataframe with the biggest losers for the day.
@@ -564,18 +566,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   |   Price | Name                                                |    Change |   Change % | Exchange   |
-        |:---------|--------:|:----------------------------------------------------|----------:|-----------:|:-----------|
-        | BULG     | 21.1116 | Leverage Shares 2x Long BULL Daily ETF              | -12.9859  |   -38.0846 | NASDAQ     |
-        | AIXI     |  1.32   | Xiao-I Corporation                                  |  -0.53    |   -28.6486 | NASDAQ     |
-        | AVAT     |  1.66   | Avalanche Treasury Corporation Class A Common Stock |  -0.41    |   -19.8068 | NASDAQ     |
-        | BULL     |  5.89   | Webull Corporation Class A Ordinary Shares          |  -1.39    |   -19.0934 | NASDAQ     |
-        | BBUL     | 12.8794 | GraniteShares 2x Long BB Daily ETF                  |  -2.6906  |   -17.2807 | NASDAQ     |
-        | BRNX     |  1.53   | BrenX Ltd.                                          |  -0.27    |   -15      | NASDAQ     |
-        | BURU     |  1.03   | Nuburu, Inc.                                        |  -0.17    |   -14.1667 | AMEX       |
-        | ALMR     | 27.77   | Alamar Biosciences, Inc.                            |  -4.49    |   -13.9182 | NASDAQ     |
-        | BLIN     |  0.7821 | Bridgeline Digital, Inc.                            |  -0.11035 |   -12.3648 | NASDAQ     |
-        | CDLX     |  2.28   | Cardlytics, Inc.                                    |  -0.32    |   -12.3077 | NASDAQ     |
+        | Symbol   |   Price | Name                                         |   Change |   Change % | Exchange   |
+        |:---------|--------:|:---------------------------------------------|---------:|-----------:|:-----------|
+        | AARD     |  1.39   | Aardvark Therapeutics, Inc. Common Stock     |  -2.56   |  -0.648101 | NASDAQ     |
+        | SHFS     |  0.1324 | SHF Holdings, Inc.                           |  -0.2105 |  -0.613882 | NASDAQ     |
+        | KCAI     | 15      | KraneShares China Alpha Index ETF            | -17.055  |  -0.532054 | AMEX       |
+        | DAVI     |  6      | Davion Healthcare Plc                        |  -5.65   |  -0.484978 | NASDAQ     |
+        | POM      |  1.17   | Pomdoctor Limited                            |  -0.86   |  -0.423645 | NASDAQ     |
+        | NCPL     |  1.33   | Netcapital Inc.                              |  -0.9    |  -0.403587 | NASDAQ     |
+        | ADVGX    |  9.02   | North Square Select Small Cap Fund - Class I |  -5.97   |  -0.398265 | NASDAQ     |
+        | NANO     |  6.13   | Forge Nano Holdings Inc. Common Stock        |  -3.97   |  -0.393069 | NASDAQ     |
+        | MGNX     |  2.25   | MacroGenics, Inc.                            |  -1.38   |  -0.380165 | NASDAQ     |
+        | LNAI     |  0.2946 | Lunai Bioworks Inc.                          |  -0.1754 |  -0.373192 | NASDAQ     |
         """
 
         biggest_losers = discovery_model.get_biggest_losers(
@@ -587,7 +589,8 @@ class Discovery:
     def get_most_active_stocks(self) -> pd.DataFrame:
         """
         Returns the most active stocks for the day. This includes the symbol, the name,
-        the price, the change and the change percentage.
+        the price, the change and the change percentage. The change percentage ("Change %")
+        is a decimal (0.0125 is +1.25%).
 
         Returns:
             pd.DataFrame: A dataframe with the most active stocks for the day.
@@ -606,18 +609,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   |   Price | Name                                       |   Change |   Change % | Exchange   |
-        |:---------|--------:|:-------------------------------------------|---------:|-----------:|:-----------|
-        | AAL      |   12.85 | American Airlines Group Inc.               |  -0.15   |   -1.15385 | NASDAQ     |
-        | AGNC     |    8.46 | AGNC Investment Corp.                      |  -0.24   |   -2.75862 | NASDAQ     |
-        | APLD     |   23.81 | Applied Digital Corp.                      |  -1.53   |   -6.03788 | NASDAQ     |
-        | BBD      |    4.34 | Banco Bradesco S.A.                        |  -0.17   |   -3.7694  | NYSE       |
-        | BITO     |   11.14 | ProShares Bitcoin ETF                      |  -0.31   |   -2.70742 | AMEX       |
-        | BIYA     |    2.3  | Baiya International Group Inc.             |   0.935  |   68.4982  | NASDAQ     |
-        | BULL     |    5.89 | Webull Corporation Class A Ordinary Shares |  -1.39   |  -19.0934  | NASDAQ     |
-        | CDE      |   16.5  | Coeur Mining, Inc.                         |  -0.67   |   -3.90215 | NYSE       |
-        | CPHI     |    0.85 | China Pharma Holdings, Inc.                |   0.2089 |   32.5846  | AMEX       |
-        | CTVA     |   14.45 | Corteva, Inc.                              |   0.54   |    3.8821  | NYSE       |
+        | Symbol   |    Price | Name                                     |   Change |   Change % | Exchange   |
+        |:---------|---------:|:-----------------------------------------|---------:|-----------:|:-----------|
+        | GPUS     |   0.1689 | Hyperscale Data, Inc.                    |   0.0429 |  0.340476  | AMEX       |
+        | XXII     |   0.1977 | 22nd Century Group, Inc.                 |  -0.018  | -0.0834492 | NASDAQ     |
+        | SHFS     |   0.1324 | SHF Holdings, Inc.                       |  -0.2105 | -0.613882  | NASDAQ     |
+        | NVD      |   4.19   | GraniteShares 2x Short NVDA Daily ETF    |   0.04   |  0.0096386 | NASDAQ     |
+        | LUCD     |   0.411  | Lucid Diagnostics Inc.                   |   0.0833 |  0.254196  | NASDAQ     |
+        | SPCX     | 147.49   | Space Exploration Technologies Corp.     |   2.74   |  0.0189292 | NASDAQ     |
+        | T        |  20.93   | AT&T Inc.                                |  -1.81   | -0.0795954 | NYSE       |
+        | SOXL     |  83.56   | Direxion Daily Semiconductor Bull 3X ETF |   1.45   |  0.0176592 | AMEX       |
+        | NU       |  15.16   | Nu Holdings Ltd.                         |   0.43   |  0.0291921 | NYSE       |
+        | NOK      |   8.14   | Nokia Oyj                                |   0.26   |  0.0329949 | NYSE       |
         """
 
         most_active_stocks = discovery_model.get_most_active_stocks(
@@ -656,18 +659,18 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Name                                                         | Exchange   | IPO Date   | Delisted Date   |
-        |:---------|:-------------------------------------------------------------|:-----------|:-----------|:----------------|
-        | 0232.HK  | Continental Aerospace Technologies Holding Limited           | HKSE       | 1991-12-12 | 2026-09-22      |
-        | 0V4O.L   | Lomiko Metals Inc.                                           | LSE        | 2022-12-07 | 2026-10-06      |
-        | 1948.T   | The Kodensha Co., Ltd.                                       | JPX        | 2001-01-04 | 2026-09-25      |
-        | 3856.T   | Abalance Corp                                                | JPX        | 2007-09-19 | 2026-09-25      |
-        | 4800.T   | Oricon Inc.                                                  | JPX        | 2002-03-21 | 2026-09-25      |
-        | 7082.T   | Jimoty, Inc.                                                 | JPX        | 2020-02-10 | 2026-09-29      |
-        | 7426.T   | Yamadai Corporation                                          | JPX        | 1995-02-01 | 2026-09-30      |
-        | 9508.T   | Kyushu Electric Power Co. Inc.                               | JPX        | 2001-01-01 | 2026-10-01      |
-        | ACT.DE   | AlzChem Group AG                                             | XETRA      | 2004-08-12 | 2026-09-18      |
-        | AETH     | Bitwise Trendwise Ether and Treasuries Rotation Strategy ETF | AMEX       | 2023-10-03 | 2026-10-02      |
+        | Symbol    | Name                                                     | Exchange   | IPO Date   | Delisted Date   |
+        |:----------|:---------------------------------------------------------|:-----------|:-----------|:----------------|
+        | 472230.KQ | SK Securities No.11 SPAC                                 | KOE        | 2024-03-04 | 2026-10-12      |
+        | 473050.KQ | Yuanta SPAC 15                                           | KOE        | 2024-02-29 | 2026-10-12      |
+        | 7183.T    | Anshin Guarantor Service Co., Ltd.                       | JPX        | 2015-11-20 | 2026-10-09      |
+        | 7490.T    | Nissin Shoji Co.,Ltd.                                    | JPX        | 2001-01-19 | 2026-10-09      |
+        | 9691.T    | Ryomo Systems Co.,Ltd.                                   | JPX        | 2000-01-06 | 2026-10-09      |
+        | ACVA      | ACV Auctions Inc.                                        | NYSE       | 2021-03-24 | 2026-10-16      |
+        | ADDS      | Hedgeye Index Adds ETF                                   | AMEX       | 2026-05-28 | 2026-10-20      |
+        | AELV      | Harbor AlphaEdge Large Cap Value ETF                     | AMEX       | 2026-08-31 | 2026-10-15      |
+        | ALARF.PA  | Adeunis Société anonyme                                  | PAR        | 2017-10-16 | 2026-10-15      |
+        | ALBG      | Themes ETF Trust - Leverage Shares 2X Long ALB Daily ETF | NASDAQ     | 2026-01-13 | 2026-10-20      |
         """
         _validate_arguments(limit=limit, page=page)
 
@@ -786,16 +789,16 @@ class Discovery:
 
         | Symbol   | Name                   |   Exchange | Trade Month   | Currency   |
         |:---------|:-----------------------|-----------:|:--------------|:-----------|
-        | ALIUSD   | Aluminum Futures       |        nan | Dec           | USD        |
+        | ALIUSD   | Aluminum Futures       |        nan | Jan           | USD        |
         | BZUSD    | Brent Crude Oil        |        nan | Dec           | USD        |
         | CCUSD    | Cocoa                  |        nan | Dec           | USD        |
-        | CLUSD    | Crude Oil              |        nan | Nov           | USD        |
-        | CTUSX    | Cotton                 |        nan | Nov           | USX        |
-        | DCUSD    | Class III Milk Futures |        nan | Dec           | USD        |
+        | CLUSD    | Crude Oil              |        nan | Dec           | USD        |
+        | CTUSX    | Cotton                 |        nan | Dec           | USX        |
+        | DCUSD    | Class III Milk Futures |        nan | Nov           | USD        |
         | DXUSD    | US Dollar              |        nan | Sep           | USD        |
         | ESUSD    | E-Mini S&P 500         |        nan | Dec           | USD        |
         | GCUSD    | Gold Futures           |        nan | Dec           | USD        |
-        | GFUSX    | Feeder Cattle Futures  |        nan | Nov           | USX        |
+        | GFUSX    | Feeder Cattle Futures  |        nan | Jan           | USX        |
         """
         commodity_list = discovery_model.get_commodity_list(
             api_key=self._api_key, user_subscription=self._fmp_plan
@@ -847,7 +850,7 @@ class Discovery:
 
     def get_index_list(self) -> pd.DataFrame:
         """
-        The index list function returns a complete list of all etf symbols that can be
+        The index list function returns a complete list of all index symbols that can be
         used in the Finance Toolkit.
 
         Returns:
@@ -886,6 +889,54 @@ class Discovery:
 
         return index_list
 
+    def get_index_constituents(self, index: str = "S&P 500") -> pd.DataFrame:
+        """
+        Returns the current constituents of an index (the S&P 500, the NASDAQ 100 or the Dow
+        Jones Industrial Average) with their sector, sub-sector, headquarters, the date they were
+        added, CIK and founding year. The symbols make a Toolkit of the whole index, for example
+        to measure market breadth from every constituent (`toolkit.technicals.get_market_breadth`)
+        or to rank them by relative strength.
+
+        These are today's members only. Breadth, relative strength or returns of past dates
+        computed from them leave out the companies that were removed from the index since,
+        often after falling behind, so the history is biased towards the survivors
+        (survivorship bias), the more so the further back it goes.
+
+        Also known as: index members, index constituents, S&P 500 components.
+
+        Args:
+            index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
+                "S&P 500".
+
+        Returns:
+            pd.DataFrame: The constituents, indexed by symbol.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        constituents = discovery.get_index_constituents("Dow Jones")
+
+        constituents[["Name", "Sector", "Date Added"]].head()
+        ```
+
+        Which returns:
+
+        | Symbol   | Name                       | Sector             | Date Added   |
+        |:---------|:---------------------------|:-------------------|:-------------|
+        | AAPL     | Apple Inc.                 | Technology         | 2015-03-19   |
+        | AMGN     | Amgen Inc.                 | Healthcare         | 2020-08-31   |
+        | AMZN     | Amazon.com, Inc.amazon.com | Consumer Cyclical  | 2024-02-26   |
+        | AXP      | American Express Company   | Financial Services | 1982-08-30   |
+        | BA       | The Boeing Company         | Industrials        | 1987-03-12   |
+        """
+        return discovery_model.get_index_constituents(
+            api_key=self._api_key, index=index, user_subscription=self._fmp_plan
+        )
+
     def get_stock_news(
         self,
         pages: int = 1,
@@ -923,13 +974,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Symbol   | Publisher           | Title                                                                                                                                                                                   |
-        |:--------------------|:---------|:--------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-        | 2026-10-08 04:00:00 | RYCEF    | Invezz              | Rolls-Royce share price is facing turbulence: here's why                                                                                                                                |
-        | 2026-10-08 04:00:00 | PHOS     | Newsfile Corp       | Nevada Organic Phosphate Continues 2026 Drill Program with MM26-11 at Murdock Mountain                                                                                                  |
-        | 2026-10-08 04:00:00 | BHV      | PRNewsWire          | Biohaven Enters Strategic Licensing Agreement with Ono Pharma for Extracellular IgG Degraders in Japan and Select Asian Regions, Lead Candidate BHV-1300 in Phase 3 for Graves' Disease |
-        | 2026-10-08 03:55:00 | POAHY    | WSJ                 | Porsche AG Increases Stake in Manthey Racing to 67%                                                                                                                                     |
-        | 2026-10-08 03:45:11 | FAMDF    | Proactive Investors | Futura Medical revises sale timetable as finance director steps down                                                                                                                    |
+        | Published Date      | Symbol   | Publisher       | Title                                                                                                        |
+        |:--------------------|:---------|:----------------|:-------------------------------------------------------------------------------------------------------------|
+        | 2026-10-24 14:21:24 | MSFT     | Seeking Alpha   | Microsoft Q1: A $744 Billion AI Reckoning Is Coming                                                          |
+        | 2026-10-24 14:19:01 | BKNG     | The Motley Fool | Advance Auto Parts vs. Booking Holdings: Which Consumer Stock Is a Better Buy in 2026?                       |
+        | 2026-10-24 14:15:00 | MGHL     | The Motley Fool | Energy Transfer vs. Kinder Morgan: Which Natural Gas Pipeline Stock Is the Better Buy for the AI Power Boom? |
+        | 2026-10-24 14:10:02 | AAP      | The Motley Fool | Advance Auto Parts vs. Dick's Sporting Goods: Are Consumers Focusing on Car Repair or Exercise More in 2026? |
+        | 2026-10-24 14:02:45 | LOT      | MarketBeat      | Lotus Technology Targets EBIT Profitability Before 2030 as Deliveries, Margins Improve                       |
         """
         _validate_arguments(
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
@@ -975,13 +1026,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Publisher                     | Title                                                                                               |
-        |:--------------------|:------------------------------|:----------------------------------------------------------------------------------------------------|
-        | 2026-10-08 03:25:22 | CNBC                          | Indian billionaire's firm backing Trump refinery plan emerges top Venezuelan oil buyer outside U.S. |
-        | 2026-10-08 02:39:31 | FXEmpire                      | First Light News: Bond Yields Remain Elevated & Equities Slip Lower                                 |
-        | 2026-10-08 02:22:25 | Bloomberg Markets and Finance | Oil Prices Rise as US Said to Consider Iran Strike Options                                          |
-        | 2026-10-08 01:30:49 | CNBC                          | America shut out Chinese EVs. Britain welcomed them — and now faces a difficult choice              |
-        | 2026-10-08 01:09:31 | Reuters                       | India denies bias in satellite internet approvals after Musk's 'oligarchs' jab                      |
+        | Published Date      | Publisher                     | Title                                                                                 |
+        |:--------------------|:------------------------------|:--------------------------------------------------------------------------------------|
+        | 2026-10-24 10:51:32 | Seeking Alpha                 | Setbacks Mounting On The AI Data Center Front                                         |
+        | 2026-10-24 10:28:42 | Investors Business Daily      | Stock Market Action Plan: A Preelection Week Primer                                   |
+        | 2026-10-24 09:00:00 | Seeking Alpha                 | Buying Main Street's Pain Won't Work This Time                                        |
+        | 2026-10-24 08:03:04 | Bloomberg Markets and Finance | Making Advanced MicroChips Takes a Global Ecosystem                                   |
+        | 2026-10-24 08:00:00 | Market Watch                  | AI fever ignites a boom in thematic ETFs as fund managers hunt for their next big hit |
         """
         _validate_arguments(limit=limit, pages=pages)
 
@@ -1031,13 +1082,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Symbol   | Publisher     | Title                                                                                                                                                                                   |
-        |:--------------------|:---------|:--------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-        | 2026-10-08 04:00:00 | BHV      | PRNewsWire    | Biohaven Enters Strategic Licensing Agreement with Ono Pharma for Extracellular IgG Degraders in Japan and Select Asian Regions, Lead Candidate BHV-1300 in Phase 3 for Graves' Disease |
-        | 2026-10-08 04:00:00 | PHOS     | Newsfile Corp | Nevada Organic Phosphate Continues 2026 Drill Program with MM26-11 at Murdock Mountain                                                                                                  |
-        | 2026-10-08 03:30:00 | CCB      | Newsfile Corp | Kaplan Fox Encourages Coastal Financial Corporation (CCB) Investors with Significant Losses to Contact the Firm Before December 1, 2026                                                 |
-        | 2026-10-08 03:15:00 | FOX      | Newsfile Corp | Kaplan Fox Encourages Alphabet Inc. (GOOGL, GOOG) Investors with Significant Losses to Contact the Firm Before December 1, 2026                                                         |
-        | 2026-10-08 03:10:00 | CELH     | Newsfile Corp | Kaplan Fox Encourages Celsius Holdings, Inc. (CELH) Investors with Significant Losses to Contact the Firm Before November 3, 2026                                                       |
+        | Published Date      | Symbol   | Publisher     | Title                                                                                                                                                                                        |
+        |:--------------------|:---------|:--------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+        | 2026-10-24 12:42:00 | FTK      | Newsfile Corp | FTK FINAL DEADLINE: ROSEN, GLOBAL INVESTOR COUNSEL, Encourages Flotek Industries, Inc. Investors to Secure Counsel Before Important October 26 Deadline in Securities Class Action - FTK     |
+        | 2026-10-24 12:23:00 | HIMS     | Newsfile Corp | HIMS DEADLINE NOTICE: ROSEN, LEADING TRIAL ATTORNEYS, Encourages Hims & Hers Health, Inc. Investors to Secure Counsel Before Important November 2 Deadline in Securities Class Action - HIMS |
+        | 2026-10-24 12:01:00 | PZZA     | Business Wire | PZZA Deadline: Rosen Law Firm Urges Papa John's International, Inc. (NASDAQ: PZZA) Stockholders to Contact the Firm for Information About Their Rights                                       |
+        | 2026-10-24 11:20:00 | ASTS     | PRNewsWire    | ASTS Deadline in 20 Days: AST SpaceMobile, Inc Class Action Lawsuit: Investors Face November 13, 2026, Deadline - Kessler Topaz Meltzer & Check, LLP                                         |
+        | 2026-10-24 11:18:00 | PFE      | Business Wire | Pfizer's 25-Valent Pediatric Pneumococcal Conjugate Vaccine Candidate Shows Robust Phase 2 Data at IDWeek 2026                                                                               |
         """
         _validate_arguments(
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
@@ -1082,13 +1133,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Symbol   | Publisher   | Title                                                                            |
-        |:--------------------|:---------|:------------|:---------------------------------------------------------------------------------|
-        | 2026-10-08 03:34:41 | USDKGUSD | Crypto news | Kyrgyzstan shuts $50M USDKG months after UK sanctions                            |
-        | 2026-10-08 03:28:00 | KISHUUSD | Tokenpost   | Kishu Inu Founder Charged With Wire Fraud Over Alleged $9 Million Gain           |
-        | 2026-10-08 03:26:14 | ETHUSD   | Cryptonews  | What is Crypto Bunker Mode? Ethereum's Justin Drake Warns of a Possible AI Break |
-        | 2026-10-08 03:25:24 | SOLUSD   | UToday      | Samsung Brings Solana to 82 Million Phones                                       |
-        | 2026-10-08 03:16:50 | XRPUSD   | Crypto news | Ripple challenges Wall Street banks with leveraged ETF financing push            |
+        | Published Date      | Symbol   | Publisher    | Title                                                                                                                     |
+        |:--------------------|:---------|:-------------|:--------------------------------------------------------------------------------------------------------------------------|
+        | 2026-10-24 14:30:07 | BTCUSD   | Bitcoin      | Bitcoin Price Sinks to $79,146 as Liquidations Rock Weekend Trading                                                       |
+        | 2026-10-24 14:24:15 | AVAXUSD  | CryptoTicker | Avalanche (AVAX) 10.3 Percent Weaker in Seven Days, Grayscale Opens In-Kind Subscriptions From $235,800: What Matters Now |
+        | 2026-10-24 14:22:33 | GAINSUSD | Tokenpost    | MemeCore Rises 25.65% to Lead Gains Among Top 90 Cryptocurrencies                                                         |
+        | 2026-10-24 14:21:36 | XRPUSD   | Tokenpost    | Mason Versluis Puts $5.89 XRP Expectation in Bull-Run Post                                                                |
+        | 2026-10-24 14:19:04 | WOOUSD   | Tokenpost    | WOO Network Token (WOO) Rose 12.63% in Five Minutes to $0.01195                                                           |
         """
         _validate_arguments(limit=limit, pages=pages)
 
@@ -1129,13 +1180,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Symbol   | Publisher    | Title                                                                                                   |
-        |:--------------------|:---------|:-------------|:--------------------------------------------------------------------------------------------------------|
-        | 2026-10-08 03:24:28 | GBPUSD   | FX Street    | British Pound: Downside seen limited near 1.3140 against US Dollar - UOB                                |
-        | 2026-10-08 03:20:35 | NZDUSD   | FX Street    | NZD/USD Price Forecast: Drifting closer to 18-month lows at 0.5580                                      |
-        | 2026-10-08 03:13:24 | XAUUSD   | Action Forex | Could Gold's Selloff Run Out of Road Below 4,000?                                                       |
-        | 2026-10-08 02:58:04 | EURUSD   | FX Street    | EUR/USD to 1.1065? Gold threatens $4,100 as Bitcoin tests support [Video]                               |
-        | 2026-10-08 02:54:45 | EURUSD   | FX Street    | EUR/USD continental collision: 7th-order institutional demand slab meets -23.0° downward rail at 1.1190 |
+        | Published Date      | Symbol   | Publisher    | Title                                                                   |
+        |:--------------------|:---------|:-------------|:------------------------------------------------------------------------|
+        | 2026-10-24 13:05:25 | XAUUSD   | Forexcom     | Gold Does Something it Hasn't Done in a Year, is Larger Risk-Off Afoot? |
+        | 2026-10-24 03:02:41 | EURUSD   | Action Forex | EUR/USD Weekly Outlook                                                  |
+        | 2026-10-24 02:55:26 | GBPUSD   | Action Forex | GBP/USD Weekly Outlook                                                  |
+        | 2026-10-24 02:51:02 | USDCHF   | Action Forex | USD/CHF Weekly Outlook                                                  |
+        | 2026-10-24 02:46:58 | AUDUSD   | Action Forex | AUD/USD Weekly Report                                                   |
         """
         _validate_arguments(limit=limit, pages=pages)
 
@@ -1187,13 +1238,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Symbol   | Publisher             | Title                                                                                                                    |
-        |:--------------------|:---------|:----------------------|:-------------------------------------------------------------------------------------------------------------------------|
-        | 2026-10-07 16:37:01 | AAPL     | Fool - Investing News | Nvidia Earned About Twice as Much as Apple Last Quarter. Its Stock Is Worth Only About 20% More.                         |
-        | 2026-10-07 16:03:51 | AAPL     | 247 Wallst            | You Have $150,000 in Savings and Have Never Owned a Single Investment. These 3 ETFs Are Enough to Build a Real Portfolio |
-        | 2026-10-07 14:03:09 | AAPL     | CNBC Television       | Apple looks to smart home devices                                                                                        |
-        | 2026-10-07 13:56:34 | AAPL     | Bloomberg Technology  | Apple Partners With LG on New Smart Home Devices                                                                         |
-        | 2026-10-07 12:41:37 | AAPL     | MarketBeat            | Morgan Stanley Is Bullish on Apple—But With a Catch                                                                      |
+        | Published Date      | Symbol   | Publisher        | Title                                                                                                              |
+        |:--------------------|:---------|:-----------------|:-------------------------------------------------------------------------------------------------------------------|
+        | 2026-10-24 13:17:00 | AAPL     | The Motley Fool  | Apple Joins Nvidia in the $5 Trillion Club. Here's Which Stock I Think Can Get to $10 Trillion First.              |
+        | 2026-10-24 11:50:52 | AAPL     | 24/7 Wall Street | PC Sales Just Crashed 21% as AI Eats the World's Memory Chips                                                      |
+        | 2026-10-24 07:15:37 | AAPL     | 24/7 Wall Street | Apple Just Passed Nvidia as the World's Most Valuable Company on iPhone Duo Day                                    |
+        | 2026-10-24 03:45:00 | AAPL     | The Motley Fool  | Apple Is One of the Most Profitable Businesses in the World. Here's Why the Stock Is Worth $295 a Share Right Now. |
+        | 2026-10-23 17:30:02 | AAPL     | The Motley Fool  | Will Apple Take Over Your (Smart) Home?                                                                            |
         """
         _validate_arguments(
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
@@ -1254,9 +1305,6 @@ class Discovery:
         |:--------------------|:---------|:--------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
         | 2026-10-07 07:30:00 | AAPL     | Newsfile Corp | RETRANSMISSION: QIMC Announces Thermogenic Wet-Gas Signature in 86% of Soil-Gas Samples at New Salem-Apple River, Nova Scotia, Next to Its 30% Clean Hydrogen Discovery |
         | 2026-10-06 09:00:00 | AAPL     | Newsfile Corp | QIMC Announces Thermogenic Wet-Gas Signature in 86% of Soil-Gas Samples at New Salem-Apple River, Nova Scotia, Next to Its 30% Clean Hydrogen Discovery                 |
-        | 2026-10-05 03:05:00 | AAPL     | Newsfile Corp | TempraMed Announces VIVI Cap Smart Connectivity with Apple Health and Google Fit, Providing Better Health Outcomes and Data Tracking                                    |
-        | 2026-09-28 09:00:00 | AAPL     | Newsfile Corp | QIMC Ties New Salem-Apple River Helium Zones to a Buried Basement Structure: Gravity, Magnetics and Geochemistry Converge on a Single Fault-Bounded Ramp                |
-        | 2026-09-25 13:21:00 | AAPL     | Business Wire | Hagens Berman: Credit Unions Win Class Certification in Class-Action Lawsuit Against Apple Alleging Illicit Revenue from Apple Pay Fees                                 |
         """
         _validate_arguments(
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
@@ -1313,13 +1361,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Symbol   | Publisher   | Title                                                                                           |
-        |:--------------------|:---------|:------------|:------------------------------------------------------------------------------------------------|
-        | 2026-10-08 02:59:34 | BTCUSD   | Tokenpost   | Bitcoin Total Demand Returns Positive as Spot Demand Recovers                                   |
-        | 2026-10-08 02:50:50 | BTCUSD   | Tokenpost   | Bitcoin Tests $82,000 Support After $487 Million ETF Outflows                                   |
-        | 2026-10-08 02:43:16 | BTCUSD   | Tokenpost   | Bitcoin Falls Into $82,500 Area as Brent Crude Reclaims $102                                    |
-        | 2026-10-08 02:40:12 | BTCUSD   | Cryptonews  | Bitcoin Price Prediction: Hawkish FOMC Minutes, Oil Price, and Rising Yields Send BTC Below 83K |
-        | 2026-10-08 02:17:06 | BTCUSD   | Tokenpost   | Crypto Market Cap Drops 4.44% to $2.83 Trillion as Bitcoin Slides                               |
+        | Published Date      | Symbol   | Publisher    | Title                                                                               |
+        |:--------------------|:---------|:-------------|:------------------------------------------------------------------------------------|
+        | 2026-10-24 14:30:07 | BTCUSD   | Bitcoin      | Bitcoin Price Sinks to $79,146 as Liquidations Rock Weekend Trading                 |
+        | 2026-10-24 14:14:02 | BTCUSD   | CryptoTicker | Ether Below $2,300: Twice as Weak as Bitcoin                                        |
+        | 2026-10-24 14:05:00 | BTCUSD   | Cointribune  | Bitcoin Sinks to $79,750 As Crypto Liquidations Surge                               |
+        | 2026-10-24 14:02:02 | BTCUSD   | Tokenpost    | Tether Gets 15 Commitments for Bitcoin (BTC) Mining Toolkit Integrations            |
+        | 2026-10-24 13:44:36 | BTCUSD   | The Block    | Crypto longs lose $404 million in four hours as bitcoin briefly slips below $80,000 |
         """
         _validate_arguments(
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
@@ -1376,13 +1424,13 @@ class Discovery:
 
         Which returns:
 
-        | Published Date      | Symbol   | Publisher   | Title                                                                                                   |
-        |:--------------------|:---------|:------------|:--------------------------------------------------------------------------------------------------------|
-        | 2026-10-08 02:58:04 | EURUSD   | FX Street   | EUR/USD to 1.1065? Gold threatens $4,100 as Bitcoin tests support [Video]                               |
-        | 2026-10-08 02:54:45 | EURUSD   | FX Street   | EUR/USD continental collision: 7th-order institutional demand slab meets -23.0° downward rail at 1.1190 |
-        | 2026-10-08 02:21:34 | EURUSD   | FX Street   | Euro: Downside risks persist toward 1.1140 against US Dollar - UOB                                      |
-        | 2026-10-08 02:02:13 | EURUSD   | FX Street   | EUR/USD Price Forecast: Holds below 1.1200, bearish tone prevails amid oversold conditions              |
-        | 2026-10-07 21:58:23 | EURUSD   | FX Street   | Euro recovers to near 1.1200 on softer US Dollar, eyes on France debt concerns                          |
+        | Published Date      | Symbol   | Publisher    | Title                                                                                       |
+        |:--------------------|:---------|:-------------|:--------------------------------------------------------------------------------------------|
+        | 2026-10-24 03:02:41 | EURUSD   | Action Forex | EUR/USD Weekly Outlook                                                                      |
+        | 2026-10-23 14:34:11 | EURUSD   | FX Street    | EUR/USD Weekly Forecast: Next bounce could be a trap                                        |
+        | 2026-10-23 14:01:37 | EURUSD   | FX Street    | EUR/USD Price Forecast: 200-week SMA offers last line of defense against deeper losses      |
+        | 2026-10-23 12:51:14 | EURUSD   | FXEmpire     | U.S. Dollar Rebounds As Oil Prices Gain 3%: Analysis For EUR/USD, GBP/USD, USD/CAD, USD/JPY |
+        | 2026-10-23 09:46:41 | EURUSD   | FX Street    | Euro: Fiscal risks cap upside against US Dollar – BBH                                       |
         """
         _validate_arguments(
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
@@ -1433,13 +1481,13 @@ class Discovery:
 
         Which returns:
 
-        | Symbol    | Date                | Company                  | Exchange   | Status   |        Shares | Price Range   |    Market Cap |
-        |:----------|:--------------------|:-------------------------|:-----------|:---------|--------------:|:--------------|--------------:|
-        | 001359.SZ | 2024-03-27 00:00:00 | Pamica Co Ltd            | SHZ        | Priced   |   3.09241e+07 | 17.39 - 26.08 |   8.065e+08   |
-        | 001389.SZ | 2024-04-01 00:00:00 | Delton Tech Ltd          | SHZ        | Priced   |   1.42666e+07 | 17.43 - 51.68 |   7.373e+08   |
-        | 036220.KQ | 2024-03-12 00:00:00 | Osang Healthcare Co.,Ltd | KOE        | Priced   |   1.84138e+07 | 15320 - 20000 |   8.80054e+10 |
-        | 0917.HK   | 2024-05-23 00:00:00 | Qunabox Group Ltd        | HKSE       | Expected | nan           | nan           |   1.91787e+09 |
-        | 0EG8.L    | 2024-03-26 00:00:00 | Finnair Oyj              | LSE        | Priced   | nan           | 2.91 - 2.91   | nan           |
+        | Symbol    | Date                | Date (ISO)               | Company                  | Exchange   | Status   |        Shares | Price Range   |   Deal Size |    Market Cap |
+        |:----------|:--------------------|:-------------------------|:-------------------------|:-----------|:---------|--------------:|:--------------|------------:|--------------:|
+        | ARTMS.IS  | 2024-03-03 00:00:00 | 2024-03-04T00:00:00.000Z | ARTEMIS HALI             | IST        | Priced   | nan           | 57.00 - 57.00 |   nan       |   1.20534e+09 |
+        | 472230.KQ | 2024-03-03 00:00:00 | 2024-03-04T00:00:00.000Z | SK Securities No.11 SPAC | KOE        | Priced   |   3.89671e+06 | 2000 - 2130   |     8.3e+09 |   8.7255e+09  |
+        | 0JUZ.L    | 2024-03-03 00:00:00 | 2024-03-04T00:00:00.000Z | Edgio, Inc.              | LSE        | Priced   | nan           | 10.07 - 10.07 |   nan       |   9.22057e+08 |
+        | PLAN.NS   | 2024-03-04 00:00:00 | 2024-03-05T00:00:00.000Z | Platinum Industries Ltd  | NSE        | Priced   |   1.05843e+07 | 171 - 226.75  |     2.4e+09 | nan           |
+        | 473370.KQ | 2024-03-04 00:00:00 | 2024-03-05T00:00:00.000Z | BNK SPAC 2               | KOE        | Priced   |   4.12776e+06 | 2000 - 2035   |     8.4e+09 |   8.44105e+09 |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -1483,13 +1531,13 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Filing Date   | Accepted Date   | Effectiveness Date   |     CIK | Form   |
-        |:---------|:--------------|:----------------|:---------------------|--------:|:-------|
-        | AAIT     | 2024-03-14    | 2024-03-14      | 2024-03-14           | 1100663 | CERT   |
-        | AAIT     | 2024-05-22    | 2024-05-22      | 2024-05-22           | 1100663 | CERT   |
-        | AAIT     | 2024-01-18    | 2024-01-18      | 2024-01-18           | 1100663 | CERT   |
-        | AAIT     | 2024-03-21    | 2024-03-20      | 2024-03-21           | 1100663 | CERT   |
-        | AAIT     | 2024-05-23    | 2024-05-23      | 2024-05-23           | 1100663 | CERT   |
+        | Symbol   | Filing Date   | Accepted Date   | Effectiveness Date   |        CIK | Form   | URL                                                                                    |
+        |:---------|:--------------|:----------------|:---------------------|-----------:|:-------|:---------------------------------------------------------------------------------------|
+        | AAIT     | 2024-05-23    | 2024-05-23      | 2024-05-23           | 0001100663 | CERT   | https://www.sec.gov/Archives/edgar/data/1100663/000141783524000090/8A_Cert_IBMS.pdf    |
+        | AAIT     | 2024-03-21    | 2024-03-20      | 2024-03-21           | 0001100663 | CERT   | https://www.sec.gov/Archives/edgar/data/1100663/000135445724000177/IBAT_8-ACert.pdf    |
+        | AAIT     | 2024-03-14    | 2024-03-14      | 2024-03-14           | 0001100663 | CERT   | https://www.sec.gov/Archives/edgar/data/1100663/000141783524000057/8A_Cert_iShares.pdf |
+        | AAIT     | 2024-05-23    | 2024-05-23      | 2024-05-23           | 0001100663 | CERT   | https://www.sec.gov/Archives/edgar/data/1100663/000141783524000091/8A_Cert_IBHK.pdf    |
+        | AAIT     | 2024-05-22    | 2024-05-22      | 2024-05-22           | 0001100663 | CERT   | https://www.sec.gov/Archives/edgar/data/1100663/000114336224000162/IBDZIBIK052224.pdf  |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -1533,13 +1581,10 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | IPO Date   |   Public Price Per Share |   Public Price Total | Form   |
-        |:---------|:-----------|-------------------------:|---------------------:|:-------|
-        | ACON     | 2022-04-21 |                     0.58 |           3.0015e+06 | 424B4  |
-        | ACONW    | 2024-02-25 |                     0.58 |           3.0015e+06 | 424B4  |
-        | ADEX     | 2021-03-02 |                     1    |           7          | S-1    |
-        | ADEX     | 2021-03-02 |                     1    |           7          | S-1/A  |
-        | ADEX-WT  | 2024-01-07 |                     1    |           7          | S-1    |
+        | Symbol   | Accepted Date   | Filing Date   | IPO Date   |        CIK |   Public Price Per Share |   Public Price Total |   Discounts and Commissions Per Share |   Discounts and Commissions Total |   Proceeds Before Expenses Per Share |   Proceeds Before Expenses Total | Form   | URL                                                                                   |
+        |:---------|:----------------|:--------------|:-----------|-----------:|-------------------------:|---------------------:|--------------------------------------:|----------------------------------:|-------------------------------------:|---------------------------------:|:-------|:--------------------------------------------------------------------------------------|
+        | ACON     | 2024-02-27      | 2024-02-27    | 2022-04-21 | 0001635077 |                     0.58 |           3.0015e+06 |                                  0.04 |                            210105 |                                 0.54 |                          2791.39 | 424B4  | https://www.sec.gov/Archives/edgar/data/1635077/000168316824001189/aclarion_424b4.htm |
+        | ACONW    | 2024-02-27      | 2024-02-27    | 2024-02-25 | 0001635077 |                     0.58 |           3.0015e+06 |                                  0.04 |                            210105 |                                 0.54 |                          2791.39 | 424B4  | https://www.sec.gov/Archives/edgar/data/1635077/000168316824001189/aclarion_424b4.htm |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -1587,11 +1632,11 @@ class Discovery:
 
         | Symbol    | Date                |   Numerator |   Denominator | Split Type   |
         |:----------|:--------------------|------------:|--------------:|:-------------|
-        | 0010.KL   | 2024-03-21 00:00:00 |           1 |             4 | stock-split  |
-        | 001270.SZ | 2024-05-07 00:00:00 |          13 |            10 | stock-split  |
-        | 001296.SZ | 2024-05-30 00:00:00 |           7 |             5 | stock-split  |
-        | 001309.SZ | 2024-04-26 00:00:00 |          13 |            10 | stock-split  |
-        | 001358.SZ | 2024-04-24 00:00:00 |           7 |             5 | stock-split  |
+        | 005810.KS | 2024-03-04 00:00:00 |           3 |             2 | stock-split  |
+        | 1160.HK   | 2024-03-04 00:00:00 |          73 |            56 | stock-split  |
+        | 1ET.F     | 2024-03-04 00:00:00 |           1 |             3 | stock-split  |
+        | DOHOME.BK | 2024-03-04 00:00:00 |          23 |            22 | stock-split  |
+        | IFBD      | 2024-03-04 00:00:00 |           1 |             8 | stock-split  |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -1610,11 +1655,13 @@ class Discovery:
         sector: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns sector performance — the average price change per sector. Provide
-        exactly one of `date` (a snapshot across all sectors on that date) or
-        `sector` (the historical time series for one sector).
+        Returns sector performance — the average price change, as a decimal (0.0125 means
+        +1.25%), of the companies listed on an exchange (NASDAQ by default) in each sector.
+        Provide exactly one of `date` (a snapshot across all sectors on that date) or `sector`
+        (the historical time series for one sector).
 
         Also known as: sector performance snapshot, sector performance history, sector trend.
 
@@ -1624,6 +1671,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one sector. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one sector. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with sector performance, indexed by Sector
@@ -1649,11 +1698,11 @@ class Discovery:
 
         | Date                | Sector   | Exchange   |   Average Change |
         |:--------------------|:---------|:-----------|-----------------:|
-        | 2024-02-26 00:00:00 | Energy   | NASDAQ     |        -0.141335 |
-        | 2024-02-27 00:00:00 | Energy   | NASDAQ     |         2.5373   |
-        | 2024-02-28 00:00:00 | Energy   | NASDAQ     |        -3.61631  |
-        | 2024-02-29 00:00:00 | Energy   | NASDAQ     |         0.625943 |
-        | 2024-03-01 00:00:00 | Energy   | NASDAQ     |         1.399    |
+        | 2026-10-19 00:00:00 | Energy   | NASDAQ     |      -0.00464467 |
+        | 2026-10-20 00:00:00 | Energy   | NASDAQ     |      -0.00762765 |
+        | 2026-10-21 00:00:00 | Energy   | NASDAQ     |      -0.00226659 |
+        | 2026-10-22 00:00:00 | Energy   | NASDAQ     |      -0.019561   |
+        | 2026-10-23 00:00:00 | Energy   | NASDAQ     |       0.0308545  |
         """
         _validate_arguments(date=date)
 
@@ -1664,6 +1713,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return sector_performance
@@ -1674,10 +1724,12 @@ class Discovery:
         industry: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns industry performance — the average price change per industry. Provide
-        exactly one of `date` (a snapshot across all industries on that date) or
+        Returns industry performance — the average price change, as a decimal (0.0125 means
+        +1.25%), of the companies listed on an exchange (NASDAQ by default) in each industry.
+        Provide exactly one of `date` (a snapshot across all industries on that date) or
         `industry` (the historical time series for one industry).
 
         Also known as: industry performance snapshot, industry performance history, industry trend.
@@ -1688,6 +1740,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one industry. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one industry. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with industry performance, indexed by Industry
@@ -1713,11 +1767,11 @@ class Discovery:
 
         | Date                | Industry      | Exchange   |   Average Change |
         |:--------------------|:--------------|:-----------|-----------------:|
-        | 2024-02-26 00:00:00 | Biotechnology | NASDAQ     |         3.05736  |
-        | 2024-02-27 00:00:00 | Biotechnology | NASDAQ     |         9.45945  |
-        | 2024-02-28 00:00:00 | Biotechnology | NASDAQ     |        -0.838124 |
-        | 2024-02-29 00:00:00 | Biotechnology | NASDAQ     |        -1.46899  |
-        | 2024-03-01 00:00:00 | Biotechnology | NASDAQ     |         2.61434  |
+        | 2026-10-19 00:00:00 | Biotechnology | NASDAQ     |       0.00476346 |
+        | 2026-10-20 00:00:00 | Biotechnology | NASDAQ     |       0.0238001  |
+        | 2026-10-21 00:00:00 | Biotechnology | NASDAQ     |       0.00810473 |
+        | 2026-10-22 00:00:00 | Biotechnology | NASDAQ     |       0.00288922 |
+        | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |      -0.00890932 |
         """
         _validate_arguments(date=date)
 
@@ -1728,6 +1782,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return industry_performance
@@ -1738,11 +1793,12 @@ class Discovery:
         sector: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns sector price-to-earnings (P/E) ratios. Provide exactly one of `date`
-        (a snapshot across all sectors on that date) or `sector` (the historical
-        time series for one sector).
+        Returns sector price-to-earnings (P/E) ratios of the companies listed on an exchange
+        (NASDAQ by default) in each sector. Provide exactly one of `date` (a snapshot across all
+        sectors on that date) or `sector` (the historical time series for one sector).
 
         Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
 
@@ -1752,6 +1808,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one sector. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one sector. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with sector P/E ratios, indexed by Sector
@@ -1777,11 +1835,11 @@ class Discovery:
 
         | Date                | Sector   | Exchange   |   PE Ratio |
         |:--------------------|:---------|:-----------|-----------:|
-        | 2024-02-26 00:00:00 | Energy   | NASDAQ     |    5.64705 |
-        | 2024-02-27 00:00:00 | Energy   | NASDAQ     |    5.73411 |
-        | 2024-02-28 00:00:00 | Energy   | NASDAQ     |    5.46423 |
-        | 2024-02-29 00:00:00 | Energy   | NASDAQ     |    5.43205 |
-        | 2024-03-01 00:00:00 | Energy   | NASDAQ     |    5.41659 |
+        | 2026-10-19 00:00:00 | Energy   | NASDAQ     |    14.6685 |
+        | 2026-10-20 00:00:00 | Energy   | NASDAQ     |    14.5791 |
+        | 2026-10-21 00:00:00 | Energy   | NASDAQ     |    14.6875 |
+        | 2026-10-22 00:00:00 | Energy   | NASDAQ     |    14.2938 |
+        | 2026-10-23 00:00:00 | Energy   | NASDAQ     |    14.8163 |
         """
         _validate_arguments(date=date)
 
@@ -1792,6 +1850,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return sector_pe
@@ -1802,11 +1861,13 @@ class Discovery:
         industry: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        exchange: str = "NASDAQ",
     ) -> pd.DataFrame:
         """
-        Returns industry price-to-earnings (P/E) ratios. Provide exactly one of
-        `date` (a snapshot across all industries on that date) or `industry` (the
-        historical time series for one industry).
+        Returns industry price-to-earnings (P/E) ratios of the companies listed on an exchange
+        (NASDAQ by default) in each industry. Provide exactly one of `date` (a snapshot across
+        all industries on that date) or `industry` (the historical time series for one
+        industry).
 
         Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
 
@@ -1816,6 +1877,8 @@ class Discovery:
             start_date (str, optional): The start of the history of one industry. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one industry. Defaults to today.
+            exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
+                or "AMEX". Defaults to "NASDAQ".
 
         Returns:
             pd.DataFrame: A dataframe with industry P/E ratios, indexed by Industry
@@ -1841,11 +1904,11 @@ class Discovery:
 
         | Date                | Industry      | Exchange   |   PE Ratio |
         |:--------------------|:--------------|:-----------|-----------:|
-        | 2024-02-26 00:00:00 | Biotechnology | NASDAQ     |   0.177825 |
-        | 2024-02-27 00:00:00 | Biotechnology | NASDAQ     |   0.161566 |
-        | 2024-02-28 00:00:00 | Biotechnology | NASDAQ     |   0.154047 |
-        | 2024-02-29 00:00:00 | Biotechnology | NASDAQ     |   7.58288  |
-        | 2024-03-01 00:00:00 | Biotechnology | NASDAQ     |   8.12904  |
+        | 2026-10-19 00:00:00 | Biotechnology | NASDAQ     |    14.4179 |
+        | 2026-10-20 00:00:00 | Biotechnology | NASDAQ     |    14.6683 |
+        | 2026-10-21 00:00:00 | Biotechnology | NASDAQ     |    14.7217 |
+        | 2026-10-22 00:00:00 | Biotechnology | NASDAQ     |    15.0816 |
+        | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |    15.0327 |
         """
         _validate_arguments(date=date)
 
@@ -1856,6 +1919,7 @@ class Discovery:
             start_date=start_date,
             end_date=end_date,
             user_subscription=self._fmp_plan,
+            exchange=exchange,
         )
 
         return industry_pe
@@ -1890,13 +1954,13 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Company Name                    | Targeted Company Name          | Transaction Date   |
-        |:---------|:--------------------------------|:-------------------------------|:-------------------|
-        | HTB      | HomeTrust Bancshares, Inc.      | Blue Ridge Bankshares, Inc.    | 2026-10-02         |
-        | HTBI     | HomeTrust Bancshares, Inc.      | Blue Ridge Bankshares, Inc.    | 2026-10-02         |
-        | IRT      | INDEPENDENCE REALTY TRUST, INC. | Centerspace                    | 2026-09-23         |
-        | JMSB     | John Marshall Bancorp, Inc.     | Eagle Financial Services, Inc. | 2026-10-02         |
-        | PATK     | PATRICK INDUSTRIES INC          | LCI Industries                 | 2026-09-23         |
+        | Symbol   | Company Name                            | Targeted Company Name      | Transaction Date   |
+        |:---------|:----------------------------------------|:---------------------------|:-------------------|
+        | ADT      | Star Equity Holdings, Inc.              | Star Equity Holdings, Inc. | 2026-10-19         |
+        | IPXG     | Inflection Point Acquisition Corp. VII* | Intuitive Machines, Inc.   | 2026-10-08         |
+        | IPXG     | Inflection Point Acquisition Corp. VII* | Intuitive Machines, Inc.   | 2026-10-08         |
+        | IPXGU    | Inflection Point Acquisition Corp. VII  | Intuitive Machines, Inc.   | 2026-10-08         |
+        | IPXGW    | Inflection Point Acquisition Corp. VII  | Intuitive Machines, Inc.   | 2026-10-08         |
         """
         _validate_arguments(limit=limit, page=page)
 
@@ -1946,11 +2010,11 @@ class Discovery:
 
         | Symbol    | Date                |     EPS |   Estimated EPS |       Revenue |   Estimated Revenue | Last Updated   |
         |:----------|:--------------------|--------:|----------------:|--------------:|--------------------:|:---------------|
-        | 000270.KS | 2026-10-01 00:00:00 | 5550.38 |        5609.44  |   3.1043e+13  |         3.14307e+13 | 2026-10-08     |
-        | 032350.KS | 2026-10-01 00:00:00 | 1718    |        1718     |   2.13512e+11 |         2.1315e+11  | 2026-10-08     |
-        | 0ENN.L    | 2026-10-01 00:00:00 |  nan    |           3.09  | nan           |         1.51e+09    | 2026-10-08     |
-        | 0JZS.L    | 2026-10-01 00:00:00 |    0.86 |           0.755 |   2.0248e+09  |         1.97614e+09 | 2026-10-08     |
-        | 0OHK.L    | 2026-10-01 00:00:00 |    9.81 |          11.1   |   7.2503e+09  |         7.10111e+09 | 2026-10-08     |
+        | 000270.KS | 2026-10-01 00:00:00 | 5550.38 |        5378.62  |   3.08555e+13 |         3.18109e+13 | 2026-10-24     |
+        | 032350.KS | 2026-10-01 00:00:00 | 1718    |        1718     |   2.12223e+11 |         2.1315e+11  | 2026-10-24     |
+        | 0ENN.L    | 2026-10-01 00:00:00 |  nan    |           3.09  | nan           |         1.51e+09    | 2026-10-24     |
+        | 0JZS.L    | 2026-10-01 00:00:00 |    0.86 |           0.755 |   2.0248e+09  |         1.97614e+09 | 2026-10-24     |
+        | 0OHK.L    | 2026-10-01 00:00:00 |   10    |          11.1   |   7.2503e+09  |         7.10111e+09 | 2026-10-24     |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -2006,8 +2070,8 @@ class Discovery:
         | EQBK     | 2026-10-02 21:50:55 | True             | https://www.sec.gov/Archives/edgar/data/1227500/000119312526412873/d16704dex991.htm  |
         | VST      | 2026-10-02 20:12:47 | False            | https://www.sec.gov/Archives/edgar/data/1692819/000114036126038468/ef20083016_8k.htm |
         | CODX     | 2026-10-02 19:38:44 | False            | https://www.sec.gov/Archives/edgar/data/1692415/000149315226045652/form8-k.htm       |
-        | CLAYU    | 2026-10-02 19:20:24 | False            | https://www.sec.gov/Archives/edgar/data/1855467/000149315226045639/form8-k.htm       |
         | MOBXW    | 2026-10-02 19:20:24 | False            | https://www.sec.gov/Archives/edgar/data/1855467/000149315226045639/form8-k.htm       |
+        | CLAYU    | 2026-10-02 19:20:24 | False            | https://www.sec.gov/Archives/edgar/data/1855467/000149315226045639/form8-k.htm       |
         """
         _validate_arguments(
             start_date=start_date, end_date=end_date, limit=limit, page=page
@@ -2058,13 +2122,13 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Reporting Name          | Transaction Type   |   Securities Transacted |   Price |
-        |:---------|:------------------------|:-------------------|------------------------:|--------:|
-        | HNGE     | Perez Daniel Antonio    | C-Conversion       |                    4100 |   0     |
-        | HNGE     | Perez Daniel Antonio    | S-Sale             |                    4100 | 100.198 |
-        | HNGE     | Perez Daniel Antonio    | C-Conversion       |                    4100 |   0     |
-        | GRAB     | Ong Chin Yin            | S-Sale             |                   38000 |   3.09  |
-        | PALI     | Jones Mitchell Lawrence | M-Exempt           |                 2620850 |   0     |
+        | Symbol   | Reporting Name   | Transaction Type   |   Securities Transacted |    Price |
+        |:---------|:-----------------|:-------------------|------------------------:|---------:|
+        | BPRE     | Ruddy Jordan B.  | P-Purchase         |                    2040 |  12.2484 |
+        | NTRA     | Sheena Jonathan  | S-Sale             |                     200 | 406.5    |
+        | NTRA     | Sheena Jonathan  | S-Sale             |                     962 | 408.258  |
+        | NTRA     | Sheena Jonathan  | S-Sale             |                     627 | 409.893  |
+        | NTRA     | Sheena Jonathan  | S-Sale             |                     605 | 411.317  |
         """
         _validate_arguments(date=date, limit=limit, page=page)
 

@@ -199,7 +199,7 @@ def test_get_tangible_asset_value(recorder):
         valuation_model.get_tangible_asset_value(
             total_assets=pd.Series([100, 120, 80, 50, 30]),
             total_liabilities=pd.Series([50, 30, 80, 20, 50]),
-            goodwill=pd.Series([1.6, 1.4, 1.15, 1.4, 1.25]),
+            goodwill_and_intangible_assets=pd.Series([1.6, 1.4, 1.15, 1.4, 1.25]),
         )
     )
 

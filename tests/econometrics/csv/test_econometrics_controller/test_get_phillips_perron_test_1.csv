@@ -1,8 +1,9 @@
 ,AAPL,MSFT
-Phillips-Perron Statistic,-0.8133406242012541,-0.8708033004688083
-Lags Used,9,9
+Phillips-Perron Statistic,-0.7091852544289506,-0.8203510316483227
+P-Value,0.9725371855859111,0.9639248055852772
+Lags Used,10,10
 Observations,36,36
-Critical Value 1%,-3.96,-3.96
-Critical Value 5%,-3.41,-3.41
-Critical Value 10%,-3.13,-3.13
+Critical Value 1%,-4.235055592421125,-4.235055592421125
+Critical Value 5%,-3.540390300068587,-3.540390300068587
+Critical Value 10%,-3.2023804526748973,-3.2023804526748973
 Reject Unit Root (5%),False,False

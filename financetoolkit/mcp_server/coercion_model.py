@@ -20,41 +20,40 @@ except ImportError:
     UnionType = None
 
 
-def _try_parse_list_of_int(val: Any) -> list[int] | None:
+def _split_list(val: str) -> list[str]:
+    """Splits a comma-separated string, with or without brackets, into its values."""
+    stripped = val.strip().removeprefix("[").removesuffix("]")
+    return [part.strip().strip("'\"") for part in stripped.split(",") if part.strip()]
+
+
+def _coerce_number(val: Any, int_allowed: bool, float_allowed: bool) -> Any:
     """
-    Attempt to parse a value as a list of integers.
-
-    Accepts an existing list (with elements coerced to int where possible) or a
-    bracket-notation string such as "[1, 4]" or "1,4". A single-element string is
-    not treated as a list and returns None so that it can be coerced as a plain int.
-
-    Args:
-        val (Any): The value to parse. Can be an existing list or a string
-            representation of a list.
-
-    Returns:
-        list[int] | None: A list of integers if parsing succeeds, otherwise None.
+    Converts a value to a number: an int when only ints are accepted, a float when only
+    floats are, and when both are an int for a whole number and a float otherwise (so
+    0.1 stays 0.1 and 3 stays 3). The value is returned as given when it is not a number.
     """
-    if isinstance(val, list):
-        try:
-            return [int(float(v)) for v in val]
-        except (ValueError, TypeError):
-            return None
+    try:
+        number = float(val)
+    except (ValueError, TypeError):
+        return val
+    if int_allowed and (not float_allowed or number.is_integer()):
+        return int(number)
+    return number
 
-    if isinstance(val, str):
-        # Strip optional brackets
-        stripped = val.strip().lstrip("[").rstrip("]").strip()
-        if not stripped:
-            return None
-        parts = [p.strip() for p in stripped.split(",") if p.strip()]
-        if len(parts) <= 1:
-            return None  # A single value should be coerced as int, not list
-        try:
-            return [int(float(p)) for p in parts]
-        except (ValueError, TypeError):
-            return None
 
-    return None
+def _coerce_item(val: Any, item_type: Any) -> Any:
+    """Converts one element of a list to the element type of the list."""
+    members = (
+        [a for a in get_args(item_type) if a is not type(None)]
+        if get_origin(item_type) is Union
+        or (UnionType is not None and isinstance(item_type, UnionType))
+        else [item_type]
+    )
+    if int in members or float in members:
+        return _coerce_number(val, int in members, float in members)
+    if bool in members:
+        return to_boolean(val)
+    return val
 
 
 def coerce_value(val: Any, annotation: Any) -> Any:
@@ -62,13 +61,16 @@ def coerce_value(val: Any, annotation: Any) -> Any:
     Best-effort type coercion for values based on a type annotation.
 
     Treats None and empty strings as absent values (returning None). For boolean targets it
-    delegates to to_boolean; for integers it attempts int(float(val)) to gracefully handle
-    numeric strings with decimals; for floats it uses float(val). Optional/Union annotations
-    (including PEP 604 ``int | None``) are unwrapped to their first non-None member.
+    delegates to to_boolean; numbers become an int or a float as the annotation accepts (a
+    whole number becomes an int when both are accepted, so 0.1 is never cut to 0).
+    Optional/Union annotations (including PEP 604 ``int | None``) are unwrapped.
 
-    For ``int | list[int]`` annotations (used by the ``lag`` parameter), the value is first
-    tried as a plain integer; if that fails it is tried as a comma-separated or bracket-
-    notation list of integers before falling back to the original value.
+    A parameter that accepts a list (``list[str]``, ``int | list[int]``,
+    ``list[float] | None``) receives a comma-separated or bracket-notation string as a list,
+    with its elements converted, since the MCP schema advertises such parameters as a
+    string. A single value stays a single value when the annotation also accepts one, and
+    becomes a list of one otherwise. A list of objects (option strategy legs) is passed on
+    as given.
 
     If conversion fails or the target type is not recognised, the original value is returned.
 
@@ -87,33 +89,31 @@ def coerce_value(val: Any, annotation: Any) -> Any:
     is_union = origin is Union or (
         UnionType is not None and isinstance(annotation, UnionType)
     )
-    if is_union:
-        args = [a for a in get_args(annotation) if a is not type(None)]
-        # Check whether any member of the union is list[int] (or list)
-        has_list_int = any(get_origin(a) is list or a is list for a in args)
-        int_args = [a for a in args if a is int]
-        target = int_args[0] if int_args else (args[0] if args else str)
-    else:
-        has_list_int = get_origin(annotation) is list or annotation is list
-        target = annotation
+    args = (
+        [a for a in get_args(annotation) if a is not type(None)]
+        if is_union
+        else [annotation]
+    )
 
-    if target is bool:
+    lists = [a for a in args if a is list or get_origin(a) is list]
+    item_type = get_args(lists[0])[0] if lists and get_args(lists[0]) else str
+    scalars = [a for a in args if a in (bool, int, float, str)]
+
+    if lists and get_origin(item_type) is not dict:
+        if isinstance(val, list):
+            return [_coerce_item(item, item_type) for item in val]
+        if isinstance(val, str):
+            items = _split_list(val)
+            if len(items) > 1 or not scalars:
+                return [_coerce_item(item, item_type) for item in items]
+
+    if not scalars:
+        return val
+    if scalars[0] is bool:
         return to_boolean(val)
-    if target is int:
-        # For int | list[int], try list parsing first when the raw value looks like a list
-        if has_list_int:
-            parsed_list = _try_parse_list_of_int(val)
-            if parsed_list is not None:
-                return parsed_list
-        try:
-            return int(float(val))
-        except (ValueError, TypeError):
-            return val
-    if target is float:
-        try:
-            return float(val)
-        except (ValueError, TypeError):
-            return val
+    # An annotation that leads with text (str | float) keeps the text as given.
+    if int in scalars or scalars[0] is float:
+        return _coerce_number(val, int in scalars, float in scalars)
     return val
 
 

@@ -712,6 +712,50 @@ def test_a_rating_with_a_missing_score_is_kept(responses):
     assert ratings["Rating"].tolist() == ["A", "A-"]
 
 
+def test_the_rating_of_a_single_ticker_is_cached_and_filtered_by_date(
+    responses, cache_location
+):
+    canned, requested = responses
+    canned["ratings-historical"] = [
+        {"symbol": "AMZN", "date": date, "rating": rating, "overallScore": score}
+        for date, rating, score in [
+            ("2026-01-05", "A-", 4),
+            ("2025-12-31", "B+", 3),
+            ("2020-12-31", "B", 3),
+        ]
+    ]
+
+    # The ticker level stays on the model's answer, which the cache splits on.
+    ratings, _ = fmp_model.get_rating(tickers="AMZN", api_key="KEY")
+    assert ratings.index.get_level_values(0).unique().tolist() == ["AMZN"]
+
+    toolkit = toolkit_controller.Toolkit(
+        ["AMZN"],
+        api_key="test-key",
+        sleep_timer=False,
+        use_cached_data=cache_location,
+        start_date="2021-01-01",
+        end_date="2025-12-31",
+    )
+    rating = toolkit.get_rating()
+
+    # One ticker returns its dates only, limited to the start and end date.
+    assert rating.index.tolist() == ["2025-12-31"]
+    assert rating["Rating"].tolist() == ["B+"]
+
+    # A second Toolkit is answered from the cache rather than finding it marked as missing.
+    calls = len(requested)
+    again = toolkit_controller.Toolkit(
+        ["AMZN"],
+        api_key="test-key",
+        sleep_timer=False,
+        use_cached_data=cache_location,
+    ).get_rating()
+
+    assert len(requested) == calls
+    assert again["Rating"].tolist() == ["B+", "A-"]
+
+
 def test_yahoo_finance_symbols_are_requested_as_financial_modeling_prep_writes_them(
     monkeypatch,
 ):
@@ -728,3 +772,141 @@ def test_yahoo_finance_symbols_are_requested_as_financial_modeling_prep_writes_t
     )
 
     assert "symbols=AAPL,EURUSD,BTCUSD&" in requested[0]
+
+
+def test_dividends_are_split_adjusted_like_the_prices(responses):
+    canned, _ = responses
+    dates = ["2020-08-06", "2020-08-07", "2020-11-05", "2020-11-06"]
+    canned["historical-price-eod/full"] = [
+        {
+            "date": date,
+            "open": 110.0,
+            "high": 111.0,
+            "low": 109.0,
+            "close": 110.0,
+            "volume": 1,
+        }
+        for date in dates
+    ]
+    canned["historical-price-eod/dividend-adjusted"] = [
+        {"date": date, "adjClose": 110.0} for date in dates
+    ]
+    # Apple's 2020 dividends: 0.82 as paid before the 4-for-1 split, 0.205 per share today.
+    canned["dividends"] = [
+        {"date": "2020-11-06", "dividend": 0.205, "adjDividend": 0.205},
+        {"date": "2020-08-07", "dividend": 0.82, "adjDividend": 0.205},
+    ]
+
+    historical = fmp_model.get_historical_data(
+        "AAPL", "key", start="2020-08-06", end="2020-11-06", sleep_timer=False
+    )
+
+    assert historical.loc["2020-08-07", "Dividends"] == pytest.approx(0.205)
+    assert historical.loc["2020-11-06", "Dividends"] == pytest.approx(0.205)
+
+
+def test_profile_and_quote_changes_are_decimals(responses):
+    canned, _ = responses
+    canned["profile"] = [
+        {
+            "symbol": "AAPL",
+            "price": 250.0,
+            "changePercentage": 1.25,
+            "companyName": "Apple Inc.",
+            "image": "",
+            "defaultImage": False,
+            "isEtf": False,
+            "isActivelyTrading": True,
+            "isAdr": False,
+            "isFund": False,
+        }
+    ]
+    canned["quote"] = [
+        {
+            "symbol": "AAPL",
+            "name": "Apple Inc.",
+            "price": 250.0,
+            "changePercentage": -0.5,
+        }
+    ]
+
+    profile, _ = fmp_model.get_profile("AAPL", api_key="K")
+    quote, _ = fmp_model.get_quote("AAPL", api_key="K")
+
+    # Published in percent, returned as decimals like every other change.
+    assert profile.loc["Change %", "AAPL"] == pytest.approx(0.0125)
+    assert quote.loc["Change %", "AAPL"] == pytest.approx(-0.005)
+    assert profile.loc["Company Name", "AAPL"] == "Apple Inc."
+
+
+def test_quote_change_has_no_float_residue(responses):
+    canned, _ = responses
+    canned["quote"] = [{"symbol": "AAPL", "price": 250.0, "changePercentage": -0.75391}]
+    canned["profile"] = [
+        {
+            "symbol": "AAPL",
+            "price": 250.0,
+            "changePercentage": -0.75391,
+            "image": "",
+            "defaultImage": False,
+            "isEtf": False,
+            "isActivelyTrading": True,
+            "isAdr": False,
+            "isFund": False,
+        }
+    ]
+
+    quote, _ = fmp_model.get_quote("AAPL", api_key="K")
+    profile, _ = fmp_model.get_profile("AAPL", api_key="K")
+
+    # -0.75391 / 100 is -0.007539100000000001 in floating point.
+    assert repr(quote.loc["Change %", "AAPL"]) == "-0.0075391"
+    assert repr(profile.loc["Change %", "AAPL"]) == "-0.0075391"
+
+
+def test_two_fiscal_periods_in_one_calendar_period_are_reported(responses, caplog):
+    """After a change of fiscal year end, the dropped period is named in a warning."""
+    canned, _ = responses
+    canned["income-statement"] = [
+        {"date": "2023-12-31", "symbol": "XYZ", "revenue": 300},
+        {"date": "2023-06-30", "symbol": "XYZ", "revenue": 200},
+        {"date": "2022-06-30", "symbol": "XYZ", "revenue": 100},
+    ]
+
+    with caplog.at_level("WARNING"):
+        statement = fmp_model.get_financial_statement(
+            "XYZ", statement="income", api_key="key"
+        )
+
+    assert statement.loc["revenue"].tolist() == [300, 100]
+    warning = " ".join(record.getMessage() for record in caplog.records)
+    assert "XYZ" in warning
+    assert "2023-12-31, 2023-06-30" in warning
+    assert "(2023)" in warning
+
+
+def test_statements_keep_the_fiscal_period_end_date(responses):
+    canned, _ = responses
+    canned["income-statement"] = [
+        {
+            "date": "2024-01-28",
+            "symbol": "NVDA",
+            "reportedCurrency": "USD",
+            "revenue": 2.0,
+        },
+        {
+            "date": "2023-01-29",
+            "symbol": "NVDA",
+            "reportedCurrency": "USD",
+            "revenue": 1.0,
+        },
+    ]
+
+    statement = fmp_model.get_financial_statement(
+        ticker="NVDA", statement="income", api_key="key", quarter=False
+    )
+
+    # The columns are the calendar years holding most of each fiscal year, while the
+    # actual last day of the fiscal year is kept as a statistic.
+    assert [str(period) for period in statement.columns] == ["2023", "2022"]
+    assert statement.loc["periodEndDate"].tolist() == ["2024-01-28", "2023-01-29"]

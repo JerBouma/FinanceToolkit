@@ -2,9 +2,9 @@
 
 __docformat__ = "google"
 
-import pandas as pd
+from collections.abc import Mapping
 
-from financetoolkit.utilities.statistics_model import to_datetime_index
+import pandas as pd
 
 # pylint: disable=protected-access
 
@@ -26,68 +26,69 @@ PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
 
 
 def determine_within_historical_data(
-    daily_historical_data: pd.DataFrame,
-    intraday_historical_data: pd.DataFrame,
+    period: str,
+    historical_data: Mapping[str, pd.DataFrame],
     intraday_period: str | None,
-):
+) -> pd.DataFrame:
     """
-    This function is a specific function solely related to the Risk controller. It
-    reshapes the historical data into a multi-index (period, observation) format for
-    each period defined in PERIOD_TRANSLATION, which is what the "within period"
-    calculations in the Risk controller operate on.
+    Reshapes the historical data of a period into a (period, observation) multi-index, the
+    format the "within period" calculations of the Risk, Performance and Econometrics
+    controllers operate on. The intraday and daily periods nest the intraday bars, the other
+    periods the daily observations; only the data the period nests is read, so a
+    LazyDict (financetoolkit.helpers) retrieves nothing else.
 
     Args:
-        daily_historical_data (pd.DataFrame): the daily historical data used for the
-        weekly, monthly, quarterly and yearly periods.
-        intraday_historical_data (pd.DataFrame): the intraday historical data used for
-        the intraday and daily periods. When empty, the daily period is skipped
-        entirely, since there would be nothing to nest inside a single day.
-        intraday_period (str | None): the intraday frequency (e.g. "1min", "1hour")
-        used to look up the outer resampling symbol. When None, the intraday period is
-        skipped entirely.
+        period (str): The period, one of the keys of PERIOD_TRANSLATION.
+        historical_data (Mapping[str, pd.DataFrame]): The historical data with a PeriodIndex
+            under the "daily" and "intraday" keys.
+        intraday_period (str | None): The intraday frequency (e.g. "1min", "1hour") used to
+            look up the outer resampling symbol of the intraday period.
+
+    Raises:
+        KeyError: For the intraday period without an intraday_period, and for the daily
+            period without intraday data, which have no within period data.
 
     Returns:
-        dict[str, pd.DataFrame]: a dictionary with the period name as key and the
-        historical data with a (period, observation) multi-index as value.
+        pd.DataFrame: The historical data with a (period, observation) multi-index.
     """
-    within_historical_data = {}
+    if period not in PERIOD_TRANSLATION or (
+        period == "intraday" and not intraday_period
+    ):
+        raise KeyError(period)
 
-    for period, symbol in PERIOD_TRANSLATION.items():
-        if not intraday_period and period == "intraday":
-            continue
-        # Without intraday observations there is nothing to nest inside a single day, so the daily period would collapse to one observation per group.  # noqa: E501
-        if intraday_historical_data.empty and period == "daily":
-            continue
+    intraday_historical_data = (
+        historical_data["intraday"]
+        if period in ("intraday", "daily")
+        else pd.DataFrame()
+    )
 
-        # The intraday entry maps each intraday_period to a symbol; every other
-        # entry is the symbol itself, and the intraday loop iteration is skipped
-        # above whenever no intraday_period was given.
-        period_symbol = (
-            symbol[intraday_period]
-            if isinstance(symbol, dict) and intraday_period is not None
-            else symbol
-        )
-        if not isinstance(period_symbol, str):
-            raise TypeError(f"No period symbol resolved for {period}.")
+    # Without intraday observations there is nothing to nest inside a single day, so the daily period would collapse to one observation per group.  # noqa: E501
+    if period == "daily" and intraday_historical_data.empty:
+        raise KeyError(period)
 
-        if not intraday_historical_data.empty and period in [
-            "intraday",
-            "daily",
-        ]:
-            source_data = intraday_historical_data
-        else:
-            source_data = daily_historical_data
+    # The intraday entry maps each intraday_period to a symbol; every other entry is the
+    # symbol itself.
+    symbol = PERIOD_TRANSLATION[period]
+    period_symbol = (
+        symbol[intraday_period]
+        if isinstance(symbol, dict) and intraday_period is not None
+        else symbol
+    )
+    if not isinstance(period_symbol, str):
+        raise TypeError(f"No period symbol resolved for {period}.")
 
-        # The daily period nests intraday observations inside each day, so like the intraday period it needs a minute-level inner index rather than a daily one.  # noqa: E501
-        inner_freq = "min" if period in ("intraday", "daily") else "D"
-        period_data = source_data.copy()
-        period_data.index = pd.MultiIndex.from_arrays(
-            [
-                to_datetime_index(source_data.index).to_period(period_symbol),
-                to_datetime_index(source_data.index).to_period(inner_freq),
-            ]
-        )
+    source_data = (
+        intraday_historical_data
+        if not intraday_historical_data.empty
+        else historical_data["daily"]
+    )
+    dates = pd.DatetimeIndex(source_data.to_timestamp().index)
 
-        within_historical_data[period] = period_data
+    # The daily period nests intraday observations inside each day, so like the intraday period it needs a minute-level inner index rather than a daily one.  # noqa: E501
+    inner_freq = "min" if period in ("intraday", "daily") else "D"
+    period_data = source_data.copy()
+    period_data.index = pd.MultiIndex.from_arrays(
+        [dates.to_period(period_symbol), dates.to_period(inner_freq)]
+    )
 
-    return within_historical_data
+    return period_data

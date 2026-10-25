@@ -7,7 +7,7 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from scipy import linalg, stats
+from scipy import linalg, optimize, stats
 from scipy.stats import linregress
 
 from financetoolkit.cache import policy_model
@@ -22,6 +22,9 @@ from financetoolkit.utilities.statistics_model import (
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
+
+# A Sortino ratio of a single observation only reports its sign, so two are required.
+MIN_SORTINO_OBSERVATIONS = 2
 
 # The Euler-Mascheroni constant, used by the Deflated Sharpe Ratio.
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
@@ -46,11 +49,15 @@ def get_covariance(
     ignored.
 
     Args:
-        returns (pd.Series | pd.DataFrame): _description_
-        benchmark_returns (pd.Series | pd.DataFrame): _description_
+        returns (pd.Series | pd.DataFrame): The asset returns, one column per asset, or a
+            rolling window object of them.
+        benchmark_returns (pd.Series | pd.DataFrame): The benchmark returns, aligned on the
+            same index as `returns`.
 
     Returns:
-        pd.Series | pd.DataFrame: _description_
+        pd.Series | pd.DataFrame | float: The sample covariance (ddof=1) of each asset with
+        the benchmark: a Series per column for a DataFrame, a float for a Series and the
+        rolling covariance for a rolling window object.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -78,14 +85,24 @@ def get_beta(
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate beta. Beta represents the slope in the linear regression between
-    the asset returns and the benchmark returns.
+    the asset returns and the benchmark returns:
+
+        - Beta = Covariance(Asset Returns, Benchmark Returns) / Variance(Benchmark Returns)
+
+    Beta is estimated on the raw returns, not on returns in excess of the risk free rate.
+    With a risk free rate that barely moves within a period the two slopes are nearly
+    identical, and raw returns keep beta independent of the chosen risk free rate.
 
     Args:
-        returns (pd.Series | pd.DataFrame): return series.
-        benchmark_returns (pd.Series | pd.DataFrame): benchmark return series.
+        returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
+            'within period' MultiIndex (period, date) to get one beta per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
 
     Returns:
-        pd.Series | pd.DataFrame: _description_
+        pd.Series | pd.DataFrame | float: A DataFrame of betas per period (rows) and asset
+        (columns) for a 'within period' index, otherwise a Series of betas per asset for a
+        DataFrame or a float for a Series. Assets with fewer than two dates shared with
+        the benchmark get NaN.
     """
     if not isinstance(returns, pd.DataFrame | pd.Series):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -147,14 +164,21 @@ def get_rolling_beta(
         index=returns.index, columns=returns.columns, dtype=np.float64
     )
 
+    rolling_beta = pd.DataFrame(
+        index=returns.index, columns=returns.columns, dtype=np.float64
+    )
+
     for column in returns.columns:
+        # The benchmark variance is taken over the same dates as the covariance, those
+        # on which the asset has a return: over every date it would mix in benchmark
+        # volatility from days the asset did not trade (e.g. before a later listing).
+        benchmark = benchmark_returns.where(returns[column].notna())
         rolling_cov.loc[:, column] = get_covariance(
-            returns[column].rolling(window=window_size), benchmark_returns
+            returns[column].rolling(window=window_size), benchmark
         )
-
-    rolling_var = benchmark_returns.rolling(window=window_size).var()
-
-    rolling_beta = rolling_cov.div(rolling_var, axis=0)
+        rolling_beta.loc[:, column] = (
+            rolling_cov[column] / benchmark.rolling(window=window_size).var()
+        )
 
     return rolling_beta
 
@@ -224,6 +248,113 @@ FACTOR_FILE_LIFETIME_SECONDS = 3600
 _factor_files: dict[str, tuple[float, bytes]] = {}
 
 
+KEN_FRENCH_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+
+# The regions Ken French publishes daily factors for, with their files spelled as the data
+# library lists them. The server matches the names regardless of case, but the published
+# spelling differs per region (only Asia Pacific ex Japan spells its momentum file "MOM").
+# Every region's factors are U.S. dollar returns with the U.S. one-month T-bill as RF.
+FACTOR_REGIONS = {
+    "United States": {
+        "five": "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
+        "three": "F-F_Research_Data_Factors_daily_CSV.zip",
+        "momentum": "F-F_Momentum_Factor_daily_CSV.zip",
+    },
+    "Developed": {
+        "five": "Developed_5_Factors_Daily_CSV.zip",
+        "three": "Developed_3_Factors_Daily_CSV.zip",
+        "momentum": "Developed_Mom_Factor_Daily_CSV.zip",
+    },
+    "Developed ex US": {
+        "five": "Developed_ex_US_5_Factors_Daily_CSV.zip",
+        "three": "Developed_ex_US_3_Factors_Daily_CSV.zip",
+        "momentum": "Developed_ex_US_Mom_Factor_Daily_CSV.zip",
+    },
+    "Europe": {
+        "five": "Europe_5_Factors_Daily_CSV.zip",
+        "three": "Europe_3_Factors_Daily_CSV.zip",
+        "momentum": "Europe_Mom_Factor_Daily_CSV.zip",
+    },
+    "Japan": {
+        "five": "Japan_5_Factors_Daily_CSV.zip",
+        "three": "Japan_3_Factors_Daily_CSV.zip",
+        "momentum": "Japan_Mom_Factor_Daily_CSV.zip",
+    },
+    "Asia Pacific ex Japan": {
+        "five": "Asia_Pacific_ex_Japan_5_Factors_Daily_CSV.zip",
+        "three": "Asia_Pacific_ex_Japan_3_Factors_Daily_CSV.zip",
+        "momentum": "Asia_Pacific_ex_Japan_MOM_Factor_Daily_CSV.zip",
+    },
+    "North America": {
+        "five": "North_America_5_Factors_Daily_CSV.zip",
+        "three": "North_America_3_Factors_Daily_CSV.zip",
+        "momentum": "North_America_Mom_Factor_Daily_CSV.zip",
+    },
+}
+
+# Ken French marks a missing value with -99.99 (or -999 in some files).
+MISSING_FACTOR_VALUES = (-99.99, -999.0)
+
+
+def factor_url(region: str = "United States", kind: str = "five") -> str:
+    """
+    The URL of Ken French's daily factor file of a region.
+
+    Args:
+        region (str, optional): One of FACTOR_REGIONS. Defaults to "United States".
+        kind (str, optional): "five" (5 factors), "three" (3 factors) or "momentum".
+            Defaults to "five".
+
+    Returns:
+        str: The URL of the ZIP file.
+
+    Raises:
+        ValueError: When the region is not published.
+    """
+    if region not in FACTOR_REGIONS:
+        raise ValueError(
+            f"The factors of {region!r} are not published. Choose from "
+            f"{', '.join(FACTOR_REGIONS)}."
+        )
+    return f"{KEN_FRENCH_URL}{FACTOR_REGIONS[region][kind]}"
+
+
+def read_factor_file(zip_data: bytes) -> pd.DataFrame:
+    """
+    Reads one of Ken French's daily factor files: the header is the first line that starts
+    with a comma (the number of description lines above it differs per file), the dates are
+    YYYYMMDD (padded with spaces in the regional files) and the values are in percent.
+
+    Args:
+        zip_data (bytes): The ZIP file.
+
+    Returns:
+        pd.DataFrame: The factors as decimals, indexed by day.
+    """
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+        text = zip_file.open(zip_file.namelist()[0]).read().decode("latin-1")
+
+    lines = text.splitlines()
+    header = next(
+        number for number, line in enumerate(lines) if line.lstrip().startswith(",")
+    )
+    dataset = pd.read_csv(
+        io.StringIO("\n".join(lines[header:])), index_col=0, skipinitialspace=True
+    )
+    dataset.index = dataset.index.astype(str).str.strip()
+    dataset = dataset[dataset.index.str.fullmatch(r"\d{8}")]
+    dataset = dataset.loc[:, ~dataset.columns.str.contains("Unnamed")]
+    dataset.columns = dataset.columns.str.strip()
+    dataset = dataset.apply(pd.to_numeric, errors="coerce")
+    dataset = dataset.mask(dataset.isin(MISSING_FACTOR_VALUES)).dropna(how="all")
+
+    # Ken French publishes the factors in percent while returns are decimals.
+    dataset = dataset / 100
+    dataset.index = pd.to_datetime(dataset.index, format="%Y%m%d").to_period(freq="D")
+    dataset.index.name = "Date"
+    return dataset
+
+
 def download_factor_file(url: str) -> bytes:
     """
     Download one of Ken French's factor files, or reuse the copy downloaded within the hour.
@@ -245,7 +376,9 @@ def download_factor_file(url: str) -> bytes:
     return content
 
 
-def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
+def obtain_fama_and_french_dataset(
+    fama_and_french_url: str | None = None, region: str = "United States"
+):
     """
     This functionality returns the Fama and French 5 Factor Model dataset. It is a dataset that contains the
     excess returns of the 5 factors that are used in the Fama and French 5 Factor Model. The factors are:
@@ -265,17 +398,17 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
 
     Args:
         fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is provided, the
-        default URL (Fama and French 5 Factor) is used.
+        5 factor file of the region is used.
+        region (str, optional): The region whose factors to use, one of FACTOR_REGIONS: "United States",
+        "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America".
+        Every region's factors are U.S. dollar returns with the U.S. one-month Treasury bill as the
+        risk-free rate (RF). Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Fama and French 5 Factor Model dataset.
     """
     # Define the URL of the ZIP file
-    fama_and_french_url = (
-        fama_and_french_url
-        if fama_and_french_url
-        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
-    )
+    fama_and_french_url = fama_and_french_url or factor_url(region, "five")
 
     cache = get_active_cache()
 
@@ -289,27 +422,9 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
         if cached_dataset is not None:
             return cached_dataset
 
-    zip_data = download_factor_file(fama_and_french_url)
-
-    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
-        # The dataset is packaged in a ZIP file, so it needs to be extracted first
-        zip_file_contents = zip_file.namelist()
-
-        csv_file_name = zip_file_contents[0]
-
-        with zip_file.open(csv_file_name) as csv_file:
-            # Skip the first 3 rows which are header information
-            fama_and_french_dataset = pd.read_csv(csv_file, skiprows=3, index_col=0)
-
-        fama_and_french_dataset = fama_and_french_dataset.dropna(axis="index")
-
-        # Ken French publishes the factors in percent while returns are decimals.
-        fama_and_french_dataset = fama_and_french_dataset / 100
-
-        fama_and_french_dataset.index = pd.to_datetime(
-            fama_and_french_dataset.index, format="%Y%m%d"
-        ).to_period(freq="D")
-        fama_and_french_dataset.index.name = "Date"
+    fama_and_french_dataset = read_factor_file(
+        download_factor_file(fama_and_french_url)
+    )
 
     if cache is not None and not fama_and_french_dataset.empty:
         cache.set(
@@ -323,7 +438,7 @@ def obtain_fama_and_french_dataset(fama_and_french_url: str | None = None):
 
 
 def obtain_fama_and_french_three_factor_dataset(
-    fama_and_french_url: str | None = None,
+    fama_and_french_url: str | None = None, region: str = "United States"
 ) -> pd.DataFrame:
     """
     This functionality returns the Fama and French 3 Factor Model dataset:
@@ -344,20 +459,21 @@ def obtain_fama_and_french_three_factor_dataset(
 
     Args:
         fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the default URL (Fama and French 3 Factor) is used.
+        provided, the 3 factor file of the region is used.
+        region (str, optional): The region whose factors to use, see
+        `obtain_fama_and_french_dataset`. Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Fama and French 3 Factor Model dataset.
     """
     return obtain_fama_and_french_dataset(
-        fama_and_french_url
-        if fama_and_french_url
-        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
-        "F-F_Research_Data_Factors_daily_CSV.zip"
+        fama_and_french_url or factor_url(region, "three")
     )
 
 
-def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataFrame:
+def obtain_carhart_momentum_dataset(
+    momentum_url: str | None = None, region: str = "United States"
+) -> pd.DataFrame:
     """
     This functionality returns the Carhart Momentum (MOM) factor dataset, used to extend
     the Fama and French 3 Factor Model into the Carhart 4 Factor Model:
@@ -370,16 +486,14 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
 
     Args:
         momentum_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the default Ken French Momentum Factor URL is used.
+        provided, the momentum file of the region is used.
+        region (str, optional): The region whose factor to use, see
+        `obtain_fama_and_french_dataset`. Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Carhart Momentum Factor dataset, with a single "Mom" column.
     """
-    momentum_url = (
-        momentum_url
-        if momentum_url
-        else "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
-    )
+    momentum_url = momentum_url or factor_url(region, "momentum")
 
     cache = get_active_cache()
 
@@ -393,31 +507,9 @@ def obtain_carhart_momentum_dataset(momentum_url: str | None = None) -> pd.DataF
         if cached_dataset is not None:
             return cached_dataset
 
-    zip_data = download_factor_file(momentum_url)
-
-    with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
-        zip_file_contents = zip_file.namelist()
-
-        csv_file_name = zip_file_contents[0]
-
-        with zip_file.open(csv_file_name) as csv_file:
-            # Skip the descriptive header rows; the "Mom" data starts right after
-            momentum_dataset = pd.read_csv(csv_file, skiprows=13, index_col=0)
-
-        # A trailing comma makes an all-NaN column that would drop every valid row.
-        momentum_dataset = momentum_dataset.loc[
-            :, ~momentum_dataset.columns.str.contains("Unnamed")
-        ]
-        momentum_dataset = momentum_dataset.dropna(axis="index")
-
-        # Ken French publishes the factor in percent while returns are decimals.
-        momentum_dataset = momentum_dataset / 100
-
-        momentum_dataset.index = pd.to_datetime(
-            momentum_dataset.index, format="%Y%m%d"
-        ).to_period(freq="D")
-        momentum_dataset.index.name = "Date"
-        momentum_dataset.columns = momentum_dataset.columns.str.strip()
+    momentum_dataset = read_factor_file(download_factor_file(momentum_url))
+    # The regional files name the factor WML (winners minus losers).
+    momentum_dataset = momentum_dataset.rename(columns={"WML": "Mom"})
 
     if cache is not None and not momentum_dataset.empty:
         cache.set(
@@ -639,8 +731,7 @@ def get_fama_and_french_model_single(
     is the independent/predictor variable and `y` is the dependent/response variable.
     Given the formula above, `factor` is `x` and `excess_returns` is `y`, so it must be
     called as `linregress(factor, excess_returns)` -- calling it the other way around
-    (as an earlier version of this function did) fits the reverse regression (`factor`
-    as a function of `excess_returns`), which generally yields a different slope and
+    fits the reverse regression (`factor` as a function of `excess_returns`), which generally yields a different slope and
     intercept (since OLS is not symmetric in `x` and `y`) and silently produces the
     wrong regression parameters and residuals for this model.
 
@@ -918,7 +1009,8 @@ def get_rolling_sharpe_ratio(
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
-        window_size (int): The size of the rolling window in months. Default is 12.
+        window_size (int): The size of the rolling window, in observations of `excess_returns`
+            (e.g. 12 for a year of monthly returns).
 
     Returns:
         pd.Series: A Series of rolling Sharpe ratios with time as index and assets as columns.
@@ -1138,6 +1230,11 @@ def get_sortino_ratio(
     - Sortino, F.A., & Price, L.N. (1994). "Performance Measurement in a Downside Risk
     Framework." Journal of Investing, 3(3), 59-64.
 
+    A Sortino ratio needs at least two observations: with a single one the mean and the
+    downside deviation are the same number, so the ratio would only report its sign (-1)
+    or be infinite. Such periods (e.g. a period that holds only one trading day of the
+    date range) are returned as NaN.
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
         rate already subtracted.
@@ -1145,22 +1242,27 @@ def get_sortino_ratio(
     Returns:
         pd.Series: A Series of Sortino ratios with time as index and assets as columns.
     """
+
+    def _sortino(returns: pd.Series | pd.DataFrame):
+        downside_deviation = np.sqrt((returns.clip(upper=0) ** 2).mean())
+        ratio = returns.mean() / downside_deviation
+        # A single observation only yields its own sign (see above).
+        return (
+            ratio.where(returns.count() >= MIN_SORTINO_OBSERVATIONS)
+            if isinstance(ratio, pd.Series)
+            else (ratio if returns.count() >= MIN_SORTINO_OBSERVATIONS else np.nan)
+        )
+
     if isinstance(excess_returns, pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             # Calculate Sortino ratio for each asset (ticker) in the DataFrame
-            sortino_ratios = excess_returns.groupby(level=0).apply(
-                lambda x: x.mean() / np.sqrt((x.clip(upper=0) ** 2).mean())
-            )
-            return sortino_ratios
+            return excess_returns.groupby(level=0).apply(_sortino)
 
-        downside_deviation = np.sqrt((excess_returns.clip(upper=0) ** 2).mean())
-
-        return excess_returns.mean() / downside_deviation
+        return _sortino(excess_returns)
 
     if isinstance(excess_returns, pd.Series):
         # Calculate Sortino ratio for a single asset (ticker)
-        downside_deviation = np.sqrt((excess_returns.clip(upper=0) ** 2).mean())
-        return excess_returns.mean() / downside_deviation
+        return _sortino(excess_returns)
 
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
@@ -1182,6 +1284,9 @@ def get_rolling_sortino_ratio(
     Returns:
         pd.Series | pd.DataFrame: Rolling Sortino ratio values with time as index.
     """
+    # A window of a single observation only yields its sign, see `get_sortino_ratio`.
+    if window_size < MIN_SORTINO_OBSERVATIONS:
+        return excess_returns * np.nan
 
     rolling_mean = excess_returns.rolling(window=window_size).mean()
     rolling_downside_deviation = np.sqrt(
@@ -1245,9 +1350,7 @@ def get_m2_ratio(
 
     Note that this requires the *benchmark's* standard deviation, not just the asset's
     own -- without it, this collapses to the plain Sharpe ratio (dimensionless) rather
-    than M2 (a return, expressed in the same units as `asset_returns`). A previous
-    version of this function omitted `benchmark_standard_deviation` entirely and
-    returned the Sharpe ratio under the "M2 Ratio" name.
+    than M2 (a return, expressed in the same units as `asset_returns`).
 
     For more information about the method, see the following paper:
 
@@ -1342,7 +1445,9 @@ def get_tracking_error(
         benchmark_returns (pd.Series): The benchmark's returns over the same period.
 
     Returns:
-        pd.Series: A Series of Tracking Error values with time as index and assets as columns.
+        pd.Series | pd.DataFrame | float: Tracking Error values. With a "within period"
+        (period, date) MultiIndex one value per period (rows) and asset (columns), for a
+        plain DataFrame one value per asset (a Series) and for a Series a float.
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -1352,13 +1457,8 @@ def get_tracking_error(
 
             return tracking_error
 
-        tracking_error = pd.DataFrame(
-            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
-        )
-        for column in tracking_error.columns:
-            tracking_error.loc[:, column] = (
-                asset_returns[column] - benchmark_returns
-            ).std()
+        # One value per asset over the whole series.
+        return asset_returns.sub(benchmark_returns, axis=0).std()
 
     if isinstance(asset_returns, (pd.Series | float)):
         tracking_error = (asset_returns - benchmark_returns).std()
@@ -1413,7 +1513,9 @@ def get_information_ratio(
         benchmark_returns (pd.Series): The benchmark's returns over the same period.
 
     Returns:
-        pd.Series: A Series of Information Ratio values with time as index and assets as columns.
+        pd.Series | pd.DataFrame | float: Information Ratio values. With a "within period"
+        (period, date) MultiIndex one value per period (rows) and asset (columns), for a
+        plain DataFrame one value per asset (a Series) and for a Series a float.
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -1426,12 +1528,10 @@ def get_information_ratio(
 
             return information_ratio
 
-        information_ratio = pd.DataFrame(
-            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
-        )
-        for column in information_ratio.columns:
-            difference = asset_returns[column] - benchmark_returns
-            information_ratio.loc[:, column] = difference.mean() / difference.std()
+        # One value per asset over the whole series.
+        difference = asset_returns.sub(benchmark_returns, axis=0)
+
+        return difference.mean() / difference.std()
 
     if isinstance(asset_returns, (pd.Series | float)):
         difference = asset_returns - benchmark_returns
@@ -1645,13 +1745,37 @@ def get_burke_ratio(
     return (excess_returns / burke_drawdown_measure).dropna()
 
 
+def _geometric_mean_return(returns: pd.Series | pd.DataFrame) -> pd.Series | float:
+    """
+    The geometric average return per observation, (PRODUCT(1 + r))^(1 / n) - 1, over the
+    non-missing returns of each column.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns to average.
+
+    Returns:
+        pd.Series | float: The geometric average return per column (or overall, for a Series).
+    """
+    # The mean of log(1 + r) skips missing values, so n is the count of each column.
+    return np.expm1(np.log1p(returns).mean())
+
+
 def _get_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
     upside: bool,
 ) -> pd.Series | pd.DataFrame:
     """
-    Shared implementation for the Upside and Downside Capture Ratios.
+    Shared implementation for the Upside and Downside Capture Ratios, following
+    Morningstar's definition: the geometric average return of the asset over the
+    observations in which the benchmark rose (fell), divided by the geometric average
+    return of the benchmark over those same observations.
+
+        - Capture Ratio = ((PRODUCT(1 + Asset Return))^(1 / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return))^(1 / n) - 1)
+
+    Where n is the number of observations with a positive (negative) benchmark return
+    on which the asset also has a return, so that both averages cover the same dates.
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1661,31 +1785,37 @@ def _get_capture_ratio(
     Returns:
         pd.Series | pd.DataFrame: Capture Ratio values.
     """
+
+    def _capture(assets: pd.DataFrame, benchmark: pd.Series) -> pd.Series:
+        mask = benchmark > 0 if upside else benchmark < 0
+        selected = assets[mask]
+        # The benchmark is averaged per asset over the dates that asset has a return,
+        # so a shorter asset history is compared with the matching benchmark window.
+        benchmark_per_asset = pd.DataFrame(
+            np.repeat(benchmark[mask].to_numpy()[:, None], assets.shape[1], axis=1),
+            index=selected.index,
+            columns=assets.columns,
+        ).where(selected.notna())
+
+        return _geometric_mean_return(selected) / _geometric_mean_return(
+            benchmark_per_asset
+        )
+
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            benchmark_name = benchmark_returns.name
             combination = pd.concat([asset_returns, benchmark_returns], axis=1)
 
-            def _capture(frame):
-                mask = (
-                    frame[benchmark_returns.name] > 0
-                    if upside
-                    else frame[benchmark_returns.name] < 0
+            return combination.groupby(level=0).apply(
+                lambda frame: _capture(
+                    frame[asset_returns.columns], frame[benchmark_name]
                 )
-                return (
-                    frame[asset_returns.columns][mask].mean()
-                    / frame[benchmark_returns.name][mask].mean()
-                )
+            )
 
-            return combination.groupby(level=0).apply(_capture)
-
-        mask = benchmark_returns > 0 if upside else benchmark_returns < 0
-
-        return asset_returns[mask].mean() / benchmark_returns[mask].mean()
+        return _capture(asset_returns, benchmark_returns)
 
     if isinstance(asset_returns, pd.Series):
-        mask = benchmark_returns > 0 if upside else benchmark_returns < 0
-
-        return asset_returns[mask].mean() / benchmark_returns[mask].mean()
+        return float(_capture(asset_returns.to_frame(), benchmark_returns).iloc[0])
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -1694,8 +1824,12 @@ def get_upside_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Upside Capture Ratio, i.e. the ratio of the asset's average return to the
-    benchmark's average return during periods in which the benchmark's return is positive.
+    Calculate the Upside Capture Ratio, i.e. the ratio of the asset's geometric average
+    return to the benchmark's geometric average return during the observations in which
+    the benchmark's return is positive (Morningstar's definition):
+
+        - Upside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark > 0))^(1 / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return | Benchmark > 0))^(1 / n) - 1)
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1711,8 +1845,12 @@ def get_downside_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Downside Capture Ratio, i.e. the ratio of the asset's average return to the
-    benchmark's average return during periods in which the benchmark's return is negative.
+    Calculate the Downside Capture Ratio, i.e. the ratio of the asset's geometric average
+    return to the benchmark's geometric average return during the observations in which
+    the benchmark's return is negative (Morningstar's definition):
+
+        - Downside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark < 0))^(1 / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return | Benchmark < 0))^(1 / n) - 1)
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1729,7 +1867,13 @@ def get_win_rate(
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Win Rate, i.e. the percentage of periods in which the asset's return
-    exceeds the benchmark's return.
+    exceeds the benchmark's return. Periods in which either return is missing are left out
+    of both the wins and the number of periods.
+
+    The formula is as follows:
+
+        - Win Rate = Number of Periods with Asset Return > Benchmark Return / Number of Periods
+          with both an Asset and a Benchmark Return
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1738,20 +1882,27 @@ def get_win_rate(
     Returns:
         pd.Series | pd.DataFrame: Win Rate values.
     """
+
+    def win_share(
+        asset: pd.Series | pd.DataFrame, benchmark: pd.Series
+    ) -> pd.Series | float:
+        # A comparison with a missing return is False, which would count a day without a quote as a loss; mask those days so the mean only covers days on which both returns exist.  # noqa: E501
+        wins = asset.gt(benchmark, axis=0).astype(float)
+
+        return wins.where(asset.notna()).where(benchmark.notna(), axis=0).mean()
+
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             combination = pd.concat([asset_returns, benchmark_returns], axis=1)
 
             return combination.groupby(level=0).apply(
-                lambda x: x[asset_returns.columns]
-                .gt(x[benchmark_returns.name], axis=0)
-                .mean()
+                lambda x: win_share(x[asset_returns.columns], x[benchmark_returns.name])
             )
 
-        return asset_returns.gt(benchmark_returns, axis=0).mean()
+        return win_share(asset_returns, benchmark_returns)
 
     if isinstance(asset_returns, pd.Series):
-        return (asset_returns > benchmark_returns).mean()
+        return win_share(asset_returns, benchmark_returns)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -1993,6 +2144,60 @@ def get_compound_growth_rate(
     return (prices.iloc[-1] / prices.iloc[0]) ** (1 / periods) - 1
 
 
+# The average length of a year in days, leap years included, to express calendar time in years.
+DAYS_PER_YEAR = 365.25
+
+
+def get_compound_annual_growth_rate(
+    prices: pd.Series | pd.DataFrame,
+) -> float | pd.Series:
+    """
+    Calculate the Compound Annual Growth Rate (CAGR) of a price series on calendar time.
+
+    The CAGR is the constant annual rate that grows the first price into the last one over
+    the time between them. That time is measured in calendar days rather than in rows, so
+    the rate does not depend on how often a price is observed: an asset that trades every
+    day (such as a cryptocurrency) and one that trades on weekdays only, observed over the
+    same dates, are measured over the same number of years.
+
+    The formula is as follows:
+
+        - Years = (Last Date - First Date) / 365.25 days
+        - CAGR = (Last Price / First Price) ^ (1 / Years) - 1
+
+    Each column is measured on its own first and last observation, so a ticker without a
+    price on the first or last date of a shared calendar (a weekend for a stock next to a
+    cryptocurrency, or a later listing) still gets the rate over the dates it has.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): Series or DataFrame of prices with a
+        DatetimeIndex or PeriodIndex, ordered from oldest to newest.
+
+    Returns:
+        float | pd.Series: The CAGR, as a float if `prices` is a Series and as a Series
+        (one value per column) if `prices` is a DataFrame. A series with fewer than two
+        prices, or whose prices fall on a single date, returns NaN.
+    """
+    if isinstance(prices, pd.DataFrame):
+        return prices.apply(get_compound_annual_growth_rate).astype(float)
+
+    observed = prices.dropna()
+
+    if len(observed) < 2:  # noqa: PLR2004
+        return float("nan")
+
+    dates = observed.index
+    if isinstance(dates, pd.PeriodIndex):
+        dates = dates.to_timestamp()
+
+    years = (dates[-1] - dates[0]).days / DAYS_PER_YEAR
+
+    if years <= 0:
+        return float("nan")
+
+    return float((observed.iloc[-1] / observed.iloc[0]) ** (1 / years) - 1)
+
+
 def get_returns(
     returns: pd.Series | pd.DataFrame,
     period: str,
@@ -2007,6 +2212,8 @@ def get_returns(
     period, following the formula:
 
         - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
+
+    A period without any return (e.g. before a ticker listed) is NaN rather than 0.
 
     If cumulative is set to True, the period returns are compounded further into
     a cumulative return, following the formula:
@@ -2044,7 +2251,8 @@ def get_returns(
         else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
-    period_returns = (1 + returns).groupby(dates).prod() - 1
+    # min_count=1 keeps a period without any return (a ticker that listed later or a gap in its history) NaN; the plain product of an empty group is 1, which would report a return of exactly 0 for it.  # noqa: E501
+    period_returns = (1 + returns).groupby(dates).prod(min_count=1) - 1
 
     if cumulative:
         return (1 + period_returns).cumprod()
@@ -2771,3 +2979,205 @@ def get_henriksson_merton_model(
         up_market_excess_returns,
         "Up Market Beta",
     )
+
+
+def get_style_weights(returns: pd.Series, style_returns: pd.DataFrame) -> pd.Series:
+    """
+    The weights of returns-based style analysis (Sharpe, 1992): the mix of style indices,
+    every weight between 0 and 1 and the weights adding up to 1, that minimizes the variance
+    of the difference between the fund's return and the weighted style returns. As
+
+        - Var(Fund - Styles @ w) = Var(Fund) - 2 * w' Cov(Styles, Fund) + w' Cov(Styles) w
+
+    the weights solve a quadratic programme in the covariances. It is scaled by the fund's
+    variance and solved with its exact gradients: on daily returns the tracking variance is
+    around 1e-6, so small that the optimizer's tolerance would otherwise stop it before the
+    weights settle in the fourth decimal.
+
+    For more information, see the following paper:
+
+    - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance Measurement."
+      The Journal of Portfolio Management, 18(2), 7-19.
+
+    Args:
+        returns (pd.Series): The fund's returns.
+        style_returns (pd.DataFrame): The returns of the style indices, a column each, on the
+            same dates as `returns` without missing values.
+
+    Returns:
+        pd.Series: The weight of every style.
+    """
+    y = returns.to_numpy(dtype=float)
+    x = style_returns.to_numpy(dtype=float)
+    styles = x.shape[1]
+
+    covariance = np.cov(np.column_stack([y, x]), rowvar=False, ddof=1)
+    scale = covariance[0, 0] if covariance[0, 0] > 0 else 1.0
+    style_covariance = covariance[1:, 1:] / scale
+    fund_covariance = covariance[1:, 0] / scale
+
+    fit = optimize.minimize(
+        lambda weights: weights @ style_covariance @ weights
+        - 2 * weights @ fund_covariance,
+        np.full(styles, 1 / styles),
+        jac=lambda weights: 2 * (style_covariance @ weights - fund_covariance),
+        method="SLSQP",
+        bounds=[(0.0, 1.0)] * styles,
+        constraints=[
+            {
+                "type": "eq",
+                "fun": lambda weights: weights.sum() - 1,
+                "jac": np.ones_like,
+            }
+        ],
+        options={"ftol": 1e-15, "maxiter": 1000},
+    )
+    # SLSQP can end a hair outside the bounds, which would let a weight read as -0.0000.
+    weights = np.clip(fit.x, 0, 1)
+
+    return pd.Series(weights / weights.sum(), index=style_returns.columns)
+
+
+def get_style_analysis(
+    returns: pd.Series, style_returns: pd.DataFrame, periods_per_year: int = 12
+) -> pd.Series:
+    """
+    Returns-based style analysis (Sharpe, 1992): the mix of style indices whose returns track
+    a fund's returns most closely. The weights are found by minimizing the variance of the
+    difference between the fund's return and the weighted style returns, with every weight
+    between 0 and 1 and the weights adding up to 1, so they read as the fund's effective
+    asset mix (see `get_style_weights`).
+
+    The other figures are in-sample, measured over the same returns the weights are fitted
+    to: the part of the fund's return the styles do not explain is the Selection Return, its
+    volatility the Tracking Error and the share of the fund's variance the styles explain the
+    R Squared. Sharpe measures selection out of sample instead, against the style estimated
+    over the periods before (see `get_rolling_style_analysis`); the in-sample figures flatter
+    the fit, as the weights are chosen to explain these very returns.
+
+    For more information, see the following paper:
+
+    - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance Measurement."
+      The Journal of Portfolio Management, 18(2), 7-19.
+
+    Args:
+        returns (pd.Series): The fund's returns.
+        style_returns (pd.DataFrame): The returns of the style indices, a column each.
+        periods_per_year (int, optional): The returns per year, to annualize the selection
+            return and the tracking error. Defaults to 12.
+
+    Returns:
+        pd.Series: The weight of every style, the R Squared, the (annualized) Selection Return
+        and the (annualized) Tracking Error. Dates on which the fund or a style has no return
+        are left out; with no more complete dates than styles the weights are undetermined and
+        every value is NaN.
+    """
+    styles = list(style_returns.columns)
+    columns = [*styles, "R Squared", "Selection Return", "Tracking Error"]
+    data = pd.concat([returns, style_returns], axis=1).dropna()
+
+    if len(data) <= len(styles):
+        return pd.Series(np.nan, index=columns)
+
+    # By position, so a fund that carries the name of a style does not clash with it.
+    weights = get_style_weights(data.iloc[:, 0], data.iloc[:, 1:]).to_numpy()
+    y = data.iloc[:, 0].to_numpy(dtype=float)
+    residual = y - data.iloc[:, 1:].to_numpy(dtype=float) @ weights
+    fund_variance = np.var(y, ddof=1)
+
+    return pd.Series(
+        [
+            *weights,
+            (
+                # A constant fund has no variance to explain; in floating point its
+                # variance is a tiny positive number rather than zero.
+                1 - np.var(residual, ddof=1) / fund_variance
+                if np.ptp(y) > 0
+                else np.nan
+            ),
+            residual.mean() * periods_per_year,
+            residual.std(ddof=1) * np.sqrt(periods_per_year),
+        ],
+        index=columns,
+    )
+
+
+def get_rolling_style_analysis(
+    returns: pd.Series,
+    style_returns: pd.DataFrame,
+    window: int,
+    periods_per_year: int = 12,
+) -> pd.DataFrame:
+    """
+    Returns-based style analysis (Sharpe, 1992) over a rolling window: per date the style
+    weights, R Squared, Selection Return and Tracking Error of the `window` periods up to and
+    including that date (see `get_style_analysis`, the figures are in-sample within each
+    window), which shows how a fund's style drifts over time.
+
+    Next to them is Sharpe's out-of-sample measure of selection. The Out-of-Sample Selection
+    Return of a date is the fund's return of that period minus the return of that period of
+    the style mix estimated over the window that ends one period earlier: the return the
+    manager added beyond a passive mix of the styles the manager was known to follow. Sharpe
+    estimates the style over the previous 60 months. It is a return per period (not
+    annualized), so its average and cumulative sum show whether the selection paid off.
+
+    For more information, see the following paper:
+
+    - Sharpe, W.F. (1992). "Asset Allocation: Management Style and Performance Measurement."
+      The Journal of Portfolio Management, 18(2), 7-19.
+
+    Args:
+        returns (pd.Series): The fund's returns.
+        style_returns (pd.DataFrame): The returns of the style indices, a column each, on the
+            same dates as `returns`.
+        window (int): The number of periods every estimate uses.
+        periods_per_year (int, optional): The returns per year, to annualize the in-sample
+            selection return and tracking error. Defaults to 12.
+
+    Returns:
+        pd.DataFrame: Per date (the last date of a window) the weight of every style, the R
+        Squared, the (annualized) Selection Return, the (annualized) Tracking Error and the
+        Out-of-Sample Selection Return. A window with no more complete dates than styles is
+        NaN, as is the Out-of-Sample Selection Return of the first window, which has no
+        earlier estimate.
+    """
+    styles = list(style_returns.columns)
+    columns = [
+        *styles,
+        "R Squared",
+        "Selection Return",
+        "Tracking Error",
+        "Out-of-Sample Selection Return",
+    ]
+    # By position from here on, so a fund that carries the name of a style does not clash.
+    data = pd.concat([returns, style_returns], axis=1)
+    fund_returns, style_data = data.iloc[:, 0], data.iloc[:, 1:]
+
+    if len(data) < window:
+        return pd.DataFrame(columns=columns, dtype=float)
+
+    result = pd.DataFrame(
+        [
+            get_style_analysis(
+                fund_returns.iloc[end - window : end],
+                style_data.iloc[end - window : end],
+                periods_per_year,
+            ).to_numpy()
+            for end in range(window, len(data) + 1)
+        ],
+        index=data.index[window - 1 :],
+        columns=columns[:-1],
+        dtype=float,
+    )
+
+    # The weights of the previous window applied to this period's style returns. A style
+    # without a return leaves the period's figure unknown rather than treating it as zero.
+    previous_weights = result.iloc[:, : len(styles)].shift(1).to_numpy()
+    style_mix_return = np.sum(
+        style_data.iloc[window - 1 :].to_numpy(dtype=float) * previous_weights, axis=1
+    )
+    result["Out-of-Sample Selection Return"] = (
+        fund_returns.iloc[window - 1 :].to_numpy(dtype=float) - style_mix_return
+    )
+
+    return result

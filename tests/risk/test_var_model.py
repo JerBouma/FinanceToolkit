@@ -2,6 +2,8 @@
 
 import numpy as np
 import pandas as pd
+import pytest
+from scipy import stats
 
 from financetoolkit.risk import var_model
 
@@ -40,10 +42,9 @@ def test_get_var_historic_different_alphas(recorder):
 def test_get_var_gaussian(recorder):
     recorder.capture(
         round(
-            var_model.get_var_gaussian(
+            var_model.get_var_cornish_fisher(
                 returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
                 alpha=0.05,
-                cornish_fisher=True,
             ),
             4,
         )
@@ -53,7 +54,6 @@ def test_get_var_gaussian(recorder):
             var_model.get_var_gaussian(
                 returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06]),
                 alpha=0.03,
-                cornish_fisher=False,
             ),
             4,
         )
@@ -65,14 +65,10 @@ def test_get_var_gaussian_dataframe(recorder):
         {"AAPL": [0.3, 0.2, 0.1, 0, 0.06], "MSFT": [0.25, 0.15, 0.08, -0.02, 0.04]}
     )
 
-    result_cf = var_model.get_var_gaussian(
-        returns=returns_df, alpha=0.05, cornish_fisher=True
-    )
+    result_cf = var_model.get_var_cornish_fisher(returns=returns_df, alpha=0.05)
     recorder.capture(result_cf.round(4))
 
-    result_normal = var_model.get_var_gaussian(
-        returns=returns_df, alpha=0.05, cornish_fisher=False
-    )
+    result_normal = var_model.get_var_gaussian(returns=returns_df, alpha=0.05)
     recorder.capture(result_normal.round(4))
 
 
@@ -81,9 +77,7 @@ def test_get_var_gaussian_negative_returns(recorder):
 
     recorder.capture(
         round(
-            var_model.get_var_gaussian(
-                returns=returns, alpha=0.05, cornish_fisher=True
-            ),
+            var_model.get_var_cornish_fisher(returns=returns, alpha=0.05),
             4,
         )
     )
@@ -205,9 +199,7 @@ def test_var_edge_cases(recorder):
 
     recorder.capture(
         round(
-            var_model.get_var_gaussian(
-                returns=constant_returns, alpha=0.05, cornish_fisher=False
-            ),
+            var_model.get_var_gaussian(returns=constant_returns, alpha=0.05),
             4,
         )
     )
@@ -379,3 +371,88 @@ def test_get_component_var_sums_to_portfolio_var(recorder):
     portfolio_var = var_model.get_var_historic(portfolio_returns, alpha=0.05)
 
     recorder.capture(bool(np.isclose(component_var.sum(), portfolio_var, atol=1e-8)))
+
+
+def test_get_var_gaussian_uses_sample_standard_deviation():
+    returns = pd.Series([0.03, -0.02, 0.01, -0.04, 0.02, 0.005, -0.01])
+    expected = returns.mean() + stats.norm.ppf(0.05) * returns.std(ddof=1)
+
+    assert np.isclose(var_model.get_var_gaussian(returns, 0.05), expected)
+
+
+def test_get_var_studentt_uses_fitted_location():
+    rng = np.random.default_rng(7)
+    returns = pd.Series(stats.t.rvs(4, size=1500, random_state=rng) * 0.01 + 0.001)
+    dof, location, scale = stats.t.fit(returns)
+
+    result = var_model.get_var_studentt(returns, 0.05)
+
+    assert np.isclose(
+        float(result[0]), location + scale * stats.t.ppf(0.05, dof), atol=1e-10
+    )
+
+
+def test_get_var_studentt_too_few_observations_is_nan():
+    returns = pd.DataFrame({"A": [0.01, np.nan, np.nan], "B": [0.01, -0.02, 0.03]})
+
+    result = var_model.get_var_studentt(returns, 0.05)
+
+    assert np.isnan(result["A"])
+    assert np.isfinite(result["B"])
+
+
+def test_get_var_evt_alpha_outside_fitted_tail_raises():
+    returns = pd.Series(np.random.default_rng(1).normal(0, 0.01, 500))
+
+    with pytest.raises(ValueError, match="outside the tail"):
+        var_model.get_var_evt(returns, alpha=0.10, threshold_percentile=0.95)
+
+    # The boundary itself is inside the fitted tail.
+    assert np.isfinite(var_model.get_var_evt(returns, 0.05, 0.95).iloc[0])
+
+
+def test_get_marginal_var_gaussian_is_exact_euler_allocation():
+    rng = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        rng.multivariate_normal(
+            [0.002, 0.001, -0.0005],
+            [[4e-4, 1e-4, 0], [1e-4, 2e-4, 5e-5], [0, 5e-5, 1e-4]],
+            size=1000,
+        ),
+        columns=["A", "B", "C"],
+    )
+    weights = pd.Series({"A": 0.5, "B": 0.3, "C": 0.2})
+
+    marginal = var_model.get_marginal_var(returns, weights, 0.05, "gaussian")
+    component = var_model.get_component_var(returns, weights, 0.05, "gaussian")
+    portfolio_var = var_model.get_var_gaussian(returns @ weights, 0.05)
+
+    # The components add up to the portfolio VaR, also with non-zero means.
+    assert np.isclose(component.sum(), portfolio_var, atol=1e-12)
+
+    # And each marginal VaR is the derivative of the portfolio VaR to the weight.
+    step = 1e-6
+    for asset in weights.index:
+        bumped = weights.copy()
+        bumped[asset] += step
+        finite_difference = (
+            var_model.get_var_gaussian(returns @ bumped, 0.05) - portfolio_var
+        ) / step
+        assert np.isclose(marginal[asset], finite_difference, atol=1e-5)
+
+
+def test_get_marginal_var_drops_dates_with_a_missing_return():
+    returns = pd.DataFrame(
+        {
+            "A": [0.01, -0.02, 0.03, -0.01, 0.02, np.nan],
+            "B": [0.02, -0.01, 0.01, -0.03, 0.01, 0.05],
+        }
+    )
+    weights = pd.Series({"A": 0.5, "B": 0.5})
+
+    with_gap = var_model.get_component_var(returns, weights, 0.05, "gaussian")
+    without_row = var_model.get_component_var(
+        returns.iloc[:-1], weights, 0.05, "gaussian"
+    )
+
+    pd.testing.assert_series_equal(with_gap, without_row)

@@ -134,18 +134,21 @@ def get_johansen_cointegration(
     Economic Dynamics and Control, 12(2-3), 231-254.
     - Johansen, S. (1991). "Estimation and Hypothesis Testing of Cointegration Vectors
     in Gaussian Vector Autoregressive Models." Econometrica, 59(6), 1551-1580.
+    - MacKinnon, J.G., Haug, A.A., & Michelis, L. (1999). "Numerical Distribution
+    Functions of Likelihood Ratio Tests for Cointegration." Journal of Applied
+    Econometrics, 14(5), 563-577.
 
     Also known as: Johansen test, Johansen procedure, VECM rank test.
 
     Args:
         data (pd.DataFrame): A DataFrame with one column per series (e.g. price levels of
         several assets), at least 2 columns.
-        det_order (int, optional): Which deterministic term to include: -1 (none), 0 (a
-        constant, restricted to lie in the cointegrating relation -- no separate linear
-        trend) or 1 (a linear trend restricted to the cointegrating relation, alongside
-        an unrestricted constant in the short-run dynamics). These are Johansen's cases
-        1, 2 and 4 respectively, matching the critical-value tables `statsmodels`
-        returns. Defaults to 0.
+        det_order (int, optional): Which deterministic term to include: -1 (none,
+        Johansen's case 1), 0 (an unrestricted constant, case 3: the levels may drift
+        and the cointegrating relations have a nonzero mean) or 1 (a linear trend: the
+        levels are linearly detrended before the test, evaluated against the case 5
+        critical values of an unrestricted trend). The critical values are those of
+        MacKinnon, Haug & Michelis (1999) that `statsmodels` returns. Defaults to 0.
         k_ar_diff (int, optional): The number of lagged first differences to include as
         short-run dynamics (equivalent to fitting a levels-VAR of order `k_ar_diff + 1`).
         Defaults to 1.

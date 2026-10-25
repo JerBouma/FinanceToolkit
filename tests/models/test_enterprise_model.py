@@ -54,3 +54,31 @@ def test_get_tobins_q_ratio_type_error():
             total_liabilities=1000,
             total_assets=2000,
         )
+
+
+def test_get_enterprise_value_breakdown_deducts_short_term_investments():
+    """Cash and marketable securities are deducted together, as in the Ratios module."""
+    from financetoolkit.ratios import valuation_model
+
+    breakdown = enterprise_model.get_enterprise_value_breakdown(
+        share_price=pd.Series([100.0, 110.0]),
+        shares_outstanding=pd.Series([200.0, 150.0]),
+        total_debt=pd.Series([500.0, 400.0]),
+        minority_interest=pd.Series([50.0, 40.0]),
+        preferred_equity=pd.Series([40.0, 30.0]),
+        cash_and_cash_equivalents=pd.Series([430.0, 340.0]),
+        short_term_investments=pd.Series([70.0, float("nan")]),
+    )
+
+    assert "Short Term Investments" in breakdown.index
+    # 20000 + 500 + 50 + 40 - (430 + 70) and a missing short term investment counts as 0.
+    assert breakdown.loc["Enterprise Value"].tolist() == [20090.0, 16630.0]
+
+    expected = valuation_model.get_enterprise_value(
+        market_cap=pd.Series([20000.0, 16500.0]),
+        total_debt=pd.Series([500.0, 400.0]),
+        minority_interest=pd.Series([50.0, 40.0]),
+        preferred_equity=pd.Series([40.0, 30.0]),
+        cash_and_cash_equivalents=pd.Series([500.0, 340.0]),
+    )
+    assert breakdown.loc["Enterprise Value"].tolist() == expected.tolist()

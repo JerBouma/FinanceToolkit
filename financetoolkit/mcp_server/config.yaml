@@ -118,9 +118,6 @@ module_class_map:
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
-  # Needs the caller's own name and email for the SEC and downloads quarterly files of
-  # about 80 MB, which does not suit a shared server.
-  - "get_fee_breakdown"
   - "collect_bond_statistics"
   - "collect_all_ratios"
   - "collect_custom_ratios"

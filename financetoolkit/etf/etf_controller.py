@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from financetoolkit.etf import etf_model, sec_model
+from financetoolkit.etf import etf_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -609,88 +609,6 @@ class ETF:
             )
             return float("nan")
         return premium
-
-    @handle_errors
-    def get_fee_breakdown(
-        self, sec_user_agent: str | None = None, rounding: int | None = None
-    ) -> pd.DataFrame:
-        """
-        Get the fee table of the prospectus of every US fund from the SEC: the management fee,
-        the distribution and service (12b-1) fee, the other expenses, the fees of the funds it
-        invests in (acquired fund fees), the gross expense ratio, the fee waiver (negative, a
-        reduction), the net expense ratio (what investors pay) and the portfolio turnover (the share of the portfolio traded
-        in a year, which costs a fund trading costs on top of its expense ratio), as decimals.
-
-        The data comes from the risk/return summaries the SEC publishes each quarter from the
-        prospectuses (Form N-1A) of US funds, read back up to five quarters until every fund is
-        found; of the filings of a quarter (the annual prospectus and supplements that change
-        the fees) the latest is used. A unit investment trust such as SPY files no such prospectus and is not covered.
-        The first call downloads the quarterly files (about 80 MB each); the fees are cached
-        for 90 days afterwards. The SEC asks every automated request to identify itself with a
-        name and an email address, given as `sec_user_agent` or in the
-        FINANCETOOLKIT_SEC_USER_AGENT environment variable.
-
-        See definition: https://www.sec.gov/data-research/sec-markets-data/mutual-fund-prospectus-riskreturn-summary-data-sets
-
-        Also known as: fee table, expense ratio breakdown, 12b-1 fee, management fee, portfolio
-        turnover.
-
-        Args:
-            sec_user_agent (str | None, optional): Your name and email address, e.g.
-                "Jane Doe jane.doe@example.com". Defaults to None, which reads the
-                FINANCETOOLKIT_SEC_USER_AGENT environment variable.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to None, which uses the rounding of the Toolkit.
-
-        Returns:
-            pd.DataFrame: The fees, turnover, the prospectus date (the date on the cover of the
-            prospectus the fee table is from, empty when the filer gave none), the filing
-            date, series and class (rows) per fund (columns).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(["VTI", "VOO", "AGG", "BND"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-        toolkit.etf.get_fee_breakdown(sec_user_agent="Jane Doe jane.doe@example.com")
-        ```
-
-        Which returns:
-
-        |                                      | VTI        | VOO        | AGG        | BND        |
-        |:-------------------------------------|:-----------|:-----------|:-----------|:-----------|
-        | Management Fee                       | 0.0003     | 0.0002     | 0.0003     | 0.0002     |
-        | Distribution and Service (12b-1) Fee | 0.0        | 0.0        | nan        | 0.0        |
-        | Other Expenses                       | 0.0        | 0.0001     | 0.0        | 0.0001     |
-        | Acquired Fund Fees                   | nan        | nan        | 0.0        | nan        |
-        | Gross Expense Ratio                  | 0.0003     | 0.0003     | 0.0003     | 0.0003     |
-        | Fee Waiver                           | nan        | nan        | 0.0        | nan        |
-        | Net Expense Ratio                    | 0.0003     | 0.0003     | 0.0003     | 0.0003     |
-        | Portfolio Turnover                   | 0.03       | 0.02       | 0.62       | 0.38       |
-        | Prospectus Date                      | 2026-04-28 | 2026-04-28 | 2026-06-29 | 2026-04-28 |
-        | Filing Date                          | 2026-04-28 | 2026-04-28 | 2026-06-18 | 2026-04-28 |
-        | Series                               | S000002848 | S000002839 | S000004362 | S000002564 |
-        | Class                                | C000007808 | C000092055 | C000012092 | C000046844 |
-        """
-        user_agent = sec_model.resolve_user_agent(sec_user_agent)
-        breakdown = sec_model.get_fee_breakdown(self._funds(), user_agent)
-        if breakdown.empty:
-            raise ValueError(
-                "None of these tickers has a prospectus fee table at the SEC; it covers US "
-                "funds registered under Form N-1A."
-            )
-        if missing := [fund for fund in self._funds() if fund not in breakdown.index]:
-            logger.warning(
-                "No SEC fee table was found for %s (a unit investment trust such as SPY, or a "
-                "fund outside the US, files none).",
-                ", ".join(missing),
-            )
-        labels = ["Prospectus Date", "Filing Date", "Series", "Class"]
-        numeric = breakdown.drop(columns=labels).apply(pd.to_numeric, errors="coerce")
-        numeric = self._round(numeric, rounding)
-        return pd.concat([numeric, breakdown[labels]], axis=1).T
 
     @handle_errors
     def get_tracking(

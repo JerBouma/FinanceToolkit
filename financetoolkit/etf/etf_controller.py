@@ -426,7 +426,9 @@ class ETF:
         )
 
     @handle_errors
-    def get_profile(self, rounding: int | None = None) -> pd.DataFrame:
+    def get_profile(
+        self, stale_nav: bool = False, rounding: int | None = None
+    ) -> pd.DataFrame:
         """
         Get the profile of every fund: its name, issuer, asset class, domicile, inception date,
         expense ratio, assets under management, net asset value (NAV), latest price and the
@@ -440,10 +442,18 @@ class ETF:
         days before the NAV Date (an end date in the past), when the NAV is in another currency
         than the listing (a close in pence, GBp or GBX, is compared in pounds) and, with a logged
         warning, when it exceeds 50% either way, which is a data error rather than a price.
+        With stale_nav=True the premium is given however old the NAV is: it compares the NAV
+        with the last close on or before the NAV Date, or with the latest close when the prices
+        end before the NAV Date or the NAV has no date. A NAV days older than the close then
+        mostly shows how the market moved since, not what the fund trades at.
 
         Also known as: ETF profile, expense ratio, assets under management, premium discount.
 
         Args:
+            stale_nav (bool, optional): Whether to give the premium for a NAV that is not
+                current, comparing it with the nearest close available. Defaults to False,
+                which leaves the premium empty without a close within three days before the
+                NAV Date.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
 
@@ -533,6 +543,9 @@ class ETF:
                 else:
                     # The prices end before the NAV date, so its close is not known yet.
                     close_at_nav = float("nan")
+            if stale_nav and pd.isna(close_at_nav):
+                # Asked for regardless of age: the nearest close there is.
+                close_at_nav = float(before.iloc[-1]) if not before.empty else latest
             premium = self._premium(
                 fund, close_at_nav, nav, info.get("NAV Currency"), currencies.get(fund)
             )

@@ -314,3 +314,30 @@ def test_a_fund_missing_from_the_holdings_is_nan(etf):
     assert concentration["BBB"].drop("Largest Holding").isna().all()
     assert concentration.loc["Number of Holdings", "AAA"] == 3  # noqa: PLR2004
     assert overlap["BBB"].isna().all() and overlap.loc["BBB"].isna().all()
+
+
+def test_a_stale_nav_gets_a_premium_when_asked_for(etf):
+    close = etf._historical()["Close"]["AAA"]
+    # A NAV dated before the prices begin has no close of its own date.
+    nav_day = close.index[0].to_timestamp() - pd.Timedelta(days=10)
+    with_information(
+        etf, NAV=float(close.iloc[-1]), Updated_At=nav_day.strftime("%Y-%m-%d")
+    )
+
+    assert pd.isna(etf.get_profile().loc["Premium/Discount", "AAA"])
+    assert etf.get_profile(stale_nav=True, rounding=8).loc[
+        "Premium/Discount", "AAA"
+    ] == pytest.approx(0, abs=1e-8)
+
+
+def test_a_stale_nav_after_the_prices_uses_the_latest_close(etf):
+    close = etf._historical()["Close"]["AAA"]
+    nav_day = close.index[-1].to_timestamp() + pd.offsets.BDay(1)
+    with_information(
+        etf, NAV=float(close.iloc[-1]), Updated_At=nav_day.strftime("%Y-%m-%d")
+    )
+
+    assert pd.isna(etf.get_profile().loc["Premium/Discount", "AAA"])
+    assert etf.get_profile(stale_nav=True, rounding=8).loc[
+        "Premium/Discount", "AAA"
+    ] == pytest.approx(0, abs=1e-8)

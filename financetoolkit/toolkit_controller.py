@@ -627,6 +627,85 @@ class Toolkit:
         from financetoolkit.models.models_controller import Models  # noqa: PLC0415
 
         # Every dataset is retrieved when a model first needs it.
+
+        def compare_with_peers(peers: dict[str, list[str]] | None) -> pd.DataFrame:
+            # Imported when first used, as only the peer comparison needs them.
+            from financetoolkit.fmp_model import get_stock_peers  # noqa: PLC0415
+            from financetoolkit.models import peers_model  # noqa: PLC0415
+
+            tickers = self._get_statement_tickers("Models")
+
+            peer_map = {
+                ticker: list((peers or {}).get(ticker) or [])
+                or get_stock_peers(ticker, self._api_key, self._fmp_plan)
+                for ticker in tickers
+            }
+            universe = sorted(
+                set(tickers) | {peer for group in peer_map.values() for peer in group}
+            )
+            # The latest fiscal year is what is compared, so three years of data suffice.
+            others = Toolkit(
+                tickers=universe,
+                api_key=self._api_key,
+                start_date=(datetime.today() - timedelta(days=365 * 3)).strftime(
+                    "%Y-%m-%d"
+                ),
+                use_cached_data=self._cache,
+                enforce_source=self._enforce_source,
+                benchmark_ticker=None,
+                progress_bar=False,
+            )
+            ratios = others.ratios
+            income = others.get_income_statement(growth=True)
+            metrics = pd.DataFrame(
+                {
+                    "Price-to-Earnings": peers_model.get_latest_values(
+                        ratios.get_price_to_earnings_ratio()
+                    ),
+                    "EV-to-EBITDA": peers_model.get_latest_values(
+                        ratios.get_ev_to_ebitda_ratio()
+                    ),
+                    "Price-to-Book": peers_model.get_latest_values(
+                        ratios.get_price_to_book_ratio()
+                    ),
+                    "Price-to-Sales": peers_model.get_latest_values(
+                        ratios.get_price_to_sales_ratio()
+                    ),
+                    "Gross Margin": peers_model.get_latest_values(
+                        ratios.get_gross_margin()
+                    ),
+                    "Operating Margin": peers_model.get_latest_values(
+                        ratios.get_operating_margin()
+                    ),
+                    "Net Profit Margin": peers_model.get_latest_values(
+                        ratios.get_net_profit_margin()
+                    ),
+                    "Return on Equity": peers_model.get_latest_values(
+                        ratios.get_return_on_equity()
+                    ),
+                    "Return on Invested Capital": peers_model.get_latest_values(
+                        ratios.get_return_on_invested_capital()
+                    ),
+                    "Revenue Growth": peers_model.get_latest_values(
+                        income.loc[:, "Revenue", :]
+                    ),
+                    "Debt-to-Equity": peers_model.get_latest_values(
+                        ratios.get_debt_to_equity_ratio()
+                    ),
+                    "Dividend Yield": peers_model.get_latest_values(
+                        ratios.get_dividend_yield()
+                    ),
+                }
+            )
+            return pd.concat(
+                {
+                    ticker: peers_model.get_peer_comparison(
+                        metrics, ticker, peer_map[ticker]
+                    )
+                    for ticker in tickers
+                }
+            )
+
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
             historical_data=LazyDict(self._get_module_historical_data),
@@ -640,6 +719,7 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            peer_function=compare_with_peers,
         )
 
     @property

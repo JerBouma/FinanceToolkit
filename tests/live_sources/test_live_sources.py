@@ -67,6 +67,7 @@ from financetoolkit.fixedincome import (
     esma_model,
     euribor_model,
     fed_model,
+    fiscaldata_model,
     norgesbank_model,
     rba_model,
     riksbank_model,
@@ -568,6 +569,19 @@ SOURCES = {
         "monthly",
         (-0.25, 0.25),
     ),
+    # The regional factor files of the same library, one per region.
+    **{
+        f"Kenneth French {region} five factors": (
+            lambda region=region: performance_model.obtain_fama_and_french_dataset(
+                region=region
+            ),
+            "Mkt-RF",
+            "monthly",
+            (-0.25, 0.25),
+        )
+        for region in performance_model.FACTOR_REGIONS
+        if region != "United States"
+    },
 }
 
 # The Cboe volatility indices behind the implied volatility term structures, in percent.
@@ -906,3 +920,26 @@ def test_commodity_forward_curve(name):
         TODAY - timedelta(days=DAILY_MAX_AGE_DAYS)
     ), f"{name} is not current: the latest observation is {curve.index[-1]}"
     assert (latest > 0).all(), f"{name} has non-positive prices"
+
+
+@pytest.mark.parametrize("name", ["FiscalData Treasury auctions"])
+def test_treasury_auctions(name):
+    # The Treasury auctions bills every week, so the last six weeks hold many auctions.
+    auctions = fiscaldata_model.get_treasury_auctions(
+        (TODAY - timedelta(days=42)).strftime("%Y-%m-%d"), TODAY.strftime("%Y-%m-%d")
+    )
+
+    assert not auctions.empty, f"{name} returned no auctions"
+    for column in ("Auction Date", "Security Type", "High Yield", "Bid-to-Cover Ratio"):
+        assert column in auctions.columns, f"{name} has no {column} column"
+    assert set(auctions["Security Type"]) & {
+        "Bill",
+        "Note",
+        "Bond",
+    }, f"{name} has no bill, note or bond auctions"
+    bid_to_cover = pd.to_numeric(
+        auctions["Bid-to-Cover Ratio"], errors="coerce"
+    ).dropna()
+    assert (
+        (bid_to_cover > 1) & (bid_to_cover < 10)
+    ).all(), f"{name} has an implausible bid-to-cover ratio"

@@ -265,3 +265,21 @@ def test_a_failing_currency_lookup_keeps_the_premium(etf):
     assert etf.get_profile().loc["Premium/Discount", "BBB"] == pytest.approx(
         0.01, abs=1e-4
     )
+
+
+def test_a_nav_date_on_a_weekend_is_reported_as_its_close(etf):
+    close = etf._historical()["Close"]["AAA"]
+    # An update on Monday before the open is 16 hours after Sunday; the NAV is of Friday's
+    # close and is dated as such.
+    fridays = [
+        day for day in close.index[:-1] if day.to_timestamp().dayofweek == 4
+    ]  # noqa: PLR2004
+    friday = fridays[-1].to_timestamp()
+    updated = (
+        (friday + pd.Timedelta(days=3, hours=8))
+        .tz_localize("America/New_York")
+        .tz_convert("UTC")
+    )
+    with_information(etf, Updated_At=updated.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+    assert etf.get_profile().loc["NAV Date", "AAA"] == friday.strftime("%Y-%m-%d")

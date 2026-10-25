@@ -299,7 +299,9 @@ def get_fee_breakdown(
     # a waiver reported the waiver is their difference, otherwise the reported waiver is made
     # negative (a missing gross ratio must not lose it).
     both = net.notna() & gross.notna() & waiver.notna()
-    waiver = (net - gross).round(6).where(both, -waiver.abs())
+    waiver = (net - gross).round(6).where(
+        both, -waiver.abs()
+    ) + 0.0  # no -0.0 for a zero waiver
     breakdown["Fee Waiver"] = waiver
     # A missing ratio follows from the other and the waiver, if any.
     breakdown["Gross Expense Ratio"] = gross.fillna(net - waiver.fillna(0))

@@ -70,3 +70,13 @@ def test_the_tracking_difference_is_the_difference_of_annualized_returns():
 
     expected = (1 + fund).prod() - (1 + benchmark).prod()
     assert tracking["Tracking Difference"] == pytest.approx(expected)
+
+
+def test_a_fund_without_weights_has_no_concentration_or_overlap():
+    empty = pd.Series(dtype=float)
+    assert etf_model.get_concentration(empty).drop("Largest Holding").isna().all()
+
+    weights = {"VOO": pd.Series({"AAPL": 0.6, "MSFT": 0.4}), "NEW": empty}
+    overlap = etf_model.get_overlap(weights)
+    assert overlap.loc["VOO", "VOO"] == pytest.approx(1.0)
+    assert overlap["NEW"].isna().all() and overlap.loc["NEW"].isna().all()

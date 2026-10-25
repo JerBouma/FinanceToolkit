@@ -37,7 +37,17 @@ def get_concentration(weights: pd.Series) -> pd.Series:
     weights = weights.dropna()
     weights = weights[weights > 0].sort_values(ascending=False)
     if weights.empty:
-        raise ValueError("The fund has no holdings with a weight.")
+        # A fund without weighted holdings has no concentration; the other funds still do.
+        return pd.Series(
+            {
+                "Number of Holdings": np.nan,
+                "Largest Holding": None,
+                "Largest Weight": np.nan,
+                "Top 10 Weight": np.nan,
+                "Herfindahl-Hirschman Index": np.nan,
+                "Effective Number of Holdings": np.nan,
+            }
+        )
 
     # The weights are scaled to the part of the fund the holdings cover, so cash and
     # holdings without a weight do not dilute the index.
@@ -72,6 +82,9 @@ def get_overlap(weights: dict[str, pd.Series]) -> pd.DataFrame:
     overlap = pd.DataFrame(np.nan, index=funds, columns=funds)
     for first in funds:
         for second in funds:
+            # A fund without holdings data has an unknown overlap, not none.
+            if weights[first].empty or weights[second].empty:
+                continue
             common = weights[first].index.intersection(weights[second].index)
             overlap.loc[first, second] = float(
                 np.minimum(weights[first][common], weights[second][common])

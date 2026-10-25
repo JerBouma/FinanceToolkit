@@ -523,6 +523,9 @@ class ETF:
                 and (nav_date - before.index[-1].to_timestamp()).days <= NAV_PRICE_DAYS
                 else float("nan")
             )
+            if pd.notna(close_at_nav):
+                # A weekend or holiday date from the 16 hours is reported as its close.
+                nav_date = before.index[-1].to_timestamp()
             premium = self._premium(
                 fund, close_at_nav, nav, info.get("NAV Currency"), currencies.get(fund)
             )

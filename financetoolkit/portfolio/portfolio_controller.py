@@ -452,18 +452,20 @@ class Portfolio:
         The value of every transaction's ticker on the transaction's date, from daily values with
         one column per ticker on the dates of the historical data. A transaction on a date without
         a price, such as a weekend, takes the first following trading day, the day its position
-        starts on, and a transaction after the last date is NaN.
+        starts on, and a transaction after the last date takes the last date, the close it is
+        priced at.
         """
         dates = self._daily_historical_data.index
         locations = dates.get_indexer(
             self._portfolio_dataset.index.get_level_values(0), method="backfill"
         )
+        locations[locations == -1] = len(dates) - 1
         tickers = self._portfolio_dataset.index.get_level_values(1)
 
         values = [
             (
                 float(daily_values[ticker].iloc[location])
-                if location != -1 and ticker in daily_values.columns
+                if ticker in daily_values.columns
                 else float("nan")
             )
             for location, ticker in zip(locations, tickers, strict=True)
@@ -654,8 +656,9 @@ class Portfolio:
         Fill in the price of transactions that leave it out: the closing price of the day,
         in the currency the ticker trades in. A transaction on a day without a price, such as a
         weekend or a holiday, takes the closing price of the first following trading day, the day
-        its position, benchmark and dividends start on. Files and folders that have a price column
-        are passed on as they are.
+        its position, benchmark and dividends start on. A transaction after the latest close, such
+        as one of today before today's close is available, takes the latest close, with a warning.
+        Files and folders that have a price column are passed on as they are.
         """
         if isinstance(dataset, list) or (
             isinstance(dataset, str) and not dataset.endswith(("csv", "xlsx", "xls"))
@@ -698,8 +701,20 @@ class Portfolio:
             # The first close on or after the date, as the positions, the benchmark and the dividends use: the previous close would price a weekend purchase on Friday while its position starts on Monday.  # noqa: E501
             if symbol not in closes.columns or pd.isna(day):
                 return float("nan")
-            following = closes[symbol].loc[day.normalize() :].dropna()
-            return float(following.iloc[0]) if not following.empty else float("nan")
+            available = closes[symbol].dropna()
+            following = available.loc[day.normalize() :]
+            if not following.empty:
+                return float(following.iloc[0])
+            # A trade after the latest close (the weekend after it, or today before the provider has today's bar) takes the latest close, the day its position, benchmark and dividends start on as well.  # noqa: E501
+            if available.empty:
+                return float("nan")
+            logger.warning(
+                "The %s transaction of %s has no close on or after that date and is priced at the last close of %s.",
+                symbol,
+                day.strftime("%Y-%m-%d"),
+                available.index[-1].strftime("%Y-%m-%d"),
+            )
+            return float(available.iloc[-1])
 
         frame["Price"] = [
             first_close(str(symbol), day)
@@ -1715,10 +1730,11 @@ class Portfolio:
         This covers realized and unrealized results and the dividends together and is NaN when nothing
         was invested. The "Portfolio" row divides by the capital contributed to the portfolio instead:
         the peak of the cumulative net contribution, i.e. every buy plus the costs minus the sale
-        proceeds and the dividends received, summed over the assets per date. The buys of a rebalancing
-        are paid for by the sells and dividends of the portfolio itself, so a portfolio that invests
-        10,000 once has 10,000 of capital however often it is rebalanced, while its "Invested" adds up
-        every rebalancing buy. A portfolio that never sells has its "Invested" as its capital.
+        proceeds and the dividends received up to that date, summed over the assets per date. The buys
+        of a rebalancing are paid for by the sells and dividends of the portfolio itself, so a portfolio
+        that invests 10,000 once has 10,000 of capital however often it is rebalanced, while its
+        "Invested" adds up every rebalancing buy. A portfolio of buys has its "Invested" as its capital,
+        less the part of a later buy that a dividend received before it paid for.
         - Return Value: The absolute profit or loss, i.e. Latest Value plus all sale proceeds plus
         Dividends minus Invested. This equals realized PnL plus unrealized PnL plus dividends minus the
         transaction costs, where the realized PnL is the figure reported by get_transactions_overview.
@@ -2397,7 +2413,10 @@ class Portfolio:
                 flows if identifier == "Portfolio" else flows[identifiers == identifier]
             )
             dates = pd.to_datetime(selected.index.get_level_values("Date").astype(str))
-            cash_flows = pd.Series(selected.to_numpy(), index=dates)
+            # A transaction after the last date is priced at, and its position starts on, the last close.  # noqa: E501
+            cash_flows = pd.Series(
+                selected.to_numpy(), index=dates.where(dates <= last_date, last_date)
+            )
             dividends = (
                 pd.concat(list(dividend_flows.values()))
                 if identifier == "Portfolio" and dividend_flows

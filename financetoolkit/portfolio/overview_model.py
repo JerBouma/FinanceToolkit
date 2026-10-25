@@ -3,10 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import to_period_index
-
-logger = logger_model.get_logger()
 
 # pylint: disable=too-many-locals
 
@@ -576,25 +573,27 @@ def calculate_contributed_capital(positions_overview: pd.DataFrame) -> float:
     """
     Calculate the capital contributed to a portfolio from outside, the denominator of its total return.
 
-    Within a portfolio, sale proceeds and dividends are cash that can fund later purchases. The net
-    contribution on every date is the cumulative value of every buy plus the transaction costs, minus
-    the sale proceeds and the dividends received, summed over all assets. Its peak is the most money
-    that ever had to be put in: for a portfolio that invests 10,000 once and rebalances quarterly, it
-    stays 10,000 however many rebalancing buys follow, since each is paid for by the sells and the
-    dividends of the portfolio itself.
+    The portfolio is treated as a cash account: sale proceeds and dividends are cash within the
+    portfolio that funds later purchases. The net contribution on every date is the cumulative value of
+    every buy plus the transaction costs, minus the sale proceeds and the dividends received up to that
+    date, summed over all assets. Its peak is the most money that ever had to be put in: for a portfolio
+    that invests 10,000 once and rebalances with its own sells and dividends, it stays 10,000 however
+    many rebalancing buys follow.
 
     Args:
         positions_overview (pd.DataFrame): The positions overview of `create_positions_overview`, with the
             cumulative "Invested Amount", "Realized Proceeds" and "Dividends" of every asset per date.
 
     Returns:
-        float: The peak of the cumulative net contribution. A portfolio without a single sale returns its
-            total "Invested Amount", every buy plus the costs.
+        float: The peak of the cumulative net contribution. A portfolio of buys without a dividend
+            between them returns its total "Invested Amount", every buy plus the costs.
 
     Notes:
-        - A portfolio that never sells is a record of purchases whose dividends are reported as cash
-          received, so every buy is new capital and the contributed capital equals the amount invested.
-          Only a portfolio that sells, such as one that is rebalanced, recycles its own cash.
+        - A dividend received before a later buy pays for part of that buy, so it lowers the capital by
+          at most the dividend. Dividends after the last buy leave it unchanged.
+        - The figure moves continuously with the size of the sales: a small sale lowers it by at most its
+          proceeds, so a portfolio of buys alone and the same portfolio with a tiny sale report nearly the
+          same return.
         - The peak rather than the latest value is used, because money taken out later does not undo
           the capital that was at work before it.
     """
@@ -603,10 +602,6 @@ def calculate_contributed_capital(positions_overview: pd.DataFrame) -> float:
 
     invested = positions_overview["Invested Amount"].sum(axis=1)
     proceeds = positions_overview["Realized Proceeds"].sum(axis=1)
-
-    if proceeds.iloc[-1] <= 0:
-        return float(invested.iloc[-1])
-
     dividends = (
         positions_overview["Dividends"].sum(axis=1)
         if "Dividends" in positions_overview.columns.get_level_values(0)
@@ -906,6 +901,8 @@ def create_positions_overview(
         - Transactions dated on a day without a price, such as a weekend or an exchange holiday, are
           carried forward to the first following date that does have a price. Aligning them on the
           date itself would drop the transaction from every position metric without any warning.
+          A transaction after the last date with a price, such as one of today before today's close
+          is available, is placed on that last date, the date of the closing price it is priced at.
         - Positions are marked at the traded closing price, the basis of the transaction prices, and
           dividends are added as cash when they are paid, so "Cumulative Return" is a total return
           and "Current Value" is the market value quoted on that date. Marking units bought at a
@@ -931,24 +928,16 @@ def create_positions_overview(
         transaction_volume < 0, 0.0
     )
 
-    # A transaction booked on a day without a price, such as a weekend or an exchange holiday, has no row to land on, and aligning on the date alone silently drops it from every position metric, so it is carried forward to the next date that does exist.  # noqa: E501
+    # A transaction booked on a day without a price, such as a weekend or an exchange holiday, has no row to land on, and aligning on the date alone silently drops it from every position metric, so it is carried forward to the next date that does exist. One after the last date lands on the last date, the close it is priced at.  # noqa: E501
     price_dates = pd.Index(period_dates).unique().sort_values()
     transaction_dates = transactions.index.get_level_values(0)
     date_locations = price_dates.get_indexer(transaction_dates, method="bfill")
+    date_locations[date_locations == -1] = len(price_dates) - 1
 
-    if (date_locations == -1).any():
-        logger.warning(
-            "%s transaction(s) are dated after the last available price and are therefore "
-            "excluded from the positions overview.",
-            int((date_locations == -1).sum()),
-        )
-
-    matched = date_locations != -1
-    transactions = transactions[matched]
     transactions.index = pd.MultiIndex.from_arrays(
         [
-            price_dates[date_locations[matched]],
-            portfolio_dataset.index.get_level_values(1)[matched],
+            price_dates[date_locations],
+            portfolio_dataset.index.get_level_values(1),
         ],
         names=portfolio_dataset.index.names,
     )

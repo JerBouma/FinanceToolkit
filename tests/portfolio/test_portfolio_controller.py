@@ -363,24 +363,91 @@ def test_a_weekend_transaction_is_priced_at_the_next_close(monkeypatch):
     assert overview.loc["AAPL", "Alpha"] == pytest.approx(0.0, abs=1e-9)
 
 
-def test_the_portfolio_return_of_buys_alone_is_on_the_amount_invested(monkeypatch):
-    trades = pd.DataFrame(
-        {
-            "Date": ["2021-01-11", "2021-06-01", "2021-06-01"],
-            "Ticker": ["AAPL", "AAPL", "MSFT"],
-            "Volume": [10, 5, 3],
-            "Costs": [-1.0, -1.0, -1.0],
-        }
-    )
-    self_benchmarked, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+def test_a_transaction_after_the_last_close_is_priced_at_the_last_close(monkeypatch):
+    # The data ends on Friday 2022-12-30, so a trade of Saturday 2022-12-31 has no close on or after its date and takes, as its position, benchmark and dividends do, the close of 2022-12-30.  # noqa: E501
+    def overview_for(date):
+        trades = pd.DataFrame(
+            {
+                "Date": ["2021-01-11", date],
+                "Ticker": ["AAPL", "MSFT"],
+                "Volume": [10, 5],
+                "Costs": [0.0, 0.0],
+            }
+        )
+        portfolio_after, prices = _self_benchmarked_portfolio(monkeypatch, trades)
+        return (
+            portfolio_after,
+            prices,
+            portfolio_after.get_portfolio_overview(rounding=12),
+        )
 
-    overview = self_benchmarked.get_portfolio_overview(rounding=12)
+    after, prices, overview = overview_for("2022-12-31")
+    _, _, on_last_close = overview_for("2022-12-30")
 
-    assert overview.loc["Portfolio", "Return"] == pytest.approx(
-        overview.loc["Portfolio", "Return Value"]
-        / overview.loc["Portfolio", "Invested"]
+    assert float(after._portfolio_dataset["Price"].iloc[-1]) == pytest.approx(
+        float(prices[("Close", "MSFT")].iloc[-1])
     )
-    assert self_benchmarked._positions_overview["Dividends"].iloc[-1].sum() > 0
+    # The benchmark is bought on the same day as the position: no return over no time, not -100%.  # noqa: E501
+    assert overview.loc["MSFT", "Benchmark Return"] == pytest.approx(0.0, abs=1e-12)
+    pd.testing.assert_frame_equal(overview, on_last_close)
+    assert after.get_positions_overview()[("Volume", "MSFT")].iloc[-1] == pytest.approx(
+        5.0
+    )
+
+
+def test_a_tiny_sale_changes_the_portfolio_return_only_marginally(monkeypatch):
+    buys = {
+        "Date": ["2021-01-11", "2021-06-01", "2021-06-01"],
+        "Ticker": ["AAPL", "AAPL", "MSFT"],
+        "Volume": [10.0, 5.0, 3.0],
+        "Costs": [-1.0, -1.0, -1.0],
+    }
+    with_sale = {
+        column: values + [value]
+        for (column, values), value in zip(
+            buys.items(), ["2022-06-01", "AAPL", -0.01, 0.0], strict=True
+        )
+    }
+    without, _ = _self_benchmarked_portfolio(monkeypatch, pd.DataFrame(buys))
+    sold, _ = _self_benchmarked_portfolio(monkeypatch, pd.DataFrame(with_sale))
+
+    plain = without.get_portfolio_overview(rounding=12).loc["Portfolio"]
+    tiny = sold.get_portfolio_overview(rounding=12).loc["Portfolio"]
+    proceeds = 0.01 * float(sold._portfolio_dataset["Price"].iloc[-1])
+
+    # The sale lowers the capital by at most its proceeds rather than switching to a different measure.  # noqa: E501
+    capital = plain["Return Value"] / plain["Return"]
+    capital_with_sale = tiny["Return Value"] / tiny["Return"]
+    assert capital - proceeds - 1e-6 <= capital_with_sale <= capital + 1e-6
+    assert tiny["Return"] == pytest.approx(plain["Return"], abs=1e-4)
+
+
+def test_the_capital_of_buys_is_invested_less_the_dividends_between_them(monkeypatch):
+    def portfolio_row(dates):
+        trades = pd.DataFrame(
+            {
+                "Date": dates,
+                "Ticker": ["AAPL", "AAPL", "MSFT"],
+                "Volume": [10, 5, 3],
+                "Costs": [-1.0, -1.0, -1.0],
+            }
+        )
+        buys, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+        row = buys.get_portfolio_overview(rounding=12).loc["Portfolio"]
+        return buys, row, row["Return Value"] / row["Return"]
+
+    # Without a dividend between the buys, every buy is new capital.
+    together, row, capital = portfolio_row(["2021-01-11", "2021-01-12", "2021-01-12"])
+    assert capital == pytest.approx(row["Invested"])
+    assert together._positions_overview["Dividends"].iloc[-1].sum() > 0
+
+    # The AAPL dividends received between the buys pay for part of the later buys.
+    apart, row, capital = portfolio_row(["2021-01-11", "2021-06-01", "2021-06-01"])
+    dividends = apart._positions_overview["Dividends"].sum(axis=1)
+    dividends.index = dividends.index.to_timestamp()
+    before_second_buy = float(dividends.loc[:"2021-05-31"].iloc[-1])
+    assert before_second_buy > 0
+    assert capital == pytest.approx(row["Invested"] - before_second_buy)
 
 
 def test_a_portfolio_of_one_ticker(monkeypatch):

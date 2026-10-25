@@ -448,7 +448,7 @@ def test_the_contributed_capital_of_a_rebalanced_portfolio_is_its_initial_value(
     )
 
 
-def test_the_contributed_capital_of_buys_alone_is_the_amount_invested():
+def test_the_contributed_capital_of_buys_is_lowered_by_a_dividend_between_them():
     dates = pd.period_range("2023-01-02", periods=6, freq="D")
     prices = pd.DataFrame({"A": [10.0, 11, 12, 13, 14, 15]}, index=dates)
     dividends = pd.DataFrame({"A": [0.0, 0, 1, 0, 0, 0]}, index=dates)
@@ -465,5 +465,5 @@ def test_the_contributed_capital_of_buys_alone_is_the_amount_invested():
         pd.concat({"Close": prices, "Dividends": dividends}, axis=1),
     )
 
-    # A dividend is received before the second buy, yet without a sale every buy is new capital.
-    assert calculate_contributed_capital(positions) == pytest.approx(232.0)
+    # The dividend of 10 received before the second buy pays for part of it: 101 + 131 - 10.
+    assert calculate_contributed_capital(positions) == pytest.approx(222.0)

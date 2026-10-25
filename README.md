@@ -241,7 +241,7 @@ For example, the components for Nvidia are shown below.
 | Equity Multiplier       | 1.5931 | 1.4592 | 1.4205 | 1.5846 | 1.6775 | 1.7525 | 1.6428 | 1.4499 | 1.3456 |
 | Return on Equity        | 0.4605 | 0.4926 | 0.2595 | 0.2978 | 0.4483 | 0.1793 | 0.9146 | 1.1918 | 1.0149 |
 
-And below the components and the resulting return on equity are plotted for each of the three companies.
+And below each component is shown for every fiscal year, with the latest value on top, multiplying into the return on equity.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/models-dark.png">
@@ -369,25 +369,33 @@ And below inflation and the policy rate are plotted for each month, next to the 
 
 ## Economic Relations
 
-Rates rose and the shares fell, but the whole market fell with them. The [econometrics](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics) module separates the two with regressions, tests and forecasts built on `statsmodels` and `linearmodels` (`pip install financetoolkit[econometrics]`). Through the Toolkit it analyzes the returns of its tickers, and on its own, through `Econometrics(data=...)`, any data at all, here the weekly returns of the three and the S&P 500 next to the weekly change in the 10-year Treasury yield:
+Rates rose and the shares fell, but a 10-year Treasury yield is made of two parts: the real yield, the return investors demand on top of inflation, and the inflation they expect over those ten years. The [econometrics](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics) module tells such drivers apart with regressions, tests and forecasts built on `statsmodels` and `linearmodels` (`pip install financetoolkit[econometrics]`). Through the Toolkit it analyzes the returns of its tickers, and on its own, through `Econometrics(data=...)`, any data at all, here the monthly returns of the three next to the monthly change in the US 10-year real yield and in 10-year inflation expectations:
 
 ```python
 import pandas as pd
 
 from financetoolkit import Econometrics
 
-# The weekly change in the 10-year Treasury yield next to the weekly returns
-treasury_data = companies.get_treasury_data(period="weekly")
-weekly_returns = historical_data["Return"].copy()
-weekly_returns["10-Year Yield"] = treasury_data["Close"]["10 Year"].diff()
+# The US 10-year real yield and inflation expectations at the end of each month
+real_yield = companies.economics.get_real_yield_curve("United States", period="monthly")
+inflation_expectations = companies.economics.get_breakeven_inflation_expectations(
+    "United States", period="monthly"
+)
+
+# The monthly change in both next to the monthly returns
+monthly_returns = companies.get_historical_data(period="monthly")["Return"][["NVDA", "AMD", "INTC"]]
+monthly_returns["Real Yield"] = real_yield[("United States", "10Y")].diff()
+monthly_returns["Inflation Expectations"] = inflation_expectations[("United States", "10Y")].diff()
 
 # The data are changes already
-econometrics = Econometrics(data=weekly_returns, changes="none")
+econometrics = Econometrics(data=monthly_returns, changes="none")
 
-# Regress the return of each company on the S&P 500 and the 10-year yield
+# Regress the return of each company on the change in the real yield and inflation expectations
 regressions = pd.concat(
     {
-        ticker: econometrics.get_ols(dependent_ticker=ticker, independent_tickers=["Benchmark", "10-Year Yield"])
+        ticker: econometrics.get_ols(
+            dependent_ticker=ticker, independent_tickers=["Real Yield", "Inflation Expectations"]
+        )
         for ticker in ["NVDA", "AMD", "INTC"]
     }
 )
@@ -398,19 +406,19 @@ regressions
 
 For example, the coefficients for each company are shown below.
 
-|                           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-|:--------------------------|--------------:|-------------:|--------------:|----------:|
-| ('NVDA', 'Intercept')     |        0.0059 |       0.0024 |        2.4711 |    0.0139 |
-| ('NVDA', 'Benchmark')     |        1.7054 |       0.092  |       18.5318 |    0      |
-| ('NVDA', '10-Year Yield') |       -1.1156 |       1.9448 |       -0.5736 |    0.5665 |
-| ('AMD', 'Intercept')      |        0.005  |       0.0029 |        1.7173 |    0.0867 |
-| ('AMD', 'Benchmark')      |        1.6292 |       0.112  |       14.5426 |    0      |
-| ('AMD', '10-Year Yield')  |       -1.7499 |       2.3675 |       -0.7391 |    0.4602 |
-| ('INTC', 'Intercept')     |       -0.0016 |       0.0024 |       -0.6692 |    0.5038 |
-| ('INTC', 'Benchmark')     |        1.1598 |       0.0943 |       12.2984 |    0      |
-| ('INTC', '10-Year Yield') |       -0.7415 |       1.9929 |       -0.3721 |    0.71   |
+|                                    |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+|:-----------------------------------|--------------:|-------------:|--------------:|----------:|
+| ('NVDA', 'Intercept')              |        0.049  |       0.0129 |        3.8028 |    0.0003 |
+| ('NVDA', 'Real Yield')             |      -22.8132 |       5.6358 |       -4.0479 |    0.0001 |
+| ('NVDA', 'Inflation Expectations') |       18.1329 |       9.1029 |        1.992  |    0.0493 |
+| ('AMD', 'Intercept')               |        0.047  |       0.0151 |        3.1182 |    0.0024 |
+| ('AMD', 'Real Yield')              |      -34.1771 |       6.59   |       -5.1862 |    0      |
+| ('AMD', 'Inflation Expectations')  |       10.8116 |      10.644  |        1.0157 |    0.3124 |
+| ('INTC', 'Intercept')              |        0.0078 |       0.0107 |        0.7316 |    0.4663 |
+| ('INTC', 'Real Yield')             |      -18.6985 |       4.6705 |       -4.0035 |    0.0001 |
+| ('INTC', 'Inflation Expectations') |       -1.1572 |       7.5438 |       -0.1534 |    0.8784 |
 
-And below each coefficient is shown with its 95% confidence interval. A coefficient of 1.5 on the S&P 500 means the share moved 1.5% for every 1% the market moved, and a coefficient of -1 on the 10-year yield means a weekly return 1% lower for every percentage point the yield rose, on top of what the market explains.
+And below each coefficient is shown with its 95% confidence interval. The yields are decimals, so a change of 0.001 is 0.1 percentage point, and a coefficient of -20 means a monthly return 2% lower for every 0.1 percentage point the yield rose. All three are valued on earnings that lie far ahead, which a higher real yield discounts more heavily: a 0.1 percentage point rise in the real yield went with a monthly return about 2.3% lower for Nvidia, 3.4% lower for AMD and 1.9% lower for Intel, each significant at the 1% level. Rising inflation expectations, often a sign of a growing economy, went with a higher return for Nvidia, significant at the 5% level, but made no significant difference for AMD and Intel. Short-term rates matter less than they might seem: the 3-month yield shows no significant relation with these returns, as the Federal Reserve's policy rate reaches growth companies mainly through the long-term real yields it moves.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-dark.png">

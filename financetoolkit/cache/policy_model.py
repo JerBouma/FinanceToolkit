@@ -45,6 +45,7 @@ NGFS = "NGFS"
 MACROHISTORY = "Macrohistory"
 DE_NEDERLANDSCHE_BANK = "DeNederlandscheBank"
 EUROPEAN_SYSTEMIC_RISK_BOARD = "ESRB"
+DAMODARAN = "Damodaran"
 
 # The market risk premium is published per country, so it is one cache entry. Its name
 # changed when the premiums became decimals (v2.2.2), so an entry cached in percent by an
@@ -200,6 +201,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{US_TREASURY}.par_yield_curve_year": CachePolicy(ttl_seconds=30 * DAY),
     f"{US_TREASURY}.par_yield_curve_real": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.par_yield_curve_real_year": CachePolicy(ttl_seconds=30 * DAY),
+    # Auctions are added several times a week; a past year's results are final.
+    f"{US_TREASURY}.auctions": CachePolicy(ttl_seconds=DAY),
+    f"{US_TREASURY}.auctions_year": CachePolicy(ttl_seconds=30 * DAY),
     f"{FREDDIE_MAC}.series": CachePolicy(ttl_seconds=DAY),
     f"{IBGE}.series": CachePolicy(ttl_seconds=DAY),
     # Daily bond yields; a rerun only asks for the last month, since yields are not revised
@@ -235,6 +239,8 @@ POLICIES: dict[str, CachePolicy] = {
     f"{DE_NEDERLANDSCHE_BANK}.listing": CachePolicy(ttl_seconds=7 * DAY),
     f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
     f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.listing": CachePolicy(ttl_seconds=7 * DAY),
+    # The default spreads of the synthetic rating table are updated once a year.
+    f"{DAMODARAN}.synthetic_ratings": CachePolicy(ttl_seconds=30 * DAY),
     f"{FEDERAL_RESERVE_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365

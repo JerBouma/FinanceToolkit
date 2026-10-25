@@ -57,17 +57,17 @@ def get_commodity_forward_curve(
     is exactly what a single spot price series cannot reveal.
 
     Not every commodity has a listed contract for every calendar month (grains in
-    particular only trade specific delivery months), so months with no listed
-    contract are silently skipped -- the number of columns returned can be fewer
-    than `contracts`.
+    particular only trade specific delivery months), so months with no listed (or an
+    expired) contract are skipped and later months are tried instead, until `contracts`
+    contracts are found.
 
     Args:
         commodity (str): The commodity to retrieve the curve for. One of "Crude Oil",
             "Natural Gas", "Gold", "Silver", "Copper", "Corn", "Wheat" or "Soybeans".
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
-        contracts (int, optional): The number of sequential monthly contracts ahead
-            of today to attempt to fetch. Defaults to 12.
+        contracts (int, optional): The number of contracts to return, the nearest
+            listed ones from the current month on. Defaults to 12.
 
     Raises:
         ValueError: If `commodity` is not one of the supported names.
@@ -89,7 +89,11 @@ def get_commodity_forward_curve(
     cache = get_active_cache()
 
     curve: dict[str, pd.Series] = {}
-    for months_ahead in range(contracts):
+    # The months are scanned until `contracts` contracts are found, since the nearest ones
+    # may have expired and some commodities only list a few delivery months a year.
+    for months_ahead in range(contracts * 3 + 3):
+        if len(curve) >= contracts:
+            break
         month_index = today.month - 1 + months_ahead
         year = today.year + month_index // 12
         month = month_index % 12 + 1

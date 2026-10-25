@@ -113,3 +113,24 @@ def test_toolkit_get_normalization_files_saves_to_the_given_folder(tmp_path):
     )
 
     assert len(list(tmp_path.glob("*.csv"))) == 4
+
+
+def test_normalization_maps_the_period_end_date_and_yahoo_forex_changes():
+    from importlib.resources import files
+
+    statistics = pd.read_csv(
+        files("financetoolkit") / "normalization" / "statistics.csv", index_col=0
+    )
+    cash_yf = pd.read_csv(
+        files("financetoolkit") / "normalization" / "cash_yf.csv", index_col=0
+    )
+
+    statistics_yf = pd.read_csv(
+        files("financetoolkit") / "normalization" / "statistics_yf.csv", index_col=0
+    )
+
+    assert statistics.loc["periodEndDate"].iloc[0] == "Period End Date"
+    assert statistics_yf.loc["periodEndDate"].iloc[0] == "Period End Date"
+    # Yahoo Finance's Net Change in Cash excludes the exchange rate effect, which it reports
+    # separately; the translation of the cash flow statement reconciles with it.
+    assert cash_yf.loc["EffectOfExchangeRateChanges"].iloc[0] == "Forex Changes on Cash"

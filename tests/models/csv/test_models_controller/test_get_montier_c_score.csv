@@ -1,0 +1,15 @@
+,,2021,2022,2023
+AAPL,Net Income to Cash Flow Gap,1.0,0.0,1.0
+AAPL,Days Sales Outstanding,1.0,0.0,1.0
+AAPL,Days Sales of Inventory,1.0,0.0,1.0
+AAPL,Other Current Assets to Revenue,0.0,1.0,0.0
+AAPL,Depreciation to Fixed Assets,1.0,1.0,0.0
+AAPL,Total Asset Growth,0.0,0.0,0.0
+AAPL,C-Score,4.0,2.0,3.0
+MSFT,Net Income to Cash Flow Gap,1.0,0.0,1.0
+MSFT,Days Sales Outstanding,1.0,0.0,1.0
+MSFT,Days Sales of Inventory,1.0,1.0,0.0
+MSFT,Other Current Assets to Revenue,0.0,1.0,1.0
+MSFT,Depreciation to Fixed Assets,1.0,0.0,1.0
+MSFT,Total Asset Growth,1.0,0.0,1.0
+MSFT,C-Score,5.0,2.0,5.0

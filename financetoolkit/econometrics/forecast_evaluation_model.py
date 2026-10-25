@@ -202,25 +202,41 @@ def get_volatility_forecast(
     lambda_: float,
 ) -> pd.Series | pd.DataFrame:
     """
-    One-period-ahead Variance forecast, lagged by one period so it can be compared
-    to the realized squared return out-of-sample -- the forecast half of the
-    Diebold-Mariano test in `get_diebold_mariano_test`.
+    One-period-ahead Variance forecast built from the returns up to the prior period
+    only, so it can be compared to the realized squared return out-of-sample -- the
+    forecast half of the Diebold-Mariano test in `get_diebold_mariano_test`.
+
+    - "ewma": σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², the RiskMetrics recursion of
+      `risk_model.get_ewma_volatility`, which already uses returns up to t - 1
+    - "rolling": the sample variance (ddof=1) of the `window_size` returns up to t - 1
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset's return series, or one column per asset.
+        Each column is forecast on its own non-missing observations.
         method (str): The forecasting method, one of "ewma" or "rolling".
         window_size (int): The rolling window size used by the "rolling" method.
         lambda_ (float): The decay factor used by the "ewma" method.
 
     Returns:
-        pd.Series | pd.DataFrame: The lagged Variance forecast, shaped like `returns`.
+        pd.Series | pd.DataFrame: The Variance forecast for each period, shaped like `returns`.
     """
-    if method == "ewma":
-        volatility = risk_model.get_ewma_volatility(returns, lambda_)
-    else:
-        volatility = returns.rolling(window=window_size).std()
+    if isinstance(returns, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_volatility_forecast(
+                    returns[column], method, window_size, lambda_
+                )
+                for column in returns.columns
+            }
+        )
 
-    return (volatility**2).shift(1)
+    clean_returns = returns.dropna()
+
+    if method == "ewma":
+        return risk_model.get_ewma_volatility(clean_returns, lambda_) ** 2
+
+    # The window ending at t includes rₜ itself, so it is shifted to end at t - 1.
+    return clean_returns.rolling(window=window_size).var().shift(1)
 
 
 def get_rmse(

@@ -142,8 +142,9 @@ def get_roll_spread(
         prices.
 
     Returns:
-        pd.Series | pd.DataFrame: The Roll Spread (in price units), the Roll Spread
-        as a percentage of the mean price, the underlying lag-1 autocovariance, and
+        pd.Series | pd.DataFrame: The Roll Spread (in price units), the Relative Roll
+        Spread (the Roll Spread divided by the mean price, as a decimal: 0.005 is 0.5%
+        of the price), the underlying lag-1 autocovariance, and
         whether that autocovariance was negative (i.e. whether a valid estimate could
         be backed out).
 
@@ -179,7 +180,7 @@ def get_roll_spread(
             return pd.Series(
                 {
                     "Roll Spread": np.nan,
-                    "Roll Spread (%)": np.nan,
+                    "Relative Roll Spread": np.nan,
                     "Autocovariance": np.nan,
                     "Valid Estimate": False,
                 }
@@ -191,7 +192,7 @@ def get_roll_spread(
             return pd.Series(
                 {
                     "Roll Spread": np.nan,
-                    "Roll Spread (%)": np.nan,
+                    "Relative Roll Spread": np.nan,
                     "Autocovariance": autocovariance,
                     "Valid Estimate": False,
                 }
@@ -203,7 +204,7 @@ def get_roll_spread(
         return pd.Series(
             {
                 "Roll Spread": roll_spread,
-                "Roll Spread (%)": roll_spread / mean_price * 100,
+                "Relative Roll Spread": roll_spread / mean_price,
                 "Autocovariance": autocovariance,
                 "Valid Estimate": True,
             }

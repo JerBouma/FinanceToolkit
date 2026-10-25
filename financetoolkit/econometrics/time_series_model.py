@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import math
+
 import numpy as np
 import pandas as pd
 from statsmodels.tsa.arima.model import ARIMA
@@ -24,8 +26,10 @@ JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS: dict[float, str] = {
 
 def arima_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Coefficient, Std. Error) of the constant, AR and MA
-    coefficients from a `get_arima_forecast` result dict.
+    Builds the coefficient table (Coefficient, Std. Error) of the mean, AR and MA
+    coefficients from a `get_arima_forecast` result dict. The first row is labelled
+    "Mean" for `d = 0` (the mean of the series) and "Drift" for `d >= 1` (the mean of the
+    `d`-times differenced series).
 
     Args:
         result (dict): A fitted ARIMA result dict, as returned by `get_arima_forecast`.
@@ -33,19 +37,19 @@ def arima_summary_table(result: dict) -> pd.DataFrame:
     Returns:
         pd.DataFrame: The coefficient table.
     """
-    p, _, q = result["order"]
+    p, d, q = result["order"]
     names = (
-        ["Intercept"]
+        ["Mean" if d == 0 else "Drift"]
         + [f"AR{i}" for i in range(1, p + 1)]
         + [f"MA{j}" for j in range(1, q + 1)]
     )
     coefficients = [
-        result["constant"],
+        result["mean"],
         *result["ar_coefficients"],
         *result["ma_coefficients"],
     ]
     standard_errors = [
-        result["constant_std_error"],
+        result["mean_std_error"],
         *result["ar_std_errors"],
         *result["ma_std_errors"],
     ]
@@ -74,8 +78,13 @@ def get_arima_forecast(
     component that regresses the (differenced) series on its own past `p` values, and
     a moving-average (MA) component that regresses it on the past `q` forecast errors:
 
-    - Let `y'_t` be `series` differenced `d` times. Then:
-    - y'_t = c + SUM_{i=1}^{p}(phi_i * y'_(t-i)) + SUM_{j=1}^{q}(theta_j * e_(t-j)) + e_t
+    - Let `y'_t` be `series` differenced `d` times and `mu` its mean. Then:
+    - y'_t - mu = SUM_{i=1}^{p}(phi_i * (y'_(t-i) - mu)) + SUM_{j=1}^{q}(theta_j * e_(t-j)) + e_t
+
+    The model is estimated in this mean-deviation form, so the reported coefficient is the
+    mean `mu` itself (the "Mean" for `d = 0`, the "Drift" per period for `d >= 1`), not
+    the intercept of the recursion written as `y'_t = c + SUM(phi_i * y'_(t-i)) + ...`.
+    The two relate as c = mu * (1 - SUM_{i=1}^{p}(phi_i)).
 
     Estimated by exact Maximum Likelihood via the Kalman filter (a state-space
     representation of the ARMA recursion), which correctly handles the MA component's
@@ -93,20 +102,20 @@ def get_arima_forecast(
         q (int): The moving-average order.
         forecast_steps (int, optional): The number of periods ahead to forecast.
         Defaults to 1.
-        include_constant (bool, optional): Whether to estimate a free intercept `c`
-        (defaults to True). For `d >= 1` and no `include_constant`, `c` is fixed at 0
-        rather than estimated -- appropriate when the differenced series is not
-        expected to have a nonzero mean/drift (the common case for `d >= 1`; leaving
-        `include_constant=True` on a truly zero-drift differenced series lets small-
-        sample noise in the estimated `c` compound into a spuriously trending
-        multi-step forecast, since each step's drift accumulates).
+        include_constant (bool, optional): Whether to estimate the mean `mu` of the
+        differenced series (the mean of the series for `d = 0`, its drift for
+        `d >= 1`). When False, `mu` is fixed at 0 rather than estimated -- appropriate
+        when the differenced series is not expected to have a nonzero mean/drift
+        (leaving `include_constant=True` on a truly zero-drift differenced series lets
+        small-sample noise in the estimated drift compound into a spuriously trending
+        multi-step forecast, since each step's drift accumulates). Defaults to True.
         max_iterations (int, optional): The maximum number of Maximum Likelihood
         optimizer iterations. Defaults to 1000.
 
     Returns:
-        dict: The fitted constant/AR/MA coefficients and their standard errors,
+        dict: The fitted mean/AR/MA coefficients and their standard errors,
         in-sample residuals and fitted values, and the `forecast_steps`-ahead
-        forecast -- keys `order`, `constant`, `constant_std_error`,
+        forecast -- keys `order`, `mean`, `mean_std_error`,
         `ar_coefficients`, `ar_std_errors`, `ma_coefficients`, `ma_std_errors`,
         `residuals`, `fitted_values`, `forecast`, `sum_of_squared_residuals`,
         `n_observations`, `converged`. Call `arima_summary_table` for a coefficient
@@ -189,10 +198,13 @@ def get_arima_forecast(
         sm_result.params.index != "sigma2"
     )
     if is_trend_param.any():
-        constant = float(sm_result.params[is_trend_param].iloc[0])
-        constant_std_error = float(sm_result.bse[is_trend_param].iloc[0])
+        # statsmodels estimates the trend as b * t^d in levels; differencing it d times
+        # leaves the constant d! * b, which is the mean (drift) of the differenced series.
+        drift_scale = float(math.factorial(d))
+        mean = drift_scale * float(sm_result.params[is_trend_param].iloc[0])
+        mean_std_error = drift_scale * float(sm_result.bse[is_trend_param].iloc[0])
     else:
-        constant, constant_std_error = 0.0, np.nan
+        mean, mean_std_error = 0.0, np.nan
     ar_coefficients = np.asarray(sm_result.arparams)
     ar_std_errors = sm_result.bse.filter(regex=r"^ar\.").to_numpy()
     ma_coefficients = np.asarray(sm_result.maparams)
@@ -207,8 +219,8 @@ def get_arima_forecast(
 
     return {
         "order": (p, d, q),
-        "constant": constant,
-        "constant_std_error": constant_std_error,
+        "mean": mean,
+        "mean_std_error": mean_std_error,
         "ar_coefficients": ar_coefficients,
         "ar_std_errors": ar_std_errors,
         "ma_coefficients": ma_coefficients,
@@ -503,9 +515,10 @@ def irf_summary_table(result: dict) -> pd.DataFrame:
         `get_impulse_response_function`.
 
     Returns:
-        pd.DataFrame: The combined response table.
+        pd.DataFrame: The combined response table, with the column levels named "Shock"
+        and "Response".
     """
-    return pd.concat(result["responses"], axis=1)
+    return pd.concat(result["responses"], axis=1, names=["Shock", "Response"])
 
 
 _VAR_RESULT_KEYS = {"coefficient_matrices", "variable_names", "lags", "residuals"}
@@ -687,9 +700,10 @@ def variance_decomposition_summary_table(result: dict) -> pd.DataFrame:
         `get_variance_decomposition`.
 
     Returns:
-        pd.DataFrame: The combined decomposition table.
+        pd.DataFrame: The combined decomposition table, with the column levels named
+        "Response" and "Shock".
     """
-    return pd.concat(result["decomposition"], axis=1)
+    return pd.concat(result["decomposition"], axis=1, names=["Response", "Shock"])
 
 
 def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
@@ -849,8 +863,9 @@ def get_vecm_forecast(
     re-derived, since that function already contains this codebase's verified
     rank-testing machinery. Given the rank, `alpha`, `beta` and the `Gamma_i`
     short-run matrices are then jointly estimated by `statsmodels.tsa.vector_ar.vecm.VECM`
-    (with `deterministic="co"`, a constant restricted to lie in the cointegrating
-    relation, matching the `det_order=0` convention used for rank determination).
+    (with `deterministic="co"`, an unrestricted constant outside the cointegrating
+    relation, Johansen's case 3, matching the `det_order=0` convention used for rank
+    determination).
 
     Forecasts are produced on the levels scale via the fitted model's own multi-step
     forecast recursion.

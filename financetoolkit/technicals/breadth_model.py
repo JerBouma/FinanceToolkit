@@ -6,6 +6,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.technicals.overlap_model import get_exponential_moving_average
+
 
 def get_mcclellan_oscillator(
     prices_close: pd.Series, short_ema_window: int, long_ema_window: int
@@ -20,9 +22,9 @@ def get_mcclellan_oscillator(
     periods) chosen to approximate 10% and 5% trend weightings in Sherman McClellan's
     original per-day smoothing constants.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - McClellan Oscillator = EMA(Advancers — Decliners, short_ema_window) — EMA(Advancers —
+    - McClellan Oscillator = EMA(Advancers - Decliners, short_ema_window) - EMA(Advancers -
       Decliners, long_ema_window)
 
     Also known as: McClellan Oscillator.
@@ -31,6 +33,9 @@ def get_mcclellan_oscillator(
     Oscillator and Summation Index." Trade Levels Inc.
 
     Notes:
+        - Both EMAs are seeded with the Simple Moving Average of their first values (see
+          `overlap_model.get_exponential_moving_average`), so the oscillator starts once the
+          long EMA has `long_ema_window` daily signals, which begin on the second period.
         - This implementation is applied to a single security's own daily up/down signal
           (see `get_advancers_decliners`) rather than to a true cross-sectional count of
           advancing versus declining issues across a market universe, which is how the
@@ -46,13 +51,13 @@ def get_mcclellan_oscillator(
     Returns:
         pd.Series: McClellan Oscillator values.
     """
-    advancers_decliners = get_advancers_decliners(prices_close)
-    short_ema = advancers_decliners.ewm(
-        span=short_ema_window, min_periods=1, adjust=False
-    ).mean()
-    long_ema = advancers_decliners.ewm(
-        span=long_ema_window, min_periods=1, adjust=False
-    ).mean()
+    # The first price has no previous close and therefore no advance or decline; leaving
+    # it missing keeps a zero that never happened out of the seed of both EMAs.
+    advancers_decliners = get_advancers_decliners(prices_close).where(
+        prices_close.shift(1).notna()
+    )
+    short_ema = get_exponential_moving_average(advancers_decliners, short_ema_window)
+    long_ema = get_exponential_moving_average(advancers_decliners, long_ema_window)
 
     return short_ema - long_ema
 
@@ -69,7 +74,7 @@ def get_advancers_decliners(
     yields a simple directional signal for that security: +1 on a day it closed higher than
     the prior day, -1 on a day it closed lower, and 0 on an unchanged day.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - Signal = +1 if Close(t) > Close(t-1), -1 if Close(t) < Close(t-1), else 0
 
@@ -107,10 +112,10 @@ def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
     lead price: a rising OBV alongside flat or falling price signals accumulation that may
     precede a price breakout, and vice versa for a falling OBV.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - OBV(t) = OBV(t-1) + Volume(t), if Close(t) > Close(t-1)
-    - OBV(t) = OBV(t-1) — Volume(t), if Close(t) < Close(t-1)
+    - OBV(t) = OBV(t-1) - Volume(t), if Close(t) < Close(t-1)
     - OBV(t) = OBV(t-1), if Close(t) = Close(t-1)
 
     Also known as: OBV.
@@ -144,9 +149,9 @@ def _get_money_flow_multiplier(
     range onto a scale from -1 (closed at the low) to +1 (closed at the high), which is then
     used to weight that period's volume as either buying or selling pressure.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
+    - Money Flow Multiplier = ((Close - Low) - (High - Close)) / (High - Low)
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -175,9 +180,9 @@ def get_accumulation_distribution_line(
     range (the Money Flow Multiplier). A rising line suggests volume is flowing in on
     up-weighted days (accumulation); a falling line suggests the opposite (distribution).
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
+    - Money Flow Multiplier = ((Close - Low) - (High - Close)) / (High - Low)
     - Money Flow Volume = Money Flow Multiplier * Volume
     - Accumulation/Distribution Line = Cumulative Sum(Money Flow Volume)
 
@@ -213,7 +218,7 @@ def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
     market breadth indicator, meaning it is calculated across the columns (tickers) of
     the provided data rather than per ticker over time.
 
-    The formula is a follows:
+    The formula is as follows:
 
     - TRIN = (Advancing Issues / Declining Issues) / (Advancing Volume / Declining Volume)
 
@@ -246,16 +251,16 @@ def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
 
 def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series:
     """
-    Calculate the New Highs — New Lows for a universe of tickers.
+    Calculate the New Highs - New Lows for a universe of tickers.
 
-    New Highs — New Lows measures the number of tickers reaching a new high over the
+    New Highs - New Lows measures the number of tickers reaching a new high over the
     specified window minus the number of tickers reaching a new low over the same
     window. It is a cross-sectional market breadth indicator, meaning it is calculated
     across the columns (tickers) of the provided data rather than per ticker over time.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - New Highs — New Lows = (Number of tickers at a window-period high) — (Number of tickers at a window-period low)
+    - New Highs - New Lows = (Number of tickers at a window-period high) - (Number of tickers at a window-period low)
 
     Also known as: new highs minus new lows, record high percent.
 
@@ -267,7 +272,7 @@ def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series
         window (int): Number of periods to consider for the new high / new low lookback.
 
     Returns:
-        pd.Series: New Highs — New Lows values.
+        pd.Series: New Highs - New Lows values.
     """
     rolling_high = prices_close.rolling(window=window, min_periods=1).max()
     rolling_low = prices_close.rolling(window=window, min_periods=1).min()
@@ -295,9 +300,9 @@ def get_chaikin_oscillator(
     flow before they necessarily show up in price, and is typically read as an early signal
     of a change in accumulation/distribution pressure.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Chaikin Oscillator = EMA(Accumulation/Distribution Line, short_window) — EMA
+    - Chaikin Oscillator = EMA(Accumulation/Distribution Line, short_window) - EMA
       (Accumulation/Distribution Line, long_window)
 
     Also known as: Chaikin Oscillator.
@@ -305,6 +310,13 @@ def get_chaikin_oscillator(
     Reference: Chaikin, M. (1980s). There is no formal journal citation; the standard
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
+
+    Notes:
+        - Both EMAs are seeded with the Simple Moving Average of their first values (see
+          `overlap_model.get_exponential_moving_average`), as StockCharts calculates them, so
+          the oscillator starts on period `long_window` - 1. TA-Lib's `ta_ADOSC.c` seeds both
+          with the first Accumulation/Distribution value instead, which only changes the
+          first values.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -320,8 +332,8 @@ def get_chaikin_oscillator(
     adl = get_accumulation_distribution_line(
         prices_high, prices_low, prices_close, volumes
     )
-    short_ema = adl.ewm(span=short_window, min_periods=1, adjust=False).mean()
-    long_ema = adl.ewm(span=long_window, min_periods=1, adjust=False).mean()
+    short_ema = get_exponential_moving_average(adl, short_window)
+    long_ema = get_exponential_moving_average(adl, long_window)
 
     return short_ema - long_ema
 
@@ -342,9 +354,9 @@ def get_chaikin_money_flow(
     Sustained readings above zero indicate buying pressure (accumulation) is dominating over
     the window, while sustained readings below zero indicate selling pressure (distribution).
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
+    - Money Flow Multiplier = ((Close - Low) - (High - Close)) / (High - Low)
     - Money Flow Volume = Money Flow Multiplier * Volume
     - CMF = Sum(Money Flow Volume, window) / Sum(Volume, window)
 
@@ -407,10 +419,10 @@ def get_ease_of_movement(
     was "difficult". The raw daily reading is typically smoothed with a Simple Moving
     Average to reduce noise.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Distance Moved = (High(t) + Low(t)) / 2 — (High(t-1) + Low(t-1)) / 2
-    - Box Ratio = (Volume / volume_divisor) / (High — Low)
+    - Distance Moved = (High(t) + Low(t)) / 2 - (High(t-1) + Low(t-1)) / 2
+    - Box Ratio = (Volume / volume_divisor) / (High - Low)
     - Raw EMV = Distance Moved / Box Ratio
     - EMV = SMA(Raw EMV, window)
 
@@ -497,9 +509,9 @@ def get_negative_volume_index(
     low-volume (quiet) days, so tracking price behaviour specifically on those days isolates
     informed trading from the noise of high-volume, crowd-driven days.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) < Volume(t-1)
+    - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) - 1)) if Volume(t) < Volume(t-1)
     - Index(t) = Index(t-1) otherwise
 
     Also known as: NVI, Negative Volume Index.
@@ -537,9 +549,9 @@ def get_positive_volume_index(
     Index isolates price behaviour on high-volume (crowd-driven) days, which is traditionally
     read as tracking less-informed, sentiment-driven trading.
 
-    The formula is a follows:
+    The formula is as follows:
 
-    - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) > Volume(t-1)
+    - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) - 1)) if Volume(t) > Volume(t-1)
     - Index(t) = Index(t-1) otherwise
 
     Also known as: PVI, Positive Volume Index.

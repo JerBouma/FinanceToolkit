@@ -24,8 +24,9 @@ def test_get_arima_forecast_recovers_ar1_coefficients(recorder):
     assert abs(result["ar_coefficients"][0] - phi_true) < 0.05
     assert result["converged"]
 
-    # For d=0 the constant is the unconditional mean, not the recursion intercept.
-    unconditional_mean = result["constant"]
+    # For d=0 the reported coefficient is the unconditional mean, not the recursion intercept.
+    unconditional_mean = result["mean"]
+    assert abs(unconditional_mean - const_true / (1 - phi_true)) < 0.1
     # The distance to the mean decays geometrically, so it converges by step 20.
     distance_first_step = abs(result["forecast"].iloc[0] - unconditional_mean)
     distance_last_step = abs(result["forecast"].iloc[-1] - unconditional_mean)
@@ -51,7 +52,7 @@ def test_get_arima_forecast_recovers_arma11_coefficients():
 
     assert abs(result["ar_coefficients"][0] - phi_true) < 0.1
     assert abs(result["ma_coefficients"][0] - theta_true) < 0.1
-    assert result["constant"] == 0.0
+    assert result["mean"] == 0.0
 
 
 def test_get_arima_forecast_differencing_undoes_correctly():
@@ -411,3 +412,27 @@ def test_get_vecm_forecast_invalid_significance():
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass
+
+
+def test_get_arima_forecast_reports_the_drift_of_the_differenced_series():
+    # The second difference is an AR(1) around 0.3; statsmodels estimates the trend as
+    # b * t^2 in levels, so the drift of the twice-differenced series is 2! * b.
+    rng = np.random.default_rng(0)
+    n = 600
+    second_difference = np.zeros(n)
+    for t in range(1, n):
+        second_difference[t] = (
+            0.3 + 0.5 * (second_difference[t - 1] - 0.3) + rng.standard_normal()
+        )
+
+    for d, level in (
+        (1, np.cumsum(second_difference)),
+        (2, np.cumsum(np.cumsum(second_difference))),
+    ):
+        result = time_series_model.get_arima_forecast(
+            pd.Series(level), p=1, d=d, q=0, forecast_steps=1
+        )
+        sample_drift = np.diff(level, d).mean()
+
+        assert abs(result["mean"] - sample_drift) < 0.02
+        assert time_series_model.arima_summary_table(result).index[0] == "Drift"

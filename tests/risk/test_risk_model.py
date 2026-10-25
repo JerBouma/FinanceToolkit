@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.risk import risk_model
 
@@ -306,3 +307,75 @@ def test_get_rolling_excess_volatility(recorder):
             window_size=3,
         ).round(4)
     )
+
+
+def test_drawdown_measures_are_nan_without_observations():
+    returns = pd.DataFrame(
+        {"A": [np.nan, np.nan, np.nan], "B": [0.01, -0.05, 0.02]},
+    )
+
+    for result in (
+        risk_model.get_max_drawdown(returns),
+        risk_model.get_conditional_drawdown_at_risk(returns, 0.05),
+        risk_model.get_max_drawdown_duration(returns),
+        risk_model.get_max_drawdown_recovery_time(returns),
+        risk_model.get_ui(returns, rolling=14),
+    ):
+        assert np.isnan(result["A"])
+    assert np.isclose(risk_model.get_max_drawdown(returns)["B"], -0.05)
+    assert np.isnan(risk_model.get_max_drawdown(returns["A"]))
+    assert np.isnan(risk_model.get_max_drawdown_duration(returns["A"]))
+    assert np.isnan(risk_model.get_max_drawdown_recovery_time(returns["A"]))
+
+
+def test_within_period_drawdown_is_nan_for_a_period_without_data():
+    index = pd.MultiIndex.from_tuples(
+        [("2020", 1), ("2020", 2), ("2021", 1), ("2021", 2)]
+    )
+    returns = pd.DataFrame(
+        {"A": [np.nan, np.nan, 0.01, -0.02], "B": [0.01, -0.03, 0.02, -0.01]},
+        index=index,
+    )
+
+    result = risk_model.get_max_drawdown(returns)
+
+    assert np.isnan(result.loc["2020", "A"])
+    assert np.isclose(result.loc["2021", "A"], -0.02)
+
+
+def test_get_ui_short_period_uses_the_high_so_far():
+    # Five observations with a 14-period window: the high is taken over the observations so far.
+    returns = pd.Series([0.02, -0.03, -0.01, 0.015, -0.02])
+
+    assert np.isfinite(risk_model.get_ui(returns, rolling=14))
+    assert np.isclose(
+        risk_model.get_ui(returns, rolling=14), risk_model.get_ui(returns, None)
+    )
+
+
+def test_get_hurst_exponent_includes_max_lag():
+    data = pd.Series(np.cumsum(np.random.default_rng(0).normal(0, 1, 2000)))
+    values = data.to_numpy()
+    lags = np.arange(2, 11)
+    standard_deviations = [np.std(values[lag:] - values[:-lag]) for lag in lags]
+    expected = np.polyfit(np.log(lags), np.log(standard_deviations), 1)[0]
+
+    assert np.isclose(risk_model.get_hurst_exponent(data, max_lag=10), expected)
+    assert abs(risk_model.get_hurst_exponent(data) - 0.5) < 0.1  # noqa: PLR2004
+
+
+def test_get_ui_invalid_method():
+    with pytest.raises(ValueError, match="method"):
+        risk_model.get_ui(pd.Series([0.01, -0.02]), method="bad")
+
+
+def test_get_hill_estimator_without_data_uses_no_order_statistics():
+    for returns in (pd.Series(dtype=float), pd.Series([np.nan, np.nan, 0.01])):
+        result = risk_model.get_hill_estimator(returns, tail="left")
+
+        assert pd.isna(result["Hill Tail Index"])
+        assert result["Observations Used (k)"] == 0
+
+    # With data, a fraction that rounds down to zero still uses one order statistic.
+    result = risk_model.get_hill_estimator(pd.Series([-0.01, -0.02, -0.03]), k=0.1)
+    assert result["Observations Used (k)"] == 1

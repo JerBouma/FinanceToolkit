@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.econometrics import panel_data_model, regression_model
 
@@ -318,3 +319,247 @@ def test_get_hausman_test_degrees_of_freedom_matches_common_regressors():
     result = panel_data_model.get_hausman_test(y, x)
 
     assert result["Degrees of Freedom"] == 1
+
+
+def test_get_fixed_effects_two_way_effects_count_the_level_once():
+    # The entity plus time effects must equal linearmodels' combined estimated effects,
+    # balanced or not, so the grand mean of y - X @ beta is not counted twice.
+    from linearmodels.panel import PanelOLS
+
+    rng = np.random.default_rng(3)
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(5)], range(30)], names=["entity", "time"]
+    )
+    x = pd.Series(rng.standard_normal(len(index)), index=index, name="X")
+    y = pd.Series(rng.standard_normal(len(index)), index=index) + 2 * x + 3
+
+    for keep in (np.ones(len(index), dtype=bool), rng.random(len(index)) > 0.2):
+        y_kept, x_kept = y[keep], x[keep]
+        result = panel_data_model.get_fixed_effects(
+            y_kept, x_kept, entity_effects=True, time_effects=True
+        )
+        reference = PanelOLS(
+            y_kept, x_kept.to_frame(), entity_effects=True, time_effects=True
+        ).fit()
+
+        combined = (
+            result["entity_effects"]
+            .reindex(y_kept.index.get_level_values("entity"))
+            .to_numpy()
+            + result["time_effects"]
+            .reindex(y_kept.index.get_level_values("time"))
+            .to_numpy()
+        )
+        np.testing.assert_allclose(
+            combined, reference.estimated_effects.to_numpy().ravel(), atol=1e-9
+        )
+        time_effect_per_observation = result["time_effects"].reindex(
+            y_kept.index.get_level_values("time")
+        )
+        assert abs(time_effect_per_observation.mean()) < 1e-9
+
+
+def test_get_fixed_effects_time_effects_absorbing_a_common_factor_raises():
+    rng = np.random.default_rng(3)
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(4)], range(30)], names=["entity", "time"]
+    )
+    common_factor = pd.Series(
+        np.tile(rng.standard_normal(30), 4), index=index, name="X"
+    )
+    y = pd.Series(rng.standard_normal(len(index)), index=index) + common_factor
+
+    with pytest.raises(ValueError, match="absorb"):
+        panel_data_model.get_fixed_effects(
+            y, common_factor, entity_effects=True, time_effects=True
+        )
+
+
+def test_get_random_effects_and_hausman_need_more_entities_than_parameters():
+    rng = np.random.default_rng(3)
+    index = pd.MultiIndex.from_product(
+        [["A", "B"], range(50)], names=["entity", "time"]
+    )
+    x = pd.DataFrame(rng.standard_normal((100, 2)), index=index, columns=["a", "b"])
+    y = pd.Series(rng.standard_normal(100), index=index)
+
+    with pytest.raises(ValueError, match="more entities"):
+        panel_data_model.get_random_effects(y, x)
+    with pytest.raises(ValueError, match="more entities"):
+        panel_data_model.get_hausman_test(y, x)
+
+
+def test_get_hausman_test_degrees_of_freedom_is_the_rank_of_the_variance_difference(
+    monkeypatch,
+):
+    # Two compared slopes whose variance difference has rank 1, so the statistic is
+    # chi-squared with 1 degree of freedom rather than 2.
+    fe = {
+        "feature_names": ["a", "b"],
+        "coefficients": np.array([1.2, 0.5]),
+        "covariance_matrix": np.array([[0.02, 0.01], [0.01, 0.02]]),
+    }
+    re = {
+        "feature_names": ["Intercept", "a", "b"],
+        "coefficients": np.array([0.0, 1.0, 0.5]),
+        "covariance_matrix": np.array(
+            [[1.0, 0.0, 0.0], [0.0, 0.01, 0.0], [0.0, 0.0, 0.01]]
+        ),
+    }
+    monkeypatch.setattr(
+        panel_data_model, "get_fixed_effects", lambda *_, **__: {"regression": fe}
+    )
+    monkeypatch.setattr(panel_data_model, "get_random_effects", lambda *_, **__: re)
+
+    result = panel_data_model.get_hausman_test(None, None)
+
+    assert result["Degrees of Freedom"] == 1
+    # pinv([[0.01, 0.01], [0.01, 0.01]]) = 25 * ones, and the difference is (0.2, 0).
+    np.testing.assert_allclose(result["Hausman Statistic"], 25 * 0.2**2)
+
+
+@pytest.mark.parametrize(
+    ("absorbed_by", "entity_effects", "time_effects"),
+    [("time", True, True), ("time", False, True), ("entity", True, False)],
+)
+def test_get_fixed_effects_single_absorbed_regressor_raises(
+    absorbed_by, entity_effects, time_effects
+):
+    # A single absorbed regressor does not make PanelOLS raise: it is demeaned to rounding
+    # noise and fitted with a coefficient of 0 and a standard error of order 1e15.
+    rng = np.random.default_rng(3)
+    n_entities, n_times = 6, 40
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(n_entities)], range(n_times)],
+        names=["entity", "time"],
+    )
+    if absorbed_by == "time":
+        values = np.tile(rng.standard_normal(n_times), n_entities)
+    else:
+        values = np.repeat(rng.standard_normal(n_entities), n_times)
+    x = pd.DataFrame({"m": values}, index=index)
+    y = pd.Series(rng.standard_normal(len(index)), index=index)
+
+    with pytest.raises(ValueError, match=r"absorb one or more regressors \(m\)"):
+        panel_data_model.get_fixed_effects(
+            y, x, entity_effects=entity_effects, time_effects=time_effects
+        )
+
+    # Next to a regressor that varies, only the absorbed one is named.
+    x["z"] = rng.standard_normal(len(index))
+    with pytest.raises(ValueError, match=r"\(m\)"):
+        panel_data_model.get_fixed_effects(
+            y, x, entity_effects=entity_effects, time_effects=time_effects
+        )
+
+
+def test_get_hausman_test_numerically_singular_difference_uses_the_pseudo_inverse(
+    monkeypatch,
+):
+    # A variance difference that is singular up to rounding: np.linalg.inv succeeds on it
+    # and returns an inverse of order 1e16, whereas the pseudo-inverse of the same rank as
+    # the degrees of freedom gives the rank-1 statistic.
+    variance_difference = np.array([[0.01, 0.01], [0.01, 0.01 + 1e-18]])
+    fe = {
+        "feature_names": ["a", "b"],
+        "coefficients": np.array([1.2, 0.5]),
+        "covariance_matrix": variance_difference + 0.01 * np.eye(2),
+    }
+    re = {
+        "feature_names": ["Intercept", "a", "b"],
+        "coefficients": np.array([0.0, 1.0, 0.5]),
+        "covariance_matrix": np.array(
+            [[1.0, 0.0, 0.0], [0.0, 0.01, 0.0], [0.0, 0.0, 0.01]]
+        ),
+    }
+    monkeypatch.setattr(
+        panel_data_model, "get_fixed_effects", lambda *_, **__: {"regression": fe}
+    )
+    monkeypatch.setattr(panel_data_model, "get_random_effects", lambda *_, **__: re)
+
+    result = panel_data_model.get_hausman_test(None, None)
+
+    assert result["Degrees of Freedom"] == 1
+    np.testing.assert_allclose(result["Hausman Statistic"], 25 * 0.2**2, rtol=1e-6)
+
+
+@pytest.mark.parametrize("balanced", [True, False])
+def test_get_fixed_effects_two_way_absorbs_an_entity_plus_date_regressor(balanced):
+    # A regressor a_i + b_t varies within every entity and every date, so neither one-way
+    # check sees it, yet the two-way effects absorb it fully (PanelOLS would fit it with a
+    # coefficient of order 1e9).
+    rng = np.random.default_rng(1)
+    n_entities, n_times = 5, 40
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(n_entities)], range(n_times)],
+        names=["entity", "time"],
+    )
+    x = pd.DataFrame(
+        {
+            "own": rng.standard_normal(len(index)),
+            "ab": np.repeat(rng.standard_normal(n_entities), n_times)
+            + np.tile(rng.standard_normal(n_times), n_entities),
+        },
+        index=index,
+    )
+    y = 2.0 * x["own"] + x["ab"] + rng.standard_normal(len(index)) * 0.1
+    if not balanced:
+        keep = rng.random(len(index)) > 0.3
+        x, y = x[keep], y[keep]
+
+    with pytest.raises(ValueError, match=r"absorb one or more regressors \(ab\)"):
+        panel_data_model.get_fixed_effects(y, x, entity_effects=True, time_effects=True)
+
+    # The genuine regressor on its own is estimated, and so is a_i + b_t under one-way effects.
+    result = panel_data_model.get_fixed_effects(
+        y, x[["own"]], entity_effects=True, time_effects=True
+    )
+    assert abs(result["regression"]["coefficients"][0] - 2.0) < 0.05
+    panel_data_model.get_fixed_effects(y, x, entity_effects=True, time_effects=False)
+
+
+def test_get_fixed_effects_two_way_on_a_weakly_connected_panel():
+    # A staircase of short overlapping histories (entity i observed on dates 3i to 3i + 4)
+    # connects the entities only through two shared dates each, where alternating entity
+    # and time demeaning converges very slowly. The sparse least squares fit must still
+    # flag an absorbed a_i + b_t and match the intercepts of a dense dummy-variable fit.
+    rng = np.random.default_rng(5)
+    index = pd.MultiIndex.from_tuples(
+        [(f"E{i}", t) for i in range(60) for t in range(3 * i, 3 * i + 5)],
+        names=["entity", "time"],
+    )
+    entities = index.get_level_values("entity")
+    dates = index.get_level_values("time")
+    entity_part = pd.Series(rng.standard_normal(60), index=entities.unique())
+    date_part = pd.Series(rng.standard_normal(dates.nunique()), index=dates.unique())
+    ab = 1e3 * (
+        5
+        + entity_part.reindex(entities).to_numpy()
+        + date_part.reindex(dates).to_numpy()
+    )
+    x = pd.DataFrame({"own": rng.standard_normal(len(index)), "ab": ab}, index=index)
+    y = 10 + 2.0 * x["own"] + ab / 1e3 + rng.standard_normal(len(index))
+
+    with pytest.raises(ValueError, match=r"absorb one or more regressors \(ab\)"):
+        panel_data_model.get_fixed_effects(y, x, entity_effects=True, time_effects=True)
+
+    result = panel_data_model.get_fixed_effects(
+        y, x[["own"]], entity_effects=True, time_effects=True
+    )
+    beta = result["regression"]["coefficients"][0]
+    fitted = (
+        result["entity_effects"].reindex(entities).to_numpy()
+        + result["time_effects"].reindex(dates).to_numpy()
+        + beta * x["own"].to_numpy()
+    )
+
+    dummies = np.column_stack(
+        [
+            x["own"].to_numpy(),
+            pd.get_dummies(entities).to_numpy(float),
+            pd.get_dummies(dates).to_numpy(float)[:, 1:],
+        ]
+    )
+    coefficients = np.linalg.lstsq(dummies, y.to_numpy(), rcond=None)[0]
+    np.testing.assert_allclose(beta, coefficients[0], rtol=1e-10)
+    np.testing.assert_allclose(fitted, dummies @ coefficients, rtol=1e-10, atol=1e-10)

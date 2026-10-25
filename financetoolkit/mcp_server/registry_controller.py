@@ -25,6 +25,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
 from financetoolkit.fmp_model import parse_fiscal_period
+from financetoolkit.mcp_server import series_model
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
@@ -66,6 +67,24 @@ _OPAQUE_TYPES = {
     "Series",
     "DataFrame",
 }
+
+
+# Injected into each tool's Args docstring so FastMCP can surface them.
+def _curve_maturity(maturity: Any) -> float | str:
+    """A curve maturity as a number of years, or the label itself ("10Y", "6M")."""
+    try:
+        return float(maturity)
+    except (TypeError, ValueError):
+        label = str(maturity).strip().upper()
+        if label[:-1].replace(".", "", 1).isdigit() and label[-1:] in (
+            "D",
+            "W",
+            "M",
+            "Y",
+        ):
+            return label
+        raise
+
 
 # The indicators that read the returns of the period itself rather than results within each
 # period, so a blocked period (e.g. daily performance) does not apply to them.
@@ -188,12 +207,27 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "bond_price": "Clean price of the bond per 100 face value.",
     "coupon_rate": "Annual coupon rate as a decimal, e.g. 0.05 for 5 %.",
     "years_to_maturity": "Years remaining until the bond matures.",
-    "maturities": "Comma-separated bond maturity labels, e.g. '3month,2year,10year'.",
+    "maturities": "Comma-separated maturities, e.g. '1M,3M,6M,1Y'.",
     "strike_rate": "Option strike price.",
     "factors_to_calculate": "Comma-separated factor names to include in the calculation.",
     "growth_rate": "Assumed constant growth rate as a decimal.",
     "perpetual_growth_rate": "Terminal (perpetual) growth rate used in DCF models.",
     "weighted_average_cost_of_capital": "WACC as a decimal, e.g. 0.09 for 9 %.",
+    "series": (
+        "Analyze the indicators of other tools instead of the tickers' prices: references "
+        "separated by ';', each tool:indicator:tickers-or-countries with an optional "
+        ":column, e.g. 'valuation:get_price_to_earnings_ratio:AAPL,MSFT; "
+        "macroeconomics:get_inflation_rate:United States' or "
+        "'rates:get_government_bond_yield_curve:United States,Germany:10Y'. Every ticker or "
+        "country becomes a series named after it, which dependent_ticker and "
+        "independent_tickers then name. Use start_date for a long enough history."
+    ),
+    "changes": (
+        "With series: how their changes (the 'Return' column the regressions and "
+        "diagnostics use) are calculated: 'percentage' (default), 'log', 'difference' (for "
+        "rates and ratios) or 'none' (the series are changes already). The series "
+        "themselves are the 'Adj Close' column the unit root and cointegration tests use."
+    ),
     "show_columns": (
         "Comma-separated names to filter the output. "
         "For historical data use the key names visible in any response record "
@@ -254,8 +288,10 @@ ASSUMED_INPUTS = (
     "notional",
 )
 
-# The yield curves the fixed income calculations take, which default to a sample curve.
+# The yield curves the fixed income calculations take, which default to a sample curve,
+# except for the calculations that default to the current market curve.
 CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
+MARKET_CURVE_METHODS = ("get_option_adjusted_spread",)
 
 # A window of at most this many days can be empty for lack of trading days alone.
 SHORT_WINDOW_DAYS = 3
@@ -770,6 +806,9 @@ class ToolRegistry:
         self._inspector = inspector
         self._tool_index: dict[str, list[dict[str, str]]] = {}
         self._indicator_index: list[dict[str, str]] = []
+        # The module and category of every indicator per tool, for the indicators an
+        # econometrics call names as its series.
+        self._routes: dict[str, dict[str, tuple[str, str]]] = {}
         self._module_class_map: dict[str, type] = self._resolve_class_map(
             module_class_map
         )
@@ -876,6 +915,83 @@ class ToolRegistry:
             )
         return specifications
 
+    def _collect_series(
+        self,
+        references: str,
+        start_date: str,
+        end_date: str,
+        quarterly: bool,
+        benchmark_ticker: str,
+    ) -> pd.DataFrame:
+        """
+        Retrieves the indicators an econometrics call names as its series, each through
+        the tool it belongs to (and so through its cache), and arranges them as series by
+        date, see series_model.
+
+        Args:
+            references (str): The references, see series_model.parse_series_references.
+            start_date (str): The start date of the call.
+            end_date (str): The end date of the call.
+            quarterly (bool): Whether quarterly data is asked for.
+            benchmark_ticker (str): The benchmark of the call.
+
+        Returns:
+            pd.DataFrame: The series, a column each, by date.
+
+        Raises:
+            ValueError: When a reference names an unknown tool or indicator.
+        """
+        frames = []
+        for reference in series_model.parse_series_references(references):
+            tools = (
+                [reference.tool]
+                if reference.tool
+                else [
+                    tool
+                    for tool, routes in self._routes.items()
+                    if reference.indicator in routes
+                ]
+            )
+            if not tools or tools[0] not in self._routes:
+                raise ValueError(
+                    f"The series '{reference.text}' names no known "
+                    f"{'tool' if reference.tool else 'indicator'}. Use search_metrics to "
+                    "find an indicator and its tool."
+                )
+            routes = self._routes[tools[0]]
+            if reference.indicator not in routes:
+                raise ValueError(
+                    f"`{reference.indicator}` is not an indicator of `{tools[0]}` (series "
+                    f"'{reference.text}')."
+                )
+            module, category = routes[reference.indicator]
+            by_ticker = category in (
+                self._inspector.categories.get("ticker", "ticker"),
+                self._inspector.categories.get("toolkit", "toolkit"),
+            )
+            entities = (
+                [entity.upper() for entity in reference.entities]
+                if by_ticker
+                else [
+                    normalize_country_name(entity, country_names())
+                    for entity in reference.entities
+                ]
+            )
+            result = self._provider.call_method(
+                module_name=module,
+                method_name=reference.indicator,
+                category=category,
+                tickers=entities if by_ticker else None,
+                countries=None if by_ticker else entities,
+                start_date=start_date,
+                end_date=end_date,
+                quarterly=quarterly,
+                benchmark_ticker=benchmark_ticker,
+            )
+            resolved = reference._replace(entities=entities)
+            frames.append((resolved, series_model.to_series_columns(result, resolved)))
+        return series_model.combine_series(frames)
+
     def _build_router_wrapper(
         self,
         spec: RouterGroupSpec,
@@ -933,6 +1049,12 @@ class ToolRegistry:
 
         method_param_names = {
             m: inspector.get_method_param_names(owning_class(m), m)
+            for m in group_methods
+        }
+        # The order of every indicator's own parameters, so the inputs it requires are named
+        # as its signature lists them rather than in the order the group first saw them.
+        method_param_order = {
+            m: list(inspect.signature(getattr(owning_class(m), m)).parameters)
             for m in group_methods
         }
         param_meta = [(p.name, p.annotation, p.default) for p in extra_params]
@@ -1037,6 +1159,15 @@ class ToolRegistry:
             if not tickers and method_name in self._tickers_optional:
                 tickers = ["SPY"]
 
+            # An econometrics call can analyze the indicators of other tools instead of
+            # the prices of its tickers.
+            raw_series = (
+                kwargs.pop("series", None) if module_name == "econometrics" else None
+            )
+            changes = (
+                kwargs.pop("changes", None) if module_name == "econometrics" else None
+            ) or "percentage"
+
             # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
             if method_dispatch and method_name in method_dispatch:
@@ -1048,6 +1179,7 @@ class ToolRegistry:
                     inspector.categories.get("toolkit", "toolkit"),
                 )
                 and not tickers
+                and not raw_series
             ):
                 return (
                     f"`{tool_name}` (`{method_name}`) requires a `tickers` parameter. "
@@ -1208,14 +1340,15 @@ class ToolRegistry:
                 ):
                     method_kwargs[pname] = value
 
-            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number.
+            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number; a
+            # label such as "10Y" or "6M" is passed on for the indicator to read.
             curve_note = None
             for curve in CURVE_PARAMETERS:
                 given = method_kwargs.get(curve)
                 if isinstance(given, dict):
                     try:
                         method_kwargs[curve] = {
-                            float(maturity): float(rate)
+                            _curve_maturity(maturity): float(rate)
                             for maturity, rate in given.items()
                         }
                     except (TypeError, ValueError):
@@ -1228,12 +1361,15 @@ class ToolRegistry:
                 for curve in CURVE_PARAMETERS
                 if curve in accepted_params
                 and method_kwargs.get(curve) in (None, "", {})
+                and method_name not in MARKET_CURVE_METHODS
             ]:
                 curve_note = (
                     f"{', '.join(f'`{curve}`' for curve in missing_curves)} "
                     f"{'was' if len(missing_curves) == 1 else 'were'} not given, so a fixed "
-                    "sample curve was used for illustration, not market data. Pass the "
-                    "current curve, e.g. from get_treasury_rates in the rates tool."
+                    "sample curve was used for illustration, not market data. Pass a "
+                    "current zero-coupon (spot) curve from the rates tool, e.g. "
+                    "get_bank_of_england_yield_curve or get_hqm_corporate_bond_yield_curve "
+                    "with rate='spot'; get_treasury_rates is a par curve."
                 )
 
             # The economic inputs of a calculation that the caller left to their defaults
@@ -1249,12 +1385,20 @@ class ToolRegistry:
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
-            missing_inputs = [
-                pname
-                for pname, per_method in parameter_defaults.items()
-                if per_method.get(method_name, None) is inspect.Parameter.empty
-                and method_kwargs.get(pname) in (None, "")
-            ]
+            signature_order = method_param_order.get(method_name, [])
+            missing_inputs = sorted(
+                (
+                    pname
+                    for pname, per_method in parameter_defaults.items()
+                    if per_method.get(method_name, None) is inspect.Parameter.empty
+                    and method_kwargs.get(pname) in (None, "")
+                ),
+                key=lambda pname: (
+                    signature_order.index(pname)
+                    if pname in signature_order
+                    else len(signature_order)
+                ),
+            )
             if missing_inputs:
                 listed = ", ".join(f"`{pname}`" for pname in missing_inputs)
                 return (
@@ -1345,18 +1489,32 @@ class ToolRegistry:
                 # The warnings and errors logged during the call explain an empty result,
                 # e.g. a missing API key, so they are passed on rather than lost.
                 with capture_call_messages() as call_messages:
-                    result = provider.call_method(
-                        module_name=dispatch_module,
-                        method_name=method_name,
-                        category=dispatch_category,
-                        tickers=tickers,
-                        countries=countries,
-                        start_date=start_date,
-                        end_date=end_date,
-                        quarterly=quarterly,
-                        benchmark_ticker=benchmark_ticker,
-                        **method_kwargs,
-                    )
+                    if raw_series:
+                        result = provider.call_econometrics_with_data(
+                            method_name,
+                            self._collect_series(
+                                raw_series,
+                                start_date=start_date,
+                                end_date=end_date,
+                                quarterly=quarterly,
+                                benchmark_ticker=benchmark_ticker,
+                            ),
+                            changes=changes,
+                            **method_kwargs,
+                        )
+                    else:
+                        result = provider.call_method(
+                            module_name=dispatch_module,
+                            method_name=method_name,
+                            category=dispatch_category,
+                            tickers=tickers,
+                            countries=countries,
+                            start_date=start_date,
+                            end_date=end_date,
+                            quarterly=quarterly,
+                            benchmark_ticker=benchmark_ticker,
+                            **method_kwargs,
+                        )
                     input_info = call_input_info()
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
@@ -1715,6 +1873,17 @@ class ToolRegistry:
 
             sig_params.append(P(p.name, POS, default=default, annotation=annotation))
 
+        if module_name == "econometrics":
+            sig_params.extend(
+                P(
+                    name,
+                    POS,
+                    default=None,
+                    annotation=_annotate_with_description(name, str | None),
+                )
+                for name in ("series", "changes")
+            )
+
         # Appended last so it does not disturb positional ordering of other params.
         sig_params.append(
             P(
@@ -1811,6 +1980,13 @@ class ToolRegistry:
         if not group_methods:
             logger.warning(f"No methods found for group '{spec.tool_name}' — skipping")
             return False
+
+        self._routes[spec.tool_name] = {
+            method_name: (method_dispatch or {}).get(
+                method_name, (spec.module_name, spec.category)
+            )
+            for method_name in group_methods
+        }
 
         # Each indicator by name, the first sentence of its docstring and its aliases, so
         # search_metrics can point at the indicator itself rather than only its tool.

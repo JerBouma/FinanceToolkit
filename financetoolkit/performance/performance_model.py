@@ -23,6 +23,9 @@ from financetoolkit.utilities.statistics_model import (
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
+# A Sortino ratio of a single observation only reports its sign, so two are required.
+MIN_SORTINO_OBSERVATIONS = 2
+
 # The Euler-Mascheroni constant, used by the Deflated Sharpe Ratio.
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
@@ -46,11 +49,15 @@ def get_covariance(
     ignored.
 
     Args:
-        returns (pd.Series | pd.DataFrame): _description_
-        benchmark_returns (pd.Series | pd.DataFrame): _description_
+        returns (pd.Series | pd.DataFrame): The asset returns, one column per asset, or a
+            rolling window object of them.
+        benchmark_returns (pd.Series | pd.DataFrame): The benchmark returns, aligned on the
+            same index as `returns`.
 
     Returns:
-        pd.Series | pd.DataFrame: _description_
+        pd.Series | pd.DataFrame | float: The sample covariance (ddof=1) of each asset with
+        the benchmark: a Series per column for a DataFrame, a float for a Series and the
+        rolling covariance for a rolling window object.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -78,14 +85,24 @@ def get_beta(
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate beta. Beta represents the slope in the linear regression between
-    the asset returns and the benchmark returns.
+    the asset returns and the benchmark returns:
+
+        - Beta = Covariance(Asset Returns, Benchmark Returns) / Variance(Benchmark Returns)
+
+    Beta is estimated on the raw returns, not on returns in excess of the risk free rate.
+    With a risk free rate that barely moves within a period the two slopes are nearly
+    identical, and raw returns keep beta independent of the chosen risk free rate.
 
     Args:
-        returns (pd.Series | pd.DataFrame): return series.
-        benchmark_returns (pd.Series | pd.DataFrame): benchmark return series.
+        returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
+            'within period' MultiIndex (period, date) to get one beta per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
 
     Returns:
-        pd.Series | pd.DataFrame: _description_
+        pd.Series | pd.DataFrame | float: A DataFrame of betas per period (rows) and asset
+        (columns) for a 'within period' index, otherwise a Series of betas per asset for a
+        DataFrame or a float for a Series. Assets with fewer than two dates shared with
+        the benchmark get NaN.
     """
     if not isinstance(returns, pd.DataFrame | pd.Series):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -147,14 +164,21 @@ def get_rolling_beta(
         index=returns.index, columns=returns.columns, dtype=np.float64
     )
 
+    rolling_beta = pd.DataFrame(
+        index=returns.index, columns=returns.columns, dtype=np.float64
+    )
+
     for column in returns.columns:
+        # The benchmark variance is taken over the same dates as the covariance, those
+        # on which the asset has a return: over every date it would mix in benchmark
+        # volatility from days the asset did not trade (e.g. before a later listing).
+        benchmark = benchmark_returns.where(returns[column].notna())
         rolling_cov.loc[:, column] = get_covariance(
-            returns[column].rolling(window=window_size), benchmark_returns
+            returns[column].rolling(window=window_size), benchmark
         )
-
-    rolling_var = benchmark_returns.rolling(window=window_size).var()
-
-    rolling_beta = rolling_cov.div(rolling_var, axis=0)
+        rolling_beta.loc[:, column] = (
+            rolling_cov[column] / benchmark.rolling(window=window_size).var()
+        )
 
     return rolling_beta
 
@@ -707,8 +731,7 @@ def get_fama_and_french_model_single(
     is the independent/predictor variable and `y` is the dependent/response variable.
     Given the formula above, `factor` is `x` and `excess_returns` is `y`, so it must be
     called as `linregress(factor, excess_returns)` -- calling it the other way around
-    (as an earlier version of this function did) fits the reverse regression (`factor`
-    as a function of `excess_returns`), which generally yields a different slope and
+    fits the reverse regression (`factor` as a function of `excess_returns`), which generally yields a different slope and
     intercept (since OLS is not symmetric in `x` and `y`) and silently produces the
     wrong regression parameters and residuals for this model.
 
@@ -986,7 +1009,8 @@ def get_rolling_sharpe_ratio(
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
-        window_size (int): The size of the rolling window in months. Default is 12.
+        window_size (int): The size of the rolling window, in observations of `excess_returns`
+            (e.g. 12 for a year of monthly returns).
 
     Returns:
         pd.Series: A Series of rolling Sharpe ratios with time as index and assets as columns.
@@ -1206,6 +1230,11 @@ def get_sortino_ratio(
     - Sortino, F.A., & Price, L.N. (1994). "Performance Measurement in a Downside Risk
     Framework." Journal of Investing, 3(3), 59-64.
 
+    A Sortino ratio needs at least two observations: with a single one the mean and the
+    downside deviation are the same number, so the ratio would only report its sign (-1)
+    or be infinite. Such periods (e.g. a period that holds only one trading day of the
+    date range) are returned as NaN.
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
         rate already subtracted.
@@ -1213,22 +1242,27 @@ def get_sortino_ratio(
     Returns:
         pd.Series: A Series of Sortino ratios with time as index and assets as columns.
     """
+
+    def _sortino(returns: pd.Series | pd.DataFrame):
+        downside_deviation = np.sqrt((returns.clip(upper=0) ** 2).mean())
+        ratio = returns.mean() / downside_deviation
+        # A single observation only yields its own sign (see above).
+        return (
+            ratio.where(returns.count() >= MIN_SORTINO_OBSERVATIONS)
+            if isinstance(ratio, pd.Series)
+            else (ratio if returns.count() >= MIN_SORTINO_OBSERVATIONS else np.nan)
+        )
+
     if isinstance(excess_returns, pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             # Calculate Sortino ratio for each asset (ticker) in the DataFrame
-            sortino_ratios = excess_returns.groupby(level=0).apply(
-                lambda x: x.mean() / np.sqrt((x.clip(upper=0) ** 2).mean())
-            )
-            return sortino_ratios
+            return excess_returns.groupby(level=0).apply(_sortino)
 
-        downside_deviation = np.sqrt((excess_returns.clip(upper=0) ** 2).mean())
-
-        return excess_returns.mean() / downside_deviation
+        return _sortino(excess_returns)
 
     if isinstance(excess_returns, pd.Series):
         # Calculate Sortino ratio for a single asset (ticker)
-        downside_deviation = np.sqrt((excess_returns.clip(upper=0) ** 2).mean())
-        return excess_returns.mean() / downside_deviation
+        return _sortino(excess_returns)
 
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
@@ -1250,6 +1284,9 @@ def get_rolling_sortino_ratio(
     Returns:
         pd.Series | pd.DataFrame: Rolling Sortino ratio values with time as index.
     """
+    # A window of a single observation only yields its sign, see `get_sortino_ratio`.
+    if window_size < MIN_SORTINO_OBSERVATIONS:
+        return excess_returns * np.nan
 
     rolling_mean = excess_returns.rolling(window=window_size).mean()
     rolling_downside_deviation = np.sqrt(
@@ -1313,9 +1350,7 @@ def get_m2_ratio(
 
     Note that this requires the *benchmark's* standard deviation, not just the asset's
     own -- without it, this collapses to the plain Sharpe ratio (dimensionless) rather
-    than M2 (a return, expressed in the same units as `asset_returns`). A previous
-    version of this function omitted `benchmark_standard_deviation` entirely and
-    returned the Sharpe ratio under the "M2 Ratio" name.
+    than M2 (a return, expressed in the same units as `asset_returns`).
 
     For more information about the method, see the following paper:
 
@@ -1410,7 +1445,9 @@ def get_tracking_error(
         benchmark_returns (pd.Series): The benchmark's returns over the same period.
 
     Returns:
-        pd.Series: A Series of Tracking Error values with time as index and assets as columns.
+        pd.Series | pd.DataFrame | float: Tracking Error values. With a "within period"
+        (period, date) MultiIndex one value per period (rows) and asset (columns), for a
+        plain DataFrame one value per asset (a Series) and for a Series a float.
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -1420,13 +1457,8 @@ def get_tracking_error(
 
             return tracking_error
 
-        tracking_error = pd.DataFrame(
-            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
-        )
-        for column in tracking_error.columns:
-            tracking_error.loc[:, column] = (
-                asset_returns[column] - benchmark_returns
-            ).std()
+        # One value per asset over the whole series.
+        return asset_returns.sub(benchmark_returns, axis=0).std()
 
     if isinstance(asset_returns, (pd.Series | float)):
         tracking_error = (asset_returns - benchmark_returns).std()
@@ -1481,7 +1513,9 @@ def get_information_ratio(
         benchmark_returns (pd.Series): The benchmark's returns over the same period.
 
     Returns:
-        pd.Series: A Series of Information Ratio values with time as index and assets as columns.
+        pd.Series | pd.DataFrame | float: Information Ratio values. With a "within period"
+        (period, date) MultiIndex one value per period (rows) and asset (columns), for a
+        plain DataFrame one value per asset (a Series) and for a Series a float.
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -1494,12 +1528,10 @@ def get_information_ratio(
 
             return information_ratio
 
-        information_ratio = pd.DataFrame(
-            index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
-        )
-        for column in information_ratio.columns:
-            difference = asset_returns[column] - benchmark_returns
-            information_ratio.loc[:, column] = difference.mean() / difference.std()
+        # One value per asset over the whole series.
+        difference = asset_returns.sub(benchmark_returns, axis=0)
+
+        return difference.mean() / difference.std()
 
     if isinstance(asset_returns, (pd.Series | float)):
         difference = asset_returns - benchmark_returns
@@ -1713,13 +1745,37 @@ def get_burke_ratio(
     return (excess_returns / burke_drawdown_measure).dropna()
 
 
+def _geometric_mean_return(returns: pd.Series | pd.DataFrame) -> pd.Series | float:
+    """
+    The geometric average return per observation, (PRODUCT(1 + r))^(1 / n) - 1, over the
+    non-missing returns of each column.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns to average.
+
+    Returns:
+        pd.Series | float: The geometric average return per column (or overall, for a Series).
+    """
+    # The mean of log(1 + r) skips missing values, so n is the count of each column.
+    return np.expm1(np.log1p(returns).mean())
+
+
 def _get_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
     upside: bool,
 ) -> pd.Series | pd.DataFrame:
     """
-    Shared implementation for the Upside and Downside Capture Ratios.
+    Shared implementation for the Upside and Downside Capture Ratios, following
+    Morningstar's definition: the geometric average return of the asset over the
+    observations in which the benchmark rose (fell), divided by the geometric average
+    return of the benchmark over those same observations.
+
+        - Capture Ratio = ((PRODUCT(1 + Asset Return))^(1 / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return))^(1 / n) - 1)
+
+    Where n is the number of observations with a positive (negative) benchmark return
+    on which the asset also has a return, so that both averages cover the same dates.
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1729,31 +1785,37 @@ def _get_capture_ratio(
     Returns:
         pd.Series | pd.DataFrame: Capture Ratio values.
     """
+
+    def _capture(assets: pd.DataFrame, benchmark: pd.Series) -> pd.Series:
+        mask = benchmark > 0 if upside else benchmark < 0
+        selected = assets[mask]
+        # The benchmark is averaged per asset over the dates that asset has a return,
+        # so a shorter asset history is compared with the matching benchmark window.
+        benchmark_per_asset = pd.DataFrame(
+            np.repeat(benchmark[mask].to_numpy()[:, None], assets.shape[1], axis=1),
+            index=selected.index,
+            columns=assets.columns,
+        ).where(selected.notna())
+
+        return _geometric_mean_return(selected) / _geometric_mean_return(
+            benchmark_per_asset
+        )
+
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            benchmark_name = benchmark_returns.name
             combination = pd.concat([asset_returns, benchmark_returns], axis=1)
 
-            def _capture(frame):
-                mask = (
-                    frame[benchmark_returns.name] > 0
-                    if upside
-                    else frame[benchmark_returns.name] < 0
+            return combination.groupby(level=0).apply(
+                lambda frame: _capture(
+                    frame[asset_returns.columns], frame[benchmark_name]
                 )
-                return (
-                    frame[asset_returns.columns][mask].mean()
-                    / frame[benchmark_returns.name][mask].mean()
-                )
+            )
 
-            return combination.groupby(level=0).apply(_capture)
-
-        mask = benchmark_returns > 0 if upside else benchmark_returns < 0
-
-        return asset_returns[mask].mean() / benchmark_returns[mask].mean()
+        return _capture(asset_returns, benchmark_returns)
 
     if isinstance(asset_returns, pd.Series):
-        mask = benchmark_returns > 0 if upside else benchmark_returns < 0
-
-        return asset_returns[mask].mean() / benchmark_returns[mask].mean()
+        return float(_capture(asset_returns.to_frame(), benchmark_returns).iloc[0])
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -1762,8 +1824,12 @@ def get_upside_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Upside Capture Ratio, i.e. the ratio of the asset's average return to the
-    benchmark's average return during periods in which the benchmark's return is positive.
+    Calculate the Upside Capture Ratio, i.e. the ratio of the asset's geometric average
+    return to the benchmark's geometric average return during the observations in which
+    the benchmark's return is positive (Morningstar's definition):
+
+        - Upside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark > 0))^(1 / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return | Benchmark > 0))^(1 / n) - 1)
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1779,8 +1845,12 @@ def get_downside_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Downside Capture Ratio, i.e. the ratio of the asset's average return to the
-    benchmark's average return during periods in which the benchmark's return is negative.
+    Calculate the Downside Capture Ratio, i.e. the ratio of the asset's geometric average
+    return to the benchmark's geometric average return during the observations in which
+    the benchmark's return is negative (Morningstar's definition):
+
+        - Downside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark < 0))^(1 / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return | Benchmark < 0))^(1 / n) - 1)
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1797,7 +1867,13 @@ def get_win_rate(
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Win Rate, i.e. the percentage of periods in which the asset's return
-    exceeds the benchmark's return.
+    exceeds the benchmark's return. Periods in which either return is missing are left out
+    of both the wins and the number of periods.
+
+    The formula is as follows:
+
+        - Win Rate = Number of Periods with Asset Return > Benchmark Return / Number of Periods
+          with both an Asset and a Benchmark Return
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1806,20 +1882,27 @@ def get_win_rate(
     Returns:
         pd.Series | pd.DataFrame: Win Rate values.
     """
+
+    def win_share(
+        asset: pd.Series | pd.DataFrame, benchmark: pd.Series
+    ) -> pd.Series | float:
+        # A comparison with a missing return is False, which would count a day without a quote as a loss; mask those days so the mean only covers days on which both returns exist.  # noqa: E501
+        wins = asset.gt(benchmark, axis=0).astype(float)
+
+        return wins.where(asset.notna()).where(benchmark.notna(), axis=0).mean()
+
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             combination = pd.concat([asset_returns, benchmark_returns], axis=1)
 
             return combination.groupby(level=0).apply(
-                lambda x: x[asset_returns.columns]
-                .gt(x[benchmark_returns.name], axis=0)
-                .mean()
+                lambda x: win_share(x[asset_returns.columns], x[benchmark_returns.name])
             )
 
-        return asset_returns.gt(benchmark_returns, axis=0).mean()
+        return win_share(asset_returns, benchmark_returns)
 
     if isinstance(asset_returns, pd.Series):
-        return (asset_returns > benchmark_returns).mean()
+        return win_share(asset_returns, benchmark_returns)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -2061,6 +2144,60 @@ def get_compound_growth_rate(
     return (prices.iloc[-1] / prices.iloc[0]) ** (1 / periods) - 1
 
 
+# The average length of a year in days, leap years included, to express calendar time in years.
+DAYS_PER_YEAR = 365.25
+
+
+def get_compound_annual_growth_rate(
+    prices: pd.Series | pd.DataFrame,
+) -> float | pd.Series:
+    """
+    Calculate the Compound Annual Growth Rate (CAGR) of a price series on calendar time.
+
+    The CAGR is the constant annual rate that grows the first price into the last one over
+    the time between them. That time is measured in calendar days rather than in rows, so
+    the rate does not depend on how often a price is observed: an asset that trades every
+    day (such as a cryptocurrency) and one that trades on weekdays only, observed over the
+    same dates, are measured over the same number of years.
+
+    The formula is as follows:
+
+        - Years = (Last Date - First Date) / 365.25 days
+        - CAGR = (Last Price / First Price) ^ (1 / Years) - 1
+
+    Each column is measured on its own first and last observation, so a ticker without a
+    price on the first or last date of a shared calendar (a weekend for a stock next to a
+    cryptocurrency, or a later listing) still gets the rate over the dates it has.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): Series or DataFrame of prices with a
+        DatetimeIndex or PeriodIndex, ordered from oldest to newest.
+
+    Returns:
+        float | pd.Series: The CAGR, as a float if `prices` is a Series and as a Series
+        (one value per column) if `prices` is a DataFrame. A series with fewer than two
+        prices, or whose prices fall on a single date, returns NaN.
+    """
+    if isinstance(prices, pd.DataFrame):
+        return prices.apply(get_compound_annual_growth_rate).astype(float)
+
+    observed = prices.dropna()
+
+    if len(observed) < 2:  # noqa: PLR2004
+        return float("nan")
+
+    dates = observed.index
+    if isinstance(dates, pd.PeriodIndex):
+        dates = dates.to_timestamp()
+
+    years = (dates[-1] - dates[0]).days / DAYS_PER_YEAR
+
+    if years <= 0:
+        return float("nan")
+
+    return float((observed.iloc[-1] / observed.iloc[0]) ** (1 / years) - 1)
+
+
 def get_returns(
     returns: pd.Series | pd.DataFrame,
     period: str,
@@ -2075,6 +2212,8 @@ def get_returns(
     period, following the formula:
 
         - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
+
+    A period without any return (e.g. before a ticker listed) is NaN rather than 0.
 
     If cumulative is set to True, the period returns are compounded further into
     a cumulative return, following the formula:
@@ -2112,7 +2251,8 @@ def get_returns(
         else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
-    period_returns = (1 + returns).groupby(dates).prod() - 1
+    # min_count=1 keeps a period without any return (a ticker that listed later or a gap in its history) NaN; the plain product of an empty group is 1, which would report a return of exactly 0 for it.  # noqa: E501
+    period_returns = (1 + returns).groupby(dates).prod(min_count=1) - 1
 
     if cumulative:
         return (1 + period_returns).cumprod()

@@ -105,9 +105,9 @@ def get_defensive_interval_ratio(
         Defensive Interval Ratio = (Cash and Cash Equivalents + Marketable Securities +
             Accounts Receivable) / Daily Operating Expenses
 
-    Where Daily Operating Expenses is typically calculated as
-    (Operating Expenses - Non-Cash Charges) / 365, i.e. the average cash operating
-    expenses incurred per day.
+    Where Daily Operating Expenses is calculated as (Cost of Goods Sold + Operating
+    Expenses - Non-Cash Charges) / Days, i.e. the average cash expenditures incurred
+    per day, with Days the length of the window the expenses cover (365 for a year).
 
     Also known as: defensive interval period, basic defense interval.
 
@@ -115,8 +115,8 @@ def get_defensive_interval_ratio(
         cash_and_equivalents (float or pd.Series): Total cash and cash equivalents of the company.
         marketable_securities (float or pd.Series): Total marketable securities of the company.
         accounts_receivable (float or pd.Series): Total accounts receivable of the company.
-        daily_operating_expenses (float or pd.Series): The average cash operating expenses
-            incurred per day, typically (Operating Expenses - Non-Cash Charges) / 365.
+        daily_operating_expenses (float or pd.Series): The average cash expenditures incurred
+            per day: (Cost of Goods Sold + Operating Expenses - Non-Cash Charges) / Days.
 
     Returns:
         float | pd.Series: The defensive interval ratio value, expressed in days.

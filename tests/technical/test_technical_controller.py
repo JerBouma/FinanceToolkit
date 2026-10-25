@@ -425,3 +425,82 @@ def test_get_supertrend(recorder, technical_module):
     recorder.capture(technical_module.get_supertrend())
     recorder.capture(technical_module.get_supertrend(growth=True))
     recorder.capture(technical_module.get_supertrend(growth=True, lag=[1, 2, 3]))
+
+
+def test_period_ohlc_is_aggregated_from_the_adjusted_daily_prices(technical_module):
+    import pandas as pd
+    import pytest
+
+    weekly = technical_module._get_historical_data("weekly", "Adj Close")
+    daily = technical_module._get_historical_data("daily", "Adj Close")
+    raw = technical_module._historical_data["weekly"]
+
+    # Apple went ex-dividend on Friday 7 February 2020: the Monday open of that week is
+    # scaled by the factor before the dividend, not by the one at the end of the week.
+    week = pd.Period("2020-02-07", freq="W")
+    days = daily.loc["2020-02-03":"2020-02-07"]
+    assert weekly.loc[week, ("Open", "AAPL")] == pytest.approx(
+        days[("Open", "AAPL")].iloc[0]
+    )
+    assert weekly.loc[week, ("High", "AAPL")] == pytest.approx(
+        days[("High", "AAPL")].max()
+    )
+    assert weekly.loc[week, ("Low", "AAPL")] == pytest.approx(
+        days[("Low", "AAPL")].min()
+    )
+    end_of_week_factor = (
+        raw.loc[week, ("Adj Close", "AAPL")] / raw.loc[week, ("Close", "AAPL")]
+    )
+    assert (
+        weekly.loc[week, ("Open", "AAPL")]
+        < raw.loc[week, ("Open", "AAPL")] * end_of_week_factor
+    )
+
+    # The close and every other column stay as they are.
+    pd.testing.assert_frame_equal(weekly["Adj Close"], raw["Adj Close"])
+    pd.testing.assert_frame_equal(weekly["Volume"], raw["Volume"])
+
+
+def test_conventional_default_windows():
+    import inspect  # noqa: PLC0415
+
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    def defaults(method):
+        return {
+            name: parameter.default
+            for name, parameter in inspect.signature(method).parameters.items()
+        }
+
+    assert defaults(Technicals.get_percentage_price_oscillator)["short_window"] == 12
+    assert defaults(Technicals.get_percentage_price_oscillator)["long_window"] == 26
+    assert defaults(Technicals.get_force_index)["window"] == 13
+    keltner = defaults(Technicals.get_keltner_channels)
+    assert (keltner["window"], keltner["atr_window"], keltner["atr_multiplier"]) == (
+        20,
+        10,
+        2,
+    )
+
+
+def test_relative_vigor_index_returns_index_and_signal_line(technical_module):
+    result = technical_module.get_relative_vigor_index()
+
+    assert {"Relative Vigor Index", "Signal Line"} <= set(
+        result.columns.get_level_values(0)
+    )
+
+
+def test_get_trix_defaults_to_a_window_of_15(technical_module):
+    import inspect
+
+    import pandas as pd
+
+    assert (
+        inspect.signature(technical_module.get_trix).parameters["window"].default == 15
+    )
+    pd.testing.assert_frame_equal(
+        technical_module.get_trix(), technical_module.get_trix(window=15)
+    )

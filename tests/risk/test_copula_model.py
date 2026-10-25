@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from financetoolkit.risk import copula_model
 
@@ -104,3 +105,15 @@ def test_get_tail_dependence_coefficient_too_few_observations(recorder):
     a = pd.Series([1.0, 2.0])
     b = pd.Series([1.0, 2.0])
     recorder.capture(copula_model.get_tail_dependence_coefficient(a, b))
+
+
+def test_get_student_t_copula_parameters_inverts_kendalls_tau():
+    simulation = copula_model.get_student_t_copula_simulation(0.5, 4, 2000)
+    series_a = pd.Series(simulation["U"].to_numpy())
+    series_b = pd.Series(simulation["V"].to_numpy())
+
+    result = copula_model.get_student_t_copula_parameters(series_a, series_b)
+    kendall_tau = stats.kendalltau(series_a, series_b)[0]
+
+    assert np.isclose(result["Rho"], np.sin(np.pi * kendall_tau / 2))
+    assert abs(result["Rho"] - 0.5) < 0.05

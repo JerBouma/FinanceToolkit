@@ -1,4 +1,6 @@
 ,AAPL,MSFT
-Variance Ratio,1.096,0.9959
-Variance Ratio Statistic,0.7257,-0.0306
-P-Value,0.468,0.9756
+Variance Ratio,1.1127,1.0112
+Variance Ratio Statistic,0.8519,0.0844
+P-Value,0.3943,0.9327
+Robust Variance Ratio Statistic,0.8157,0.0822
+Robust P-Value,0.4147,0.9345

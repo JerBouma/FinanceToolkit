@@ -128,14 +128,27 @@ def test_get_ols_hac_reweights_standard_errors():
     )
 
 
-def test_get_ols_hac_missing_maxlags():
-    x = pd.Series([1.0, 2.0, 3.0, 4.0])
-    y = pd.Series([2.0, 4.0, 6.0, 8.0])
-    try:
-        regression_model.get_ols(y, x, cov_type="HAC")
-        raise AssertionError("Expected ValueError")
-    except ValueError:
-        pass
+def test_get_ols_hac_defaults_maxlags_to_newey_west_rule():
+    # Without maxlags, HAC uses floor(4 * (n / 100)^(2/9)): 4 lags for 250 observations.
+    import statsmodels.api as sm
+
+    rng = np.random.default_rng(7)
+    x = pd.Series(rng.standard_normal(250), name="X")
+    y = 0.5 * x + pd.Series(rng.standard_normal(250))
+
+    assert regression_model.default_hac_maxlags(100) == 4  # noqa: PLR2004
+    assert regression_model.default_hac_maxlags(250) == 4  # noqa: PLR2004
+    assert regression_model.default_hac_maxlags(1000) == 6  # noqa: PLR2004
+
+    hac_result = regression_model.get_ols(y, x, cov_type="HAC")
+    reference = sm.OLS(y.to_numpy(), sm.add_constant(x.to_numpy())).fit(
+        cov_type="HAC", cov_kwds={"maxlags": 4}
+    )
+    np.testing.assert_allclose(hac_result["standard_errors"], reference.bse, rtol=1e-10)
+
+    weights = pd.Series(np.ones(250))
+    wls_result = regression_model.get_wls(y, x, weights, cov_type="HAC")
+    np.testing.assert_allclose(wls_result["standard_errors"], reference.bse, rtol=1e-10)
 
 
 def test_get_ols_hac_negative_maxlags():

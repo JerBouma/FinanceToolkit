@@ -1,0 +1,19 @@
+,,2022,2023
+AAPL,G1 Return on Assets,1.0,1.0
+AAPL,G2 Cash Flow Return on Assets,1.0,1.0
+AAPL,G3 Cash Flow above Net Income,1.0,1.0
+AAPL,G4 Earnings Variability,1.0,1.0
+AAPL,G5 Growth Variability,0.0,1.0
+AAPL,G6 Research and Development Intensity,1.0,1.0
+AAPL,G7 Capital Expenditure Intensity,0.0,0.0
+AAPL,G8 Advertising Intensity,0.0,0.0
+AAPL,G-Score,5.0,6.0
+MSFT,G1 Return on Assets,0.0,0.0
+MSFT,G2 Cash Flow Return on Assets,0.0,0.0
+MSFT,G3 Cash Flow above Net Income,1.0,1.0
+MSFT,G4 Earnings Variability,0.0,0.0
+MSFT,G5 Growth Variability,1.0,0.0
+MSFT,G6 Research and Development Intensity,0.0,0.0
+MSFT,G7 Capital Expenditure Intensity,1.0,1.0
+MSFT,G8 Advertising Intensity,1.0,1.0
+MSFT,G-Score,4.0,3.0

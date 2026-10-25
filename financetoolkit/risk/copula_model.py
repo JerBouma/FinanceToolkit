@@ -419,13 +419,20 @@ def get_student_t_copula_parameters(
     dof_bounds: tuple[float, float] = STUDENT_T_DOF_BOUNDS,
 ) -> dict[str, float]:
     """
-    Calibrate a bivariate Student-T copula to two series, via profile maximum
-    likelihood (Demarta & McNeil, 2005): for each candidate degrees of freedom,
-    the correlation is estimated as the sample correlation of the pseudo-
-    observations' Student-T quantiles at that degrees of freedom (the same plug-in
-    estimator as in `get_gaussian_copula_parameters`), and the degrees of freedom
-    that maximizes the resulting log-likelihood is found via bounded 1-D
-    optimization.
+    Calibrate a bivariate Student-T copula to two series with the two-step method
+    of Demarta & McNeil (2005): the correlation is estimated from Kendall's tau of
+    the pseudo-observations, and the degrees of freedom by maximum likelihood given
+    that correlation.
+
+    The formula for the correlation is as follows:
+
+    - rho = sin(pi * tau / 2)
+
+    Where `tau` is Kendall's rank correlation. The relation holds for every
+    elliptical copula, so it does not depend on the degrees of freedom, and it is
+    robust to the heavy tails a Student-T copula is meant for. With rho fixed, the
+    degrees of freedom that maximize the copula log-likelihood are found via bounded
+    1-D optimization.
 
     See: Demarta, S., & McNeil, A.J. (2005), "The T Copula and Related Copulas",
     International Statistical Review, 73(1), 111-129.
@@ -450,10 +457,11 @@ def get_student_t_copula_parameters(
     """
     u, v = _align_pseudo_observations(series_a, series_b)
 
-    def negative_log_likelihood(dof: float) -> float:
-        x, y = stats.t.ppf(u, dof), stats.t.ppf(v, dof)
-        rho = np.corrcoef(x, y)[0, 1]
+    # Kendall's tau inversion (Demarta & McNeil, 2005): valid for any elliptical copula, so rho is fixed before the degrees of freedom are fitted.  # noqa: E501
+    kendall_tau = float(stats.kendalltau(u, v)[0])
+    rho = float(np.clip(np.sin(np.pi * kendall_tau / 2), -0.999999, 0.999999))
 
+    def negative_log_likelihood(dof: float) -> float:
         return -float(np.sum(np.log(get_student_t_copula_density(u, v, rho, dof))))
 
     result = optimize.minimize_scalar(
@@ -461,8 +469,6 @@ def get_student_t_copula_parameters(
     )
 
     dof = float(result.x)
-    x, y = stats.t.ppf(u, dof), stats.t.ppf(v, dof)
-    rho = float(np.corrcoef(x, y)[0, 1])
     log_likelihood = -float(result.fun)
 
     tail_dependence = 2 * stats.t.sf(

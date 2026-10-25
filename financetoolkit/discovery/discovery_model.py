@@ -303,14 +303,14 @@ def get_stock_screener(
     api_key: str,
     market_cap_higher: int | None = None,
     market_cap_lower: int | None = None,
-    price_higher: int | None = None,
-    price_lower: int | None = None,
-    beta_higher: int | None = None,
-    beta_lower: int | None = None,
+    price_higher: float | None = None,
+    price_lower: float | None = None,
+    beta_higher: float | None = None,
+    beta_lower: float | None = None,
     volume_higher: int | None = None,
     volume_lower: int | None = None,
-    dividend_higher: int | None = None,
-    dividend_lower: int | None = None,
+    dividend_higher: float | None = None,
+    dividend_lower: float | None = None,
     sector: str | None = None,
     industry: str | None = None,
     country: str | None = None,
@@ -332,15 +332,15 @@ def get_stock_screener(
         api_key (str): the API key from Financial Modeling Prep.
         market_cap_higher (int, optional): The market cap higher than. Defaults to None.
         market_cap_lower (int, optional): The market cap lower than. Defaults to None.
-        price_higher (int, optional): The price higher than. Defaults to None.
-        price_lower (int, optional): The price lower than. Defaults to None.
-        beta_higher (int, optional): The beta higher than. Defaults to None.
-        beta_lower (int, optional): The beta lower than. Defaults to None.
+        price_higher (float, optional): The price higher than. Defaults to None.
+        price_lower (float, optional): The price lower than. Defaults to None.
+        beta_higher (float, optional): The beta higher than. Defaults to None.
+        beta_lower (float, optional): The beta lower than. Defaults to None.
         volume_higher (int, optional): The volume higher than. Defaults to None.
         volume_lower (int, optional): The volume lower than. Defaults to None.
-        dividend_higher (int, optional): The minimum last annual dividend per share, an amount
+        dividend_higher (float, optional): The minimum last annual dividend per share, an amount
             in the listing's currency rather than a yield. Defaults to None.
-        dividend_lower (int, optional): The maximum last annual dividend per share, an amount
+        dividend_lower (float, optional): The maximum last annual dividend per share, an amount
             in the listing's currency rather than a yield. Defaults to None.
         sector (str, optional): The sector to restrict the screen to, e.g. "Energy".
         industry (str, optional): The industry to restrict the screen to, e.g. "Biotechnology".

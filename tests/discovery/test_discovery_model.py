@@ -293,3 +293,20 @@ def test_index_constituents(monkeypatch):
     assert list(constituents.index) == ["AAPL", "MSFT"]
     with pytest.raises(ValueError, match="not available"):
         discovery_model.get_index_constituents(api_key="KEY", index="DAX")
+
+
+def test_the_screener_sends_fractional_bounds(monkeypatch):
+    urls = []
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        urls.append(url)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+    discovery_model.get_stock_screener(
+        api_key="KEY", beta_higher=0.8, beta_lower=1.5, dividend_higher=0.25
+    )
+
+    assert "betaMoreThan=0.8" in urls[0]
+    assert "betaLowerThan=1.5" in urls[0]
+    assert "dividendMoreThan=0.25" in urls[0]

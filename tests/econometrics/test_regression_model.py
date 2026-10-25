@@ -346,3 +346,46 @@ def test_get_quantile_regression_invalid_tau():
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass
+
+
+def test_get_feasible_weights_follows_the_wooldridge_procedure():
+    # Error variance grows with |x|, so the weights must fall as |x| grows.
+    rng = np.random.default_rng(7)
+    x = pd.Series(rng.standard_normal(500), name="X")
+    y = 1 + 2 * x + rng.standard_normal(500) * np.exp(0.8 * x)
+
+    weights = regression_model.get_feasible_weights(y, x)
+
+    design = np.column_stack([np.ones(500), x])
+    residuals = y - design @ np.linalg.lstsq(design, y, rcond=None)[0]
+    log_squared = np.log(residuals**2)
+    fitted = design @ np.linalg.lstsq(design, log_squared, rcond=None)[0]
+    assert np.allclose(weights, np.exp(-fitted))
+    assert (weights > 0).all()
+    assert weights[x.to_numpy().argmax()] < weights[x.to_numpy().argmin()]
+
+
+def test_get_ar1_covariance_gives_the_prais_winsten_estimate():
+    # GLS with the AR(1) structure equals OLS on the Prais-Winsten transformed data.
+    rng = np.random.default_rng(3)
+    n = 400
+    x = pd.Series(rng.standard_normal(n), name="X")
+    errors = np.zeros(n)
+    for t in range(1, n):
+        errors[t] = 0.6 * errors[t - 1] + rng.standard_normal()
+    y = 0.5 + 1.5 * x + errors
+
+    omega = regression_model.get_ar1_covariance(y, x)
+
+    design = np.column_stack([np.ones(n), x])
+    residuals = (y - design @ np.linalg.lstsq(design, y, rcond=None)[0]).to_numpy()
+    rho = (residuals[1:] @ residuals[:-1]) / (residuals[:-1] @ residuals[:-1])
+    assert np.isclose(omega[0, 1], rho)
+    assert np.isclose(omega[0, 3], rho**3)
+    assert 0.5 < rho < 0.7
+
+    transform = np.eye(n) - np.diag(np.full(n - 1, rho), k=-1)
+    transform[0, 0] = np.sqrt(1 - rho**2)
+    expected = np.linalg.lstsq(transform @ design, transform @ y, rcond=None)[0]
+    result = regression_model.get_gls(y, x, omega)
+    assert np.allclose(result["coefficients"], expected)

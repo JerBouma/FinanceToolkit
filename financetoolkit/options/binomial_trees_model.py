@@ -219,7 +219,7 @@ def calculate_option_value(
     up_option_payoff: float,
     down_option_payoff: float,
     risk_free_rate: float,
-    time_to_expiration: int,
+    time_to_expiration: float,
     timestep: int | float,
     risk_neutral_probability: float,
 ):
@@ -230,7 +230,7 @@ def calculate_option_value(
     up_option_payoff (float): Option payoff in the up state
     down_option_payoff (float): Option payoff in the down state
     risk_free_rate (float): Risk-free interest rate
-    time_to_expiration (int): Time to expiration
+    time_to_expiration (float): Time to expiration
     timestep (int): Number of time steps
     risk_neutral_probability (float): Risk-neutral probability
 
@@ -248,7 +248,7 @@ def calculate_option_value(
 def get_option_payoffs(
     stock_price: float,
     strike_price: float,
-    years: int,
+    years: float,
     timesteps: int,
     risk_free_rate: float,
     volatility: float,
@@ -263,7 +263,7 @@ def get_option_payoffs(
     Args:
         stock_price (float): Current stock price
         strike_price (float): Option strike price
-        years (int): Time to expiration in years
+        years (float): Time to expiration in years
         timesteps (int): Number of time steps
         risk_free_rate (float): Risk-free interest rate
         volatility (float): Volatility of the underlying stock

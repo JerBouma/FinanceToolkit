@@ -1937,7 +1937,7 @@ class Econometrics:
     @handle_errors
     def get_wls(
         self,
-        weights: pd.Series,
+        weights: pd.Series | str = "feasible",
         dependent_ticker: str | None = None,
         independent_tickers: str | list[str] | None = None,
         include_benchmark: bool = False,
@@ -1968,14 +1968,25 @@ class Econometrics:
 
         With equal weights WLS reduces to OLS. A typical use is down-weighting periods of
         high volatility, so that a few turbulent periods do not dominate the estimated
-        relationship. Use `get_breusch_pagan_test` or `get_white_test` to establish whether
+        relationship. By default (weights="feasible") the weights are estimated from the
+        regression itself with the feasible GLS procedure of Wooldridge (2016): the
+        logarithm of the squared OLS residuals is regressed on the independent tickers, and
+        each period's weight is 1 / exp(fitted value), the inverse of its estimated error
+        variance. Use `get_breusch_pagan_test` or `get_white_test` to establish whether
         heteroskedasticity is present before choosing WLS over OLS.
 
-        Also known as: weighted regression.
+        For more information about the feasible weights, see the following book:
+
+        - Wooldridge, J.M. (2016). "Introductory Econometrics: A Modern Approach", 6th
+        edition, Section 8.4. Cengage Learning.
+
+        Also known as: weighted regression, feasible WLS.
 
         Args:
-            weights (pd.Series): The (positive) weight of each observation, aligned to
-            the same period index as the return data (e.g. `1 / rolling_variance`).
+            weights (pd.Series | str, optional): The (positive) weight of each observation,
+            aligned to the same period index as the return data (e.g. `1 / rolling_variance`),
+            or "feasible" to estimate them from the regression's own residuals with the
+            feasible GLS procedure of Wooldridge (2016). Defaults to "feasible".
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
             Defaults to None, meaning the Toolkit instance's first ticker.
             independent_tickers (str | list[str] | None, optional): The independent
@@ -2040,17 +2051,33 @@ class Econometrics:
             period, column, [dependent_ticker, *independent_tickers]
         )
 
-        to_align = [returns[dependent_ticker], returns[independent_tickers], weights]
+        estimate_weights = isinstance(weights, str)
+        if estimate_weights and weights != "feasible":
+            raise ValueError(
+                f"weights must be a Series of weights or 'feasible', received '{weights}'."
+            )
+
+        to_align = [returns[dependent_ticker], returns[independent_tickers]]
+        if not estimate_weights:
+            to_align.append(weights.rename("__weights__"))
         if clusters is not None:
             to_align.append(clusters.rename("__clusters__"))
 
         aligned = pd.concat(to_align, axis=1, join="inner").dropna()
         aligned_clusters = aligned.pop("__clusters__") if clusters is not None else None
+        # Estimated weights come from the same observations as the regression they weight.
+        aligned_weights = (
+            regression_model.get_feasible_weights(
+                aligned.iloc[:, 0], aligned[independent_tickers], add_constant
+            )
+            if estimate_weights
+            else aligned.pop("__weights__")
+        )
 
         result = regression_model.get_wls(
             aligned.iloc[:, 0],
             aligned[independent_tickers],
-            aligned.iloc[:, -1],
+            aligned_weights,
             add_constant=add_constant,
             cov_type=cov_type,
             clusters=aligned_clusters,
@@ -2065,7 +2092,7 @@ class Econometrics:
     @handle_errors
     def get_gls(
         self,
-        omega: pd.DataFrame,
+        omega: pd.DataFrame | str = "ar1",
         dependent_ticker: str | None = None,
         independent_tickers: str | list[str] | None = None,
         include_benchmark: bool = False,
@@ -2091,21 +2118,26 @@ class Econometrics:
           `column` plus a constant (add_constant=True)
 
         Under a correctly specified `Omega` this is the most efficient linear unbiased
-        estimator. Note that `omega` must be supplied, for example from a fitted AR(1) error
-        structure: this performs the GLS estimation step itself, not the separate problem of
-        estimating `Omega` (Feasible GLS). `get_durbin_watson_test` helps establish whether
-        the residuals are autocorrelated in the first place.
+        estimator. By default (omega="ar1") `Omega` is estimated from the regression itself
+        as an AR(1) error structure, eₜ = ρ·eₜ₋₁ + uₜ: ρ is the slope of the OLS residuals on
+        their own lag and Ωᵢⱼ = ρ^|i - j|, which makes this the Prais-Winsten estimator. Any
+        other structure can be supplied as `omega`. `get_durbin_watson_test` helps establish
+        whether the residuals are autocorrelated in the first place.
 
         For more information about the method, see the following paper:
 
         - Aitken, A.C. (1935). "On Least Squares and Linear Combinations of Observations."
         Proceedings of the Royal Society of Edinburgh, 55, 42-48.
+        - Prais, S.J. and Winsten, C.B. (1954). "Trend Estimators and Serial Correlation."
+        Cowles Commission Discussion Paper No. 383.
 
-        Also known as: GLS.
+        Also known as: GLS, Prais-Winsten.
 
         Args:
-            omega (pd.DataFrame): The (symmetric, positive-definite) error covariance
-            structure, up to a scalar, shape `(n, n)`.
+            omega (pd.DataFrame | str, optional): The (symmetric, positive-definite) error
+            covariance structure, up to a scalar, shape `(n, n)`, or "ar1" to estimate an
+            AR(1) structure from the regression's own residuals (Prais-Winsten). Defaults
+            to "ar1".
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
             Defaults to None, meaning the Toolkit instance's first ticker.
             independent_tickers (str | list[str] | None, optional): The independent
@@ -2164,10 +2196,21 @@ class Econometrics:
             period, column, [dependent_ticker, *independent_tickers]
         )
 
+        if isinstance(omega, str):
+            if omega != "ar1":
+                raise ValueError(
+                    f"omega must be a DataFrame or 'ar1', received '{omega}'."
+                )
+            omega_values = regression_model.get_ar1_covariance(
+                returns[dependent_ticker], returns[independent_tickers], add_constant
+            )
+        else:
+            omega_values = omega.to_numpy()
+
         result = regression_model.get_gls(
             returns[dependent_ticker],
             returns[independent_tickers],
-            omega.to_numpy(),
+            omega_values,
             add_constant=add_constant,
         )
 
@@ -3032,11 +3075,11 @@ class Econometrics:
     @handle_errors
     def get_wald_test(
         self,
-        restriction_matrix: pd.DataFrame | np.ndarray,
+        restriction_matrix: pd.DataFrame | np.ndarray | list[list[float]],
         dependent_ticker: str | None = None,
         independent_tickers: str | list[str] | None = None,
         include_benchmark: bool = False,
-        restriction_values: pd.Series | np.ndarray | None = None,
+        restriction_values: pd.Series | np.ndarray | list[float] | None = None,
         period: str | None = None,
         column: str = "Return",
         add_constant: bool = True,
@@ -3075,9 +3118,10 @@ class Econometrics:
         Also known as: Wald chi-squared test.
 
         Args:
-            restriction_matrix (pd.DataFrame | np.ndarray): The `(q, k)` restriction matrix `R`, one
-            row per restriction, one column per coefficient in the same order as `add_constant`
-            (if True, "Intercept" first) followed by the independent ticker(s).
+            restriction_matrix (pd.DataFrame | np.ndarray | list[list[float]]): The `(q, k)`
+            restriction matrix `R`, one row per restriction, one column per coefficient in the
+            same order as `add_constant` (if True, "Intercept" first) followed by the
+            independent ticker(s), e.g. [[0, 1, 0], [0, 0, 1]].
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
             Defaults to None, meaning the Toolkit instance's first ticker.
             independent_tickers (str | list[str] | None, optional): The independent
@@ -3088,8 +3132,9 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" in the
             default independent ticker(s) (has no effect when independent_tickers is given
             explicitly). Defaults to False.
-            restriction_values (pd.Series | np.ndarray | None, optional): The length-`q` vector of
-            hypothesized values. Defaults to None, i.e. all restrictions equal zero.
+            restriction_values (pd.Series | np.ndarray | list[float] | None, optional): The
+            length-`q` vector of hypothesized values. Defaults to None, i.e. all restrictions
+            equal zero.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
             Defaults to "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".

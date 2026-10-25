@@ -948,3 +948,48 @@ def test_get_difference_in_differences_without_control_data(
         empty.get_difference_in_differences(
             treated_tickers="AAPL", treatment_date="2021-06-30", period="weekly"
         )
+
+
+def test_get_wls_estimates_feasible_weights_by_default(econometrics_module):
+    from financetoolkit.econometrics import regression_model  # noqa: PLC0415
+
+    returns = econometrics_module._get_series_column("weekly", "Return")[
+        ["AAPL", "MSFT"]
+    ].dropna()
+    weights = pd.Series(
+        regression_model.get_feasible_weights(returns["AAPL"], returns["MSFT"]),
+        index=returns.index,
+    )
+
+    pd.testing.assert_frame_equal(
+        econometrics_module.get_wls(period="weekly"),
+        econometrics_module.get_wls(weights, period="weekly"),
+    )
+    assert econometrics_module.get_wls("unknown", period="weekly").empty
+
+
+def test_get_gls_estimates_an_ar1_structure_by_default(econometrics_module):
+    from financetoolkit.econometrics import regression_model  # noqa: PLC0415
+
+    returns = econometrics_module._get_series_column("weekly", "Return")
+    omega = pd.DataFrame(
+        regression_model.get_ar1_covariance(returns["AAPL"], returns[["MSFT"]])
+    )
+
+    pd.testing.assert_frame_equal(
+        econometrics_module.get_gls(period="weekly"),
+        econometrics_module.get_gls(omega, period="weekly"),
+    )
+
+
+def test_get_wald_test_takes_lists(econometrics_module):
+    """The MCP server passes the restriction matrix and values as lists."""
+    from_lists = econometrics_module.get_wald_test(
+        [[0, 1]], period="weekly", restriction_values=[0.5]
+    )
+    from_arrays = econometrics_module.get_wald_test(
+        np.array([[0.0, 1.0]]), period="weekly", restriction_values=np.array([0.5])
+    )
+
+    assert not from_lists.empty
+    pd.testing.assert_series_equal(from_lists, from_arrays)

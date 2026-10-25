@@ -40,7 +40,11 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
 
     - LM = n * R^2_auxiliary
 
-    Which is asymptotically chi-squared distributed with `k - 1` degrees of
+    This is the studentized form of Koenker (1981), the `statsmodels` default
+    (`robust=True`): unlike the original Breusch-Pagan statistic (half the explained
+    sum of squares of the auxiliary regression on the scaled squared residuals), it
+    does not assume normally distributed errors, which matters for fat-tailed returns.
+    It is asymptotically chi-squared distributed with `k - 1` degrees of
     freedom under the null hypothesis of homoskedasticity (constant residual
     variance), where `k` is the number of parameters in the auxiliary
     regression.
@@ -59,12 +63,14 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
 
     - Breusch, T.S., & Pagan, A.R. (1979). "A Simple Test for Heteroscedasticity
     and Random Coefficient Variation." Econometrica, 47(5), 1287-1294.
+    - Koenker, R. (1981). "A Note on Studentizing a Test for Heteroscedasticity."
+    Journal of Econometrics, 17(1), 107-112.
 
     Args:
         result (dict): A fitted OLS regression, from `regression_model.get_ols`.
 
     Returns:
-        pd.Series: The Breusch-Pagan LM statistic, its p-value, and whether
+        pd.Series: The (studentized) Breusch-Pagan LM statistic, its p-value, and whether
         homoskedasticity is rejected at the 5% level.
 
     Notes:

@@ -25,6 +25,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field as PydanticField
 
 from financetoolkit.fmp_model import parse_fiscal_period
+from financetoolkit.mcp_server import series_model
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.coercion_model import (
     coerce_value,
@@ -208,6 +209,21 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "growth_rate": "Assumed constant growth rate as a decimal.",
     "perpetual_growth_rate": "Terminal (perpetual) growth rate used in DCF models.",
     "weighted_average_cost_of_capital": "WACC as a decimal, e.g. 0.09 for 9 %.",
+    "series": (
+        "Analyze the indicators of other tools instead of the tickers' prices: references "
+        "separated by ';', each tool:indicator:tickers-or-countries with an optional "
+        ":column, e.g. 'valuation:get_price_to_earnings_ratio:AAPL,MSFT; "
+        "macroeconomics:get_inflation_rate:United States' or "
+        "'rates:get_government_bond_yield_curve:United States,Germany:10Y'. Every ticker or "
+        "country becomes a series named after it, which dependent_ticker and "
+        "independent_tickers then name. Use start_date for a long enough history."
+    ),
+    "changes": (
+        "With series: how their changes (the 'Return' column the regressions and "
+        "diagnostics use) are calculated: 'percentage' (default), 'log', 'difference' (for "
+        "rates and ratios) or 'none' (the series are changes already). The series "
+        "themselves are the 'Adj Close' column the unit root and cointegration tests use."
+    ),
     "show_columns": (
         "Comma-separated names to filter the output. "
         "For historical data use the key names visible in any response record "
@@ -786,6 +802,9 @@ class ToolRegistry:
         self._inspector = inspector
         self._tool_index: dict[str, list[dict[str, str]]] = {}
         self._indicator_index: list[dict[str, str]] = []
+        # The module and category of every indicator per tool, for the indicators an
+        # econometrics call names as its series.
+        self._routes: dict[str, dict[str, tuple[str, str]]] = {}
         self._module_class_map: dict[str, type] = self._resolve_class_map(
             module_class_map
         )
@@ -891,6 +910,83 @@ class ToolRegistry:
                 )
             )
         return specifications
+
+    def _collect_series(
+        self,
+        references: str,
+        start_date: str,
+        end_date: str,
+        quarterly: bool,
+        benchmark_ticker: str,
+    ) -> pd.DataFrame:
+        """
+        Retrieves the indicators an econometrics call names as its series, each through
+        the tool it belongs to (and so through its cache), and arranges them as series by
+        date, see series_model.
+
+        Args:
+            references (str): The references, see series_model.parse_series_references.
+            start_date (str): The start date of the call.
+            end_date (str): The end date of the call.
+            quarterly (bool): Whether quarterly data is asked for.
+            benchmark_ticker (str): The benchmark of the call.
+
+        Returns:
+            pd.DataFrame: The series, a column each, by date.
+
+        Raises:
+            ValueError: When a reference names an unknown tool or indicator.
+        """
+        frames = []
+        for reference in series_model.parse_series_references(references):
+            tools = (
+                [reference.tool]
+                if reference.tool
+                else [
+                    tool
+                    for tool, routes in self._routes.items()
+                    if reference.indicator in routes
+                ]
+            )
+            if not tools or tools[0] not in self._routes:
+                raise ValueError(
+                    f"The series '{reference.text}' names no known "
+                    f"{'tool' if reference.tool else 'indicator'}. Use search_metrics to "
+                    "find an indicator and its tool."
+                )
+            routes = self._routes[tools[0]]
+            if reference.indicator not in routes:
+                raise ValueError(
+                    f"`{reference.indicator}` is not an indicator of `{tools[0]}` (series "
+                    f"'{reference.text}')."
+                )
+            module, category = routes[reference.indicator]
+            by_ticker = category in (
+                self._inspector.categories.get("ticker", "ticker"),
+                self._inspector.categories.get("toolkit", "toolkit"),
+            )
+            entities = (
+                [entity.upper() for entity in reference.entities]
+                if by_ticker
+                else [
+                    normalize_country_name(entity, country_names())
+                    for entity in reference.entities
+                ]
+            )
+            result = self._provider.call_method(
+                module_name=module,
+                method_name=reference.indicator,
+                category=category,
+                tickers=entities if by_ticker else None,
+                countries=None if by_ticker else entities,
+                start_date=start_date,
+                end_date=end_date,
+                quarterly=quarterly,
+                benchmark_ticker=benchmark_ticker,
+            )
+            resolved = reference._replace(entities=entities)
+            frames.append((resolved, series_model.to_series_columns(result, resolved)))
+        return series_model.combine_series(frames)
 
     def _build_router_wrapper(
         self,
@@ -1059,6 +1155,15 @@ class ToolRegistry:
             if not tickers and method_name in self._tickers_optional:
                 tickers = ["SPY"]
 
+            # An econometrics call can analyze the indicators of other tools instead of
+            # the prices of its tickers.
+            raw_series = (
+                kwargs.pop("series", None) if module_name == "econometrics" else None
+            )
+            changes = (
+                kwargs.pop("changes", None) if module_name == "econometrics" else None
+            ) or "percentage"
+
             # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category
             if method_dispatch and method_name in method_dispatch:
@@ -1070,6 +1175,7 @@ class ToolRegistry:
                     inspector.categories.get("toolkit", "toolkit"),
                 )
                 and not tickers
+                and not raw_series
             ):
                 return (
                     f"`{tool_name}` (`{method_name}`) requires a `tickers` parameter. "
@@ -1378,18 +1484,32 @@ class ToolRegistry:
                 # The warnings and errors logged during the call explain an empty result,
                 # e.g. a missing API key, so they are passed on rather than lost.
                 with capture_call_messages() as call_messages:
-                    result = provider.call_method(
-                        module_name=dispatch_module,
-                        method_name=method_name,
-                        category=dispatch_category,
-                        tickers=tickers,
-                        countries=countries,
-                        start_date=start_date,
-                        end_date=end_date,
-                        quarterly=quarterly,
-                        benchmark_ticker=benchmark_ticker,
-                        **method_kwargs,
-                    )
+                    if raw_series:
+                        result = provider.call_econometrics_with_data(
+                            method_name,
+                            self._collect_series(
+                                raw_series,
+                                start_date=start_date,
+                                end_date=end_date,
+                                quarterly=quarterly,
+                                benchmark_ticker=benchmark_ticker,
+                            ),
+                            changes=changes,
+                            **method_kwargs,
+                        )
+                    else:
+                        result = provider.call_method(
+                            module_name=dispatch_module,
+                            method_name=method_name,
+                            category=dispatch_category,
+                            tickers=tickers,
+                            countries=countries,
+                            start_date=start_date,
+                            end_date=end_date,
+                            quarterly=quarterly,
+                            benchmark_ticker=benchmark_ticker,
+                            **method_kwargs,
+                        )
                     input_info = call_input_info()
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
@@ -1748,6 +1868,17 @@ class ToolRegistry:
 
             sig_params.append(P(p.name, POS, default=default, annotation=annotation))
 
+        if module_name == "econometrics":
+            sig_params.extend(
+                P(
+                    name,
+                    POS,
+                    default=None,
+                    annotation=_annotate_with_description(name, str | None),
+                )
+                for name in ("series", "changes")
+            )
+
         # Appended last so it does not disturb positional ordering of other params.
         sig_params.append(
             P(
@@ -1844,6 +1975,13 @@ class ToolRegistry:
         if not group_methods:
             logger.warning(f"No methods found for group '{spec.tool_name}' — skipping")
             return False
+
+        self._routes[spec.tool_name] = {
+            method_name: (method_dispatch or {}).get(
+                method_name, (spec.module_name, spec.category)
+            )
+            for method_name in group_methods
+        }
 
         # Each indicator by name, the first sentence of its docstring and its aliases, so
         # search_metrics can point at the indicator itself rather than only its tool.

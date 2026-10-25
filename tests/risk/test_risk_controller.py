@@ -469,8 +469,9 @@ def _risk_with_late_listing(risk_module, listing_date="2021-01-01"):
     from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
 
     historical_data = {}
-    for period, period_data in risk_module._historical_data.items():
-        data = period_data.copy()
+    # Read per period: the Toolkit's module loads a period when it is first asked for.
+    for period in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+        data = risk_module._historical_data[period].copy()
         if not data.empty and "MSFT" in data.columns.get_level_values(1):
             before_listing = data.index.to_timestamp() < listing_date
             for column in data.columns.get_level_values(0).unique():

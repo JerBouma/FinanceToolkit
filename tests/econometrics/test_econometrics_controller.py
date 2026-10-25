@@ -799,8 +799,9 @@ def test_per_ticker_statistics_ignore_a_younger_ticker(econometrics_module):
     # MSFT only starts halfway through the sample: AAPL's per-ticker statistics, and
     # the AAPL/Benchmark pair statistics, must not lose the dates MSFT is missing.
     historical_data = {}
-    for period, original_frame in econometrics_module._historical_data.items():
-        frame = original_frame.copy()
+    # Read per period: the Toolkit's module loads a period when it is first asked for.
+    for period in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+        frame = econometrics_module._historical_data[period].copy()
         if not frame.empty:
             msft_columns = [column for column in frame.columns if column[1] == "MSFT"]
             frame.iloc[: len(frame) // 2, frame.columns.get_indexer(msft_columns)] = (
@@ -876,8 +877,9 @@ def _econometrics_with_msft(econometrics_module, rows):
     # `rows` is the slice of each period's history where MSFT has no data; None
     # removes MSFT from the Toolkit altogether.
     historical_data = {}
-    for period, original_frame in econometrics_module._historical_data.items():
-        frame = original_frame.copy()
+    # Read per period: the Toolkit's module loads a period when it is first asked for.
+    for period in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+        frame = econometrics_module._historical_data[period].copy()
         msft_columns = [column for column in frame.columns if column[1] == "MSFT"]
         if rows is None:
             frame = frame.drop(columns=msft_columns)

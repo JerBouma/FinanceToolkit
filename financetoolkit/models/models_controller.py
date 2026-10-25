@@ -5533,7 +5533,8 @@ class Models:
                 "Share Price": share_price,
                 "Probability Undervalued": (
                     float((values > share_price).mean())
-                    if pd.notna(values).any()
+                    # Without a share price or a simulated value there is nothing to compare.
+                    if pd.notna(share_price) and pd.notna(values).any()
                     else float("nan")
                 ),
             }

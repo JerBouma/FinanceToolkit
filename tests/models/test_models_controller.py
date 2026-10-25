@@ -766,3 +766,22 @@ def test_magic_formula_on_a_short_quarterly_window(monkeypatch):
     assert list(result.columns.astype(str)) == ["2019Q4", "2020Q1", "2020Q2"]
     assert result.loc[("A", "Magic Formula Rank")].notna().all()
     assert warnings == []
+
+
+def test_monte_carlo_valuation_without_a_share_price(models_module, monkeypatch):
+    import pandas as pd  # noqa: PLC0415
+
+    ticker = models_module._tickers[0]
+    latest_price = models_module._latest_price
+    monkeypatch.setattr(
+        models_module,
+        "_latest_price",
+        lambda symbol: float("nan") if symbol == ticker else latest_price(symbol),
+    )
+
+    valuation = models_module.get_monte_carlo_intrinsic_valuation(
+        growth_rate=0.08, weighted_average_cost_of_capital=0.09, simulations=200
+    )
+
+    assert pd.isna(valuation.loc[ticker, "Probability Undervalued"])
+    assert valuation.drop(index=ticker)["Probability Undervalued"].notna().all()

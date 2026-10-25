@@ -292,32 +292,39 @@ Together the two modules cover 70+ metrics, such as [Value at Risk](https://www.
 The past shows how much risk came with the returns; the option market puts a price on the risk ahead. The [options](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) module prices options with Black-Scholes, the Binomial Model and others, calculates the Greeks up to the third order and reads the live option chains: the put-call ratio, max pain, dealer gamma exposure, the volatility skew and term structure and the implied move. As the chains are those of today, the Toolkit below runs up to today, and the numbers are those of the day this README was last updated:
 
 ```python
+import pandas as pd
+
 # Initialize the Toolkit up to today, as the option chains are live
 companies_today = Toolkit(["NVDA", "AMD", "INTC"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-# Get the at-the-money implied volatility of the six nearest expirations
-term_structure = companies_today.options.get_implied_volatility_term_structure(number_of_expirations=6)
+# The model-free implied volatility, the method behind the VIX, at fixed horizons
+implied_volatility = pd.concat(
+    {
+        days: companies_today.options.get_model_free_implied_volatility(days=days)
+        for days in [7, 30, 60, 90, 180]
+    },
+    names=["Days"],
+)
 
 # Show the results for Nvidia
-term_structure.loc["NVDA"]
+implied_volatility.xs("NVDA", level=1)
 ```
 
-For example, Nvidia's implied volatility for each expiration is shown below.
+As the companies list different expirations, the model-free implied volatility reads the expected variance from all out-of-the-money options of the two expirations around each horizon and interpolates between them, so all three are compared over exactly the same number of days. For example, Nvidia's implied volatility for each horizon is shown below.
 
-| Expiration   |   Days to Expiration |   At-the-Money Volatility |
-|:-------------|---------------------:|--------------------------:|
-| 2026-10-26   |                    1 |                    0.3558 |
-| 2026-10-28   |                    3 |                    0.4155 |
-| 2026-10-30   |                    5 |                    0.4152 |
-| 2026-11-02   |                    8 |                    0.3882 |
-| 2026-11-04   |                   10 |                    0.4096 |
-| 2026-11-06   |                   12 |                    0.3985 |
+|   Days | Near-Term Expiration   | Next-Term Expiration   |   Near-Term Volatility |   Next-Term Volatility |   Forward Price |   Model-Free Implied Volatility |
+|-------:|:-----------------------|:-----------------------|-----------------------:|-----------------------:|----------------:|--------------------------------:|
+|      7 | 2026-11-02             | 2026-11-04             |                 0.4282 |                 0.4372 |         211.274 |                          0.4216 |
+|     30 | 2026-11-20             | 2026-11-27             |                 0.5007 |                 0.4746 |         211.697 |                          0.4845 |
+|     60 | 2026-12-18             | 2027-01-15             |                 0.4471 |                 0.4356 |         212.126 |                          0.4437 |
+|     90 | 2027-01-15             | 2027-02-19             |                 0.4356 |                 0.4316 |         212.877 |                          0.4345 |
+|    180 | 2027-04-16             | 2027-05-21             |                 0.4349 |                 0.4253 |         215.128 |                          0.4327 |
 
-And below this term structure is plotted for each of the three companies.
+And below the implied volatility of each company is plotted for every horizon.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-dark.png">
-  <img alt="Implied Volatility Term Structure" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-light.png">
+  <img alt="Model-Free Implied Volatility" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-light.png">
 </picture>
 
 ## The Economic Environment

@@ -170,3 +170,126 @@ def test_the_screener_takes_country_names_and_screens_stocks_only(monkeypatch):
         and "isFund=false" in urls[0]
     )
     assert "country=GB" in urls[1] and "isEtf=true" in urls[1]
+
+
+def test_insider_trades_of_a_date_are_filtered_locally(monkeypatch):
+    pages = {
+        0: [("2026-10-23", "A"), ("2026-10-22", "B")],
+        1: [("2026-10-21", "C"), ("2026-10-20", "D")],
+    }
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        page = int(url.split("page=")[1].split("&")[0])
+        rows = pages.get(page, [])
+        return pd.DataFrame(
+            {"symbol": [row[1] for row in rows], "filingDate": [row[0] for row in rows]}
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    trades = discovery_model.get_insider_trading_latest(
+        api_key="KEY", date="2026-10-21"
+    )
+
+    # The endpoint ignores a date, so pages are read until it has passed.
+    assert list(trades.index) == ["C"]
+    assert len(requested) == 2  # noqa: PLR2004
+
+
+def test_sector_changes_are_decimals(monkeypatch):
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        assert "exchange=NYSE" in url
+        return pd.DataFrame(
+            {
+                "date": ["2026-10-23"],
+                "sector": ["Energy"],
+                "exchange": ["NYSE"],
+                "averageChange": [1.25],
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    snapshot = discovery_model.get_sector_performance(
+        api_key="KEY", date="2026-10-23", exchange="NYSE"
+    )
+
+    assert snapshot.loc["Energy", "Average Change"] == pytest.approx(0.0125)
+
+
+@pytest.mark.parametrize(
+    ("function", "ascending"),
+    [
+        (discovery_model.get_biggest_gainers, False),
+        (discovery_model.get_biggest_losers, True),
+        (discovery_model.get_most_active_stocks, None),
+    ],
+)
+def test_movers_changes_are_decimals(monkeypatch, function, ascending):
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        return pd.DataFrame(
+            {
+                "symbol": ["A", "B"],
+                "name": ["A Inc.", "B Inc."],
+                "price": [10.0, 20.0],
+                "change": [1.0, -2.0],
+                "changesPercentage": [11.1111, -9.0909],
+                "exchange": ["NASDAQ", "NYSE"],
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    movers = function(api_key="KEY")
+
+    assert movers.loc["A", "Change %"] == pytest.approx(0.111111)
+    assert movers.loc["B", "Change %"] == pytest.approx(-0.090909)
+
+    if ascending is not None:
+        assert movers["Change %"].is_monotonic_increasing == ascending
+
+
+def test_free_float_of_all_stocks_is_a_decimal(monkeypatch):
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        return pd.DataFrame(
+            {
+                "symbol": ["INDI"],
+                "date": ["2026-10-07 22:37:55"],
+                "freeFloat": [98.543],
+                "floatShares": [2.0821e08],
+                "outstandingShares": [2.11289e08],
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    shares_float = discovery_model.get_stock_shares_float(api_key="KEY")
+
+    assert shares_float.loc["INDI", "Free Float"] == pytest.approx(0.98543)
+
+
+def test_index_constituents(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame(
+            {
+                "symbol": ["MSFT", "AAPL"],
+                "name": ["Microsoft", "Apple"],
+                "sector": ["Technology"] * 2,
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    constituents = discovery_model.get_index_constituents(
+        api_key="KEY", index="Dow Jones"
+    )
+
+    assert "dowjones-constituent" in requested[0]
+    assert list(constituents.index) == ["AAPL", "MSFT"]
+    with pytest.raises(ValueError, match="not available"):
+        discovery_model.get_index_constituents(api_key="KEY", index="DAX")

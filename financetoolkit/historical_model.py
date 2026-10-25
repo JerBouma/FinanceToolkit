@@ -242,7 +242,8 @@ def get_historical_data(
     Returns:
         pd.DataFrame: A pandas DataFrame object containing the historical stock data for the given ticker(s).
         The index of the DataFrame is the date of the data and the columns are a multi-index
-        with the ticker symbol(s) as the first level and the OHLC data as the second level.
+        with the column (Open, High, Low, Close, Adj Close, Volume, Return, Cumulative Return)
+        as the first level and the ticker symbol(s) as the second level.
     """
     # NaN rather than 0 so that a ticker without data is recognisable as missing instead of reading as a genuine price, volume and return of zero.  # noqa: E501
     empty_historical_data = pd.DataFrame(
@@ -799,9 +800,10 @@ def convert_daily_to_other_period(
             Defaults to "Adj Close", which makes the return a total return.
 
     Returns:
-        pd.DataFrame: A pandas DataFrame object containing the yearly historical stock data.
-        The index of the DataFrame is the date of the data and the columns are a multi-index
-        with the ticker symbol(s) as the first level and the OHLC data as the second level.
+        pd.DataFrame: The historical data aggregated to the chosen period. The index holds
+        the periods and the columns are a multi-index with the column (Open, High, Low,
+        Close, Adj Close, Volume, Return, Cumulative Return and, when present, Dividends)
+        as the first level and the ticker symbol(s) as the second level.
     """
     if period not in ["weekly", "monthly", "quarterly", "yearly"]:
         raise ValueError(
@@ -871,6 +873,58 @@ def convert_daily_to_other_period(
 
     # Deliberately not filled with zero. The first period has no preceding period to compare against, so its Return is unknown rather than flat, and a fabricated zero is indistinguishable from a genuinely unchanged period. It propagated into the first row of every period level performance metric, which is why an asset with a positive excess return could report a negative Ulcer Performance Index.  # noqa: E501
     return period_historical_data
+
+
+def calculate_period_average(
+    period: str,
+    daily_data: pd.DataFrame,
+    columns: list[str] | None = None,
+    rounding: int | None = None,
+) -> pd.DataFrame:
+    """
+    Averages daily observations over each week, month, quarter or year.
+
+    A level such as a Treasury yield or an exchange rate describes the period best by its
+    average over the period rather than by its value on the last day. The average yield is
+    what a holder earned over the period, and the average exchange rate is the rate IAS 21.40
+    allows as an approximation of the rates on the dates of the transactions of the period.
+    Only the dates present in the data are averaged, so days without an observation (weekends,
+    holidays) carry no weight.
+
+    Args:
+        period (str): The period to average over (weekly, monthly, quarterly or yearly).
+        daily_data (pd.DataFrame): The daily data with a (column, ticker) multi-index or plain
+            columns.
+        columns (list[str] | None, optional): The first level columns to average. Any other
+            column is left out of the result. Defaults to None, which averages every column.
+        rounding (int | None, optional): The number of decimals to round to, or None for no
+            rounding. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The average per period, indexed by the periods and with the columns of
+        daily_data that were averaged.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+    if columns is not None:
+        daily_data = daily_data.loc[
+            :,
+            [
+                (column[0] if isinstance(column, tuple) else column) in columns
+                for column in daily_data.columns
+            ],
+        ]
+
+    dates = to_period_index(daily_data.index).asfreq(PERIOD_TRANSLATION[period])
+    dates.name = "Date"
+
+    period_average = daily_data.groupby(dates).mean().sort_index()
+
+    return period_average if rounding is None else period_average.round(rounding)
 
 
 def get_historical_statistics(

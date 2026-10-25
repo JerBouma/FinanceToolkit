@@ -40,7 +40,11 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
 
     - LM = n * R^2_auxiliary
 
-    Which is asymptotically chi-squared distributed with `k - 1` degrees of
+    This is the studentized form of Koenker (1981), the `statsmodels` default
+    (`robust=True`): unlike the original Breusch-Pagan statistic (half the explained
+    sum of squares of the auxiliary regression on the scaled squared residuals), it
+    does not assume normally distributed errors, which matters for fat-tailed returns.
+    It is asymptotically chi-squared distributed with `k - 1` degrees of
     freedom under the null hypothesis of homoskedasticity (constant residual
     variance), where `k` is the number of parameters in the auxiliary
     regression.
@@ -59,21 +63,29 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
 
     - Breusch, T.S., & Pagan, A.R. (1979). "A Simple Test for Heteroscedasticity
     and Random Coefficient Variation." Econometrica, 47(5), 1287-1294.
+    - Koenker, R. (1981). "A Note on Studentizing a Test for Heteroscedasticity."
+    Journal of Econometrics, 17(1), 107-112.
 
     Args:
         result (dict): A fitted OLS regression, from `regression_model.get_ols`.
 
     Returns:
-        pd.Series: The Breusch-Pagan LM statistic, its p-value, and whether
+        pd.Series: The (studentized) Breusch-Pagan LM statistic, its p-value, and whether
         homoskedasticity is rejected at the 5% level.
 
     Notes:
     - Uses `result["design_matrix"]` (the design matrix actually used to fit `result`) as
     the regressors of the auxiliary regression, exactly as specified in the original
     Breusch-Pagan (1979) formulation.
+    - The auxiliary regression always includes a constant, also when `result` was fitted
+    without one (`add_constant=False`): the LM statistic is built on the centered
+    R-squared and its `k - 1` degrees of freedom count the non-constant regressors.
     """
+    # het_breuschpagan assumes the design holds a constant (for R² and the degrees
+    # of freedom), so one is added when the original regression had none.
     lm_statistic, p_value, _, _ = het_breuschpagan(
-        result["residuals"], result["design_matrix"]
+        result["residuals"],
+        sm.add_constant(result["design_matrix"], has_constant="skip"),
     )
 
     return pd.Series(
@@ -128,9 +140,16 @@ def get_white_test(result: dict) -> pd.Series:
     Raises:
         ValueError: If the polynomial-expanded auxiliary design is rank-deficient
         (e.g. too few observations relative to the number of original regressors).
+
+    Notes:
+    - The auxiliary regression always includes a constant and the regressors' levels,
+    also when `result` was fitted without a constant (`add_constant=False`).
     """
+    # het_white expands the design into its cross-products and assumes it holds a
+    # constant (so the levels are among them), so one is added when it has none.
     lm_statistic, p_value, _, _ = het_white(
-        result["residuals"], result["design_matrix"]
+        result["residuals"],
+        sm.add_constant(result["design_matrix"], has_constant="skip"),
     )
 
     return pd.Series(

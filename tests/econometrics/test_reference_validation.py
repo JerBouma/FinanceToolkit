@@ -380,6 +380,19 @@ def test_phillips_perron_matches_arch(macro):
         np.testing.assert_allclose(
             result["Phillips-Perron Statistic"], reference.stat, rtol=1e-8
         )
+        np.testing.assert_allclose(result["P-Value"], reference.pvalue, rtol=1e-8)
+        for level in ("1%", "5%", "10%"):
+            np.testing.assert_allclose(
+                result[f"Critical Value {level}"],
+                reference.critical_values[level],
+                rtol=1e-10,
+            )
+
+        # From about 35 observations on, the default window equals arch's default.
+        default_reference = arch_unitroot.PhillipsPerron(
+            macro["log_gdp"].to_numpy(), trend=trend, test_type="tau"
+        )
+        assert result["Lags Used"] == default_reference.lags
 
 
 def test_cointegration_tests(macro):
@@ -470,22 +483,34 @@ def test_cusum_stability_test(macro):
 
 
 def test_variance_ratio_matches_arch(macro):
-    # Also hand-built. The toolkit implements the asymptotic Lo-MacKinlay form without
-    # their finite-sample bias correction, so on ~200 observations it sits a few percent
-    # closer to 1 than `arch` does -- same conclusion, slightly more conservative.
+    # Hand-built: the unbiased Lo-MacKinlay estimators equal arch's debiased form, both for
+    # the homoskedastic z(q) and the heteroskedasticity-robust z*(q).
     arch_unitroot = pytest.importorskip("arch.unitroot")
 
     returns = macro["gdp_returns"]
-    result = diagnostics_model.get_variance_ratio_test(returns, q=4)
     # `arch` takes the level whose increments are being tested, and demeans it.
-    reference = arch_unitroot.VarianceRatio(
-        np.cumsum(returns.to_numpy()), lags=4, robust=False, overlap=True, trend="c"
-    )
+    level = np.r_[0.0, np.cumsum(returns.to_numpy())]
 
-    np.testing.assert_allclose(result["Variance Ratio"], reference.vr, rtol=0.05)
-    np.testing.assert_allclose(
-        result["Variance Ratio Statistic"], reference.stat, rtol=0.10
-    )
+    for q in (2, 4, 8):
+        result = diagnostics_model.get_variance_ratio_test(returns, q=q)
+        reference = arch_unitroot.VarianceRatio(
+            level, lags=q, robust=False, debiased=True, overlap=True, trend="c"
+        )
+        robust_reference = arch_unitroot.VarianceRatio(
+            level, lags=q, robust=True, debiased=True, overlap=True, trend="c"
+        )
+
+        np.testing.assert_allclose(result["Variance Ratio"], reference.vr, rtol=1e-12)
+        np.testing.assert_allclose(
+            result["Variance Ratio Statistic"], reference.stat, rtol=1e-10
+        )
+        np.testing.assert_allclose(result["P-Value"], reference.pvalue, rtol=1e-6)
+        np.testing.assert_allclose(
+            result["Robust Variance Ratio Statistic"], robust_reference.stat, rtol=1e-10
+        )
+        np.testing.assert_allclose(
+            result["Robust P-Value"], robust_reference.pvalue, rtol=1e-6
+        )
 
 
 def test_variance_ratio_is_correctly_sized_under_a_random_walk():
@@ -961,10 +986,8 @@ def test_volatility_forecast():
         )
         .dropna()
         .to_numpy(),
-        (risk_model.get_ewma_volatility(returns, 0.94) ** 2)
-        .shift(1)
-        .dropna()
-        .to_numpy(),
+        # The RiskMetrics recursion already builds σₜ² from rₜ₋₁, so no extra lag.
+        (risk_model.get_ewma_volatility(returns, 0.94) ** 2).dropna().to_numpy(),
         rtol=1e-12,
     )
     np.testing.assert_allclose(

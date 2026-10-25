@@ -408,3 +408,21 @@ def test_a_browser_opening_the_mcp_url_gets_the_setup_page() -> None:
     assert stream.status_code == 401  # noqa
     assert "resource_metadata" in stream.headers["WWW-Authenticate"]
     assert client.post("/mcp", json={}).status_code == 401  # noqa
+
+
+def test_the_authorization_page_escapes_its_parameters() -> None:
+    """Query parameters are shown as text, never as markup."""
+    mcp = FastMCP("TestEscapeServer")
+    register_auth_routes(mcp)
+    client = TestClient(mcp.sse_app(), base_url="http://127.0.0.1:8000")
+
+    page = client.get(
+        '/oauth/authorize?client_id="><script>alert(1)</script>'
+        "&redirect_uri=http://localhost/callback&code_challenge=abc"
+        '&code_challenge_method=S256&state="><img src=x onerror=alert(1)>'
+    )
+
+    assert page.status_code == 200  # noqa
+    assert "<script>alert(1)</script>" not in page.text
+    assert "<img src=x" not in page.text
+    assert "&lt;script&gt;" in page.text

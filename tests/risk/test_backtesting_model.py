@@ -158,3 +158,38 @@ def test_get_acerbi_szekely_test_too_few_observations(recorder):
             returns, var_estimates, cvar_estimates, alpha=0.05
         )
     )
+
+
+def test_get_acerbi_szekely_test_breach_is_strictly_below_the_var():
+    returns = pd.Series([-0.05, -0.02, 0.01, 0.02, -0.01, 0.03, 0.0, -0.03])
+    var_estimates = pd.Series([-0.05] * 8)
+    cvar_estimates = pd.Series([-0.06] * 8)
+
+    result = backtesting_model.get_acerbi_szekely_test(
+        returns, var_estimates, cvar_estimates, alpha=0.05, n_bootstrap=50
+    )
+
+    # A return equal to the VaR is no breach, as in the Kupiec and Christoffersen tests.
+    assert result["Breaches"] == 0
+    kupiec = backtesting_model.get_kupiec_test(returns, var_estimates, 0.05)
+    assert (
+        kupiec["Kupiec Statistic"]
+        == backtesting_model.get_kupiec_test(returns, var_estimates - 1e-9, 0.05)[
+            "Kupiec Statistic"
+        ]
+    )
+
+
+def test_get_acerbi_szekely_test_is_one_sided():
+    rng = np.random.default_rng(0)
+    returns = pd.Series(rng.normal(0, 0.01, 1000))
+    # A model that overstates the tail losses: breaches are rare and mild.
+    var_estimates = pd.Series(-0.03, index=returns.index)
+    cvar_estimates = pd.Series(-0.04, index=returns.index)
+
+    result = backtesting_model.get_acerbi_szekely_test(
+        returns, var_estimates, cvar_estimates, alpha=0.05
+    )
+
+    assert result["Acerbi-Szekely Statistic"] < 0
+    assert result["P-Value"] > 0.5  # noqa: PLR2004

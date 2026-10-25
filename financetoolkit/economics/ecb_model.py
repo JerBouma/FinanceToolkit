@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import io
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.cache import policy_model
@@ -129,19 +130,30 @@ def get_long_term_interest_rate(start_date: str, end_date: str) -> pd.DataFrame:
     estimated by the ECB from the bonds of all euro area central governments. It is
     taken from the yield curve request, so both share one query.
 
+    The ECB's spot rates are zero-coupon rates from a Svensson model, continuously
+    compounded. The 10-year rate is converted to annual compounding, exp(r) - 1, so it is
+    quoted on the same per-annum basis as the other 10-year yields. It remains a
+    zero-coupon rate, whereas the U.S. Treasury, the Bank of England and the Japanese
+    Ministry of Finance publish par yields; on an upward sloping curve the zero-coupon
+    rate lies slightly above the par yield.
+
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
 
     Returns:
-        pd.DataFrame: The yield as a decimal, indexed by business day.
+        pd.DataFrame: The annually compounded zero-coupon yield as a decimal, indexed by
+        business day.
     """
     yield_curve = get_yield_curve(start_date, end_date)
 
     if yield_curve.empty or "10Y" not in yield_curve.columns:
         return pd.DataFrame()
 
-    return yield_curve[["10Y"]].rename(columns={"10Y": COUNTRY}).dropna()
+    ten_year = yield_curve[["10Y"]].rename(columns={"10Y": COUNTRY}).dropna()
+
+    # Continuous to annual compounding: exp(r) - 1, with expm1 for precision near zero.
+    return np.expm1(ten_year)
 
 
 def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
@@ -165,13 +177,16 @@ def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
     Retrieves the daily euro area yield curve, the spot rates the ECB estimates from the
     bonds of all euro area central governments, from 3 months to 30 years, since 2004.
 
+    The spot rates are zero-coupon rates from a Svensson model with continuous
+    compounding, as the ECB publishes them (not par yields).
+
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
 
     Returns:
-        pd.DataFrame: The spot rates as decimals, indexed by business day with a column per
-        maturity ("3M" to "30Y").
+        pd.DataFrame: The continuously compounded spot rates as decimals, indexed by business
+        day with a column per maturity ("3M" to "30Y").
     """
     return collect_ecb_series(
         YIELD_CURVE_KEY,

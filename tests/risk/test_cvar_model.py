@@ -2,6 +2,8 @@
 
 import numpy as np
 import pandas as pd
+import pytest
+from scipy import integrate, stats
 
 from financetoolkit.risk import cvar_model, var_model
 
@@ -214,3 +216,64 @@ def test_get_cvar_evt_insufficient_exceedances(recorder):
     recorder.capture(
         cvar_model.get_cvar_evt(returns=returns, alpha=0.05, threshold_percentile=0.95)
     )
+
+
+def test_get_cvar_gaussian_uses_sample_standard_deviation():
+    returns = pd.Series([0.03, -0.02, 0.01, -0.04, 0.02, 0.005, -0.01])
+    z = stats.norm.ppf(0.05)
+    expected = returns.mean() - returns.std(ddof=1) * stats.norm.pdf(z) / 0.05
+
+    assert np.isclose(cvar_model.get_cvar_gaussian(returns, 0.05), expected)
+
+
+def test_get_cvar_studentt_matches_the_fitted_distribution():
+    rng = np.random.default_rng(1)
+    returns = pd.Series(stats.t.rvs(4, size=3000, random_state=rng) * 0.01 + 0.0005)
+    dof, location, scale = stats.t.fit(returns)
+
+    # The Expected Shortfall is the mean of the fitted quantile function over the tail.
+    expected = (
+        integrate.quad(lambda p: location + scale * stats.t.ppf(p, dof), 0, 0.05)[0]
+        / 0.05
+    )
+
+    assert np.isclose(
+        cvar_model.get_cvar_studentt(returns, 0.05).iloc[0], expected, rtol=1e-6
+    )
+
+
+def test_get_cvar_studentt_without_finite_mean_is_nan():
+    returns = pd.Series(stats.t.rvs(0.7, size=2000, random_state=3) * 0.01)
+
+    assert stats.t.fit(returns)[0] <= 1
+    assert np.isnan(cvar_model.get_cvar_studentt(returns, 0.05).iloc[0])
+
+
+def test_get_cvar_cornish_fisher_matches_the_integral():
+    rng = np.random.default_rng(1)
+    returns = pd.Series(stats.t.rvs(6, size=3000, random_state=rng) * 0.01)
+    mean, std = returns.mean(), returns.std(ddof=1)
+    skewness, kurtosis = returns.skew(), returns.kurt()
+
+    def quantile(p):
+        z = stats.norm.ppf(p)
+        z_cf = (
+            z
+            + (z**2 - 1) * skewness / 6
+            + (z**3 - 3 * z) * kurtosis / 24
+            - (2 * z**3 - 5 * z) * skewness**2 / 36
+        )
+        return mean + z_cf * std
+
+    expected = integrate.quad(quantile, 0, 0.05, limit=200)[0] / 0.05
+
+    assert np.isclose(
+        cvar_model.get_cvar_cornish_fisher(returns, 0.05), expected, rtol=1e-3
+    )
+
+
+def test_get_cvar_evt_alpha_outside_fitted_tail_raises():
+    returns = pd.Series(np.random.default_rng(1).normal(0, 0.01, 500))
+
+    with pytest.raises(ValueError, match="outside the tail"):
+        cvar_model.get_cvar_evt(returns, alpha=0.2, threshold_percentile=0.9)

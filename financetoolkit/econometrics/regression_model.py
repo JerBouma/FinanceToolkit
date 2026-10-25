@@ -89,15 +89,34 @@ def _validate_design(x: np.ndarray, y: np.ndarray) -> None:
         )
 
 
+def default_hac_maxlags(observations: int) -> int:
+    """
+    The Newey & West (1994) rule of thumb for the HAC truncation lag with Bartlett weights:
+    floor(4 * (n / 100)^(2/9)), e.g. 4 lags for 100 observations and 5 for 250.
+
+    Args:
+        observations (int): The number of observations in the regression.
+
+    Returns:
+        int: The maximum lag.
+    """
+    return int(np.floor(4 * (observations / 100) ** (2 / 9)))
+
+
 def _cov_type_and_kwds(
-    cov_type: str, clusters: np.ndarray | None, maxlags: int | None = None
+    cov_type: str,
+    clusters: np.ndarray | None,
+    maxlags: int | None = None,
+    observations: int | None = None,
 ) -> tuple[StatsmodelsCovType, dict]:
     if cov_type not in COV_TYPES:
         raise ValueError(f"cov_type must be one of {COV_TYPES}, received {cov_type!r}.")
 
     if cov_type == "HAC":
         if maxlags is None:
-            raise ValueError("maxlags must be provided when cov_type='HAC'.")
+            if observations is None:
+                raise ValueError("maxlags must be provided when cov_type='HAC'.")
+            maxlags = default_hac_maxlags(observations)
         if maxlags < 0:
             raise ValueError(f"maxlags must be non-negative, received {maxlags}.")
         return "HAC", {"maxlags": maxlags}
@@ -315,15 +334,15 @@ def get_ols(
           standard errors -- valid under both heteroskedastic AND
           serially-correlated errors, the standard choice for time-series
           regressions in finance (HC-robust alone corrects for heteroskedasticity
-          but assumes no autocorrelation). Requires `maxlags`.
+          but assumes no autocorrelation). Uses `maxlags`.
 
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required (and only used) when `cov_type="cluster"`. Defaults to
         None.
         maxlags (int | None, optional): The maximum lag to include when estimating the
-        HAC (Newey-West) covariance matrix, required (and only used) when
-        `cov_type="HAC"`. A common rule of thumb is `floor(4 * (n / 100)^(2/9))`
-        (Newey & West, 1994). Defaults to None.
+        HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults
+        to None, meaning the Newey & West (1994) rule of thumb
+        `floor(4 * (n / 100)^(2/9))` with `n` the number of observations.
 
     Returns:
         dict: The fitted coefficients, their standard errors/t-statistics/
@@ -336,13 +355,14 @@ def get_ols(
         ValueError: If there are not more observations than parameters, `x` is
         rank-deficient (perfectly collinear regressors), `cov_type` is not a
         recognized value, `cov_type="cluster"` without `clusters` (or with fewer
-        than 2 distinct clusters), or `cov_type="HAC"` without a non-negative
-        `maxlags`.
+        than 2 distinct clusters), or `cov_type="HAC"` with a negative `maxlags`.
 
     Notes:
         Reference: Newey, W.K. & West, K.D. (1987). "A Simple, Positive
         Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance
         Matrix." Econometrica, 55(3), 703-708.
+        Reference: Newey, W.K. & West, K.D. (1994). "Automatic Lag Selection in
+        Covariance Matrix Estimation." Review of Economic Studies, 61(4), 631-653.
 
     As an example:
 
@@ -373,7 +393,9 @@ def get_ols(
     )
 
     _validate_design(x_values, y_values)
-    sm_cov_type, cov_kwds = _cov_type_and_kwds(cov_type, cluster_values, maxlags)
+    sm_cov_type, cov_kwds = _cov_type_and_kwds(
+        cov_type, cluster_values, maxlags, observations=len(y_values)
+    )
 
     sm_result = sm.OLS(y_values, x_values).fit(cov_type=sm_cov_type, cov_kwds=cov_kwds)
 
@@ -415,8 +437,8 @@ def get_wls(
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required when `cov_type="cluster"`. Defaults to None.
         maxlags (int | None, optional): The maximum lag to include when estimating the
-        HAC (Newey-West) covariance matrix, required when `cov_type="HAC"`. See
-        `get_ols`'s `maxlags` for the rule-of-thumb formula. Defaults to None.
+        HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults
+        to None, meaning the Newey & West (1994) rule of thumb (see `get_ols`).
 
     Returns:
         dict: The fitted coefficients, their standard errors/t-statistics/
@@ -444,7 +466,9 @@ def get_wls(
         raise ValueError("All weights must be strictly positive.")
 
     _validate_design(x_values, y_values)
-    sm_cov_type, cov_kwds = _cov_type_and_kwds(cov_type, cluster_values, maxlags)
+    sm_cov_type, cov_kwds = _cov_type_and_kwds(
+        cov_type, cluster_values, maxlags, observations=len(y_values)
+    )
 
     sm_result = sm.WLS(y_values, x_values, weights=weight_values).fit(
         cov_type=sm_cov_type, cov_kwds=cov_kwds

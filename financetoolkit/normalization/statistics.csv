@@ -1,5 +1,6 @@
 Statistics,Generic
 reportedCurrency,Reported Currency
+periodEndDate,Period End Date
 cik,CIK ID
 fillingDate,Filling Date
 acceptedDate,Accepted Date

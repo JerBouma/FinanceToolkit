@@ -158,3 +158,143 @@ def test_graham_number_needs_positive_earnings_and_book_value():
 
     assert graham_number.iloc[0] == np.sqrt(22.5 * 2 * 10)
     assert graham_number.iloc[1:].isna().all()
+
+
+def test_valuations_require_a_discount_rate_above_the_perpetual_growth_rate():
+    with pytest.raises(ValueError, match="Perpetual Growth Rate"):
+        intrinsic_model.get_intrinsic_value(
+            cash_flow=500,
+            growth_rate=0.05,
+            perpetual_growth_rate=0.1,
+            weighted_average_cost_of_capital=0.1,
+            cash_and_cash_equivalents=100,
+            total_debt=100,
+            shares_outstanding=100,
+        )
+
+    with pytest.raises(ValueError, match="Growth Rate"):
+        intrinsic_model.get_gorden_growth_model(
+            dividends_per_share=1.0, rate_of_return=0.05, growth_rate=0.06
+        )
+
+    with pytest.raises(ValueError, match="Stable Growth Rate"):
+        intrinsic_model.get_two_stage_dividend_discount_model(
+            dividends_per_share=1.0,
+            rate_of_return=0.08,
+            high_growth_rate=0.15,
+            stable_growth_rate=0.08,
+        )
+
+    # The high-growth phase is discounted explicitly and may exceed the rate of return.
+    two_stage = intrinsic_model.get_two_stage_dividend_discount_model(
+        dividends_per_share=1.0,
+        rate_of_return=0.08,
+        high_growth_rate=0.15,
+        stable_growth_rate=0.03,
+    )
+    assert two_stage.loc["Intrinsic Value"].iloc[0] > 0
+
+
+def test_residual_income_charges_the_beginning_book_value():
+    # RI_t = NI_t - r * B_t-1
+    residual_income = intrinsic_model.get_residual_income(
+        net_income=pd.Series([10.0, 12.0]),
+        cost_of_equity=0.1,
+        book_value_of_equity=pd.Series([100.0, 110.0]).shift(1),
+    )
+
+    assert residual_income.isna().iloc[0]
+    assert residual_income.iloc[1] == pytest.approx(12.0 - 0.1 * 100.0)
+
+
+def test_intrinsic_value_adds_back_the_short_term_investments():
+    inputs = {
+        "cash_flow": 500,
+        "growth_rate": 0.05,
+        "perpetual_growth_rate": 0.02,
+        "weighted_average_cost_of_capital": 0.1,
+        "cash_and_cash_equivalents": 100,
+        "total_debt": 100,
+        "shares_outstanding": 100,
+    }
+    without = intrinsic_model.get_intrinsic_value(**inputs)
+    with_investments = intrinsic_model.get_intrinsic_value(
+        **inputs, short_term_investments=50
+    )
+
+    assert with_investments.loc["Enterprise Value"].iloc[0] == pytest.approx(
+        without.loc["Enterprise Value"].iloc[0]
+    )
+    assert with_investments.loc["Equity Value"].iloc[0] == pytest.approx(
+        without.loc["Equity Value"].iloc[0] + 50
+    )
+
+
+def test_get_implied_growth_rate_recovers_the_dcf_growth():
+    import numpy as np  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    value = float(
+        intrinsic_model.get_intrinsic_value(100, 0.05, 0.025, 0.09, 50, 80, 10, 5)
+        .loc["Intrinsic Value"]
+        .iloc[0]
+    )
+    implied = intrinsic_model.get_implied_growth_rate(
+        value, 100, 0.025, 0.09, 50, 80, 10, 5
+    )
+    assert implied == pytest.approx(0.05, abs=1e-8)
+    assert np.isnan(
+        intrinsic_model.get_implied_growth_rate(10, -5, 0.02, 0.09, 0, 0, 1)
+    )
+
+
+def test_get_earnings_power_value():
+    import pandas as pd  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    result = intrinsic_model.get_earnings_power_value(
+        revenue=pd.Series([100.0, 120.0]),
+        operating_income=pd.Series([20.0, 30.0]),
+        income_tax_expense=pd.Series([4.0, 5.0]),
+        income_before_tax=pd.Series([20.0, 25.0]),
+        weighted_average_cost_of_capital=0.1,
+        cash_and_cash_equivalents=10,
+        total_debt=30,
+        shares_outstanding=10,
+    )
+    margin = (0.2 + 0.25) / 2
+    nopat = margin * 120 * (1 - 0.2)
+    assert result["Normalized NOPAT"] == pytest.approx(nopat)
+    assert result["Earnings Power Value per Share"] == pytest.approx(
+        (nopat / 0.1 - 20) / 10
+    )
+
+
+def test_get_monte_carlo_intrinsic_value_without_uncertainty():
+    import pytest  # noqa: PLC0415
+
+    values = intrinsic_model.get_monte_carlo_intrinsic_value(
+        100, 0.05, 0.0, 0.025, 0.0, 0.09, 0.0, 50, 80, 10, 5, simulations=50
+    )
+    deterministic = float(
+        intrinsic_model.get_intrinsic_value(100, 0.05, 0.025, 0.09, 50, 80, 10, 5)
+        .loc["Intrinsic Value"]
+        .iloc[0]
+    )
+    assert values == pytest.approx(deterministic)
+
+
+def test_implied_growth_rate_is_missing_with_a_missing_input():
+    import numpy as np
+
+    growth = intrinsic_model.get_implied_growth_rate(
+        cash_flow=100.0,
+        weighted_average_cost_of_capital=np.nan,
+        perpetual_growth_rate=0.02,
+        cash_and_cash_equivalents=10.0,
+        total_debt=20.0,
+        shares_outstanding=10.0,
+        share_price=50.0,
+    )
+
+    assert np.isnan(growth)

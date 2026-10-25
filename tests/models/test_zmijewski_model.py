@@ -53,3 +53,14 @@ def test_get_zmijewski_bankruptcy_probability(recorder):
             zmijewski_score=pd.Series([-3.0, -1.0, 0.0, 1.0, 3.0]),
         )
     )
+
+
+def test_zmijewski_score_uses_the_full_precision_coefficients():
+    # Zmijewski (1984): -4.336 - 4.513 NI/TA + 5.679 TL/TA - 0.004 CA/CL
+    score = zmijewski_model.get_zmijewski_score(
+        net_income_to_total_assets_ratio=0.1,
+        total_liabilities_to_total_assets_ratio=0.5,
+        current_assets_to_current_liabilities_ratio=2.0,
+    )
+
+    assert abs(score - (-4.336 - 0.4513 + 2.8395 - 0.008)) < 1e-12

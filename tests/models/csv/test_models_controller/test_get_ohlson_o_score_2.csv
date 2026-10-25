@@ -5,7 +5,7 @@ AAPL,Log of Total Assets,Lag 3,,,,0.0032
 AAPL,Total Liabilities to Total Assets,Lag 1,,0.0275,0.044,-0.0381
 AAPL,Total Liabilities to Total Assets,Lag 2,,,0.0728,0.0042
 AAPL,Total Liabilities to Total Assets,Lag 3,,,,0.0319
-AAPL,Working Capital to Total Assets,Lag 1,,-0.7747,-2.9759,-0.9062
+AAPL,Working Capital to Total Assets,Lag 1,,-0.7747,-2.9759,0.9062
 AAPL,Working Capital to Total Assets,Lag 2,,,-1.4451,-1.1854
 AAPL,Working Capital to Total Assets,Lag 3,,,,-1.0418
 AAPL,Current Liabilities to Current Assets,Lag 1,,0.269,0.222,-0.11
@@ -26,8 +26,8 @@ AAPL,Negative Income Indicator,Lag 3,,,,
 AAPL,Change in Net Income,Lag 1,,,-0.8925,-1.5417
 AAPL,Change in Net Income,Lag 2,,,,-1.0582
 AAPL,Change in Net Income,Lag 3,,,,
-AAPL,Ohlson O-Score,Lag 1,,,-0.0406,0.0232
-AAPL,Ohlson O-Score,Lag 2,,,,-0.0184
+AAPL,Ohlson O-Score,Lag 1,,,0.0406,-0.0232
+AAPL,Ohlson O-Score,Lag 2,,,,0.0184
 AAPL,Ohlson O-Score,Lag 3,,,,
 AAPL,Ohlson Bankruptcy Probability,Lag 1,,,0.4171,-0.1738
 AAPL,Ohlson Bankruptcy Probability,Lag 2,,,,0.1708
@@ -59,8 +59,8 @@ MSFT,Negative Income Indicator,Lag 3,,,,
 MSFT,Change in Net Income,Lag 1,,,-0.4684,-1.0304
 MSFT,Change in Net Income,Lag 2,,,,-1.0161
 MSFT,Change in Net Income,Lag 3,,,,
-MSFT,Ohlson O-Score,Lag 1,,,0.0182,0.0149
-MSFT,Ohlson O-Score,Lag 2,,,,0.0334
+MSFT,Ohlson O-Score,Lag 1,,,-0.0182,-0.0149
+MSFT,Ohlson O-Score,Lag 2,,,,-0.0334
 MSFT,Ohlson O-Score,Lag 3,,,,
 MSFT,Ohlson Bankruptcy Probability,Lag 1,,,-0.1709,-0.1442
 MSFT,Ohlson Bankruptcy Probability,Lag 2,,,,-0.2905

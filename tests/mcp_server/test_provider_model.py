@@ -156,3 +156,31 @@ def test_the_standalone_instances_are_bounded_least_recently_used_first(
 
     assert len(kept) == provider_model.MAXIMUM_STANDALONE_INSTANCES
     assert not any("2000-01-01" in key for key in kept)
+
+
+def test_a_single_country_reaches_a_method_of_one_country(monkeypatch, provider):
+    class CurveFixedIncome:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_yield_curve_principal_components(self, country="United States"):
+            return pd.DataFrame({"PC1": [0.3]}, index=[country])
+
+    monkeypatch.setattr(provider_model, "FixedIncome", CurveFixedIncome)
+    arguments = dict(
+        module_name="fixedincome",
+        method_name="get_yield_curve_principal_components",
+        start_date="2020-01-01",
+        end_date="2026-01-01",
+        quarterly=False,
+    )
+
+    result = provider.call_standalone_module_functionality(
+        countries=["Germany"], **arguments
+    )
+    assert list(result.index) == ["Germany"]
+
+    with pytest.raises(ValueError, match="one country at a time"):
+        provider.call_standalone_module_functionality(
+            countries=["Germany", "Japan"], **arguments
+        )

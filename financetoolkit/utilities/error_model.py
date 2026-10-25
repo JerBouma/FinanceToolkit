@@ -116,9 +116,14 @@ def get_tickers_from_arguments(args: tuple) -> str:
 
     Returns:
         str: " for " followed by a comma separated list of tickers, or an empty string
-        when the controller has no tickers, such as Economics and Fixed Income.
+        when the controller has no tickers, such as Economics and Fixed Income, or has not
+        retrieved them yet.
     """
-    tickers = getattr(args[0], "_tickers", None) if args else None
+    # Read from the instance itself: the modules retrieve their tickers when first needed,
+    # and reporting an error must not retrieve data (or fail on the error it reports).
+    tickers = (
+        vars(args[0]).get("_tickers") if args and hasattr(args[0], "__dict__") else None
+    )
 
     if isinstance(tickers, str):
         return f" for {tickers}"

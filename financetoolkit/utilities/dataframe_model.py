@@ -146,7 +146,7 @@ def _filter_dataframe_columns(
             ]
 
             if level_valid:
-                mask |= pd.Series(level_values.isin(level_valid).tolist())
+                mask |= pd.Series(level_values.astype(str).isin(level_valid).tolist())
                 matched.extend(level_valid)
 
         for column in show_columns:

@@ -10,6 +10,7 @@ import pandas as pd
 def get_days_sales_in_receivables_index(
     net_receivables: pd.Series | pd.DataFrame,
     revenue: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Days Sales in Receivables Index (DSRI) measures the change in the proportion of
@@ -19,11 +20,13 @@ def get_days_sales_in_receivables_index(
     The formula is as follows:
 
         - Receivables to Sales = Net Receivables / Revenue
-        - DSRI = Receivables to Sales (t) / Receivables to Sales (t-1)
+        - DSRI = Receivables to Sales (t) / Receivables to Sales (t-lag)
 
     Args:
         net_receivables (pd.Series | pd.DataFrame): The net receivables of the company.
         revenue (pd.Series | pd.DataFrame): The revenue of the company.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Days Sales in Receivables Index (DSRI).
@@ -34,12 +37,13 @@ def get_days_sales_in_receivables_index(
     """
     receivables_to_sales = net_receivables / revenue
 
-    return receivables_to_sales / receivables_to_sales.shift(1, axis=1)
+    return receivables_to_sales / receivables_to_sales.shift(lag, axis=1)
 
 
 def get_gross_margin_index(
     revenue: pd.Series | pd.DataFrame,
     cost_of_goods_sold: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Gross Margin Index (GMI) measures the deterioration of a company's gross margin
@@ -49,11 +53,13 @@ def get_gross_margin_index(
     The formula is as follows:
 
         - Gross Margin = (Revenue - Cost of Goods Sold) / Revenue
-        - GMI = Gross Margin (t-1) / Gross Margin (t)
+        - GMI = Gross Margin (t-lag) / Gross Margin (t)
 
     Args:
         revenue (pd.Series | pd.DataFrame): The revenue of the company.
         cost_of_goods_sold (pd.Series | pd.DataFrame): The cost of goods sold of the company.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Gross Margin Index (GMI).
@@ -64,13 +70,14 @@ def get_gross_margin_index(
     """
     gross_margin = (revenue - cost_of_goods_sold) / revenue
 
-    return gross_margin.shift(1, axis=1) / gross_margin
+    return gross_margin.shift(lag, axis=1) / gross_margin
 
 
 def get_asset_quality_index(
     total_current_assets: pd.Series | pd.DataFrame,
     property_plant_and_equipment: pd.Series | pd.DataFrame,
     total_assets: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Asset Quality Index (AQI) measures the change in the proportion of non-current,
@@ -81,13 +88,15 @@ def get_asset_quality_index(
     The formula is as follows:
 
         - Asset Quality = 1 - ((Total Current Assets + Property, Plant and Equipment) / Total Assets)
-        - AQI = Asset Quality (t) / Asset Quality (t-1)
+        - AQI = Asset Quality (t) / Asset Quality (t-lag)
 
     Args:
         total_current_assets (pd.Series | pd.DataFrame): The total current assets of the company.
         property_plant_and_equipment (pd.Series | pd.DataFrame): The property, plant and
         equipment of the company.
         total_assets (pd.Series | pd.DataFrame): The total assets of the company.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Asset Quality Index (AQI).
@@ -100,11 +109,12 @@ def get_asset_quality_index(
         (total_current_assets + property_plant_and_equipment) / total_assets
     )
 
-    return asset_quality / asset_quality.shift(1, axis=1)
+    return asset_quality / asset_quality.shift(lag, axis=1)
 
 
 def get_sales_growth_index(
     revenue: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Sales Growth Index (SGI) measures the year-over-year growth in revenue. While
@@ -114,10 +124,12 @@ def get_sales_growth_index(
 
     The formula is as follows:
 
-        - SGI = Revenue (t) / Revenue (t-1)
+        - SGI = Revenue (t) / Revenue (t-lag)
 
     Args:
         revenue (pd.Series | pd.DataFrame): The revenue of the company.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Sales Growth Index (SGI).
@@ -126,12 +138,13 @@ def get_sales_growth_index(
     - A high SGI is not proof of manipulation by itself but flags companies under pressure to
     keep growth rates up, a common precondition for earnings manipulation.
     """
-    return revenue / revenue.shift(1, axis=1)
+    return revenue / revenue.shift(lag, axis=1)
 
 
 def get_depreciation_index(
     depreciation_and_amortization: pd.Series | pd.DataFrame,
     property_plant_and_equipment: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Depreciation Index (DEPI) measures the change in the rate at which a company is
@@ -143,13 +156,15 @@ def get_depreciation_index(
 
         - Depreciation Rate = Depreciation and Amortization /
         (Depreciation and Amortization + Property, Plant and Equipment)
-        - DEPI = Depreciation Rate (t-1) / Depreciation Rate (t)
+        - DEPI = Depreciation Rate (t-lag) / Depreciation Rate (t)
 
     Args:
         depreciation_and_amortization (pd.Series | pd.DataFrame): The depreciation and
         amortization of the company.
         property_plant_and_equipment (pd.Series | pd.DataFrame): The property, plant and
         equipment of the company.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Depreciation Index (DEPI).
@@ -157,17 +172,21 @@ def get_depreciation_index(
     Notes:
     - A DEPI greater than 1 indicates a slowing depreciation rate, which can be a sign of
     earnings manipulation through the understatement of depreciation expense.
+    - Beneish (1999) uses depreciation expense alone. Statements report depreciation and
+    amortization as one line, so the rate here includes amortization, which also moves with
+    acquired intangible assets.
     """
     depreciation_rate = depreciation_and_amortization / (
         depreciation_and_amortization + property_plant_and_equipment
     )
 
-    return depreciation_rate.shift(1, axis=1) / depreciation_rate
+    return depreciation_rate.shift(lag, axis=1) / depreciation_rate
 
 
 def get_selling_general_and_administrative_expenses_index(
     selling_general_and_administrative_expenses: pd.Series | pd.DataFrame,
     revenue: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Selling, General and Administrative Expenses Index (SGAI) measures the change in
@@ -178,12 +197,14 @@ def get_selling_general_and_administrative_expenses_index(
     The formula is as follows:
 
         - SGA to Sales = Selling, General and Administrative Expenses / Revenue
-        - SGAI = SGA to Sales (t) / SGA to Sales (t-1)
+        - SGAI = SGA to Sales (t) / SGA to Sales (t-lag)
 
     Args:
         selling_general_and_administrative_expenses (pd.Series | pd.DataFrame): The selling,
         general and administrative expenses of the company.
         revenue (pd.Series | pd.DataFrame): The revenue of the company.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Selling, General and Administrative Expenses Index (SGAI).
@@ -193,13 +214,14 @@ def get_selling_general_and_administrative_expenses_index(
     """
     sga_to_sales = selling_general_and_administrative_expenses / revenue
 
-    return sga_to_sales / sga_to_sales.shift(1, axis=1)
+    return sga_to_sales / sga_to_sales.shift(lag, axis=1)
 
 
 def get_leverage_index(
     total_current_liabilities: pd.Series | pd.DataFrame,
     long_term_debt: pd.Series | pd.DataFrame,
     total_assets: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Leverage Index (LVGI) measures the change in a company's leverage. An increase in
@@ -209,13 +231,15 @@ def get_leverage_index(
     The formula is as follows:
 
         - Leverage = (Total Current Liabilities + Long Term Debt) / Total Assets
-        - LVGI = Leverage (t) / Leverage (t-1)
+        - LVGI = Leverage (t) / Leverage (t-lag)
 
     Args:
         total_current_liabilities (pd.Series | pd.DataFrame): The total current liabilities
         of the company.
         long_term_debt (pd.Series | pd.DataFrame): The long term debt of the company.
         total_assets (pd.Series | pd.DataFrame): The total assets of the company.
+        lag (int, optional): The number of periods between the two compared periods: 1 on yearly
+        data and 4 on quarterly data, so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Leverage Index (LVGI).
@@ -225,7 +249,7 @@ def get_leverage_index(
     """
     leverage = (total_current_liabilities + long_term_debt) / total_assets
 
-    return leverage / leverage.shift(1, axis=1)
+    return leverage / leverage.shift(lag, axis=1)
 
 
 def get_total_accruals_to_total_assets(
@@ -255,6 +279,16 @@ def get_total_accruals_to_total_assets(
     Notes:
     - A high TATA indicates that a large portion of earnings is composed of accruals rather
     than cash, which is a hallmark of earnings manipulation.
+    - Beneish (1999) builds total accruals from balance sheet changes (working capital excluding
+    cash, current maturities of long-term debt and income tax payable, minus depreciation). This
+    function uses the cash flow form, Net Income minus Cash Flow from Operations, as in Beneish,
+    Lee and Nichols (2013).
+
+    References:
+    - Beneish, Messod D. "The Detection of Earnings Manipulation." Financial Analysts Journal,
+    Vol. 55, No. 5, 1999, pp. 24-36.
+    - Beneish, Messod D., Charles M. C. Lee, and D. Craig Nichols. "Earnings Manipulation and
+    Expected Returns." Financial Analysts Journal, Vol. 69, No. 2, 2013, pp. 57-82.
     """
     return (net_income - cash_flow_from_operations) / total_assets
 
@@ -317,6 +351,8 @@ def get_beneish_m_score(
     References:
     - Beneish, Messod D. "The Detection of Earnings Manipulation." Financial Analysts Journal,
     Vol. 55, No. 5, 1999, pp. 24-36.
+    - Beneish, Messod D., Charles M. C. Lee, and D. Craig Nichols. "Earnings Manipulation and
+    Expected Returns." Financial Analysts Journal, Vol. 69, No. 2, 2013, pp. 57-82.
     """
     return (
         -4.84

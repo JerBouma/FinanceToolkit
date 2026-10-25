@@ -5,6 +5,7 @@
 # pylint: disable=missing-function-docstring
 
 import pandas as pd
+import pytest
 
 from financetoolkit import historical_model
 
@@ -185,3 +186,28 @@ def test_a_ticker_without_data_does_not_break_the_others(monkeypatch):
 
     assert data.index.is_monotonic_increasing
     assert data["Close"]["AAPL"].tolist()[:3] == [1.0, 2.0, 3.0]
+
+
+def test_calculate_period_average_averages_the_observed_days():
+    """Each period is the mean of its own dates; days without data carry no weight."""
+    dates = pd.PeriodIndex(
+        ["2023-01-30", "2023-01-31", "2023-02-01", "2023-02-28"], freq="D"
+    )
+    daily = pd.DataFrame(
+        {
+            ("Adj Close", "^TNX"): [0.03, 0.05, 0.04, 0.02],
+            ("Return", "^TNX"): [0.0, 0.1, 0.2, 0.3],
+        },
+        index=dates,
+    )
+
+    average = historical_model.calculate_period_average(
+        "monthly", daily, columns=["Adj Close"]
+    )
+
+    assert list(average.columns) == [("Adj Close", "^TNX")]
+    assert average[("Adj Close", "^TNX")].tolist() == pytest.approx([0.04, 0.03])
+    assert str(average.index[0]) == "2023-01"
+
+    with pytest.raises(ValueError):
+        historical_model.calculate_period_average("daily", daily)

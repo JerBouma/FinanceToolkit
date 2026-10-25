@@ -134,15 +134,15 @@ AAPL,Preferred Stock,Lag 3,,,,
 AAPL,Common Stock,Lag 1,,0.1297,0.1305,0.1382
 AAPL,Common Stock,Lag 2,,,0.2771,0.2867
 AAPL,Common Stock,Lag 3,,,,0.4536
-AAPL,Retained Earnings,Lag 1,,-0.6284,-1.5516,-0.9302
+AAPL,Retained Earnings,Lag 1,,-0.6284,-1.5516,0.9302
 AAPL,Retained Earnings,Lag 2,,,-1.205,-1.0385
 AAPL,Retained Earnings,Lag 3,,,,-1.0143
 AAPL,Additional Paid In Capital,Lag 1,,,,
 AAPL,Additional Paid In Capital,Lag 2,,,,
 AAPL,Additional Paid In Capital,Lag 3,,,,
-AAPL,Accumulated Other Comprehensive Income,Lag 1,,-1.4015,-69.1534,0.0309
-AAPL,Accumulated Other Comprehensive Income,Lag 2,,,26.3621,-71.2577
-AAPL,Accumulated Other Comprehensive Income,Lag 3,,,,27.2069
+AAPL,Accumulated Other Comprehensive Income,Lag 1,,1.4015,-69.1534,-0.0309
+AAPL,Accumulated Other Comprehensive Income,Lag 2,,,-26.3621,-71.2577
+AAPL,Accumulated Other Comprehensive Income,Lag 3,,,,-27.2069
 AAPL,Total Shareholder Equity,Lag 1,,-0.0344,-0.1968,0.2264
 AAPL,Total Shareholder Equity,Lag 2,,,-0.2245,-0.015
 AAPL,Total Shareholder Equity,Lag 3,,,,-0.0489
@@ -296,7 +296,7 @@ MSFT,Retained Earnings,Lag 3,,,,2.4383
 MSFT,Additional Paid In Capital,Lag 1,,,,
 MSFT,Additional Paid In Capital,Lag 2,,,,
 MSFT,Additional Paid In Capital,Lag 3,,,,
-MSFT,Accumulated Other Comprehensive Income,Lag 1,,-0.4281,-3.5675,0.3559
+MSFT,Accumulated Other Comprehensive Income,Lag 1,,-0.4281,-3.5675,-0.3559
 MSFT,Accumulated Other Comprehensive Income,Lag 2,,,-2.4683,-4.4813
 MSFT,Accumulated Other Comprehensive Income,Lag 3,,,,-2.9909
 MSFT,Total Shareholder Equity,Lag 1,,0.2002,0.1729,0.2383

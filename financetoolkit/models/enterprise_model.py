@@ -9,12 +9,13 @@ from financetoolkit.utilities.dataframe_model import concat_frames
 
 
 def get_enterprise_value_breakdown(
-    share_price: pd.Series,
-    shares_outstanding: pd.Series,
-    total_debt: pd.Series,
-    minority_interest: pd.Series,
-    preferred_equity: pd.Series,
-    cash_and_cash_equivalents: pd.Series,
+    share_price: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+    total_debt: pd.Series | pd.DataFrame,
+    minority_interest: pd.Series | pd.DataFrame,
+    preferred_equity: pd.Series | pd.DataFrame,
+    cash_and_cash_equivalents: pd.Series | pd.DataFrame,
+    short_term_investments: pd.Series | pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     The Enterprise Value breakdown corresponds to the following components:
@@ -26,36 +27,59 @@ def get_enterprise_value_breakdown(
         - Debt: The sum of long-term and short-term debt
         - Preferred equity: The value of preferred shares
         - Minority interest: The equity value of a subsidiary with less than 50% ownership.
-        - Cash and cash equivalents: The total amount of cash, certificates of
-        deposit, drafts, money orders, commercial paper, marketable securities, money market
-        funds, short-term government bonds, or Treasury bills a company possesses.
+        - Cash and cash equivalents: The cash and the investments that are readily convertible
+        to cash within three months, such as money market funds and Treasury bills.
+        - Short term investments: The marketable securities that are not cash equivalents, such
+        as certificates of deposit and commercial paper with a longer maturity.
+
+    The formula is as follows:
+
+        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest
+        + Preferred Equity - (Cash and Cash Equivalents + Short Term Investments)
+
+    Cash and marketable securities are deducted together (Damodaran), the same Enterprise
+    Value as the Ratios module calculates. A missing Short Term Investments value counts as 0.
 
     Args:
-        share_price (pd.Series): The share price of the company.
-        shares_outstanding (pd.Series): The total shares outstanding of the company.
-        total_debt (pd.Series): The total debt of the company.
-        minority_interest (pd.Series): The minority interest of the company.
-        preferred_equity (pd.Series): The preferred equity of the company.
-        cash_and_cash_equivalents (pd.Series): The cash and cash equivalents of the company.
+        share_price (pd.Series | pd.DataFrame): The share price of the company.
+        shares_outstanding (pd.Series | pd.DataFrame): The total shares outstanding of the company.
+        total_debt (pd.Series | pd.DataFrame): The total debt of the company.
+        minority_interest (pd.Series | pd.DataFrame): The minority interest of the company.
+        preferred_equity (pd.Series | pd.DataFrame): The preferred equity of the company.
+        cash_and_cash_equivalents (pd.Series | pd.DataFrame): The cash and cash equivalents of the
+            company.
+        short_term_investments (pd.Series | pd.DataFrame | None, optional): The short term
+            investments of the company. Defaults to None, which deducts only the cash and cash
+            equivalents and leaves the Short Term Investments row out of the breakdown.
 
     Returns:
         pd.DataFrame: the Enterprise Value breakdown.
+
+    References:
+    - Damodaran, Aswath. "Investment Valuation: Tools and Techniques for Determining the
+    Value of Any Asset." 3rd ed., Wiley, 2012, chapter 16.
     """
-    # Calculate the net profit margin
+    # The market value of the common shares.
     market_cap = valuation_model.get_market_cap(
         share_price=share_price, total_shares_outstanding=shares_outstanding
     )
 
-    # Calculate the market cap
+    # The two separate rows are added so that a missing short term investment value never
+    # leaves the cash out of the deduction.
+    cash_and_short_term_investments = (
+        cash_and_cash_equivalents.add(short_term_investments, fill_value=0)
+        if short_term_investments is not None
+        else cash_and_cash_equivalents
+    )
+
     enterprise_value = valuation_model.get_enterprise_value(
         market_cap=market_cap,
         total_debt=total_debt,
         minority_interest=minority_interest,
         preferred_equity=preferred_equity,
-        cash_and_cash_equivalents=cash_and_cash_equivalents,
+        cash_and_cash_equivalents=cash_and_short_term_investments,
     )
 
-    # Create a dictionary with the Dupont analysis components
     components = {
         "Share Price": share_price,
         "Market Capitalization": market_cap,
@@ -63,8 +87,12 @@ def get_enterprise_value_breakdown(
         "Minority Interest": minority_interest,
         "Preferred Equity": preferred_equity,
         "Cash and Cash Equivalents": cash_and_cash_equivalents,
-        "Enterprise Value": enterprise_value,
     }
+
+    if short_term_investments is not None:
+        components["Short Term Investments"] = short_term_investments
+
+    components["Enterprise Value"] = enterprise_value
 
     if isinstance(enterprise_value, pd.DataFrame):
         return (

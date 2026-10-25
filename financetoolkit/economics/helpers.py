@@ -53,6 +53,31 @@ COUNTRY_CODES: dict[str, str] = {
     "EU27_2020": "European Union",
 }  # fmt: skip
 
+# The countries the OECD names differently from the Global Macro Database. An OECD series
+# combined with a GMDB series (the real interest rate and the misery index, whose inflation
+# leg is always the GMDB's) is renamed to the GMDB names first, as columns that differ only
+# in name would otherwise not line up and give a column of NaN for each spelling.
+OECD_TO_GMDB_COUNTRY_NAMES: dict[str, str] = {
+    "Russia": "Russian Federation",
+    "Swaziland": "Eswatini",
+    "Democratic Republic of the Congo": "Congo DR",
+}
+
+
+def to_gmdb_country_names(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Renames the country columns of an OECD series to the names the Global Macro Database
+    uses, so the two can be combined column by column.
+
+    Args:
+        data (pd.DataFrame): The OECD series with a column per country.
+
+    Returns:
+        pd.DataFrame: The same series with the GMDB country names.
+    """
+    return data.rename(columns=OECD_TO_GMDB_COUNTRY_NAMES)
+
+
 # The periods a high-frequency series can be returned in, with the PeriodIndex frequency
 # each one maps to. Weekly periods end on Friday, the last trading day of the week.
 PERIOD_FREQUENCIES = {"daily": "D", "weekly": "W-FRI", "monthly": "M"}
@@ -120,6 +145,7 @@ def collect_cached_data(
     fetch: Callable[[], pd.DataFrame],
     description: str,
     expect_empty: bool = False,
+    fallback: str | None = None,
 ) -> pd.DataFrame:
     """
     Retrieves a dataset through the cache, serving the last stored copy when the source
@@ -141,6 +167,10 @@ def collect_cached_data(
         description (str): What is retrieved, used in the log messages.
         expect_empty (bool): Whether an empty answer is expected, such as for a period
             before a source starts, so it is not warned about. Defaults to False.
+        fallback (str | None): What is used instead when the source cannot be reached and
+            nothing is cached, for data that only adds to another source's series. The
+            failure is then logged as information with this note rather than as an error.
+            Defaults to None.
 
     Returns:
         pd.DataFrame: The data, or an empty DataFrame when the source cannot be reached
@@ -174,6 +204,16 @@ def collect_cached_data(
                 error,
             )
             return stale_data
+
+        if fallback:
+            logger.info(
+                "Could not reach %s for the %s (%s), so %s.",
+                source,
+                description,
+                error,
+                fallback,
+            )
+            return pd.DataFrame()
 
         logger.error(
             "Could not reach %s for the %s (%s). No data is returned for it.",

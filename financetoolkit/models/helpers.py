@@ -5,8 +5,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.utilities.statistics_model import to_datetime_index
-
 # pylint: disable=protected-access
 
 PERIOD_TRANSLATION: dict[str, str] = {
@@ -18,34 +16,28 @@ PERIOD_TRANSLATION: dict[str, str] = {
 
 
 def determine_within_historical_data(
-    daily_historical_data: pd.DataFrame,
-):
+    period: str, daily_historical_data: pd.DataFrame
+) -> pd.DataFrame:
     """
-    This function is a specific function solely related to the Ratios controller. It
-    therefore also requires a self instance to exists with specific parameters.
+    Nests the daily historical data under the week, month, quarter or year it falls in, the
+    "within period" data the models estimate a beta per period from.
 
     Args:
-        period (str): the period to return the data for.
-        within_period (bool): whether to return the data within the period or the
-        entire period.
+        period (str): The period (weekly, monthly, quarterly or yearly).
+        daily_historical_data (pd.DataFrame): The daily historical data, with a PeriodIndex.
 
     Raises:
-        ValueError: if the period is not daily, monthly, weekly, quarterly, or yearly.
+        KeyError: If the period is not weekly, monthly, quarterly or yearly.
 
     Returns:
-        pd.Series: the returns for the period.
+        pd.DataFrame: The daily data with the period and the day as the index levels.
     """
-    within_historical_data = {}
+    symbol = PERIOD_TRANSLATION[period]
+    dates = pd.DatetimeIndex(daily_historical_data.to_timestamp().index)
 
-    for period, symbol in PERIOD_TRANSLATION.items():
-        period_data = daily_historical_data.copy()
-        period_data.index = pd.MultiIndex.from_arrays(
-            [
-                to_datetime_index(daily_historical_data.index).to_period(symbol),
-                to_datetime_index(daily_historical_data.index).to_period("D"),
-            ]
-        )
+    period_data = daily_historical_data.copy()
+    period_data.index = pd.MultiIndex.from_arrays(
+        [dates.to_period(symbol), dates.to_period("D")]
+    )
 
-        within_historical_data[period] = period_data
-
-    return within_historical_data
+    return period_data

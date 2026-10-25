@@ -1,14 +1,14 @@
 ,,2022,2023
 AAPL,Return on Assets Criteria,1,1
 AAPL,Operating Cashflow Criteria,1,1
-AAPL,Change in Return on Assets Criteria,1,0
+AAPL,Change in Return on Assets Criteria,0,0
 AAPL,Accruals Criteria,1,1
 AAPL,Change in Leverage Criteria,1,1
 AAPL,Change in Current Ratio Criteria,0,1
 AAPL,Number of Shares Criteria,1,1
 AAPL,Gross Margin Criteria,1,1
-AAPL,Asset Turnover Criteria,1,0
-AAPL,Piotroski Score,8,7
+AAPL,Asset Turnover Criteria,0,0
+AAPL,Piotroski Score,6,7
 MSFT,Return on Assets Criteria,1,1
 MSFT,Operating Cashflow Criteria,1,1
 MSFT,Change in Return on Assets Criteria,1,0

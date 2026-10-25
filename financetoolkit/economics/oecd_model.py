@@ -743,8 +743,8 @@ def get_house_prices(
     potential macroeconomic imbalances and the risk exposure of the household
     and financial sectors.
 
-    The series returned is seasonally adjusted and expressed as an index, with the
-    base year (index = 100) varying per country.
+    The series returned is seasonally adjusted and expressed as an index with
+    2015 = 100 for every country.
 
     Args:
         quarterly (bool): Whether to return the quarterly data or the yearly data.
@@ -781,8 +781,8 @@ def get_rent_prices(
     properties over time. Rent Prices are key statistics not only for citizens and
     households across the world, but also for economic and monetary policy makers.
 
-    The series returned is seasonally adjusted and expressed as an index, with the
-    base year (index = 100) varying per country.
+    The series returned is seasonally adjusted and expressed as an index with
+    2015 = 100 for every country.
 
     Args:
         quarterly (bool): Whether to return the quarterly data or the yearly data.
@@ -940,8 +940,9 @@ def get_gross_domestic_product_growth(
     """
     Get the quarterly growth of real gross domestic product (GDP) for a variety of
     countries from the OECD's Quarterly National Accounts. The growth is measured in
-    chain-linked volumes and is seasonally and calendar adjusted, the headline figure
-    national statistical offices publish.
+    chain-linked volumes and is seasonally and calendar adjusted. The quarter-on-quarter
+    growth is not annualized, so it is about a quarter of the annualized rate some
+    statistical offices, such as the U.S. Bureau of Economic Analysis, headline.
 
     Args:
         year_over_year (bool): Whether to return the change on the same quarter a year
@@ -1196,9 +1197,9 @@ def get_share_prices(
     monthly data, and normally expressed as simple arithmetic averages of
     the daily data.
 
-    The series is a price index (it excludes dividends), with the base year
-    (index = 100) varying per country, so levels are not comparable across countries
-    but growth rates are.
+    The series is a price index (it excludes dividends) with 2015 = 100 for every
+    country, so a level shows the change since 2015 and is not comparable across
+    countries as a price; growth rates are.
 
     Args:
         period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.

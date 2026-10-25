@@ -223,11 +223,11 @@ For example, see some of the profitability ratios of Microsoft below.
 
 |                                 |    2017 |    2018 |    2019 |    2020 |    2021 |    2022 |    2023 |
 |:--------------------------------|--------:|--------:|--------:|--------:|--------:|--------:|--------:|
-| Gross Margin                    |  0.6191 |  0.6525 |  0.659  |  0.6778 |  0.6893 |  0.684  |  0.6892 |
-| Operating Margin                |  0.2482 |  0.3177 |  0.3414 |  0.3703 |  0.4159 |  0.4206 |  0.4177 |
-| Net Profit Margin               |  0.2357 |  0.1502 |  0.3118 |  0.3096 |  0.3645 |  0.3669 |  0.3415 |
-| Interest Coverage Ratio         | 13.9982 | 16.5821 | 20.3429 | 25.3782 | 34.7835 | 47.4275 | 52.0244 |
-| Income Before Tax Profit Margin |  0.2574 |  0.3305 |  0.3472 |  0.3708 |  0.423  |  0.4222 |  0.4214 |
+| Gross Margin                    |  0.6452 |  0.6525 |  0.659  |  0.6778 |  0.6893 |  0.684  |  0.6892 |
+| Operating Margin                |  0.3006 |  0.3177 |  0.3414 |  0.3703 |  0.4159 |  0.4206 |  0.4177 |
+| Net Profit Margin               |  0.2639 |  0.1502 |  0.3118 |  0.3096 |  0.3645 |  0.3669 |  0.3415 |
+| Interest Coverage Ratio         | 13.0626 | 12.8277 | 15.9937 | 20.4396 | 29.8022 | 40.4183 | 44.9812 |
+| Income Before Tax Profit Margin |  0.3096 |  0.3305 |  0.3472 |  0.3708 |  0.423  |  0.4222 |  0.4214 |
 
 And below a few of the profitability ratios of Microsoft, each with its latest value, the change over the period and its trend.
 
@@ -268,7 +268,7 @@ The five components of the Extended DuPont Analysis multiply into the Return on 
   <img alt="Models" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/models-light.png">
 </picture>
 
-The `models` module covers 10+ models in total, for example [DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/dupont-analysis), [WACC](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/weighted-average-cost-of-capital-wacc), [Economic Value Added (EVA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/economic-value-added-eva), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/altman-z-score), [Beneish M-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/beneish-m-score) and the [Graham Number](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/graham-number). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#getting-started) and the full model-by-model documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models).**
+The `models` module covers 35+ models in total, from valuation (reverse DCF, Earnings Power Value, Monte Carlo DCF, peer comparison) and credit (Merton distance to default, synthetic credit rating) to quality and manipulation scores (Magic Formula, Mohanram G-Score, Dechow F-Score, Montier C-Score), for example [DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/dupont-analysis), [WACC](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/weighted-average-cost-of-capital-wacc), [Economic Value Added (EVA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/economic-value-added-eva), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/altman-z-score), [Beneish M-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/beneish-m-score) and the [Graham Number](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/graham-number). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#getting-started) and the full model-by-model documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models).**
 
 ### Obtaining Options and Greeks
 

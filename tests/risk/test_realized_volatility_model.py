@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.risk import realized_volatility_model
 
@@ -176,3 +177,30 @@ def test_get_har_rv_forecast_invalid_type():
         raise AssertionError("Expected a TypeError to be raised.")
     except TypeError:
         pass
+
+
+def test_get_yang_zhang_volatility_needs_a_period_index():
+    dates = pd.bdate_range("2023-01-02", periods=60)
+    rng = np.random.default_rng(5)
+    close = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, 0.01, 60))), index=dates)
+    open_ = close.shift(1).fillna(100) * np.exp(rng.normal(0, 0.002, 60))
+    high = np.maximum(open_, close) * 1.005
+    low = np.minimum(open_, close) * 0.995
+
+    # Every grouping step converts the index the same way, with the same clear error.
+    with pytest.raises(TypeError, match="PeriodIndex"):
+        realized_volatility_model.get_yang_zhang_volatility(
+            open_, high, low, close, "monthly"
+        )
+
+    period_index = dates.to_period("D")
+    result = realized_volatility_model.get_yang_zhang_volatility(
+        open_.set_axis(period_index),
+        high.set_axis(period_index),
+        low.set_axis(period_index),
+        close.set_axis(period_index),
+        "monthly",
+    )
+
+    assert len(result) == 3  # noqa: PLR2004
+    assert result.notna().all()

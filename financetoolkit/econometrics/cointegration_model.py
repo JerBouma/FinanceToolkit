@@ -140,12 +140,13 @@ def get_johansen_cointegration(
     Args:
         data (pd.DataFrame): A DataFrame with one column per series (e.g. price levels of
         several assets), at least 2 columns.
-        det_order (int, optional): Which deterministic term to include: -1 (none), 0 (a
-        constant, restricted to lie in the cointegrating relation -- no separate linear
-        trend) or 1 (a linear trend restricted to the cointegrating relation, alongside
-        an unrestricted constant in the short-run dynamics). These are Johansen's cases
-        1, 2 and 4 respectively, matching the critical-value tables `statsmodels`
-        returns. Defaults to 0.
+        det_order (int, optional): Which deterministic term to include: -1 (none), 0 (an
+        unrestricted constant: `coint_johansen` demeans the levels and the differences,
+        so the levels may drift linearly) or 1 (a linear trend restricted to the
+        cointegrating relation, alongside an unrestricted constant: the levels are
+        linearly detrended and the differences demeaned). These are Johansen's cases
+        1, 3 and 4 respectively, matching the MacKinnon, Haug and Michelis (1999)
+        critical-value tables `statsmodels` returns. Defaults to 0.
         k_ar_diff (int, optional): The number of lagged first differences to include as
         short-run dynamics (equivalent to fitting a levels-VAR of order `k_ar_diff + 1`).
         Defaults to 1.

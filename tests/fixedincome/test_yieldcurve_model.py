@@ -128,3 +128,21 @@ def test_get_breakeven_inflation_rate_type_error():
         yieldcurve_model.get_breakeven_inflation_rate(
             nominal_yield="0.045", real_yield=0.018
         )
+
+
+def test_get_par_yield_prices_at_par_between_coupon_dates():
+    """A bond with the par yield as coupon prices at par on the same curve, at any maturity."""
+    from financetoolkit.fixedincome import bond_model
+
+    spot_rates = pd.Series({1: 0.03, 2: 0.032, 5: 0.038, 10: 0.044})
+
+    for maturity, frequency in ((2.5, 1), (2.75, 2), (5, 1), (7.3, 4)):
+        par_yield = yieldcurve_model.get_par_yield(
+            spot_rates=spot_rates, years_to_maturity=maturity, frequency=frequency
+        )
+        assert (
+            bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
+                100, par_yield, maturity, spot_rates, frequency
+            )
+            == pytest.approx(100)
+        )

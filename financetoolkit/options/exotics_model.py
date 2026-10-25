@@ -154,8 +154,8 @@ def get_barrier_option(
     - Up barrier: the barrier is above the current stock price.
 
     A useful identity that this function satisfies (and that is used to validate the
-    implementation) is in-out parity: for identical parameters, a knock-in option plus
-    its corresponding knock-out option (same direction) always equals the price of the
+    implementation) is in-out parity: for identical parameters and no rebate, a knock-in
+    option plus its corresponding knock-out option (same direction) equals the price of the
     equivalent vanilla European option, since the underlying either does or does not
     touch the barrier:
 
@@ -327,9 +327,14 @@ def get_asian_option(
     An Asian option's payoff depends on the average price of the underlying stock over
     the option's life, rather than the price at a single point in time, which typically
     makes it cheaper than the equivalent vanilla option (the averaging reduces
-    variance). While the arithmetic-average Asian option has no closed-form solution
-    (it requires simulation, see `options_model.get_monte_carlo_option_price`), the
-    geometric-average version has an elegant closed form: since the geometric average
+    variance). The package prices the continuously sampled geometric-average Asian
+    option only. The arithmetic-average Asian option has no closed-form solution and
+    needs a path simulation that averages the price along each path, which
+    `options_model.get_monte_carlo_option_price` does not do: it prices European
+    options from the terminal price. The geometric-average version has an elegant
+    closed form instead and, since the geometric mean never exceeds the arithmetic mean,
+    is a lower bound for the arithmetic-average call and an upper bound for the
+    arithmetic-average put. Since the geometric average
     of a Geometric Brownian Motion is itself lognormally distributed, the Asian option
     can be priced with a Black-Scholes-style formula using an adjusted volatility and
     an adjusted cost of carry:

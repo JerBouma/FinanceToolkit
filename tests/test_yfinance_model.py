@@ -92,3 +92,110 @@ def test_a_currency_pair_is_requested_as_yahoo_finance_writes_it(monkeypatch):
     yfinance_model.get_historical_data("EURUSD", start="2025-01-01", end="2025-01-31")
 
     assert requested == ["EURUSD=X"]
+
+
+def apple_balance_sheet():
+    """A Yahoo Finance balance sheet with Apple's September fiscal year ends."""
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            pd.Timestamp("2023-09-30"): [352583e6, 29965e6],
+            pd.Timestamp("2022-09-24"): [352755e6, 23646e6],
+            pd.Timestamp("2021-09-25"): [351002e6, 34940e6],
+        },
+        index=["TotalAssets", "CashAndCashEquivalents"],
+    )
+
+
+@pytest.mark.parametrize("quarter", [False, True])
+def test_the_yahoo_period_end_dates_are_the_fiscal_period_ends(monkeypatch, quarter):
+    import pandas as pd
+
+    from financetoolkit import normalization_model
+    from financetoolkit.helpers import determine_period_end_dates
+
+    class FakeTicker:
+        def __init__(self, ticker):
+            self.ticker = ticker
+
+        def get_balance_sheet(self, freq):  # noqa: ARG002
+            return apple_balance_sheet()
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(yfinance_model, "get_reported_currency", lambda _: "USD")
+
+    statement = yfinance_model.get_financial_statement(
+        "AAPL", statement="balance", quarter=quarter
+    )
+
+    # Labelled with calendar periods, while the row keeps the dates Yahoo Finance reported.
+    expected_labels = (
+        ["2023Q3", "2022Q3", "2021Q3"] if quarter else ["2023", "2022", "2021"]
+    )
+    assert [str(period) for period in statement.columns] == expected_labels
+    assert statement.loc["periodEndDate"].tolist() == [
+        "2023-09-30",
+        "2022-09-24",
+        "2021-09-25",
+    ]
+
+    statistics = yfinance_model.get_statistics_statement(
+        "AAPL", periods=statement.columns, financial_statement=statement
+    )
+
+    assert statistics.loc["financialCurrency"].tolist() == ["USD"] * 3
+
+    # Normalized as the Toolkit normalizes the Yahoo Finance statistics.
+    statistics_format = normalization_model.read_normalization_file("statistics_yf")
+    normalized = normalization_model.convert_financial_statements(
+        financial_statements=pd.concat({"AAPL": statistics}, axis=0),
+        statement_format=statistics_format,
+        adjust_financial_statements=False,
+        reverse_dates=True,
+    )
+
+    period_end_dates = determine_period_end_dates(
+        periods=normalized.columns,
+        tickers=["AAPL"],
+        quarter=quarter,
+        statistics_statement=normalized,
+    )
+
+    assert period_end_dates.loc["AAPL"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2021-09-25",
+        "2022-09-24",
+        "2023-09-30",
+    ]
+
+
+def test_a_yahoo_statement_without_period_end_dates_leaves_the_statistic_out(
+    monkeypatch,
+):
+    import pandas as pd
+
+    monkeypatch.setattr(yfinance_model, "get_reported_currency", lambda _: "USD")
+    periods = pd.PeriodIndex(["2023", "2022"], freq="Y")
+
+    statistics = yfinance_model.get_statistics_statement(
+        "AAPL",
+        periods=periods,
+        financial_statement=pd.DataFrame(
+            {period: [1.0] for period in periods}, index=["TotalAssets"]
+        ),
+    )
+
+    assert statistics.index.tolist() == ["financialCurrency"]
+
+    # Without a reporting currency the period end dates still make a statistics statement.
+    monkeypatch.setattr(yfinance_model, "get_reported_currency", lambda _: "")
+    statement = pd.DataFrame(
+        {periods[0]: ["2023-09-30"], periods[1]: ["2022-09-24"]},
+        index=["periodEndDate"],
+    )
+
+    statistics = yfinance_model.get_statistics_statement(
+        "AAPL", periods=periods, financial_statement=statement
+    )
+
+    assert statistics.loc["periodEndDate"].tolist() == ["2023-09-30", "2022-09-24"]

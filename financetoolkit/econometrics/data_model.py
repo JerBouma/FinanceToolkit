@@ -168,9 +168,8 @@ def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
         changes (str): "percentage" (the relative change, like a return), "log" (the log
             change), "difference" (the first difference, for rates and ratios that can be
             zero or negative) or "none" (the series are changes already). The percentage
-            change divides by the absolute previous value, as the growth rates of the
-            package do, so a rise from -10 to -5 is +50% rather than -50%; a change from
-            zero is NaN.
+            change is (x - previous) / |previous|, so a rise from -10 to -5 is +50%
+            rather than -50%; a change from zero is NaN.
 
     Returns:
         pd.DataFrame: The changes at the dates of the levels; the first observation of each

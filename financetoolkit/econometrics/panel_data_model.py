@@ -23,11 +23,19 @@ SIGNIFICANCE_LEVEL = 0.05
 TWO_WAY_MAX_ITERATIONS = 1000
 TWO_WAY_TOLERANCE = 1e-12
 
+# A regressor is absorbed when the variation the fixed effects leave of it is below this
+# share of its scale. The within-group range of a one-way absorbed regressor is exactly 0;
+# two-way demeaning leaves rounding noise of up to about 1e-13 on a sparse unbalanced
+# panel, while a genuine regressor such as 1e6 plus noise of 1e-4 keeps about 3e-10.
+ONE_WAY_ABSORBED_SHARE = 1e-12
+TWO_WAY_ABSORBED_SHARE = 1e-11
+
 # Why a regressor cannot be estimated next to the fixed effects that absorb it.
 ABSORBED_REGRESSOR_EXPLANATION = (
     "a regressor that is the same for every entity at each date cannot be combined with "
-    "time_effects, and one that is constant per entity cannot be combined with "
-    "entity_effects."
+    "time_effects, one that is constant per entity cannot be combined with "
+    "entity_effects, and one that is the sum of an entity part and a date part cannot be "
+    "combined with both."
 )
 
 
@@ -121,6 +129,39 @@ def _align_panel(y: pd.Series, x: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame
     return combined["__y__"], combined.drop(columns="__y__")
 
 
+def _two_way_demean(
+    data: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Removes the entity and time means of every column by alternating projections:
+    demeaning by entity, then by time, until a pass no longer changes the data. This is
+    the two-way within transformation `x_it - a_i - b_t` of a balanced or unbalanced
+    panel (one pass suffices on a balanced one).
+
+    Returns:
+        tuple: The demeaned data and the entity part `a_i` and time part `b_t` that were
+        removed, all per observation. The split between `a_i` and `b_t` is only unique
+        up to a level shift.
+    """
+    # The data's own scale makes the stopping rule hold for large-valued columns too,
+    # whose rounding noise alone exceeds an absolute tolerance.
+    tolerance = TWO_WAY_TOLERANCE * data.abs().max().clip(lower=1.0)
+    demeaned = data
+    entity_part = data * 0.0
+    time_part = data * 0.0
+
+    for _ in range(TWO_WAY_MAX_ITERATIONS):
+        entity_means = demeaned.groupby(level="entity").transform("mean")
+        time_means = (demeaned - entity_means).groupby(level="time").transform("mean")
+        demeaned = demeaned - entity_means - time_means
+        entity_part += entity_means
+        time_part += time_means
+        if ((entity_means + time_means).abs().max() < tolerance).all():
+            break
+
+    return demeaned, entity_part, time_part
+
+
 def _effect_intercepts(
     y_panel: pd.Series,
     x_panel: pd.DataFrame,
@@ -153,30 +194,11 @@ def _effect_intercepts(
         alpha = residual_from_slope.groupby(level=level).mean()
         return (alpha, None) if entity_effects else (None, alpha)
 
-    entity_codes = residual_from_slope.index.get_level_values("entity")
-    time_codes = residual_from_slope.index.get_level_values("time")
-    time_alpha = pd.Series(0.0, index=pd.Index(time_codes.unique(), name="time"))
-    entity_alpha = residual_from_slope.groupby(level="entity").mean()
-
-    for _ in range(TWO_WAY_MAX_ITERATIONS):
-        previous = entity_alpha
-        time_alpha = (
-            (residual_from_slope - entity_alpha.reindex(entity_codes).to_numpy())
-            .groupby(level="time")
-            .mean()
-        )
-        # Pins the free level shift between the two sets of effects on the entity side.
-        time_alpha -= time_alpha.reindex(time_codes).to_numpy().mean()
-        entity_alpha = (
-            (residual_from_slope - time_alpha.reindex(time_codes).to_numpy())
-            .groupby(level="entity")
-            .mean()
-        )
-        if (
-            np.max(np.abs(entity_alpha.to_numpy() - previous.to_numpy()))
-            < TWO_WAY_TOLERANCE
-        ):
-            break
+    _, entity_part, time_part = _two_way_demean(residual_from_slope.to_frame())
+    # Pins the free level shift between the two sets of effects on the entity side.
+    level_shift = time_part.iloc[:, 0].mean()
+    entity_alpha = entity_part.iloc[:, 0].groupby(level="entity").mean() + level_shift
+    time_alpha = time_part.iloc[:, 0].groupby(level="time").mean() - level_shift
 
     return entity_alpha, time_alpha
 
@@ -347,20 +369,22 @@ def get_fixed_effects(
     # PanelOLS only raises AbsorbingEffectError when the absorbed regressors leave the
     # demeaned design rank deficient as a whole; a single absorbed regressor is demeaned to
     # floating-point noise instead and fitted with a coefficient of 0 and a standard error
-    # of order 1e15. Checking the within-group variation first catches both cases.  # noqa: E501
-    absorbed_columns = []
+    # of order 1e15, or, when it is the sum a_i + b_t of an entity and a date part under
+    # two-way effects, of order 1e9. Checking the variation that is left after the fixed
+    # effects first catches all of these: the within-group range for one-way effects and
+    # the two-way demeaned values (which also vanish for a regressor that is constant per
+    # entity or per date) for two-way effects.
     scale = x_panel.abs().max().clip(lower=1.0)
-    for level, active in (("time", time_effects), ("entity", entity_effects)):
-        if not active:
-            continue
-        grouped = x_panel.groupby(level=level)
-        within_range = (grouped.max() - grouped.min()).abs().max()
-        absorbed_columns += [
-            str(column)
-            for column in x_panel.columns
-            if within_range[column] <= 1e-12 * scale[column]
-            and str(column) not in absorbed_columns
-        ]
+    if entity_effects and time_effects:
+        remaining = _two_way_demean(x_panel)[0].abs().max() / scale
+        is_absorbed = remaining <= TWO_WAY_ABSORBED_SHARE
+    else:
+        grouped = x_panel.groupby(level="entity" if entity_effects else "time")
+        remaining = (grouped.max() - grouped.min()).abs().max() / scale
+        is_absorbed = remaining <= ONE_WAY_ABSORBED_SHARE
+    absorbed_columns = [
+        str(column) for column in x_panel.columns[is_absorbed.to_numpy()]
+    ]
     if absorbed_columns:
         raise ValueError(
             "The fixed effects fully absorb one or more regressors "

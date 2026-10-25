@@ -481,3 +481,38 @@ def test_get_hausman_test_numerically_singular_difference_uses_the_pseudo_invers
 
     assert result["Degrees of Freedom"] == 1
     np.testing.assert_allclose(result["Hausman Statistic"], 25 * 0.2**2, rtol=1e-6)
+
+
+@pytest.mark.parametrize("balanced", [True, False])
+def test_get_fixed_effects_two_way_absorbs_an_entity_plus_date_regressor(balanced):
+    # A regressor a_i + b_t varies within every entity and every date, so neither one-way
+    # check sees it, yet the two-way effects absorb it fully (PanelOLS would fit it with a
+    # coefficient of order 1e9).
+    rng = np.random.default_rng(1)
+    n_entities, n_times = 5, 40
+    index = pd.MultiIndex.from_product(
+        [[f"E{i}" for i in range(n_entities)], range(n_times)],
+        names=["entity", "time"],
+    )
+    x = pd.DataFrame(
+        {
+            "own": rng.standard_normal(len(index)),
+            "ab": np.repeat(rng.standard_normal(n_entities), n_times)
+            + np.tile(rng.standard_normal(n_times), n_entities),
+        },
+        index=index,
+    )
+    y = 2.0 * x["own"] + x["ab"] + rng.standard_normal(len(index)) * 0.1
+    if not balanced:
+        keep = rng.random(len(index)) > 0.3
+        x, y = x[keep], y[keep]
+
+    with pytest.raises(ValueError, match=r"absorb one or more regressors \(ab\)"):
+        panel_data_model.get_fixed_effects(y, x, entity_effects=True, time_effects=True)
+
+    # The genuine regressor on its own is estimated, and so is a_i + b_t under one-way effects.
+    result = panel_data_model.get_fixed_effects(
+        y, x[["own"]], entity_effects=True, time_effects=True
+    )
+    assert abs(result["regression"]["coefficients"][0] - 2.0) < 0.05
+    panel_data_model.get_fixed_effects(y, x, entity_effects=True, time_effects=False)

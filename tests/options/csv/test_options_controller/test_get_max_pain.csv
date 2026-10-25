@@ -1,0 +1,5 @@
+Ticker,Expiration,Max Pain,Stock Price,Distance to Max Pain
+AAPL,Expiry 1,132.5,129.93,0.0198
+AAPL,Expiry 2,132.5,129.93,0.0198
+MSFT,Expiry 1,244.6,239.82,0.0199
+MSFT,Expiry 2,244.6,239.82,0.0199

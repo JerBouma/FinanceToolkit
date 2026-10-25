@@ -641,6 +641,9 @@ class ToolkitProvider:
                 benchmark_ticker=benchmark_ticker,
                 # The same database the provider opened, or False when running uncached.
                 use_cached_data=self._use_cached_data,
+                # Unrounded, as the answer is rounded to significant digits when formatted,
+                # so small values (a daily variance) keep their precision.
+                rounding=None,
             )
             self._toolkit_cache[cache_key] = toolkit_instance
             while len(self._toolkit_cache) > MAXIMUM_TOOLKIT_INSTANCES:
@@ -812,6 +815,7 @@ class ToolkitProvider:
                         fred_api_key=effective_fred_key,
                         cache=self._cache,
                         api_key=effective_key,
+                        rounding=None,
                     )
                 elif module_name == "fixedincome":
                     # get_treasury_rates is served by FMP, so without the key it silently returns no data.
@@ -822,6 +826,7 @@ class ToolkitProvider:
                         quarterly=quarterly,
                         fred_api_key=effective_fred_key,
                         cache=self._cache,
+                        rounding=None,
                     )
                 elif module_name == "discovery":
                     instance = Discovery(

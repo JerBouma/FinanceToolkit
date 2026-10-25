@@ -1,4 +1,8 @@
-"""Derivative Models"""
+"""Derivative Models
+
+Prices European swaptions (options to enter an interest rate swap) with Black-76 and the
+Bachelier (normal) model. Caps, floors and bond options are not implemented.
+"""
 
 import numpy as np
 from scipy.special import ndtr
@@ -131,7 +135,8 @@ def _get_annuity_factor(
         Annuity = SUM_(k=1)^(n) [ accrual * DiscountFactor(years_to_maturity + k * accrual) ]
 
     Where accrual = 1 / payment_frequency and n = tenor * payment_frequency is the
-    number of payments made over the life of the underlying swap.
+    number of payments made over the life of the underlying swap. The discount factors are
+    continuously compounded, DiscountFactor(t) = exp(-risk_free_rate * t), on a flat curve.
 
     Args:
         risk_free_rate (float): The risk-free interest rate used to discount each
@@ -168,7 +173,8 @@ def get_black_price(
     Black's Model for pricing financial derivatives.
 
     Black's Model is a mathematical model used for pricing financial derivatives, its primary applications are for
-    pricing options on future contracts, bond options, interest rate cap and floors, and swaptions.
+    pricing options on future contracts, bond options, interest rate caps and floors, and swaptions. This function
+    implements the swaption case only.
 
     Swaption is an option on an interest rate swap that gives the holder the right, but not the obligation,
     to enter into the swap at a predetermined fixed rate (strike rate) at a specified future time (maturity).
@@ -269,10 +275,11 @@ def get_bachelier_price(
     volatility_type: str = "normal",
 ) -> tuple[float, float]:
     """
-    Bachelier Model for pricing future contracts.
+    Bachelier Model for pricing swaptions.
 
-    The Bachelier Model is an alternative to Black's Model for pricing options on futures contracts.
-    It assumes that the distribution of the underlying asset follows a normal distribution with constant volatility.
+    The Bachelier Model is an alternative to Black's Model for pricing options on futures contracts and interest
+    rates. It assumes that the distribution of the underlying rate follows a normal distribution with constant
+    volatility. This function implements the swaption case.
 
     Exercising a swaption is not a single payment at expiration but the right to enter a swap that exchanges
     cash flows at every payment date over the underlying swap's tenor. The swaption price therefore discounts

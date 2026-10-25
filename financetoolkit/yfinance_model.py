@@ -20,6 +20,9 @@ from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
 
+# The raw name of the row holding each fiscal period's last day, mapped to Period End Date by statistics_yf.csv as FinancialModelingPrep's periodEndDate is by statistics.csv.  # noqa: E501
+PERIOD_END_DATE_ITEM = "periodEndDate"
+
 # The reporting currency of a company changes almost never, so it is resolved once per ticker per process rather than on every statement request.  # noqa: E501
 REPORTED_CURRENCY_CACHE: dict[str, str] = {}
 
@@ -108,12 +111,19 @@ def get_financial_statement(
         )
         return pd.DataFrame(columns=[error_code])
 
+    period_end_dates = pd.DatetimeIndex(financial_statement.columns)
+
     # yfinance returns dates as columns and items as rows; convert to periods. A fiscal period is labelled with the calendar period holding most of it, at both frequencies and identically to the FinancialModelingPrep path.  # noqa: E501
     financial_statement.columns = helpers.convert_period_end_dates_to_calendar_periods(
-        period_end_dates=pd.DatetimeIndex(financial_statement.columns),
+        period_end_dates=period_end_dates,
         quarter=quarter,
         ticker=ticker,
         fiscal_year_adjustments=fiscal_year_adjustments,
+    )
+
+    # The label above is a calendar period, so the date Yahoo Finance reports, the actual last day of each fiscal period, is kept as a row (picked up as the Period End Date statistic by get_statistics_statement): daily ratios apply a period's figures from that day on and currency translation takes its closing and average rates from the fiscal period it ends. Added before the duplicates are dropped so the date stays with the period that is kept.  # noqa: E501
+    financial_statement.loc[PERIOD_END_DATE_ITEM] = period_end_dates.strftime(
+        "%Y-%m-%d"
     )
 
     if financial_statement.columns.duplicated().any():
@@ -131,42 +141,69 @@ def get_financial_statement(
 def get_statistics_statement(
     ticker: str,
     periods: pd.Index,
+    financial_statement: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Builds the statistics statement for a Yahoo Finance sourced ticker, mirroring the
     statistics that FinancialModelingPrep returns alongside its financial statements.
 
-    The only statistic Yahoo Finance publishes that the Toolkit depends on is the
-    currency the financial statements are reported in, exposed as ``financialCurrency``
-    on the quote summary. Without it a Yahoo sourced ticker has no `Reported Currency`,
-    which is what the currency conversion compares against the currency the instrument
-    trades in, so those tickers were never converted at all and their statements were
-    left in a different currency from their own price history.
+    Two statistics Yahoo Finance publishes are needed by the Toolkit:
 
-    The reporting currency is a property of the company rather than of a period, so the
-    same value is repeated across every period, matching the shape FinancialModelingPrep
-    returns.
+        - The currency the financial statements are reported in, exposed as
+          ``financialCurrency`` on the quote summary. It is what the currency conversion
+          compares against the currency the instrument trades in; without it a Yahoo
+          sourced ticker's statements would stay in a different currency from its own
+          price history. It is a property of the company rather than of a period, so the
+          same value is repeated across every period, matching the shape
+          FinancialModelingPrep returns.
+        - The last day of each fiscal period (``periodEndDate``, the Period End Date), the
+          column date Yahoo Finance reports before get_financial_statement relabels it to a
+          calendar period. Apple's fiscal year labelled 2023 ends on 30 September 2023,
+          which is the day from which daily ratios apply its figures and over which
+          currency translation takes its closing and average rates. It is read from the
+          ``periodEndDate`` row get_financial_statement adds to the statement; when the
+          statement does not hold it (such as a statement cached without it), the row is
+          left out and the Toolkit falls back to the latest date the period can end on.
 
     Args:
         ticker (str): the ticker to retrieve the statistics for.
         periods (pd.Index): the reporting periods to report the statistics against,
             normally the columns of the financial statement of the same ticker.
+        financial_statement (pd.DataFrame | None, optional): the financial statement as
+            returned by get_financial_statement, whose ``periodEndDate`` row holds the
+            fiscal period end dates. Defaults to None, which leaves the Period End Date out.
 
     Returns:
         pd.DataFrame: A DataFrame with the Yahoo Finance statistics names as index and
-        the given periods as columns. Empty when Yahoo Finance does not report a
-        reporting currency for the ticker.
+        the given periods as columns. Empty when Yahoo Finance reports neither a
+        reporting currency nor period end dates for the ticker.
     """
-    reported_currency = get_reported_currency(ticker)
-
-    if not reported_currency or len(periods) == 0:
+    if len(periods) == 0:
         return pd.DataFrame()
 
-    return pd.DataFrame(
-        [[reported_currency] * len(periods)],
-        index=["financialCurrency"],
-        columns=periods,
-    )
+    statistics = {}
+
+    reported_currency = get_reported_currency(ticker)
+
+    if reported_currency:
+        statistics["financialCurrency"] = pd.Series(
+            [reported_currency] * len(periods), index=periods, dtype=object
+        )
+
+    if (
+        financial_statement is not None
+        and PERIOD_END_DATE_ITEM in financial_statement.index
+    ):
+        statistics[PERIOD_END_DATE_ITEM] = (
+            financial_statement.loc[PERIOD_END_DATE_ITEM]
+            .reindex(periods)
+            .astype(object)
+        )
+
+    if not statistics:
+        return pd.DataFrame()
+
+    return pd.DataFrame(statistics).T.reindex(columns=periods)
 
 
 def get_reported_currency(ticker: str) -> str:

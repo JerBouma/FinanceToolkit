@@ -186,18 +186,24 @@ def test_limit_and_the_cut_keep_the_latest_periods_of_a_sideways_table():
     assert "last" in answer["_notes"][0] and "periods" in answer["_notes"][0]
 
 
-def test_floats_lose_their_binary_artefacts_and_infinity_becomes_null():
+def test_floats_are_rounded_to_significant_digits_and_infinity_becomes_null():
     import json
 
     import pandas as pd
 
     from financetoolkit.mcp_server.formatting_model import format_result
 
-    weights = pd.DataFrame({"Weight": [0.08317952249999999, float("inf")]})
+    values = pd.DataFrame(
+        {"Value": [0.08317952249999999, 0.000123456, 12345.678912, float("inf")]}
+    )
 
-    assert json.loads(format_result(weights)) == [
-        {"index": 0, "Weight": 0.0831795225},
-        {"index": 1, "Weight": None},
+    # Four decimals, with at least four significant digits for small values such as a
+    # daily variance.
+    assert [record["Value"] for record in json.loads(format_result(values))] == [
+        0.08318,
+        0.0001235,
+        12345.6789,
+        None,
     ]
 
 

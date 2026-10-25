@@ -48,8 +48,8 @@ def get_kupiec_test(
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
         var_estimates (pd.Series | pd.DataFrame): A Series or Dataframe of Value at
         Risk estimates, aligned to the same index as `returns`.
-        alpha (float): The confidence level the VaR estimates were built with
-        (e.g., 0.05 for 95% confidence).
+        alpha (float): The tail probability the VaR estimates were built with
+        (e.g., 0.05 for the 95% confidence level).
 
     Returns:
         pd.Series | pd.DataFrame: The Kupiec statistic and its p-value.
@@ -186,10 +186,12 @@ def get_acerbi_szekely_test(
     loss on each breach day to the CVaR estimate that was supposed to describe the
     average loss on such days:
 
-    - Z2 = (1 / (n * alpha)) * SUM_t[ r_t * 1{r_t <= VaR_t} / CVaR_t ] - 1
+    - Z2 = (1 / (n * alpha)) * SUM_t[ r_t * 1{r_t < VaR_t} / CVaR_t ] - 1
 
-    Since `CVaR_t = E[r_t | r_t <= VaR_t]` by construction and breaches occur with
+    Since `CVaR_t = E[r_t | r_t < VaR_t]` by construction and breaches occur with
     probability `alpha`, `Z2 = 0` in expectation under a correctly calibrated model.
+    A breach is a return strictly below the VaR, as in the paper (X_t + VaR_t < 0) and
+    as in `get_kupiec_test` and `get_christoffersen_test`.
     `Z2 > 0` indicates the model *underestimates* tail risk (realized losses on breach
     days are, on average, worse than the CVaR predicted -- i.e. `abs(r_t) > abs(CVaR_t)`
     on breach days), while `Z2 < 0` indicates the model is conservative.
@@ -200,13 +202,18 @@ def get_acerbi_szekely_test(
     of the constant to `- 1` and, with it, the sign of the statistic relative to the
     paper. The magnitude and the p-value are unaffected.
 
-    The Z2 statistic has no closed-form null distribution (the indicator function
-    makes it non-pivotal), so -- following the Monte Carlo approach recommended in the
-    original paper -- the p-value here is obtained via a nonparametric (i.i.d.,
-    paired) bootstrap: `n_bootstrap` resamples of the `(return, VaR, CVaR)` triples are
-    drawn with replacement, Z2 is recomputed on each, and the resulting bootstrap
-    Standard Error is used to studentize the observed Z2 into an (asymptotically
-    normal) z-score.
+    The Z2 statistic has no closed-form null distribution. The paper obtains its
+    p-value by simulating returns from the model's own predictive distributions and
+    recomputing Z2 on each simulated path. That needs the full forecast distribution of
+    every day, which a rolling VaR/CVaR path does not carry, so this function uses an
+    approximation instead: `n_bootstrap` paired resamples of the observed
+    `(return, VaR, CVaR)` triples are drawn with replacement (i.i.d. bootstrap), Z2 is
+    recomputed on each, and the bootstrap Standard Error studentizes the observed Z2
+    into a z-score that is compared with the standard normal distribution.
+
+    The test is one-sided, as in the paper: only an underestimation of tail risk
+    rejects the model. On this module's sign convention that is a positive Z2, so the
+    p-value is P(Z > z-score); a conservative model (Z2 < 0) gives a p-value above 0.5.
 
     For more information about the method, see the following paper:
 
@@ -222,8 +229,8 @@ def get_acerbi_szekely_test(
         cvar_estimates (pd.Series | pd.DataFrame): A Series or Dataframe of Conditional
         Value at Risk (Expected Shortfall) estimates, aligned to the same index as
         `returns`.
-        alpha (float): The confidence level the VaR/CVaR estimates were built with
-        (e.g., 0.05 for 95% confidence).
+        alpha (float): The tail probability the VaR/CVaR estimates were built with
+        (e.g., 0.05 for the 95% confidence level).
         n_bootstrap (int, optional): The number of bootstrap resamples used to estimate
         the Standard Error of Z2. Defaults to 1000.
         random_state (int, optional): The seed for the bootstrap random number
@@ -231,7 +238,7 @@ def get_acerbi_szekely_test(
 
     Returns:
         pd.Series | pd.DataFrame: The Z2 statistic, its bootstrap Standard Error, its
-        (studentized, two-sided) p-value, and the number of breaches observed.
+        (studentized, one-sided) p-value, and the number of breaches observed.
     """
     if isinstance(returns, pd.DataFrame):
         return pd.DataFrame(
@@ -264,7 +271,7 @@ def get_acerbi_szekely_test(
                 }
             )
 
-        breach = (aligned["returns"] <= aligned["var"]).to_numpy()
+        breach = (aligned["returns"] < aligned["var"]).to_numpy()
         r = aligned["returns"].to_numpy()
         cvar = aligned["cvar"].to_numpy()
 
@@ -283,10 +290,11 @@ def get_acerbi_szekely_test(
         standard_error = float(np.std(bootstrap_z2, ddof=1))
 
         if standard_error == 0:
-            p_value = np.nan if z2_statistic == 0 else 0.0
+            p_value = np.nan if z2_statistic == 0 else float(z2_statistic < 0)
         else:
+            # One-sided: only Z2 > 0 (tail risk underestimated) counts against the model.
             z_score = z2_statistic / standard_error
-            p_value = 2 * stats.norm.sf(abs(z_score))
+            p_value = stats.norm.sf(z_score)
 
         return pd.Series(
             {

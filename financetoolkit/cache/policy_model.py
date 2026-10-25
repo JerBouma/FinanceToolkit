@@ -45,6 +45,7 @@ NGFS = "NGFS"
 MACROHISTORY = "Macrohistory"
 DE_NEDERLANDSCHE_BANK = "DeNederlandscheBank"
 EUROPEAN_SYSTEMIC_RISK_BOARD = "ESRB"
+DAMODARAN = "Damodaran"
 
 # The market risk premium is published per country, so it is one cache entry. Its name
 # changed when the premiums became decimals (v2.2.2), so an entry cached in percent by an
@@ -238,6 +239,8 @@ POLICIES: dict[str, CachePolicy] = {
     f"{DE_NEDERLANDSCHE_BANK}.listing": CachePolicy(ttl_seconds=7 * DAY),
     f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
     f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.listing": CachePolicy(ttl_seconds=7 * DAY),
+    # The default spreads of the synthetic rating table are updated once a year.
+    f"{DAMODARAN}.synthetic_ratings": CachePolicy(ttl_seconds=30 * DAY),
     f"{FEDERAL_RESERVE_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365

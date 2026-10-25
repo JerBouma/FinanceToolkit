@@ -11,8 +11,8 @@ AAPL,Operating Cycle,Lag 3,,,,
 AAPL,Days of Accounts Payable Outstanding,Lag 1,,,0.1669,0.1129
 AAPL,Days of Accounts Payable Outstanding,Lag 2,,,,0.2986
 AAPL,Days of Accounts Payable Outstanding,Lag 3,,,,
-AAPL,Cash Conversion Cycle,Lag 1,,,0.1803,0.1359
-AAPL,Cash Conversion Cycle,Lag 2,,,,0.3407
+AAPL,Cash Conversion Cycle,Lag 1,,,-0.1803,-0.1359
+AAPL,Cash Conversion Cycle,Lag 2,,,,-0.3407
 AAPL,Cash Conversion Cycle,Lag 3,,,,
 AAPL,Cash Conversion Efficiency,Lag 1,,-0.0323,0.0893,-0.0691
 AAPL,Cash Conversion Efficiency,Lag 2,,,0.0541,0.0141
@@ -29,8 +29,8 @@ AAPL,Accounts Payable Turnover Ratio,Lag 3,,,,
 AAPL,SGA-to-Revenue Ratio,Lag 1,,-0.171,0.0582,0.022
 AAPL,SGA-to-Revenue Ratio,Lag 2,,,-0.1228,0.0815
 AAPL,SGA-to-Revenue Ratio,Lag 3,,,,-0.1034
-AAPL,Fixed Asset Turnover,Lag 1,,,-0.0145,-0.0117
-AAPL,Fixed Asset Turnover,Lag 2,,,,-0.0261
+AAPL,Fixed Asset Turnover,Lag 1,,,0.0019,-0.0721
+AAPL,Fixed Asset Turnover,Lag 2,,,,-0.0703
 AAPL,Fixed Asset Turnover,Lag 3,,,,
 AAPL,Asset Turnover Ratio,Lag 1,,,0.0337,-0.0302
 AAPL,Asset Turnover Ratio,Lag 2,,,,0.0025
@@ -53,7 +53,7 @@ AAPL,SBC to Revenue Ratio,Lag 3,,,,0.1365
 AAPL,Deferred Revenue Ratio,Lag 1,,-0.1405,-0.0337,0.0448
 AAPL,Deferred Revenue Ratio,Lag 2,,,-0.1694,0.0096
 AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1322
-AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,-0.5588
+AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,0.5588
 AAPL,Working Capital Turnover Ratio,Lag 2,,,,-3.4584
 AAPL,Working Capital Turnover Ratio,Lag 3,,,,
 MSFT,Days of Inventory Outstanding,Lag 1,,,0.1736,-0.0691
@@ -68,8 +68,8 @@ MSFT,Operating Cycle,Lag 3,,,,
 MSFT,Days of Accounts Payable Outstanding,Lag 1,,,0.0285,0.0329
 MSFT,Days of Accounts Payable Outstanding,Lag 2,,,,0.0623
 MSFT,Days of Accounts Payable Outstanding,Lag 3,,,,
-MSFT,Cash Conversion Cycle,Lag 1,,,0.0641,0.0508
-MSFT,Cash Conversion Cycle,Lag 2,,,,0.1182
+MSFT,Cash Conversion Cycle,Lag 1,,,-0.0641,-0.0508
+MSFT,Cash Conversion Cycle,Lag 2,,,,-0.1182
 MSFT,Cash Conversion Cycle,Lag 3,,,,
 MSFT,Cash Conversion Efficiency,Lag 1,,0.0759,-0.0162,-0.0797
 MSFT,Cash Conversion Efficiency,Lag 2,,,0.0584,-0.0946
@@ -86,8 +86,8 @@ MSFT,Accounts Payable Turnover Ratio,Lag 3,,,,
 MSFT,SGA-to-Revenue Ratio,Lag 1,,-0.1314,-0.0686,0.0236
 MSFT,SGA-to-Revenue Ratio,Lag 2,,,-0.191,-0.0466
 MSFT,SGA-to-Revenue Ratio,Lag 3,,,,-0.1719
-MSFT,Fixed Asset Turnover,Lag 1,,,-0.0798,-0.1292
-MSFT,Fixed Asset Turnover,Lag 2,,,,-0.1987
+MSFT,Fixed Asset Turnover,Lag 1,,,-0.0785,-0.1432
+MSFT,Fixed Asset Turnover,Lag 2,,,,-0.2105
 MSFT,Fixed Asset Turnover,Lag 3,,,,
 MSFT,Asset Turnover Ratio,Lag 1,,,0.0724,-0.0388
 MSFT,Asset Turnover Ratio,Lag 2,,,,0.0308

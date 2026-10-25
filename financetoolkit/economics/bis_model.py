@@ -5,6 +5,7 @@ __docformat__ = "google"
 import io
 
 import pandas as pd
+import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import (
@@ -17,6 +18,23 @@ from financetoolkit.utilities.requests_model import get_request
 # Version 2 of the BIS SDMX API, asking for the latest version of every dataflow (~), so
 # that a new version of a dataset does not break the request.
 BASE_URL = "https://stats.bis.org/api/v2/data/dataflow/BIS/"
+
+# The HTTP status the BIS answers for a period without published data.
+NOT_FOUND = 404
+
+
+def request_csv(url: str, timeout: int) -> str:
+    """
+    Request a BIS dataset as CSV. The BIS answers a period it has not published yet (such as
+    the current month) with a 404 rather than an empty body, so that counts as no data and
+    the cached history is served without an error.
+    """
+    try:
+        return get_request(url, timeout=timeout).text
+    except requests.HTTPError as error:
+        if error.response is not None and error.response.status_code == NOT_FOUND:
+            return ""
+        raise
 
 
 def get_central_bank_policy_rate(start_date: str, end_date: str) -> pd.DataFrame:
@@ -40,17 +58,17 @@ def get_central_bank_policy_rate(start_date: str, end_date: str) -> pd.DataFrame
     description = "central bank policy rates"
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_CBPOL/~/D.?format=csv&detail=dataonly"
             f"&startPeriod={fetch_start}&endPeriod={fetch_end}",
             timeout=300,
         )
 
         # A range without observations is answered with an empty body.
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(data, {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}, description)
 
         data = data[data["REF_AREA"].isin(COUNTRY_CODES.keys())]
@@ -98,16 +116,16 @@ def get_consumer_prices(measure: str, start_date: str, end_date: str) -> pd.Data
     description = "BIS consumer prices"
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_LONG_CPI/~/M..{unit}?format=csv&detail=dataonly"
             f"&startPeriod={fetch_start[:7]}&endPeriod={fetch_end[:7]}",
             timeout=120,
         )
 
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(data, {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}, description)
 
         data = data[data["REF_AREA"].isin(COUNTRY_CODES.keys())]
@@ -163,16 +181,16 @@ def get_exchange_rates(
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         period_start = fetch_start if code == "D" else fetch_start[:7]
         period_end = fetch_end if code == "D" else fetch_end[:7]
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_XRU/~/{code}...{collection if code == 'M' else ''}?format=csv"
             f"&detail=dataonly&startPeriod={period_start}&endPeriod={period_end}",
             timeout=300,
         )
 
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(data, {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}, description)
 
         data = data[data["REF_AREA"].isin(COUNTRY_CODES.keys())]
@@ -196,14 +214,26 @@ def get_exchange_rates(
     )
 
 
+# The commercial types of the BIS property price dataset (RE_TYPE): all commercial
+# property, offices, retail, office and retail, and industrial property.
+COMMERCIAL_PROPERTY_TYPES = {"A", "B", "C", "D", "G"}
+
+# The PRICED_UNIT of an index in real terms, "real price per square meter".
+REAL_PRICE_UNIT = "8"
+
+
 def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFrame:
     """
     Retrieves the quarterly commercial property price indices the BIS collects from
     national sources, for around twenty economies including the euro area, from 1945 for
     the United States and from the 1990s and 2000s for most others.
 
-    Per country one index is taken: the one for all commercial property in the whole
-    country where there is one, otherwise the longest available.
+    Per country one nominal index of commercial property is taken: the one for all
+    commercial property in the whole country where there is one, otherwise the longest
+    index of a commercial type (offices, retail, office and retail, or industrial
+    property), preferring the whole country. Indices of dwellings, land, agricultural
+    property and real prices are left out, so a country without a nominal commercial
+    property index has no column.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -215,7 +245,7 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
     description = "commercial property prices"
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
-        response = get_request(
+        text = request_csv(
             f"{BASE_URL}WS_CPP/~/Q.......?format=csv&detail=dataonly"
             # Quarters are written as "2026-Q2".
             f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
@@ -223,15 +253,26 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
             timeout=120,
         )
 
-        if not response.text.strip():
+        if not text.strip():
             return pd.DataFrame()
 
-        data = pd.read_csv(io.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(text))
         require_columns(
             data,
             {"REF_AREA", "COVERED_AREA", "RE_TYPE", "TIME_PERIOD", "OBS_VALUE"},
             description,
         )
+
+        # The dataset also holds dwellings (rented ones for Switzerland), land and real
+        # prices (PRICED_UNIT 8, Iceland), which are not commercial property prices and
+        # would otherwise be picked for a country where they are the longest series.
+        data = data[data["RE_TYPE"].astype(str).isin(COMMERCIAL_PROPERTY_TYPES)]
+
+        if "PRICED_UNIT" in data.columns:
+            data = data[data["PRICED_UNIT"].astype(str) != REAL_PRICE_UNIT]
+
+        if data.empty:
+            return pd.DataFrame()
 
         series_columns = [
             column
@@ -239,13 +280,16 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
             if column not in ("FREQ", "TIME_PERIOD", "OBS_VALUE")
         ]
         lengths = data.groupby(series_columns, as_index=False).size()
-        lengths["preferred"] = (lengths["COVERED_AREA"].astype(str) == "0") & (
+        lengths["whole_country"] = lengths["COVERED_AREA"].astype(str) == "0"
+        lengths["preferred"] = lengths["whole_country"] & (
             lengths["RE_TYPE"].astype(str) == "A"
         )
         chosen = (
-            lengths.sort_values(["preferred", "size"], ascending=False)
+            lengths.sort_values(
+                ["preferred", "whole_country", "size"], ascending=False, kind="stable"
+            )
             .drop_duplicates(subset="REF_AREA")
-            .drop(columns=["preferred", "size"])
+            .drop(columns=["preferred", "whole_country", "size"])
         )
 
         data = data.merge(chosen, on=series_columns)

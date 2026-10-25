@@ -223,11 +223,11 @@ For example, see some of the profitability ratios of Microsoft below.
 
 |                                 |    2017 |    2018 |    2019 |    2020 |    2021 |    2022 |    2023 |
 |:--------------------------------|--------:|--------:|--------:|--------:|--------:|--------:|--------:|
-| Gross Margin                    |  0.6191 |  0.6525 |  0.659  |  0.6778 |  0.6893 |  0.684  |  0.6892 |
-| Operating Margin                |  0.2482 |  0.3177 |  0.3414 |  0.3703 |  0.4159 |  0.4206 |  0.4177 |
-| Net Profit Margin               |  0.2357 |  0.1502 |  0.3118 |  0.3096 |  0.3645 |  0.3669 |  0.3415 |
-| Interest Coverage Ratio         | 13.9982 | 16.5821 | 20.3429 | 25.3782 | 34.7835 | 47.4275 | 52.0244 |
-| Income Before Tax Profit Margin |  0.2574 |  0.3305 |  0.3472 |  0.3708 |  0.423  |  0.4222 |  0.4214 |
+| Gross Margin                    |  0.6452 |  0.6525 |  0.659  |  0.6778 |  0.6893 |  0.684  |  0.6892 |
+| Operating Margin                |  0.3006 |  0.3177 |  0.3414 |  0.3703 |  0.4159 |  0.4206 |  0.4177 |
+| Net Profit Margin               |  0.2639 |  0.1502 |  0.3118 |  0.3096 |  0.3645 |  0.3669 |  0.3415 |
+| Interest Coverage Ratio         | 13.0626 | 12.8277 | 15.9937 | 20.4396 | 29.8022 | 40.4183 | 44.9812 |
+| Income Before Tax Profit Margin |  0.3096 |  0.3305 |  0.3472 |  0.3708 |  0.423  |  0.4222 |  0.4214 |
 
 And below a few of the profitability ratios of Microsoft, each with its latest value, the change over the period and its trend.
 
@@ -268,7 +268,7 @@ The five components of the Extended DuPont Analysis multiply into the Return on 
   <img alt="Models" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/models-light.png">
 </picture>
 
-The `models` module covers 10+ models in total, for example [DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/dupont-analysis), [WACC](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/weighted-average-cost-of-capital-wacc), [Economic Value Added (EVA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/economic-value-added-eva), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/altman-z-score), [Beneish M-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/beneish-m-score) and the [Graham Number](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/graham-number). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#getting-started) and the full model-by-model documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models).**
+The `models` module covers 35+ models in total, from valuation (reverse DCF, Earnings Power Value, Monte Carlo DCF, peer comparison) and credit (Merton distance to default, synthetic credit rating) to quality and manipulation scores (Magic Formula, Mohanram G-Score, Dechow F-Score, Montier C-Score), for example [DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/dupont-analysis), [WACC](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/weighted-average-cost-of-capital-wacc), [Economic Value Added (EVA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/economic-value-added-eva), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/altman-z-score), [Beneish M-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/beneish-m-score) and the [Graham Number](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/graham-number). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#getting-started) and the full model-by-model documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models).**
 
 ### Obtaining Options and Greeks
 
@@ -299,7 +299,7 @@ Which can also be plotted together with Gamma, Theta and Vega as follows:
   <img alt="Greeks" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/greeks-light.png">
 </picture>
 
-The `options` module is divided into four categories: [**Option Pricing**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/black-scholes-model) (Black-Scholes, Binomial Model, Implied Volatility), [**First-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/first-order-greeks) (Delta, Vega, Theta, Rho), [**Second-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/second-order-greeks) (Gamma, Vanna, Charm, Vomma) and [**Third-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/third-order-greeks) (Speed, Zomma, Color, Ultima). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#getting-started) and the full option pricing and Greeks documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options).**
+The `options` module is divided into four categories: [**Option Pricing**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/black-scholes-model) (Black-Scholes, Binomial Model, Implied Volatility), [**First-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/first-order-greeks) (Delta, Vega, Theta, Rho), [**Second-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/second-order-greeks) (Gamma, Vanna, Charm, Vomma) and [**Third-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/third-order-greeks) (Speed, Zomma, Color, Ultima), next to option market metrics read from the live chains: put-call ratio, max pain, dealer gamma exposure, volatility skew and term structure, the implied (earnings) move, the volatility risk premium and a model-free implied volatility with the VIX method for any ticker. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#getting-started) and the full option pricing and Greeks documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options).**
 
 ### Obtaining Performance Metrics
 
@@ -330,7 +330,7 @@ And below the correlations with each factor are plotted over time for both Apple
   <img alt="Performance" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/performance-light.png">
 </picture>
 
-Beyond Beta, CAPM and the Fama-French factors, the `performance` module covers around 20+ metrics in total, for example [Sharpe Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/sharpe-ratio), [Sortino Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/sortino-ratio), [Calmar Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/calmar-ratio), [Omega Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/omega-ratio) and the [Correlation Matrix](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/correlation-matrix). Most of these also support `rolling=<n>` for a value that evolves through time instead of one number per period. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#getting-started) and the full performance metric documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance).**
+Beyond Beta, CAPM and the Fama-French factors, the `performance` module covers around 20+ metrics in total, for example [Sharpe Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/sharpe-ratio), [Sortino Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/sortino-ratio), [Calmar Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/calmar-ratio), [Omega Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/omega-ratio) and the [Correlation Matrix](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/correlation-matrix). Most of these also support `rolling=<n>` for a value that evolves through time instead of one number per period. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#getting-started) and the full performance metric documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance).** The factor models also take Ken French's regional factors (`region="Europe"`, `"Japan"`, `"Developed"` and more), and returns-based style analysis (`get_style_analysis`) finds the mix of style indices that tracks a fund best.
 
 ### Obtaining Risk Metrics
 
@@ -387,7 +387,31 @@ And below the Ichimoku Cloud of the last twelve months is plotted for Apple and 
   <img alt="Technicals" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/technicals-light.png">
 </picture>
 
-The 40+ indicators are divided into four categories: [**Breadth**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-breadth-indicators) (McClellan Oscillator, Advancers/Decliners, OBV, ADL, Chaikin Oscillator, TRIN, New Highs - New Lows), [**Momentum**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-momentum-indicators) (RSI, MACD, Stochastic, Williams %R, Aroon, CCI, ADX and more), [**Overlap**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-overlap-indicators) (SMA, EMA, DEMA, TRIX, WMA, Hull MA, VWAP, Parabolic SAR, Pivot Points, Support/Resistance) and [**Volatility**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-volatility-indicators) (ATR, Keltner Channels, Bollinger Bands, Donchian Channels, Volatility Cone). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#getting-started) and the full technical indicator documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals).**
+The 40+ indicators are divided into four categories: [**Breadth**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-breadth-indicators) (McClellan Oscillator, Advancers/Decliners, OBV, ADL, Chaikin Oscillator, TRIN, New Highs - New Lows), [**Momentum**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-momentum-indicators) (RSI, MACD, Stochastic, Williams %R, Aroon, CCI, ADX and more), [**Overlap**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-overlap-indicators) (SMA, EMA, DEMA, TRIX, WMA, Hull MA, VWAP, Parabolic SAR, Pivot Points, Support/Resistance) and [**Volatility**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-volatility-indicators) (ATR, Keltner Channels, Bollinger Bands, Donchian Channels, Volatility Cone). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#getting-started) and the full technical indicator documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals).** Market breadth across many tickers (`get_market_breadth`, for example from the constituents `Discovery.get_index_constituents` lists), seasonality per month or weekday and relative strength with a 1-99 rating complete the set.
+
+### Analyzing ETFs
+
+The `etf` module analyzes exchange traded funds and other funds: their holdings, sector and country weightings, profile and premium or discount to NAV, how closely they track their index, how concentrated and how much alike they are, what their holdings are valued at and how liquid they are.
+
+```python
+# How concentrated are an S&P 500, a NASDAQ 100 and an equal weight S&P 500 fund?
+funds = Toolkit(["VOO", "QQQ", "RSP"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+funds.etf.get_concentration()
+```
+
+Which returns:
+
+|                              | VOO     | QQQ     | RSP      |
+|:-----------------------------|:--------|:--------|:---------|
+| Number of Holdings           | 507.0   | 105.0   | 507.0    |
+| Largest Holding              | NVDA    | NVDA    | PTC      |
+| Largest Weight               | 0.084   | 0.0814  | 0.003    |
+| Top 10 Weight                | 0.3913  | 0.4665  | 0.0266   |
+| Herfindahl-Hirschman Index   | 0.023   | 0.0316  | 0.002    |
+| Effective Number of Holdings | 43.4661 | 31.6935 | 497.7398 |
+
+The S&P 500 of VOO behaves like a portfolio of about 43 equally weighted stocks, while the equal weight RSP spreads it over nearly all 500. Next to `get_concentration`, the module has `get_holdings`, `get_information`, `get_sector_weightings`, `get_country_weightings`, `get_profile`, `get_tracking`, `get_overlap`, `get_look_through_valuation` and `get_liquidity`.
 
 ### Obtaining Fixed Income Metrics
 
@@ -415,7 +439,7 @@ And below the effective yield for each credit rating is plotted over time.
   <img alt="Fixed Income" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/fixedincome-light.png">
 </picture>
 
-Beyond ICE BofA benchmarks, the `fixedincome` module covers [**Bond Valuations**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/general-statistics) (Present Value, Macaulay/Modified Duration, Convexity, Yield to Maturity), [**Derivative Valuations**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/black-model) (Black and Bachelier models for Swaptions), [**Government Bonds**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/3-month-government-bond-yield) (3-month and 10-year yields) and **Central Bank rates** ([Euribor](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/euro-interbank-offered-rate-euribor), [ECB](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/main-refinancing-operations-ecb) and [Federal Reserve rates](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/secured-overnight-financing-rate-sofr) incl. SOFR). It can be called via `companies.fixedincome` or standalone through `from financetoolkit import FixedIncome`. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#getting-started) and the full fixed income documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome).**
+Beyond ICE BofA benchmarks, the `fixedincome` module covers [**Bond Valuations**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/general-statistics) (Present Value, Macaulay/Modified Duration, Convexity, Yield to Maturity), [**Derivative Valuations**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/black-model) (Black and Bachelier models for Swaptions), [**Government Bonds**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/3-month-government-bond-yield) (3-month and 10-year yields), **Central Bank rates** ([Euribor](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/euro-interbank-offered-rate-euribor), [ECB](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/main-refinancing-operations-ecb) and [Federal Reserve rates](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/secured-overnight-financing-rate-sofr) incl. SOFR), **Yield Curve Analytics** (zero-coupon curves bootstrapped from government par yields, Nelson-Siegel-Svensson fits, principal components and the Vasicek, Cox-Ingersoll-Ross and Hull-White short-rate models), **Credit** (the option-adjusted spread of callable bonds and the default probabilities credit spreads imply) and **US Treasury auction results** (yields, bid-to-cover ratios and bidder shares from 1979). It can be called via `companies.fixedincome` or standalone through `from financetoolkit import FixedIncome`. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#getting-started) and the full fixed income documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome).**
 
 ### Understanding Key Economic Indicators
 
@@ -448,36 +472,31 @@ The 40+ indicators are divided into five categories: [**Government**](https://ww
 
 ### Explore your own Portfolio
 
-Through a custom XLSX, XLS or CSV file you are able to load in your own portfolio directly into the Finance Toolkit. This allows you to view your positions and performance (over time) versus a benchmark and other positions as well as your PnL development over time. Furthermore, the portfolio can be directly loaded in the core functionality of the Finance Toolkit as well making it possible to calculate all metrics and ratios for your portfolio (which is a time-weighted sum of all positions). The portfolio module is a standalone module and can be used as such by using `from financetoolkit import Portfolio`. **Find the the full portfolio documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio).**
-
-___
-<b><div align="center">It is important to note that it requires a specific Excel template to work, see for further instructions the Getting Started guide <a href="https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio#getting-started" target="_blank">here</a>.</div></b>
-___
+A portfolio can be given as weights (`Portfolio(weights={"VTI": 0.6, "BND": 0.4})`, invested on a start date and rebalanced), as the shares you hold (`Portfolio(holdings={"AAPL": 10, "MSFT": 5})`), as your own transactions (a DataFrame, CSV or Excel file with Date, Ticker and Volume, and optionally Price, Costs and Currency) or as one of thirteen classic portfolios such as the 60/40, Ray Dalio's All Weather, Harry Browne's Permanent Portfolio, the Golden Butterfly and the Bogleheads three-fund portfolio (`Portfolio.from_preset("All Weather")`, listed with `Portfolio.get_presets()`). This allows you to view your positions and performance (over time) versus a benchmark and other positions as well as your PnL development over time. Furthermore, the portfolio can be directly loaded in the core functionality of the Finance Toolkit as well making it possible to calculate all metrics and ratios for your portfolio (which is a time-weighted sum of all positions). Portfolios can also be built from any set of tickers with `toolkit.portfolio`: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, minimum CVaR and Black-Litterman), the efficient frontier, risk contributions, historical stress tests, look-through exposure of ETFs and a Brinson attribution against the benchmark. **Find the full portfolio documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio).**
 
 ```python
 from financetoolkit import Portfolio
 
-# Initialize the Portfolio module with your own dataset
-portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+# A classic portfolio, invested since 2016 and rebalanced every year
+portfolio = Portfolio.from_preset(
+    "Permanent Portfolio", start_date="2016-01-01", api_key="FINANCIAL_MODELING_PREP_KEY"
+)
 
-# Get an overview of all positions
-portfolio.get_positions_overview()
+# Get an overview of the positions against the benchmark
+portfolio.get_portfolio_overview()
 ```
 
-The table below shows one of the functionalities of the Portfolio module but is purposely shrunken down given the >30 assets.
+Which returns:
 
-| Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Return |   Return Value |   Benchmark Return |   Volatility |   Benchmark Volatility |   Alpha |   Beta |   Weight |
-|:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|---------:|---------------:|-------------------:|-------------:|-----------------------:|--------:|-------:|---------:|
-| AAPL         |      137 |     -28 |  38.9692 |   5310.78  |        241.84  |       33132.1  |   5.2386 |     27821.3    |             2.2258 |       0.3858 |                 0.1937 |  3.0128 | 1.2027 |   0.0405 |
-| ALGN         |       81 |     -34 | 117.365  |   9472.53  |        187.03  |       15149.4  |   0.5993 |      5676.9    |             2.1413 |       0.5985 |                 0.1937 | -1.542  | 1.5501 |   0.0185 |
-| AMD          |       78 |     -30 |  11.9075 |    898.784 |         99.86  |        7789.08 |   7.6662 |      6890.3    |             3.7945 |       0.6159 |                 0.1937 |  3.8718 | 1.6551 |   0.0095 |
-| AMZN         |      116 |     -28 |  41.5471 |   4791.46  |        212.28  |       24624.5  |   4.1392 |     19833      |             1.8274 |       0.4921 |                 0.1937 |  2.3118 | 1.1594 |   0.0301 |
-| ASML         |      129 |     -25 |  33.3184 |   4273.07  |        709.08  |       91471.3  |  20.4065 |     87198.3    |             3.8005 |       0.4524 |                 0.1937 | 16.606  | 1.4407 |   0.1119 |
-| VOO          |       77 |     -12 | 238.499  |  18352.5   |        546.33  |       42067.4  |   1.2922 |     23715      |             1.1179 |       0.1699 |                 0.1937 |  0.1743 | 0.9973 |   0.0515 |
-| WMT          |       92 |     -18 |  17.8645 |   1625.53  |         98.61  |        9072.12 |   4.581  |      7446.59   |             2.4787 |       0.2334 |                 0.1937 |  2.1024 | 0.4948 |   0.0111 |
-| Portfolio    |     2142 |    -532 |  59.8406 | 128710     |        381.689 |      817577    |   5.3521 |    688867      |             2.0773 |       0.4193 |                 0.1937 |  3.2747 | 1.2909 |   1      |
+| Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Dividends |   Return |   Return Value |   Benchmark Return |   Volatility |   Benchmark Volatility |   Alpha |    Beta |   Weight |
+|:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|------------:|---------:|---------------:|-------------------:|-------------:|-----------------------:|--------:|--------:|---------:|
+| BIL          |  58.8104 |       0 |  91.4038 |    5932.22 |         91.63  |        5388.8  |     877.305 |   0.1502 |        891.005 |             1.5146 |       0.0019 |                 0.1274 | -1.3644 | -0.0007 |   0.2524 |
+| GLD          |  13.5603 |       0 | 107.8    |    2826.68 |        366.61  |        4971.36 |       0     |   1.9397 |       5483.03  |             2.0415 |       0.2845 |                 0.1274 | -0.1018 |  0.8392 |   0.2328 |
+| TLT          |  61.6578 |       0 | 106.197  |    6557.19 |         81.34  |        5015.25 |    1103.75  |  -0.0647 |       -424.38  |             1.4673 |       0.096  |                 0.1274 | -1.532  |  0.2198 |   0.2349 |
+| VTI          |  16.0292 |       0 | 116.418  |    3277.2  |        373.01  |        5979.04 |     624.615 |   1.7616 |       5773.18  |             1.6532 |       0.1293 |                 0.1274 |  0.1084 |  1.0113 |   0.28   |
+| Portfolio    | 150.058  |       0 | 102.715  |   18593.3  |        142.308 |       21354.4  |    2605.67  |   1.1723 |      11722.8   |             2.9794 |       0.0943 |                 0.1274 | -1.8072 |  0.53   |   1      |
 
-In which the weights and returns can be depicted as follows:
+For a portfolio of individual stocks, the weights and returns over time can be depicted as follows:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-dark.png">
@@ -486,7 +505,7 @@ In which the weights and returns can be depicted as follows:
 
 ### Applying Econometric Techniques
 
-The `econometrics` module provides [regression](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/ordinary-least-squares-ols), [hypothesis testing](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/jarque-bera-test), [unit root and cointegration](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf), [Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/granger-causality) and [panel data](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) methods built on `statsmodels` and `linearmodels`. It requires the optional `financetoolkit[econometrics]` extra (`pip install financetoolkit[econometrics]`) and can be used via `companies.econometrics`.
+The `econometrics` module provides [regression](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/ordinary-least-squares-ols), [hypothesis testing](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/jarque-bera-test), [unit root and cointegration](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf), [Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/granger-causality) and [panel data](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) methods built on `statsmodels` and `linearmodels`. It requires the optional `financetoolkit[econometrics]` extra (`pip install financetoolkit[econometrics]`) and can be used via `companies.econometrics`, or standalone on any data (ratios, economic indicators, yield curves or a dataset of your own) through `from financetoolkit import Econometrics` and `Econometrics(data=...)`.
 
 ```python
 # AAPL is the Toolkit's first ticker, so it's the default dependent ticker;
@@ -517,7 +536,7 @@ And below each coefficient is shown with its 95% confidence interval, with stars
   <img alt="Econometrics" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-light.png">
 </picture>
 
-Only `QCOM`, `SWKS`, `MSFT`, `GOOGL` and `PG` come out statistically significant once every regressor is controlled for at once. The `econometrics` module covers 48 methods in total, including [unit root tests](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf) (ADF, KPSS, Phillips-Perron), [cointegration and Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/engle-granger-cointegration), [panel data estimators](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) (Fixed/Random Effects), [causal inference](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/propensity-score-matching-psm) (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching, Synthetic Control) and [time-series forecasting](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/arima-forecast) (ARIMA, VAR, VECM). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#getting-started) and the full econometrics documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics).**
+Only `QCOM`, `SWKS`, `MSFT`, `GOOGL` and `PG` come out statistically significant once every regressor is controlled for at once. The `econometrics` module covers 53 methods in total, including [unit root tests](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf) (ADF, KPSS, Phillips-Perron), [cointegration and Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/engle-granger-cointegration), [panel data estimators](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) (Fixed/Random Effects), [causal inference](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/propensity-score-matching-psm) (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching, Synthetic Control), [time-series forecasting](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/arima-forecast) (ARIMA, VAR, VECM), regimes and dynamics (Markov regime switching, Bai-Perron structural breaks, a Kalman filter time-varying beta and DCC-GARCH correlations) and pairs trading (hedge ratio, half-life and z-score signals). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#getting-started) and the full econometrics documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics).**
 
 # MCP Server
 

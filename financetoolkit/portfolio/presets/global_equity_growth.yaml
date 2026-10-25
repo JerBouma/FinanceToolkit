@@ -1,0 +1,39 @@
+# JUDGEMENT: no published originator; the weights are illustrative.
+name: Global Equity Growth
+aliases: ["Global Growth", "All Equity"]
+description: "All stocks, spread across the US, Europe, Japan, emerging markets and China, tilted to growth."
+source:
+  text: "Illustrative allocation without a published originator."
+  link: ""
+rebalancing: yearly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.3
+    asset_class: Equity
+    currency: USD
+  - ticker: VGK
+    name: Vanguard FTSE Europe ETF
+    weight: 0.15
+    asset_class: Equity
+    currency: USD
+  - ticker: EWJ
+    name: iShares MSCI Japan ETF
+    weight: 0.1
+    asset_class: Equity
+    currency: USD
+  - ticker: VWO
+    name: Vanguard FTSE Emerging Markets ETF
+    weight: 0.15
+    asset_class: Equity
+    currency: USD
+  - ticker: MCHI
+    name: iShares MSCI China ETF
+    weight: 0.1
+    asset_class: Equity
+    currency: USD
+  - ticker: VUG
+    name: Vanguard Growth ETF
+    weight: 0.2
+    asset_class: Equity
+    currency: USD

@@ -1,0 +1,26 @@
+# Duration, iShares GOVT 5.43y (2026-10-06) https://www.ishares.com/us/products/239468/ishares-us-treasury-bond-etf
+# JUDGEMENT: the 40/40/20 weights have no published originator.
+name: Small-Cap Value Tilt
+aliases: ["Small Cap Value", "Factor Tilt", "Fama-French"]
+description: "80% in small-cap and value stocks, the size and value premia, with 20% US Treasury bonds."
+source:
+  text: "Fama and French (1992), The Cross-Section of Expected Stock Returns, The Journal of Finance, 47(2), 427-465, on the size and value premia; the weights are illustrative."
+  link: "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x"
+rebalancing: yearly
+holdings:
+  - ticker: VB
+    name: Vanguard Small-Cap ETF
+    weight: 0.4
+    asset_class: Equity
+    currency: USD
+  - ticker: VTV
+    name: Vanguard Value ETF
+    weight: 0.4
+    asset_class: Equity
+    currency: USD
+  - ticker: GOVT
+    name: iShares U.S. Treasury Bond ETF
+    weight: 0.2
+    asset_class: Fixed Income
+    currency: USD
+    duration: 5.43

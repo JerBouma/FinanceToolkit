@@ -87,7 +87,7 @@ def test_large_outputs_default_to_a_compact_selection(captured):
 
     asyncio.run(
         mcp_controller.mcp.call_tool(
-            "market_data", {"indicator": "get_etf_holdings", "tickers": "IWDA.AS"}
+            "etf", {"indicator": "get_holdings", "tickers": "IWDA.AS"}
         )
     )
     assert captured[-1]["limit"] == 25  # noqa: PLR2004
@@ -142,8 +142,8 @@ def test_limit_selects_the_first_or_last_rows(monkeypatch):
 def test_an_indicator_with_its_own_limit_receives_it(captured):
     asyncio.run(
         mcp_controller.mcp.call_tool(
-            "market_data",
-            {"indicator": "get_etf_holdings", "tickers": "IWDA.AS", "limit": -10},
+            "etf",
+            {"indicator": "get_holdings", "tickers": "IWDA.AS", "limit": -10},
         )
     )
 
@@ -230,7 +230,7 @@ def test_the_benchmark_note_is_left_out_without_a_benchmark(monkeypatch):
 
     text = asyncio.run(
         mcp_controller.mcp.call_tool(
-            "market_data", {"indicator": "get_etf_holdings", "tickers": "SPY"}
+            "etf", {"indicator": "get_holdings", "tickers": "SPY"}
         )
     )[0][0].text
 
@@ -555,3 +555,19 @@ def test_an_assumed_bond_input_is_named(captured):
 
     assert "Assumed yield_to_maturity=0.08 (the default)" in call()
     assert "Assumed" not in call(yield_to_maturity=0.045)
+
+
+def test_daily_style_analysis_is_not_blocked(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {
+                "indicator": "get_style_analysis",
+                "tickers": "ARKK",
+                "style_tickers": "IWF,AGG",
+                "period": "daily",
+            },
+        )
+    )
+
+    assert captured[-1]["period"] == "daily"

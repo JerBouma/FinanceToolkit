@@ -1,0 +1,25 @@
+# Year 0 is thirty years before the target date: 90% stocks until 25 years before it, then linearly down to 50/50 at
+# the target date (year 30) and 30/70 seven years later (year 37), held flat after.
+name: Target-Date Glidepath
+aliases: ["Target Date", "Glidepath", "Glide Path", "Lifecycle"]
+description: "A target-date fund on Vanguard's glide path: 90% stocks until 25 years out, 50% at the target date and 30% seven years after."
+source:
+  text: "Vanguard Target Retirement Funds prospectus (28 Jan 2026), p. 111, glide path chart: 90% stocks 25 years before retirement, 50% at retirement; the allocation reaches that of the Target Retirement Income Fund (about 30% stocks) within seven years after the target date."
+  link: "https://personal1.vanguard.com/pub/Pdf/p308.pdf"
+rebalancing: quarterly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.9
+    asset_class: Equity
+    currency: USD
+  - ticker: BND
+    name: Vanguard Total Bond Market ETF
+    weight: 0.1
+    asset_class: Fixed Income
+    currency: USD
+schedule:
+  - {year: 0, weights: {VTI: 0.9, BND: 0.1}}
+  - {year: 5, weights: {VTI: 0.9, BND: 0.1}}
+  - {year: 30, weights: {VTI: 0.5, BND: 0.5}}
+  - {year: 37, weights: {VTI: 0.3, BND: 0.7}}

@@ -207,7 +207,7 @@ def test_periods_are_rounded_not_truncated():
 
 
 def test_yield_to_maturity_from_a_guess_of_zero():
-    """A guess of 0 used to start the secant method from two identical points."""
+    """A guess of 0 starts the secant method from two distinct points."""
     price = bond_model.get_bond_price(1000, 0.05, 10, 0.06, 2)
 
     assert bond_model.get_yield_to_maturity(
@@ -217,7 +217,10 @@ def test_yield_to_maturity_from_a_guess_of_zero():
 
 def test_macaulay_duration_matches_the_price_periods():
     """The principal is weighted at the same moment the price discounts it to."""
-    price = bond_model.get_bond_price(100, 0.05, 2.75, 0.05, 2)
+    # Duration is a sensitivity of the full price, the clean price plus accrued interest.
+    price = bond_model.get_bond_price(
+        100, 0.05, 2.75, 0.05, 2
+    ) + bond_model.get_accrued_interest(100, 0.05, 2.75, 2)
     shock = 1e-6
     effective_duration = (
         bond_model.get_bond_price(100, 0.05, 2.75, 0.05 - shock, 2)
@@ -228,3 +231,89 @@ def test_macaulay_duration_matches_the_price_periods():
     )
 
     assert modified_duration == pytest.approx(effective_duration, rel=1e-6)
+
+
+def test_fractional_maturity_matches_quantlib():
+    """2.5 years of annual coupons: QuantLib (30/360) gives dirty 100.2043, clean 97.7043."""
+    assert bond_model.get_accrued_fraction(2.5, 1) == pytest.approx(0.5)
+    assert bond_model.get_accrued_interest(100, 0.05, 2.5, 1) == pytest.approx(2.5)
+    np.testing.assert_allclose(
+        bond_model.get_cash_flow_periods(2.5, 1), [0.5, 1.5, 2.5]
+    )
+    assert bond_model.get_bond_price(100, 0.05, 2.5, 0.06, 1) == pytest.approx(
+        97.70426717046045, abs=1e-9
+    )
+    assert bond_model.get_macaulays_duration(100, 0.05, 2.5, 0.06, 1) == pytest.approx(
+        2.3573474352559565, abs=1e-9
+    )
+
+
+def test_fractional_maturity_semi_annual_matches_quantlib():
+    """2.75 years of semi-annual coupons, reference values from QuantLib (30/360)."""
+    assert bond_model.get_bond_price(100, 0.05, 2.75, 0.045, 2) == pytest.approx(
+        101.27289635, abs=1e-6
+    )
+    assert bond_model.get_macaulays_duration(
+        100, 0.05, 2.75, 0.045, 2
+    ) == pytest.approx(2.57435708, abs=1e-6)
+    assert bond_model.get_modified_duration(100, 0.05, 2.75, 0.045, 2) == pytest.approx(
+        2.51770864, abs=1e-6
+    )
+    assert bond_model.get_convexity(100, 0.05, 2.75, 0.045, 2) == pytest.approx(
+        7.851, abs=1e-3
+    )
+
+
+def test_macaulay_duration_never_exceeds_the_maturity():
+    for maturity in (0.5, 2.5, 7.25, 10.5):
+        assert (
+            bond_model.get_macaulays_duration(100, 0.05, maturity, 0.06, 1)
+            <= maturity + 1e-12
+        )
+
+
+def test_bond_at_its_coupon_yield_prices_near_par_between_coupon_dates():
+    """The clean price excludes the accrued coupon, so it stays near par, not par plus accrued."""
+    assert bond_model.get_bond_price(100, 0.05, 2.5, 0.05, 1) == pytest.approx(
+        100, abs=0.05
+    )
+    assert bond_model.get_bond_price(100, 0.04, 3.3, 0.04, 4) == pytest.approx(
+        100, abs=0.05
+    )
+
+
+def test_yield_to_maturity_inverts_a_fractional_maturity_price():
+    price = bond_model.get_bond_price(100, 0.05, 2.75, 0.045, 2)
+
+    assert bond_model.get_yield_to_maturity(
+        100, 0.05, 2.75, price, 2, tolerance=1e-10
+    ) == pytest.approx(0.045, abs=1e-9)
+
+
+def test_curve_price_uses_fractional_times_on_a_flat_curve():
+    """On a flat curve the curve price equals the yield price, also between coupon dates."""
+    flat_curve = pd.Series({0.25: 0.06, 1: 0.06, 5: 0.06, 10: 0.06})
+
+    for maturity, frequency in ((2.5, 1), (2.75, 2), (7.3, 4)):
+        assert (
+            bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
+                100, 0.05, maturity, flat_curve, frequency
+            )
+            == pytest.approx(
+                bond_model.get_bond_price(100, 0.05, maturity, 0.06, frequency)
+            )
+        )
+
+    # A bond priced on the curve has a Z-spread of zero.
+    price = bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
+        100, 0.05, 2.5, pd.Series({1: 0.03, 2: 0.035, 5: 0.04}), 1
+    )
+    assert bond_model.get_z_spread(
+        100,
+        0.05,
+        2.5,
+        price,
+        pd.Series({1: 0.03, 2: 0.035, 5: 0.04}),
+        1,
+        tolerance=1e-10,
+    ) == pytest.approx(0, abs=1e-8)

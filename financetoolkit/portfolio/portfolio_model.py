@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from financetoolkit import currencies_model
 from financetoolkit.portfolio import helpers
 from financetoolkit.utilities import logger_model
 
@@ -74,7 +75,7 @@ def read_portfolio_dataset(
     additional_files = []
     spreadsheet_files = []
 
-    # A copy is iterated and a new list is built, since removing entries from the list being iterated skips every other directory and mutates the caller's list in place.  # noqa: E501
+    # A folder stands for the spreadsheets in it, which are read after the files given directly.
     for file in excel_location:
         if file.split(".")[-1] not in ["xlsx", "xls", "csv"]:
             for sub_file in os.listdir(file):
@@ -88,7 +89,6 @@ def read_portfolio_dataset(
     logger.info("Reading Portfolio Files")
     for file in excel_location:
         portfolio_dataset = helpers.read_excel(file)
-        portfolio_dataset.columns = portfolio_dataset.columns.str.lower()
 
         (
             portfolio_dataset,
@@ -126,7 +126,7 @@ def read_portfolio_dataset(
             # Summing prices would falsely indicate a higher investment than made.
             number_columns.remove(selected_price_column)
 
-            # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears; adding the frame to itself instead only produced the right answer for a pair and silently deleted a group of three or more identical transactions altogether.  # noqa: E501
+            # Each group of identical rows collapses onto its first occurrence with the summable columns multiplied by how often the row appears.  # noqa: E501
             row_identity = portfolio_dataset.astype(str).agg("|".join, axis=1)
             occurrences = row_identity.map(row_identity.value_counts())
 
@@ -166,6 +166,11 @@ def read_portfolio_dataset(
         selected_currency_column,
         selected_costs_column,
     )
+
+
+def _first_column(dataset: pd.DataFrame, names: list[str]) -> str | None:
+    """The first of the names that is a column of the dataset, or None when none is."""
+    return next((name for name in names if name in dataset.columns), None)
 
 
 def format_portfolio_dataset(
@@ -231,14 +236,13 @@ def format_portfolio_dataset(
     dataset.columns = [str(column).strip().lower() for column in dataset.columns]
 
     date_columns = [column.lower() for column in date_columns]
-    date_column_match = [column for column in date_columns if column in dataset.columns]
+    date_column_first = _first_column(dataset, date_columns)
 
-    if not date_column_match:
+    if date_column_first is None:
         raise ValueError(
             "No date columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {date_columns}"
         )
-    date_column_first = date_column_match[0]
 
     dataset = dataset.set_index(date_column_first)
 
@@ -261,60 +265,44 @@ def format_portfolio_dataset(
     dataset = dataset.reset_index()
 
     tickers_columns = [column.lower() for column in tickers_columns]
-    tickers_columns_match = [
-        column for column in tickers_columns if column in dataset.columns
-    ]
+    tickers_column_first = _first_column(dataset, tickers_columns)
 
-    if not tickers_columns_match:
+    if tickers_column_first is None:
         raise ValueError(
             "No ticker columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {tickers_columns}"
         )
-    tickers_column_first = tickers_columns_match[0]
     dataset[tickers_column_first] = dataset[tickers_column_first].astype("category")
 
-    name_columns = [column.lower() for column in name_columns]
-    name_columns_match = [
-        column for column in name_columns if column in dataset.columns
-    ]
-
-    if not name_columns_match:
-        name_columns_match = tickers_columns_match
-
-    name_column_first = name_columns_match[0]
-    name_column_name = (
-        "TEMP " + name_column_first
-        if name_columns_match == tickers_columns_match
-        else name_column_first
-    )
+    # Without a name column the ticker doubles as the name, in a column of its own.
+    name_column_first = _first_column(dataset, [c.lower() for c in name_columns])
+    if name_column_first in (None, tickers_column_first):
+        name_column_first = tickers_column_first
+        name_column_name = "TEMP " + name_column_first
+    else:
+        name_column_name = name_column_first
     dataset[name_column_name] = dataset[name_column_first].astype("category")
 
     price_columns = [column.lower() for column in price_columns]
-    price_columns_match = [
-        column for column in price_columns if column in dataset.columns
-    ]
+    price_column_first = _first_column(dataset, price_columns)
 
-    if not price_columns_match:
+    if price_column_first is None:
         raise ValueError(
             "No price columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {price_columns}"
         )
-    price_column_first = price_columns_match[0]
     dataset[price_column_first] = dataset[price_column_first].apply(
         helpers.convert_to_float
     )
 
     volume_columns = [column.lower() for column in volume_columns]
-    volume_columns_match = [
-        column for column in volume_columns if column in dataset.columns
-    ]
+    volume_column_first = _first_column(dataset, volume_columns)
 
-    if not volume_columns_match:
+    if volume_column_first is None:
         raise ValueError(
             "No volume columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {volume_columns}"
         )
-    volume_column_first = volume_columns_match[0]
     dataset[volume_column_first] = dataset[volume_column_first].apply(
         helpers.convert_to_float
     )
@@ -340,11 +328,9 @@ def format_portfolio_dataset(
 
     if costs_columns:
         costs_columns = [column.lower() for column in costs_columns]
-        costs_columns_match = [
-            column for column in costs_columns if column in dataset.columns
-        ]
+        costs_column_first = _first_column(dataset, costs_columns)
 
-        if not costs_columns_match:
+        if costs_column_first is None:
             logger.warning(
                 "No costs columns found in the portfolio dataset. Please ensure in your dataset "
                 "there is a column named one of the following: %s. "
@@ -354,7 +340,6 @@ def format_portfolio_dataset(
             costs_column_first = "TEMP Costs"
             dataset[costs_column_first] = 0.0
         else:
-            costs_column_first = costs_columns_match[0]
             dataset[costs_column_first] = dataset[costs_column_first].apply(
                 helpers.convert_to_float
             )
@@ -364,11 +349,9 @@ def format_portfolio_dataset(
 
     if isinstance(currency_columns, list):
         currency_columns = [column.lower() for column in currency_columns]
-        currency_columns_match = [
-            column for column in currency_columns if column in dataset.columns
-        ]
+        currency_column_first = _first_column(dataset, currency_columns)
 
-        if not currency_columns_match:
+        if currency_column_first is None:
             logger.warning(
                 "No currency columns found in the portfolio dataset. Please ensure in your dataset "
                 "there is a column named one of the following: %s. "
@@ -378,17 +361,15 @@ def format_portfolio_dataset(
             currency_column_first = "TEMP Currency"
             dataset[currency_column_first] = "EUR"
         else:
-            currency_column_first = currency_columns_match[0]
-
             if (dataset[currency_column_first].str.len() != CURRENCY_CODE_LENGTH).any():
                 raise ValueError(
                     "Currency column must contain 3-letter currency codes only (e.g. EUR, USD or JPY)."
                 )
 
-            dataset[currency_column_first] = dataset[currency_column_first].astype(
-                "category"
+            # Capitals, except for GBp, ZAc and ILA: GBp is pence and GBP is pounds, so writing pence in capitals would make every price a hundred times too large.  # noqa: E501
+            dataset[currency_column_first] = (
+                dataset[currency_column_first].astype(str).map(normalize_currency)
             )
-            dataset[currency_column_first] = dataset[currency_column_first].str.upper()
 
             # Prevents the currency column being dropped with DEGIRO's Unnamed columns.
             dataset = dataset.rename(columns={currency_column_first: "currency"})
@@ -399,9 +380,9 @@ def format_portfolio_dataset(
             raise ValueError(
                 "Currency must be a 3-letter currency code (e.g. EUR, USD or JPY)."
             )
-        # A single currency code applies to every transaction, so it becomes a column of its own; using the code itself as the column name looked up a column that does not exist and made the rename below drop the currency entirely.  # noqa: E501
+        # A single currency code applies to every transaction, so it becomes a column of its own.
         currency_column_first = "TEMP Currency"
-        dataset[currency_column_first] = currency_columns.upper()
+        dataset[currency_column_first] = normalize_currency(currency_columns)
     else:
         currency_column_first = None
 
@@ -431,3 +412,314 @@ def format_portfolio_dataset(
         column_mapping["currency"],
         column_mapping["costs"],
     )
+
+
+# Exchanges that quote in a fractional unit: London in pence (GBp, which brokers also write
+# as GBX), Johannesburg in cents (ZAc) and Tel Aviv in agorot (ILA). Exchange rates are only
+# published between major units, so these are converted through the pound, rand and shekel.
+MINOR_CURRENCY_UNITS: dict[str, tuple[str, int]] = {
+    **currencies_model.MINOR_CURRENCY_UNITS,
+    "GBX": ("GBP", 100),
+    "ZAC": ("ZAR", 100),  # codespell:ignore zar
+}
+
+
+def normalize_currency(currency: str) -> str:
+    """
+    A currency code written in capitals, except for the fractional units (GBp, ZAc, ILA)
+    whose case tells them apart from the major currency: GBp is pence, GBP is pounds.
+
+    Args:
+        currency (str): The currency code, e.g. "usd", "GBp" or "GBX".
+
+    Returns:
+        str: The normalized currency code, e.g. "USD", "GBp" or "GBX".
+    """
+    currency = str(currency).strip()
+    return (
+        currency
+        if currency in currencies_model.MINOR_CURRENCY_UNITS
+        else currency.upper()
+    )
+
+
+def get_price_unit(currency: str) -> tuple[str, int]:
+    """
+    The major currency a price quoted in a currency belongs to and how many of the quoted
+    units make up one of it: ("GBP", 100) for a price in pence (GBp or GBX), ("ZAR", 100)
+    for South African cents, ("ILS", 100) for agorot and (currency, 1) otherwise.
+
+    Args:
+        currency (str): The currency the price is quoted in, e.g. "USD" or "GBp".
+
+    Returns:
+        tuple[str, int]: The major currency and the number of quoted units in one of it.
+    """
+    currency = str(currency).strip()
+    if currency in MINOR_CURRENCY_UNITS:
+        return MINOR_CURRENCY_UNITS[currency]
+    return MINOR_CURRENCY_UNITS.get(currency.upper(), (currency.upper(), 1))
+
+
+def get_exchange_rate_ticker(base_currency: str, currency: str) -> str | None:
+    """
+    The exchange rate that converts a price quoted in a currency into the base currency,
+    as the Yahoo Finance symbol BASE + QUOTE + "=X" between the major currencies: USDGBP=X,
+    the pounds per dollar, for a price in pounds or pence that is converted to dollars.
+
+    Args:
+        base_currency (str): The currency to convert to, e.g. "USD".
+        currency (str): The currency the price is quoted in, e.g. "GBp".
+
+    Returns:
+        str | None: The exchange rate ticker, or None when both are the same currency (a
+        price in pence and one in pounds differ by a factor of 100 but need no exchange
+        rate).
+    """
+    base, _ = get_price_unit(base_currency)
+    quote, _ = get_price_unit(currency)
+    return None if base == quote else f"{base}{quote}=X"
+
+
+def get_exchange_rate_tickers(
+    currencies: dict[str, str], base_currency: str
+) -> list[str]:
+    """
+    The exchange rates needed to convert prices quoted in the currencies to the base
+    currency, see `get_exchange_rate_ticker`.
+
+    Args:
+        currencies (dict[str, str]): The currency each ticker is quoted in.
+        base_currency (str): The currency to convert to, e.g. "USD".
+
+    Returns:
+        list[str]: The exchange rate tickers, e.g. ["USDEUR=X", "USDGBP=X"].
+    """
+    return sorted(
+        {
+            rate_ticker
+            for currency in currencies.values()
+            if (rate_ticker := get_exchange_rate_ticker(base_currency, currency))
+        }
+    )
+
+
+def get_base_currency(currencies: dict[str, str], weights: dict[str, float]) -> str:
+    """
+    The currency most of a portfolio trades in: the major currency with the largest sum of
+    weights, the first one listed when two are equal.
+
+    Args:
+        currencies (dict[str, str]): The currency each ticker is quoted in.
+        weights (dict[str, float]): The weight per ticker.
+
+    Returns:
+        str: The major currency, e.g. "USD". USD when no currency is known.
+    """
+    totals: dict[str, float] = {}
+    for ticker, weight in weights.items():
+        currency = currencies.get(ticker)
+        if currency:
+            major, _ = get_price_unit(currency)
+            totals[major] = totals.get(major, 0.0) + abs(float(weight))
+    return max(totals, key=lambda currency: totals[currency]) if totals else "USD"
+
+
+def _align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
+    """
+    A daily exchange rate on the dates of a price series: the rate of the same day, or the
+    last one before it when the rate has no quote that day (exchanges and the currency
+    market close on different holidays). For weekly to yearly prices, which hold the last
+    price of each period, it is the last rate of each period.
+    """
+    rate = rate.dropna()
+    if (
+        isinstance(index, pd.PeriodIndex)
+        and isinstance(rate.index, pd.PeriodIndex)
+        and rate.index.freq != index.freq
+    ):
+        rate = rate.groupby(rate.index.asfreq(index.freq)).last()
+    return rate.reindex(rate.index.union(index)).sort_index().ffill().reindex(index)
+
+
+def convert_prices(
+    prices: pd.DataFrame,
+    currencies: dict[str, str],
+    base_currency: str,
+    exchange_rates: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """
+    Prices in the currency each ticker is quoted in, converted to one base currency. A price
+    is divided by the number of quoted units in its major currency (100 for pence) and by
+    the exchange rate BASE/QUOTE of the same day (e.g. USDGBP=X, the pounds per dollar),
+    and multiplied by the units of the base currency. Values in money, such as dividends,
+    convert the same way.
+
+    Args:
+        prices (pd.DataFrame): The prices, one column per ticker, on a daily (or weekly to
+            yearly) date index.
+        currencies (dict[str, str]): The currency each ticker is quoted in. A ticker without
+            one is taken to be quoted in the base currency.
+        base_currency (str): The currency to convert to, e.g. "USD".
+        exchange_rates (pd.DataFrame | None, optional): The daily exchange rates, one column
+            per ticker of `get_exchange_rate_ticker` (e.g. USDGBP=X). Defaults to None, for
+            prices that need no exchange rate.
+
+    Returns:
+        pd.DataFrame: The prices in the base currency.
+
+    Raises:
+        ValueError: When a ticker needs an exchange rate that is not available.
+    """
+    _, base_units = get_price_unit(base_currency)
+    converted = prices.astype(float)
+
+    for ticker in prices.columns:
+        currency = currencies.get(ticker) or base_currency
+        _, units = get_price_unit(currency)
+        rate_ticker = get_exchange_rate_ticker(base_currency, currency)
+
+        rate: pd.Series | float = 1.0
+        if rate_ticker is not None:
+            if (
+                exchange_rates is None
+                or rate_ticker not in exchange_rates.columns
+                or exchange_rates[rate_ticker].isna().all()
+            ):
+                raise ValueError(
+                    f"{ticker} is quoted in {currency} and cannot be converted to "
+                    f"{base_currency} without the exchange rate {rate_ticker}."
+                )
+            rate = _align_exchange_rate(exchange_rates[rate_ticker], prices.index)
+
+        if units != base_units or rate_ticker is not None:
+            converted[ticker] = converted[ticker] / units * base_units / rate
+
+    return converted
+
+
+def convert_historical_data(
+    historical_data: pd.DataFrame,
+    conversions: dict[str, tuple[str, str]],
+    exchange_rates: pd.DataFrame | None,
+    columns: list[str],
+) -> pd.DataFrame:
+    """
+    Historical data (columns such as Open and Adj Close, each with one column per ticker)
+    with the money columns of some tickers converted to another currency, after which
+    their Return and Cumulative Return are calculated again from the converted Adj Close,
+    so they are the returns in that currency.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data, with the column names on the
+            first level of the columns and the tickers on the second.
+        conversions (dict[str, tuple[str, str]]): Per ticker the currency its data is
+            quoted in and the currency to convert it to, e.g. {"VOD.L": ("GBp", "USD")}.
+        exchange_rates (pd.DataFrame | None): The daily exchange rates, see
+            `convert_prices`.
+        columns (list[str]): The columns to convert, e.g. Open, High, Low, Close, Adj Close
+            and Dividends.
+
+    Returns:
+        pd.DataFrame: The converted historical data.
+    """
+    historical_data = historical_data.copy()
+    available = historical_data.columns.get_level_values(0).unique()
+
+    for ticker, (currency, target) in conversions.items():
+        if ("Adj Close", ticker) not in historical_data.columns:
+            continue
+        for column in columns:
+            if (column, ticker) in historical_data.columns:
+                historical_data[(column, ticker)] = convert_prices(
+                    historical_data[column][[ticker]],
+                    {ticker: currency},
+                    target,
+                    exchange_rates,
+                )[ticker]
+
+        adjusted_close = historical_data[("Adj Close", ticker)]
+        if "Return" in available:
+            historical_data[("Return", ticker)] = adjusted_close.pct_change()
+        first = adjusted_close.first_valid_index()
+        if "Cumulative Return" in available and first is not None:
+            historical_data[("Cumulative Return", ticker)] = (
+                adjusted_close / adjusted_close.loc[first]
+            )
+
+    return historical_data
+
+
+def align_benchmark_data(benchmark_data: pd.DataFrame, dates: pd.Index) -> pd.DataFrame:
+    """
+    Daily benchmark data aligned to the dates of the portfolio's historical data.
+
+    Prices (Open, High, Low, Close, Adj Close and any other level) on a date without a benchmark
+    quote, such as a holiday of the benchmark's exchange, are carried forward from the previous
+    quote. Flows (Volume and Dividends) on a benchmark date that is missing from `dates` are
+    added to the first following date, so no dividend is lost. Return and Cumulative Return are
+    calculated again from the aligned Adj Close: a carried-forward price is a return of zero.
+
+    Filling a missing date with the next quote instead would copy that day's price and return
+    onto the earlier date, counting the return twice and pricing a day with information from
+    the future.
+
+    Args:
+        benchmark_data (pd.DataFrame): The daily historical data of one benchmark, one column per
+            field (e.g. Close, Adj Close, Dividends, Return).
+        dates (pd.Index): The dates to align to, e.g. those of the portfolio's historical data.
+
+    Returns:
+        pd.DataFrame: The benchmark data on `dates`, with the columns of `benchmark_data`.
+    """
+    if benchmark_data.empty:
+        return benchmark_data.reindex(dates)
+
+    benchmark_data = benchmark_data.sort_index()
+    benchmark_data = benchmark_data[~benchmark_data.index.duplicated(keep="first")]
+    dates = pd.Index(dates)
+
+    flow_columns = [
+        column for column in ["Volume", "Dividends"] if column in benchmark_data
+    ]
+    return_columns = [
+        column for column in ["Return", "Cumulative Return"] if column in benchmark_data
+    ]
+    level_columns = [
+        column
+        for column in benchmark_data.columns
+        if column not in flow_columns + return_columns
+    ]
+
+    aligned = (
+        benchmark_data[level_columns]
+        .reindex(dates.union(benchmark_data.index))
+        .ffill()
+        .reindex(dates)
+    )
+
+    # Every benchmark date maps to the first portfolio date on or after it.
+    locations = dates.get_indexer(benchmark_data.index, method="bfill")
+    matched = locations != -1
+    for column in flow_columns:
+        aligned[column] = (
+            benchmark_data[column]
+            .astype(float)
+            .fillna(0.0)[matched]
+            .groupby(dates[locations[matched]])
+            .sum()
+            .reindex(dates, fill_value=0.0)
+        )
+
+    if "Adj Close" in aligned:
+        adjusted_close = aligned["Adj Close"]
+        first = adjusted_close.first_valid_index()
+        if "Return" in return_columns:
+            returns = adjusted_close.pct_change()
+            if first is not None:
+                returns.loc[first] = 0.0
+            aligned["Return"] = returns
+        if "Cumulative Return" in return_columns and first is not None:
+            aligned["Cumulative Return"] = adjusted_close / adjusted_close.loc[first]
+
+    return aligned.reindex(columns=benchmark_data.columns)

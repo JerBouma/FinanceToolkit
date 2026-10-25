@@ -9,7 +9,7 @@ import pandas as pd
 
 
 def get_present_value_of_growth_opportunities(
-    weighted_average_cost_of_capital: pd.DataFrame,
+    cost_of_equity: pd.DataFrame,
     earnings_per_share: pd.Series | pd.DataFrame,
     close_prices: pd.DataFrame,
     calculate_daily: bool = False,
@@ -17,7 +17,7 @@ def get_present_value_of_growth_opportunities(
     """
     The Present Value of Growth Opportunities (PVGO) is the net present value of all future investments a company is
     expected to make. It is calculated as the difference between the Close Price and the Earnings Per Share divided by
-    the Weighted Average Cost of Capital.
+    the Cost of Equity.
 
     It is meant to be used as relative valuation metric and therefore doesn't necessarily have a meaning when used
     for one company.
@@ -25,10 +25,10 @@ def get_present_value_of_growth_opportunities(
 
     The formula is as follows:
 
-        PVGO = Close Price — (Earnings Per Share / Weighted Average Cost of Capital)
+        PVGO = Close Price — (Earnings Per Share / Cost of Equity)
 
     Args:
-        weighted_average_cost_of_capital (pd.DataFrame): The weighted average cost of capital.
+        cost_of_equity (pd.DataFrame): The cost of equity, the return shareholders require.
         earnings_per_share (pd.Series | pd.DataFrame): The earnings per share.
         close_prices (pd.DataFrame): The close prices.
         calculate_daily (bool): Whether to calculate the PVGO on a daily basis. If False, the PVGO is calculated
@@ -38,27 +38,19 @@ def get_present_value_of_growth_opportunities(
         pd.DataFrame: The PVGO.
 
     Notes:
-    - In the textbook derivation of PVGO (e.g. Bodie, Kane & Marcus, "Investments"), the no-growth
-    value EPS / r is discounted at r = the cost of equity (the "market capitalization rate" for the
-    stock), since both the share Price and EPS are equity-only, per-share quantities. This
-    implementation instead discounts at the Weighted Average Cost of Capital (WACC), which blends in
-    the (typically lower, tax-shielded) cost of debt. Because WACC is generally below the cost of
-    equity, EPS / WACC will generally overstate the no-growth value and therefore understate PVGO
-    relative to the textbook formula. This is a practical simplification (WACC is already computed
-    elsewhere in this toolkit for every company, whereas a standalone cost of equity series requires
-    re-deriving the CAPM inputs); treat the resulting PVGO as an approximation, and prefer comparing
-    PVGO *across* companies or over time for the same company rather than reading absolute levels
-    literally.
+    - Following the textbook derivation of PVGO (e.g. Bodie, Kane & Marcus, "Investments"), the
+    no-growth value EPS / r is discounted at r = the cost of equity (the "market capitalization rate"
+    for the stock), since both the share Price and EPS are equity-only, per-share quantities.
     """
-    earnings_wacc_ratio = (earnings_per_share / weighted_average_cost_of_capital).T
+    no_growth_value = (earnings_per_share / cost_of_equity).T
 
     if calculate_daily:
-        earnings_wacc_ratio.index = pd.PeriodIndex(earnings_wacc_ratio.index, freq="D")
-        earnings_wacc_ratio = pd.DataFrame(
-            earnings_wacc_ratio, index=close_prices.index
+        no_growth_value.index = pd.PeriodIndex(no_growth_value.index, freq="D")
+        no_growth_value = pd.DataFrame(
+            no_growth_value, index=close_prices.index
         ).ffill()
 
-    return close_prices - earnings_wacc_ratio
+    return close_prices - no_growth_value
 
 
 def get_sustainable_growth_rate(
@@ -78,7 +70,7 @@ def get_sustainable_growth_rate(
 
     Args:
         return_on_equity (float | pd.Series | pd.DataFrame): The return on equity (ROE) of
-        the company.
+        the company, measured on the equity at the beginning of the period (Higgins).
         retention_ratio (float | pd.Series | pd.DataFrame): The retention ratio of the company,
         i.e. the proportion of net income retained rather than paid out as dividends. This is
         equal to (1 - Dividend Payout Ratio).
@@ -110,7 +102,7 @@ def get_internal_growth_rate(
 
     Args:
         return_on_assets (float | pd.Series | pd.DataFrame): The return on assets (ROA) of
-        the company.
+        the company, measured on the total assets at the end of the period.
         retention_ratio (float | pd.Series | pd.DataFrame): The retention ratio of the company,
         i.e. the proportion of net income retained rather than paid out as dividends. This is
         equal to (1 - Dividend Payout Ratio).

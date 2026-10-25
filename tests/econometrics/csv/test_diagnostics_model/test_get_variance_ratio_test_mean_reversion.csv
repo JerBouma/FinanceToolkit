@@ -1,4 +1,6 @@
 ,0
-Variance Ratio,0.6985
-Variance Ratio Statistic,-4.3512
+Variance Ratio,0.7013
+Variance Ratio Statistic,-4.3107
 P-Value,0.0
+Robust Variance Ratio Statistic,-4.1766
+Robust P-Value,0.0

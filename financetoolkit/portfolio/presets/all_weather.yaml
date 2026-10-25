@@ -1,0 +1,38 @@
+# Duration, iShares TLT 14.63y (2026-10-06) https://www.ishares.com/us/products/239454/ishares-20-year-treasury-bond-etf
+# Duration, iShares GOVT 5.43y (2026-10-06) https://www.ishares.com/us/products/239468/ishares-us-treasury-bond-etf
+# JUDGEMENT: GOVT stands in for the intermediate Treasuries (the book's exact maturities were not verified).
+name: All Weather
+aliases: ["Dalio", "All Seasons", "Ray Dalio"]
+description: "Ray Dalio's mix for every economic environment: 30% US stocks, 40% long-term and 15% intermediate Treasuries, 7.5% gold and 7.5% commodities."
+source:
+  text: "Dalio's mix as published in Robbins (2014), MONEY: Master the Game; Bridgewater publishes no weights. CNBC (2018), 11 Dec 2018, on that book: 30% stocks, 40% long-term US bonds, 15% intermediate US bonds, 7.5% gold and 7.5% other commodities."
+  link: "https://www.cnbc.com/2018/12/11/ray-dalio-this-investment-strategy-is-good-in-a-financial-crisis.html"
+rebalancing: quarterly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.3
+    asset_class: Equity
+    currency: USD
+  - ticker: TLT
+    name: iShares 20+ Year Treasury Bond ETF
+    weight: 0.4
+    asset_class: Fixed Income
+    currency: USD
+    duration: 14.63
+  - ticker: GOVT
+    name: iShares U.S. Treasury Bond ETF
+    weight: 0.15
+    asset_class: Fixed Income
+    currency: USD
+    duration: 5.43
+  - ticker: GLD
+    name: SPDR Gold Shares
+    weight: 0.075
+    asset_class: Commodity
+    currency: USD
+  - ticker: DBC
+    name: Invesco DB Commodity Index Tracking Fund
+    weight: 0.075
+    asset_class: Commodity
+    currency: USD

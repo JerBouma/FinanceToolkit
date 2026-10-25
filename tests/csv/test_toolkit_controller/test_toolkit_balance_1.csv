@@ -44,9 +44,9 @@ AAPL,Total Liabilities,,0.1136,0.0492,-0.0386
 AAPL,Treasury Stock,,,,
 AAPL,Preferred Stock,,,,
 AAPL,Common Stock,,0.1297,0.1305,0.1382
-AAPL,Retained Earnings,,-0.6284,-1.5516,-0.9302
+AAPL,Retained Earnings,,-0.6284,-1.5516,0.9302
 AAPL,Additional Paid In Capital,,,,
-AAPL,Accumulated Other Comprehensive Income,,-1.4015,-69.1534,0.0309
+AAPL,Accumulated Other Comprehensive Income,,1.4015,-69.1534,-0.0309
 AAPL,Total Shareholder Equity,,-0.0344,-0.1968,0.2264
 AAPL,Total Equity,,-0.0344,-0.1968,0.2264
 AAPL,Minority Interest,,,,
@@ -98,7 +98,7 @@ MSFT,Preferred Stock,,,,
 MSFT,Common Stock,,0.0318,0.0461,0.078
 MSFT,Retained Earnings,,0.6506,0.4772,0.4101
 MSFT,Additional Paid In Capital,,,,
-MSFT,Accumulated Other Comprehensive Income,,-0.4281,-3.5675,0.3559
+MSFT,Accumulated Other Comprehensive Income,,-0.4281,-3.5675,-0.3559
 MSFT,Total Shareholder Equity,,0.2002,0.1729,0.2383
 MSFT,Total Equity,,0.2002,0.1729,0.2383
 MSFT,Minority Interest,,,,

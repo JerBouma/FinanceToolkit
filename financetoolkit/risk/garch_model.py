@@ -19,28 +19,81 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 # Number of deterministic Sobol starting points a GARCH-family fit tries, in addition to the domain-informed initial guess.  # noqa: E501
 N_MULTI_START_POINTS = 32
 
+# The GARCH and GJR-GARCH recursions start from a backcast: an exponentially weighted average of the first squared returns, with the same window and decay as the arch package (Kevin Sheppard), so the fitted parameters agree with it.  # noqa: E501
+BACKCAST_OBSERVATIONS = 75
+BACKCAST_DECAY = 0.94
+
+# A fit needs at least two returns: one for the sample Variance its bounds anchor to and one more for the recursion.  # noqa: E501
+MINIMUM_FIT_OBSERVATIONS = 2
+
+
+def _apply_per_column(
+    returns: pd.DataFrame, function, forecast: bool = False, **kwargs
+) -> pd.DataFrame:
+    """
+    Applies a single-series GARCH-family function to every column of `returns` on that
+    column's own non-missing returns.
+
+    Fitting all columns on the rows where every column has a return would cut each
+    series down to the shortest history (a ticker that listed later, or one with a gap),
+    and the recursion cannot run over missing values, so each column is fitted on its
+    own observations instead.
+
+    Args:
+        returns (pd.DataFrame): A DataFrame of returns, one column per series, which may
+            hold missing values.
+        function (callable): The function to apply to the np.ndarray of each column's
+            returns, such as `get_garch` or `get_garch_forecast`.
+        forecast (bool, optional): Whether `function` returns a forecast (a fixed number
+            of steps ahead, indexed 0 to time_steps - 1) rather than one value per
+            observation (indexed by the column's own dates). Defaults to False.
+        **kwargs: The keyword arguments passed on to `function`.
+
+    Returns:
+        pd.DataFrame: The results, one column per column of `returns`. Columns with fewer
+        than two returns are NaN, and so are the dates a column has no return for.
+    """
+    results = {}
+
+    for column in returns.columns:
+        column_returns = returns[column].dropna()
+
+        if len(column_returns) < MINIMUM_FIT_OBSERVATIONS:
+            continue
+
+        values = np.asarray(function(column_returns.to_numpy(), **kwargs))
+
+        results[column] = (
+            pd.Series(values)
+            if forecast
+            else pd.Series(values, index=column_returns.index[: len(values)])
+        )
+
+    if forecast:
+        return pd.DataFrame(results, columns=returns.columns, dtype=float)
+
+    return pd.DataFrame(
+        results, index=returns.index, columns=returns.columns, dtype=float
+    )
+
 
 def _fit_multi_start(
     wrapper_func,
     bounds: list[tuple[float, float]],
     initial_guess: list[float],
     model_name: str,
+    number_of_points: int = N_MULTI_START_POINTS,
 ) -> np.ndarray:
     """
     Fits a GARCH-family log-likelihood by running `scipy.optimize.minimize` (L-BFGS-B)
-    from many deterministic starting points spread across `bounds`, and keeps the best.
+    from many deterministic starting points spread across `bounds`, keeps the best and
+    finishes it with Nelder-Mead. The search runs on the parameters scaled to [0, 1]
+    within their bounds.
 
-    This used to run `scipy.optimize.dual_annealing`, a global optimizer, instead. It
-    reports success (with message "Maximum number of iteration reached") even when the
-    local search never improves on `x0`, and worse, its chaotic simulated-annealing walk
-    turned out to be sensitive to platform floating-point differences: the exact same
-    integer seed produced a genuinely different local optimum on Linux than on macOS for
-    EGARCH (parameters differing enough to flip Gamma's sign), because the log-likelihood
-    it climbs isn't bit-identical across libm/BLAS backends, and tiny ULP differences
-    flip early Metropolis accept/reject decisions, fully diverging the search from there.
-    Neither more seeds (4 -> 8, no change) nor polishing each seed's result with L-BFGS-B
-    (no change either) closed that gap, which is expected: both just replay the same
-    biased trajectory more precisely, they don't change what the trajectory visits.
+    A global optimizer with a stochastic walk (such as simulated annealing) is avoided on
+    purpose: the log-likelihood is not bit-identical across libm/BLAS backends, and tiny
+    floating-point differences flip its accept/reject decisions, so the same seed reaches
+    different optima on different platforms.
 
     Gradient descent from many fixed points doesn't have that failure mode: there is no
     stochastic accept/reject step, so tiny platform-level floating-point noise in the
@@ -60,6 +113,9 @@ def _fit_multi_start(
         to the Sobol-sampled ones.
         model_name (str): The model name to include in the warning message if every
         attempt fails.
+        number_of_points (int, optional): The number of Sobol-sampled starting points tried
+        in addition to the initial guess; 0 runs a single local search from the initial
+        guess. Defaults to N_MULTI_START_POINTS (32).
 
     Returns:
         np.ndarray: The fitted weights from the best-scoring successful attempt, or an
@@ -69,9 +125,22 @@ def _fit_multi_start(
     lower = np.array([b[0] for b in bounds], dtype=float)
     upper = np.array([b[1] for b in bounds], dtype=float)
 
+    # The search runs on the parameters scaled to [0, 1] within their bounds: omega is of
+    # the order of a daily variance (1e-5) and the other weights of 0.1, and on their own
+    # scales the numerical gradient is so badly conditioned that L-BFGS-B stops close to
+    # where it started.
+    span = upper - lower
+
+    def scaled_objective(unit: np.ndarray) -> float:
+        return wrapper_func(lower + unit * span)
+
     sampler = qmc.Sobol(d=dim, seed=42)
-    starts = qmc.scale(sampler.random(N_MULTI_START_POINTS), lower, upper)
-    starts = np.vstack([np.asarray(initial_guess, dtype=float), starts])
+    starts = np.vstack(
+        [
+            (np.asarray(initial_guess, dtype=float) - lower) / span,
+            sampler.random(number_of_points),
+        ]
+    )
 
     best_x = None
     best_value = np.inf
@@ -79,7 +148,10 @@ def _fit_multi_start(
     for start in starts:
         try:
             result = optimize.minimize(
-                wrapper_func, start, bounds=bounds, method="L-BFGS-B"
+                scaled_objective,
+                np.clip(start, 0.0, 1.0),
+                bounds=[(0.0, 1.0)] * dim,
+                method="L-BFGS-B",
             )
         except (ValueError, FloatingPointError):
             continue
@@ -89,7 +161,7 @@ def _fit_multi_start(
 
         if result.fun < best_value:
             best_value = result.fun
-            best_x = result.x
+            best_x = lower + result.x * span
 
     if best_x is None:
         logger.warning(
@@ -100,7 +172,54 @@ def _fit_multi_start(
         )
         return np.full(dim, np.nan)
 
+    # The stationarity constraint is a wall of infinite values, along which gradient steps
+    # stall; Nelder-Mead, which only compares values, finishes the search from the best point.
+    polished = optimize.minimize(
+        lambda unit: (
+            scaled_objective(unit) if np.all((unit >= 0) & (unit <= 1)) else np.inf
+        ),
+        (best_x - lower) / span,
+        method="Nelder-Mead",
+        options={"xatol": 1e-8, "fatol": 1e-8, "maxiter": 2000 * dim},
+    )
+    if np.isfinite(polished.fun) and polished.fun < best_value:
+        best_x = lower + polished.x * span
+
     return best_x
+
+
+def get_backcast(returns: np.ndarray) -> float:
+    """
+    Calculates the backcast the GARCH and GJR-GARCH variance recursions start from: an
+    exponentially weighted average (decay 0.94) of the first 75 squared returns, with the
+    first return weighted most.
+
+    The recursion needs a variance and a squared return for the period before the first
+    observation. Starting from the first squared return alone makes every fitted
+    parameter depend on the size of that single return: a small one starts the recursion
+    far below the true variance, the likelihood then prefers a lower persistence (beta)
+    to forget that start quickly, and the estimates are biased. An average of the first
+    returns is a far steadier estimate of the variance at the start of the sample. The
+    window and decay are those of the arch package, so the fitted parameters agree with
+    it.
+
+    For more information, see:
+
+    - Bollerslev, T. (1986). "Generalized Autoregressive Conditional Heteroskedasticity."
+    Journal of Econometrics, 31(3), 307-327.
+    - Sheppard, K. arch: Autoregressive Conditional Heteroskedasticity models in Python,
+    https://arch.readthedocs.io
+
+    Args:
+        returns (np.ndarray): A np.ndarray of returns.
+
+    Returns:
+        float: The backcast, a variance in the units of the squared returns.
+    """
+    window = min(BACKCAST_OBSERVATIONS, len(returns))
+    decay_weights = BACKCAST_DECAY ** np.arange(window)
+
+    return float(np.sum(returns[:window] ** 2 * decay_weights / decay_weights.sum()))
 
 
 def _linear_variance_recursion(
@@ -156,9 +275,9 @@ def garch_log_maximization(
     # Compute GARCH values using a vectorized function
     garch = get_garch(returns, weights_array, t, p=p, q=q)
 
-    # garch[i] is built from returns[i - 1], so it pairs with returns[i] itself.
-    u = returns[1:t]
-    v = garch[1:t]
+    # garch[i] is built from returns[i - 1] (garch[0] from the backcast), so it pairs with returns[i] itself and every observation, the first included, enters the likelihood.  # noqa: E501
+    u = returns[:t]
+    v = garch[:t]
 
     # Use np.sum to calculate the sum of the log-likelihood
     result = -np.sum(-np.log(v) - u**2 / v)
@@ -225,10 +344,13 @@ def get_garch(
     p: int = 1,
     q: int = 1,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates volatility forecasts based on the GARCH model.
+    """Calculates the conditional variance of the GARCH model.
 
     GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
     instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
+
+    The recursion starts from the backcast (see `get_backcast`), which stands in for both the squared return and the
+    variance before the first observation: sigma2[0] = omega + (alpha + beta) * backcast.
 
     More information can be found in:
     - https://en.wikipedia.org/wiki/Autoregressive_conditional_heteroskedasticity#GARCH
@@ -260,7 +382,8 @@ def get_garch(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_garch,
                     weights=weights,
                     time_steps=time_steps,
@@ -268,15 +391,15 @@ def get_garch(
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             garch = pd.concat(period_data_list, axis=0)
 
             return garch
-        return returns.aggregate(
+        return _apply_per_column(
+            returns,
             get_garch,
             weights=weights,
             time_steps=time_steps,
@@ -303,13 +426,16 @@ def get_garch(
 
         omega, alpha, beta = weights[0], weights[1], weights[2]
 
+        # The first step treats the squared return and the variance before the sample as the backcast, as the arch package does, see get_backcast.  # noqa: E501
+        first_variance = omega + (alpha + beta) * get_backcast(returns)
+
         # sigma2[i] = omega + alpha * returns[i - 1] ** 2 + beta * sigma2[i - 1] is a
         # first-order linear recursion, which lfilter computes in compiled code with the
         # same operations in the same order as the loop it replaces.
         return _linear_variance_recursion(
             omega + alpha * returns[: time_steps - 1] ** 2,
             beta,
-            returns[0] ** 2,
+            first_variance,
             time_steps,
         )
 
@@ -357,23 +483,34 @@ def get_garch_forecast(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_garch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
+                    get_garch_forecast,
+                    forecast=True,
+                    weights=weights,
+                    time_steps=time_steps,
+                    p=p,
+                    q=q,
                 )
-                period_data.name = sub_period
                 period_data.columns = [
                     col + " " + str(sub_period) for col in period_data.columns
                 ]
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             garch_forecast = pd.concat(period_data_list, axis=1)
 
             return garch_forecast
 
-        return returns.aggregate(
-            get_garch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+        return _apply_per_column(
+            returns,
+            get_garch_forecast,
+            forecast=True,
+            weights=weights,
+            time_steps=time_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, pd.Series):
         return get_garch_forecast(
@@ -423,8 +560,9 @@ def gjr_garch_log_maximization(
 
     garch = get_gjr_garch(returns, weights_array, t, p=p, q=q)
 
-    u = returns[1:t]
-    v = garch[1:t]
+    # Every observation, the first included, enters the likelihood, see garch_log_maximization.
+    u = returns[:t]
+    v = garch[:t]
 
     return -np.sum(-np.log(v) - u**2 / v)
 
@@ -444,6 +582,11 @@ def get_gjr_garch_weights(
       the sign of the shock)
     - alpha + gamma / 2 + beta < 1 (the GJR-GARCH stationarity condition, assuming a
       symmetric error distribution)
+
+    The fitted GARCH(1, 1) weights with gamma = 0 serve as an extra starting point and
+    as a floor: GARCH is the special case gamma = 0, so a local search from them competes
+    with the multi-start result, and when both end at a lower log-likelihood than the
+    GARCH fit (a local optimum), the GARCH weights with gamma = 0 are returned instead.
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -470,6 +613,14 @@ def get_gjr_garch_weights(
 
     initial_guess = [initial_omega, 0.05, 0.1, 0.8]
 
+    # GARCH is GJR-GARCH with gamma = 0, so the GJR-GARCH likelihood can never be lower at its optimum than the GARCH one. The four-parameter surface does have local optima the multi-start search can settle in (on simulated series it stopped below the GARCH likelihood), so the GARCH fit is both an extra starting point and a floor: a local search from it competes with the multi-start result, and the GARCH weights with gamma 0 are kept when neither does better.  # noqa: E501
+    garch_weights = get_garch_weights(returns, t, p, q)
+    nested_weights = (
+        np.array([garch_weights[0], garch_weights[1], 0.0, garch_weights[2]])
+        if np.all(np.isfinite(garch_weights))
+        else None
+    )
+
     def wrapper_func(parameters):
         alpha, gamma, beta = parameters[1], parameters[2], parameters[3]
         if alpha + gamma / 2 + beta >= 1:  # Stationarity constraint
@@ -478,7 +629,30 @@ def get_gjr_garch_weights(
             return np.inf
         return gjr_garch_log_maximization(parameters, returns, t, p, q)
 
-    return _fit_multi_start(wrapper_func, bounds, initial_guess, "GJR-GARCH")
+    weights = _fit_multi_start(wrapper_func, bounds, initial_guess, "GJR-GARCH")
+
+    if nested_weights is None:
+        return weights
+
+    # A separate local search rather than one more start in the multi-start search: only the best start is polished there, so an extra start can displace the one that polishes to the higher likelihood.  # noqa: E501
+    candidates = [
+        weights,
+        _fit_multi_start(
+            wrapper_func,
+            bounds,
+            nested_weights,
+            "GJR-GARCH (local search from the GARCH fit)",
+            number_of_points=0,
+        ),
+        nested_weights,
+    ]
+    scores = [
+        wrapper_func(candidate) if np.all(np.isfinite(candidate)) else np.inf
+        for candidate in candidates
+    ]
+
+    # The first candidate wins ties, so the GARCH weights are only returned when the search ends below them.  # noqa: E501
+    return candidates[int(np.argmin(scores))]
 
 
 def get_gjr_garch(
@@ -489,7 +663,7 @@ def get_gjr_garch(
     p: int = 1,
     q: int = 1,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates volatility forecasts based on the GJR-GARCH model.
+    """Calculates the conditional variance of the GJR-GARCH model.
 
     GJR-GARCH extends GARCH with a leverage term that lets negative shocks (bad news)
     raise volatility by more than positive shocks of the same size, a well documented
@@ -498,6 +672,10 @@ def get_gjr_garch(
     - sigma_t^2 = omega + (alpha + gamma * 1[u_(t-1) < 0]) * u_(t-1)^2 + beta * sigma_(t-1)^2
 
     A positive gamma indicates the presence of a leverage effect.
+
+    The recursion starts from the backcast (see `get_backcast`) for the squared return and the variance
+    before the first observation, with the indicator at its expectation of one half:
+    sigma2[0] = omega + (alpha + gamma / 2 + beta) * backcast.
 
     For more information about the method, see the following paper:
 
@@ -528,7 +706,8 @@ def get_gjr_garch(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_gjr_garch,
                     weights=weights,
                     time_steps=time_steps,
@@ -536,15 +715,15 @@ def get_gjr_garch(
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             gjr_garch = pd.concat(period_data_list, axis=0)
 
             return gjr_garch
-        return returns.aggregate(
+        return _apply_per_column(
+            returns,
             get_gjr_garch,
             weights=weights,
             time_steps=time_steps,
@@ -573,11 +752,14 @@ def get_gjr_garch(
         lagged = returns[: time_steps - 1]
         indicator = np.where(lagged < 0, 1.0, 0.0)
 
+        # The first step uses the backcast for the squared return and the variance before the sample, with the leverage term at its expectation (a negative shock half of the time), as the arch package does.  # noqa: E501
+        first_variance = omega + (alpha + gamma / 2 + beta) * get_backcast(returns)
+
         # A first-order linear recursion like GARCH, see _linear_variance_recursion.
         return _linear_variance_recursion(
             omega + (alpha + gamma * indicator) * lagged**2,
             beta,
-            returns[0] ** 2,
+            first_variance,
             time_steps,
         )
 
@@ -626,27 +808,34 @@ def get_gjr_garch_forecast(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_gjr_garch_forecast,
+                    forecast=True,
                     weights=weights,
                     time_steps=time_steps,
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
                 period_data.columns = [
                     col + " " + str(sub_period) for col in period_data.columns
                 ]
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             gjr_garch_forecast = pd.concat(period_data_list, axis=1)
 
             return gjr_garch_forecast
 
-        return returns.aggregate(
-            get_gjr_garch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+        return _apply_per_column(
+            returns,
+            get_gjr_garch_forecast,
+            forecast=True,
+            weights=weights,
+            time_steps=time_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, pd.Series):
         return get_gjr_garch_forecast(
@@ -697,8 +886,8 @@ def egarch_log_maximization(
 
     garch = get_egarch(returns, weights_array, t, p=p, q=q)
 
-    u = returns[1:t]
-    v = garch[1:t]
+    u = returns[:t]
+    v = garch[:t]
 
     return -np.sum(-np.log(v) - u**2 / v)
 
@@ -751,7 +940,7 @@ def get_egarch(
     p: int = 1,
     q: int = 1,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates volatility forecasts based on the EGARCH model.
+    """Calculates the conditional variance of the EGARCH model.
 
     EGARCH models the log of the conditional variance, which avoids having to
     constrain the parameters to keep the variance positive and, like GJR-GARCH, lets
@@ -763,6 +952,8 @@ def get_egarch(
     Where `z = u / sigma` is the standardized shock and `E|z| = sqrt(2 / pi)` under the
     assumption of standard normal innovations. A negative gamma indicates the presence
     of a leverage effect (negative shocks raise volatility by more than positive ones).
+    The recursion starts from the logarithm of the backcast (see get_backcast), as the
+    arch package does, and every observation enters the likelihood.
 
     For more information about the method, see the following paper:
 
@@ -792,7 +983,8 @@ def get_egarch(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_egarch,
                     weights=weights,
                     time_steps=time_steps,
@@ -800,15 +992,15 @@ def get_egarch(
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             egarch = pd.concat(period_data_list, axis=0)
 
             return egarch
-        return returns.aggregate(
+        return _apply_per_column(
+            returns,
             get_egarch,
             weights=weights,
             time_steps=time_steps,
@@ -842,7 +1034,10 @@ def get_egarch(
         # likelihood, evaluated thousands of times per fit, the bulk of an EGARCH fit.
         lagged = returns[: time_steps - 1].tolist()
         sigma2 = [0.0] * time_steps
-        log_variance = math.log(float(returns[0]) ** 2 + 1e-12)
+        # The first step starts from the backcast (see get_backcast) with the shock terms
+        # at their expected value of zero, as the arch package does.
+        log_variance = omega + beta * math.log(get_backcast(returns) + 1e-12)
+        log_variance = min(max(log_variance, -20.0), 20.0)
         sigma2[0] = math.exp(log_variance)
 
         for i, previous_return in enumerate(lagged, start=1):
@@ -907,27 +1102,34 @@ def get_egarch_forecast(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_egarch_forecast,
+                    forecast=True,
                     weights=weights,
                     time_steps=time_steps,
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
                 period_data.columns = [
                     col + " " + str(sub_period) for col in period_data.columns
                 ]
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             egarch_forecast = pd.concat(period_data_list, axis=1)
 
             return egarch_forecast
 
-        return returns.aggregate(
-            get_egarch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+        return _apply_per_column(
+            returns,
+            get_egarch_forecast,
+            forecast=True,
+            weights=weights,
+            time_steps=time_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, pd.Series):
         return get_egarch_forecast(

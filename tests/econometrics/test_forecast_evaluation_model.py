@@ -261,3 +261,67 @@ def test_get_out_of_sample_validation_mismatched_forecast_length():
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass
+
+
+def test_get_volatility_forecast_uses_information_up_to_previous_period():
+    rng = np.random.default_rng(3)
+    returns = pd.Series(rng.normal(0, 0.01, 120))
+    lambda_, window_size = 0.94, 10
+
+    ewma = forecast_evaluation_model.get_volatility_forecast(
+        returns, "ewma", window_size, lambda_
+    )
+    rolling = forecast_evaluation_model.get_volatility_forecast(
+        returns, "rolling", window_size, lambda_
+    )
+
+    # By construction: σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², seeded with σ₁² = r₀².
+    expected_ewma = [np.nan, returns[0] ** 2]
+    for t in range(2, len(returns)):
+        expected_ewma.append(
+            lambda_ * expected_ewma[-1] + (1 - lambda_) * returns[t - 1] ** 2
+        )
+    np.testing.assert_allclose(ewma.to_numpy(), expected_ewma, rtol=1e-12)
+
+    # The rolling forecast for t is the sample variance of rₜ₋w..rₜ₋₁.
+    for t in range(window_size, len(returns)):
+        assert np.isclose(
+            rolling[t], returns.iloc[t - window_size : t].var(ddof=1), rtol=1e-12
+        )
+    assert rolling.iloc[:window_size].isna().all()
+
+    # Changing rₜ leaves both forecasts for t unchanged, and changes those for t + 1.
+    shocked = returns.copy()
+    shocked[60] = 0.2
+    for method in ("ewma", "rolling"):
+        base = forecast_evaluation_model.get_volatility_forecast(
+            returns, method, window_size, lambda_
+        )
+        moved = forecast_evaluation_model.get_volatility_forecast(
+            shocked, method, window_size, lambda_
+        )
+        assert np.isclose(base[60], moved[60])
+        assert not np.isclose(base[61], moved[61])
+
+
+def test_get_volatility_forecast_dataframe_uses_each_columns_own_history():
+    rng = np.random.default_rng(4)
+    returns = pd.DataFrame(
+        {"Old": rng.normal(0, 0.01, 80), "Young": rng.normal(0, 0.02, 80)}
+    )
+    returns.loc[:39, "Young"] = np.nan
+
+    for method in ("ewma", "rolling"):
+        result = forecast_evaluation_model.get_volatility_forecast(
+            returns, method, 10, 0.94
+        )
+        alone = forecast_evaluation_model.get_volatility_forecast(
+            returns["Old"], method, 10, 0.94
+        )
+        young_alone = forecast_evaluation_model.get_volatility_forecast(
+            returns["Young"].dropna(), method, 10, 0.94
+        )
+        pd.testing.assert_series_equal(result["Old"], alone, check_names=False)
+        pd.testing.assert_series_equal(
+            result["Young"].dropna(), young_alone.dropna(), check_names=False
+        )

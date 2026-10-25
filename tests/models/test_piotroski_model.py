@@ -47,7 +47,7 @@ def test_get_return_on_assets_criteria(sample_financial_data):
     """Test return on assets criteria calculation"""
     result = piotroski_model.get_return_on_assets_criteria(
         net_income=sample_financial_data["net_income"],
-        average_total_assets=sample_financial_data["total_assets"],
+        beginning_total_assets=sample_financial_data["total_assets"],
     )
 
     assert isinstance(result, pd.Series)
@@ -66,7 +66,7 @@ def test_get_return_on_assets_criteria_negative_income():
     )
 
     result = piotroski_model.get_return_on_assets_criteria(
-        net_income=net_income, average_total_assets=total_assets
+        net_income=net_income, beginning_total_assets=total_assets
     )
 
     # Should be 0 for negative income years, 1 for positive
@@ -111,9 +111,8 @@ def test_get_accruals_criteria(sample_financial_data):
     """Test accruals criteria calculation"""
     result = piotroski_model.get_accruals_criteria(
         net_income=sample_financial_data["net_income"],
-        average_total_assets=sample_financial_data["total_assets"],
         operating_cashflow=sample_financial_data["operating_cashflow"],
-        total_assets=sample_financial_data["total_assets"],
+        beginning_total_assets=sample_financial_data["total_assets"],
     )
 
     assert isinstance(result, pd.Series)
@@ -136,9 +135,8 @@ def test_get_accruals_criteria_negative():
 
     result = piotroski_model.get_accruals_criteria(
         net_income=net_income,
-        average_total_assets=total_assets,
         operating_cashflow=operating_cashflow,
-        total_assets=total_assets,
+        beginning_total_assets=total_assets,
     )
 
     # Since operating cashflow < net income, accruals should be negative, criteria should be 0
@@ -237,7 +235,7 @@ def test_edge_cases_zero_values():
     )
 
     result = piotroski_model.get_return_on_assets_criteria(
-        net_income=zero_net_income, average_total_assets=total_assets
+        net_income=zero_net_income, beginning_total_assets=total_assets
     )
 
     # Zero net income should result in 0 criteria
@@ -249,8 +247,37 @@ def test_edge_cases_empty_series():
     empty_series = pd.Series([], dtype=float)
 
     result = piotroski_model.get_return_on_assets_criteria(
-        net_income=empty_series, average_total_assets=empty_series
+        net_income=empty_series, beginning_total_assets=empty_series
     )
 
     assert isinstance(result, pd.Series)
     assert len(result) == 0
+
+
+def test_piotroski_score_scales_by_beginning_total_assets(models_module):
+    # Piotroski (2000): ROA, CFO, accruals and asset turnover over beginning-of-year total
+    # assets; only the leverage signal uses average total assets.
+    income = models_module._income_statement
+    balance = models_module._balance_sheet_statement
+    cash = models_module._cash_flow_statement
+
+    piotroski = models_module.get_piotroski_score()
+    beginning_assets = balance.loc[:, "Total Assets", :].shift(1, axis=1)
+    return_on_assets = income.loc[:, "Net Income", :] / beginning_assets
+    turnover = income.loc[:, "Revenue", :] / beginning_assets
+    cash_return = cash.loc[:, "Operating Cash Flow", :] / beginning_assets
+
+    for ticker in models_module._tickers:
+        for period in piotroski.columns:
+            scores = piotroski.loc[ticker, period]
+            previous = period - 1
+            assert scores["Change in Return on Assets Criteria"] == int(
+                return_on_assets.loc[ticker, period]
+                > return_on_assets.loc[ticker, previous]
+            )
+            assert scores["Asset Turnover Criteria"] == int(
+                turnover.loc[ticker, period] > turnover.loc[ticker, previous]
+            )
+            assert scores["Accruals Criteria"] == int(
+                cash_return.loc[ticker, period] > return_on_assets.loc[ticker, period]
+            )

@@ -22,6 +22,12 @@ from financetoolkit.utilities.logger_model import get_logger
 logger = get_logger()
 
 
+# Numbers in an answer are rounded to four decimals, keeping at least four significant
+# digits for small values.
+ANSWER_DECIMALS = 4
+ANSWER_SIGNIFICANT_DIGITS = 4
+
+
 def _clean(val: Any) -> int | float | str | bool | None:
     """Convert a single value to a JSON-serializable Python primitive."""
     try:
@@ -41,9 +47,15 @@ def _clean(val: Any) -> int | float | str | bool | None:
         f = float(val)
         if math.isnan(f) or math.isinf(f):
             return None
-        # Twelve significant digits drop binary artefacts such as 0.08317952249999999
-        # (a weight divided by 100) without touching any meaningful precision.
-        return float(f"{f:.12g}")
+        if f == 0:
+            return 0.0
+        # Four decimals, but at least four significant digits, so a daily variance of
+        # 0.000123 keeps its precision while larger numbers do not carry noise digits.
+        decimals = max(
+            ANSWER_DECIMALS,
+            ANSWER_SIGNIFICANT_DIGITS - 1 - math.floor(math.log10(abs(f))),
+        )
+        return float(f"{round(f, decimals):.12g}")
     return val
 
 
@@ -188,6 +200,11 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
 
         stacked = dataframe.stack(level=ticker_level)
         stacked.index.names = [orig_name, ticker_name]
+        # When both levels hold the same names (an impulse response is shock by response,
+        # both tickers), the keys say which level they are: "Shock MSFT".
+        kept_name = dataframe.columns.names[-1 if ticker_level == 0 else 0]
+        if kept_name and set(map(str, first)) == set(map(str, last)):
+            stacked.columns = [f"{kept_name} {column}" for column in stacked.columns]
 
         flat = stacked.reset_index()
         return [
@@ -211,13 +228,16 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
             else:
                 level_names.append(f"level_{i}")
 
+        named_last_level = bool(dataframe.index.names[-1])
         dataframe = dataframe.copy()
         dataframe.index.names = level_names
         flat = dataframe.reset_index()
 
-        # One metric means the last column level repeats, so drop it to stay concise.
+        # One metric means the last column level repeats, so drop it to stay concise. A
+        # level the result names itself (such as an option's expiration) is information,
+        # even when it has one value, and is kept.
         last_level = level_names[-1] if level_names else None
-        if last_level and len(flat[last_level].unique()) == 1:
+        if last_level and not named_last_level and len(flat[last_level].unique()) == 1:
             flat = flat.drop(columns=[last_level])
 
         return [

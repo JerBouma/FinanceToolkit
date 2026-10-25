@@ -261,7 +261,11 @@ def get_real_gross_domestic_product(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_real_gross_domestic_product_usd(gmd_dataset: pd.DataFrame) -> pd.DataFrame:
-    """Retrieves real GDP expressed in cross-country comparable USD ('rGDP_USD'), removing rows with all NaNs."""
+    """
+    Retrieves real GDP in US dollars ('rGDP_USD'), removing rows with all NaNs. The real
+    GDP in 2015 prices is converted at the 2015 market exchange rate, not at purchasing
+    power parities.
+    """
     return gmd_dataset["rGDP_USD"].dropna(axis="rows", how="all")
 
 

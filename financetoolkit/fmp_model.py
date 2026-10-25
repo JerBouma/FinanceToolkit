@@ -402,6 +402,14 @@ def get_financial_statement(
     if not financial_statement.empty:
         financial_statement = financial_statement.drop("symbol", axis=1)
 
+        period_end_dates = pd.to_datetime(financial_statement["date"])
+
+        # The label below is a calendar period, so the actual last day of each fiscal period is
+        # kept as a statistic (Period End Date): daily ratios apply a period's figures from that
+        # day on and currency translation takes its closing and average rates from the fiscal
+        # period it ends.
+        financial_statement["periodEndDate"] = period_end_dates.dt.strftime("%Y-%m-%d")
+
         # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
         financial_statement["date"] = pd.to_datetime(
             financial_statement["date"]
@@ -417,10 +425,28 @@ def get_financial_statement(
             )
         )
 
+        # Two different fiscal periods can map onto one calendar period, e.g. after a change
+        # of fiscal year end. Only the first (most recent) is kept, which is reported since the
+        # other period's figures are then missing from the output.
+        fiscal_periods = period_end_dates.groupby(
+            financial_statement["date"].to_numpy()
+        ).unique()
+        for calendar_period, end_dates in fiscal_periods.items():
+            if len(end_dates) > 1:
+                logger.warning(
+                    "%s reports the fiscal periods ending %s in one calendar period (%s). Only "
+                    "the period ending %s is kept.",
+                    ticker,
+                    ", ".join(str(pd.Timestamp(date).date()) for date in end_dates),
+                    calendar_period,
+                    pd.Timestamp(end_dates[0]).date(),
+                )
+
         financial_statement = financial_statement.set_index("date").T
 
         if financial_statement.columns.duplicated().any():
-            # Duplicate statements for one period are equal, so one copy can be dropped.
+            # Duplicate statements for one period are usually the same period reported twice,
+            # so one copy can be dropped; a different fiscal period is reported above.
             financial_statement = financial_statement.loc[
                 :, ~financial_statement.columns.duplicated()
             ]
@@ -619,7 +645,12 @@ def get_historical_data(
                         ~dividends_df.index.duplicated(keep="first")
                     ]
 
-                    historical_data["Dividends"] = dividends_df["dividend"]
+                    # The prices are split-adjusted, so the dividends are too: "dividend"
+                    # is the amount as paid, which before a 4-for-1 split is four times
+                    # the dividend per share of today.
+                    historical_data["Dividends"] = dividends_df[
+                        ("adjDividend" if "adjDividend" in dividends_df else "dividend")
+                    ]
                 else:
                     historical_data["Dividends"] = 0
             except KeyError:
@@ -1182,7 +1213,8 @@ def get_analyst_estimates(
             before=start_date, axis=1
         )
 
-        analyst_estimates_total = analyst_estimates_total.round(rounding)
+        if rounding is not None:
+            analyst_estimates_total = analyst_estimates_total.round(rounding)
 
         if quarter:
             analyst_estimates_total.columns = pd.PeriodIndex(
@@ -1289,6 +1321,15 @@ def get_profile(
                 pd.concat(profile_dict)[0].unstack(level=0)
             )
             profile_dataframe = profile_dataframe.rename(index=naming)
+
+            # The source quotes the daily change in percent; returned as a decimal like every
+            # other change in the package (0.0125 is +1.25%), rounded to remove the float
+            # residue of the division as in get_quote.
+            if "Change %" in profile_dataframe.index:
+                profile_dataframe.loc["Change %"] = (
+                    pd.to_numeric(profile_dataframe.loc["Change %"], errors="coerce")
+                    / 100
+                ).round(10)
             profile_dataframe = profile_dataframe.drop(
                 [
                     "image",
@@ -1394,6 +1435,15 @@ def get_quote(
         quote_dataframe = to_dataframe(pd.concat(quote_dict)[0].unstack(level=0))
         quote_dataframe = quote_dataframe.rename(index=naming)
 
+        # The source quotes the daily change in percent; returned as a decimal like every
+        # other change in the package (0.0125 is +1.25%). Rounded to 10 decimals, beyond
+        # the precision the source quotes, which removes the float residue of the division
+        # (-0.75391 / 100 gives -0.007539100000000001).
+        if "Change %" in quote_dataframe.index:
+            quote_dataframe.loc["Change %"] = (
+                pd.to_numeric(quote_dataframe.loc["Change %"], errors="coerce") / 100
+            ).round(10)
+
     return quote_dataframe, no_data
 
 
@@ -1469,10 +1519,9 @@ def get_rating(
 
     if ratings_dict:
         # A date is kept when a single score is missing, which still has its rating.
+        # The ticker level is kept for a single ticker too: the cache splits the result
+        # per ticker on it, and without it the ratings were cached as missing.
         ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna(how="all")
-
-        if len(ticker_list) == 1:
-            ratings_dataframe = to_dataframe(ratings_dataframe.loc[ticker_list[0]])
 
         return ratings_dataframe, no_data
 
@@ -1639,6 +1688,11 @@ def get_dividend_calendar(
             dividend_calendar = dividend_calendar.sort_index()
 
             dividend_calendar = dividend_calendar.rename(columns=naming)
+            # The yield is published in percent and returned as a decimal, like every rate.
+            if "Yield" in dividend_calendar:
+                dividend_calendar["Yield"] = (
+                    pd.to_numeric(dividend_calendar["Yield"], errors="coerce") / 100
+                )
 
             dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
                 before=start_date, after=end_date, axis=0
@@ -2820,6 +2874,65 @@ def get_etf_information(
     )
 
 
+def get_ratios_ttm(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the trailing twelve month valuation ratios of each ticker as Financial Modeling
+    Prep calculates them: the price-to-earnings, price-to-book, price-to-sales and
+    price-to-free-cash-flow ratios, the dividend yield and the net profit margin. They value
+    the holdings of a fund without retrieving every holding's financial statements.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the ratios for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The ratios (rows) per ticker (columns), and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "priceToEarningsRatioTTM": "Price-to-Earnings",
+        "priceToBookRatioTTM": "Price-to-Book",
+        "priceToSalesRatioTTM": "Price-to-Sales",
+        "priceToFreeCashFlowRatioTTM": "Price-to-Free-Cash-Flow",
+        "dividendYieldTTM": "Dividend Yield",
+        "netProfitMarginTTM": "Net Profit Margin",
+    }
+
+    def worker(ticker):
+        url = f"https://financialmodelingprep.com/stable/ratios-ttm?symbol={ticker}&apikey={api_key}"
+        ratios = _get_records(url=url, user_subscription=user_subscription)
+
+        if "priceToEarningsRatioTTM" not in ratios.columns:
+            return ticker, ratios, False
+
+        ratios = ratios.iloc[0].rename(index=naming)
+
+        return (
+            ticker,
+            pd.to_numeric(
+                ratios[[name for name in naming.values() if name in ratios.index]],
+                errors="coerce",
+            ),
+            True,
+        )
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker,
+        ticker_list,
+        "trailing twelve month ratios",
+        user_subscription,
+        unstack=True,
+    )
+
+
 def get_etf_country_weightings(
     tickers: list[str] | str,
     api_key: str,
@@ -3067,3 +3180,60 @@ def get_earnings_call_transcripts(
     return _collect_per_ticker_frames(
         worker, ticker_list, "earnings call transcripts", user_subscription
     )
+
+
+def get_upcoming_earnings_date(
+    ticker: str, api_key: str, user_subscription: str = "Free"
+) -> str:
+    """
+    Retrieves the date of a company's next earnings announcement.
+
+    Args:
+        ticker (str): The company.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        str: The date (YYYY-MM-DD) of the first announcement from today on, or "" when none
+        is scheduled.
+    """
+    _require_fmp_api_key(api_key)
+    today = pd.Timestamp.today().normalize()
+    url = (
+        f"https://financialmodelingprep.com/stable/earnings?symbol={ticker}&limit=10"
+        f"&from={today:%Y-%m-%d}&to={today + pd.Timedelta(days=400):%Y-%m-%d}&apikey={api_key}"
+    )
+    records = _get_records(url=url, user_subscription=user_subscription)
+
+    if "date" not in records.columns:
+        return ""
+
+    dates = pd.to_datetime(records["date"], errors="coerce")
+    upcoming = dates[dates >= today]
+
+    return upcoming.min().strftime("%Y-%m-%d") if not upcoming.empty else ""
+
+
+def get_stock_peers(
+    ticker: str, api_key: str, user_subscription: str = "Free"
+) -> list[str]:
+    """
+    Retrieves the peers Financial Modeling Prep lists for a company: companies in the same
+    sector, listed on the same exchange and of a similar market capitalization.
+
+    Args:
+        ticker (str): The company.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        list[str]: The peers' tickers, empty when none are listed.
+    """
+    _require_fmp_api_key(api_key)
+    url = f"https://financialmodelingprep.com/stable/stock-peers?symbol={ticker}&apikey={api_key}"
+    records = _get_records(url=url, user_subscription=user_subscription)
+
+    if "symbol" not in records.columns:
+        return []
+
+    return [str(symbol) for symbol in records["symbol"] if str(symbol) != ticker]

@@ -119,9 +119,9 @@ def test_the_largest_holdings_of_a_fund(unrounded_toolkit):
     )
     toolkit._tickers = ["FUND"]
 
-    assert list(toolkit.get_etf_holdings(limit=2).index) == ["B", "C"]
-    assert list(toolkit.get_etf_holdings(limit=-2).index) == ["A", "D"]
-    assert len(toolkit.get_etf_holdings()) == 4  # noqa: PLR2004
+    assert list(toolkit.etf.get_holdings(limit=2).index) == ["B", "C"]
+    assert list(toolkit.etf.get_holdings(limit=-2).index) == ["A", "D"]
+    assert len(toolkit.etf.get_holdings()) == 4  # noqa: PLR2004
 
 
 def test_the_key_maturities_of_the_eiopa_curve(monkeypatch):

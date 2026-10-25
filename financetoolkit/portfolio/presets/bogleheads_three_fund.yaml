@@ -1,0 +1,23 @@
+name: Bogleheads Three-Fund
+aliases: ["Three Fund", "3 Fund", "Bogleheads", "Three-Fund"]
+description: "The Bogleheads' three funds: 42% US stocks, 18% international stocks and 40% US bonds."
+source:
+  text: "Bogleheads wiki, Three-fund portfolio, opening example: 42% total US stock market, 18% total international stock and 40% total bond market (snapshot 6 Aug 2025)."
+  link: "https://web.archive.org/web/20250806074811/https://www.bogleheads.org/wiki/Three-fund_portfolio"
+rebalancing: yearly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.42
+    asset_class: Equity
+    currency: USD
+  - ticker: VXUS
+    name: Vanguard Total International Stock ETF
+    weight: 0.18
+    asset_class: Equity
+    currency: USD
+  - ticker: BND
+    name: Vanguard Total Bond Market ETF
+    weight: 0.4
+    asset_class: Fixed Income
+    currency: USD

@@ -1,0 +1,35 @@
+# Duration, iShares GOVT 5.43y (2026-10-06) https://www.ishares.com/us/products/239468/ishares-us-treasury-bond-etf
+# Duration, iShares Core EUR Govt Bond 6.70y (2026-10-06) https://www.ishares.com/uk/individual/en/products/251740/
+# Duration, iShares Core UK Gilts 6.98y (2026-10-06) https://www.ishares.com/uk/individual/en/products/251806/
+# JUDGEMENT: no published originator; a bond-heavy, three-currency mix (10/40/30/20) chosen for illustration.
+name: Conservative Multi-Country Bonds
+aliases: ["Conservative", "Conservative Income"]
+description: "Mostly US, euro-area and UK government bonds, with 10% in US stocks for growth."
+source:
+  text: "Illustrative allocation without a published originator."
+  link: ""
+rebalancing: quarterly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.1
+    asset_class: Equity
+    currency: USD
+  - ticker: GOVT
+    name: iShares U.S. Treasury Bond ETF
+    weight: 0.4
+    asset_class: Fixed Income
+    currency: USD
+    duration: 5.43
+  - ticker: IEGA.AS
+    name: iShares Core EUR Govt Bond UCITS ETF
+    weight: 0.3
+    asset_class: Fixed Income
+    currency: EUR
+    duration: 6.70
+  - ticker: IGLT.L
+    name: iShares Core UK Gilts UCITS ETF
+    weight: 0.2
+    asset_class: Fixed Income
+    currency: GBP
+    duration: 6.98

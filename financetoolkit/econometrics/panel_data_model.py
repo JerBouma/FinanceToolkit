@@ -5,7 +5,9 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 from linearmodels.panel import PanelOLS, RandomEffects
-from scipy import stats
+from linearmodels.panel.utility import AbsorbingEffectError
+from scipy import sparse, stats
+from scipy.sparse.linalg import lsmr
 
 from financetoolkit.utilities.statistics_model import to_multi_index
 
@@ -16,6 +18,25 @@ ENTITY_TIME_INDEX_LEVELS = 2
 
 # The 5% level for flagging whether Hausman rejects Random Effects.
 SIGNIFICANCE_LEVEL = 0.05
+
+# Stopping tolerances of the sparse least squares fit on the entity and time dummies:
+# near machine precision, so the fit is exact on weakly connected panels too.
+TWO_WAY_SOLVER_TOLERANCE = 1e-15
+
+# A regressor is absorbed when the variation the fixed effects leave of it is below this
+# share of its scale. The within-group range of a one-way absorbed regressor is exactly 0;
+# the two-way least squares fit leaves rounding noise of about 1e-14, also on weakly
+# connected panels, while a genuine regressor such as 1e6 plus noise of 1e-4 keeps about 3e-10.
+ONE_WAY_ABSORBED_SHARE = 1e-12
+TWO_WAY_ABSORBED_SHARE = 1e-11
+
+# Why a regressor cannot be estimated next to the fixed effects that absorb it.
+ABSORBED_REGRESSOR_EXPLANATION = (
+    "a regressor that is the same for every entity at each date cannot be combined with "
+    "time_effects, one that is constant per entity cannot be combined with "
+    "entity_effects, and one that is the sum of an entity part and a date part cannot be "
+    "combined with both."
+)
 
 
 def _normalize_time_level(index: pd.MultiIndex) -> pd.MultiIndex:
@@ -108,22 +129,113 @@ def _align_panel(y: pd.Series, x: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame
     return combined["__y__"], combined.drop(columns="__y__")
 
 
-def _effect_intercepts(
-    y_panel: pd.Series, x_panel: pd.DataFrame, coefficients: np.ndarray, level: str
-) -> pd.Series:
+def _two_way_demean(
+    data: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Recovers the fixed-effect intercepts implied by a fitted within-regression:
-    `alpha_g = mean_{within g}(y - X @ beta)`, which (since the mean is linear) is
-    algebraically identical to `mean(y) - mean(X) @ beta` for each group `g` of the
-    given `level` ("entity" or "time"). `linearmodels.panel.PanelOLS`'s own
-    `estimated_effects` combines entity and time effects into a single column for
-    the two-way case, so this recomputes them from the fitted slope coefficients
-    directly instead, keeping them separable regardless of which effects are active.
+    Removes the entity and time effects of every column by regressing it on the entity
+    and time dummies with sparse least squares (LSMR). This is the two-way within
+    transformation `x_it - a_i - b_t` of a balanced or unbalanced panel, exact also on a
+    weakly connected one (short overlapping histories, groups of entities sharing only
+    a few dates) where alternating entity and time demeaning stalls.
+
+    Returns:
+        tuple: The demeaned data and the entity part `a_i` and time part `b_t` that were
+        removed, all per observation. The split between `a_i` and `b_t` is only unique
+        up to a level shift.
+
+    Raises:
+        ValueError: If the least squares fit does not converge.
     """
-    residual_from_slope = y_panel.to_numpy() - x_panel.to_numpy() @ coefficients
-    return (
-        pd.Series(residual_from_slope, index=y_panel.index).groupby(level=level).mean()
+    entity_codes, entities = pd.factorize(data.index.get_level_values("entity"))
+    time_codes, _ = pd.factorize(data.index.get_level_values("time"))
+    rows = np.arange(len(data))
+    dummies = sparse.csr_matrix(
+        (
+            np.ones(2 * len(data)),
+            (np.r_[rows, rows], np.r_[entity_codes, len(entities) + time_codes]),
+        )
     )
+    # Scaling each dummy by one over the square root of its number of observations
+    # (Jacobi preconditioning) cuts the iterations on a large staggered panel from about
+    # 300 to 15; a weakly connected staircase of short histories still takes over 100.
+    column_scale = 1 / np.sqrt(np.asarray(dummies.sum(axis=0)).ravel())
+    scaled_dummies = dummies @ sparse.diags(column_scale)
+
+    # The column mean goes to the entity part first: it lies in the span of the dummies,
+    # and removing it keeps a large level (prices, market caps) out of the solver's
+    # relative tolerance. conlim=0 drops the condition number stop, so only a converged
+    # fit or the iteration limit ends the solve.
+    values = data.to_numpy(dtype=float)
+    entity_part = np.tile(values.mean(axis=0), (len(data), 1))
+    time_part = np.zeros_like(values)
+    for column in range(values.shape[1]):
+        scaled_solution, istop, iterations = lsmr(
+            scaled_dummies,
+            values[:, column] - entity_part[:, column],
+            atol=TWO_WAY_SOLVER_TOLERANCE,
+            btol=TWO_WAY_SOLVER_TOLERANCE,
+            conlim=0,
+            maxiter=10 * dummies.shape[1],
+        )[:3]
+        # LSMR stops without a least squares solution on a condition number beyond
+        # 1 / machine precision (6) or at the iteration limit (7).
+        if istop in (6, 7):
+            raise ValueError(
+                f"The two-way fixed effects fit of {data.columns[column]} did not "
+                f"converge (LSMR stop code {istop} after {iterations} iterations)."
+            )
+        solution = scaled_solution * column_scale
+        entity_part[:, column] += solution[: len(entities)][entity_codes]
+        time_part[:, column] = solution[len(entities) :][time_codes]
+
+    index, columns = data.index, data.columns
+    return (
+        pd.DataFrame(values - entity_part - time_part, index=index, columns=columns),
+        pd.DataFrame(entity_part, index=index, columns=columns),
+        pd.DataFrame(time_part, index=index, columns=columns),
+    )
+
+
+def _effect_intercepts(
+    y_panel: pd.Series,
+    x_panel: pd.DataFrame,
+    coefficients: np.ndarray,
+    entity_effects: bool,
+    time_effects: bool,
+) -> tuple[pd.Series | None, pd.Series | None]:
+    """
+    Recovers the fixed-effect intercepts implied by a fitted within-regression from the
+    slope-adjusted outcome `r_it = y_it - X_it @ beta`.
+
+    - One-way: `alpha_g = mean_{within g}(r)` for each entity (or time period) `g`.
+    - Two-way: `r_it = alpha_i + lambda_t + e_it`, normalized so that the time effects
+    average zero over the observations. The entity effects then carry the overall level
+    and `alpha_i + lambda_t + X_it @ beta` is the fitted value. Taking both one-way group
+    means instead would count the grand mean of `r` twice.
+
+    `linearmodels.panel.PanelOLS`'s own `estimated_effects` combines entity and time
+    effects into a single column for the two-way case, so this separates them from the
+    fitted slope coefficients directly. For a balanced panel the two-way solution is the
+    closed form `alpha_i = rbar_i.` and `lambda_t = rbar_.t - rbar_..`; an unbalanced panel
+    is solved by sparse least squares on the entity and time dummies.
+    """
+    residual_from_slope = pd.Series(
+        y_panel.to_numpy() - x_panel.to_numpy() @ coefficients, index=y_panel.index
+    )
+
+    if not (entity_effects and time_effects):
+        level = "entity" if entity_effects else "time"
+        alpha = residual_from_slope.groupby(level=level).mean()
+        return (alpha, None) if entity_effects else (None, alpha)
+
+    _, entity_part, time_part = _two_way_demean(residual_from_slope.to_frame())
+    # Pins the free level shift between the two sets of effects on the entity side.
+    level_shift = time_part.iloc[:, 0].mean()
+    entity_alpha = entity_part.iloc[:, 0].groupby(level="entity").mean() + level_shift
+    time_alpha = time_part.iloc[:, 0].groupby(level="time").mean() - level_shift
+
+    return entity_alpha, time_alpha
 
 
 def _from_panel_result(
@@ -196,7 +308,9 @@ def get_fixed_effects(
     market-wide shock) the same way. Because the entity/time intercepts are
     absorbed rather than estimated as coefficients, they are recovered separately
     (see the returned dict's `entity_effects`/`time_effects` keys) as
-    `alpha_i = mean_t(y_it) - mean_t(x_it) @ beta`.
+    `alpha_i = mean_t(y_it) - mean_t(x_it) @ beta`. With both effects, the time effects
+    are normalized to average zero over the observations, so the entity effects carry
+    the overall level and `alpha_i + lambda_t + x_it @ beta` is the fitted value.
 
     Args:
         y (pd.Series | pd.DataFrame): The dependent variable. Either a `pd.Series`
@@ -217,14 +331,17 @@ def get_fixed_effects(
         already corrected for the absorbed fixed effects, no intercept: it is
         absorbed by the fixed effects; see `_from_panel_result` for the full key
         list), `entity_effects`/`time_effects` are the recovered entity-/time-
-        specific intercepts (`pd.Series`, or `None` if that effect was not fit).
+        specific intercepts (`pd.Series`, or `None` if that effect was not fit). With
+        both effects, the time effects are deviations that average zero over the
+        observations.
 
     Raises:
         TypeError: If `y` or `x` is not one of the accepted types/shapes.
         ValueError: If both `entity_effects` and `time_effects` are False, `y` and
-        `x` share no overlapping non-missing observations, or there are not enough
+        `x` share no overlapping non-missing observations, there are not enough
         observations to estimate the regressors plus the absorbed fixed-effect
-        parameters.
+        parameters, or the fixed effects fully absorb a regressor (e.g. a common
+        factor, identical for every entity at each date, with `time_effects=True`).
 
     Notes:
         Reference: Wooldridge, J.M. (2010). "Econometric Analysis of Cross Section
@@ -284,10 +401,43 @@ def get_fixed_effects(
             f"{absorbed} absorbed fixed-effect parameter(s)."
         )
 
+    # PanelOLS only raises AbsorbingEffectError when the absorbed regressors leave the
+    # demeaned design rank deficient as a whole; a single absorbed regressor is demeaned to
+    # floating-point noise instead and fitted with a coefficient of 0 and a standard error
+    # of order 1e15, or, when it is the sum a_i + b_t of an entity and a date part under
+    # two-way effects, of order 1e9. Checking the variation that is left after the fixed
+    # effects first catches all of these: the within-group range for one-way effects and
+    # the two-way demeaned values (which also vanish for a regressor that is constant per
+    # entity or per date) for two-way effects.
+    scale = x_panel.abs().max().clip(lower=1.0)
+    if entity_effects and time_effects:
+        remaining = _two_way_demean(x_panel)[0].abs().max() / scale
+        is_absorbed = remaining <= TWO_WAY_ABSORBED_SHARE
+    else:
+        grouped = x_panel.groupby(level="entity" if entity_effects else "time")
+        remaining = (grouped.max() - grouped.min()).abs().max() / scale
+        is_absorbed = remaining <= ONE_WAY_ABSORBED_SHARE
+    absorbed_columns = [
+        str(column) for column in x_panel.columns[is_absorbed.to_numpy()]
+    ]
+    if absorbed_columns:
+        raise ValueError(
+            "The fixed effects fully absorb one or more regressors "
+            f"({', '.join(absorbed_columns)}): {ABSORBED_REGRESSOR_EXPLANATION}"
+        )
+
     try:
         sm_result = PanelOLS(
             y_panel, x_panel, entity_effects=entity_effects, time_effects=time_effects
         ).fit()
+    except AbsorbingEffectError as error:
+        # A regressor that is identical for every entity at each date (a common factor
+        # such as a market benchmark) is fully explained by the time effects, and one
+        # that is constant per entity by the entity effects, so its slope is not identified.  # noqa: E501
+        raise ValueError(
+            "The fixed effects fully absorb one or more regressors: "
+            f"{ABSORBED_REGRESSOR_EXPLANATION}"
+        ) from error
     except (ValueError, ZeroDivisionError, np.linalg.LinAlgError) as error:
         raise ValueError(
             "Could not fit the Fixed Effects model -- check that there are enough "
@@ -296,15 +446,8 @@ def get_fixed_effects(
 
     fit = _from_panel_result(sm_result, list(x_panel.columns), x_panel.to_numpy())
 
-    entity_alpha = (
-        _effect_intercepts(y_panel, x_panel, fit["coefficients"], "entity")
-        if entity_effects
-        else None
-    )
-    time_alpha = (
-        _effect_intercepts(y_panel, x_panel, fit["coefficients"], "time")
-        if time_effects
-        else None
+    entity_alpha, time_alpha = _effect_intercepts(
+        y_panel, x_panel, fit["coefficients"], entity_effects, time_effects
     )
 
     return {
@@ -363,7 +506,9 @@ def get_random_effects(
     Raises:
         TypeError: If `y` or `x` is not one of the accepted types/shapes.
         ValueError: If `y` and `x` share no overlapping non-missing observations,
-        or there are not enough observations to estimate the model.
+        there are not enough observations to estimate the model, or there are no
+        more entities than parameters (the Swamy-Arora between-entity variance
+        divides by `N - k`, with `k` the parameters including the intercept).
 
     Notes:
         Reference: Swamy, P.A.V.B., & Arora, S.S. (1972). "The Exact Finite Sample
@@ -407,11 +552,19 @@ def get_random_effects(
 
     n = len(y_panel)
     k = x_panel.shape[1]
+    n_entities = y_panel.index.get_level_values("entity").nunique()
 
     if n - k - 1 <= 0:
         raise ValueError(
             f"Not enough observations ({n}) to estimate {k} parameter(s) plus an "
             "intercept."
+        )
+    # The Swamy-Arora between-entity variance divides the between regression's residual sum
+    # of squares by N - (k + 1), so it is undefined unless there are more entities than parameters.  # noqa: E501
+    if n_entities <= k + 1:
+        raise ValueError(
+            f"Random Effects needs more entities ({n_entities}) than parameters "
+            f"({k + 1}, including the intercept) to estimate the between-entity variance."
         )
 
     x_with_constant = x_panel.copy()
@@ -453,8 +606,9 @@ def get_hausman_test(
 
     Under the null hypothesis that Random Effects' exogeneity assumption holds
     (and is therefore consistent AND efficient), `H` is asymptotically
-    chi-squared distributed with degrees of freedom equal to the number of
-    coefficients compared. A significant result rejects that null -- i.e.
+    chi-squared distributed with degrees of freedom equal to the rank of
+    `Var(b_FE) - Var(b_RE)`: the number of coefficients compared, unless that
+    difference is singular, in which case its pseudo-inverse is used. A significant result rejects that null -- i.e.
     indicates Random Effects is inconsistent and Fixed Effects should be
     preferred, even though it discards the between-entity variation Random
     Effects would otherwise use.
@@ -478,8 +632,9 @@ def get_hausman_test(
     Raises:
         TypeError: If `y` or `x` is not one of the accepted types/shapes.
         ValueError: If `y` and `x` share no overlapping non-missing observations,
-        there are not enough observations to fit either model, or the two
-        estimators share no common regressors to compare.
+        there are not enough observations (or entities, see `get_random_effects`) to
+        fit either model, the two estimators share no common regressors to compare,
+        or `Var(b_FE) - Var(b_RE)` has rank 0.
 
     Notes:
         Reference: Hausman, J.A. (1978). "Specification Tests in Econometrics."
@@ -553,15 +708,29 @@ def get_hausman_test(
     difference = b_fe - b_re
     variance_difference = var_fe - var_re
 
-    try:
+    # The chi-squared degrees of freedom are the rank of Var(b_FE) - Var(b_RE), which equals
+    # the number of compared coefficients unless the difference is singular (Hausman, 1978).  # noqa: E501
+    degrees_of_freedom = int(np.linalg.matrix_rank(variance_difference))
+    if degrees_of_freedom == 0:
+        raise ValueError(
+            "Var(b_FE) - Var(b_RE) has rank 0, so the Hausman statistic is undefined."
+        )
+
+    # A rank-deficient difference uses the pseudo-inverse with the same rank as the degrees
+    # of freedom, as Stata does: np.linalg.inv often succeeds on a numerically singular
+    # matrix and returns an inverse dominated by rounding noise.  # noqa: E501
+    if degrees_of_freedom < len(common_names):
+        # The cut-off matches np.linalg.matrix_rank, so pinv keeps exactly
+        # `degrees_of_freedom` singular values.
+        tolerance = max(variance_difference.shape) * np.finfo(float).eps
+        inverse_variance_difference = np.linalg.pinv(
+            variance_difference, rcond=tolerance
+        )
+    else:
         inverse_variance_difference = np.linalg.inv(variance_difference)
-    except np.linalg.LinAlgError:
-        # A singular Var(b_FE) - Var(b_RE) falls back to the pseudo-inverse, as Stata does.
-        inverse_variance_difference = np.linalg.pinv(variance_difference)
 
     statistic = float(difference @ inverse_variance_difference @ difference)
     statistic = max(statistic, 0.0)
-    degrees_of_freedom = len(common_names)
     p_value = float(stats.chi2.sf(statistic, degrees_of_freedom))
 
     return pd.Series(

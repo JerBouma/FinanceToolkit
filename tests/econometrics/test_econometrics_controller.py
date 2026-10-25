@@ -190,7 +190,7 @@ def test_get_ols_hac(recorder, econometrics_module):
 
 
 def test_get_wls_hac(recorder, econometrics_module):
-    returns = econometrics_module._get_price_column("weekly", "Return")
+    returns = econometrics_module._get_series_column("weekly", "Return")
     weights = pd.Series(1.0, index=returns.index)
     recorder.capture(
         econometrics_module.get_wls(weights, period="weekly", cov_type="HAC", maxlags=4)
@@ -198,13 +198,13 @@ def test_get_wls_hac(recorder, econometrics_module):
 
 
 def test_get_wls(recorder, econometrics_module):
-    returns = econometrics_module._get_price_column("weekly", "Return")
+    returns = econometrics_module._get_series_column("weekly", "Return")
     weights = pd.Series(1.0, index=returns.index)
     recorder.capture(econometrics_module.get_wls(weights, period="weekly"))
 
 
 def test_get_gls(recorder, econometrics_module):
-    returns = econometrics_module._get_price_column("weekly", "Return")
+    returns = econometrics_module._get_series_column("weekly", "Return")
     n = len(returns["AAPL"].dropna())
     omega = pd.DataFrame(np.eye(n))
     recorder.capture(econometrics_module.get_gls(omega, period="weekly"))

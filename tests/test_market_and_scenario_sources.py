@@ -754,3 +754,32 @@ def test_option_chains_fall_back_to_cboe_when_yahoo_has_none(monkeypatch):
     assert calls.loc[("^SPX", 7800.0), "In The Money"]
     assert not calls.loc[("^SPX", 7900.0), "In The Money"]
     assert calls.loc[("^SPX", 7900.0), "Implied Volatility"] == pytest.approx(0.11)
+
+
+def test_federal_reserve_scenario_files_named_after_their_table(monkeypatch):
+    from financetoolkit.economics import frb_model
+
+    text = (
+        "Scenario Name,Date,Real GDP growth\n"
+        "Supervisory Severely Adverse,2025 Q1,-5.9\n"
+    )
+    requested = []
+
+    def fake(url, timeout):
+        requested.append(url)
+        # The files of 2025 are named after their table: 3A domestic, 3B international.
+        if "2025-Table_3A_" not in url and "2025-Table_3B_" not in url:
+            raise _not_found(url)
+        return FakeResponse(text=text)
+
+    monkeypatch.setattr(frb_model, "get_request", fake)
+
+    scenario = frb_model.get_supervisory_scenario("adverse", year=2025)
+
+    assert scenario[("United States", "Real GDP growth")].iloc[0] == pytest.approx(
+        -0.059
+    )
+    assert any(
+        url.endswith("2025-Table_3A_Supervisory_Severely_Adverse_Domestic.csv")
+        for url in requested
+    )

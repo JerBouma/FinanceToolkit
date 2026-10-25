@@ -1,9 +1,14 @@
 """Performance Controller Tests""" ""
 # pylint: disable=missing-function-docstring
 
+import copy
 from functools import partial
 
+import numpy as np
+import pandas as pd
 import pytest
+
+from financetoolkit.performance.performance_controller import Performance
 
 
 def test_collect_all_metrics(recorder, performance_module):
@@ -306,3 +311,119 @@ def test_get_henriksson_merton_model(recorder, performance_module):
     recorder.capture(performance_module.get_henriksson_merton_model())
     recorder.capture(performance_module.get_henriksson_merton_model(period="quarterly"))
     recorder.capture(performance_module.get_henriksson_merton_model(growth=True))
+
+
+def test_get_returns_cumulative_keeps_the_first_period(performance_module):
+    # A date range starting after the first observation, so its first period has a
+    # return of its own (the data's first day only has a zero return).
+    performance = copy.copy(performance_module)
+    performance._start_date = "2020-06-15"
+
+    period_returns = performance.get_returns(period="yearly", rounding=10)
+    cumulative = performance.get_returns(period="yearly", cumulative=True, rounding=10)
+
+    # Growth of 1 from the start of the date range: the first period shows its own return.
+    assert period_returns.index[0] == pd.Period("2020", "Y")
+    pd.testing.assert_frame_equal(
+        cumulative, (1 + period_returns).cumprod().round(10), check_freq=False
+    )
+    assert (cumulative.iloc[0] != 1).all()
+
+    excess = performance.get_excess_return(period="yearly", rounding=10)
+    cumulative_excess = performance.get_excess_return(
+        period="yearly", cumulative=True, rounding=10
+    )
+    pd.testing.assert_frame_equal(
+        cumulative_excess, (1 + excess).cumprod().round(10), check_freq=False
+    )
+    assert (cumulative_excess.iloc[0] != 1).all()
+
+
+def test_get_sharpe_ratio_deflated_uses_daily_trials(performance_module):
+    probabilistic = performance_module.get_sharpe_ratio(
+        method="probabilistic", rounding=10
+    )
+    deflated = performance_module.get_sharpe_ratio(method="deflated", rounding=10)
+
+    # Trials on the same (daily) scale as the Sharpe ratio give a probability strictly
+    # between 0 and the probabilistic Sharpe ratio, not a deflated ratio of always 0.
+    assert (deflated.to_numpy() > 0).any()
+    assert (deflated.to_numpy() <= probabilistic.to_numpy() + 1e-12).all()
+
+
+def _intraday_performance():
+    rng = np.random.default_rng(1)
+    days = pd.period_range("2024-01-01", periods=10, freq="D")
+    columns = pd.MultiIndex.from_product([["Return"], ["A", "Benchmark"]])
+    daily = pd.DataFrame(
+        rng.normal(0, 0.01, (len(days), 2)), index=days, columns=columns
+    )
+    # Seven hourly bars per day.
+    stamps = [
+        pd.Timestamp(str(day)) + pd.Timedelta(hours=10 + hour)
+        for day in days
+        for hour in range(7)
+    ]
+    intraday = pd.DataFrame(
+        rng.normal(0.0005, 0.002, (len(stamps), 2)),
+        index=pd.PeriodIndex(stamps, freq="min"),
+        columns=columns,
+    )
+    return Performance(
+        tickers=["A"],
+        historical_data={
+            "intraday": intraday,
+            "daily": daily,
+            "weekly": daily,
+            "monthly": daily,
+            "quarterly": daily,
+            "yearly": daily,
+        },
+        risk_free_rate_data={"daily": pd.Series(0.04, index=days)},
+        intraday_period="1hour",
+        rounding=None,
+    )
+
+
+def test_get_sharpe_ratio_annualizes_intraday_bars():
+    performance = _intraday_performance()
+
+    for period in ("intraday", "daily"):
+        ratio = performance.get_sharpe_ratio(period=period, rounding=10)
+        annualized = performance.get_sharpe_ratio(
+            period=period, annualize=True, rounding=10
+        )
+
+        # 252 trading days of 7 bars each.
+        assert not ratio.empty
+        assert (annualized / ratio).to_numpy() == pytest.approx(
+            np.sqrt(252 * 7), rel=1e-6
+        )
+
+
+def test_intraday_excess_return_uses_the_per_bar_risk_free_rate():
+    performance = _intraday_performance()
+
+    within_day = performance._get_within_historical_data("daily")
+    daily_rate = (1 + 0.04) ** (1 / 252) - 1
+    bar_rate = (1 + daily_rate) ** (1 / 7) - 1
+
+    # Ten days of seven bars each, grouped per day.
+    assert within_day.index.get_level_values(0).nunique() == 10
+    np.testing.assert_allclose(
+        within_day["Excess Return"]["A"].to_numpy(),
+        within_day["Return"]["A"].to_numpy() - bar_rate,
+    )
+
+    sharpe_ratio = performance.get_sharpe_ratio(period="daily", rounding=10)
+    excess = within_day["Excess Return"]["A"]
+    expected = excess.groupby(level=0).mean() / excess.groupby(level=0).std()
+    np.testing.assert_allclose(
+        sharpe_ratio["A"].to_numpy(), expected.round(10).to_numpy()
+    )
+    assert not performance.get_sortino_ratio(period="daily").empty
+
+
+def test_within_period_daily_without_intraday_data_raises(performance_module):
+    with pytest.raises(ValueError, match="Intraday data is required"):
+        performance_module._get_within_historical_data("daily")

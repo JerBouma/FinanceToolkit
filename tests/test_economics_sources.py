@@ -479,6 +479,27 @@ def test_a_refused_bls_request_is_not_a_format_change(monkeypatch):
     assert bls_model.get_unemployment_rate().empty
 
 
+def test_an_unreachable_bls_is_logged_as_the_oecd_fallback(monkeypatch, caplog):
+    import logging  # noqa: PLC0415
+
+    from financetoolkit.economics import bls_model, helpers  # noqa: PLC0415
+
+    def busy(url, timeout):
+        response = requests.Response()
+        response.status_code = 503
+        raise requests.HTTPError("503 Server Error", response=response)
+
+    monkeypatch.setattr(bls_model, "get_request", busy)
+    monkeypatch.setattr(helpers, "RETRY_DELAY_SECONDS", 0)
+
+    with caplog.at_level(logging.INFO, logger="financetoolkit"):
+        assert bls_model.get_unemployment_rate().empty
+
+    messages = [record for record in caplog.records if "BLS" in record.getMessage()]
+    assert messages and all(record.levelno == logging.INFO for record in messages)
+    assert "the OECD's" in messages[-1].getMessage()
+
+
 def test_ons_quarters_are_parsed(monkeypatch):
     payload = {
         "quarters": [
@@ -731,6 +752,22 @@ def test_ecb_requests_start_on_the_first_of_the_month(monkeypatch):
     }
 
 
+def test_ecb_ten_year_rate_is_annually_compounded(monkeypatch):
+    from financetoolkit.economics import ecb_model
+
+    curve = pd.DataFrame(
+        {"3M": [0.0262], "10Y": [0.0419]},
+        index=pd.PeriodIndex(["2026-09-15"], freq="D"),
+    )
+    monkeypatch.setattr(ecb_model, "get_yield_curve", lambda start, end: curve)
+
+    rate = ecb_model.get_long_term_interest_rate("2026-09-10", "2026-09-30")
+
+    # The Svensson spot rate is continuously compounded: exp(0.0419) - 1 per annum.
+    assert list(rate.columns) == ["Euro Area"]
+    assert rate.iloc[0, 0] == pytest.approx(0.042790, abs=1e-6)
+
+
 def test_calendar_events_filter_and_survey_levels(monkeypatch):
     from financetoolkit.economics import fmp_model as economics_fmp_model
 
@@ -914,3 +951,100 @@ def test_the_government_bond_yield_defaults_to_monthly(monkeypatch):
     FixedIncome(start_date="2023-01-01", quarterly=True).get_government_bond_yield()
 
     assert requested == ["monthly", "monthly", "quarterly"]
+
+
+def test_bis_commercial_property_leaves_out_dwellings_land_and_real_prices(monkeypatch):
+    text = (
+        "FREQ,REF_AREA,COVERED_AREA,RE_TYPE,RE_VINTAGE,COMPILING_ORG,PRICED_UNIT,ADJUST_CODED,TIME_PERIOD,OBS_VALUE\n"
+        # Switzerland only has rented dwellings and the Czech Republic only commercial land.
+        "Q,CH,0,O,0,2,6,0,2025-Q4,100\nQ,CH,0,O,0,2,6,0,2026-Q1,101\n"
+        "Q,CZ,0,M,0,2,6,0,2026-Q1,150\n"
+        # Iceland's real index is as long as its nominal one and is not taken.
+        "Q,IS,3,A,0,2,8,0,2025-Q4,80\nQ,IS,3,A,0,2,8,0,2026-Q1,81\n"
+        "Q,IS,3,A,0,2,1,0,2025-Q4,90\nQ,IS,3,A,0,2,1,0,2026-Q1,92\n"
+        # Turkey's offices: the whole country wins over the capital of the same length.
+        "Q,TR,2,B,0,2,6,0,2026-Q1,300\nQ,TR,0,B,0,2,6,0,2026-Q1,200\n"
+    )
+    monkeypatch.setattr(
+        bis_model, "get_request", lambda url, timeout: FakeResponse(text=text)
+    )
+
+    prices = bis_model.get_commercial_property_prices("2025-10-01", "2026-03-31")
+
+    assert sorted(prices.columns) == ["Iceland", "Turkey"]
+    assert prices.loc[pd.Period("2026Q1", "Q"), "Iceland"] == 92  # noqa: PLR2004
+    assert prices.loc[pd.Period("2026Q1", "Q"), "Turkey"] == 200  # noqa: PLR2004
+
+
+def test_oecd_countries_are_renamed_to_their_gmdb_names():
+    oecd = pd.DataFrame(
+        {"Russia": [0.08], "Swaziland": [0.07], "Germany": [0.02]},
+        index=pd.PeriodIndex(["2023"], freq="Y"),
+    )
+    gmdb = pd.DataFrame(
+        {"Russian Federation": [0.06], "Eswatini": [0.05], "Germany": [0.06]},
+        index=pd.PeriodIndex(["2023"], freq="Y"),
+    )
+
+    # Without the renaming each spelling would be its own column of NaN.
+    combined = helpers.to_gmdb_country_names(oecd) - gmdb
+
+    assert combined.notna().all().all()
+    assert combined.loc[pd.Period("2023", "Y"), "Russian Federation"] == pytest.approx(
+        0.02
+    )
+
+
+def test_real_interest_rate_and_misery_index_line_up_oecd_and_gmdb_names(monkeypatch):
+    from financetoolkit.economics import economics_controller
+
+    years = pd.PeriodIndex(["2022", "2023"], freq="Y")
+    oecd = pd.DataFrame({"Russia": [0.09, 0.11], "Germany": [0.02, 0.025]}, index=years)
+    inflation = pd.DataFrame(
+        {"Russian Federation": [0.14, 0.06], "Germany": [0.07, 0.06]}, index=years
+    )
+
+    monkeypatch.setattr(
+        economics_controller.Economics, "_get_gmdb_dataset", lambda self, **kw: None
+    )
+    monkeypatch.setattr(
+        economics_controller.oecd_model,
+        "get_long_term_interest_rate",
+        lambda **kw: oecd,
+    )
+    monkeypatch.setattr(
+        economics_controller.oecd_model, "get_unemployment_rate", lambda **kw: oecd
+    )
+    monkeypatch.setattr(
+        economics_controller.gmdb_model, "get_inflation_rate", lambda **kw: inflation
+    )
+
+    economics = economics_controller.Economics(
+        start_date="2022-01-01", end_date="2023-12-31"
+    )
+
+    real_rate = economics.get_real_interest_rate(gmdb_source=False)
+    misery = economics.get_misery_index(gmdb_source=False)
+
+    assert sorted(real_rate.columns) == ["Germany", "Russian Federation"]
+    assert real_rate.loc["2023", "Russian Federation"] == pytest.approx(0.05)
+    assert misery.loc["2022", "Russian Federation"] == pytest.approx(0.23)
+
+
+def test_an_unpublished_bis_period_is_no_data(monkeypatch):
+    def not_published(url, timeout):
+        response = requests.Response()
+        response.status_code = 404
+        raise requests.HTTPError(response=response)
+
+    monkeypatch.setattr(bis_model, "get_request", not_published)
+    assert bis_model.request_csv("https://stats.bis.org/x", timeout=1) == ""
+
+    def unavailable(url, timeout):
+        response = requests.Response()
+        response.status_code = 503
+        raise requests.HTTPError(response=response)
+
+    monkeypatch.setattr(bis_model, "get_request", unavailable)
+    with pytest.raises(requests.HTTPError):
+        bis_model.request_csv("https://stats.bis.org/x", timeout=1)

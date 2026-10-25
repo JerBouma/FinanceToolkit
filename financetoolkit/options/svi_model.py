@@ -120,6 +120,15 @@ def get_svi_parameters(
         dict[str, float]: The calibrated {"a", "b", "rho", "m", "sigma"} parameters.
 
     Notes:
+        The fit enforces Gatheral's condition a + b * sigma * sqrt(1 - rho^2) >= 0: the
+        minimum of the SVI curve, reached at k = m - rho * sigma / sqrt(1 - rho^2), is
+        exactly that expression, so the condition keeps the total variance non-negative
+        at every log-moneyness. Without it a least-squares fit can return a curve that
+        dips below zero between or beyond the quoted strikes, where no implied volatility
+        exists. The condition is imposed exactly by optimizing over
+        c = a + b * sigma * sqrt(1 - rho^2) with the bound c >= 0 and recovering
+        a = c - b * sigma * sqrt(1 - rho^2).
+
         The raw SVI least-squares surface is not convex and has a large flat region in
         which b collapses to zero, which a local optimizer started from a single guess
         will happily settle in -- returning a straight line through a pronounced smile
@@ -136,14 +145,22 @@ def get_svi_parameters(
             "to calibrate the 5 raw SVI parameters."
         )
 
+    def to_raw_parameters(parameters: np.ndarray) -> tuple[float, ...]:
+        # The optimizer works with the minimum total variance c instead of a, so the
+        # bound c >= 0 enforces a + b * sigma * sqrt(1 - rho^2) >= 0 exactly.
+        minimum_variance, b, rho, m, sigma = parameters
+        a = minimum_variance - b * sigma * np.sqrt(1 - rho**2)
+        return a, b, rho, m, sigma
+
     def objective(parameters: np.ndarray) -> float:
-        a, b, rho, m, sigma = parameters
+        a, b, rho, m, sigma = to_raw_parameters(parameters)
         model_variance = get_svi_total_variance(log_moneyness, a, b, rho, m, sigma)
 
         return float(np.sum((model_variance - total_variance) ** 2))
 
     # The minimum of the observed smile is the natural location for m, but a smile whose minimum sits at the edge of the quoted strikes needs the mid-point as a fallback.  # noqa: E501
     log_moneyness_span = max(log_moneyness.max() - log_moneyness.min(), 1e-6)
+    # Each guess starts the curve's minimum (c) at the lowest observed total variance.
     initial_guesses = [
         [
             max(total_variance.min(), 1e-8),
@@ -168,7 +185,7 @@ def get_svi_parameters(
             x0=initial_guess,
             method="L-BFGS-B",
             bounds=[
-                (None, None),  # a
+                (0, None),  # c = a + b * sigma * sqrt(1 - rho^2) >= 0
                 (1e-6, None),  # b >= 0
                 (-0.999, 0.999),  # rho in (-1, 1)
                 (None, None),  # m
@@ -185,7 +202,7 @@ def get_svi_parameters(
             f"{len(initial_guesses)} starting points."
         )
 
-    a, b, rho, m, sigma = best_result.x
+    a, b, rho, m, sigma = to_raw_parameters(best_result.x)
 
     return {
         "a": float(a),
@@ -215,8 +232,9 @@ def check_calendar_arbitrage(
             parameters (see `get_svi_parameters`) for each expiry, keyed by time to
             expiration in years.
         log_moneyness_grid (pd.Series | np.ndarray, optional): The log-moneyness
-            grid to check the condition on. Defaults to a grid from -1 to 1 (roughly
-            37% below to 172% above the forward price) with 200 points.
+            grid to check the condition on. Defaults to a grid from -1 to 1 (strikes
+            from 63% below to 172% above the forward price, since e^-1 = 0.37 and
+            e^1 = 2.72) with 200 points.
 
     Returns:
         pd.DataFrame: One row per log-moneyness/expiry-pair where the condition is

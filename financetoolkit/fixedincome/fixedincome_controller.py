@@ -68,6 +68,15 @@ TREASURY_MATURITIES = {
 }
 
 
+# Each maturity label unit as (days or months it spans, those per year): days and weeks count calendar days of a 365-day year. Multiplying first and dividing last keeps 36M exactly 3.0 and 1W exactly 7/365 years.  # noqa: E501
+MATURITY_UNITS: dict[str, tuple[int, int]] = {
+    "D": (1, 365),
+    "W": (7, 365),
+    "M": (1, 12),
+    "Y": (1, 1),
+}
+
+
 def _maturity_in_months(label: str) -> float:
     """
     Converts a maturity label such as "3M" or "10Y" into months, for sorting a curve.
@@ -79,6 +88,85 @@ def _maturity_in_months(label: str) -> float:
         float: The maturity in months.
     """
     return float(label[:-1]) * (12 if label.endswith("Y") else 1)
+
+
+def _maturity_in_years(maturity) -> float:
+    """
+    Converts a maturity, a number of years or a label such as "1W", "6M" or "10Y", into years.
+
+    Days and weeks count in calendar days (a year of 365 days), so "1D" is 1/365 and "1W"
+    is 7/365 of a year, while months are twelfths of a year.
+
+    Args:
+        maturity (float | int | str): The maturity in years, or a label ending in "D"
+            (days), "W" (weeks), "M" (months) or "Y" (years) as the yield curve methods
+            and the MCP server pass them.
+
+    Returns:
+        float: The maturity in years.
+
+    Raises:
+        ValueError: If the maturity is neither a number nor such a label.
+    """
+    if isinstance(maturity, int | float | np.number):
+        return float(maturity)
+
+    label = str(maturity).strip().upper()
+
+    try:
+        return float(label)
+    except ValueError:
+        pass
+
+    if label[-1:] in MATURITY_UNITS:
+        length, per_year = MATURITY_UNITS[label[-1]]
+
+        try:
+            return float(label[:-1]) * length / per_year
+        except ValueError:
+            pass
+
+    raise ValueError(
+        f"The maturity {maturity!r} is not a number of years or a label such as '1W', '6M' or '10Y'."
+    )
+
+
+def _get_spot_curve(curve: pd.Series | dict | None, default: dict) -> pd.Series:
+    """
+    Returns a yield curve as a Series indexed by maturity in years (floats), sorted by maturity.
+
+    A curve with string keys ('1', '10' or '10Y') would otherwise sort alphabetically, placing
+    10 years before 2 years, and break the linear interpolation between maturities.
+
+    Args:
+        curve (pd.Series | dict | None): The curve by maturity, or None for the default.
+        default (dict): The curve to use when none is given.
+
+    Returns:
+        pd.Series: The curve indexed by maturity in years, in increasing order.
+    """
+    curve_series = pd.Series(default if curve is None else curve, dtype=float)
+    curve_series.index = [_maturity_key(maturity) for maturity in curve_series.index]
+
+    return curve_series.sort_index()
+
+
+def _maturity_key(maturity) -> float | int:
+    """
+    Converts a maturity into years, kept as an integer when it is a whole number of years.
+
+    Whole years stay integers so that curve maturities and the key rate maturities read from
+    them label the output as 5 rather than 5.0.
+
+    Args:
+        maturity (float | int | str): The maturity in years, or a label such as "6M" or "10Y".
+
+    Returns:
+        float | int: The maturity in years.
+    """
+    years = _maturity_in_years(maturity)
+
+    return int(years) if years.is_integer() else years
 
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
@@ -137,7 +225,7 @@ class FixedIncome:
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
             quarterly (bool | None, optional): Whether to return quarterly data where a method is
                 not given a period. Defaults to None, which returns the highest frequency available.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to, or None to skip rounding. Defaults to 4.
             fred_api_key (str, optional): A FRED API key used to retrieve ICE BofA bond index data
                 (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
                 https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set via the FRED_API_KEY
@@ -202,7 +290,7 @@ class FixedIncome:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
         self._rounding: int | None = rounding
-        self._fred_api_key = fred_api_key
+        self._fred_api_key = validation_model.resolve_fred_api_key(fred_api_key)
         # A copied documentation example passes the placeholder key, treated as no key at all.
         self._api_key = validation_model.resolve_api_key(api_key)
         # The data retrieved from external sources is cached, see use_cached_data.
@@ -245,7 +333,7 @@ class FixedIncome:
         self,
         par_value: float = 100,
         coupon_rate: float = 0.05,
-        years_to_maturity: int = 5,
+        years_to_maturity: float = 5,
         yield_to_maturity: float = 0.08,
         frequency: int = 1,
         show_input_info: bool = True,
@@ -270,7 +358,30 @@ class FixedIncome:
             - Dollar Duration: The modified duration multiplied by the bond price, divided by 100.
             - DV01: The currency change in the bond's price, per par value of face, for a one basis
                 point (0.01%) change in the yield to maturity.
-            - Convexity: The second derivative of the bond price with respect to the yield to maturity.
+            - Convexity: The second derivative of the bond price with respect to the yield to maturity,
+                divided by the price.
+            - Prices between coupon dates: the present value is the clean (quoted) price, while the
+                durations, DV01 and convexity are sensitivities of the full (dirty) price; on a coupon
+                date the two prices coincide.
+
+        The formula is as follows:
+
+        - PV(t) = Cash Flow(t) / (1 + YTM / Frequency)^(Frequency * t), with each coupon equal to Par Value *
+          Coupon Rate / Frequency and the par value repaid with the last coupon
+        - Dirty Price = SUM(PV(t)), over the remaining payment times t in years (fractional between coupon dates)
+        - Present Value = Dirty Price - Accrued Interest, the clean price (see `get_present_value`)
+        - Current Yield = Par Value * Coupon Rate / Present Value
+        - Effective Yield = (1 + Coupon Rate / Frequency)^Frequency - 1
+        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
+        - Modified Duration = Macaulay's Duration / (1 + YTM / Frequency)
+        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
+        - Dollar Duration = Modified Duration * Dirty Price / 100
+        - DV01 = (Present Value(YTM - 0.0001) - Present Value(YTM + 0.0001)) / 2
+        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price *
+          0.0001^2)
+
+        Where YTM is the yield to maturity, a nominal annual rate compounded `frequency` times a year (0.08 and
+        annual by default). The Effective Yield restates the coupon rate, not the yield to maturity.
 
         These statistics can be used to evaluate the bond's performance as opposed to other bonds or to estimate the bond's
         sensitivity to changes in interest rates to be able to apply a hedging strategy.
@@ -280,7 +391,7 @@ class FixedIncome:
         Args:
             par_value (float): The face value of the bond. Defaults to 100.
             coupon_rate (float): The annual coupon rate (in decimal). Defaults to 0.05.
-            years_to_maturity (int): The number of years until the bond matures. Defaults to 5.
+            years_to_maturity (float): The number of years until the bond matures. Defaults to 5.
             yield_to_maturity (float): The yield to maturity of the bond (in decimal). Defaults to 0.08.
             frequency (int): The number of coupon payments per year. Defaults to 1.
             show_input_info (bool, optional): Whether to display input information. Defaults to True.
@@ -307,7 +418,7 @@ class FixedIncome:
 
         Which returns:
 
-        |                     |        0 |
+        |                     |    Value |
         |:--------------------|---------:|
         | Par Value           | 100      |
         | Coupon Rate         |   0.05   |
@@ -324,10 +435,12 @@ class FixedIncome:
         | DV01                |   0.0368 |
         | Convexity           |  22.4017 |
 
-        Note how the effective duration sits just above the modified duration for every
-        bond: the two measure the same sensitivity, and their small difference is exactly
-        the convexity picked up by repricing over a 100 basis point shift rather than
-        differentiating at a point.
+        Note how the effective duration sits just above the modified duration: the two
+        measure the same sensitivity, but the symmetric 100 basis point repricing of the
+        effective duration also picks up the third-order term of the price-yield
+        relationship, about -P'''(y) * Δy^2 / (6 * P), which the analytical modified
+        duration leaves out. The convexity (second-order) terms cancel in the symmetric
+        difference.
         """
         bond_statistics = {
             "Par Value": par_value,
@@ -413,7 +526,8 @@ class FixedIncome:
                 frequency,
             )
 
-        return apply_rounding(pd.Series(bond_statistics), self._rounding)
+        # Named so that the statistics render under a "Value" header rather than an unnamed "0" column.  # noqa: E501
+        return apply_rounding(pd.Series(bond_statistics, name="Value"), self._rounding)
 
     def get_present_value(
         self,
@@ -426,20 +540,32 @@ class FixedIncome:
     ):
         """
         Calculates the bond prices for different coupon rates and years to maturity. The bond price is the present value of the bond's
-        future cash flows, which includes the coupon payments and the par value of the bond at maturity. The bond price is calculated
-        using the following formula:
+        future cash flows, which includes the coupon payments and the par value of the bond at maturity.
 
-        - Bond Price = (C / r) * (1 — (1 + r)^-n) + F / (1 + r)^n
+        The formula is as follows:
+
+        - Dirty Price = SUM(C / (1 + r)^(t_i)) + F / (1 + r)^(t_n), over the remaining coupons i = 1, ..., n
+        - Accrued Interest = C * a
+        - Bond Price = Dirty Price - Accrued Interest, the clean price
 
         where:
 
-        - C = Coupon payment per period
-        - r = Yield to maturity per period
-        - n = Number of periods
+        - C = Coupon payment per period, Par Value * Coupon Rate / Frequency
+        - r = Yield to maturity per period, Yield to Maturity / Frequency (a nominal annual rate compounded
+          `frequency` times a year, 0.08 and annual by default)
+        - a = Elapsed fraction of the current coupon period, in periods of equal length (30/360), 0 on a coupon date
+        - t_i = i - a, the time of the i-th cash flow in coupon periods, so t_n = Years to Maturity * Frequency
         - F = Face value of the bond
+
+        On a coupon date this is Bond Price = (C / r) * (1 - (1 + r)^-n) + F / (1 + r)^n.
 
         The bond price is used to determine the fair value of the bond and to compare the bond's price to its market price to determine
         if the bond is overvalued or undervalued.
+
+        The coupon schedule runs back from maturity, so a maturity that is not a whole number of coupon periods (2.5 years of
+        annual coupons) discounts every cash flow over its fractional number of periods, and the price is the clean (quoted)
+        price: the full price minus the coupon interest accrued since the previous coupon date, matching QuantLib's clean price
+        with a 30/360 count. On a coupon date the two coincide.
 
         Also known as: PV, bond pricing, discounted cash flows.
 
@@ -470,11 +596,11 @@ class FixedIncome:
 
         Which returns:
 
-        |   Coupon Rate |     5 |    10 |    15 |
-        |--------------:|------:|------:|------:|
-        |          0.03 | 80.04 | 66.45 | 57.2  |
-        |          0.05 | 88.02 | 79.87 | 74.32 |
-        |          0.07 | 96.01 | 93.29 | 91.44 |
+        |   Coupon Rate |       5 |      10 |      15 |
+        |--------------:|--------:|--------:|--------:|
+        |          0.03 | 80.0364 | 66.4496 | 57.2026 |
+        |          0.05 | 88.0219 | 79.8698 | 74.3216 |
+        |          0.07 | 96.0073 | 93.2899 | 91.4405 |
         """
         coupon_rate = (
             np.round(
@@ -533,7 +659,7 @@ class FixedIncome:
                 frequency,
             )
 
-        return bond_prices_df.round(2)
+        return apply_rounding(bond_prices_df, self._rounding)
 
     def get_duration(
         self,
@@ -560,6 +686,24 @@ class FixedIncome:
         same as the dollar duration, the price value of a basis point (PVBP) or the dollar value of a 0.01% change (DV01), which are
         all expressed as a currency amount instead. The dollar duration is available through this method via `duration_type='dollar'`
         and the DV01 is calculated separately, see `collect_bond_statistics`.
+
+        The formula is as follows (the default is the modified duration):
+
+        - PV(t) = Cash Flow(t) / (1 + YTM / Frequency)^(Frequency * t), with each coupon equal to Par Value *
+          Coupon Rate / Frequency and the par value repaid with the last coupon
+        - Dirty Price = SUM(PV(t)), over the remaining payment times t in years (fractional between coupon dates)
+        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
+        - Modified Duration = Macaulay's Duration / (1 + YTM / Frequency)
+        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
+        - Dollar Duration = Modified Duration * Dirty Price / 100
+
+        Where YTM is the yield to maturity (compounded at the coupon frequency, 0.08 and annual by default).
+
+        Modified duration is the first estimate of interest rate risk: a modified duration of 7 means the price falls by
+        about 7% if the yield rises by one percentage point. The estimate worsens for larger moves, which convexity corrects
+        (see `get_taylor_price_change`), and it assumes the cash flows are fixed. For callable bonds and mortgage-backed
+        securities the relevant measure is an effective duration from a model that values the embedded option, which this
+        method does not include.
 
         Also known as: Macaulay duration, modified duration, bond price sensitivity.
 
@@ -595,11 +739,11 @@ class FixedIncome:
 
         Which returns:
 
-        |   Coupon Rate |    5 |   10 |    15 |
-        |--------------:|-----:|-----:|------:|
-        |          0.03 | 4.33 | 7.82 | 10.4  |
-        |          0.05 | 4.18 | 7.26 |  9.41 |
-        |          0.07 | 4.05 | 6.87 |  8.79 |
+        |   Coupon Rate |      5 |     10 |      15 |
+        |--------------:|-------:|-------:|--------:|
+        |          0.03 | 4.3312 | 7.8207 | 10.3951 |
+        |          0.05 | 4.1774 | 7.2645 |  9.4072 |
+        |          0.07 | 4.0491 | 6.8683 |  8.7891 |
         """
         duration_type_lower = duration_type.lower()
 
@@ -690,7 +834,7 @@ class FixedIncome:
                 duration_type_lower.title(),
             )
 
-        return bond_prices_df.round(2)
+        return apply_rounding(bond_prices_df, self._rounding)
 
     def get_yield_to_maturity(
         self,
@@ -709,27 +853,39 @@ class FixedIncome:
         discount rate that equates the present value of the bond's cash flows to its market price. The yield to maturity is used to
         estimate the bond's return and to compare the bond's return to other investments.
 
-        The yield to maturity is calculated using the following formula:
+        The formula is as follows, solved for r:
 
-        - Bond Price = (C / r) * (1 — (1 + r)^-n) + F / (1 + r)^n
+        - Bond Price = SUM(C / (1 + r)^(t_i)) + F / (1 + r)^(t_n) - C * a, over the remaining coupons i = 1, ..., n
+        - Yield to Maturity = r * Frequency
 
         where:
 
-        - C = Coupon payment per period
+        - C = Coupon payment per period, Par Value * Coupon Rate / Frequency
         - r = Yield to maturity per period
-        - n = Number of periods
+        - a = Elapsed fraction of the current coupon period, in periods of equal length (30/360), 0 on a coupon date
+        - t_i = i - a, the time of the i-th cash flow in coupon periods, so t_n = Years to Maturity * Frequency
         - F = Face value of the bond
 
+        The Bond Price is the clean price, the dirty price minus the accrued coupon C * a, as in `get_present_value`.
+
         The goal is to find the yield to maturity that satisfies the equation above. This is done using the secant method
-        which is an iterative method that converges to the root of a function.
+        which is an iterative method that converges to the root of a function. The bond price is read as a clean (quoted)
+        price, and a maturity between coupon dates discounts each cash flow over its fractional number of periods, in the
+        same way as `get_present_value`, so the yield is a nominal annual rate compounded `frequency` times per year.
+
+        The yield to maturity is the return of a bond bought at this price and held to maturity, if every coupon is reinvested
+        at the same yield and the issuer pays in full. It is the standard way to quote and compare bonds, but it is one average
+        rate for all cash flows: bonds with the same maturity but different coupons have different yields even when both are
+        priced in line with the same spot curve, and for callable bonds the yield to worst is quoted instead.
 
         Also known as: YTM, bond return to maturity.
 
         Args:
-            par_value (float): The par value (face value) of the bond. This is the original price when it was issued by the issuer.
+            par_value (float): The par value (face value) of the bond, the amount repaid at maturity. Defaults to 100.
             coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
-            bond_price (float, optional): The price of the bond. Defaults to None.
+            bond_price (float, optional): The clean (quoted) price of the bond. Defaults to None, a range of
+                prices around the par value.
             frequency (int, optional): The number of coupon payments per year. Defaults to 1.
             guess (float, optional): The initial guess for the yield to maturity. Defaults to 0.05.
             tolerance (float, optional): The tolerance level for convergence. Defaults to 0.0001.
@@ -851,22 +1007,26 @@ class FixedIncome:
         spot curve, so `near_maturity` and `far_maturity` do not need to coincide
         exactly with a maturity present in `spot_rates`.
 
-        The forward rate is calculated using the following formula:
+        The formula is as follows:
 
         - Forward Rate = ((1 + r2)^t2 / (1 + r1)^t1)^(1 / (t2 - t1)) - 1
 
         where:
 
-        - r1 = Spot rate at the near maturity
+        - r1 = Spot rate at the near maturity, interpolated linearly from the curve
         - t1 = Near maturity, in years
-        - r2 = Spot rate at the far maturity
+        - r2 = Spot rate at the far maturity, interpolated linearly from the curve
         - t2 = Far maturity, in years
+
+        The spot rates are read as effective annual (annually compounded) rates and the forward rate is
+        annually compounded as well.
 
         Also known as: implied forward rate, forward-forward rate.
 
         Args:
-            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve,
-                indexed by maturity in years (in decimal). Defaults to a sample curve.
+            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
+                in decimals, read as effective annual (annually compounded) rates, indexed
+                by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             near_maturity (float | list, optional): The nearer maturity (or maturities),
                 in years. If not provided, a range of near maturities will be used.
             far_maturity (float | list, optional): The further maturity (or maturities),
@@ -900,11 +1060,7 @@ class FixedIncome:
         |               2 | 0.042 | 0.047  |
         |               3 | 0.044 | 0.0483 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         near_maturity = range(1, 6) if near_maturity is None else near_maturity
         far_maturity = range(5, 11) if far_maturity is None else far_maturity
@@ -969,20 +1125,26 @@ class FixedIncome:
         opposed to the theoretical spot curve which is usually bootstrapped rather than
         directly observed.
 
-        The par yield is calculated using the following formula:
+        The formula is as follows:
 
-        - Par Yield = frequency * (1 - DF(n)) / SUM(DF(k))
+        - DF(t) = 1 / (1 + Spot Rate(t / Frequency) / Frequency)^t, the discount factor of a cash flow after t
+          coupon periods
+        - Par Yield = Frequency * (1 - DF(t_n)) / (SUM(DF(t_i)) - a), over the remaining coupons i = 1, ..., n
 
-        where DF(k) = 1 / (1 + spot_rate(k / frequency) / frequency)^k is the discount
-        factor for the cash flow at period k, spot_rate(t) is obtained by interpolating
-        the spot curve at time t (in years), and n = years_to_maturity * frequency is
-        the number of coupon periods.
+        where Spot Rate(τ) is the spot curve interpolated linearly at τ years and read as a nominal annual rate
+        compounded `frequency` times a year (annual by default), a is the elapsed fraction of the current coupon
+        period (0 on a coupon date) and t_i = i - a is the time of the i-th coupon in periods, so t_n =
+        Years to Maturity * Frequency. On a coupon date this is the textbook Frequency * (1 - DF(n)) / SUM(DF(k));
+        for a maturity between coupon dates the par yield is the coupon at which the clean price, without accrued
+        interest, equals par (see `yieldcurve_model.get_par_yield`). The par yield is a nominal annual coupon rate
+        paid `frequency` times a year.
 
         Also known as: par rate, par coupon rate.
 
         Args:
-            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve,
-                indexed by maturity in years (in decimal). Defaults to a sample curve.
+            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
+                in decimals, read as nominal annual rates compounded `frequency` times per
+                year, indexed by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             years_to_maturity (float | list, optional): The maturity (or maturities), in
                 years, to calculate the par yield for. If not provided, a range of years
                 to maturity will be used.
@@ -1017,11 +1179,7 @@ class FixedIncome:
         |                   5 |      0.0377 |
         |                  10 |      0.0431 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         years_to_maturity = (
             range(1, 11) if years_to_maturity is None else years_to_maturity
@@ -1071,15 +1229,18 @@ class FixedIncome:
         curve, so `long_maturity` and `short_maturity` do not need to coincide exactly
         with a maturity present in `spot_rates`.
 
-        The yield curve spread is calculated using the following formula:
+        The formula is as follows:
 
         - Yield Curve Spread = Long-Term Yield - Short-Term Yield
+
+        Where both yields are interpolated linearly from the curve and subtracted as given, in the
+        compounding of the curve passed.
 
         Also known as: term spread, yield curve slope.
 
         Args:
-            spot_rates (pd.Series | dict, optional): The yield curve, indexed by
-                maturity in years (in decimal). Defaults to a sample curve.
+            spot_rates (pd.Series | dict, optional): The yield curve in decimals, indexed
+                by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             long_maturity (float | list, optional): The longer maturity (or maturities),
                 in years. If not provided, a range of long maturities will be used.
             short_maturity (float | list, optional): The shorter maturity (or
@@ -1112,11 +1273,7 @@ class FixedIncome:
         |              10 | 0.014 | 0.012 |
         |              30 | 0.02  | 0.018 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         long_maturity = range(5, 11) if long_maturity is None else long_maturity
         short_maturity = range(1, 5) if short_maturity is None else short_maturity
@@ -1179,17 +1336,29 @@ class FixedIncome:
         curves, so `maturity` does not need to coincide exactly with a maturity present
         in `nominal_rates` or `real_rates`.
 
-        The breakeven inflation rate is calculated using the following formula:
+        The formula is as follows:
 
         - Breakeven Inflation Rate = Nominal Yield - Real Yield
+
+        Where both yields are interpolated linearly from their curves and subtracted as given, in the
+        compounding of the curves passed (the simple difference, not (1 + Nominal) / (1 + Real) - 1).
+
+        The breakeven rate is often read as the market's expected inflation, but it also
+        contains an inflation risk premium, which raises it, and a liquidity premium on
+        inflation-linked bonds, which lowers it, so it rises and falls in market stress for
+        reasons other than inflation expectations. For the United States the comparison is
+        with CPI-U, the index TIPS pay on. Survey expectations (`get_inflation_expectations`
+        in the Economics module) are the usual cross-check.
 
         Also known as: TIPS breakeven spread, inflation breakeven.
 
         Args:
             nominal_rates (pd.Series | dict, optional): The nominal (non-inflation-protected)
-                yield curve, indexed by maturity in years (in decimal). Defaults to a sample curve.
+                yield curve in decimals, indexed by maturity in years (a number, or a label such as '6M' or '10Y').
+                Defaults to a sample curve.
             real_rates (pd.Series | dict, optional): The real (inflation-protected) yield
-                curve, indexed by maturity in years (in decimal). Defaults to a sample curve.
+                curve in decimals, indexed by maturity in years (a number, or a label such as '6M' or '10Y').
+                Defaults to a sample curve.
             maturity (float | list, optional): The maturity (or maturities), in years,
                 to calculate the breakeven inflation rate for. If not provided, a range
                 of maturities will be used.
@@ -1221,16 +1390,8 @@ class FixedIncome:
         |         10 |                      0.028 |
         |         30 |                      0.03  |
         """
-        nominal_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if nominal_rates is None
-            else pd.Series(nominal_rates)
-        ).sort_index()
-        real_rates_series = (
-            pd.Series(DEFAULT_REAL_SPOT_CURVE)
-            if real_rates is None
-            else pd.Series(real_rates)
-        ).sort_index()
+        nominal_rates_series = _get_spot_curve(nominal_rates, DEFAULT_SPOT_CURVE)
+        real_rates_series = _get_spot_curve(real_rates, DEFAULT_REAL_SPOT_CURVE)
 
         maturity = [1, 2, 3, 5, 7, 10, 20, 30] if maturity is None else maturity
 
@@ -1301,15 +1462,33 @@ class FixedIncome:
         The Z-spread is found iteratively using the secant method, in the same way that
         `get_yield_to_maturity` solves for the yield to maturity.
 
+        The formula is as follows, solved for the Z-Spread:
+
+        - Clean Price = SUM(Cash Flow(t) / (1 + (Spot Rate(t) + Z-Spread) / Frequency)^(Frequency * t)) - Accrued Interest
+
+        Where each coupon is Par Value * Coupon Rate / Frequency, the par value is repaid with the
+        last coupon, t is each remaining payment time in years and Spot Rate(t) is the benchmark
+        spot rate (compounded at the coupon frequency) interpolated linearly between the curve's
+        maturities and held flat beyond its first and last maturity.
+
+        The Z-spread depends on the benchmark curve: against the government curve it measures
+        credit and liquidity risk together, against the swap curve mostly the credit risk
+        relative to banks. It should be calculated with a zero-coupon (spot) curve; a par
+        yield curve such as the Treasury's is close but not the same. For a bond with an
+        embedded option the Z-spread includes the option's value, which the option-adjusted
+        spread removes.
+
         Also known as: zero-volatility spread, static spread.
 
         Args:
             par_value (float): The par value (face value) of the bond.
             coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
-            bond_price (float, optional): The price of the bond. Defaults to None.
+            bond_price (float, optional): The clean (quoted) price of the bond. Defaults to None, a range of
+                prices around the par value.
             spot_rates (pd.Series | dict, optional): The benchmark zero-coupon (spot)
-                yield curve, indexed by maturity in years (in decimal). Defaults to a sample curve.
+                yield curve in decimals, read as nominal annual rates compounded `frequency`
+                times per year, indexed by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
             frequency (int, optional): The number of coupon payments per year. Defaults to 1.
             guess (float, optional): The initial guess for the Z-spread. Defaults to 0.01.
             tolerance (float, optional): The tolerance level for convergence. Defaults to 0.0001.
@@ -1342,11 +1521,7 @@ class FixedIncome:
         |          100 | 0.0124 | 0.007  | 0.0053 |
         |          105 | 0.0012 | 0.0007 | 0.0005 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         if bond_price is None:
             step_size = par_value / 10
@@ -1420,15 +1595,18 @@ class FixedIncome:
         restates the discount yield on a basis that is comparable to coupon-bearing
         bonds and notes.
 
-        The bond-equivalent yield is calculated using the following formula:
+        The formula is as follows:
 
-        - BEY = 365 * Discount Yield / (360 - Days to Maturity * Discount Yield)
+        - BEY = 365 * Discount Yield / (360 - Days to Maturity * Discount Yield), for 182.5 days or less
+        - Price = 1 - Discount Yield * Days to Maturity / 360, per unit of face value
+        - BEY = (-2t + 2 * SQRT(t^2 - (2t - 1) * (1 - 1 / Price))) / (2t - 1), with t = Days to Maturity / 365,
+          for more than 182.5 days
 
-        for a bill with half a year or less remaining. Beyond that an equivalent coupon-bearing
-        note would have paid a coupon at the six month point, so the U.S. Treasury's semi-annually
-        compounded solution (31 CFR 356, Appendix B) is used instead — see
-        `bond_model.get_bond_equivalent_yield`. Applying the simple formula to a 52-week bill
-        instead overstates its yield by roughly seven basis points.
+        A bill with half a year or less remaining takes the simple restatement onto the purchase price and a
+        365-day year. Beyond that an equivalent coupon-bearing note would have paid a coupon at the six month
+        point, so the U.S. Treasury's semi-annually compounded solution (31 CFR 356, Appendix B) is used instead,
+        see `bond_model.get_bond_equivalent_yield`. Applying the simple formula to a 52-week bill instead
+        overstates its yield by roughly seven basis points.
 
         Also known as: BEY, coupon-equivalent yield, investment rate.
 
@@ -1531,14 +1709,33 @@ class FixedIncome:
         rate duration measures the bond's price sensitivity to a shock at a single
         tenor of the curve while every other point is held fixed. Because cash flows
         are discounted using linear interpolation between the curve's tenors, a shock
-        at one tenor tapers off towards its neighboring tenors and has no effect beyond
-        them.
+        at an inner tenor tapers off towards its neighboring tenors and has no effect
+        beyond them. The curve is held flat beyond its first and last tenors, so a shock
+        at the first tenor moves every cash flow paid before it in full (and a shock at
+        the last tenor every cash flow paid after it).
 
         Summing the key rate durations across every tenor of the curve approximately
         reproduces the bond's effective (parallel-shift) duration, but key rate
         duration additionally reveals which segment of the curve the bond's price is
         most exposed to — information that is essential for constructing curve-neutral
         hedges or identifying "twist" risk.
+
+        A barbell and a bullet with the same duration have very different key rate
+        profiles and react differently when the curve steepens or flattens, which is why
+        key rate durations are hedged with instruments at each key maturity. Because a
+        shock at one maturity tapers off to its neighbours, the profile also depends on
+        which maturities the curve contains: the same bond shows different key rate
+        durations on a curve with more or fewer points.
+
+        The formula is as follows:
+
+        - Dirty Price = SUM(Cash Flow(t) / (1 + Spot Rate(t) / Frequency)^(Frequency * t))
+        - Key Rate Duration = -(Dirty Price(Key Rate + Δy) - Dirty Price(Key Rate - Δy)) / (2 * Dirty Price * Δy)
+
+        Where each coupon is Par Value * Coupon Rate / Frequency, the par value is repaid with the
+        last coupon, t is each remaining payment time in years, Spot Rate(t) is the spot rate
+        (compounded at the coupon frequency) interpolated linearly between the curve's maturities
+        and Δy is the shock applied to the key rate only (1 basis point by default).
 
         Also known as: partial duration, rate-specific duration.
 
@@ -1548,8 +1745,9 @@ class FixedIncome:
             years_to_maturity (float | list, optional): The years to maturity of the
                 bond (or bonds). If not provided, a range of years to maturity will be used.
             spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
-                used to discount the bond's cash flows, indexed by maturity in years (in
-                decimal). Defaults to a sample curve.
+                used to discount the bond's cash flows, in decimals, read as nominal annual
+                rates compounded `frequency` times per year and indexed by maturity in years (a number, or a label such as '6M' or '10Y').
+                Defaults to a sample curve.
             key_rate_maturity (float | list, optional): The maturity (or maturities), in
                 years, of the curve point(s) to shock. Must be present in the index of
                 `spot_rates`. Defaults to every maturity in `spot_rates`.
@@ -1584,11 +1782,7 @@ class FixedIncome:
         |                   5 | 0.0862 | 4.0561 | -0      |
         |                  10 | 0.0862 | 0.377  |  6.4666 |
         """
-        spot_rates_series = (
-            pd.Series(DEFAULT_SPOT_CURVE)
-            if spot_rates is None
-            else pd.Series(spot_rates)
-        ).sort_index()
+        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
 
         years_to_maturity = (
             range(1, 11) if years_to_maturity is None else years_to_maturity
@@ -1601,8 +1795,11 @@ class FixedIncome:
 
         if isinstance(years_to_maturity, int | float):
             years_to_maturity = [years_to_maturity]
-        if isinstance(key_rate_maturity, int | float):
+        if isinstance(key_rate_maturity, int | float | str):
             key_rate_maturity = [key_rate_maturity]
+
+        # The same years as the curve's maturities, so '5Y' finds the 5 year point of a labelled curve.
+        key_rate_maturity = [_maturity_key(key_rate) for key_rate in key_rate_maturity]
 
         key_rate_durations: dict[float, dict[float, float]] = {}
 
@@ -1663,9 +1860,16 @@ class FixedIncome:
         This method calls `get_modified_duration` and `get_convexity` from
         `bond_model.py` directly rather than recomputing them.
 
-        The Taylor approximation is calculated using the following formula:
+        The formula is as follows:
 
+        - Modified Duration = SUM(t * PV(t)) / Dirty Price / (1 + YTM / Frequency), see `get_duration`
+        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price *
+          0.0001^2)
         - %ΔPrice ≈ -Modified Duration * Δy + 0.5 * Convexity * Δy^2
+
+        Where YTM is the yield to maturity, a nominal annual rate compounded `frequency` times a year (0.08 and
+        annual by default), Δy is the yield change (0.01 by default) and %ΔPrice is the change of the full
+        (dirty) price as a decimal, which on a coupon date equals the clean price `get_present_value` returns.
 
         Also known as: duration-convexity approximation, second-order price approximation.
 
@@ -1780,17 +1984,19 @@ class FixedIncome:
         It is possible to use two different models to calculate the derivative price:
 
         - Black Model: A mathematical model used for pricing financial derivatives, its primary applications are for
-            pricing options on future contracts, bond options, interest rate cap and floors, and swaptions.
+            pricing options on future contracts, bond options, interest rate caps and floors, and swaptions.
             For more information, see: https://en.wikipedia.org/wiki/Black_model
         - Bachelier Model: A deviation of the Black Model that is used for pricing future contracts. It is a simple model
             that assumes the price of the underlying asset follows a normal distribution with constant volatility. This
             is in contrast to the Black Model which assumes the price of the underlying asset follows a log-normal distribution.
             For more information, see: https://en.wikipedia.org/wiki/Bachelier_model
 
+        Both models are applied to European swaptions here, the right to enter an interest rate swap at the strike
+        rate; caps, floors and bond options are not implemented.
+
         It is possible to alter all parameters within the models, e.g. strike rate, volatility, years to maturity,
         risk-free rate, notional amount, and whether the holder is the receiver or payer of the derivative. Next to that, you can
-        provide lists of values for the fixed rate, strike rate, volatility, and years to maturity to calculate the derivative price
-        for multiple scenarios outside of the standard sample.
+        provide lists of strike rates and years to maturity to calculate the derivative price for several scenarios at once.
 
         Exercising a swaption is not a single payment at expiration — it is the right to enter a swap that exchanges
         cash flows at every payment date over the underlying swap's tenor. The price therefore discounts the option
@@ -1816,6 +2022,23 @@ class FixedIncome:
         the logarithm of their ratio, and raises rather than returning a silent NaN in that case.
         Use the Bachelier model for the negative rates seen in the euro area and Japan.
 
+        The formula is as follows (Black's model and a receiver swaption are the defaults):
+
+        - Annuity = (1 / Payment Frequency) * SUM(e^(-r * t_i)), over the swap's payment times t_i = T + i /
+          Payment Frequency for i = 1, ..., Tenor * Payment Frequency (the tenor defaults to T)
+        - Black d1 = (ln(F / K) + σ² * T / 2) / (σ * √T), d2 = d1 - σ * √T, with σ the lognormal volatility
+        - Black Payer Payoff = F * N(d1) - K * N(d2)
+        - Black Receiver Payoff = K * N(-d2) - F * N(-d1)
+        - Bachelier d = (F - K) / (σ_N * √T), with σ_N the normal volatility
+        - Bachelier Payer Payoff = (F - K) * N(d) + σ_N * √T * n(d)
+        - Bachelier Receiver Payoff = (K - F) * N(-d) + σ_N * √T * n(-d)
+        - Swaption Price = Notional * Annuity * Payoff
+
+        Where F is the forward swap rate, K is the strike rate, T is the years to maturity (expiry)
+        of the option, r is the continuously compounded risk-free rate (the forward rate when not
+        given), N is the cumulative standard normal distribution and n its density. A volatility
+        quoted on the other basis is converted with σ_N = σ * F.
+
         Also known as: bond derivative pricing, fixed income derivative, swaption pricing.
 
         Args:
@@ -1826,9 +2049,12 @@ class FixedIncome:
             volatility (float, optional): The volatility of the underlying swap rate, quoted on the
                 basis given by `volatility_type`. Defaults to 0.01, read as a 1% lognormal volatility
                 by the Black model and as 100 basis points of normal volatility by the Bachelier model.
-            years_to_maturity (float | list, optional): The years to maturity of the derivative in years. Defaults to None which means it plots
-                the derivative price for the next 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
-            risk_free_rate (float, optional): The risk-free interest rate. Defaults to None which means it is equal to the fixed rate.
+            years_to_maturity (float | list, optional): The years to maturity of the derivative. Defaults to None, which
+                returns the price for 1 to 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
+            risk_free_rate (float, optional): The risk-free interest rate used to discount the swap's payment dates,
+                read as a continuously compounded rate on a flat curve (discount factor exp(-r * t)). Defaults to None,
+                which uses the forward rate; as the forward rate is a swap rate on the swap's own compounding, pass the
+                continuously compounded rate explicitly for an exact annuity.
             notional (float, optional): The notional amount of the derivative. Defaults to 10_000_000.
             tenor (float | None, optional): The tenor (length in years) of the underlying swap. Defaults to None,
                 which means it is equal to years_to_maturity for each scenario.
@@ -1846,6 +2072,11 @@ class FixedIncome:
             pandas.DataFrame: The derivative prices rounded to the specified decimal places.
             pandas.DataFrame (optional): The derivative payoffs rounded to the specified decimal places if include_payoff is True.
 
+        In the example below the result has one column per expiry date and one row per strike.
+        The strikes below the 3.25% forward are worthless because a receiver swaption only
+        pays when the fixed rate it locks in exceeds the prevailing forward, and at a 1%
+        lognormal volatility a 50 basis point gap is far out of reach.
+
         As an example:
 
         ```python
@@ -1862,7 +2093,7 @@ class FixedIncome:
         )
         ```
 
-        Which returns, with one column per expiry date and one row per strike:
+        Which returns:
 
         |   Strike Rate |   2026-12-31 |   2027-12-31 |   2030-12-30 |   2035-12-29 |
         |--------------:|-------------:|-------------:|-------------:|-------------:|
@@ -1870,10 +2101,6 @@ class FixedIncome:
         |        0.0325 |      1224.91 |      3300.15 |      11280.4 |      25086.1 |
         |        0.0375 |     47237.2  |     89991.1  |     194547   |     305934   |
         |        0.0425 |     94474.3  |    179982    |     389094   |     611868   |
-
-        The strikes below the 3.25% forward are worthless because a receiver swaption only
-        pays when the fixed rate it locks in exceeds the prevailing forward, and at a 1%
-        lognormal volatility a 50 basis point gap is far out of reach.
         """
         model_lower = model.lower()
 
@@ -2045,8 +2272,8 @@ class FixedIncome:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
                 Defaults to None, which returns the monthly data (quarterly when the class was
                 created with quarterly=True).
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
@@ -2065,21 +2292,21 @@ class FixedIncome:
 
         long_term_interest_rate = fixedincome.get_government_bond_yield(short_term=False, period='monthly')
 
-        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Brazil']]
+        long_term_interest_rate.loc[:, ['Japan', 'United States', 'Germany']]
         ```
 
         Which returns:
 
-        |         |   Japan |   United States |   Brazil |
-        |:--------|--------:|----------------:|---------:|
-        | 2023-05 |  0.0043 |          0.0357 |   0.0728 |
-        | 2023-06 |  0.004  |          0.0375 |   0.0728 |
-        | 2023-07 |  0.0059 |          0.039  |   0.07   |
-        | 2023-08 |  0.0064 |          0.0417 |   0.07   |
-        | 2023-09 |  0.0076 |          0.0438 |   0.07   |
-        | 2023-10 |  0.0095 |          0.048  |   0.0655 |
-        | 2023-11 |  0.0066 |          0.045  |   0.0655 |
-        | 2023-12 |  0.0062 |          0.0402 |   0.0655 |
+        |         |   Japan |   United States |   Germany |
+        |:--------|--------:|----------------:|----------:|
+        | 2023-05 |  0.0043 |          0.0357 |    0.0234 |
+        | 2023-06 |  0.004  |          0.0375 |    0.0238 |
+        | 2023-07 |  0.0059 |          0.039  |    0.0246 |
+        | 2023-08 |  0.0064 |          0.0417 |    0.0255 |
+        | 2023-09 |  0.0076 |          0.0438 |    0.0266 |
+        | 2023-10 |  0.0095 |          0.048  |    0.0282 |
+        | 2023-11 |  0.0066 |          0.045  |    0.026  |
+        | 2023-12 |  0.0062 |          0.0402 |    0.021  |
         """
         period = (
             period
@@ -2178,9 +2405,11 @@ class FixedIncome:
         - United States: the U.S. Department of the Treasury's par yield curve, 1 month to
           30 years, from 1990.
         - Euro Area: the yield curve the European Central Bank estimates from the bonds of
-          all euro area central governments, 3 months to 30 years, from 2004.
+          all euro area central governments, 3 months to 30 years, from 2004, as zero-coupon
+          (spot) rates of a Svensson model, continuously compounded.
         - Germany: the term structure the Deutsche Bundesbank estimates from listed federal
-          securities, 1 to 30 years.
+          securities, 1 to 30 years, as zero-coupon (spot) rates of a Svensson model,
+          continuously compounded.
         - United Kingdom: the Bank of England's nominal par yields of gilts, 5, 10 and 20
           years.
         - Japan: the Ministry of Finance's Japanese government bond yields, 1 to 40 years,
@@ -2203,6 +2432,13 @@ class FixedIncome:
 
         The yields are returned as decimal fractions per annum (0.0419 for 4.19%), with one
         column per country and maturity, sorted from the shortest to the longest maturity.
+        Each curve is returned as its source publishes it: the Euro Area and Germany curves
+        are continuously compounded zero-coupon rates, while the other countries publish
+        par or benchmark bond yields, which compound with the coupon frequency of their
+        bonds. The two are not interchangeable: a continuously compounded zero rate r
+        equals an annually compounded zero rate of exp(r) - 1, and a par yield is the
+        coupon rate at which a bond prices at par, which differs from the zero rate of the
+        same maturity whenever the curve is not flat.
         Weekly and monthly periods take the yields on the last trading day of each period
         (weeks end on Friday).
 
@@ -2395,6 +2631,12 @@ class FixedIncome:
         FinancialModelingPrep, and without one, or when the key's plan does not include them,
         from the U.S. Department of the Treasury directly, which gives the same figures.
 
+        These are par yields: the coupons at which a new Treasury of each maturity would price at
+        par, interpolated by the Treasury from the most recently auctioned securities. Discounting
+        individual cash flows needs zero-coupon (spot) rates bootstrapped from them; on a steep
+        curve the two differ by several basis points at long maturities. The 10-year minus 2-year
+        and 10-year minus 3-month spreads from this curve are the most watched recession indicators.
+
         Also known as: the Treasury yield curve, the risk-free curve.
 
         Args:
@@ -2504,8 +2746,8 @@ class FixedIncome:
         of all bonds in a given maturity and rating category and a spot Treasury curve. An OAS index is constructed
         using each constituent bond's OAS, weighted by market capitalization.
 
-        The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually measured in
-        basis points (bp), that equates the theoretical present value of a series of uncertain cash flows to the
+        The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually quoted in
+        basis points, that equates the theoretical present value of a series of uncertain cash flows to the
         market price of a fixed-income investment. The spread is added to the risk-free rate to compensate for the
         uncertainty of the cash flows.
 
@@ -2516,19 +2758,20 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity option adjusted spread or the rating option adjusted spread.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Option Adjusted Spread, in basis points. The FRED
-            series are published in percent and are multiplied by 100 here, so a 0.77% spread is
-            returned as 77.
+            pd.DataFrame: A DataFrame containing the Option Adjusted Spread as decimal fractions, like
+            every other rate. The FRED series are published in percent and are divided by 100 here, so
+            a 0.77% (77 basis point) spread is returned as 0.0077.
 
         As an example:
 
@@ -2547,17 +2790,17 @@ class FixedIncome:
 
         | Date       |   1-3 Years |   3-5 Years |   5-7 Years |   7-10 Years |   10-15 Years |   15+ Years |
         |:-----------|------------:|------------:|------------:|-------------:|--------------:|------------:|
-        | 2024-01-01 |         nan |         nan |         nan |          nan |           nan |         nan |
-        | 2024-01-02 |          78 |          95 |         109 |          128 |           133 |         119 |
-        | 2024-01-03 |          80 |          98 |         113 |          133 |           136 |         122 |
-        | 2024-01-04 |          80 |          98 |         112 |          133 |           135 |         122 |
-        | 2024-01-05 |          80 |          98 |         112 |          132 |           134 |         121 |
-        | 2024-01-08 |          79 |          98 |         112 |          132 |           134 |         120 |
-        | 2024-01-09 |          78 |          96 |         110 |          130 |           131 |         117 |
-        | 2024-01-10 |          77 |          94 |         108 |          128 |           128 |         113 |
-        | 2024-01-11 |          75 |          94 |         107 |          128 |           127 |         113 |
-        | 2024-01-12 |          74 |          94 |         107 |          128 |           126 |         112 |
-        | 2024-01-15 |          74 |          94 |         107 |          128 |           125 |         111 |
+        | 2024-01-01 |    nan      |    nan      |    nan      |     nan      |      nan      |    nan      |
+        | 2024-01-02 |      0.0078 |      0.0095 |      0.0109 |       0.0128 |        0.0133 |      0.0119 |
+        | 2024-01-03 |      0.008  |      0.0098 |      0.0113 |       0.0133 |        0.0136 |      0.0122 |
+        | 2024-01-04 |      0.008  |      0.0098 |      0.0112 |       0.0133 |        0.0135 |      0.0122 |
+        | 2024-01-05 |      0.008  |      0.0098 |      0.0112 |       0.0132 |        0.0134 |      0.0121 |
+        | 2024-01-08 |      0.0079 |      0.0098 |      0.0112 |       0.0132 |        0.0134 |      0.012  |
+        | 2024-01-09 |      0.0078 |      0.0096 |      0.011  |       0.013  |        0.0131 |      0.0117 |
+        | 2024-01-10 |      0.0077 |      0.0094 |      0.0108 |       0.0128 |        0.0128 |      0.0113 |
+        | 2024-01-11 |      0.0075 |      0.0094 |      0.0107 |       0.0128 |        0.0127 |      0.0113 |
+        | 2024-01-12 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0126 |      0.0112 |
+        | 2024-01-15 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0125 |      0.0111 |
         """
         self._require_fred_api_key()
 
@@ -2594,9 +2837,7 @@ class FixedIncome:
         takes place on the weekend, weekend observations will occur as a result of month ending accrued interest adjustments.
 
         The effective yield of an ICE BofA index is the yield of the index as a whole, aggregated from the
-        yields of its constituent bonds and weighted by their market capitalisation, on the same
-        compounded (effective annual) basis that the accompanying Semi-Annual Yield to Worst series is
-        quoted on a semi-annual basis. It is an index-level yield of the corporate bond market segment,
+        yields of its constituent bonds and weighted by their market capitalisation. It is an index-level yield of the corporate bond market segment,
         not a statistic derived from any single bond's coupon — for the single-bond coupon-reinvestment
         calculation, see the "Effective Yield" row of `collect_bond_statistics` instead.
 
@@ -2612,14 +2853,15 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity effective yield or the rating effective yield.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ICE BofA Effective Yield
@@ -2697,14 +2939,15 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity total return or the rating total return.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ICE BofA Total Return, as an index level rather
@@ -2784,14 +3027,15 @@ class FixedIncome:
 
         Args:
             maturity (bool, optional): Whether to return the maturity yield to worst or the rating yield to worst.
+                Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
         Notes:
-            ICE restricted the history it licenses to FRED in April 2026: every ICE BofA series now
-            carries only the most recent three years of observations. A start_date earlier than that
-            silently returns fewer rows rather than an error, and the example below will fall out of
-            range in time. Go to the ICE source directly for longer histories.
+            ICE licenses only the most recent three years of every ICE BofA series to FRED. A
+            start_date earlier than that returns fewer rows rather than an error, and the example
+            below falls out of that window over time. Go to the ICE source directly for longer
+            histories.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ICE BofA Yield to Worst. The FRED series are
@@ -2955,6 +3199,11 @@ class FixedIncome:
         Unlike the ICE BofA option-adjusted spreads (see `get_ice_bofa_option_adjusted_spread`),
         of which FRED only carries the last three years, this spread covers four decades, long
         enough to calibrate how credit spreads behave through several business cycles.
+
+        The formula is as follows:
+
+        - HQM Spread (maturity) = HQM Corporate Par Yield (maturity) - Treasury Constant Maturity Yield (maturity),
+          both monthly averages, for 2, 5, 10 and 30 years
 
         The data comes from FRED, so a free FRED API key is required. The spreads are returned
         as decimal fractions (0.0079 for 0.79 percentage points).
@@ -3234,6 +3483,17 @@ class FixedIncome:
         default within the period and is the measure to calibrate default rates on. With include_withdrawals=True they are a separate "Withdrawals" column, and
         with probabilities=False the counts are returned instead.
 
+        The formula is as follows (probabilities=True, the default):
+
+        - Transition Probability (from, to) = Count (from, to) / SUM(Count (from, every end category)), with
+          the end categories the ratings and default, plus "Withdrawals" only when include_withdrawals=True
+
+        A single year's matrix rests on few observations in the top and bottom rows: an AAA
+        row with few issuers is often 100% stable one year and shows a downgrade the next.
+        Credit models therefore use the average over many years, or a longer horizon, and
+        check how far the latest year deviates from it, which also shows where in the credit
+        cycle the year stands.
+
         See definition: https://registers.esma.europa.eu/cerep-publication/
 
         Also known as: rating migration matrix, credit migration matrix, transition
@@ -3357,6 +3617,12 @@ class FixedIncome:
         a few minutes the first time; each year is cached afterwards. The years before an
         agency reported to CEREP read as zero defaults and are left out, so the history
         starts at the first year with a default.
+
+        Default rates rise steeply down the rating scale, from close to zero for investment
+        grade to tens of percent a year for CCC, and because they cluster in recessions a
+        probability of default calibrated on calm years understates the risk. Practitioners
+        average over a full cycle, often decades, for through-the-cycle estimates and use the
+        worst years for stress scenarios. Rates for the top ratings rest on very few defaults.
 
         See definition: https://registers.esma.europa.eu/cerep-publication/
 
@@ -3490,6 +3756,14 @@ class FixedIncome:
 
         Monthly values are the averages over the month, as Moody's publishes them; weekly
         values are the yields on the last day of each week (weeks end on Friday).
+
+        The formula is as follows (spread=True only):
+
+        - Aaa = Aaa Yield - 10-Year Treasury Yield, and Baa likewise
+        - Baa - Aaa = Baa Yield - Aaa Yield
+
+        Monthly spreads subtract the monthly average 10-year Treasury constant maturity yield; daily
+        spreads are the ones FRED publishes against the daily 10-year yield.
 
         The data comes from FRED, so a free FRED API key is required. The yields and spreads
         are returned as decimal fractions (0.0675 for 6.75%).
@@ -3677,6 +3951,13 @@ class FixedIncome:
         separate file, so only the months between the start and end date are downloaded, and
         a release is cached for a year since it does not change.
 
+        Up to the last liquid point the curve follows market rates (for the euro, swap rates
+        minus a credit risk adjustment); beyond it the curve is extrapolated towards the
+        ultimate forward rate, so long maturities reflect the regulatory assumption more than
+        market prices. Insurers that are allowed to apply the volatility adjustment discount
+        with that curve, and the shocked curves give the interest rate risk capital
+        requirement of the standard formula.
+
         See definition: https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en
 
         Also known as: Solvency II discount curve, EIOPA RFR, risk-free rate term structure,
@@ -3695,7 +3976,7 @@ class FixedIncome:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             maturity_years (list[int] | None, optional): The maturities in years to keep, e.g.
-                [1, 2, 5, 10, 20, 30] for the key points of the curve. Defaults to None, which
+                [1, 2, 5, 10, 20, 30] (or "1,2,5,10,20,30") for the key points of the curve. Defaults to None, which
                 keeps every maturity from 1 to 150 years.
 
         Returns:
@@ -3716,11 +3997,10 @@ class FixedIncome:
 
         Which returns:
 
-        |         |   ('Euro Area', '1Y') |   ('United Kingdom', '1Y') |   ('Euro Area', '10Y') |   ('United Kingdom', '10Y') |   ('Euro Area', '30Y') |
-        |:--------|----------------------:|---------------------------:|-----------------------:|----------------------------:|-----------------------:|
-        | 2026-07 |                0.0283 |                     0.0415 |                 0.0316 |                      0.0468 |                 0.0337 |
-        | 2026-08 |                0.0292 |                     0.0418 |                 0.0327 |                      0.0473 |                 0.0345 |
-        | 2026-09 |                0.0327 |                     0.0445 |                 0.0358 |                      0.0501 |                 0.0351 |
+        |         |   ('Euro Area', '1Y') |   ('United Kingdom', '1Y') |   ('Euro Area', '10Y') |   ('United Kingdom', '10Y') |   ('Euro Area', '30Y') |   ('United Kingdom', '30Y') |   ('Euro Area', '60Y') |   ('United Kingdom', '60Y') |   ('Euro Area', '150Y') |   ('United Kingdom', '150Y') |
+        |:--------|----------------------:|---------------------------:|-----------------------:|----------------------------:|-----------------------:|----------------------------:|-----------------------:|----------------------------:|------------------------:|-----------------------------:|
+        | 2026-07 |                0.0283 |                     0.0415 |                 0.0316 |                      0.0468 |                 0.0337 |                      0.0518 |                 0.0335 |                      0.0443 |                  0.0332 |                       0.0375 |
+        | 2026-09 |                0.0327 |                     0.0445 |                 0.0358 |                      0.0501 |                 0.0351 |                      0.0533 |                 0.0342 |                      0.0447 |                  0.0335 |                       0.0376 |
         """
         if curve not in {**eiopa_model.CURVES, **eiopa_model.SHOCKED_CURVES}:
             raise ValueError(
@@ -3751,6 +4031,12 @@ class FixedIncome:
                 :, term_structures.columns.get_level_values(0).isin(requested)
             ]
 
+        if isinstance(maturity_years, str):
+            maturity_years = [
+                int(float(maturity))
+                for maturity in maturity_years.split(",")
+                if maturity.strip()
+            ]
         if maturity_years is not None:
             # 150 maturities per country and month are rarely all needed.
             term_structures = term_structures.loc[
@@ -3793,8 +4079,10 @@ class FixedIncome:
         get_eiopa_risk_free_rate it completes the market inputs of the standard formula's
         market risk module.
 
-        The "Type 1 Equity Charge" (equities listed in the EEA or OECD) is 39% plus the
-        adjustment and the "Type 2 Equity Charge" (other equities) 49% plus the adjustment.
+        The formula is as follows:
+
+        - Type 1 Equity Charge = 0.39 + Symmetric Adjustment, for equities listed in the EEA or OECD
+        - Type 2 Equity Charge = 0.49 + Symmetric Adjustment, for other equities
         Every value is a decimal fraction (0.0771 for 7.71%). No API key is needed. Weekly
         and monthly periods take the value on the last day of each period, which is the
         value insurers apply at that reporting date.
@@ -4113,7 +4401,7 @@ class FixedIncome:
         | 2026-06 |      0.0098 |          0.0095 |           0.0072 |  0.0308 |
         | 2026-07 |      0.0129 |          0.0493 |           0.0075 |  0.0209 |
         | 2026-08 |      0.0205 |          0.0194 |           0.0011 |  0.0072 |
-        | 2026-09 |      0.0132 |          0.0092 |           0.0122 |  0.0015 |
+        | 2026-09 |      0.0133 |          0.0091 |           0.0122 |  0.0015 |
         """
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "financial stress index"
@@ -4152,22 +4440,23 @@ class FixedIncome:
     ):
         """
         Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
-        of European banks lend funds to one another in the interbank market. These rates are published
+        of European banks lend funds to one another in the interbank market. These rates are fixed
         daily by the European Money Markets Institute (EMMI) and serve as a benchmark for various
         financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
 
-        The Euribor rates are determined for different maturities, typically ranging from overnight to 12 months.
-        The most common maturities are 1 month, 3 months, 6 months, and 12 months. Each maturity represents
-        the time period for which the funds are borrowed, with longer maturities generally implying higher
-        interest rates due to increased uncertainty and risk over longer time horizons.
+        Euribor is fixed for maturities of one week to 12 months; this method returns the 1, 3, 6 and 12-month
+        rates as monthly averages of the daily fixings, from the European Central Bank, as decimals. Longer
+        maturities carry a term premium but also reflect where markets expect short rates to go, so the curve
+        inverts when cuts are expected.
 
         For more information, see for example: https://data.ecb.europa.eu/data/datasets/FM/FM.M.U2.EUR.RT.MM.EURIBOR6MD_.HSTA
 
         Also known as: euro interbank offered rate, eurozone money market.
 
         Args:
-            maturities (str | list | None, optional): Maturities for which to retrieve rates. Defaults to None.
-                When set to None, it will retrieve rates for 1 month, 3 months, 6 months, and 12 months.
+            maturities (str | list | None, optional): The maturities to retrieve, from "1M", "3M", "6M" and "1Y",
+                as a list or a comma-separated string ("1M,3M").
+                Defaults to None, which retrieves all four.
             nominal (bool, optional): Whether to retrieve the nominal Euribor fixings or their real
                 (inflation-adjusted) counterpart. The ECB only publishes a real Euribor for the 3-month
                 maturity, so nominal=False returns that maturity alone and warns about any others that
@@ -4219,7 +4508,11 @@ class FixedIncome:
         | 2025-12 |    0.0192 |    0.0205 |    0.0214 |     0.0227 |
         """
         if isinstance(maturities, str):
-            maturities = [maturities]
+            maturities = [
+                maturity.strip()
+                for maturity in maturities.split(",")
+                if maturity.strip()
+            ]
 
         maturity_names = {
             "1M": "1-Month",
@@ -4298,6 +4591,12 @@ class FixedIncome:
         The deposit facility rate is one of the three interest rates the ECB sets every
         six weeks as part of its monetary policy. The rate defines the interest banks
         receive for depositing money with the central bank overnight.
+
+        With ample excess liquidity in the banking system the deposit facility rate is the
+        rate that steers money markets: the euro short-term rate (€STR) trades just below it.
+        The marginal lending rate forms the top of the corridor and the deposit facility rate
+        the bottom, with the main refinancing rate in between; the main refinancing rate
+        matters more when banks rely on the ECB's weekly operations for funding.
 
         See source: https://data.ecb.europa.eu/main-figures/
 
@@ -4412,6 +4711,12 @@ class FixedIncome:
 
         The New York Fed publishes the rates for the prior business day on the New
         York Fed's website between 8:00 and 9:00 a.m.
+
+        SOFR is the US dollar reference rate that replaced dollar LIBOR in loans and derivatives.
+        Being secured by Treasuries, it usually trades a few basis points from the effective federal
+        funds rate but jumps at month and quarter ends and when reserves get scarce, so the spread
+        between its 1st and 99th percentiles, or between SOFR and the EFFR, is watched as a sign of
+        strain in the repo market.
 
         See source: https://www.newyorkfed.org/markets/reference-rates/
 

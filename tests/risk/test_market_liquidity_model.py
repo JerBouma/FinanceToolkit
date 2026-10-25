@@ -114,3 +114,18 @@ def test_get_roll_spread_invalid_type():
         raise AssertionError("Expected TypeError")
     except TypeError:
         pass
+
+
+def test_get_roll_spread_relative_spread_is_a_decimal():
+    rng = np.random.default_rng(0)
+    efficient_price = 100 + np.cumsum(rng.normal(0, 0.05, 3000))
+    bounce = rng.choice([-0.25, 0.25], size=3000)
+    prices = pd.Series(efficient_price + bounce)
+
+    result = market_liquidity_model.get_roll_spread(prices)
+
+    assert "Roll Spread (%)" not in result.index
+    assert np.isclose(
+        result["Relative Roll Spread"], result["Roll Spread"] / prices.mean()
+    )
+    assert result["Relative Roll Spread"] < 0.01

@@ -715,11 +715,20 @@ def test_get_fixed_effects_both_regressor_args(econometrics_module):
 
 
 def test_get_random_effects(recorder, econometrics_module):
+    # The Benchmark is a third entity next to AAPL and MSFT, which Random Effects needs.
     recorder.capture(
         econometrics_module.get_random_effects(
-            independent_column="Volume", period="weekly"
+            independent_column="Volume", period="weekly", include_benchmark=True
         )
     )
+
+
+def test_get_random_effects_excludes_the_benchmark_by_default(econometrics_module):
+    # Without the Benchmark only AAPL and MSFT remain, too few entities to fit.
+    result = econometrics_module.get_random_effects(
+        independent_column="Volume", period="weekly"
+    )
+    assert result.empty
 
 
 def test_get_random_effects_not_enough_entities(econometrics_module):
@@ -733,11 +742,20 @@ def test_get_random_effects_not_enough_entities(econometrics_module):
 
 
 def test_get_hausman_test(recorder, econometrics_module):
+    # The Benchmark is a third entity next to AAPL and MSFT, which Random Effects needs.
     recorder.capture(
         econometrics_module.get_hausman_test(
-            independent_column="Volume", period="weekly"
+            independent_column="Volume", period="weekly", include_benchmark=True
         )
     )
+
+
+def test_get_hausman_test_excludes_the_benchmark_by_default(econometrics_module):
+    # Without the Benchmark only AAPL and MSFT remain, too few entities to fit.
+    result = econometrics_module.get_hausman_test(
+        independent_column="Volume", period="weekly"
+    )
+    assert result.empty
 
 
 def test_get_hausman_test_not_enough_entities(econometrics_module):
@@ -767,3 +785,164 @@ def test_get_fixed_effects_names_a_factor_that_is_not_loaded(
     monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
     with pytest.raises(ValueError, match="SPY are not among the loaded tickers"):
         econometrics_module.get_fixed_effects(independent_tickers="SPY")
+
+
+def test_pair_tables_are_rounded(econometrics_module):
+    # Each pair's row mixes numbers and a boolean, which left object columns that the
+    # rounding skipped.
+    for result in (
+        econometrics_module.get_engle_granger_cointegration(period="quarterly"),
+        econometrics_module.get_granger_causality(period="weekly", max_lag=3),
+        econometrics_module.get_two_sample_t_test(period="weekly"),
+    ):
+        numeric = result.select_dtypes("number")
+
+        assert not numeric.empty
+        assert (numeric.round(4) == numeric).all().all()
+
+
+def test_per_ticker_statistics_ignore_a_younger_ticker(econometrics_module):
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    # MSFT only starts halfway through the sample: AAPL's per-ticker statistics, and
+    # the AAPL/Benchmark pair statistics, must not lose the dates MSFT is missing.
+    historical_data = {}
+    for period, original_frame in econometrics_module._historical_data.items():
+        frame = original_frame.copy()
+        if not frame.empty:
+            msft_columns = [column for column in frame.columns if column[1] == "MSFT"]
+            frame.iloc[: len(frame) // 2, frame.columns.get_indexer(msft_columns)] = (
+                np.nan
+            )
+        historical_data[period] = frame
+
+    younger = Econometrics(
+        tickers=econometrics_module._tickers,
+        historical_data=historical_data,
+        rounding=econometrics_module._rounding,
+    )
+
+    for method, kwargs in [
+        ("get_augmented_dickey_fuller", {"period": "weekly"}),
+        ("get_kpss_test", {"period": "weekly"}),
+        ("get_phillips_perron_test", {"period": "weekly"}),
+        ("get_zivot_andrews_test", {"period": "monthly"}),
+        ("get_arch_lm_test", {}),
+        ("get_jarque_bera_test", {}),
+        ("get_ljung_box_test", {}),
+        ("get_variance_ratio_test", {}),
+        ("get_cusum_test", {}),
+        ("get_diebold_mariano_test", {}),
+    ]:
+        original = getattr(econometrics_module, method)(rounding=None, **kwargs)
+        result = getattr(younger, method)(rounding=None, **kwargs)
+        pd.testing.assert_series_equal(
+            result["AAPL"], original["AAPL"], obj=method, check_like=True
+        )
+        assert not result["MSFT"].equals(original["MSFT"]), method
+
+    for method in ("get_two_sample_t_test", "get_rmse", "get_mae"):
+        original = getattr(econometrics_module, method)(
+            include_benchmark=True, rounding=None
+        )
+        result = getattr(younger, method)(include_benchmark=True, rounding=None)
+        pd.testing.assert_series_equal(
+            pd.Series(result.loc[("AAPL", "Benchmark")]),
+            pd.Series(original.loc[("AAPL", "Benchmark")]),
+            obj=method,
+        )
+
+    # The two independent samples keep their own lengths: AAPL's mean is its full mean.
+    t_test = younger.get_two_sample_t_test(rounding=None).loc[("AAPL", "MSFT")]
+    returns = econometrics_module._historical_data["daily"]["Return"]
+    assert np.isclose(t_test["Mean A"], returns["AAPL"].dropna().mean(), atol=1e-4)
+    assert np.isclose(
+        t_test["Mean B"],
+        historical_data["daily"]["Return"]["MSFT"].dropna().mean(),
+        atol=1e-4,
+    )
+
+
+def test_get_difference_in_differences_default_controls_exclude_benchmark(
+    econometrics_module,
+):
+    default = econometrics_module.get_difference_in_differences(
+        treated_tickers="AAPL", treatment_date="2021-06-30", period="weekly"
+    )
+    explicit = econometrics_module.get_difference_in_differences(
+        treated_tickers="AAPL",
+        treatment_date="2021-06-30",
+        control_tickers="MSFT",
+        period="weekly",
+    )
+    pd.testing.assert_frame_equal(default, explicit)
+
+
+def _econometrics_with_msft(econometrics_module, rows):
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    # `rows` is the slice of each period's history where MSFT has no data; None
+    # removes MSFT from the Toolkit altogether.
+    historical_data = {}
+    for period, original_frame in econometrics_module._historical_data.items():
+        frame = original_frame.copy()
+        msft_columns = [column for column in frame.columns if column[1] == "MSFT"]
+        if rows is None:
+            frame = frame.drop(columns=msft_columns)
+        elif not frame.empty:
+            frame[msft_columns] = frame[msft_columns].astype(float)
+            frame.iloc[rows, frame.columns.get_indexer(msft_columns)] = np.nan
+        historical_data[period] = frame
+
+    return Econometrics(
+        tickers=[
+            ticker
+            for ticker in econometrics_module._tickers
+            if rows is not None or ticker != "MSFT"
+        ],
+        historical_data=historical_data,
+        rounding=econometrics_module._rounding,
+    )
+
+
+def test_models_ignore_tickers_they_do_not_use(econometrics_module):
+    # MSFT misses its first 300 days ("young") or all of its data ("empty"): AAPL's
+    # ARIMA forecast, the Benchmark/AAPL Engle-Granger test and the AAPL~Benchmark
+    # regression do not use MSFT, so they equal the results without MSFT.
+    without_msft = _econometrics_with_msft(econometrics_module, None)
+
+    def results(econometrics):
+        return (
+            econometrics.get_arima_forecast(rounding=None)["AAPL"],
+            econometrics.get_engle_granger_cointegration(
+                include_benchmark=True, rounding=None
+            ).loc[("Benchmark", "AAPL")],
+            econometrics.get_ols(
+                dependent_ticker="AAPL",
+                independent_tickers="Benchmark",
+                rounding=None,
+            ),
+        )
+
+    expected = results(without_msft)
+    assert not expected[0].empty and not expected[2].empty
+
+    for rows in (slice(0, 300), slice(None)):
+        arima, engle_granger, ols = results(
+            _econometrics_with_msft(econometrics_module, rows)
+        )
+        pd.testing.assert_series_equal(arima, expected[0])
+        pd.testing.assert_series_equal(engle_granger, expected[1])
+        pd.testing.assert_frame_equal(ols, expected[2])
+
+
+def test_get_difference_in_differences_without_control_data(
+    econometrics_module, monkeypatch
+):
+    empty = _econometrics_with_msft(econometrics_module, slice(None))
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+
+    with pytest.raises(ValueError, match="no control observations"):
+        empty.get_difference_in_differences(
+            treated_tickers="AAPL", treatment_date="2021-06-30", period="weekly"
+        )

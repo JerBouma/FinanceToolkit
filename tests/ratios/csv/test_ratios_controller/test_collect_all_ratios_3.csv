@@ -1,179 +1,179 @@
 ,,2020,2021,2022,2023
-AAPL,Days of Inventory Outstanding,,9.1181,9.4097,9.6109
-AAPL,Days of Sales Outstanding,,21.1517,25.2057,27.4699
-AAPL,Operating Cycle,,30.2698,34.6154,37.0808
-AAPL,Days of Accounts Payable Outstanding,,83.1683,97.0504,108.0033
-AAPL,Cash Conversion Cycle,,-52.8985,-62.435,-70.9225
-AAPL,Cash Conversion Efficiency,0.2939,0.2844,0.3098,0.2884
-AAPL,Receivables Turnover,,17.2563,14.4808,13.2873
-AAPL,Inventory Turnover Ratio,,40.0303,38.7899,37.9777
-AAPL,Accounts Payable Turnover Ratio,,4.3887,3.7609,3.3795
-AAPL,SGA-to-Revenue Ratio,0.0725,0.0601,0.0636,0.065
-AAPL,Fixed Asset Turnover,,1.846,1.8192,1.7979
-AAPL,Asset Turnover Ratio,,1.0841,1.1206,1.0868
-AAPL,Operating Ratio,0.7588,0.702,0.6977,0.7018
-AAPL,R&D Intensity Ratio,0.0683,0.0599,0.0666,0.078
-AAPL,S&M to Revenue Ratio,0.0,0.0,0.0,0.0
-AAPL,G&A to Revenue Ratio,0.0,0.0,0.0,0.0
-AAPL,SBC to Revenue Ratio,0.0249,0.0216,0.0229,0.0283
-AAPL,Deferred Revenue Ratio,0.0242,0.0208,0.0201,0.021
-AAPL,Working Capital Turnover Ratio,,15.346,-85.519,-37.7268
-MSFT,Days of Inventory Outstanding,,15.8314,18.5792,17.296
-MSFT,Days of Sales Outstanding,,76.0605,75.7577,80.0472
-MSFT,Operating Cycle,,91.8919,94.3369,97.3431
-MSFT,Days of Accounts Payable Outstanding,,96.7601,99.5171,102.7867
-MSFT,Cash Conversion Cycle,,-4.8682,-5.1802,-5.4435
-MSFT,Cash Conversion Efficiency,0.4243,0.4565,0.4491,0.4133
-MSFT,Receivables Turnover,,4.7988,4.818,4.5598
-MSFT,Inventory Turnover Ratio,,23.0554,19.6457,21.1032
-MSFT,Accounts Payable Turnover Ratio,,3.7722,3.6677,3.551
-MSFT,SGA-to-Revenue Ratio,0.1728,0.1501,0.1398,0.1431
-MSFT,Fixed Asset Turnover,,1.2508,1.151,1.0023
-MSFT,Asset Turnover Ratio,,0.5293,0.5676,0.5456
-MSFT,Operating Ratio,0.6297,0.5841,0.5794,0.5823
-MSFT,R&D Intensity Ratio,0.1347,0.1232,0.1236,0.1283
-MSFT,S&M to Revenue Ratio,0.137,0.1197,0.1101,0.1074
-MSFT,G&A to Revenue Ratio,0.0357,0.0304,0.0298,0.0357
-MSFT,SBC to Revenue Ratio,0.037,0.0364,0.0378,0.0454
-MSFT,Deferred Revenue Ratio,0.2517,0.247,0.2297,0.2402
-MSFT,Working Capital Turnover Ratio,,1.6371,2.3278,2.7395
-AAPL,Current Ratio,1.3636,1.0746,0.8794,0.988
-AAPL,Quick Ratio,1.0159,0.7086,0.4967,0.6267
-AAPL,Cash Ratio,0.8629,0.4992,0.3137,0.4236
-AAPL,Working Capital,38321000000.0,9355000000.0,-18577000000.0,-1742000000.0
-AAPL,Operating Cash Flow Ratio,0.7655,0.8291,0.7933,0.7607
-AAPL,Operating Cash Flow to Sales Ratio,0.2939,0.2844,0.3098,0.2884
-AAPL,Short Term Coverage Ratio,5.8591,6.6635,5.7864,6.9933
-AAPL,Defensive Interval Ratio,1410.8089,997.2868,689.8643,767.1251
-MSFT,Current Ratio,2.5158,2.08,1.7846,1.7692
-MSFT,Quick Ratio,2.3308,1.8983,1.5672,1.5357
-MSFT,Cash Ratio,1.8881,1.4692,1.1017,1.0682
-MSFT,Working Capital,109605000000.0,95749000000.0,74602000000.0,80108000000.0
-MSFT,Operating Cash Flow Ratio,0.8391,0.8656,0.9364,0.8409
-MSFT,Operating Cash Flow to Sales Ratio,0.4243,0.4565,0.4491,0.4133
-MSFT,Short Term Coverage Ratio,16.1843,9.5069,32.3881,16.6918
-MSFT,Defensive Interval Ratio,1972.8167,1793.3419,1439.7292,1336.8957
-AAPL,Gross Margin,0.3823,0.4178,0.4331,0.4413
-AAPL,Operating Margin,0.2415,0.2978,0.3029,0.2982
-AAPL,Net Profit Margin,0.2091,0.2588,0.2531,0.2531
-AAPL,EBITDA Margin,0.2817,0.3287,0.331,0.3283
-AAPL,Free Cash Flow Margin,0.2673,0.2541,0.2826,0.2598
-AAPL,Interest Coverage Ratio,26.921,45.4567,44.538,31.9908
-AAPL,Income Before Tax Profit Margin,0.2444,0.2985,0.302,0.2967
-AAPL,Effective Tax Rate,0.1443,0.133,0.162,0.1472
-AAPL,Return on Assets,,0.2806,0.2836,0.275
-AAPL,Cash Return on Assets,,0.3083,0.3471,0.3134
-AAPL,Return on Equity,,1.4744,1.7546,1.7195
-AAPL,Return on Invested Capital,,0.4143,0.4439,0.46
-AAPL,Return on Capital Employed,0.3202,0.496,0.6139,0.5677
-AAPL,Return on Tangible Assets,,1.4744,1.7546,1.7195
-AAPL,Income Quality Ratio,1.4052,1.0988,1.2239,1.1397
-AAPL,Net Income per EBT,0.8557,0.867,0.838,0.8528
-AAPL,Free Cash Flow to Operating Cash Flow Ratio,0.9094,0.8935,0.9123,0.9009
-AAPL,EBT to EBIT Ratio,0.9589,0.9764,0.976,0.9666
-AAPL,EBIT to Revenue,0.2549,0.3058,0.3095,0.307
-AAPL,Cash Tax Rate,0.1416,0.2324,0.1643,0.1642
-AAPL,Tax Rate Divergence,-0.0027,0.0994,0.0023,0.017
-MSFT,Gross Margin,0.6778,0.6893,0.684,0.6892
-MSFT,Operating Margin,0.3703,0.4159,0.4206,0.4177
-MSFT,Net Profit Margin,0.3096,0.3645,0.3669,0.3415
-MSFT,EBITDA Margin,0.4598,0.4855,0.4935,0.4831
-MSFT,Free Cash Flow Margin,0.3163,0.3339,0.3286,0.2807
-MSFT,Interest Coverage Ratio,25.3782,34.7835,47.4275,52.0244
-MSFT,Income Before Tax Profit Margin,0.3708,0.423,0.4222,0.4214
-MSFT,Effective Tax Rate,0.1651,0.1383,0.1311,0.1898
-MSFT,Return on Assets,,0.193,0.2082,0.1863
-MSFT,Cash Return on Assets,,0.2417,0.2549,0.2255
-MSFT,Return on Equity,,0.4708,0.4715,0.3882
-MSFT,Return on Invested Capital,,0.2243,0.2496,0.2128
-MSFT,Return on Capital Employed,0.2429,0.2996,0.318,0.2965
-MSFT,Return on Tangible Assets,,0.4992,0.5026,0.411
-MSFT,Income Quality Ratio,1.3702,1.2525,1.2241,1.2103
-MSFT,Net Income per EBT,0.8349,0.8617,0.8689,0.8102
-MSFT,Free Cash Flow to Operating Cash Flow Ratio,0.7455,0.7313,0.7317,0.6791
-MSFT,EBT to EBIT Ratio,0.9534,0.9681,0.9759,0.9784
-MSFT,EBIT to Revenue,0.389,0.437,0.4326,0.4307
-MSFT,Cash Tax Rate,0.0,0.0,0.0,0.0
-MSFT,Tax Rate Divergence,-0.1651,-0.1383,-0.1311,-0.1898
-AAPL,Debt-to-Assets Ratio,0.3775,0.3889,0.3756,0.3151
-AAPL,Asset Coverage Ratio,1.8995,1.7663,1.6597,2.0082
-AAPL,Debt-to-Equity Ratio,1.8714,2.1639,2.6145,1.7875
-AAPL,Debt Service Coverage Ratio,0.629,0.8683,0.7757,0.7866
+AAPL,Days of Inventory Outstanding,,10.1531,9.6374,9.4043
+AAPL,Days of Sales Outstanding,,24.1676,26.1511,27.0798
+AAPL,Operating Cycle,,34.3207,35.7885,36.4841
+AAPL,Days of Accounts Payable Outstanding,,92.6087,99.3993,105.6815
+AAPL,Cash Conversion Cycle,,-58.288,-63.6108,-69.1974
+AAPL,Cash Conversion Efficiency,,0.2885,0.2976,0.2992
+AAPL,Receivables Turnover,,30.2058,27.9147,26.9574
+AAPL,Inventory Turnover Ratio,,71.8993,75.7465,77.624
+AAPL,Accounts Payable Turnover Ratio,,7.8826,7.3441,6.9075
+AAPL,SGA-to-Revenue Ratio,,0.0654,0.0619,0.0643
+AAPL,Fixed Asset Turnover,,13.5001,14.8959,14.5471
+AAPL,Asset Turnover Ratio,,1.8976,2.1602,2.2049
+AAPL,Operating Ratio,,0.7264,0.6998,0.6997
+AAPL,R&D Intensity Ratio,,0.0635,0.0634,0.0722
+AAPL,S&M to Revenue Ratio,,0.0,0.0,0.0
+AAPL,G&A to Revenue Ratio,,0.0,0.0,0.0
+AAPL,SBC to Revenue Ratio,,0.023,0.0223,0.0256
+AAPL,Deferred Revenue Ratio,,0.0111,0.0102,0.0103
+AAPL,Working Capital Turnover Ratio,,26.8618,-164.8547,-76.5405
+MSFT,Days of Inventory Outstanding,,16.8224,20.264,17.7284
+MSFT,Days of Sales Outstanding,,82.1905,81.9989,82.71
+MSFT,Operating Cycle,,99.0129,102.2629,100.4384
+MSFT,Days of Accounts Payable Outstanding,,102.8171,108.5418,105.3565
+MSFT,Cash Conversion Cycle,,-3.8041,-6.2788,-4.9181
+MSFT,Cash Conversion Efficiency,,0.4417,0.4525,0.4306
+MSFT,Receivables Turnover,,8.8818,8.9026,8.826
+MSFT,Inventory Turnover Ratio,,43.3944,36.0245,41.1769
+MSFT,Accounts Payable Turnover Ratio,,7.1,6.7255,6.9289
+MSFT,SGA-to-Revenue Ratio,,0.1605,0.1445,0.1415
+MSFT,Fixed Asset Turnover,,5.0297,4.6272,4.1531
+MSFT,Asset Turnover Ratio,,0.9797,1.0488,1.0561
+MSFT,Operating Ratio,,0.605,0.5816,0.5809
+MSFT,R&D Intensity Ratio,,0.1285,0.1235,0.1261
+MSFT,S&M to Revenue Ratio,,0.1277,0.1145,0.1087
+MSFT,G&A to Revenue Ratio,,0.0328,0.03,0.0329
+MSFT,SBC to Revenue Ratio,,0.0367,0.0372,0.0417
+MSFT,Deferred Revenue Ratio,,0.1246,0.1188,0.1176
+MSFT,Working Capital Turnover Ratio,,3.0299,4.3012,5.3026
+AAPL,Current Ratio,,1.2065,0.967,0.9321
+AAPL,Quick Ratio,,0.8489,0.5919,0.5598
+AAPL,Cash Ratio,,0.6652,0.397,0.3671
+AAPL,Working Capital,,23838000000.0,-4611000000.0,-10159500000.0
+AAPL,Operating Cash Flow Ratio,,1.6001,1.6187,1.555
+AAPL,Operating Cash Flow to Sales Ratio,,0.2885,0.2976,0.2992
+AAPL,Short Term Coverage Ratio,,12.5731,12.3187,12.6063
+AAPL,Defensive Interval Ratio,,161.5529,118.4852,117.2741
+MSFT,Current Ratio,,2.2758,1.9271,1.7765
+MSFT,Quick Ratio,,2.0926,1.727,1.5507
+MSFT,Cash Ratio,,1.6574,1.279,1.0842
+MSFT,Working Capital,,102677000000.0,85175500000.0,77355000000.0
+MSFT,Operating Cash Flow Ratio,,1.7074,1.8045,1.773
+MSFT,Operating Cash Flow to Sales Ratio,,0.4417,0.4525,0.4306
+MSFT,Short Term Coverage Ratio,,23.2493,30.6395,44.1763
+MSFT,Defensive Interval Ratio,,750.8306,619.6347,537.0989
+AAPL,Gross Margin,,0.4026,0.4257,0.4371
+AAPL,Operating Margin,,0.2737,0.3005,0.3006
+AAPL,Net Profit Margin,,0.2375,0.2558,0.2531
+AAPL,EBITDA Margin,,0.3086,0.3299,0.3297
+AAPL,Free Cash Flow Margin,,0.2597,0.2689,0.2714
+AAPL,Interest Coverage Ratio,,31.7573,40.9588,34.0527
+AAPL,Income Before Tax Profit Margin,,0.2753,0.3004,0.2994
+AAPL,Effective Tax Rate,,0.1373,0.1482,0.1548
+AAPL,Return on Assets,,0.4507,0.5527,0.558
+AAPL,Cash Return on Assets,,0.5474,0.6428,0.6598
+AAPL,Return on Equity,,2.3685,3.4191,3.4888
+AAPL,Return on Invested Capital,,0.7808,1.0165,1.1087
+AAPL,Return on Capital Employed,,0.7893,1.0765,1.1513
+AAPL,Return on Tangible Assets,,0.4507,0.5527,0.558
+AAPL,Income Quality Ratio,,1.2145,1.163,1.1824
+AAPL,Net Income per EBT,,0.8627,0.8518,0.8452
+AAPL,Free Cash Flow to Operating Cash Flow Ratio,,0.9004,0.9037,0.9069
+AAPL,EBT to EBIT Ratio,,0.9697,0.9762,0.9714
+AAPL,EBIT to Revenue,,0.2839,0.3077,0.3083
+AAPL,Cash Tax Rate,,0.1979,0.1969,0.1643
+AAPL,Tax Rate Divergence,,0.0606,0.0487,0.0095
+MSFT,Gross Margin,,0.684,0.6864,0.6867
+MSFT,Operating Margin,,0.395,0.4184,0.4191
+MSFT,Net Profit Margin,,0.3393,0.3658,0.3537
+MSFT,EBITDA Margin,,0.4737,0.4898,0.4881
+MSFT,Free Cash Flow Margin,,0.3258,0.331,0.3038
+MSFT,Interest Coverage Ratio,,24.8886,34.7696,42.646
+MSFT,Income Before Tax Profit Margin,,0.399,0.4226,0.4218
+MSFT,Effective Tax Rate,,0.1497,0.1344,0.1614
+MSFT,Return on Assets,,0.3324,0.3836,0.3736
+MSFT,Cash Return on Assets,,0.4327,0.4746,0.4547
+MSFT,Return on Equity,,0.811,0.8687,0.7785
+MSFT,Return on Invested Capital,,0.5236,0.6065,0.5836
+MSFT,Return on Capital Employed,,0.5183,0.5955,0.5953
+MSFT,Return on Tangible Assets,,0.4004,0.4767,0.4675
+MSFT,Income Quality Ratio,,1.3019,1.237,1.2172
+MSFT,Net Income per EBT,,0.8503,0.8656,0.8386
+MSFT,Free Cash Flow to Operating Cash Flow Ratio,,0.7376,0.7315,0.7056
+MSFT,EBT to EBIT Ratio,,0.9618,0.9723,0.9772
+MSFT,EBIT to Revenue,,0.4149,0.4346,0.4317
+MSFT,Cash Tax Rate,,0.0,0.0,0.0
+MSFT,Tax Rate Divergence,,-0.1497,-0.1344,-0.1614
+AAPL,Debt-to-Assets Ratio,,0.3835,0.3822,0.3453
+AAPL,Asset Coverage Ratio,,1.8292,1.7138,1.8187
+AAPL,Debt-to-Equity Ratio,,2.0151,2.3646,2.1589
+AAPL,Debt Service Coverage Ratio,,5.6612,5.9286,5.8555
 AAPL,Equity Multiplier,,5.255,6.1862,6.252
-AAPL,Free Cash Flow Yield,0.0323,0.0316,0.0531,
-AAPL,Net-Debt to EBITDA Ratio,1.0894,0.8449,0.8337,0.6448
-AAPL,Gross Debt to EBITDA Ratio,1.581,1.1355,1.0149,0.8829
-AAPL,Cash Flow Coverage Ratio,0.6598,0.7621,0.922,0.9951
-AAPL,CAPEX Coverage Ratio,11.0376,9.3855,11.4075,10.087
-AAPL,Dividend CAPEX Coverage Ratio,3.7716,4.0716,4.781,4.2543
-AAPL,Debt-to-Capital Ratio,0.6517,0.6839,0.7233,0.6413
-AAPL,Preferred Dividend Coverage Ratio,inf,inf,inf,inf
-AAPL,Interest Paid to Expense Ratio,1.0449,1.0159,0.9775,0.9669
-MSFT,Debt-to-Assets Ratio,0.2356,0.2031,0.1679,0.1456
-MSFT,Asset Coverage Ratio,3.1791,3.6207,4.2632,5.0648
-MSFT,Debt-to-Equity Ratio,0.6001,0.4773,0.3679,0.2908
-MSFT,Debt Service Coverage Ratio,0.7324,0.7886,0.877,0.85
+AAPL,Free Cash Flow Yield,,0.0555,0.0964,
+AAPL,Net-Debt to EBITDA Ratio,,0.4703,0.4195,0.3705
+AAPL,Gross Debt to EBITDA Ratio,,0.6549,0.5363,0.475
+AAPL,Cash Flow Coverage Ratio,,1.4274,1.6817,1.9107
+AAPL,CAPEX Coverage Ratio,,10.042,10.379,10.7396
+AAPL,Dividend CAPEX Coverage Ratio,,3.9349,4.4263,4.5154
+AAPL,Debt-to-Capital Ratio,,0.6683,0.7028,0.6834
+AAPL,Preferred Dividend Coverage Ratio,,,,
+AAPL,Interest Paid to Expense Ratio,,1.031,0.9957,0.9714
+MSFT,Debt-to-Assets Ratio,,0.2185,0.1847,0.1561
+MSFT,Asset Coverage Ratio,,3.3948,3.9258,4.6597
+MSFT,Debt-to-Equity Ratio,,0.5331,0.4183,0.3252
+MSFT,Debt Service Coverage Ratio,,8.7932,11.7823,16.6481
 MSFT,Equity Multiplier,,2.4399,2.2643,2.0839
-MSFT,Free Cash Flow Yield,0.0274,0.0225,0.0367,
-MSFT,Net-Debt to EBITDA Ratio,0.8733,0.6562,0.4838,0.2467
-MSFT,Gross Debt to EBITDA Ratio,1.0797,0.8306,0.6262,0.5857
-MSFT,Cash Flow Coverage Ratio,0.8546,1.1323,1.4532,1.4606
-MSFT,CAPEX Coverage Ratio,3.9295,3.7213,3.7275,3.116
-MSFT,Dividend CAPEX Coverage Ratio,1.9843,2.0661,2.1188,1.8282
-MSFT,Debt-to-Capital Ratio,0.3751,0.3231,0.2689,0.2253
-MSFT,Preferred Dividend Coverage Ratio,inf,inf,inf,inf
-MSFT,Interest Paid to Expense Ratio,0.0,0.0,0.0,0.0
-AAPL,Earnings per Share,3.2753,5.614,6.1132,6.1341
-AAPL,Revenue per Share,15.6613,21.691,24.1536,24.2393
-AAPL,Price-to-Earnings,39.5719,31.0866,21.0103,
-AAPL,Price-to-Earnings-Growth,,0.4354,2.3634,
-AAPL,Book Value per Share,3.7276,3.7409,3.1038,3.9302
-AAPL,Price-to-Book,34.7704,46.6519,41.3815,
-AAPL,Interest Debt per Share,7.14,8.2519,8.2943,7.274
-AAPL,CAPEX per Share,-0.417,-0.6573,-0.6559,-0.6931
-AAPL,Earnings Yield,0.0253,0.0322,0.0476,
-AAPL,Dividend Payout Ratio,0.2453,0.1528,0.1487,0.1549
-AAPL,Dividend Yield,0.0202,0.005,0.0071,
-AAPL,Weighted Dividend Yield,0.0062,0.0049,0.0071,
-AAPL,Price-to-Cash-Flow,28.1606,28.2903,17.1664,
-AAPL,Price-to-Free-Cash-Flow,30.9662,31.664,18.8158,
-AAPL,Price-to-Sales,8.2758,8.0457,5.3176,
-AAPL,Market Cap,2271831816540.0,2943265663880.0,2096888192360.0,
-AAPL,Enterprise Value,2356093816540.0,3044847663880.0,2205722192360.0,
-AAPL,EV-to-Sales,8.5828,8.3234,5.5936,
-AAPL,EV-to-EBIT,33.6758,27.2221,18.0747,
-AAPL,EV-to-EBITDA,30.4625,25.3246,16.8968,
-AAPL,EV-to-Operating-Cash-Flow,29.2051,29.2667,18.0573,
-AAPL,Tangible Asset Value,65339000000.0,63090000000.0,50672000000.0,62146000000.0
-AAPL,Net Current Asset Value,-114836000000.0,-153076000000.0,-166678000000.0,-146871000000.0
-AAPL,EV-to-Free-Cash-Flow,32.1147,32.7569,19.7924,
-AAPL,Buyback Yield,0.0315,0.0288,0.0426,
-AAPL,Shareholder Yield,0.0517,0.0338,0.0497,
-AAPL,SBC-Adjusted Free Cash Flow,66536000000.0,85047000000.0,102405000000.0,88751000000.0
-MSFT,Earnings per Share,5.7635,8.0535,9.6469,9.6843
-MSFT,Revenue per Share,18.6145,22.0936,26.2958,28.3612
-MSFT,Price-to-Earnings,37.2274,40.6233,24.4099,
-MSFT,Price-to-Earnings-Growth,,1.0225,1.2334,
-MSFT,Book Value per Share,15.3982,18.663,22.0878,27.5994
-MSFT,Price-to-Book,13.9341,17.5299,10.6611,
-MSFT,Interest Debt per Share,9.5782,9.2167,8.3996,8.2887
-MSFT,CAPEX per Share,-2.0098,-2.7106,-3.1679,-3.7616
-MSFT,Earnings Yield,0.0269,0.0246,0.041,
-MSFT,Dividend Payout Ratio,0.3418,0.2696,0.2493,0.2736
-MSFT,Dividend Yield,0.0097,0.007,0.0108,
-MSFT,Weighted Dividend Yield,0.0092,0.0066,0.0102,
-MSFT,Price-to-Cash-Flow,27.1688,32.4346,19.9418,
-MSFT,Price-to-Free-Cash-Flow,36.443,44.3536,27.2532,
-MSFT,Price-to-Sales,11.5265,14.8079,8.9551,
-MSFT,Market Cap,1648464480000.0,2489033280000.0,1775519200000.0,
-MSFT,Enterprise Value,1705886480000.0,2542584280000.0,1822858200000.0,
-MSFT,EV-to-Sales,11.928,15.1265,9.1938,
-MSFT,EV-to-EBIT,30.6665,34.6175,21.2506,
-MSFT,EV-to-EBITDA,25.9431,31.1584,18.6304,
-MSFT,EV-to-Operating-Cash-Flow,28.1151,33.1325,20.4735,
-MSFT,Tangible Asset Value,74953000000.0,92277000000.0,99018000000.0,138337000000.0
-MSFT,Net Current Asset Value,-1092000000.0,-7385000000.0,-28614000000.0,-21496000000.0
-MSFT,EV-to-Free-Cash-Flow,37.7125,45.3078,27.9798,
-MSFT,Buyback Yield,0.0131,0.0103,0.0174,
-MSFT,Shareholder Yield,0.0228,0.0173,0.0282,
-MSFT,SBC-Adjusted Free Cash Flow,39945000000.0,50000000000.0,57647000000.0,49864000000.0
+MSFT,Free Cash Flow Yield,,0.0396,0.0671,
+MSFT,Net-Debt to EBITDA Ratio,,0.3765,0.2811,0.1813
+MSFT,Gross Debt to EBITDA Ratio,,0.4709,0.3596,0.3027
+MSFT,Cash Flow Coverage Ratio,,1.9804,2.5693,2.9136
+MSFT,CAPEX Coverage Ratio,,3.8104,3.7246,3.3969
+MSFT,Dividend CAPEX Coverage Ratio,,2.0291,2.0941,1.964
+MSFT,Debt-to-Capital Ratio,,0.3477,0.2949,0.2454
+MSFT,Preferred Dividend Coverage Ratio,,,,
+MSFT,Interest Paid to Expense Ratio,,0.0,0.0,0.0
+AAPL,Earnings per Share,,9.0182,11.9126,12.4457
+AAPL,Revenue per Share,,37.9683,46.5609,49.177
+AAPL,Price-to-Earnings,,19.6902,10.9069,
+AAPL,Price-to-Earnings-Growth,,0.443,2.3908,
+AAPL,Book Value per Share,,3.7341,3.4275,3.5104
+AAPL,Price-to-Book,,47.5536,37.9081,
+AAPL,Interest Debt per Share,,7.8456,8.4407,8.0059
+AAPL,CAPEX per Share,,-1.0907,-1.3349,-1.3702
+AAPL,Earnings Yield,,0.0508,0.0917,
+AAPL,Dividend Payout Ratio,,0.1877,0.1507,0.1518
+AAPL,Dividend Yield,0.0197,0.0196,0.0137,
+AAPL,Weighted Dividend Yield,,0.0095,0.0138,
+AAPL,Price-to-Cash-Flow,,16.2128,9.3781,
+AAPL,Price-to-Free-Cash-Flow,,18.0059,10.378,
+AAPL,Price-to-Sales,,4.6768,2.7905,
+AAPL,Market Cap,2325818715660.0,2994703666830.0,2121213662670.0,
+AAPL,Enterprise Value,2357153715660.0,3068586666830.0,2205389662670.0,
+AAPL,EV-to-Sales,,4.7922,2.9013,
+AAPL,EV-to-EBIT,,17.5111,9.6564,
+AAPL,EV-to-EBITDA,,15.5311,8.7943,
+AAPL,EV-to-Operating-Cash-Flow,,16.6128,9.7502,
+AAPL,Tangible Asset Value,,64214500000.0,56881000000.0,56409000000.0
+AAPL,Net Current Asset Value,,-133956000000.0,-159877000000.0,-156774500000.0
+AAPL,EV-to-Free-Cash-Flow,,18.4501,10.7898,
+AAPL,Buyback Yield,,0.0522,0.0822,
+AAPL,Shareholder Yield,,0.0718,0.0959,
+AAPL,SBC-Adjusted Free Cash Flow,,151583000000.0,187452000000.0,191156000000.0
+MSFT,Earnings per Share,,13.8738,17.7731,19.419
+MSFT,Revenue per Share,,40.8916,48.5886,54.8963
+MSFT,Price-to-Earnings,,24.2414,13.4934,
+MSFT,Price-to-Earnings-Growth,,1.0511,1.2562,
+MSFT,Book Value per Share,,17.0226,20.3677,24.8311
+MSFT,Price-to-Book,,19.7573,11.7745,
+MSFT,Interest Debt per Share,,9.7212,9.1011,8.6129
+MSFT,CAPEX per Share,,-4.7401,-5.9029,-6.9584
+MSFT,Earnings Yield,,0.0413,0.0741,
+MSFT,Dividend Payout Ratio,,0.2999,0.2586,0.2614
+MSFT,Dividend Yield,0.0094,0.0131,0.0202,
+MSFT,Weighted Dividend Yield,,0.0124,0.0192,
+MSFT,Price-to-Cash-Flow,,18.6204,10.9078,
+MSFT,Price-to-Free-Cash-Flow,,25.2459,14.9113,
+MSFT,Price-to-Sales,,8.2247,4.9357,
+MSFT,Market Cap,1708852860000.0,2558722560000.0,1808242800000.0,
+MSFT,Enterprise Value,1643323860000.0,2496241560000.0,1764763800000.0,
+MSFT,EV-to-Sales,,8.0238,4.817,
+MSFT,EV-to-EBIT,,20.3153,11.5119,
+MSFT,EV-to-EBITDA,,16.9401,9.8346,
+MSFT,EV-to-Operating-Cash-Flow,,18.1657,10.6455,
+MSFT,Tangible Asset Value,,76196000000.0,86098500000.0,108345500000.0
+MSFT,Net Current Asset Value,,-4238500000.0,-17999500000.0,-25055000000.0
+MSFT,EV-to-Free-Cash-Flow,,24.6294,14.5527,
+MSFT,Buyback Yield,,0.0185,0.0313,
+MSFT,Shareholder Yield,,0.0316,0.0515,
+MSFT,SBC-Adjusted Free Cash Flow,,89945000000.0,107647000000.0,107511000000.0

@@ -30,7 +30,9 @@ class BLSRequestRefusedError(requests.exceptions.RequestException):
     """The BLS refused the request, e.g. because the daily request limit was reached."""
 
 
-def collect_recent_bls_series(series_id: str, description: str) -> pd.DataFrame:
+def collect_recent_bls_series(
+    series_id: str, description: str, fallback: str | None = None
+) -> pd.DataFrame:
     """
     Retrieves the monthly observations of a BLS series for the current and the previous
     year, in a single request that is cached for a day.
@@ -38,6 +40,8 @@ def collect_recent_bls_series(series_id: str, description: str) -> pd.DataFrame:
     Args:
         series_id (str): The BLS series identifier, e.g. "LNS14000000".
         description (str): What is retrieved, used in the log and error messages.
+        fallback (str | None): What is used instead when the BLS cannot be reached, logged
+            as information rather than as an error. Defaults to None.
 
     Returns:
         pd.DataFrame: A single "United States" column indexed by month.
@@ -87,6 +91,7 @@ def collect_recent_bls_series(series_id: str, description: str) -> pd.DataFrame:
         entity=f"{series_id}/recent",
         fetch=fetch,
         description=description,
+        fallback=fallback,
     )
 
 
@@ -101,6 +106,10 @@ def get_unemployment_rate() -> pd.DataFrame:
     """
     # The BLS publishes the rate in percent of the labour force.
     return (
-        collect_recent_bls_series(SERIES["unemployment_rate"], "US unemployment rate")
+        collect_recent_bls_series(
+            SERIES["unemployment_rate"],
+            "US unemployment rate",
+            fallback="the US series is the OECD's, without the months the BLS publishes first",
+        )
         / 100
     )

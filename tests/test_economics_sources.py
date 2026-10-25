@@ -479,6 +479,27 @@ def test_a_refused_bls_request_is_not_a_format_change(monkeypatch):
     assert bls_model.get_unemployment_rate().empty
 
 
+def test_an_unreachable_bls_is_logged_as_the_oecd_fallback(monkeypatch, caplog):
+    import logging  # noqa: PLC0415
+
+    from financetoolkit.economics import bls_model, helpers  # noqa: PLC0415
+
+    def busy(url, timeout):
+        response = requests.Response()
+        response.status_code = 503
+        raise requests.HTTPError("503 Server Error", response=response)
+
+    monkeypatch.setattr(bls_model, "get_request", busy)
+    monkeypatch.setattr(helpers, "RETRY_DELAY_SECONDS", 0)
+
+    with caplog.at_level(logging.INFO, logger="financetoolkit"):
+        assert bls_model.get_unemployment_rate().empty
+
+    messages = [record for record in caplog.records if "BLS" in record.getMessage()]
+    assert messages and all(record.levelno == logging.INFO for record in messages)
+    assert "the OECD's" in messages[-1].getMessage()
+
+
 def test_ons_quarters_are_parsed(monkeypatch):
     payload = {
         "quarters": [

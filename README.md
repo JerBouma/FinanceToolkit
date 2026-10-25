@@ -38,20 +38,16 @@ ___
 
 1. [Installation](#installation)
 2. [Functionality](#functionality)
-    - [Toolkit Data](#toolkit-data)
-    - [Discovery](#discovery)
-    - [Ratios](#ratios)
-    - [Models](#models)
-    - [Options](#options)
-    - [Performance](#performance)
-    - [Risk](#risk)
-    - [Technicals](#technicals)
-    - [ETF Analysis](#etf-analysis)
-    - [Portfolio Optimization](#portfolio-optimization)
-    - [Portfolio](#portfolio)
-    - [Fixed Income](#fixed-income)
-    - [Economics](#economics)
-    - [Econometrics](#econometrics)
+    - [Discovering the Sector](#discovering-the-sector)
+    - [Following the Market](#following-the-market)
+    - [Zooming in on Competitors](#zooming-in-on-competitors)
+    - [Weighing Risk and Return](#weighing-risk-and-return)
+    - [What the Option Market Expects](#what-the-option-market-expects)
+    - [The Economic Environment](#the-economic-environment)
+    - [Economic Relations](#economic-relations)
+    - [Comparing the Sector's ETFs](#comparing-the-sectors-etfs)
+    - [Building a Diversified Portfolio](#building-a-diversified-portfolio)
+    - [Following the Portfolio](#following-the-portfolio)
 3. [MCP Server](#mcp-server)
 4. [Questions & Answers](#questions--answers)
 5. [Contributing](#contributing)
@@ -95,106 +91,20 @@ The same `enforce_source` argument is also accepted per call on `get_historical_
 
 # Functionality
 
-This section is an introduction to the Finance Toolkit. Find with the link below fully-fledged code documentation as well as Getting Started guides with many examples ranging from basic examples to creating custom ratios to working with your own datasets.
+This section is an introduction to the Finance Toolkit. The documentation contains many more examples: every module page opens with a Getting Started section, from the basics to creating custom ratios and working with your own datasets.
 
-___ 
-
-<b><div align="center">Find a variety of How-To Guides including Code Documentation for the FinanceToolkit <a href="https://www.jeroenbouma.com/projects/financetoolkit">here</a>.</div></b>
 ___
 
-The Finance Toolkit is made up of a few classes. `Toolkit` is the main one: it retrieves the data of one or more tickers and gives access to every analysis module as a property (`ratios`, `models`, `options`, `performance`, `risk`, `technicals`, `etf`, `portfolio`, `fixedincome`, `economics` and `econometrics`). `Discovery`, `Portfolio`, `FixedIncome`, `Economics` and `Econometrics` can also be used on their own. Most examples below build on the same `companies` instance:
+<b><div align="center">Find the Documentation, including the Getting Started guides, <a href="https://www.jeroenbouma.com/projects/financetoolkit/docs">here</a>.</div></b>
+___
 
-```python
-from financetoolkit import Toolkit
+The sections below follow one analysis of the semiconductor sector from start to finish, where each step answers the question the previous one raises: which companies make up the sector, how their shares did, what drives their profits, how much risk came with the returns, what the option market expects next, how the economy shaped all of it, whether a fund is the better way in and how the sector fits into a diversified portfolio. Every module of the Finance Toolkit appears once, but each holds far more than shown here: 500+ methods in total, all described with examples in the [documentation](https://www.jeroenbouma.com/projects/financetoolkit/docs).
 
-# Initialize the Toolkit for Apple and Microsoft from 2018 to 2025
-companies = Toolkit(
-    ["AAPL", "MSFT"],
-    api_key="FINANCIAL_MODELING_PREP_KEY",
-    start_date="2017-12-31",
-    end_date="2025-12-31",
-)
-```
+## Discovering the Sector
 
-Each ratio, indicator and metric has a corresponding function that can be called directly, for example `ratios.get_return_on_equity` or `technicals.get_relative_strength_index`. Every module also has one or more `collect_` functions that return a whole category at once, e.g. `ratios.collect_profitability_ratios`, useful when you want everything in one call instead of assembling it metric by metric.
+An analysis starts with a set of companies. The [Discovery](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery) module finds them without needing any tickers yet, through stock screeners, sector performance, news and lists of companies, ETFs, indices, currencies, cryptocurrencies and commodities.
 
-Three capabilities cut across nearly the whole toolkit:
-
-- **`rolling` and `trailing` windows.** Many metrics return one value per reporting period by default. Pass `rolling=<n>` to compute the metric over a sliding window instead, or `trailing=<n>` for a trailing sum/average (e.g. a trailing 4-quarter sum to annualize a quarterly flow) — turning a snapshot into a proper time series.
-- **`growth` and `lag`.** Pass `growth=True` on almost any `get_` or `collect_` function to return the period-over-period growth instead of the raw value. `lag` (an `int` or list of `int`s, default `1`) controls how many periods back that growth is measured against, e.g. `lag=4` for year-over-year growth on quarterly data. Combine with `trailing` (e.g. `trailing=4, growth=True`) to get TTM growth.
-- **`standardize` (Z-Score).** Most `get_*` methods across Economics, Ratios, Technicals, Risk, Performance, Models, Options and Fixed Income accept `standardize=True`, converting raw values into standard deviations from their own historical mean/std. Useful for ranking, scoring, or spotting an unusual reading across metrics that otherwise live on incompatible scales.
-
-Every module below also has a **Getting Started guide** and full **code documentation** (formulas, parameters, worked examples) linked in its own section, see the [documentation hub](https://www.jeroenbouma.com/projects/financetoolkit) for the complete index.
-
-## Toolkit Data
-
-The `Toolkit` retrieves the data every module builds on: historical prices, financial statements and much more, such as company profiles, quotes, analyst estimates, earnings calendars, revenue segmentation, ESG scores, dividends and Treasury rates.
-
-### Historical Data
-
-Obtain [historical data](https://www.jeroenbouma.com/projects/financetoolkit/docs/historical-data) on a daily, weekly, monthly, quarterly or yearly basis. This includes OHLC, volumes, dividends, returns and cumulative returns for each corresponding period, for every ticker and the benchmark (the S&P 500 through `SPY` unless `benchmark_ticker` says otherwise).
-
-```python
-# Obtain the daily historical data for all tickers and the benchmark
-historical_data = companies.get_historical_data()
-
-# Show the last five trading days of Apple
-historical_data.xs("AAPL", axis=1, level=1).tail()
-```
-
-Which returns:
-
-| Date       |   Open |   High |    Low |   Close |   Adj Close |      Volume |   Dividends |   Return |   Cumulative Return |
-|:-----------|-------:|-------:|-------:|--------:|------------:|------------:|------------:|---------:|--------------------:|
-| 2025-12-24 | 272.34 | 275.43 | 272.2  |  273.81 |      273.07 | 1.79106e+07 |           0 |   0.0053 |              6.7877 |
-| 2025-12-26 | 274.16 | 275.37 | 272.86 |  273.4  |      272.66 | 2.15218e+07 |           0 |  -0.0015 |              6.7775 |
-| 2025-12-29 | 272.69 | 274.36 | 272.35 |  273.76 |      273.02 | 2.37152e+07 |           0 |   0.0013 |              6.7865 |
-| 2025-12-30 | 272.81 | 274.08 | 272.28 |  273.08 |      272.34 | 2.21396e+07 |           0 |  -0.0025 |              6.7696 |
-| 2025-12-31 | 273.06 | 273.68 | 271.75 |  271.86 |      271.12 | 2.72936e+07 |           0 |  -0.0045 |              6.7392 |
-
-And below the cumulative returns of Apple and Microsoft are plotted against the S&P 500:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/historical-dark.png">
-  <img alt="Historical Data" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/historical-light.png">
-</picture>
-
-Metrics such as `Volatility`, `Excess Return` and `Excess Volatility` are calculated as dedicated [Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk/volatility) and [Performance](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/excess-return) methods rather than columns on this table to create more efficient and flexible functionalities. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs#getting-started) and the full historical data documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/historical-data).**
-
-### Financial Statements
-
-Obtain an [Income Statement](https://www.jeroenbouma.com/projects/financetoolkit/docs/income-statements) on an annual or quarterly basis. This can also be a [Balance Sheet Statement](https://www.jeroenbouma.com/projects/financetoolkit/docs/balance-sheet-statements), a [Cash Flow Statement](https://www.jeroenbouma.com/projects/financetoolkit/docs/cash-flow-statements) or a statistics statement.
-
-```python
-# Obtain the annual Income Statements for all tickers
-income_statement = companies.get_income_statement()
-
-# Show the first five rows for Apple
-income_statement.loc["AAPL"].head()
-```
-
-Which returns:
-
-|                                     |        2017 |        2018 |        2019 |        2020 |        2021 |        2022 |        2023 |        2024 |        2025 |
-|:------------------------------------|------------:|------------:|------------:|------------:|------------:|------------:|------------:|------------:|------------:|
-| Revenue                             | 2.29234e+11 | 2.65595e+11 | 2.60174e+11 | 2.74515e+11 | 3.65817e+11 | 3.94328e+11 | 3.83285e+11 | 3.91035e+11 | 4.16161e+11 |
-| Cost of Goods Sold                  | 1.41048e+11 | 1.63756e+11 | 1.61782e+11 | 1.69559e+11 | 2.12981e+11 | 2.23546e+11 | 2.14137e+11 | 2.10352e+11 | 2.2096e+11  |
-| Gross Profit                        | 8.8186e+10  | 1.01839e+11 | 9.8392e+10  | 1.04956e+11 | 1.52836e+11 | 1.70782e+11 | 1.69148e+11 | 1.80683e+11 | 1.95201e+11 |
-| Research and Development Expenses   | 1.1581e+10  | 1.4236e+10  | 1.6217e+10  | 1.8752e+10  | 2.1914e+10  | 2.6251e+10  | 2.9915e+10  | 3.137e+10   | 3.455e+10   |
-| General and Administrative Expenses | 0           | 0           | 0           | 0           | 0           | 0           | 0           | 7.458e+09   | 8.077e+09   |
-
-And below the revenue of Apple and Microsoft is plotted for each fiscal year:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/statements-dark.png">
-  <img alt="Financial Statements" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/statements-light.png">
-</picture>
-
-With `convert_currency=True` the statements are converted to the currency of the historical data, which matters when comparing companies that report in different currencies, and `quarterly=True` gives the quarterly statements. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs#getting-started) and the full financial statement documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs).**
-
-## Discovery
-
-Before analyzing a ticker you often need to find it. The `Discovery` class is standalone and covers among other things stock screeners, lists of companies, cryptocurrencies, forex, commodities, ETFs and indices, index constituents, sector and industry performance and news feeds.
+The screener below looks for semiconductor companies on NASDAQ that are worth more than $100 billion:
 
 ```python
 from financetoolkit import Discovery
@@ -215,7 +125,7 @@ semiconductors = discovery.get_stock_screener(
 semiconductors[["Name", "Market Cap", "Beta", "Price", "Dividend"]].head()
 ```
 
-Which returns:
+For example, the five largest companies the screener returns are shown below.
 
 | Symbol   | Name                         |    Market Cap |   Beta |   Price |   Dividend |
 |:---------|:-----------------------------|--------------:|-------:|--------:|-----------:|
@@ -225,367 +135,219 @@ Which returns:
 | AMD      | Advanced Micro Devices, Inc. |  843646776955 |  2.454 |  516.79 |      0     |
 | INTC     | Intel Corp.                  |  459679713584 |  2.23  |   86.96 |      0     |
 
-And below all of the companies the screener found are ranked by market cap:
+And below all of them are ranked by market cap.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/discovery-dark.png">
-  <img alt="Discovery" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/discovery-light.png">
+  <img alt="Discovering the Sector" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/discovery-light.png">
 </picture>
 
-Furthermore, you can find in this module [stock screeners](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery/stock-screener), [sector/industry performance](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery/sector-performance), [news feeds](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery/stock-market-news) and more. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery#getting-started) and the full instrument discovery documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/discovery).**
+## Following the Market
 
-## Ratios
+The rest of this walkthrough follows three of them: Nvidia, AMD and Intel. They are loaded into the Toolkit in one line, and the S&P 500 comes along as the benchmark:
 
-The `ratios` module calculates 80+ financial ratios from the balance sheet, income and cash flow statements, for example the [Profitability Ratios](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios/all-profitability-ratios).
+```python
+from financetoolkit import Toolkit
+
+# Initialize the Toolkit for Nvidia, AMD and Intel from 2018 to 2025
+companies = Toolkit(
+    ["NVDA", "AMD", "INTC"],
+    api_key="FINANCIAL_MODELING_PREP_KEY",
+    start_date="2017-12-31",
+    end_date="2025-12-31",
+)
+```
+
+[Historical data](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_historical_data) comes on a daily, weekly, monthly, quarterly or yearly basis, with the return and cumulative return of each period, and so do the [income statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_income_statement), [balance sheet](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_balance_sheet_statement) and [cash flow statement](https://www.jeroenbouma.com/projects/financetoolkit/docs#get_cash_flow_statement) on an annual or quarterly basis. How far a share has travelled is one thing; whether the rally was stretched is another. The [technicals](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals) module answers that with 50+ indicators, such as the Relative Strength Index (RSI), which moves between 0 and 100 and is commonly read as overbought above 70:
+
+```python
+# Obtain weekly market data for all tickers and the benchmark
+historical_data = companies.get_historical_data(period="weekly")
+
+# The 14-week Relative Strength Index
+relative_strength_index = companies.technicals.get_relative_strength_index(period="weekly", window=14)
+
+# Show the highest RSI of each year
+relative_strength_index.groupby(relative_strength_index.index.start_time.year).max()
+```
+
+For example, the highest weekly RSI of each year is shown below.
+
+|   Date |    NVDA |     AMD |    INTC |   Benchmark |
+|-------:|--------:|--------:|--------:|------------:|
+|   2018 | 66.1087 | 90.9719 | 66.7363 |     66.0498 |
+|   2019 | 73.8156 | 81.2446 | 69.8225 |     75.9305 |
+|   2020 | 85.2337 | 82.1215 | 78.4827 |     80.2378 |
+|   2021 | 85.1593 | 82.0983 | 71.5862 |     74.4751 |
+|   2022 | 58.4343 | 58.9426 | 61.2806 |     59.9225 |
+|   2023 | 87.5129 | 77.506  | 76.2332 |     71.4291 |
+|   2024 | 91.0702 | 82.1403 | 67.6949 |     80.0566 |
+|   2025 | 73.3514 | 82.5281 | 79.7429 |     71.6939 |
+
+And below the cumulative returns of all three are plotted against the S&P 500, with the RSI underneath.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/historical-dark.png">
+  <img alt="Following the Market" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/historical-light.png">
+</picture>
+
+## Zooming in on Competitors
+
+Nvidia's shares outran the other two by far, which raises the question whether its business did as well. From the financial statements the Toolkit calculates 80+ [ratios](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) in five categories: efficiency, liquidity, profitability, solvency and valuation. Each ratio has its own function, and a `collect_` function returns a whole category at once:
 
 ```python
 # Collect all Profitability Ratios for all tickers
 profitability_ratios = companies.ratios.collect_profitability_ratios()
 
-# Show the first five ratios for Microsoft
-profitability_ratios.loc["MSFT"].head()
+# Show the first ratios for Nvidia
+profitability_ratios.loc["NVDA"].head()
 ```
 
-Which returns:
+For example, some of Nvidia's profitability ratios are shown below.
 
 |                       |   2017 |   2018 |   2019 |   2020 |   2021 |   2022 |   2023 |   2024 |   2025 |
 |:----------------------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
-| Gross Margin          | 0.6452 | 0.6525 | 0.659  | 0.6778 | 0.6893 | 0.684  | 0.6892 | 0.6976 | 0.6882 |
-| Operating Margin      | 0.3006 | 0.3177 | 0.3414 | 0.3703 | 0.4159 | 0.4206 | 0.4177 | 0.4464 | 0.4562 |
-| Net Profit Margin     | 0.2639 | 0.1502 | 0.3118 | 0.3096 | 0.3645 | 0.3669 | 0.3415 | 0.3596 | 0.3615 |
-| EBITDA Margin         | 0.3915 | 0.4106 | 0.4342 | 0.4598 | 0.4855 | 0.4935 | 0.4831 | 0.5374 | 0.5774 |
-| Free Cash Flow Margin | 0.3249 | 0.2922 | 0.304  | 0.3163 | 0.3339 | 0.3286 | 0.2807 | 0.3022 | 0.2542 |
+| Gross Margin          | 0.5993 | 0.6121 | 0.6199 | 0.6234 | 0.6493 | 0.5693 | 0.7272 | 0.7499 | 0.7107 |
+| Operating Margin      | 0.3305 | 0.3247 | 0.2607 | 0.2718 | 0.3731 | 0.1566 | 0.5412 | 0.6242 | 0.6038 |
+| Net Profit Margin     | 0.3137 | 0.3534 | 0.2561 | 0.2598 | 0.3623 | 0.1619 | 0.4885 | 0.5585 | 0.556  |
+| EBITDA Margin         | 0.3509 | 0.347  | 0.2956 | 0.3376 | 0.4167 | 0.2138 | 0.566  | 0.6385 | 0.617  |
+| Free Cash Flow Margin | 0.2995 | 0.2683 | 0.3913 | 0.2815 | 0.3021 | 0.1412 | 0.4435 | 0.4663 | 0.4477 |
 
-And below a few of the profitability ratios of Microsoft, each with its latest value, the change over the period and its trend:
+And below a few of them are shown with their latest value and their course over the years.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/ratios-dark.png">
-  <img alt="Ratios" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/ratios-light.png">
+  <img alt="Profitability Ratios" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/ratios-light.png">
 </picture>
 
-The 80+ ratios are divided into five categories: [**Efficiency**](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios/all-efficiency-ratios) (asset/inventory/receivables turnover, cash conversion cycle, R&D/SG&A/SBC-to-revenue), [**Liquidity**](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios/all-liquidity-ratios) (current, quick and cash ratios, working capital), [**Profitability**](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios/all-profitability-ratios) (margins, ROE/ROA/ROIC, cash vs. effective tax rate), [**Solvency**](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios/all-solvency-ratios) (debt-to-equity, debt-to-capital, interest and dividend coverage) and [**Valuation**](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios/all-valuation-ratios) (P/E, PEG, Forward P/E, EV multiples, buyback and shareholder yield). It's also possible to define fully [custom ratios](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios/custom-ratios) calculated automatically from the balance sheet, income and cash flow statements. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios#getting-started) and the full ratio-by-ratio documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios).**
-
-## Models
-
-The `models` module combines statements, prices and rates into financial models, for example the [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/extended-dupont-analysis) which breaks the Return on Equity (ROE) down into five components.
+A high return on equity can come from margins, from turnover or from debt. [Models](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) combine the ratios to tell these apart: the [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis) splits the return on equity into five components that multiply into it: interest burden, tax burden, operating margin, asset turnover and equity multiplier.
 
 ```python
 # Get the Extended DuPont Analysis for all tickers
 extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
 
-# Show the results for Apple
-extended_dupont_analysis.loc["AAPL"]
+# Show the results for Nvidia
+extended_dupont_analysis.loc["NVDA"]
 ```
 
-Which returns:
+For example, the components for Nvidia are shown below.
 
 |                         |   2017 |   2018 |   2019 |   2020 |   2021 |   2022 |   2023 |   2024 |   2025 |
 |:------------------------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
-| Interest Burden Ratio   | 1.0447 | 1.0283 | 1.0283 | 1.0121 | 1.0024 | 0.9972 | 0.9951 | 1.0022 | 0.9976 |
-| Tax Burden Ratio        | 0.7544 | 0.8166 | 0.8406 | 0.8557 | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
-| Operating Profit Margin | 0.2676 | 0.2669 | 0.2457 | 0.2415 | 0.2978 | 0.3029 | 0.2982 | 0.3151 | 0.3197 |
-| Asset Turnover          | 0.6578 | 0.7168 | 0.7389 | 0.8288 | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
-| Equity Multiplier       | 2.6573 | 3.0724 | 3.5633 | 4.2509 | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
-| Return on Equity        | 0.3687 | 0.4936 | 0.5592 | 0.7369 | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
+| Interest Burden Ratio   | 0.9956 | 1.0242 | 1.0436 | 0.9729 | 0.99   | 0.9898 | 1.0257 | 1.0316 | 1.0848 |
+| Tax Burden Ratio        | 0.9534 | 1.0629 | 0.9414 | 0.9825 | 0.981  | 1.0447 | 0.88   | 0.8674 | 0.8488 |
+| Operating Profit Margin | 0.3305 | 0.3247 | 0.2607 | 0.2718 | 0.3731 | 0.1566 | 0.5412 | 0.6242 | 0.6038 |
+| Asset Turnover          | 0.9215 | 0.9551 | 0.7134 | 0.7233 | 0.7376 | 0.6319 | 1.1397 | 1.4718 | 1.3564 |
+| Equity Multiplier       | 1.5931 | 1.4592 | 1.4205 | 1.5846 | 1.6775 | 1.7525 | 1.6428 | 1.4499 | 1.3456 |
+| Return on Equity        | 0.4605 | 0.4926 | 0.2595 | 0.2978 | 0.4483 | 0.1793 | 0.9146 | 1.1918 | 1.0149 |
 
-The five components multiply into the ROE: interest burden × tax burden × operating margin × asset turnover × equity multiplier. Below each of them is plotted for Apple and Microsoft, ending in the resulting ROE:
+And below the components and the resulting return on equity are plotted for each of the three companies.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/models-dark.png">
-  <img alt="Models" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/models-light.png">
+  <img alt="Extended DuPont Analysis" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/models-light.png">
 </picture>
 
-The `models` module covers 35+ models in total, from valuation (reverse DCF, Earnings Power Value, Monte Carlo DCF, peer comparison) and credit (Merton distance to default, synthetic credit rating) to quality and manipulation scores (Magic Formula, Mohanram G-Score, Dechow F-Score, Montier C-Score), for example [DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/dupont-analysis), [WACC](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/weighted-average-cost-of-capital-wacc), [Economic Value Added (EVA)](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/economic-value-added-eva), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/altman-z-score), [Beneish M-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/beneish-m-score) and the [Graham Number](https://www.jeroenbouma.com/projects/financetoolkit/docs/models/graham-number). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#getting-started) and the full model-by-model documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/models).**
+Other models include the [Weighted Average Cost of Capital](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_weighted_average_cost_of_capital), [Altman Z-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_altman_z_score), [Piotroski F-Score](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_piotroski_score) and [Intrinsic Valuation](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_intrinsic_valuation). Almost every function also accepts `growth=True` for the growth from one period to the next, `trailing=4` for trailing twelve-month figures and `standardize=True` for Z-Scores.
 
-## Options
+## Weighing Risk and Return
 
-The `options` module prices options with the [Black Scholes Model](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/black-scholes-model), the Binomial Model and others, and calculates the First, Second and Third Order Greeks such as [Delta](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/delta), [Gamma](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/gamma), [Theta](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/theta) and [Vega](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/vega) for a range of strike prices and expiration dates. Options are priced on the last day of the data, here the 31st of December 2025.
+Strong businesses do not make for smooth shares. The market data feeds the [performance](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance) and [risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk) modules, which calculate their metrics for any period, from intraday to yearly:
 
 ```python
-# Get the Delta of the call options for all tickers, 15% around the stock price
-delta = companies.options.get_delta(
-    strike_price_range=0.15, strike_step_size=10, expiration_time_range=180
-)
+# The annualized Sharpe Ratio for each year
+sharpe_ratio = companies.performance.get_sharpe_ratio(period="yearly", annualize=True)
 
-# Show Apple's Delta for expirations in one, three and six months
-delta.loc["AAPL", ["2026-01-30", "2026-03-31", "2026-06-28"]]
+# The deepest fall within each year
+maximum_drawdown = companies.risk.get_maximum_drawdown(period="yearly", within_period=True)
+
+# Show the Sharpe Ratios
+sharpe_ratio
 ```
 
-Which returns:
+For example, the yearly Sharpe Ratios are shown below.
 
-|   Strike Price |   2026-01-30 |   2026-03-31 |   2026-06-28 |
-|---------------:|-------------:|-------------:|-------------:|
-|            230 |       0.9696 |       0.8795 |       0.8225 |
-|            240 |       0.9221 |       0.8184 |       0.77   |
-|            250 |       0.8366 |       0.7442 |       0.7122 |
-|            260 |       0.7119 |       0.6603 |       0.6508 |
-|            270 |       0.5608 |       0.5711 |       0.5878 |
-|            280 |       0.4058 |       0.4814 |       0.5247 |
-|            290 |       0.269  |       0.3957 |       0.4632 |
-|            300 |       0.1634 |       0.3174 |       0.4046 |
+| Date   |    NVDA |     AMD |    INTC |
+|:-------|--------:|--------:|--------:|
+| 2018   | -0.613  |  1.1009 |  0.161  |
+| 2019   |  1.5458 |  1.9143 |  1.048  |
+| 2020   |  1.656  |  1.419  | -0.0445 |
+| 2021   |  2.0003 |  1.2366 |  0.2976 |
+| 2022   | -0.8393 | -1.0532 | -1.5306 |
+| 2023   |  2.6986 |  1.9195 |  1.8358 |
+| 2024   |  2.0851 | -0.2615 | -1.5749 |
+| 2025   |  0.8325 |  1.1753 |  1.2061 |
 
-And below the Delta of Apple's call options is plotted for each strike price and expiration:
+And below both are plotted for each year, the maximum drawdown together with the S&P 500.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/greeks-dark.png">
-  <img alt="Options" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/greeks-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/risk-dark.png">
+  <img alt="Sharpe Ratio and Maximum Drawdown" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/risk-light.png">
 </picture>
 
-The `options` module is divided into four categories: [**Option Pricing**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/black-scholes-model) (Black-Scholes, Binomial Model, Bjerksund-Stensland, Monte Carlo, barrier, Asian and binary options, Implied Volatility), [**First-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/first-order-greeks) (Delta, Vega, Theta, Rho), [**Second-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/second-order-greeks) (Gamma, Vanna, Charm, Vomma) and [**Third-Order Greeks**](https://www.jeroenbouma.com/projects/financetoolkit/docs/options/third-order-greeks) (Speed, Zomma, Color, Ultima). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options#getting-started) and the full option pricing and Greeks documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/options).**
+Together the two modules cover 70+ metrics, such as [Value at Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_value_at_risk), [GARCH](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_garch), [Jensen's Alpha](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_jensens_alpha), the [Capital Asset Pricing Model](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model) and the [Fama-French factors](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_and_french_model). Most of them also accept `rolling=<n>` for a value that moves through time.
 
-### Option Market Metrics
+## What the Option Market Expects
 
-Next to the theoretical prices, the `options` module reads the live option chains: the put-call ratio, max pain, dealer gamma exposure, volatility skew and term structure, the implied (earnings) move, the volatility risk premium and a model-free implied volatility with the VIX method for any ticker. As these read today's option chains, the Toolkit runs up to today.
+The past shows how much risk came with the returns; the option market puts a price on the risk ahead. The [options](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) module prices options with Black-Scholes, the Binomial Model and others, calculates the Greeks up to the third order and reads the live option chains: the put-call ratio, max pain, dealer gamma exposure, the volatility skew and term structure and the implied move. As the chains are those of today, the Toolkit below runs up to today, and the numbers are those of the day this README was last updated:
 
 ```python
 # Initialize the Toolkit up to today, as the option chains are live
-companies_today = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+companies_today = Toolkit(["NVDA", "AMD", "INTC"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
 # Get the at-the-money implied volatility of the six nearest expirations
 companies_today.options.get_implied_volatility_term_structure(number_of_expirations=6)
 ```
 
-Which returns:
+For example, the implied volatility for each expiration is shown below.
 
 |                        |   Days to Expiration |   At-the-Money Volatility |
 |:-----------------------|---------------------:|--------------------------:|
-| ('AAPL', '2026-10-26') |                    1 |                    0.2005 |
-| ('AAPL', '2026-10-28') |                    3 |                    0.2389 |
-| ('AAPL', '2026-10-30') |                    5 |                    0.2455 |
-| ('AAPL', '2026-11-04') |                   10 |                    0.3411 |
-| ('AAPL', '2026-11-06') |                   12 |                    0.3326 |
-| ('AAPL', '2026-11-13') |                   19 |                    0.304  |
-| ('MSFT', '2026-10-26') |                    1 |                    0.229  |
-| ('MSFT', '2026-10-30') |                    5 |                    0.5159 |
-| ('MSFT', '2026-11-02') |                    8 |                    0.4732 |
-| ('MSFT', '2026-11-04') |                   10 |                    0.4328 |
-| ('MSFT', '2026-11-06') |                   12 |                    0.4142 |
-| ('MSFT', '2026-11-13') |                   19 |                    0.3734 |
+| ('NVDA', '2026-10-26') |                    1 |                    0.3558 |
+| ('NVDA', '2026-10-28') |                    3 |                    0.4155 |
+| ('NVDA', '2026-10-30') |                    5 |                    0.4152 |
+| ('NVDA', '2026-11-02') |                    8 |                    0.3882 |
+| ('NVDA', '2026-11-04') |                   10 |                    0.4096 |
+| ('NVDA', '2026-11-06') |                   12 |                    0.3985 |
+| ('AMD', '2026-10-26')  |                    1 |                    0.5029 |
+| ('AMD', '2026-10-28')  |                    3 |                    0.5792 |
+| ('AMD', '2026-10-30')  |                    5 |                    0.6276 |
+| ('AMD', '2026-11-02')  |                    8 |                    0.5866 |
+| ('AMD', '2026-11-04')  |                   10 |                    0.7242 |
+| ('AMD', '2026-11-06')  |                   12 |                    0.7236 |
+| ('INTC', '2026-10-30') |                    5 |                    0.97   |
+| ('INTC', '2026-11-06') |                   12 |                    0.7948 |
+| ('INTC', '2026-11-13') |                   19 |                    0.7225 |
+| ('INTC', '2026-11-20') |                   26 |                    0.6897 |
+| ('INTC', '2026-11-27') |                   33 |                    0.6474 |
+| ('INTC', '2026-12-04') |                   40 |                    0.6305 |
 
-And below this term structure is plotted for both companies:
+And below this term structure is plotted for each of the three companies.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-dark.png">
-  <img alt="Option Market Metrics" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-light.png">
+  <img alt="Implied Volatility Term Structure" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-light.png">
 </picture>
 
-## Performance
+## The Economic Environment
 
-The `performance` module measures how well an investment did, on its own and against the benchmark, over any period (`weekly`, `monthly`, `quarterly` or `yearly`). This includes the correlations with the [factors as defined by Fama and French](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/factor-asset-correlations): market, size, value, operating profitability and investment.
+All three are listed in the United States and valued on earnings that lie years ahead, which makes US inflation and interest rates the backdrop to their share prices. In 2022, the year the maximum drawdown above shows each of them falling by more than half, inflation reached 9% and the Federal Reserve raised its policy rate from 0.12% to 4.38%.
 
-```python
-# Get the Fama-French factor correlations for all tickers, per quarter
-factor_asset_correlations = companies.performance.get_factor_asset_correlations(
-    period="quarterly"
-)
-
-# Show the last five quarters for Apple
-factor_asset_correlations["AAPL"].tail()
-```
-
-Which returns:
-
-|        |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
-|:-------|---------:|--------:|--------:|--------:|--------:|
-| 2024Q4 |   0.4928 | -0.067  | -0.3767 | -0.2219 | -0.0636 |
-| 2025Q1 |   0.5077 | -0.0516 | -0.0674 |  0.0039 | -0.0835 |
-| 2025Q2 |   0.9058 |  0.0118 | -0.5271 | -0.2813 |  0.3645 |
-| 2025Q3 |   0.4237 |  0.1292 | -0.0917 |  0.1732 |  0.0317 |
-| 2025Q4 |   0.5796 |  0.2295 |  0.0121 | -0.2656 | -0.0535 |
-
-And below the correlations with each factor are plotted over time for Apple and Microsoft:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/performance-dark.png">
-  <img alt="Performance" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/performance-light.png">
-</picture>
-
-Beyond Beta, CAPM and the Fama-French factors, the `performance` module covers 40+ metrics in total, for example the [Sharpe Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/sharpe-ratio), [Sortino Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/sortino-ratio), [Calmar Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/calmar-ratio), [Omega Ratio](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/omega-ratio) and the [Correlation Matrix](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance/correlation-matrix). Most of these also support `rolling=<n>` for a value that evolves through time instead of one number per period. The factor models also take Ken French's regional factors (`region="Europe"`, `"Japan"`, `"Developed"` and more), and returns-based style analysis (`get_style_analysis`) finds the mix of style indices that tracks a fund best. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#getting-started) and the full performance metric documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance).**
-
-## Risk
-
-The `risk` module measures how much an investment can lose and how its returns are distributed, for example the [Value at Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk/value-at-risk-var). With `within_period=True` it is calculated from the daily returns within each period, here each month. The distribution can be Historical, Gaussian, Student-t, Cornish-Fisher or a Peak-over-Threshold Extreme Value Theory (`distribution="evt"`) fit for the tail.
+The [economics](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics) module covers 60+ countries with 50+ indicators, from GDP and unemployment to money supply and interest rates, and the [fixed income](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome) module adds bond yields, yield curves, central bank rates and bond and derivative valuations. Both are reached through the same Toolkit instance, or on their own with `from financetoolkit import Economics, FixedIncome`:
 
 ```python
-# Get the monthly Value at Risk for all tickers and the benchmark
-value_at_risk = companies.risk.get_value_at_risk(period="monthly", within_period=True)
+# Inflation on the same month a year earlier and the Federal Reserve's policy rate
+inflation_rate = companies.economics.get_inflation_rate("United States", period="monthly")
+policy_rate = companies.economics.get_central_bank_policy_rate("United States", period="monthly")
 
-# Show the last five months
-value_at_risk.tail()
-```
-
-Which returns:
-
-|         |    AAPL |    MSFT |   Benchmark |
-|:--------|--------:|--------:|------------:|
-| 2025-08 | -0.0197 | -0.0164 |     -0.006  |
-| 2025-09 | -0.0148 | -0.0123 |     -0.0054 |
-| 2025-10 | -0.0163 | -0.0212 |     -0.0106 |
-| 2025-11 | -0.0096 | -0.0205 |     -0.0154 |
-| 2025-12 | -0.012  | -0.0243 |     -0.0106 |
-
-And below the Value at Risk of Apple, Microsoft and the S&P 500 is plotted for each month, also demonstrating the impact of COVID-19:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/risk-dark.png">
-  <img alt="Risk" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/risk-light.png">
-</picture>
-
-Beyond VaR/CVaR/Entropic VaR, the `risk` module covers 40+ metrics in total, for example [Conditional Drawdown at Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk/conditional-drawdown-at-risk-cdar), [Maximum Drawdown Duration](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk/maximum-drawdown-duration), [EWMA Volatility](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk/ewma-volatility), GARCH models, copulas and the [Hurst Exponent](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk/hurst-exponent). Most of these support `rolling=<n>` for a value that evolves through time instead of one number per period. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#getting-started) and the full risk metric documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk).**
-
-## Technicals
-
-The `technicals` module calculates 40+ technical indicators from the historical data, for example the Relative Strength Index (RSI), a momentum oscillator between 0 and 100 where readings above 70 are commonly seen as overbought and below 30 as oversold.
-
-```python
-# Get the 14-day Relative Strength Index for all tickers and the benchmark
-relative_strength_index = companies.technicals.get_relative_strength_index(window=14)
-
-# Show the last five trading days
-relative_strength_index.tail()
-```
-
-Which returns:
-
-| Date       |    AAPL |    MSFT |   Benchmark |
-|:-----------|--------:|--------:|------------:|
-| 2025-12-24 | 50.0194 | 50.581  |     61.8463 |
-| 2025-12-26 | 49.1735 | 50.2949 |     61.7596 |
-| 2025-12-29 | 49.9735 | 49.7088 |     58.6708 |
-| 2025-12-30 | 48.4232 | 50.095  |     57.6152 |
-| 2025-12-31 | 45.6848 | 46.1445 |     51.5392 |
-
-And below the RSI of Apple and Microsoft is plotted for 2025:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/technicals-dark.png">
-  <img alt="Technicals" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/technicals-light.png">
-</picture>
-
-The 40+ indicators are divided into four categories: [**Breadth**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-breadth-indicators) (McClellan Oscillator, Advancers/Decliners, OBV, ADL, Chaikin Oscillator, TRIN, New Highs - New Lows), [**Momentum**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-momentum-indicators) (RSI, MACD, Stochastic, Williams %R, Aroon, CCI, ADX and more), [**Overlap**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-overlap-indicators) (SMA, EMA, DEMA, TRIX, WMA, Hull MA, VWAP, Parabolic SAR, Pivot Points, Support/Resistance) and [**Volatility**](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals/all-volatility-indicators) (ATR, Keltner Channels, Bollinger Bands, Donchian Channels, Volatility Cone). Market breadth across many tickers (`get_market_breadth`, for example from the constituents `Discovery.get_index_constituents` lists), seasonality per month or weekday and relative strength with a 1-99 rating complete the set. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals#getting-started) and the full technical indicator documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/technicals).**
-
-## ETF Analysis
-
-The `etf` module analyzes exchange traded funds and other funds: their holdings, sector and country weightings, profile and premium or discount to NAV, how closely they track their index, how concentrated and how much alike they are, what their holdings are valued at and how liquid they are.
-
-```python
-# Initialize the Toolkit for an S&P 500, a NASDAQ 100 and an equal weight S&P 500 fund
-funds = Toolkit(["VOO", "QQQ", "RSP"], api_key="FINANCIAL_MODELING_PREP_KEY")
-
-# Measure how concentrated each fund is from its current holdings
-funds.etf.get_concentration()
-```
-
-Which returns:
-
-|                              | VOO     | QQQ     | RSP     |
-|:-----------------------------|:--------|:--------|:--------|
-| Number of Holdings           | 507.0   | 105.0   | 507.0   |
-| Largest Holding              | NVDA    | NVDA    | PTC     |
-| Largest Weight               | 0.084   | 0.081   | 0.003   |
-| Top 10 Weight                | 0.3913  | 0.4664  | 0.0267  |
-| Herfindahl-Hirschman Index   | 0.023   | 0.0316  | 0.002   |
-| Effective Number of Holdings | 43.4661 | 31.6617 | 497.537 |
-
-The effective number of holdings is the number of equally weighted holdings that would give the same concentration. Below it is plotted next to the weight of the ten largest holdings of each fund:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/etf-dark.png">
-  <img alt="ETF Analysis" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/etf-light.png">
-</picture>
-
-Next to `get_concentration`, the module has `get_holdings`, `get_information`, `get_sector_weightings`, `get_country_weightings`, `get_profile`, `get_tracking`, `get_overlap`, `get_look_through_valuation` and `get_liquidity`.
-
-## Portfolio Optimization
-
-The `portfolio` module builds portfolios from the tickers of any Toolkit: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, inverse volatility, minimum CVaR and Black-Litterman), the efficient frontier, risk contributions, historical stress tests, look-through exposure of ETFs and a Brinson attribution against the benchmark.
-
-```python
-# Initialize the Toolkit for four stocks and a gold fund from 2021 to 2025
-assets = Toolkit(
-    ["AAPL", "MSFT", "JNJ", "XOM", "GLD"],
-    api_key="FINANCIAL_MODELING_PREP_KEY",
-    start_date="2021-01-01",
-    end_date="2025-12-31",
-)
-
-# The efficient frontier and its two best known portfolios, with at most 40% per asset
-efficient_frontier = assets.portfolio.get_efficient_frontier(points=25, maximum_weight=0.4)
-minimum_variance = assets.portfolio.get_minimum_variance_weights(maximum_weight=0.4)
-maximum_sharpe = assets.portfolio.get_maximum_sharpe_weights(maximum_weight=0.4)
-
-# Show the maximum Sharpe ratio portfolio
-maximum_sharpe
-```
-
-Which returns:
-
-|           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
-|:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-| AAPL      |   0.0083 |            0.1933 |       0.2786 |         0.5727 |              0.0082 |
-| MSFT      |   0.1918 |            0.2017 |       0.2572 |         0.6532 |              0.1973 |
-| JNJ       |   0.1212 |            0.0984 |       0.1673 |         0.3867 |              0.0496 |
-| XOM       |   0.2787 |            0.291  |       0.2702 |         0.9522 |              0.4359 |
-| GLD       |   0.4    |            0.1681 |       0.1562 |         0.8603 |              0.309  |
-| Portfolio |   1      |            0.2005 |       0.1256 |         1.3278 |              1      |
-
-The risk contribution is each asset's share of the portfolio's volatility. Below the efficient frontier is plotted with the minimum variance and maximum Sharpe ratio portfolios and each asset on its own:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-optimization-dark.png">
-  <img alt="Portfolio Optimization" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-optimization-light.png">
-</picture>
-
-Returns and volatilities are annualized and the expected returns are the historical average returns; `get_black_litterman_weights` blends them with the returns the market implies and your own views. **Find the full portfolio documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio).**
-
-## Portfolio
-
-The `Portfolio` class follows your own investments over time. A portfolio can be given as weights (`Portfolio(weights={"VTI": 0.6, "BND": 0.4})`, invested on a start date and rebalanced), as the shares you hold (`Portfolio(holdings={"AAPL": 10, "MSFT": 5})`), as your own transactions (a DataFrame, CSV or Excel file with Date, Ticker and Volume, and optionally Price, Costs and Currency) or as one of thirteen classic portfolios such as the 60/40, Ray Dalio's All Weather, Harry Browne's Permanent Portfolio, the Golden Butterfly and the Bogleheads three-fund portfolio (listed with `Portfolio.get_presets()`).
-
-```python
-from financetoolkit import Portfolio
-
-# Harry Browne's Permanent Portfolio, invested since 2016 and rebalanced every year
-portfolio = Portfolio.from_preset(
-    "Permanent Portfolio", start_date="2016-01-01", api_key="FINANCIAL_MODELING_PREP_KEY"
-)
-
-# Get an overview of the positions against the benchmark
-portfolio.get_portfolio_overview()
-```
-
-Which returns:
-
-| Identifier   |   Volume |   Costs |    Price |   Invested |   Latest Price |   Latest Value |   Dividends |   Return |   Return Value |   Benchmark Return |   Volatility |   Benchmark Volatility |   Alpha |    Beta |   Weight |
-|:-------------|---------:|--------:|---------:|-----------:|---------------:|---------------:|------------:|---------:|---------------:|-------------------:|-------------:|-----------------------:|--------:|--------:|---------:|
-| BIL          |  58.8498 |       0 |  91.4038 |    5936.19 |         91.63  |        5392.41 |     885.63  |   0.1515 |        899.338 |             1.5143 |       0.0019 |                 0.1274 | -1.3628 | -0.0007 |   0.2524 |
-| GLD          |  13.5694 |       0 | 107.803  |    2826.9  |        366.61  |        4974.69 |       0     |   1.9408 |       5486.4   |             2.0424 |       0.2845 |                 0.1274 | -0.1017 |  0.8392 |   0.2328 |
-| TLT          |  61.6991 |       0 | 106.198  |    6561.66 |         81.34  |        5018.61 |    1104.41  |  -0.0647 |       -424.817 |             1.467  |       0.096  |                 0.1274 | -1.5318 |  0.2198 |   0.2349 |
-| VTI          |  16.0399 |       0 | 116.425  |    3277.73 |        373.01  |        5983.04 |     624.954 |   1.7623 |       5776.47  |             1.6539 |       0.1293 |                 0.1274 |  0.1085 |  1.0114 |   0.28   |
-| Portfolio    | 150.158  |       0 | 102.715  |   18602.5  |        142.308 |       21368.7  |    2614.99  |   1.1737 |      11737.4   |             2.981  |       0.0943 |                 0.1274 | -1.8073 |  0.53   |   1      |
-
-And below the return of each position is plotted against the return of the benchmark over the same period:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-dark.png">
-  <img alt="Portfolio" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-light.png">
-</picture>
-
-The positions, transactions and their performance can also be viewed over time (`get_positions_overview`, `get_portfolio_performance`, `get_transactions_overview` and `get_money_weighted_return`). Furthermore, `portfolio.toolkit` loads the portfolio into the `Toolkit`, making it possible to calculate every metric and ratio for your portfolio (the time-weighted sum of all positions) and to optimize it with the `portfolio` module. **Find the full portfolio documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio).**
-
-## Fixed Income
-
-The `fixedincome` module covers bond and derivative valuations, government bond yields, central bank rates, yield curve analytics and credit, for example the daily U.S. Treasury par yield curve as published by the U.S. Department of the Treasury.
-
-```python
-# Get the daily U.S. Treasury par yield curve rates from 2018 to 2025
+# The daily U.S. Treasury par yield curve
 treasury_rates = companies.fixedincome.get_treasury_rates()
 
 # Show the curve on the last trading day of each year
 treasury_rates.groupby(treasury_rates.index.year).last()
 ```
 
-Which returns:
+For example, the yield curve at the end of each year is shown below.
 
 |   Date |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
 |-------:|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
@@ -598,86 +360,188 @@ Which returns:
 |   2024 |    0.044  |    0.0439 |    0.0437 |    0.0424 |   0.0416 |   0.0425 |   0.0427 |   0.0438 |   0.0448 |    0.0458 |    0.0486 |    0.0478 |
 |   2025 |    0.0374 |    0.0367 |    0.0367 |    0.0359 |   0.0348 |   0.0347 |   0.0355 |   0.0373 |   0.0394 |    0.0418 |    0.0479 |    0.0484 |
 
-And below the yield curve is plotted at the end of every other year:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/fixedincome-dark.png">
-  <img alt="Fixed Income" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/fixedincome-light.png">
-</picture>
-
-Beyond Treasury rates, the `fixedincome` module covers [**Bond Valuations**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/general-statistics) (Present Value, Macaulay/Modified Duration, Convexity, Yield to Maturity), [**Derivative Valuations**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/black-model) (Black and Bachelier models for Swaptions), [**Government Bonds**](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/3-month-government-bond-yield) (3-month and 10-year yields and yield curves per country), **ICE BofA Corporate Bond benchmarks** ([effective yield](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/effective-yield), option-adjusted spread, total return and yield to worst per rating and maturity), **Central Bank rates** ([Euribor](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/euro-interbank-offered-rate-euribor), [ECB](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/main-refinancing-operations-ecb) and [Federal Reserve rates](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome/secured-overnight-financing-rate-sofr) incl. SOFR), **Yield Curve Analytics** (zero-coupon curves bootstrapped from government par yields, Nelson-Siegel-Svensson fits, principal components and the Vasicek, Cox-Ingersoll-Ross and Hull-White short-rate models), **Credit** (the option-adjusted spread of callable bonds and the default probabilities credit spreads imply) and **US Treasury auction results** (yields, bid-to-cover ratios and bidder shares from 1979). It can be called via `companies.fixedincome` or standalone through `from financetoolkit import FixedIncome`. **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome#getting-started) and the full fixed income documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/fixedincome).**
-
-## Economics
-
-The `economics` module gives insights for 60+ countries into key economic indicators such as the [Consumer Price Index (CPI)](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/consumer-price-index), [Gross Domestic Product (GDP)](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/gross-domestic-product-gdp), [Unemployment Rates](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/unemployment-rates) and [3-month](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/short-term-interest-rate) and [10-year](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/long-term-interest-rate) Government Interest Rates, each at the highest frequency the source publishes. It can be called via `companies.economics` or standalone through `from financetoolkit import Economics`.
-
-```python
-# Get the monthly Unemployment Rate for a selection of countries
-unemployment_rate = companies.economics.get_unemployment_rate(
-    countries=["United States", "Germany", "Japan", "Sweden", "Colombia"]
-)
-
-# Show the last five months
-unemployment_rate.tail()
-```
-
-Which returns:
-
-|         |   United States |   Germany |   Japan |   Sweden |   Colombia |
-|:--------|----------------:|----------:|--------:|---------:|-----------:|
-| 2025-08 |           0.043 |     0.038 |   0.026 |    0.087 |     0.0876 |
-| 2025-09 |           0.044 |     0.038 |   0.026 |    0.088 |     0.0864 |
-| 2025-10 |         nan     |     0.038 |   0.026 |    0.093 |     0.0895 |
-| 2025-11 |           0.045 |     0.039 |   0.026 |    0.09  |     0.0816 |
-| 2025-12 |           0.044 |     0.039 |   0.026 |    0.088 |     0.0852 |
-
-And below these Unemployment Rates are plotted over time:
+And below inflation and the policy rate are plotted for each month, next to the yield curve at the end of the last five years. When short-term yields lie above long-term ones, as at the end of 2022 and 2023, the curve is inverted.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/economics-dark.png">
-  <img alt="Economics" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/economics-light.png">
+  <img alt="US Inflation, Policy Rate and Yield Curve" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/economics-light.png">
 </picture>
 
-The indicators are divided into five categories: [**Government**](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/government-debt) (GDP, government debt/revenue/expenditure/deficit, trust in government), [**Economy**](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/consumer-price-index) (CPI, inflation, consumer/business confidence, house/rent/share prices), [**Finance**](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/money-supply) (money supply, central bank policy rate, short/long-term interest rates), [**Environment**](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/renewable-energy) (renewable energy, carbon footprint) and [**Jobs & Society**](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics/unemployment-rates) (unemployment, labour productivity, income inequality, population, poverty rate). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics#getting-started) and the full economic indicator documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/economics).**
+## Economic Relations
 
-## Econometrics
-
-The `econometrics` module provides [regression](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/ordinary-least-squares-ols), [hypothesis testing](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/jarque-bera-test), [unit root and cointegration](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf), [Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/granger-causality) and [panel data](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) methods built on `statsmodels` and `linearmodels`. It requires the optional `financetoolkit[econometrics]` extra (`pip install financetoolkit[econometrics]`) and can be used via `companies.econometrics`, or standalone on any data (ratios, economic indicators, yield curves or a dataset of your own) through `from financetoolkit import Econometrics` and `Econometrics(data=...)`.
+Rates rose and the shares fell, but the whole market fell with them. The [econometrics](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics) module separates the two with regressions, tests and forecasts built on `statsmodels` and `linearmodels` (`pip install financetoolkit[econometrics]`). Through the Toolkit it analyzes the returns of its tickers, and on its own, through `Econometrics(data=...)`, any data at all, here the weekly returns of the three and the S&P 500 next to the weekly change in the 10-year Treasury yield:
 
 ```python
-# Initialize the Toolkit for Apple and six other large companies from 2021 to 2025
-stocks = Toolkit(
-    ["AAPL", "MSFT", "GOOGL", "AMZN", "QCOM", "XOM", "PG"],
+import pandas as pd
+
+from financetoolkit import Econometrics
+
+# The weekly change in the 10-year Treasury yield next to the weekly returns
+treasury_data = companies.get_treasury_data(period="weekly")
+weekly_returns = historical_data["Return"].copy()
+weekly_returns["10-Year Yield"] = treasury_data["Close"]["10 Year"].diff()
+
+# The data are changes already
+econometrics = Econometrics(data=weekly_returns, changes="none")
+
+# Regress the return of each company on the S&P 500 and the 10-year yield
+regressions = pd.concat(
+    {
+        ticker: econometrics.get_ols(dependent_ticker=ticker, independent_tickers=["Benchmark", "10-Year Yield"])
+        for ticker in ["NVDA", "AMD", "INTC"]
+    }
+)
+
+# Show the results
+regressions
+```
+
+For example, the coefficients for each company are shown below.
+
+|                           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+|:--------------------------|--------------:|-------------:|--------------:|----------:|
+| ('NVDA', 'Intercept')     |        0.0059 |       0.0024 |        2.4711 |    0.0139 |
+| ('NVDA', 'Benchmark')     |        1.7054 |       0.092  |       18.5318 |    0      |
+| ('NVDA', '10-Year Yield') |       -1.1156 |       1.9448 |       -0.5736 |    0.5665 |
+| ('AMD', 'Intercept')      |        0.005  |       0.0029 |        1.7173 |    0.0867 |
+| ('AMD', 'Benchmark')      |        1.6292 |       0.112  |       14.5426 |    0      |
+| ('AMD', '10-Year Yield')  |       -1.7499 |       2.3675 |       -0.7391 |    0.4602 |
+| ('INTC', 'Intercept')     |       -0.0016 |       0.0024 |       -0.6692 |    0.5038 |
+| ('INTC', 'Benchmark')     |        1.1598 |       0.0943 |       12.2984 |    0      |
+| ('INTC', '10-Year Yield') |       -0.7415 |       1.9929 |       -0.3721 |    0.71   |
+
+And below each coefficient is shown with its 95% confidence interval. A coefficient of 1.5 on the S&P 500 means the share moved 1.5% for every 1% the market moved, and a coefficient of -1 on the 10-year yield means a weekly return 1% lower for every percentage point the yield rose, on top of what the market explains.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-dark.png">
+  <img alt="Economic Relations" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-light.png">
+</picture>
+
+The module also covers unit root and cointegration tests, Granger causality, panel data, causal inference, ARIMA, VAR and VECM forecasts, regime switching, a time-varying beta and pairs trading.
+
+## Comparing the Sector's ETFs
+
+Rather than picking three companies, a fund holds the whole industry. The [ETF](https://www.jeroenbouma.com/projects/financetoolkit/docs/etf) module analyzes the holdings, sector and country weightings, tracking, concentration, overlap, valuation and liquidity of any fund, here two of the largest semiconductor funds, SMH and SOXX:
+
+```python
+# Initialize the Toolkit for two semiconductor funds
+funds = Toolkit(
+    ["SMH", "SOXX"],
+    api_key="FINANCIAL_MODELING_PREP_KEY",
+    start_date="2017-12-31",
+    end_date="2025-12-31",
+)
+
+# How concentrated each fund is and how much the two hold of the same
+concentration = funds.etf.get_concentration()
+overlap = funds.etf.get_overlap()
+
+# The weight of Nvidia, AMD and Intel in each fund
+holdings = funds.etf.get_holdings()
+weights = holdings.loc[(slice(None), ["NVDA", "AMD", "INTC"]), "Weight"].unstack(level=0)
+
+# Show the weights
+weights
+```
+
+For example, the weight of each of the three companies in both funds is shown below. Holdings are those of today, as funds publish their current holdings only.
+
+| Asset   |       SMH |      SOXX |
+|:--------|----------:|----------:|
+| NVDA    | 0.209238  | 0.0810958 |
+| AMD     | 0.0537416 | 0.0931787 |
+| INTC    | 0.0398394 | 0.0824532 |
+
+And below these weights are plotted next to the weight of the ten largest holdings of each fund and the overlap between the two.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/etf-dark.png">
+  <img alt="Comparing the Sector's ETFs" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/etf-light.png">
+</picture>
+
+## Building a Diversified Portfolio
+
+A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, minimum CVaR and Black-Litterman weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
+
+```python
+# Initialize the Toolkit for funds across sectors and asset classes from 2021 to 2025
+assets = Toolkit(
+    ["SMH", "XLV", "XLE", "TLT", "GLD"],
     api_key="FINANCIAL_MODELING_PREP_KEY",
     start_date="2021-01-01",
     end_date="2025-12-31",
 )
 
-# Regress the weekly returns of Apple (the first ticker) on the others and the S&P 500
-stocks.econometrics.get_ols(period="weekly", include_benchmark=True)
+# The efficient frontier and the maximum Sharpe ratio portfolio, with at most 40% per asset
+efficient_frontier = assets.portfolio.get_efficient_frontier(points=25, maximum_weight=0.4)
+maximum_sharpe = assets.portfolio.get_maximum_sharpe_weights(maximum_weight=0.4)
+
+# The portfolio in which every asset contributes the same share of the risk
+risk_parity = assets.portfolio.get_risk_parity_weights()
+
+# Show the risk parity portfolio
+risk_parity
 ```
 
-Which returns:
+For example, the risk parity portfolio is shown below. Returns and volatilities are annualized and the risk contribution is each asset's share of the portfolio's volatility.
 
-|           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-|:----------|--------------:|-------------:|--------------:|----------:|
-| Intercept |        0.0006 |       0.0016 |        0.3953 |    0.693  |
-| MSFT      |       -0.0084 |       0.0747 |       -0.1121 |    0.9109 |
-| GOOGL     |        0.1635 |       0.0487 |        3.3583 |    0.0009 |
-| AMZN      |       -0.0596 |       0.0545 |       -1.0949 |    0.2746 |
-| QCOM      |        0.1302 |       0.0434 |        2.9983 |    0.003  |
-| XOM       |       -0.1325 |       0.0453 |       -2.9229 |    0.0038 |
-| PG        |        0.0801 |       0.0772 |        1.0372 |    0.3006 |
-| Benchmark |        0.9365 |       0.1605 |        5.8361 |    0      |
+|           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
+|:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
+| SMH       |   0.1008 |            0.3067 |       0.3508 |         0.7782 |                 0.2 |
+| XLV       |   0.2358 |            0.0901 |       0.1449 |         0.3889 |                 0.2 |
+| XLE       |   0.1481 |            0.2463 |       0.2672 |         0.7954 |                 0.2 |
+| TLT       |   0.275  |           -0.0748 |       0.1606 |        -0.6756 |                 0.2 |
+| GLD       |   0.2403 |            0.1681 |       0.1562 |         0.8603 |                 0.2 |
+| Portfolio |   1      |            0.1084 |       0.1085 |         0.6888 |                 1   |
 
-And below each coefficient is shown with its 95% confidence interval, with stars marking how significant it is:
+And below the efficient frontier is plotted with both portfolios and each asset on its own, next to the weights of both portfolios.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-dark.png">
-  <img alt="Econometrics" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-optimization-dark.png">
+  <img alt="Building a Diversified Portfolio" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-optimization-light.png">
 </picture>
 
-Each coefficient says how much Apple's return moves with a one unit move in that return while the others stay the same. The `econometrics` module covers 53 methods in total, including [unit root tests](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/augmented-dickey-fuller-adf) (ADF, KPSS, Phillips-Perron), [cointegration and Granger causality](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/engle-granger-cointegration), [panel data estimators](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/fixed-effects) (Fixed/Random Effects), [causal inference](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/propensity-score-matching-psm) (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching, Synthetic Control), [time-series forecasting](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics/arima-forecast) (ARIMA, VAR, VECM), regimes and dynamics (Markov regime switching, Bai-Perron structural breaks, a Kalman filter time-varying beta and DCC-GARCH correlations) and pairs trading (hedge ratio, half-life and z-score signals). **Find the Getting Started guide [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics#getting-started) and the full econometrics documentation [here](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics).**
+## Following the Portfolio
+
+Optimal weights on paper still have to be held. The [Portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio) class follows a portfolio over time, given as weights, as the shares held, as your own transactions or as one of thirteen classic portfolios such as the 60/40 and the All Weather portfolio. Below the risk parity weights are invested at the start of 2021, brought back to their weights every year and followed up to today:
+
+```python
+from financetoolkit import Portfolio
+
+# Invest the risk parity weights and rebalance every year
+portfolio = Portfolio(
+    weights=risk_parity,
+    start_date="2021-01-01",
+    rebalancing="yearly",
+    api_key="FINANCIAL_MODELING_PREP_KEY",
+)
+
+# Get an overview of the positions against the benchmark
+overview = portfolio.get_portfolio_overview()
+
+# Show the main figures
+overview[["Weight", "Return", "Benchmark Return", "Volatility", "Alpha", "Beta"]]
+```
+
+For example, the main figures of each position are shown below.
+
+| Identifier   |   Weight |   Return |   Benchmark Return |   Volatility |   Alpha |    Beta |
+|:-------------|---------:|---------:|-------------------:|-------------:|--------:|--------:|
+| GLD          |   0.1969 |   0.9399 |             0.849  |       0.2845 |  0.0909 |  0.8392 |
+| SMH          |   0.1307 |   2.0669 |             0.5236 |       0.4001 |  1.5433 |  2.4046 |
+| TLT          |   0.2273 |  -0.2038 |             0.7457 |       0.096  | -0.9494 |  0.2198 |
+| XLE          |   0.2034 |   1.5458 |             0.2236 |       0.2212 |  1.3222 | -0.4119 |
+| XLV          |   0.2418 |   0.5502 |             0.7995 |       0.1632 | -0.2493 |  0.256  |
+| Portfolio    |   1      |   0.9703 |             1.1143 |       0.1047 | -0.144  |  0.5075 |
+
+And below the return of each position is plotted against the return of the benchmark over the same period.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-dark.png">
+  <img alt="Following the Portfolio" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/portfolio-light.png">
+</picture>
+
+With `portfolio.toolkit` the portfolio, the time-weighted sum of all positions, is loaded into the Toolkit, so every metric above can be calculated for it as well.
 
 # MCP Server
 

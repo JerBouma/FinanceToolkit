@@ -477,6 +477,102 @@ def get_wls(
     return _from_statsmodels_ols(sm_result, feature_names, x_values, cov_type)
 
 
+def get_feasible_weights(
+    y: pd.Series | np.ndarray,
+    x: pd.DataFrame | pd.Series | np.ndarray,
+    add_constant: bool = True,
+) -> np.ndarray:
+    """
+    Estimate the Weighted Least Squares weights of a regression of `y` on `x` from its own
+    residuals, with the feasible GLS procedure for heteroskedasticity of Wooldridge (2016):
+
+    - ûₜ = the OLS residuals of `y` on `x`
+    - ĝₜ = the fitted values of the OLS regression of log(ûₜ²) on `x` and a constant
+    - wₜ = 1 / exp(ĝₜ), the inverse of the estimated error variance
+
+    The exponential keeps every estimated variance, and so every weight, positive.
+
+    Args:
+        y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
+        x (pd.DataFrame | pd.Series | np.ndarray): The independent variable(s)/regressor(s).
+        add_constant (bool, optional): Whether the regression of `y` on `x` has an intercept.
+            The variance regression always has one. Defaults to True.
+
+    Returns:
+        np.ndarray: The (positive) weight of each observation, shape `(n,)`.
+
+    Notes:
+        Reference: Wooldridge, J.M. (2016). "Introductory Econometrics: A Modern Approach",
+        6th edition, Section 8.4, "A Feasible GLS Procedure to Correct for
+        Heteroskedasticity."
+    """
+    y_values = _to_target_vector(y)
+    x_values, _ = _to_design_matrix(x, add_constant)
+    _validate_design(x_values, y_values)
+
+    squared_residuals = sm.OLS(y_values, x_values).fit().resid ** 2
+    # An exact zero residual has no logarithm; the smallest positive one stands in for it.
+    squared_residuals = np.maximum(
+        squared_residuals, squared_residuals[squared_residuals > 0].min()
+    )
+    variance_design, _ = _to_design_matrix(x, add_constant=True)
+    fitted = sm.OLS(np.log(squared_residuals), variance_design).fit().fittedvalues
+
+    return 1 / np.exp(fitted)
+
+
+def get_ar1_covariance(
+    y: pd.Series | np.ndarray,
+    x: pd.DataFrame | pd.Series | np.ndarray,
+    add_constant: bool = True,
+) -> np.ndarray:
+    """
+    Estimate the error covariance structure of a regression of `y` on `x` with first-order
+    autocorrelated (AR(1)) errors, eₜ = ρ·eₜ₋₁ + uₜ, from its own residuals:
+
+    - ρ̂ = Σ ûₜ·ûₜ₋₁ / Σ ûₜ₋₁², the slope of the OLS residuals on their own lag
+    - Ωᵢⱼ = ρ̂^|i - j|, the correlation of the errors of observations i and j
+
+    GLS with this Ω is the Prais-Winsten estimator, which unlike Cochrane-Orcutt keeps the
+    first observation. The scale σᵤ² / (1 - ρ̂²) of the covariance is left to GLS.
+
+    Args:
+        y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
+        x (pd.DataFrame | pd.Series | np.ndarray): The independent variable(s)/regressor(s).
+        add_constant (bool, optional): Whether to prepend an intercept column of ones
+            to `x`. Defaults to True.
+
+    Returns:
+        np.ndarray: The error correlation matrix Ω, shape `(n, n)`.
+
+    Raises:
+        ValueError: If the estimated ρ is not between -1 and 1, so the errors are not a
+            stationary AR(1) process and Ω is not positive definite.
+
+    Notes:
+        References: Cochrane, D. and Orcutt, G.H. (1949). "Application of Least Squares
+        Regression to Relationships Containing Auto-Correlated Error Terms." Journal of the
+        American Statistical Association, 44(245), 32-61. Prais, S.J. and Winsten, C.B.
+        (1954). "Trend Estimators and Serial Correlation." Cowles Commission Discussion
+        Paper No. 383.
+    """
+    y_values = _to_target_vector(y)
+    x_values, _ = _to_design_matrix(x, add_constant)
+    _validate_design(x_values, y_values)
+
+    residuals = sm.OLS(y_values, x_values).fit().resid
+    rho = float(residuals[1:] @ residuals[:-1] / (residuals[:-1] @ residuals[:-1]))
+
+    if not -1 < rho < 1:
+        raise ValueError(
+            f"The residuals' first-order autocorrelation is {rho:.4f}, outside (-1, 1), "
+            "so the errors are not a stationary AR(1) process."
+        )
+
+    positions = np.arange(len(residuals))
+    return rho ** np.abs(positions[:, None] - positions[None, :])
+
+
 def get_gls(
     y: pd.Series | np.ndarray,
     x: pd.DataFrame | pd.Series | np.ndarray,
@@ -495,10 +591,10 @@ def get_gls(
 
     - beta_hat = (X' Omega^-1 X)^-1 X' Omega^-1 y
 
-    Note that `Omega` must be supplied (e.g. from a fitted AR(1) error structure or
-    a known covariance model) -- this implements the GLS estimation step itself, not
-    the (separate, model-specific) problem of estimating `Omega` in the first place
-    (Feasible GLS).
+    Note that `Omega` must be supplied (e.g. an AR(1) error structure from
+    `get_ar1_covariance` or a known covariance model) -- this implements the GLS
+    estimation step itself, not the (separate, model-specific) problem of estimating
+    `Omega` in the first place (Feasible GLS).
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.

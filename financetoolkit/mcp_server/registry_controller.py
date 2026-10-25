@@ -22,13 +22,18 @@ from typing import Annotated, Any, NamedTuple
 import pandas as pd
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import Field as PydanticField
+from pydantic import (
+    BeforeValidator,
+    Field as PydanticField,
+)
 
 from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.mcp_server import series_model
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics
 from financetoolkit.mcp_server.coercion_model import (
+    accepts_text_only,
     coerce_value,
+    text_from_parsed_json,
     to_boolean,
     validate_date,
 )
@@ -166,10 +171,6 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "the calendar year for e.g. Apple and Microsoft). Leave unset for the most recent."
     ),
     "window": "The number of periods the indicator looks back over, e.g. 14 or 20.",
-    "weights": (
-        "The portfolio weight per ticker as an object, e.g. {'AAPL': 0.6, 'MSFT': 0.4}; "
-        "equal weights when left unset."
-    ),
     "lags": "The number of lags (past periods) the test or model uses, e.g. 1 or 5.",
     "column": "The price column to use, e.g. 'Close' or 'Adj Close'.",
     "strike_price_range": (
@@ -268,6 +269,15 @@ def _annotate_with_description(
 
     if suffix:
         desc = f"{desc} {suffix}"
+
+    # A text argument that reads as JSON reaches validation as a list or object, which
+    # is turned back into text (see text_from_parsed_json).
+    if accepts_text_only(ann):
+        return Annotated[  # type: ignore[valid-type]
+            ann,
+            PydanticField(description=desc),
+            BeforeValidator(text_from_parsed_json),
+        ]
 
     return Annotated[ann, PydanticField(description=desc)]  # type: ignore[valid-type]
 
@@ -602,6 +612,7 @@ def _simplify_annotation(ann: Any) -> Any:
     - ``float | range | list | None``    → ``float | None``
     - ``list[str] | str | None``         → ``str | None``
     - ``float | list | dict[str,float]`` → ``float``
+    - ``DataFrame | ndarray | list[list[float]]`` → ``list[list[float]]``
     """
     if ann is inspect.Parameter.empty or ann is None:
         return str
@@ -645,6 +656,20 @@ def _simplify_annotation(ann: Any) -> Any:
         scalars.append(a)
 
     if not scalars:
+        # A matrix (a list of lists of numbers, such as a Wald restriction matrix) has no
+        # text form, so it stays an array of arrays.
+        matrix = next(
+            (
+                a
+                for a in args
+                if typing.get_origin(a) is list
+                and typing.get_args(a)
+                and typing.get_origin(typing.get_args(a)[0]) is list
+            ),
+            None,
+        )
+        if matrix is not None:
+            return matrix | None if has_none else matrix
         # A mapping without a single-value form (portfolio weights per ticker) stays one,
         # so a caller can pass {"AAPL": 0.6, "MSFT": 0.4}.
         mapping = next(

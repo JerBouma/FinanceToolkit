@@ -1450,7 +1450,7 @@ class Options:
         american_option: bool = False,
         strike_price_range: float = 0.25,
         strike_step_size: int = 5,
-        time_to_expiration: int = 1,
+        time_to_expiration: float = 1,
         timesteps: int = 10,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -1515,7 +1515,7 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            time_to_expiration (int): The number of year to use for the time to expiration. Defaults to 1 which equals
+            time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
@@ -1675,7 +1675,7 @@ class Options:
     def get_stock_price_simulation(
         self,
         start_date: str | None = None,
-        time_to_expiration: int = 1,
+        time_to_expiration: float = 1,
         timesteps: int = 10,
         risk_free_rate: float | None = None,
         show_unique_combinations: bool = False,
@@ -1717,7 +1717,7 @@ class Options:
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
             which means it will use the most recent date.
-            time_to_expiration (int): The number of year to use for the time to expiration. Defaults to 1 which equals
+            time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
@@ -7813,16 +7813,25 @@ class Options:
     def _per_expiry(
         self,
         calculate,
-        expiration_dates: list[str] | None,
+        expiration_dates: list[str] | dict[str, list[str]] | None,
         number_of_expirations: int,
         rounding: int | None,
     ) -> pd.DataFrame:
-        """Run a calculation on every expiry of every ticker, rows (ticker, expiration)."""
+        """
+        Run a calculation on every expiry of every ticker, rows (ticker, expiration). The
+        expiries are the same for every ticker, or given per ticker as a dictionary, which
+        then also selects the tickers.
+        """
         self._warn_if_history_is_stale(_CHAIN_INPUTS_FROM_HISTORY)
+        per_ticker = (
+            expiration_dates
+            if isinstance(expiration_dates, dict)
+            else dict.fromkeys(self._tickers, expiration_dates)
+        )
         rows = {}
-        for ticker in self._tickers:
+        for ticker, ticker_expiration_dates in per_ticker.items():
             for expiration_date in self._expiries(
-                ticker, expiration_dates, number_of_expirations
+                ticker, ticker_expiration_dates, number_of_expirations
             ):
                 inputs = self._expiry_inputs(ticker, expiration_date)
                 if inputs[0].empty or inputs[1].empty:
@@ -8331,11 +8340,13 @@ class Options:
         | ('AAPL', '2026-11-06') | 2026-11-02      |                   13 |               350 |            16.85 |         0.0485 |        330.88 |        364.58 |
         | ('NVDA', '2026-11-20') | 2026-11-18      |                   27 |               210 |            20.5  |         0.0972 |        190.46 |        231.46 |
         """
+        earnings_dates = None
         if around_earnings:
             if self._earnings_function is None:
                 raise ValueError("Earnings dates are not available for this Toolkit.")
             earnings_dates = self._earnings_function()
-            tables = []
+            # Each ticker uses the first expiry after its own earnings date.
+            expiration_dates = {}
             for ticker in self._tickers:
                 earnings_date = earnings_dates.get(ticker)
                 if not earnings_date:
@@ -8346,23 +8357,12 @@ class Options:
                     for date in options_model.get_option_expiry_dates(ticker)
                     if date > earnings_date
                 ]
-                if not after:
-                    continue
-                original = self._tickers
-                self._tickers = [ticker]
-                try:
-                    table = self.get_implied_move(
-                        expiration_dates=[after[0]], rounding=rounding
-                    )
-                finally:
-                    self._tickers = original
-                table.insert(0, "Earnings Date", earnings_date)
-                tables.append(table)
-            if not tables:
+                if after:
+                    expiration_dates[ticker] = [after[0]]
+            if not expiration_dates:
                 raise ValueError("No expiry after an upcoming earnings date was found.")
-            return pd.concat(tables)
 
-        return self._per_expiry(
+        table = self._per_expiry(
             lambda calls, puts, stock_price, *_: market_metrics_model.get_implied_move(
                 calls, puts, stock_price
             ),
@@ -8370,6 +8370,13 @@ class Options:
             number_of_expirations,
             rounding,
         )
+        if earnings_dates is not None:
+            table.insert(
+                0,
+                "Earnings Date",
+                table.index.get_level_values("Ticker").map(earnings_dates),
+            )
+        return table
 
     def _model_free_volatility(self, ticker: str, days: int) -> pd.Series:
         """The constant-maturity model-free implied volatility of one ticker."""

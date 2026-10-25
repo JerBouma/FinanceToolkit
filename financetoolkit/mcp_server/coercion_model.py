@@ -7,6 +7,7 @@ Python types required by controller methods, as well as date-string validation.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Union, get_args, get_origin
 
@@ -115,6 +116,42 @@ def coerce_value(val: Any, annotation: Any) -> Any:
     if int in scalars or scalars[0] is float:
         return _coerce_number(val, int in scalars, float in scalars)
     return val
+
+
+def accepts_text_only(annotation: Any) -> bool:
+    """Whether an annotation takes text (``str`` or ``str | None``) and no list."""
+    args = (
+        get_args(annotation)
+        if get_origin(annotation) is Union
+        or (UnionType is not None and isinstance(annotation, UnionType))
+        else (annotation,)
+    )
+    return str in args and not any(a is list or get_origin(a) is list for a in args)
+
+
+def text_from_parsed_json(value: Any) -> Any:
+    """
+    Turns a list or object back into text for a parameter that takes text.
+
+    The MCP SDK parses every text argument that reads as a JSON array or object into a
+    list or dictionary before validation, unless the parameter is typed exactly ``str``,
+    so tickers='["AAPL", "MSFT"]' arrives as a list and an optional text parameter would
+    refuse it. A flat list becomes comma-separated text ("AAPL,MSFT"), which every list
+    parameter accepts; a nested list or an object becomes its JSON text again.
+
+    Args:
+        value (Any): The argument as the SDK passes it on.
+
+    Returns:
+        Any: The argument as text when it is a list or dictionary, otherwise as given.
+    """
+    if isinstance(value, dict) or (
+        isinstance(value, list) and any(isinstance(v, list | dict) for v in value)
+    ):
+        return json.dumps(value)
+    if isinstance(value, list):
+        return ",".join(str(v) for v in value)
+    return value
 
 
 def to_boolean(value: str | int | float | bool) -> bool:

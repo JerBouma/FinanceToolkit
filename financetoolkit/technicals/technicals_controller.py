@@ -5347,7 +5347,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        num_std_dev: int = 2,
+        num_std_dev: float = 2,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -5386,7 +5386,7 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
                 The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
-            num_std_dev (int, optional): Number of standard deviations for the bands.
+            num_std_dev (float, optional): Number of standard deviations for the bands.
                 Defaults to 2.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
@@ -7264,7 +7264,7 @@ class Technicals:
         close_column: str = "Adj Close",
         window: int = 20,
         atr_window: int = 10,
-        atr_multiplier: int = 2,
+        atr_multiplier: float = 2,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -7295,7 +7295,7 @@ class Technicals:
                 middle line). Defaults to 20, as on StockCharts.
             atr_window (int, optional): Number of periods for ATR calculation.
                 Defaults to 10, as on StockCharts.
-            atr_multiplier (int, optional): Multiplier for ATR to determine channel width.
+            atr_multiplier (float, optional): Multiplier for ATR to determine channel width.
                 Defaults to 2.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.

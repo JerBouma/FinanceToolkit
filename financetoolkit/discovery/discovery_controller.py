@@ -214,14 +214,14 @@ class Discovery:
         self,
         market_cap_higher: int | None = None,
         market_cap_lower: int | None = None,
-        price_higher: int | None = None,
-        price_lower: int | None = None,
-        beta_higher: int | None = None,
-        beta_lower: int | None = None,
+        price_higher: float | None = None,
+        price_lower: float | None = None,
+        beta_higher: float | None = None,
+        beta_lower: float | None = None,
         volume_higher: int | None = None,
         volume_lower: int | None = None,
-        dividend_higher: int | None = None,
-        dividend_lower: int | None = None,
+        dividend_higher: float | None = None,
+        dividend_lower: float | None = None,
         sector: str | None = None,
         industry: str | None = None,
         country: str | None = None,
@@ -252,15 +252,15 @@ class Discovery:
             market_cap_higher (int): The minimum market capitalization of the stock in US dollars
                 (not in millions), e.g. 1_000_000_000 for $1 billion.
             market_cap_lower (int): The maximum market capitalization of the stock in US dollars.
-            price_higher (int): The minimum price of the stock.
-            price_lower (int): The maximum price of the stock.
-            beta_higher (int): The minimum beta of the stock.
-            beta_lower (int): The maximum beta of the stock.
+            price_higher (float | None): The minimum price of the stock.
+            price_lower (float | None): The maximum price of the stock.
+            beta_higher (float | None): The minimum beta of the stock.
+            beta_lower (float | None): The maximum beta of the stock.
             volume_higher (int): The minimum volume of the stock, in shares traded.
             volume_lower (int): The maximum volume of the stock.
-            dividend_higher (int): The minimum dividend of the stock, as an amount per share
+            dividend_higher (float | None): The minimum dividend of the stock, as an amount per share
                 over the last annual period rather than as a yield.
-            dividend_lower (int): The maximum dividend of the stock.
+            dividend_lower (float | None): The maximum dividend of the stock.
             sector (str | None): The sector to restrict the screen to, e.g. "Energy".
             industry (str | None): The industry to restrict the screen to, e.g. "Biotechnology".
             country (str | None): The two-letter country code to restrict the screen to, e.g. "US".

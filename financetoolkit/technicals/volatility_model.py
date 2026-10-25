@@ -513,7 +513,7 @@ def get_volatility_cone(
 
 
 def get_bollinger_bands(
-    prices: pd.Series, window: int, num_std_dev: int
+    prices: pd.Series, window: int, num_std_dev: float
 ) -> pd.DataFrame:
     """
     Calculate the Bollinger Bands of a given price series.
@@ -547,7 +547,7 @@ def get_bollinger_bands(
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods for the moving average.
-        num_std_dev (int): Number of standard deviations for the bands.
+        num_std_dev (float): Number of standard deviations for the bands.
 
     Returns:
         pd.DataFrame: Bollinger Bands (upper, middle, lower).

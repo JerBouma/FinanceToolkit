@@ -504,3 +504,32 @@ def test_get_trix_defaults_to_a_window_of_15(technical_module):
     pd.testing.assert_frame_equal(
         technical_module.get_trix(), technical_module.get_trix(window=15)
     )
+
+
+def test_bands_and_channels_take_a_fractional_width(technical_module):
+    """Bollinger Bands of 2.5 standard deviations and Keltner Channels of 1.5 ATRs."""
+    import pandas as pd  # noqa: PLC0415
+
+    for method, parameter, width, lower, middle in (
+        (
+            technical_module.get_bollinger_bands,
+            "num_std_dev",
+            2.5,
+            "Lower Band",
+            "Middle Band",
+        ),
+        (
+            technical_module.get_keltner_channels,
+            "atr_multiplier",
+            1.5,
+            "Lower Line",
+            "Middle Line",
+        ),
+    ):
+        standard = method(rounding=10)
+        fractional = method(rounding=10, **{parameter: width})
+        pd.testing.assert_frame_equal(
+            fractional[middle] - fractional[lower],
+            (standard[middle] - standard[lower]) * width / 2,
+            atol=1e-6,
+        )

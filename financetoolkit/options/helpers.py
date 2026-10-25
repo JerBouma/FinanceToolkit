@@ -114,7 +114,7 @@ def create_greek_dataframe(
 def create_binomial_tree_dataframe(
     binomial_tree_dictionary: dict[str, dict[float, pd.DataFrame]],
     start_date: str | pd.Period,
-    time_to_expiration: int,
+    time_to_expiration: float,
 ):
     """
     Creates the DataFrame that correctly displays the binomial tree for each ticker and strike price.
@@ -163,7 +163,7 @@ def create_binomial_tree_dataframe(
 def create_stock_simulation_dataframe(
     stock_simulation_dictonary: dict[str, pd.DataFrame],
     start_date: str | pd.Period,
-    time_to_expiration: int,
+    time_to_expiration: float,
 ):
     """
     Creates the DataFrame that correctly displays the binomial tree for each ticker and strike price.
@@ -174,7 +174,7 @@ def create_stock_simulation_dataframe(
         per ticker, one DataFrame of price paths per ticker.
         start_date (str | pd.Period): the date the simulation starts from, which labels
         the first column.
-        time_to_expiration (int): the time to expiration in years.
+        time_to_expiration (float): the time to expiration in years.
 
     Returns:
         pd.DataFrame: the DataFrame that correctly displays the simulated stock prices for

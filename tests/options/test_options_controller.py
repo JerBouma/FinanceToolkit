@@ -40,6 +40,15 @@ def test_get_stock_price_simulation(recorder, options_module):
     recorder.capture(options_module.get_stock_price_simulation(timesteps=5))
 
 
+def test_the_stock_price_simulation_takes_a_fraction_of_a_year(options_module):
+    half_year = options_module.get_stock_price_simulation(
+        time_to_expiration=0.5, timesteps=2
+    )
+
+    start, end = half_year.columns[0], half_year.columns[-1]
+    assert (end.to_timestamp() - start.to_timestamp()).days in (182, 183)
+
+
 def test_get_implied_volatility(recorder, options_module, live_mode):
     if not live_mode:
         pytest.skip("Requires --live flag for live option chain data")
@@ -841,6 +850,64 @@ def test_the_earnings_move_uses_the_first_expiry_after_the_announcement(option_m
     moves = module.get_implied_move(around_earnings=True)
 
     assert (moves["Days to Expiration"] > 10).all()
+
+
+def test_the_earnings_move_answers_every_ticker_with_its_own_expiry(option_market):
+    """Each ticker's dividend yield and expiry are kept, also with differing dates."""
+    module, labels = option_market
+    expiries = list(labels)
+    # The cached dividend yields are calculated afresh, for all tickers at once.
+    module.__dict__.pop("_dividend_yield", None)
+    earnings = {
+        ticker: expiries[number % 2] for number, ticker in enumerate(module._tickers)
+    }
+    module._earnings_function = lambda: earnings
+
+    moves = module.get_implied_move(around_earnings=True)
+
+    assert list(moves.index.get_level_values("Ticker")) == module._tickers
+    for (ticker, expiration), earnings_date in moves["Earnings Date"].items():
+        assert earnings_date == earnings[ticker]
+        assert expiration == expiries[expiries.index(earnings[ticker]) + 1]
+    assert moves["Implied Move"].notna().all()
+
+
+def test_the_mcp_earnings_move_answers_every_ticker(monkeypatch, option_market):
+    import asyncio  # noqa: PLC0415
+    import types  # noqa: PLC0415
+
+    from financetoolkit.mcp_server import mcp_controller  # noqa: PLC0415
+    from financetoolkit.mcp_server.provider_model import (  # noqa: PLC0415
+        ToolkitProvider,
+    )
+
+    module, labels = option_market
+    expiries = list(labels)
+    module.__dict__.pop("_dividend_yield", None)
+    module._earnings_function = lambda: dict(
+        zip(module._tickers, expiries, strict=False)
+    )
+    monkeypatch.setattr(
+        ToolkitProvider,
+        "get_toolkit_instance",
+        lambda self, *args, **kwargs: types.SimpleNamespace(options=module),
+    )
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "options",
+            {
+                "indicator": "get_implied_move",
+                "tickers": ",".join(module._tickers),
+                "around_earnings": True,
+            },
+        )
+    )[0][0].text
+
+    assert "Invalid input" not in text
+    for ticker, earnings_date in zip(module._tickers, expiries, strict=False):
+        assert ticker in text
+        assert earnings_date in text
 
 
 def test_the_volatility_risk_premium_in_variance_units(option_market):

@@ -649,25 +649,30 @@ class Econometrics:
         )
 
     def _get_price_column(
-        self, period: str, column: str, per_ticker: bool = False
+        self, period: str, column: str, tickers: list[str] | None = None
     ) -> pd.DataFrame:
         """
         The `column` slice of `period`, memoized -- see `_data_cache` in `__init__`.
-        Methods that combine tickers date by date (regressions, VAR, cointegration)
-        keep only the dates every ticker has. Per-ticker statistics pass
-        `per_ticker=True` and only lose the dates no ticker has, so each ticker keeps
-        its own history and the calculation drops its own missing values.
+        Without `tickers` only the dates no ticker has are dropped: per-ticker and
+        pairwise methods drop their own missing values, so each ticker keeps its own
+        history. Methods that combine tickers date by date (regressions, VAR,
+        cointegration systems) pass the `tickers` they use and keep the dates all of
+        those tickers have, so a ticker outside the model never removes dates.
         """
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
 
-        key = ("column", period, column, per_ticker)
+        # Deduplicated so a ticker named twice (e.g. as dependent and independent)
+        # still selects a single column.
+        tickers = list(dict.fromkeys(tickers)) if tickers is not None else None
+        key = ("column", period, column, tuple(tickers) if tickers else None)
 
         if key not in self._data_cache:
-            self._data_cache[key] = self._historical_data[period][column].dropna(
-                how="all" if per_ticker else "any"
+            data = self._historical_data[period][column]
+            self._data_cache[key] = (
+                data.dropna(how="all") if tickers is None else data[tickers].dropna()
             )
 
         return self._data_cache[key]
@@ -881,7 +886,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column, per_ticker=True),
+            self._get_price_column(period, column),
             include_benchmark=include_benchmark,
         )
 
@@ -992,7 +997,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column, per_ticker=True),
+            self._get_price_column(period, column),
             include_benchmark=include_benchmark,
         )
 
@@ -1098,7 +1103,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column, per_ticker=True),
+            self._get_price_column(period, column),
             include_benchmark=include_benchmark,
         )
 
@@ -1220,7 +1225,7 @@ class Econometrics:
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
-            self._get_price_column(period, column, per_ticker=True),
+            self._get_price_column(period, column),
             include_benchmark=include_benchmark,
         )
 
@@ -1446,9 +1451,8 @@ class Econometrics:
         | r <= 1 |       0.0003 |            0.3612 |                     3.8415 | False                |
         """
         period = period if period else "daily"
-        prices = self._get_price_column(period, column)
-
         tickers = self._get_tickers(include_benchmark=include_benchmark)
+        prices = self._get_price_column(period, column, tickers)
 
         result = cointegration_model.get_johansen_cointegration(
             prices[tickers], det_order=det_order, k_ar_diff=k_ar_diff
@@ -1814,12 +1818,13 @@ class Econometrics:
         | Benchmark |        0.366  |       0.0333 |       10.9991 |    0      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
             include_benchmark=include_benchmark,
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         # Positionally aligned by statsmodels, so it has to be reindexed onto the regression's own index first -- `returns` has already dropped any period with missing data, which a caller-supplied cluster label will not have.  # noqa: E501
@@ -1923,7 +1928,7 @@ class Econometrics:
             end_date="2025-12-31",
         )
 
-        returns = toolkit.econometrics._get_price_column("weekly", "Return")
+        returns = toolkit.econometrics._get_price_column("weekly", "Return", ["AAPL", "MSFT"])
         weights = pd.Series(1.0, index=returns.index)
 
         # AAPL (the first ticker) is dependent, MSFT is independent
@@ -1934,16 +1939,17 @@ class Econometrics:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0019 |        0.6332 |    0.5272 |
-        | MSFT      |        0.6281 |       0.058  |       10.8297 |    0      |
+        | Intercept |        0.0012 |       0.0019 |        0.6328 |    0.5274 |
+        | MSFT      |        0.6283 |       0.058  |       10.8323 |    0      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
             include_benchmark=include_benchmark,
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         to_align = [returns[dependent_ticker], returns[independent_tickers], weights]
@@ -2045,8 +2051,8 @@ class Econometrics:
             end_date="2025-12-31",
         )
 
-        returns = toolkit.econometrics._get_price_column("weekly", "Return")
-        n = len(returns["AAPL"].dropna())
+        returns = toolkit.econometrics._get_price_column("weekly", "Return", ["AAPL", "MSFT"])
+        n = len(returns)
         omega = pd.DataFrame(np.eye(n))
 
         # AAPL (the first ticker) is dependent; MSFT is independent
@@ -2057,16 +2063,17 @@ class Econometrics:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0019 |        0.6332 |    0.5272 |
-        | MSFT      |        0.6281 |       0.058  |       10.8297 |    0      |
+        | Intercept |        0.0012 |       0.0019 |        0.6328 |    0.5274 |
+        | MSFT      |        0.6283 |       0.058  |       10.8323 |    0      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
             include_benchmark=include_benchmark,
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         result = regression_model.get_gls(
@@ -2181,12 +2188,13 @@ class Econometrics:
         | Benchmark |      164.846  |      25.4127 |        6.4868 |    0      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
             include_benchmark=include_benchmark,
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         direction = (returns[dependent_ticker] > 0).astype(float)
@@ -2291,12 +2299,13 @@ class Econometrics:
         | QQQ       |       78.1324 |      11.1444 |        7.0109 |    0      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
             include_benchmark=include_benchmark,
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         direction = (returns[dependent_ticker] > 0).astype(float)
@@ -2409,12 +2418,13 @@ class Econometrics:
         | Benchmark |        0.3965 |       0.1133 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
             include_benchmark=include_benchmark,
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         result = regression_model.get_quantile_regression(
@@ -2539,8 +2549,6 @@ class Econometrics:
         | Benchmark |         0.0101 |       0.008  |        1.2668 |    0.2103 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         factor_tickers = (
             [factor_tickers]
             if isinstance(factor_tickers, str)
@@ -2563,6 +2571,10 @@ class Econometrics:
                 if isinstance(asset_tickers, str)
                 else list(asset_tickers)
             )
+
+        returns = self._get_price_column(
+            period, column, [*asset_tickers, *factor_tickers]
+        )
 
         result = fama_macbeth_model.get_fama_macbeth_regression(
             returns[asset_tickers],
@@ -2591,12 +2603,13 @@ class Econometrics:
         on the result dict's residuals/coefficients/covariance matrix.
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         independent_tickers = (
             [independent_tickers]
             if isinstance(independent_tickers, str)
             else independent_tickers
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         return regression_model.get_ols(
@@ -2694,7 +2707,7 @@ class Econometrics:
         | ('ORCL', 'SAP')  |        0.6326 |              2210.92 |    0.5271 |   0.0012 |   0.0007 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column, per_ticker=True)
+        returns = self._get_price_column(period, column)
 
         rows = {
             (ticker_a, ticker_b): hypothesis_testing_model.get_two_sample_t_test(
@@ -3162,8 +3175,6 @@ class Econometrics:
         | Endogenous (5%)    |   1      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         instrument_tickers = (
             [instrument_tickers]
             if isinstance(instrument_tickers, str)
@@ -3173,6 +3184,17 @@ class Econometrics:
             [other_independent_tickers]
             if isinstance(other_independent_tickers, str)
             else other_independent_tickers
+        )
+
+        returns = self._get_price_column(
+            period,
+            column,
+            [
+                dependent_ticker,
+                suspect_ticker,
+                *instrument_tickers,
+                *(other_independent_tickers or []),
+            ],
         )
 
         result = hypothesis_testing_model.get_hausman_wu_test(
@@ -3208,12 +3230,13 @@ class Econometrics:
         produces before handing it off to the requested diagnostic.
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         independent_tickers = (
             [independent_tickers]
             if isinstance(independent_tickers, str)
             else independent_tickers
+        )
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
         )
 
         return regression_model.get_ols(
@@ -3613,9 +3636,8 @@ class Econometrics:
         | AMZN  | 2.0804 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         tickers = self._get_tickers(include_benchmark=include_benchmark)
+        returns = self._get_price_column(period, column, tickers)
 
         test_result = specification_tests_model.get_vif(returns[tickers])
 
@@ -3835,7 +3857,9 @@ class Econometrics:
         )
 
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, *independent_tickers]
+        )
 
         result_full = regression_model.get_ols(
             returns[dependent_ticker],
@@ -3954,8 +3978,6 @@ class Econometrics:
         | NVDA      |        1.2518 |       0.1094 |       11.441  |    0      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         endogenous_ticker = (
             [endogenous_ticker]
             if isinstance(endogenous_ticker, str)
@@ -3970,6 +3992,17 @@ class Econometrics:
             [exogenous_tickers]
             if isinstance(exogenous_tickers, str)
             else exogenous_tickers
+        )
+
+        returns = self._get_price_column(
+            period,
+            column,
+            [
+                dependent_ticker,
+                *endogenous_ticker,
+                *instrument_tickers,
+                *(exogenous_tickers or []),
+            ],
         )
 
         result = causal_inference_model.get_iv_2sls(
@@ -4084,7 +4117,7 @@ class Econometrics:
         | Treated x Post |       -0.0246 |       0.0511 |       -0.4817 |    0.6309 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column, per_ticker=True)
+        returns = self._get_price_column(period, column)
 
         treated_tickers = (
             [treated_tickers] if isinstance(treated_tickers, str) else treated_tickers
@@ -4128,6 +4161,16 @@ class Econometrics:
 
         outcome = pd.concat(outcome_values, ignore_index=True)
         treated = pd.concat(treated_values, ignore_index=True)
+
+        # Without one of the two groups the Treated dummy is constant and the design
+        # is rank deficient, which says nothing about the cause.
+        for group, flag in (("treated", 1.0), ("control", 0.0)):
+            if not treated.eq(flag).any():
+                raise ValueError(
+                    f"There are no {group} observations: the {group} tickers have no "
+                    f"{column} data in this period."
+                )
+
         post = pd.concat(post_values, ignore_index=True)
 
         result = causal_inference_model.get_difference_in_differences(
@@ -4235,7 +4278,9 @@ class Econometrics:
         | N Right       | 728      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, running_variable_ticker]
+        )
 
         result = causal_inference_model.get_regression_discontinuity(
             returns[dependent_ticker],
@@ -4352,14 +4397,15 @@ class Econometrics:
         | N Control     | 1069      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         covariate_tickers = (
             [covariate_tickers]
             if isinstance(covariate_tickers, str)
             else covariate_tickers
         )
 
+        returns = self._get_price_column(
+            period, column, [dependent_ticker, treatment_ticker, *covariate_tickers]
+        )
         treatment = (returns[treatment_ticker] > treatment_threshold).astype(float)
 
         result = causal_inference_model.get_propensity_score_matching(
@@ -4489,8 +4535,6 @@ class Econometrics:
         | N Post-Periods           | 255      |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         if donor_tickers is None:
             donor_tickers = [
                 ticker
@@ -4503,6 +4547,10 @@ class Econometrics:
                 if isinstance(donor_tickers, str)
                 else list(donor_tickers)
             )
+
+        returns = self._get_price_column(
+            period, column, [treated_ticker, *donor_tickers]
+        )
 
         result = causal_inference_model.get_synthetic_control(
             returns[treated_ticker],
@@ -5057,7 +5105,8 @@ class Econometrics:
         Returns:
             pd.DataFrame: The `forecast_steps`-ahead forecast, one column per ticker,
             indexed `1, ..., forecast_steps` (periods ahead, not a continuation of the
-            historical date index). Each ticker's ARIMA model is fit independently.
+            historical date index). Each ticker's ARIMA model is fit independently on
+            its own history; a ticker without enough data has an empty (NaN) column.
 
         Notes:
         - The method retrieves historical price data based on the specified `period`
@@ -5100,9 +5149,12 @@ class Econometrics:
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
 
-        result = pd.DataFrame(
-            {
-                ticker: time_series_model.get_arima_forecast(
+        forecasts = {}
+        for ticker in tickers:
+            # Each ticker is fitted on its own history; one without enough data of its
+            # own gets an empty column instead of failing the other tickers.
+            try:
+                forecasts[ticker] = time_series_model.get_arima_forecast(
                     prices[ticker],
                     p=p,
                     d=d,
@@ -5110,9 +5162,13 @@ class Econometrics:
                     forecast_steps=forecast_steps,
                     include_constant=include_constant,
                 )["forecast"]
-                for ticker in tickers
-            }
-        )
+            except ValueError as error:
+                logger.warning("No ARIMA forecast for %s: %s", ticker, error)
+
+        if not forecasts:
+            raise ValueError("None of the tickers has enough data for an ARIMA fit.")
+
+        result = pd.DataFrame(forecasts).reindex(columns=tickers)
         result.index.name = "Step"
 
         return apply_rounding(
@@ -5228,9 +5284,8 @@ class Econometrics:
         |     20 | 17.6978 |  19.8639 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         tickers = self._get_tickers(include_benchmark=include_benchmark)
+        returns = self._get_price_column(period, column, tickers)
 
         result = time_series_model.get_var_forecast(
             returns[tickers], lags=lags, forecast_steps=forecast_steps
@@ -5346,9 +5401,8 @@ class Econometrics:
         |        20 |             0.5252 |             0.9034 |             0.1052 |             0.5418 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         tickers = self._get_tickers(include_benchmark=include_benchmark)
+        returns = self._get_price_column(period, column, tickers)
 
         var_result = time_series_model.get_var_forecast(
             returns[tickers], lags=lags, forecast_steps=1
@@ -5457,9 +5511,8 @@ class Econometrics:
         |        20 |             0.9967 |             0.0033 |             0.3142 |             0.6858 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column)
-
         tickers = self._get_tickers(include_benchmark=include_benchmark)
+        returns = self._get_price_column(period, column, tickers)
 
         var_result = time_series_model.get_var_forecast(
             returns[tickers], lags=lags, forecast_steps=1
@@ -5568,9 +5621,8 @@ class Econometrics:
         |      5 | 313.289 | 314.135 |
         """
         period = period if period else "daily"
-        prices = self._get_price_column(period, column)
-
         tickers = self._get_tickers(include_benchmark=include_benchmark)
+        prices = self._get_price_column(period, column, tickers)
 
         result = time_series_model.get_vecm_forecast(
             prices[tickers],
@@ -5653,7 +5705,7 @@ class Econometrics:
         | ('VOO', 'Benchmark') | 0.001  |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column, per_ticker=True)
+        returns = self._get_price_column(period, column)
 
         values = {
             (ticker_a, ticker_b): forecast_evaluation_model.get_rmse(
@@ -5746,7 +5798,7 @@ class Econometrics:
         | ('IAU', 'GLDM') | 0.0003 |
         """
         period = period if period else "daily"
-        returns = self._get_price_column(period, column, per_ticker=True)
+        returns = self._get_price_column(period, column)
 
         values = {
             (ticker_a, ticker_b): forecast_evaluation_model.get_mae(
@@ -5846,7 +5898,8 @@ class Econometrics:
 
         Returns:
             pd.DataFrame: `RMSE`, `MAE` and `Holdout Observations`, one column per
-            ticker.
+            ticker. With `model="arima"` each ticker uses its own history and a ticker
+            without enough data has an empty (NaN) column.
 
         Raises:
             ValueError: If `model` is not "arima" or "var", or (for `model="var"`)
@@ -5871,9 +5924,9 @@ class Econometrics:
 
         |                      |   BTCUSD |   ETHUSD |
         |:---------------------|---------:|---------:|
-        | RMSE                 | 11392.5  |  971.073 |
-        | MAE                  |  9783.02 |  821.838 |
-        | Holdout Observations |   365    |  365     |
+        | RMSE                 | 11424.9  |  1003.11 |
+        | MAE                  |  9896.95 |   842.37 |
+        | Holdout Observations |   366    |   366    |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)
@@ -5886,17 +5939,22 @@ class Econometrics:
         columns = {}
         for ticker in tickers:
             if model == "arima":
-                columns[ticker] = (
-                    forecast_evaluation_model.get_out_of_sample_validation(
-                        prices[ticker],
-                        time_series_model.get_arima_forecast,
-                        train_fraction=train_fraction,
-                        p=p,
-                        d=d,
-                        q=q,
-                        include_constant=include_constant,
+                # As in get_arima_forecast, a ticker without enough data of its own
+                # gets an empty column instead of failing the other tickers.
+                try:
+                    columns[ticker] = (
+                        forecast_evaluation_model.get_out_of_sample_validation(
+                            prices[ticker],
+                            time_series_model.get_arima_forecast,
+                            train_fraction=train_fraction,
+                            p=p,
+                            d=d,
+                            q=q,
+                            include_constant=include_constant,
+                        )
                     )
-                )
+                except ValueError as error:
+                    logger.warning("No ARIMA validation for %s: %s", ticker, error)
                 continue
 
             ticker_other_tickers = (
@@ -5935,7 +5993,10 @@ class Econometrics:
                 }
             )
 
-        result = pd.DataFrame(columns)
+        if not columns:
+            raise ValueError("None of the tickers has enough data for an ARIMA fit.")
+
+        result = pd.DataFrame(columns).reindex(columns=tickers)
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
@@ -6052,9 +6113,9 @@ class Econometrics:
         # The windows count trading days of the dependent ticker and the Benchmark
         # together, so only their common dates are kept: another ticker's missing
         # dates do not shorten or shift the estimation and event windows.
-        returns = self._get_price_column("daily", column, per_ticker=True)[
-            [dependent_ticker, BENCHMARK_TICKER]
-        ].dropna()
+        returns = self._get_price_column(
+            "daily", column, [dependent_ticker, BENCHMARK_TICKER]
+        )
 
         result = event_study_model.get_event_study(
             returns=returns[dependent_ticker],

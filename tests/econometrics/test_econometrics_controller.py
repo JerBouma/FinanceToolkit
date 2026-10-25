@@ -3,6 +3,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 
 def test_get_arch_lm_test(recorder, econometrics_module):
@@ -867,3 +868,73 @@ def test_get_difference_in_differences_default_controls_exclude_benchmark(
         period="weekly",
     )
     pd.testing.assert_frame_equal(default, explicit)
+
+
+def _econometrics_with_msft(econometrics_module, rows):
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    # `rows` is the slice of each period's history where MSFT has no data; None
+    # removes MSFT from the Toolkit altogether.
+    historical_data = {}
+    for period, original_frame in econometrics_module._historical_data.items():
+        frame = original_frame.copy()
+        msft_columns = [column for column in frame.columns if column[1] == "MSFT"]
+        if rows is None:
+            frame = frame.drop(columns=msft_columns)
+        elif not frame.empty:
+            frame[msft_columns] = frame[msft_columns].astype(float)
+            frame.iloc[rows, frame.columns.get_indexer(msft_columns)] = np.nan
+        historical_data[period] = frame
+
+    return Econometrics(
+        tickers=[
+            ticker
+            for ticker in econometrics_module._tickers
+            if rows is not None or ticker != "MSFT"
+        ],
+        historical_data=historical_data,
+        rounding=econometrics_module._rounding,
+    )
+
+
+def test_models_ignore_tickers_they_do_not_use(econometrics_module):
+    # MSFT misses its first 300 days ("young") or all of its data ("empty"): AAPL's
+    # ARIMA forecast, the Benchmark/AAPL Engle-Granger test and the AAPL~Benchmark
+    # regression do not use MSFT, so they equal the results without MSFT.
+    without_msft = _econometrics_with_msft(econometrics_module, None)
+
+    def results(econometrics):
+        return (
+            econometrics.get_arima_forecast(rounding=None)["AAPL"],
+            econometrics.get_engle_granger_cointegration(
+                include_benchmark=True, rounding=None
+            ).loc[("Benchmark", "AAPL")],
+            econometrics.get_ols(
+                dependent_ticker="AAPL",
+                independent_tickers="Benchmark",
+                rounding=None,
+            ),
+        )
+
+    expected = results(without_msft)
+    assert not expected[0].empty and not expected[2].empty
+
+    for rows in (slice(0, 300), slice(None)):
+        arima, engle_granger, ols = results(
+            _econometrics_with_msft(econometrics_module, rows)
+        )
+        pd.testing.assert_series_equal(arima, expected[0])
+        pd.testing.assert_series_equal(engle_granger, expected[1])
+        pd.testing.assert_frame_equal(ols, expected[2])
+
+
+def test_get_difference_in_differences_without_control_data(
+    econometrics_module, monkeypatch
+):
+    empty = _econometrics_with_msft(econometrics_module, slice(None))
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+
+    with pytest.raises(ValueError, match="no control observations"):
+        empty.get_difference_in_differences(
+            treated_tickers="AAPL", treatment_date="2021-06-30", period="weekly"
+        )

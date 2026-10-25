@@ -8,14 +8,14 @@ AAPL,Asset Coverage Ratio,Lag 3,,,,0.0572
 AAPL,Debt-to-Equity Ratio,Lag 1,,0.1563,0.2082,-0.3163
 AAPL,Debt-to-Equity Ratio,Lag 2,,,0.3971,-0.1739
 AAPL,Debt-to-Equity Ratio,Lag 3,,,,-0.0448
-AAPL,Debt Service Coverage Ratio,Lag 1,,0.3804,-0.1066,0.0141
-AAPL,Debt Service Coverage Ratio,Lag 2,,,0.2332,-0.0941
-AAPL,Debt Service Coverage Ratio,Lag 3,,,,0.2506
+AAPL,Debt Service Coverage Ratio,Lag 1,,0.4169,-0.1754,0.1739
+AAPL,Debt Service Coverage Ratio,Lag 2,,,0.1683,-0.0321
+AAPL,Debt Service Coverage Ratio,Lag 3,,,,0.3715
 AAPL,Equity Multiplier,Lag 1,,,0.1772,0.0106
 AAPL,Equity Multiplier,Lag 2,,,,0.1897
 AAPL,Equity Multiplier,Lag 3,,,,
-AAPL,Free Cash Flow Yield,Lag 1,,-0.0217,0.6804,
-AAPL,Free Cash Flow Yield,Lag 2,,,0.644,
+AAPL,Free Cash Flow Yield,Lag 1,,-0.0159,0.6935,
+AAPL,Free Cash Flow Yield,Lag 2,,,0.6667,
 AAPL,Free Cash Flow Yield,Lag 3,,,,
 AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2244,-0.0133,-0.2266
 AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2368
@@ -50,14 +50,14 @@ MSFT,Asset Coverage Ratio,Lag 3,,,,0.5932
 MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2292,-0.2096
 MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.3869,-0.3907
 MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5154
-MSFT,Debt Service Coverage Ratio,Lag 1,,0.0767,0.1121,-0.0308
-MSFT,Debt Service Coverage Ratio,Lag 2,,,0.1974,0.0779
-MSFT,Debt Service Coverage Ratio,Lag 3,,,,0.1606
+MSFT,Debt Service Coverage Ratio,Lag 1,,-0.2448,1.5959,-0.3021
+MSFT,Debt Service Coverage Ratio,Lag 2,,,0.9605,0.8117
+MSFT,Debt Service Coverage Ratio,Lag 3,,,,0.3682
 MSFT,Equity Multiplier,Lag 1,,,-0.072,-0.0797
 MSFT,Equity Multiplier,Lag 2,,,,-0.1459
 MSFT,Equity Multiplier,Lag 3,,,,
-MSFT,Free Cash Flow Yield,Lag 1,,-0.1788,0.6311,
-MSFT,Free Cash Flow Yield,Lag 2,,,0.3394,
+MSFT,Free Cash Flow Yield,Lag 1,,-0.1736,0.6438,
+MSFT,Free Cash Flow Yield,Lag 2,,,0.3585,
 MSFT,Free Cash Flow Yield,Lag 3,,,,
 MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2486,-0.2627,-0.4901
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624

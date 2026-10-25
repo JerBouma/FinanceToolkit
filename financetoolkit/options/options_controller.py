@@ -17,12 +17,10 @@ from financetoolkit.options import (
     svi_model,
 )
 from financetoolkit.ratios import valuation_model
-from financetoolkit.risk import risk_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_standardization,
-    to_period_index,
 )
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals,cell-var-from-loop
@@ -31,7 +29,16 @@ from financetoolkit.utilities.statistics_model import (
 
 logger = logger_model.get_logger()
 
+# The volatility is measured over the trading year before the pricing date, once at least a
+# month of returns is available.
+TRAILING_DAYS = 252
+MINIMUM_VOLATILITY_DAYS = 21
+
 MINIMUM_OBSERVATIONS_FOR_SVI_FIT = 5
+
+# The number of calendar days the last historical price may lag today before the spot price
+# is treated as stale next to the live option chains (a weekend plus a holiday is four).
+MAXIMUM_SPOT_AGE_DAYS = 5
 MINIMUM_EXPIRATIONS_FOR_CALENDAR_CHECK = 2
 
 
@@ -79,7 +86,11 @@ class Options:
             tickers (str | list[str]): The tickers to use.
             daily_historical (pd.DataFrame, optional): The daily historical data. Defaults to pd.DataFrame().
             annual_historical (pd.DataFrame, optional): The annual historical data. Defaults to pd.DataFrame().
-            risk_free_rate (pd.DataFrame, optional): The risk free rate. Defaults to pd.DataFrame().
+            risk_free_rate (pd.DataFrame, optional): The risk free rate, a Treasury yield quoted on a
+                semi-annual bond-equivalent basis ("Adj Close" column) that is converted to continuous
+                compounding. Every maturity goes through this conversion, so the 13-week bill rate,
+                quoted as a discount rate, is approximated as a bond-equivalent yield.
+                Defaults to pd.DataFrame().
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
@@ -136,23 +147,39 @@ class Options:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
 
-        # Option Statistics
-        self._prices = self._daily_historical["Adj Close"]
+        # The spot price is the traded close. On a past pricing date the Adj Close is lowered by
+        # every dividend paid after that date, which was not known yet and which the dividend
+        # yield q already accounts for. Returns (and so the volatility) do use the Adj Close.
+        self._prices = self._daily_historical[
+            "Close" if "Close" in self._daily_historical else "Adj Close"
+        ]
 
-        yearly_volatility = risk_model.get_volatility(
-            self._daily_historical["Return"], "yearly"
+        # The volatility on a date is that of the year of daily returns up to it, so a past
+        # pricing date uses only what was known on that date.
+        self._volatility = self._daily_historical["Return"].rolling(
+            TRAILING_DAYS, min_periods=MINIMUM_VOLATILITY_DAYS
+        ).std() * np.sqrt(TRAILING_DAYS)
+
+        # The Toolkit's risk-free rate is a US Treasury yield (the 10-year by default, set with the
+        # Toolkit's risk_free_rate parameter: '13w', '5y', '10y' or '30y'), quoted on a semi-annual
+        # bond-equivalent basis. The option formulas discount continuously through e^(-r * t), so
+        # the yield is converted to its continuously compounded equivalent once, here. The '13w'
+        # rate (^IRX) is a bill discount rate rather than a bond-equivalent yield, and the rate
+        # arrives here without its maturity, so it goes through the same semi-annual conversion;
+        # a 13-week discount rate of 5% sits 13 basis points below its bond-equivalent yield,
+        # which makes the '13w' rate an approximation.  # noqa: E501
+        self._risk_free_rate = options_model.get_continuously_compounded_rate(
+            risk_free_rate["Adj Close"]
         )
-        year_labels = to_period_index(self._daily_historical.index).asfreq("Y")
-        self._volatility = yearly_volatility.reindex(year_labels)
-        self._volatility.index = self._daily_historical.index
-
-        self._risk_free_rate = risk_free_rate["Adj Close"]
         self._annual_historical = annual_historical
 
-        # Calculate Dividend Yield, relevant for Black Scholes formula
+        # Calculate Dividend Yield, relevant for Black Scholes formula, relative to the traded
+        # close like the spot price.
         dividend_yield = valuation_model.get_dividend_yield(
             dividends=self._annual_historical.loc[:, "Dividends"].T,
-            stock_price=self._annual_historical.loc[:, "Adj Close"].T,
+            stock_price=self._annual_historical.loc[
+                :, "Close" if "Close" in self._annual_historical else "Adj Close"
+            ].T,
         )
 
         self._dividend_yield = {ticker: pd.Series() for ticker in self._tickers}
@@ -168,6 +195,76 @@ class Options:
 
             self._dividend_yield[ticker] = dividend_yield_cleaned
 
+        # The dividend yield on a date: the dividends of the 365 days up to it over the close of
+        # that date, see options_model.get_trailing_dividend_yield.
+        self._daily_dividend_yield = pd.DataFrame()
+        if "Close" in self._daily_historical:
+            self._daily_dividend_yield = options_model.get_trailing_dividend_yield(
+                close=self._daily_historical["Close"],
+                adjusted_close=self._daily_historical["Adj Close"],
+                dividends=self._daily_historical.get("Dividends"),
+            )
+
+    def _warn_if_spot_is_stale(self) -> None:
+        """
+        Logs a warning when the last historical date lies more than MAXIMUM_SPOT_AGE_DAYS
+        calendar days before today. The methods that work with the live option chains
+        (implied volatility, the volatility surface, the risk-neutral density and the option
+        chains filtered on strike) take the quotes and the days to expiration from today but
+        the spot price from the last historical date, so an end_date in the past or an
+        outdated price history pairs today's option prices with an old stock price. The
+        history of an instance does not change, so the warning is shown once per instance
+        rather than once for every expiration date a surface walks through.
+        """
+        if getattr(self, "_stale_spot_warning_shown", False):
+            return
+
+        last_date = self._daily_historical.index[-1]
+        last_timestamp = (
+            last_date.to_timestamp()
+            if isinstance(last_date, pd.Period)
+            else pd.Timestamp(last_date)
+        )
+        spot_age = (pd.Timestamp.today().normalize() - last_timestamp.normalize()).days
+
+        if spot_age > MAXIMUM_SPOT_AGE_DAYS:
+            self._stale_spot_warning_shown = True
+            logger.warning(
+                "The stock price is the close of %s, %d days ago, while the option chains and "
+                "the days to expiration are live. Implied volatilities and densities from these "
+                "chains are therefore based on an outdated stock price; set end_date to today "
+                "or leave it empty for current results.",
+                last_timestamp.date(),
+                spot_age,
+            )
+
+    def _dividend_yield_on(self, ticker: str, date) -> float:
+        """
+        The dividend yield of a ticker on a pricing date: the dividends of the 365 days up to
+        that date over its close, or the latest annual yield when there are no daily prices,
+        converted to the continuously compounded ln(1 + q) the option formulas discount with.
+
+        Args:
+            ticker (str): The ticker.
+            date: The pricing date.
+
+        Returns:
+            float: The dividend yield as a decimal.
+        """
+        if (
+            not self._daily_dividend_yield.empty
+            and ticker in self._daily_dividend_yield
+            and date in self._daily_dividend_yield.index
+        ):
+            value = self._daily_dividend_yield.loc[date, ticker]
+            if pd.notna(value):
+                return float(np.log1p(value))
+
+        # The trailing yield is a simple annual rate (a year of dividends over the price) while
+        # the option formulas carry it continuously through e^(-q * t); ln(1 + q) grows the
+        # stock by the same amount over a year, as the risk-free rate conversion does.  # noqa: E501
+        return float(np.log1p(self._dividend_yield[ticker].iloc[-1]))
+
     def get_option_chains(
         self,
         expiration_date: str | None = None,
@@ -178,10 +275,9 @@ class Options:
     ):
         """
         Get the Option Chains which gives information about the currently available
-        options as reported by Yahoo Finance. This returns the Contract Symbol, Strike
-        Currency, Last Price, Absolute Change, Percent Change, Volume, Open Interest,
-        Bid Pirce, Ask Price, Expiration, Last Trade Date, Implied Volatility and
-        whether the option is In The Money.
+        options as reported by Yahoo Finance. This returns the Contract Symbol, Last
+        Trade Date, Last Price, Bid, Ask, Change, Percent Change, Volume, Open Interest,
+        Implied Volatility, whether the option is In The Money and the Currency.
 
         The data comes from Yahoo Finance. When Yahoo Finance has no options for a ticker,
         Cboe's delayed quotes (15 minutes) are used, which cover every option listed on a US
@@ -194,72 +290,60 @@ class Options:
 
         Args:
             expiration_date (str | None, optional): The expiration date to use. Defaults to None which means it will
+                use the first available expiration date.
             put_option (bool, optional): Whether to show the put options instead of the call options.
                 Defaults to False.
             show_expiration_dates (bool, optional): Whether to return the available expiration dates instead of
                 the option chains. Defaults to False.
-            use the first available expiration date.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             strike_price_range (float | None, optional): Only the strikes within this fraction of the
                 current stock price, e.g. 0.05 for strikes within 5% of it. Defaults to None, which
                 keeps every strike.
 
         Returns:
-            pd.DataFrame: the option chains containing the tickers and strike prices as
-            the index and the time to expiration as the columns.
+            pd.DataFrame: the option chains with the tickers and strike prices as the index
+            and the contract details (Contract Symbol, Last Trade Date, Last Price, Bid, Ask,
+            Change, Percent Change, Volume, Open Interest, Implied Volatility, In The Money
+            and Currency) as the columns. The expiration date is stored as the DataFrame's
+            name. If show_expiration_dates is True, it returns the list of expiration dates.
 
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        option_chains = toolkit.options.get_option_chains()
+        option_chains = toolkit.options.get_option_chains(strike_price_range=0.05)
 
-        option_chains.loc[('AAPL', option_chains['In The Money'] == True), :]
+        option_chains.loc["MSFT", ["Bid", "Ask"]]
         ```
 
         Which returns:
 
-        |                 | Contract Symbol     | Last Trade Date   |   Last Price |   Bid |   Ask |   Change |   Percent Change |   Volume |   Open Interest |   Implied Volatility | In The Money   | Currency   |
-        |:----------------|:--------------------|:------------------|-------------:|------:|------:|---------:|-----------------:|---------:|----------------:|---------------------:|:---------------|:-----------|
-        | ('AAPL', 110.0) | AAPL261009C00110000 | 2026-10-07        |       224.9  |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 120.0) | AAPL261009C00120000 | 2026-10-07        |       216.17 |     0 |     0 |        0 |                0 |        3 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 175.0) | AAPL261009C00175000 | 2026-10-07        |       161.94 |     0 |     0 |        0 |                0 |        2 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 185.0) | AAPL261009C00185000 | 2026-10-07        |       151.75 |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 195.0) | AAPL261009C00195000 | 2026-09-18        |       141.39 |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 210.0) | AAPL261009C00210000 | 2026-09-29        |       121.37 |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 215.0) | AAPL261009C00215000 | 2026-09-29        |       114.62 |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 220.0) | AAPL261009C00220000 | 2026-10-07        |       114.26 |     0 |     0 |        0 |                0 |        3 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 225.0) | AAPL261009C00225000 | 2026-10-05        |       109.87 |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 230.0) | AAPL261009C00230000 | 2026-10-05        |       103.5  |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 235.0) | AAPL261009C00235000 | 2026-10-01        |        92.78 |     0 |     0 |        0 |                0 |       16 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 240.0) | AAPL261009C00240000 | 2026-10-02        |        92.35 |     0 |     0 |        0 |                0 |       30 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 245.0) | AAPL261009C00245000 | 2026-09-30        |        93.88 |     0 |     0 |        0 |                0 |       32 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 250.0) | AAPL261009C00250000 | 2026-10-06        |        82.91 |     0 |     0 |        0 |                0 |        4 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 255.0) | AAPL261009C00255000 | 2026-10-02        |        78.8  |     0 |     0 |        0 |                0 |      345 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 260.0) | AAPL261009C00260000 | 2026-10-05        |        73.8  |     0 |     0 |        0 |                0 |        1 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 265.0) | AAPL261009C00265000 | 2026-10-06        |        68.46 |     0 |     0 |        0 |                0 |        3 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 270.0) | AAPL261009C00270000 | 2026-10-07        |        66.84 |     0 |     0 |        0 |                0 |        6 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 275.0) | AAPL261009C00275000 | 2026-10-07        |        62.17 |     0 |     0 |        0 |                0 |        7 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 280.0) | AAPL261009C00280000 | 2026-10-07        |        56.73 |     0 |     0 |        0 |                0 |      227 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 285.0) | AAPL261009C00285000 | 2026-10-07        |        52.33 |     0 |     0 |        0 |                0 |       60 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 290.0) | AAPL261009C00290000 | 2026-10-07        |        47.45 |     0 |     0 |        0 |                0 |       11 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 295.0) | AAPL261009C00295000 | 2026-10-07        |        41.9  |     0 |     0 |        0 |                0 |      144 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 300.0) | AAPL261009C00300000 | 2026-10-07        |        36.47 |     0 |     0 |        0 |                0 |      129 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 305.0) | AAPL261009C00305000 | 2026-10-07        |        31.46 |     0 |     0 |        0 |                0 |       27 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 310.0) | AAPL261009C00310000 | 2026-10-07        |        27.35 |     0 |     0 |        0 |                0 |      205 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 312.5) | AAPL261009C00312500 | 2026-10-07        |        24.7  |     0 |     0 |        0 |                0 |      254 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 315.0) | AAPL261009C00315000 | 2026-10-07        |        22.3  |     0 |     0 |        0 |                0 |       79 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 317.5) | AAPL261009C00317500 | 2026-10-07        |        18.75 |     0 |     0 |        0 |                0 |      142 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 320.0) | AAPL261009C00320000 | 2026-10-07        |        16.6  |     0 |     0 |        0 |                0 |       62 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 322.5) | AAPL261009C00322500 | 2026-10-07        |        14.21 |     0 |     0 |        0 |                0 |       71 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 325.0) | AAPL261009C00325000 | 2026-10-07        |        12    |     0 |     0 |        0 |                0 |      292 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 327.5) | AAPL261009C00327500 | 2026-10-07        |         9.7  |     0 |     0 |        0 |                0 |      469 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 330.0) | AAPL261009C00330000 | 2026-10-07        |         7.5  |     0 |     0 |        0 |                0 |     2122 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 332.5) | AAPL261009C00332500 | 2026-10-07        |         5.25 |     0 |     0 |        0 |                0 |     7506 |               0 |                    0 | True           | USD        |
-        | ('AAPL', 335.0) | AAPL261009C00335000 | 2026-10-07        |         3.55 |     0 |     0 |        0 |                0 |    24852 |               0 |                    0 | True           | USD        |
+        |   Strike Price |   Bid |   Ask |
+        |---------------:|------:|------:|
+        |          500   | 23.45 | 25.15 |
+        |          502.5 | 21    | 23.35 |
+        |          505   | 18.5  | 21    |
+        |          507.5 | 16.15 | 18.5  |
+        |          510   | 13.7  | 16.1  |
+        |          512.5 | 11.85 | 13.65 |
+        |          515   |  9.7  | 11.6  |
+        |          517.5 |  7.65 |  8.9  |
+        |          520   |  5.8  |  6.75 |
+        |          522.5 |  4.2  |  4.9  |
+        |          525   |  2.87 |  3.15 |
+        |          527.5 |  1.83 |  2.18 |
+        |          530   |  1.07 |  1.19 |
+        |          532.5 |  0.69 |  0.7  |
+        |          535   |  0.32 |  0.37 |
+        |          537.5 |  0.16 |  0.24 |
+        |          540   |  0.09 |  0.12 |
+        |          542.5 |  0.05 |  0.08 |
+        |          545   |  0.03 |  0.05 |
+        |          547.5 |  0.02 |  0.03 |
+        |          550   |  0.01 |  0.03 |
         """
         expiry_dates = options_model.get_option_expiry_dates(ticker=self._tickers[0])
 
@@ -291,6 +375,7 @@ class Options:
 
         if strike_price_range is not None:
             # The strikes around the current price, where the trading (and the question) is.
+            self._warn_if_spot_is_stale()
             current_prices = self._prices.iloc[-1]
             spot = option_chains.index.get_level_values(0).map(current_prices)
             strikes = option_chains.index.get_level_values(1)
@@ -335,9 +420,12 @@ class Options:
         - The risk—free rate and volatility of the underlying stock are known and constant.
         - The returns on the underlying stock are normally distributed.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the stock price (the traded close), risk free rate, dividend yield and volatility of the most recent
+        date are used; changing the start date prices the option as of that date instead. The volatility is the
+        annualized standard deviation of the daily returns over the year before that date and the dividend yield the
+        dividends of the 365 days up to that date relative to its close, so an earlier start date only uses what was
+        known on that date. The exception is a date in the first year of the price history: without a full year
+        before it, it takes the dividend yield of the first date that has one.
 
         The formulas are as follows:
 
@@ -350,6 +438,13 @@ class Options:
         volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
         the cumulative normal distribution of d2.
 
+        The model price is only as good as its volatility input, and here that input is realised (historical)
+        volatility, while traded options are priced off implied volatility, which usually differs from it and varies
+        by strike and expiry. Practitioners therefore use the Black Scholes value as a benchmark and compare it with
+        market prices from `get_option_chains`, or back the market's volatility out with `get_implied_volatility`.
+        Deep out-of-the-money options are most sensitive to that choice, since the model's flat volatility ignores
+        the skew.
+
         Also known as: BSM, Black-Scholes-Merton, option pricing model.
 
         Args:
@@ -361,12 +456,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -382,44 +481,34 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "AAPL"],
+            ["NVDA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        black_scholes = toolkit.options.get_black_scholes_model()
+        black_scholes = toolkit.options.get_black_scholes_model(
+            strike_price_range=0.15, strike_step_size=5, expiration_time_range=91
+        )
 
-        black_scholes.loc['AMZN']
+        black_scholes.loc["NVDA", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            175 |      55.8399 |      55.8599 |      55.8798 |      55.8998 |      55.9197 |      55.9396 |      55.9596 |      55.9795 |      55.9994 |
-        |            180 |      50.8405 |      50.861  |      50.8815 |      50.902  |      50.9225 |      50.943  |      50.9635 |      50.984  |      51.0045 |
-        |            185 |      45.8411 |      45.8622 |      45.8832 |      45.9043 |      45.9254 |      45.9465 |      45.9675 |      45.9886 |      46.0097 |
-        |            190 |      40.8417 |      40.8633 |      40.885  |      40.9066 |      40.9282 |      40.9499 |      40.9716 |      40.9933 |      41.0152 |
-        |            195 |      35.8422 |      35.8644 |      35.8867 |      35.9089 |      35.9311 |      35.9534 |      35.976  |      35.999  |      36.0226 |
-        |            200 |      30.8428 |      30.8656 |      30.8884 |      30.9112 |      30.9343 |      30.9581 |      30.9831 |      31.0098 |      31.0386 |
-        |            205 |      25.8434 |      25.8667 |      25.8902 |      25.9144 |      25.9407 |      25.9702 |      26.0039 |      26.0422 |      26.0853 |
-        |            210 |      20.8439 |      20.868  |      20.8941 |      20.926  |      20.9667 |      21.017  |      21.0765 |      21.1442 |      21.2191 |
-        |            215 |      15.8445 |      15.8734 |      15.92   |      15.9892 |      16.0782 |      16.1824 |      16.2979 |      16.4216 |      16.5511 |
-        |            220 |      10.8498 |      10.9347 |      11.079  |      11.2556 |      11.4481 |      11.6476 |      11.8495 |      12.0512 |      12.2513 |
-        |            225 |       5.9884 |       6.3445 |       6.708  |       7.0532 |       7.3783 |       7.6851 |       7.9758 |       8.2527 |       8.5173 |
-        |            230 |       2.1132 |       2.8035 |       3.3391 |       3.7938 |       4.1963 |       4.5617 |       4.8989 |       5.2137 |       5.5102 |
-        |            235 |       0.3563 |       0.8541 |       1.2982 |       1.6971 |       2.0612 |       2.3983 |       2.7135 |       3.0107 |       3.2927 |
-        |            240 |       0.0233 |       0.1671 |       0.38   |       0.6172 |       0.8611 |       1.1044 |       1.344  |       1.5787 |       1.8078 |
-        |            245 |       0.0005 |       0.0202 |       0.082  |       0.1801 |       0.3031 |       0.4424 |       0.5922 |       0.7486 |       0.9091 |
-        |            250 |       0      |       0.0015 |       0.013  |       0.0419 |       0.0896 |       0.1537 |       0.2316 |       0.3205 |       0.418  |
-        |            255 |       0      |       0.0001 |       0.0015 |       0.0078 |       0.0222 |       0.0463 |       0.0804 |       0.1238 |       0.1758 |
-        |            260 |       0      |       0      |       0.0001 |       0.0012 |       0.0046 |       0.0121 |       0.0248 |       0.0433 |       0.0677 |
-        |            265 |       0      |       0      |       0      |       0.0001 |       0.0008 |       0.0028 |       0.0068 |       0.0137 |       0.0239 |
-        |            270 |       0      |       0      |       0      |       0      |       0.0001 |       0.0006 |       0.0017 |       0.0039 |       0.0078 |
-        |            275 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.001  |       0.0023 |
-        |            280 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0006 |
-        |            285 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            160 |      28.7159 |      31.761  |      34.5215 |
+        |            165 |      24.6249 |      28.1288 |      31.1403 |
+        |            170 |      20.8373 |      24.7538 |      27.9815 |
+        |            175 |      17.3911 |      21.6463 |      25.0482 |
+        |            180 |      14.3123 |      18.8111 |      22.34   |
+        |            185 |      11.6125 |      16.2474 |      19.8537 |
+        |            190 |       9.2892 |      13.9492 |      17.5835 |
+        |            195 |       7.3269 |      11.9066 |      15.5214 |
+        |            200 |       5.6997 |      10.106  |      13.6576 |
+        |            205 |       4.3742 |       8.5311 |      11.9811 |
+        |            210 |       3.313  |       7.1639 |      10.4798 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -454,7 +543,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -519,9 +608,8 @@ class Options:
         fluctuate in the future. It is a key component of options pricing and can also be used to calculate the
         theoretical value of an option.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        The most recent stock price, risk free rate and dividend yield are used, and the implied volatility is the
+        volatility at which the Black Scholes price equals the option's last traded price.
 
         The formulas are as follows:
 
@@ -536,11 +624,23 @@ class Options:
 
         In which the Implied Volatility is then calculated as follows:
 
-        - Implied Volatility = MINIMIZE(Black Scholes Theoretical Price — Actual Option Price)
+        - Implied Volatility = the σ for which Black Scholes Theoretical Price(σ) — Actual Option Price = 0
 
         To determine the Implied Volatility, the Black Scholes Model is used to calculate the theoretical option price in
-        which sigma (σ) is the only unknown variable. The actual option price is then used to determine the implied
-        volatility by minimizing the difference between the theoretical and actual option price.
+        which sigma (σ) is the only unknown variable. Since that price rises strictly with σ, the implied volatility is
+        the root of the difference between the theoretical and actual option price, found with Brent's method on the
+        interval [1e-6, 5]. Prices outside the no-arbitrage bounds have no root and return NaN.
+
+        The implied volatility is solved from each option's last traded price, which can be hours or days old for
+        illiquid strikes, while the stock price is the latest close. Deep in-the-money and far out-of-the-money
+        strikes therefore often show extreme values (above 100%) that say more about stale quotes than about the
+        market's view. Practitioners read the smile around the money, where trading is liquid, and use
+        `get_volatility_surface`, which filters outliers and fits a smooth curve, when they need values across all
+        strikes.
+
+        The quotes and the days to expiration are live, while the stock price is the close of the last historical
+        date. When that date lies more than five days before today (for example with an end_date in the past), a
+        warning is logged, since the implied volatilities then pair today's option prices with an old stock price.
 
         Also known as: IV, option-implied volatility.
 
@@ -549,10 +649,13 @@ class Options:
             which means it will use the most recent expiration date.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_expiration_dates (bool, optional): Whether to show the expiration dates. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
@@ -560,65 +663,45 @@ class Options:
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
         Returns:
-            pd.Series | list[str]: Implied Volatility values containing the tickers as the index and the expiration
-            dates as the columns. If show_expiration_dates is True, it will return a list of expiration dates.
+            pd.Series | list[str]: Implied Volatility values indexed by ticker and strike price, with the expiration
+            date as the Series name. If show_expiration_dates is True, it returns the list of expiration dates.
 
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["MSFT", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
         implied_volatility = toolkit.options.get_implied_volatility()
 
-        implied_volatility.loc['AAPL']
+        implied_volatility.loc["AAPL"].tail(20)
         ```
 
         Which returns:
 
-        |       |   2026-10-09 |
-        |------:|-------------:|
-        | 185   |       4.2155 |
-        | 245   |       4.2461 |
-        | 270   |       1.8906 |
-        | 275   |       2.1283 |
-        | 280   |       1.302  |
-        | 285   |       1.9159 |
-        | 290   |       1.8173 |
-        | 295   |       1.2774 |
-        | 310   |       1.1031 |
-        | 312.5 |       0.957  |
-        | 315   |       0.9168 |
-        | 325   |       0.4748 |
-        | 327.5 |       0.4575 |
-        | 330   |       0.4352 |
-        | 332.5 |       0.375  |
-        | 335   |       0.3711 |
-        | 337.5 |       0.3512 |
-        | 340   |       0.3385 |
-        | 342.5 |       0.3497 |
-        | 345   |       0.3604 |
-        | 347.5 |       0.373  |
-        | 350   |       0.3914 |
-        | 352.5 |       0.3895 |
-        | 355   |       0.441  |
-        | 357.5 |       0.4675 |
-        | 360   |       0.5151 |
-        | 362.5 |       0.5215 |
-        | 365   |       0.5647 |
-        | 367.5 |       0.6074 |
-        | 370   |       0.6495 |
-        | 372.5 |       0.691  |
-        | 375   |       0.732  |
-        | 380   |       0.8126 |
-        | 385   |       0.9535 |
-        | 390   |       0.9683 |
-        | 395   |       1.3212 |
-        | 400   |       1.2428 |
-        | 405   |       1.322  |
-        | 410   |       1.2618 |
-        | 415   |       1.3318 |
+        |   Strike Price |   2026-10-26 |
+        |---------------:|-------------:|
+        |          337.5 |       0.1868 |
+        |          340   |       0.1847 |
+        |          342.5 |       0.1965 |
+        |          345   |       0.1994 |
+        |          347.5 |       0.1877 |
+        |          350   |       0.1839 |
+        |          352.5 |       0.179  |
+        |          355   |       0.1778 |
+        |          357.5 |       0.1914 |
+        |          360   |       0.1865 |
+        |          362.5 |       0.2381 |
+        |          365   |       0.2723 |
+        |          367.5 |       0.2829 |
+        |          370   |       0.3138 |
+        |          372.5 |       0.3441 |
+        |          375   |       0.4376 |
+        |          377.5 |       0.4035 |
+        |          380   |       0.4326 |
+        |          385   |       0.4896 |
+        |          410   |       0.7561 |
         """
         if expiration_date is None and not show_expiration_dates:
             # An expiry of today or tomorrow has no time left to price, so the first
@@ -642,6 +725,8 @@ class Options:
             # While the name implies option chains, it actually returns the expiration dates
             return option_chains
 
+        self._warn_if_spot_is_stale()
+
         current_period = self._daily_historical.index[-1]
         stock_price = self._prices.loc[current_period]
         volatility = self._volatility.loc[current_period]
@@ -662,7 +747,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, current_period)
             )
 
             for strike_price, row in option_chain.iterrows():
@@ -742,7 +827,12 @@ class Options:
         outlier relative to its neighbors (a common symptom of a stale or
         wide-bid/ask illiquid quote) are dropped via a median-absolute-deviation
         filter, since a single bad quote can otherwise dominate the least-squares
-        SVI fit for that whole expiry.
+        SVI fit for that whole expiry. Each fit keeps the total variance non-negative
+        through Gatheral's condition a + b * sigma * sqrt(1 - rho^2) >= 0.
+
+        The option chains and the days to expiration are live, while the stock price
+        is the close of the last historical date; a warning is logged when that date
+        lies more than five days before today.
 
         See: Gatheral, J. (2004), "A parsimonious arbitrage-free implied volatility
         parameterization with application to the valuation of volatility
@@ -764,12 +854,15 @@ class Options:
                 `number_of_expirations` available expiration dates.
             put_option (bool, optional): Whether to use put options instead of call
                 options. Defaults to False.
-            risk_free_rate (float, optional): The risk free rate to use for the
-                calculation. Defaults to None which means it will use the current
-                risk free rate.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+                uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+                risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+                quote to continuous compounding. A rate passed here is used as given, as a continuously compounded
+                rate.
             dividend_yield (float, optional): The dividend yield to use for the
-                calculation. Defaults to None which means it will use the dividend
-                yield as obtained through annual historical data.
+                calculation. Defaults to None, which uses the dividend yield on the
+                pricing date (the dividends of the 365 days up to it relative to its close,
+                as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             number_of_expirations (int, optional): The number of near-term
                 expiration dates to fit when `expiration_dates` is not given.
                 Defaults to 6.
@@ -790,59 +883,87 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["JPM"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        volatility_surface = toolkit.options.get_volatility_surface(number_of_expirations=3)
+        volatility_surface = toolkit.options.get_volatility_surface(number_of_expirations=4)
 
-        volatility_surface.loc["AAPL"]
+        volatility_surface.loc["JPM"]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-10-09 |   2026-10-12 |   2026-10-14 |
-        |---------------:|-------------:|-------------:|-------------:|
-        |          270   |       1.9963 |     nan      |     nan      |
-        |          275   |       1.8884 |     nan      |     nan      |
-        |          280   |       1.7787 |     nan      |     nan      |
-        |          285   |       1.6668 |     nan      |     nan      |
-        |          290   |       1.5527 |       0.692  |     nan      |
-        |          295   |       1.4364 |     nan      |     nan      |
-        |          305   |     nan      |       0.5509 |     nan      |
-        |          310   |       1.0741 |       0.4993 |     nan      |
-        |          312.5 |       1.0121 |       0.4724 |     nan      |
-        |          315   |       0.9497 |       0.4448 |     nan      |
-        |          317.5 |     nan      |       0.4166 |     nan      |
-        |          320   |     nan      |       0.3876 |     nan      |
-        |          322.5 |     nan      |       0.358  |       0.288  |
-        |          325   |       0.7002 |     nan      |       0.279  |
-        |          327.5 |       0.6389 |       0.2979 |       0.2701 |
-        |          330   |       0.5788 |       0.2682 |       0.2615 |
-        |          332.5 |       0.5206 |       0.2399 |       0.2533 |
-        |          335   |       0.465  |       0.2143 |       0.2456 |
-        |          337.5 |       0.4134 |       0.1934 |       0.2386 |
-        |          340   |       0.3676 |       0.1792 |       0.2324 |
-        |          342.5 |       0.3298 |       0.1736 |       0.2275 |
-        |          345   |       0.3031 |       0.177  |       0.2239 |
-        |          347.5 |       0.2903 |       0.1881 |       0.2221 |
-        |          350   |       0.2929 |       0.2048 |       0.2225 |
-        |          352.5 |       0.3102 |       0.225  |       0.2254 |
-        |          355   |       0.3394 |       0.2471 |       0.2311 |
-        |          357.5 |       0.3773 |       0.2699 |       0.2399 |
-        |          360   |       0.4212 |       0.2928 |       0.2519 |
-        |          362.5 |       0.4689 |       0.3155 |       0.2671 |
-        |          365   |       0.5189 |       0.3376 |       0.2853 |
-        |          367.5 |       0.5703 |       0.3592 |       0.3063 |
-        |          370   |       0.6224 |       0.3801 |       0.3296 |
-        |          372.5 |       0.6746 |       0.4003 |     nan      |
-        |          375   |       0.7267 |       0.4198 |     nan      |
-        |          380   |       0.8296 |       0.457  |     nan      |
-        |          385   |       0.9298 |       0.4919 |     nan      |
-        |          390   |       1.0268 |     nan      |     nan      |
-        |          395   |       1.1204 |     nan      |     nan      |
-        |          400   |       1.2105 |     nan      |     nan      |
-        |          405   |       1.2971 |     nan      |     nan      |
-        |          410   |       1.3805 |     nan      |     nan      |
-        |          415   |       1.4607 |       0.6642 |     nan      |
+        |   Strike Price |   2026-10-30 |   2026-11-06 |   2026-11-13 |   2026-11-20 |
+        |---------------:|-------------:|-------------:|-------------:|-------------:|
+        |          155   |     nan      |     nan      |     nan      |       1.3993 |
+        |          160   |     nan      |     nan      |     nan      |       1.3572 |
+        |          165   |     nan      |     nan      |     nan      |       1.3159 |
+        |          170   |     nan      |     nan      |     nan      |       1.2756 |
+        |          180   |     nan      |     nan      |     nan      |       1.1971 |
+        |          185   |     nan      |     nan      |     nan      |       1.159  |
+        |          190   |     nan      |     nan      |     nan      |       1.1216 |
+        |          195   |     nan      |     nan      |     nan      |       1.0848 |
+        |          200   |     nan      |     nan      |     nan      |       1.0487 |
+        |          205   |     nan      |     nan      |     nan      |       1.0132 |
+        |          210   |     nan      |     nan      |     nan      |       0.9782 |
+        |          215   |     nan      |     nan      |     nan      |       0.9438 |
+        |          220   |     nan      |     nan      |     nan      |       0.91   |
+        |          230   |     nan      |     nan      |     nan      |       0.8439 |
+        |          235   |     nan      |     nan      |     nan      |       0.8117 |
+        |          240   |     nan      |     nan      |     nan      |       0.7799 |
+        |          245   |     nan      |     nan      |     nan      |       0.7487 |
+        |          250   |     nan      |     nan      |     nan      |       0.7179 |
+        |          255   |     nan      |     nan      |     nan      |       0.6876 |
+        |          260   |     nan      |     nan      |     nan      |       0.6578 |
+        |          265   |     nan      |     nan      |     nan      |       0.6286 |
+        |          270   |     nan      |     nan      |     nan      |       0.5998 |
+        |          280   |     nan      |       0.7398 |     nan      |       0.5438 |
+        |          285   |     nan      |     nan      |     nan      |       0.5166 |
+        |          290   |     nan      |     nan      |     nan      |       0.49   |
+        |          295   |     nan      |     nan      |     nan      |       0.464  |
+        |          300   |       0.4147 |     nan      |       0.33   |       0.4387 |
+        |          305   |       0.3937 |       0.5749 |     nan      |       0.4142 |
+        |          310   |       0.3722 |       0.5386 |     nan      |       0.3904 |
+        |          312.5 |       0.3613 |     nan      |     nan      |     nan      |
+        |          315   |       0.3502 |       0.5006 |     nan      |       0.3675 |
+        |          320   |       0.3276 |       0.4609 |       0.2749 |       0.3456 |
+        |          322.5 |       0.3161 |     nan      |     nan      |     nan      |
+        |          325   |       0.3045 |       0.4193 |       0.262  |       0.3249 |
+        |          327.5 |       0.2929 |     nan      |     nan      |     nan      |
+        |          330   |       0.2812 |       0.3755 |       0.25   |       0.3054 |
+        |          332.5 |       0.2698 |     nan      |     nan      |     nan      |
+        |          335   |       0.2586 |       0.3298 |       0.2392 |       0.2875 |
+        |          337.5 |       0.2479 |     nan      |     nan      |     nan      |
+        |          340   |       0.2382 |       0.2836 |       0.2303 |       0.2712 |
+        |          342.5 |       0.2299 |     nan      |     nan      |     nan      |
+        |          345   |       0.224  |       0.2408 |       0.2239 |       0.257  |
+        |          347.5 |       0.2215 |     nan      |     nan      |     nan      |
+        |          350   |       0.2238 |       0.2104 |       0.2211 |       0.245  |
+        |          352.5 |       0.2321 |     nan      |     nan      |     nan      |
+        |          355   |       0.2469 |       0.2032 |       0.2229 |       0.2355 |
+        |          357.5 |       0.2679 |     nan      |     nan      |     nan      |
+        |          360   |       0.2936 |       0.22   |       0.2303 |       0.2288 |
+        |          365   |       0.3515 |       0.2504 |       0.2439 |       0.2251 |
+        |          370   |       0.4099 |       0.2853 |       0.264  |       0.2244 |
+        |          375   |       0.4647 |       0.3202 |       0.2899 |       0.2267 |
+        |          380   |       0.5153 |       0.3537 |       0.3206 |       0.2318 |
+        |          385   |       0.5619 |       0.3852 |       0.3546 |       0.2396 |
+        |          390   |       0.6051 |       0.4149 |     nan      |       0.2497 |
+        |          395   |       0.6452 |     nan      |     nan      |       0.2618 |
+        |          400   |       0.6829 |     nan      |     nan      |       0.2756 |
+        |          405   |       0.7183 |     nan      |     nan      |       0.2908 |
+        |          410   |       0.7517 |       0.5176 |     nan      |       0.3072 |
+        |          415   |       0.7835 |     nan      |     nan      |       0.3246 |
+        |          420   |     nan      |     nan      |     nan      |       0.3428 |
+        |          425   |       0.8425 |     nan      |     nan      |       0.3616 |
+        |          430   |     nan      |     nan      |     nan      |       0.3809 |
+        |          435   |     nan      |     nan      |     nan      |       0.4007 |
+        |          440   |     nan      |     nan      |     nan      |       0.4208 |
+        |          445   |     nan      |     nan      |     nan      |       0.4412 |
+        |          450   |     nan      |     nan      |     nan      |       0.4618 |
+        |          455   |     nan      |     nan      |     nan      |       0.4826 |
+        |          460   |     nan      |     nan      |     nan      |       0.5035 |
+        |          465   |     nan      |     nan      |     nan      |       0.5246 |
+        |          470   |     nan      |     nan      |     nan      |       0.5457 |
         """
         all_expiration_dates = self.get_option_chains(show_expiration_dates=True)
 
@@ -859,6 +980,8 @@ class Options:
                     f"The expiration date(s) {', '.join(invalid_dates)} are not valid. "
                     f"Choose from {', '.join(all_expiration_dates)}"
                 )
+
+        self._warn_if_spot_is_stale()
 
         current_period = self._daily_historical.index[-1]
         stock_price = self._prices.loc[current_period]
@@ -903,7 +1026,7 @@ class Options:
                 dividend_yield_value = (
                     dividend_yield
                     if dividend_yield is not None
-                    else self._dividend_yield[ticker].iloc[-1]
+                    else self._dividend_yield_on(ticker, current_period)
                 )
 
                 forward_price = stock_price.loc[ticker] * np.exp(
@@ -1002,9 +1125,15 @@ class Options:
         Where C(K) is the Black-Scholes call price at strike K, using the
         SVI-smoothed implied volatility at that strike, r is the risk-free rate and
         t is the time to expiration. The second derivative is approximated
-        numerically via a central finite difference on a fine, evenly-spaced strike
-        grid, since the smile only gives implied volatility at a sparse set of
-        traded strikes.
+        numerically via the three-point central difference
+        (C(K - h) - 2 * C(K) + C(K + h)) / h^2 on a fine, evenly-spaced strike grid
+        with spacing h, since the smile only gives implied volatility at a sparse set
+        of traded strikes. The first and last grid points have no neighbor on one side
+        and are left out.
+
+        The option chains and the days to expiration are live, while the stock price is
+        the close of the last historical date; a warning is logged when that date lies
+        more than five days before today.
 
         See the paper: Breeden, D.T., & Litzenberger, R.H. (1978), "Prices of
         State-Contingent Claims Implicit in Option Prices", Journal of Business,
@@ -1025,12 +1154,15 @@ class Options:
                 expiration date.
             put_option (bool, optional): Whether to use put options instead of call
                 options. Defaults to False.
-            risk_free_rate (float, optional): The risk free rate to use for the
-                calculation. Defaults to None which means it will use the current
-                risk free rate.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+                uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+                risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+                quote to continuous compounding. A rate passed here is used as given, as a continuously compounded
+                rate.
             dividend_yield (float, optional): The dividend yield to use for the
-                calculation. Defaults to None which means it will use the dividend
-                yield as obtained through annual historical data.
+                calculation. Defaults to None, which uses the dividend yield on the
+                pricing date (the dividends of the 365 days up to it relative to its close,
+                as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             strike_price_range (float, optional): The range of strikes to evaluate
                 the density over, as a fraction of the forward price in each
                 direction. Defaults to 0.5, i.e. from 50% to 150% of the forward
@@ -1057,40 +1189,94 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(["SPY"], api_key="FINANCIAL_MODELING_PREP_KEY", benchmark_ticker=None)
 
-        risk_neutral_density = toolkit.options.get_risk_neutral_density()
+        toolkit.options.get_risk_neutral_density(strike_price_range=0.1, number_of_strikes=81)
         ```
 
         Which returns:
 
-        |   Strike Price |   AAPL |
+        |   Strike Price |    SPY |
         |---------------:|-------:|
-        |        170.05  |      0 |
-        |        171.742 |      0 |
-        |        173.434 |      0 |
-        |        175.126 |      0 |
-        |        176.818 |      0 |
-        |        178.511 |      0 |
-        |        180.203 |      0 |
-        |        181.895 |      0 |
-        |        183.587 |      0 |
-        |        185.279 |      0 |
-        |        186.971 |      0 |
-        |        188.663 |      0 |
-        |        190.355 |      0 |
-        |        192.047 |      0 |
-        |        193.739 |      0 |
-        |        195.431 |      0 |
-        |        197.123 |      0 |
-        |        198.815 |      0 |
-        |        200.507 |      0 |
-        |        202.199 |      0 |
-        |        203.891 |      0 |
-        |        205.583 |      0 |
-        |        207.275 |      0 |
-        |        208.967 |      0 |
-        |        210.659 |      0 |
+        |        686.021 | 0      |
+        |        687.921 | 0      |
+        |        689.821 | 0      |
+        |        691.722 | 0      |
+        |        693.622 | 0.0001 |
+        |        695.522 | 0.0001 |
+        |        697.423 | 0.0001 |
+        |        699.323 | 0.0001 |
+        |        701.223 | 0.0001 |
+        |        703.124 | 0.0001 |
+        |        705.024 | 0.0001 |
+        |        706.924 | 0.0001 |
+        |        708.825 | 0.0001 |
+        |        710.725 | 0.0001 |
+        |        712.625 | 0.0002 |
+        |        714.526 | 0.0002 |
+        |        716.426 | 0.0002 |
+        |        718.326 | 0.0002 |
+        |        720.227 | 0.0003 |
+        |        722.127 | 0.0003 |
+        |        724.028 | 0.0004 |
+        |        725.928 | 0.0005 |
+        |        727.828 | 0.0006 |
+        |        729.729 | 0.0007 |
+        |        731.629 | 0.0009 |
+        |        733.529 | 0.0011 |
+        |        735.43  | 0.0015 |
+        |        737.33  | 0.0019 |
+        |        739.23  | 0.0024 |
+        |        741.131 | 0.0032 |
+        |        743.031 | 0.0043 |
+        |        744.931 | 0.0058 |
+        |        746.832 | 0.008  |
+        |        748.732 | 0.011  |
+        |        750.632 | 0.0151 |
+        |        752.533 | 0.0209 |
+        |        754.433 | 0.0284 |
+        |        756.333 | 0.0377 |
+        |        758.234 | 0.048  |
+        |        760.134 | 0.0573 |
+        |        762.034 | 0.0626 |
+        |        763.935 | 0.0612 |
+        |        765.835 | 0.0525 |
+        |        767.735 | 0.0392 |
+        |        769.636 | 0.0256 |
+        |        771.536 | 0.015  |
+        |        773.436 | 0.0081 |
+        |        775.337 | 0.0042 |
+        |        777.237 | 0.0022 |
+        |        779.137 | 0.0011 |
+        |        781.038 | 0.0006 |
+        |        782.938 | 0.0003 |
+        |        784.838 | 0.0002 |
+        |        786.739 | 0.0001 |
+        |        788.639 | 0.0001 |
+        |        790.539 | 0.0001 |
+        |        792.44  | 0      |
+        |        794.34  | 0      |
+        |        796.24  | 0      |
+        |        798.141 | 0      |
+        |        800.041 | 0      |
+        |        801.941 | 0      |
+        |        803.842 | 0      |
+        |        805.742 | 0      |
+        |        807.642 | 0      |
+        |        809.543 | 0      |
+        |        811.443 | 0      |
+        |        813.343 | 0      |
+        |        815.244 | 0      |
+        |        817.144 | 0      |
+        |        819.044 | 0      |
+        |        820.945 | 0      |
+        |        822.845 | 0      |
+        |        824.745 | 0      |
+        |        826.646 | 0      |
+        |        828.546 | 0      |
+        |        830.446 | 0      |
+        |        832.347 | 0      |
+        |        834.247 | 0      |
         """
         if expiration_date is not None:
             candidate_dates = [expiration_date]
@@ -1114,6 +1300,8 @@ class Options:
                 f"No implied volatility could be determined for expiration date(s) "
                 f"{', '.join(candidate_dates)}."
             )
+
+        self._warn_if_spot_is_stale()
 
         current_period = self._daily_historical.index[-1]
         stock_price = self._prices.loc[current_period]
@@ -1146,7 +1334,7 @@ class Options:
             dividend_yield_value = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, current_period)
             )
 
             forward_price = stock_price.loc[ticker] * np.exp(
@@ -1211,31 +1399,36 @@ class Options:
         American style options. It does so by creating a binomial tree of price paths for the underlying asset, and
         then working backwards through the tree to determine the price of the option at each node.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the stock price (the traded close), risk free rate, dividend yield and volatility of the most recent
+        date are used; changing the start date prices the option as of that date instead. The volatility is the
+        annualized standard deviation of the daily returns over the year before that date and the dividend yield the
+        dividends of the 365 days up to that date relative to its close, so an earlier start date only uses what was
+        known on that date. The exception is a date in the first year of the price history: without a full year
+        before it, it takes the dividend yield of the first date that has one.
 
         The formulas are as follows:
 
-        - up movement (u) = e^(σ * sqrt(t))
+        - time step (Δt) = T / n
+        - up movement (u) = e^(σ * sqrt(Δt))
         - down movement (d) = 1 / u
-        - risk neutral probability (p) = (e^((r — q) * t) — d) / (u — d)
+        - risk neutral probability (p) = (e^((r — q) * Δt) — d) / (u — d)
         - stock price at each node = S * u^j * d^(n — j)
         - call option price at expiration date = max(S — K, 0)
         - put option price at expiration date = max(K — S, 0)
 
         For European Style options:
 
-        - call option price at each node = (p * C_u + (1 — p) * C_d) * e^(—r * t)
-        - put option price at each node = (p * P_u + (1 — p) * P_d) * e^(—r * t)
+        - call option price at each node = (p * C_u + (1 — p) * C_d) * e^(—r * Δt)
+        - put option price at each node = (p * P_u + (1 — p) * P_d) * e^(—r * Δt)
 
         For American Style options:
 
-        - call option price at each node = max(S — K, (p * C_u + (1 — p) * C_d) * e^(—r * t))
-        - put option price at each node = max(K — S, (p * P_u + (1 — p) * P_d) * e^(—r * t))
+        - call option price at each node = max(S — K, (p * C_u + (1 — p) * C_d) * e^(—r * Δt))
+        - put option price at each node = max(K — S, (p * P_u + (1 — p) * P_d) * e^(—r * Δt))
 
-        Where S is the stock price, K is the strike price, r is the risk free rate, σ is the volatility, t is the time to
-        expiration, j is the number of up movements, n is the number of time steps, C_u is the call option price at the up
+        Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
+        volatility, T is the time to expiration, Δt is the length of one time step, j is the number of up movements,
+        n is the number of time steps, C_u is the call option price at the up
         movement, C_d is the call option price at the down movement, P_u is the put option price at the up movement and
         P_d is the put option price at the down movement.
 
@@ -1251,9 +1444,9 @@ class Options:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
             which means it will use the most recent date.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
             american_option (bool, optional): Whether to value an American option, which can be exercised at every
                 node, instead of a European option. Defaults to False.
-            it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -1262,10 +1455,13 @@ class Options:
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -1281,34 +1477,29 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["KO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        binomial_trees_model = toolkit.options.get_binomial_model(
-            start_date='2024-02-02'
+        binomial_model = toolkit.options.get_binomial_model(
+            strike_price_range=0, strike_step_size=1, timesteps=5
         )
 
-        binomial_trees_model.loc['AAPL', 140]
+        binomial_model.loc["KO"]
         ```
 
         Which returns:
 
-        | Movement   |   2024-02-02 |   2024-03-09 |   2024-04-15 |   2024-05-21 |   2024-06-27 |   2024-08-02 |   2024-09-08 |   2024-10-14 |   2024-11-20 |   2024-12-26 |   2025-02-01 |
-        |:-----------|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | UUUUUUUUUU |      49.8119 |      62.0866 |      75.8572 |      90.9918 |     107.405  |     125.099  |     144.156  |     164.677  |     186.771  |     210.556  |     236.159  |
-        | DUUUUUUUUU |     nan      |      37.5692 |      48.4029 |      60.8806 |      74.8219 |      90.0481 |     106.484  |     124.188  |     143.255  |     163.787  |     185.894  |
-        | DDUUUUUUUU |     nan      |     nan      |      26.7114 |      35.9396 |      47.0111 |      59.7425 |      73.8464 |      89.1104 |     105.555  |     123.269  |     142.346  |
-        | DDDUUUUUUU |     nan      |     nan      |     nan      |      17.4193 |      24.8233 |      34.2749 |      45.6962 |      58.7199 |      72.8924 |      88.164  |     104.617  |
-        | DDDDUUUUUU |     nan      |     nan      |     nan      |     nan      |       9.9312 |      15.2854 |      22.7845 |      32.6478 |      44.5944 |      57.7503 |      71.9295 |
-        | DDDDDUUUUU |     nan      |     nan      |     nan      |     nan      |     nan      |       4.4941 |       7.6818 |      12.8055 |      20.6027 |      31.4008 |      43.61   |
-        | DDDDDDUUUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       1.2456 |       2.464  |       4.8743 |       9.6424 |      19.0748 |
-        | DDDDDDDUUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |       0      |       0      |       0      |
-        | DDDDDDDDUU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |       0      |       0      |
-        | DDDDDDDDDU |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |       0      |
-        | DDDDDDDDDD |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |
+        |               |   2025-12-31 |   2026-03-14 |   2026-05-26 |   2026-08-07 |   2026-10-19 |   2026-12-31 |
+        |:--------------|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | (69, 'UUUUU') |        5.821 |       9.067  |      13.6268 |      19.594  |      26.7232 |      34.524  |
+        | (69, 'DUUUU') |      nan     |       2.7196 |       4.7251 |       7.9735 |      12.8942 |      19.479  |
+        | (69, 'DDUUU') |      nan     |     nan      |       0.7891 |       1.6034 |       3.2581 |       6.6205 |
+        | (69, 'DDDUU') |      nan     |     nan      |     nan      |       0      |       0      |       0      |
+        | (69, 'DDDDU') |      nan     |     nan      |     nan      |     nan      |       0      |       0      |
+        | (69, 'DDDDD') |      nan     |     nan      |     nan      |     nan      |     nan      |       0      |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1347,7 +1538,7 @@ class Options:
                 dividend_yield_value[ticker] = (
                     dividend_yield
                     if dividend_yield is not None
-                    else self._dividend_yield[ticker].iloc[-1]
+                    else self._dividend_yield_on(ticker, start_date)
                 )
 
                 if show_input_info:
@@ -1431,21 +1622,22 @@ class Options:
         """
         Simulate the Stock Price based on the Binomial Model, a mathematical model used to estimate the price of European
         and American style options. It does so by creating a binomial tree of price paths for the underlying asset based
-        on the stock price, volatility, risk free rate, dividend yield and time to expiration. The stock price is then
-        simulated based on the up and down movements.
+        on the stock price, its volatility and the time to expiration: each step multiplies the price by
+        u = e^(σ * sqrt(Δt)) or by d = 1 / u. The stock price is then simulated based on these up and down movements.
 
-        By default the most recent risk free rate and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the most recent stock price is used, you can alter this by changing the start date. The volatility
+        is the annualized standard deviation of the daily returns over the year before that date, so an earlier start
+        date only uses what was known on that date.
 
         The formulas are as follows:
 
-        - up movement (u) = e^(σ * sqrt(t))
+        - up movement (u) = e^(σ * sqrt(Δt))
         - down movement (d) = 1 / u
         - stock price at each node = S * u^j * d^(n — j)
 
-        Where S is the stock price, r is the risk free rate, σ is the volatility, t is the time to
-        expiration, j is the number of up movements, n is the number of time steps.
+        Where S is the stock price, σ is the volatility, Δt is the length of a time step (the time to
+        expiration divided by the number of time steps), j is the number of up movements and n is the
+        number of time steps. The risk free rate and the dividend yield do not affect the tree.
 
         The resulting output is a DataFrame containing the tickers and movements as the index and the
         time to expiration as the columns. The movements index contains the number of up movements and the number of
@@ -1454,9 +1646,9 @@ class Options:
         in the image found here: https://en.wikipedia.org/wiki/Binomial_options_pricing_model#Method
 
         **Hint:** consider plotting the resulting DataFrame for each company to visualize the binomial tree.
-        For example for below's example use `stock_price_simulation.loc['AMZN'].T.plot(legend=False)`
+        For example for below's example use `stock_price_simulation.loc['AMD'].T.plot(legend=False)`
 
-        Also known as: Monte Carlo simulation, GBM, stock price path.
+        Also known as: binomial tree, stock price tree, stock price path, lattice.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -1465,8 +1657,11 @@ class Options:
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
             time steps. This will be evenly distributed over the time to expiration.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            risk_free_rate (float, optional): The risk free rate shown with show_input_info; it does not affect the
+            simulated prices. Defaults to None, which uses the Toolkit's risk-free rate on the pricing date: the
+            10-year Treasury yield unless the Toolkit's risk_free_rate parameter selects '13w', '5y' or '30y',
+            converted from its semi-annual bond-equivalent quote to continuous compounding. A rate passed here is used
+            as given, as a continuously compounded rate.
             show_unique_combinations (bool, optional): Whether to show the unique combinations of the stock prices.
             Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -1484,39 +1679,29 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "ASML"],
+            ["AMD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
         stock_price_simulation = toolkit.options.get_stock_price_simulation(
-            start_date='2025-06-20', timesteps=4
+            timesteps=5, show_unique_combinations=True
         )
 
-        stock_price_simulation.loc['AMZN']
+        stock_price_simulation.loc["AMD"]
         ```
 
         Which returns:
 
-        | Movement   |   2025-06-20 |   2025-09-19 |   2025-12-19 |   2026-03-20 |   2026-06-20 |
-        |:-----------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | UUUU       |       209.69 |      249.064 |      295.832 |      351.382 |      417.362 |
-        | UUUD       |       209.69 |      249.064 |      295.832 |      351.382 |      295.832 |
-        | UUDU       |       209.69 |      249.064 |      295.832 |      249.064 |      295.832 |
-        | UUDD       |       209.69 |      249.064 |      295.832 |      249.064 |      209.69  |
-        | UDUU       |       209.69 |      249.064 |      209.69  |      249.064 |      295.832 |
-        | UDUD       |       209.69 |      249.064 |      209.69  |      249.064 |      209.69  |
-        | UDDU       |       209.69 |      249.064 |      209.69  |      176.54  |      209.69  |
-        | UDDD       |       209.69 |      249.064 |      209.69  |      176.54  |      148.631 |
-        | DUUU       |       209.69 |      176.54  |      209.69  |      249.064 |      295.832 |
-        | DUUD       |       209.69 |      176.54  |      209.69  |      249.064 |      209.69  |
-        | DUDU       |       209.69 |      176.54  |      209.69  |      176.54  |      209.69  |
-        | DUDD       |       209.69 |      176.54  |      209.69  |      176.54  |      148.631 |
-        | DDUU       |       209.69 |      176.54  |      148.631 |      176.54  |      209.69  |
-        | DDUD       |       209.69 |      176.54  |      148.631 |      176.54  |      148.631 |
-        | DDDU       |       209.69 |      176.54  |      148.631 |      125.134 |      148.631 |
-        | DDDD       |       209.69 |      176.54  |      148.631 |      125.134 |      105.352 |
+        | Movement   |   2025-12-31 |   2026-03-14 |   2026-05-26 |   2026-08-07 |   2026-10-19 |   2026-12-31 |
+        |:-----------|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
+        | UUUUU      |       214.16 |      280.988 |      368.67  |     483.712  |      634.654 |     832.696  |
+        | DUUUU      |       214.16 |      163.226 |      214.16  |     280.988  |      368.67  |     483.712  |
+        | DDUUU      |       214.16 |      163.226 |      124.405 |     163.226  |      214.16  |     280.988  |
+        | DDDUU      |       214.16 |      163.226 |      124.405 |      94.8177 |      124.405 |     163.226  |
+        | DDDDU      |       214.16 |      163.226 |      124.405 |      94.8177 |       72.267 |      94.8177 |
+        | DDDDD      |       214.16 |      163.226 |      124.405 |      94.8177 |       72.267 |      55.0796 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1610,13 +1795,16 @@ class Options:
 
         Put-Call Parity states that, for European options sharing the same strike price
         and time to expiration, the following relationship must hold in order to prevent
-        arbitrage:
+        arbitrage: C - P = S * e^(-q * t) - K * e^(-r * t).
 
-        - C - P = S * e^(-q * t) - K * e^(-r * t)
+        The formula is as follows:
 
-        Where C is the call option price, P is the put option price, S is the stock
-        price, K is the strike price, r is the risk-free rate, q is the dividend yield
-        and t is the time to expiration.
+        - Parity Gap = (C - P) - (S * e^(-q * t) - K * e^(-r * t))
+
+        Where C is the Black-Scholes call option price, P is the Black-Scholes put option
+        price, S is the stock price, K is the strike price, r is the continuously compounded
+        risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)) and t is
+        the time to expiration in years (days / 365).
 
         This method computes the Black-Scholes call and put price for each ticker,
         strike price and time to expiration and then calculates the parity gap, i.e. the
@@ -1636,12 +1824,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -1656,12 +1848,32 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["JNJ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        parity_gap = toolkit.options.get_put_call_parity()
+        parity_gap = toolkit.options.get_put_call_parity(
+            strike_price_range=0.1, strike_step_size=5
+        )
 
-        parity_gap.loc['AMZN']
+        parity_gap.loc["JNJ", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            185 |            0 |            0 |            0 |
+        |            190 |            0 |            0 |            0 |
+        |            195 |            0 |            0 |            0 |
+        |            200 |            0 |            0 |            0 |
+        |            205 |            0 |            0 |            0 |
+        |            210 |            0 |            0 |            0 |
+        |            215 |            0 |            0 |            0 |
+        |            220 |            0 |            0 |            0 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1695,7 +1907,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -1807,10 +2019,14 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
             risk_free_rate (float, optional): The domestic risk free rate to use for the calculation. Defaults to
-            None which means it will use the current risk free rate.
+            None, which uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the
+            Toolkit's risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual
+            bond-equivalent quote to continuous compounding. A rate passed here is used as given, as a continuously
+            compounded rate.
             foreign_risk_free_rate (float, optional): The foreign risk free rate to use for the calculation, which
             plays the role of the dividend yield in the standard Black-Scholes model. Defaults to 0.0.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -1827,12 +2043,36 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["USDJPY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        garman_kohlhagen = toolkit.options.get_garman_kohlhagen(foreign_risk_free_rate=0.02)
+        garman_kohlhagen = toolkit.options.get_garman_kohlhagen(
+            strike_price_range=0.05,
+            strike_step_size=2,
+            expiration_time_range=91,
+            risk_free_rate=0.0075,
+            foreign_risk_free_rate=0.0375,
+        )
 
-        garman_kohlhagen.loc['AMZN']
+        garman_kohlhagen.loc["USDJPY", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            148 |       8.4856 |       8.266  |       8.1462 |
+        |            150 |       6.5551 |       6.4903 |       6.498  |
+        |            152 |       4.7422 |       4.8793 |       5.0189 |
+        |            154 |       3.1505 |       3.4884 |       3.741  |
+        |            156 |       1.8845 |       2.3571 |       2.683  |
+        |            158 |       0.9971 |       1.4973 |       1.8467 |
+        |            160 |       0.4601 |       0.8903 |       1.2176 |
+        |            162 |       0.1832 |       0.494  |       0.7678 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -1927,23 +2167,24 @@ class Options:
 
         A binary option pays out a fixed amount if the option expires in-the-money and
         nothing otherwise. Two variants are supported through the ``option_type``
-        parameter:
+        parameter: "cash-or-nothing" (the default) pays a fixed cash amount and
+        "asset-or-nothing" pays the value of the underlying asset if the option expires
+        in-the-money.
 
-        - "cash-or-nothing": pays a fixed cash amount if the option expires
-          in-the-money.
+        The formula is as follows:
 
-            - Call = cash_payout * e^(—r * t) * N(d2)
-            - Put = cash_payout * e^(—r * t) * N(—d2)
+        - d1 = (ln(S / K) + (r - q + σ² / 2) * t) / (σ * √t)
+        - d2 = d1 - σ * √t
+        - Cash-or-Nothing Call = Cash Payout * e^(-r * t) * N(d2), with Cash Payout defaulting to 1
+        - Cash-or-Nothing Put = Cash Payout * e^(-r * t) * N(-d2)
+        - Asset-or-Nothing Call = S * e^(-q * t) * N(d1)
+        - Asset-or-Nothing Put = S * e^(-q * t) * N(-d1)
 
-        - "asset-or-nothing": pays the value of the underlying asset if the option
-          expires in-the-money.
-
-            - Call = S * e^(—q * t) * N(d1)
-            - Put = S * e^(—q * t) * N(—d1)
-
-        Where S is the stock price, r is the risk-free rate, q is the dividend yield, t
-        is the time to expiration, N(d1) is the cumulative normal distribution of d1 and
-        N(d2) is the cumulative normal distribution of d2.
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, r is the continuously compounded risk-free rate, q is the continuous dividend
+        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
+        of the daily returns over the trailing 252 trading days times √252), t is the time to
+        expiration in years (days / 365) and N is the cumulative standard normal distribution.
 
         Also known as: digital option, all-or-nothing option, cash-or-nothing option,
         asset-or-nothing option.
@@ -1961,12 +2202,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -1981,12 +2226,37 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["GOOGL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        binary_option = toolkit.options.get_binary_option()
+        binary_option = toolkit.options.get_binary_option(
+            strike_price_range=0.1, strike_step_size=5, expiration_time_range=91
+        )
 
-        binary_option.loc['AMZN']
+        binary_option.loc["GOOGL", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            280 |       0.8793 |       0.7914 |       0.7413 |
+        |            285 |       0.8376 |       0.7516 |       0.7053 |
+        |            290 |       0.7881 |       0.7086 |       0.6678 |
+        |            295 |       0.7315 |       0.6631 |       0.6291 |
+        |            300 |       0.6693 |       0.6157 |       0.5896 |
+        |            305 |       0.6029 |       0.5674 |       0.5498 |
+        |            310 |       0.5345 |       0.5187 |       0.5101 |
+        |            315 |       0.4662 |       0.4705 |       0.4709 |
+        |            320 |       0.3998 |       0.4234 |       0.4325 |
+        |            325 |       0.3371 |       0.3781 |       0.3952 |
+        |            330 |       0.2795 |       0.335  |       0.3595 |
+        |            335 |       0.2278 |       0.2945 |       0.3254 |
+        |            340 |       0.1827 |       0.257  |       0.2931 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2020,7 +2290,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2083,29 +2353,46 @@ class Options:
         standardize: bool = False,
     ):
         """
-        Calculate American option prices using the Bjerksund-Stensland (1993)
+        Calculate American option prices using the Bjerksund-Stensland (2002)
         closed-form analytical approximation.
 
         Unlike European options, American options can be exercised at any time up to
         and including expiration, which normally requires a numerical approach such as
         the Binomial Tree model (see ``get_binomial_model``). The Bjerksund-Stensland
         model instead derives a closed-form approximation by assuming the early-exercise
-        boundary is a flat trigger price: once the stock price crosses this level,
-        immediate exercise is assumed optimal.
+        boundary is flat in steps: once the stock price crosses the trigger price,
+        immediate exercise is assumed optimal. The option's life is split at
+        t1 = ½(√5 - 1) * T into two periods, each with its own flat trigger price, which
+        brings the price closer to the exact American value than a single flat trigger.
 
-        The approximation (call, cost of carry b = r - q smaller than r) is:
+        The formula is as follows (for a call, with cost of carry b = r - q smaller than r):
 
-        - β = (0.5 — b / σ²) + sqrt((b / σ² — 0.5)² + 2r / σ²)
-        - B∞ = β / (β — 1) * K
-        - B0 = max(K, r / (r — b) * K)
-        - h(T) = —(b * T + 2σ√T) * (B0 / (B∞ — B0))
-        - I = B0 + (B∞ — B0) * (1 — e^h(T))
+        - β = (0.5 - b / σ²) + √((b / σ² - 0.5)² + 2r / σ²)
+        - B∞ = β / (β - 1) * K
+        - B0 = MAX(K, r / (r - b) * K)
+        - h(t) = -(b * t + 2σ√t) * K² / ((B∞ - B0) * B0)
+        - I(t) = B0 + (B∞ - B0) * (1 - e^h(t)), with I1 = I(t1) and I2 = I(T)
+        - Call = MAX(Approximation, European Black-Scholes Call, MAX(S - K, 0)), where the Approximation is
+          S - K when S ≥ I2 and otherwise combines univariate (first period) and bivariate (both periods)
+          normal terms, see ``black_scholes_model.get_bjerksund_stensland``
+        - Put (S, K, T, r, b, σ) = Call (K, S, T, r - b, -b, σ), the put-call transformation
 
-        If S ≥ I, immediate exercise is optimal and the value is S — K. American puts
-        are priced through the put-call transformation AmericanPut(S, K, T, r, b, σ) =
-        AmericanCall(K, S, T, r — b, —b, σ).
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, r is the continuously compounded risk-free rate, q is the continuous dividend
+        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
+        of the daily returns over the trailing 252 trading days times √252) and T is the time
+        to expiration in years (days / 365).
 
-        Also known as: BS93, Bjerksund-Stensland approximation, American option
+        When b ≥ r early exercise of a call is not optimal and the value is the Black-Scholes
+        price (floored at the exercise value). Where the boundary I2 falls to or below the
+        strike, a 1,000-step binomial tree prices the option instead. At zero days to
+        expiration the value is the exercise value.
+
+        See: Bjerksund, P., & Stensland, G. (2002), "Closed Form Valuation of American
+        Options", Working paper, NHH, as presented in Haug, E. G. (2007), "The Complete
+        Guide to Option Pricing Formulas" (2nd ed.), section 3.1.4.
+
+        Also known as: BS2002, Bjerksund-Stensland approximation, American option
         approximation.
 
         Args:
@@ -2117,12 +2404,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -2137,12 +2428,36 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["VZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        bjerksund_stensland = toolkit.options.get_bjerksund_stensland()
+        bjerksund_stensland = toolkit.options.get_bjerksund_stensland(
+            strike_price_range=0.15, strike_step_size=1, expiration_time_range=91
+        )
 
-        bjerksund_stensland.loc['AMZN']
+        bjerksund_stensland.loc["VZ", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             34 |       6.73   |       6.73   |       6.73   |
+        |             35 |       5.73   |       5.73   |       5.7417 |
+        |             36 |       4.73   |       4.753  |       4.8234 |
+        |             37 |       3.7409 |       3.8477 |       3.9719 |
+        |             38 |       2.8269 |       3.0217 |       3.202  |
+        |             39 |       2.0118 |       2.2958 |       2.5242 |
+        |             40 |       1.3361 |       1.6834 |       1.9439 |
+        |             41 |       0.8214 |       1.189  |       1.4615 |
+        |             42 |       0.4646 |       0.8079 |       1.0723 |
+        |             43 |       0.241  |       0.5278 |       0.7678 |
+        |             44 |       0.1144 |       0.3314 |       0.5365 |
+        |             45 |       0.0497 |       0.2001 |       0.366  |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2176,7 +2491,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2247,15 +2562,22 @@ class Options:
         The Monte Carlo method prices an option by simulating a large number of possible
         future paths for the underlying stock price under the risk-neutral measure,
         computing the option's payoff at expiration for each simulated path, and then
-        discounting the average payoff back to the present:
+        discounting the average payoff back to the present.
 
-        - S(t + Δt) = S(t) * e^((r — q — σ²/2) * Δt + σ * √Δt * Z)
-        - Call Price = e^(—r * T) * mean(max(S(T) — K, 0))
-        - Put Price = e^(—r * T) * mean(max(K — S(T), 0))
+        The formula is as follows:
 
-        Where S(t) is the stock price at time t, r is the risk-free rate, q is the
-        dividend yield, σ is the volatility, Δt is the length of a single time step and
-        Z is a standard normal random variable.
+        - Δt = T / Time Steps, with Time Steps defaulting to 100
+        - S(t + Δt) = S(t) * e^((r - q - σ² / 2) * Δt + σ * √Δt * Z)
+        - Call Price = e^(-r * T) * MEAN(MAX(S(T) - K, 0)), averaged over the simulated paths (10,000 by default)
+        - Put Price = e^(-r * T) * MEAN(MAX(K - S(T), 0))
+        - Standard Error = Sample Standard Deviation (ddof=1) of the Discounted Payoffs / √Simulations
+
+        Where S(t) is the stock price at time t (starting from the traded close on the pricing
+        date), K is the strike price, r is the continuously compounded risk-free rate, q is the
+        continuous dividend yield (ln(1 + dividend yield)), σ is the annualized volatility (the
+        standard deviation of the daily returns over the trailing 252 trading days times √252),
+        T is the time to expiration in years (days / 365) and Z is a standard normal random
+        variable.
 
         All strike prices of an expiry are priced on the same simulated paths (common
         random numbers), which keeps the prices consistent across strikes and means the
@@ -2264,9 +2586,8 @@ class Options:
         As it is a simulation, the result comes with sampling error. Set
         ``show_standard_error=True`` to additionally return the standard error of each
         estimate — as a rule of thumb, the true price lies within plus or minus 2 times
-        the standard error roughly 95% of the time. A fixed ``seed`` is used by default
-        for reproducibility of documentation examples; set it explicitly (or leave it as
-        None) to control this behavior.
+        the standard error roughly 95% of the time. Pass a ``seed`` (as the example does)
+        to make the results reproducible; without one every call draws new paths.
 
         Also known as: Monte Carlo option pricing, simulation-based option pricing.
 
@@ -2279,12 +2600,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             simulations (int, optional): The number of simulated stock price paths. Defaults to 10,000.
             time_steps (int, optional): The number of time steps used to build each simulated path. Defaults to 100.
             seed (int | None, optional): The seed used to initialize the random number generator, ensuring
@@ -2306,12 +2631,41 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["COST"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        monte_carlo = toolkit.options.get_monte_carlo_option_price(seed=42)
+        monte_carlo = toolkit.options.get_monte_carlo_option_price(
+            strike_price_range=0.1, strike_step_size=10, expiration_time_range=31, seed=42
+        )
 
-        monte_carlo.loc['AMZN']
+        monte_carlo.loc["COST", ["2026-01-07", "2026-01-14", "2026-01-30"]]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-30 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            780 |      82.8804 |      83.4929 |      85.5951 |
+        |            790 |      72.8944 |      73.6474 |      76.2377 |
+        |            800 |      62.9375 |      63.9365 |      67.1784 |
+        |            810 |      53.0608 |      54.449  |      58.4909 |
+        |            820 |      43.3668 |      45.3486 |      50.2675 |
+        |            830 |      34.0544 |      36.7989 |      42.5958 |
+        |            840 |      25.4476 |      28.9941 |      35.5519 |
+        |            850 |      17.9002 |      22.0923 |      29.1778 |
+        |            860 |      11.7131 |      16.2131 |      23.5449 |
+        |            870 |       7.0931 |      11.4623 |      18.6844 |
+        |            880 |       3.9774 |       7.8047 |      14.5854 |
+        |            890 |       2.0399 |       5.1208 |      11.2062 |
+        |            900 |       0.9613 |       3.2137 |       8.477  |
+        |            910 |       0.4226 |       1.935  |       6.285  |
+        |            920 |       0.1699 |       1.1307 |       4.5788 |
+        |            930 |       0.0583 |       0.6377 |       3.2783 |
+        |            940 |       0.018  |       0.3433 |       2.3104 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2348,7 +2702,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2452,10 +2806,41 @@ class Options:
         ``barrier_percentage``, e.g. a value of 0.9 sets the barrier at 90% of the
         current stock price (a sensible default for a down barrier).
 
-        A useful identity is in-out parity: for identical parameters, a knock-in option
-        plus its corresponding knock-out option (same direction) always equals the price
-        of the equivalent vanilla Black-Scholes option, since the underlying either does
-        or does not touch the barrier.
+        The formula is as follows (Reiner & Rubinstein, 1991, in the notation of Haug, 2007):
+
+        - H = Barrier Percentage * S, with Barrier Percentage defaulting to 0.9
+        - b = r - q, μ = (b - σ² / 2) / σ², λ = √(μ² + 2r / σ²), φ = 1 for a call and -1 for a put, η = 1 for a
+          down barrier and -1 for an up barrier
+        - x1 = ln(S / K) / (σ√T) + (1 + μ)σ√T, x2 = ln(S / H) / (σ√T) + (1 + μ)σ√T
+        - y1 = ln(H² / (S * K)) / (σ√T) + (1 + μ)σ√T, y2 = ln(H / S) / (σ√T) + (1 + μ)σ√T
+        - z = ln(H / S) / (σ√T) + λσ√T
+        - A = φS * e^((b - r)T) * N(φx1) - φK * e^(-rT) * N(φx1 - φσ√T), and B the same with x2 in place of x1
+        - C = φS * e^((b - r)T) * (H / S)^(2(μ + 1)) * N(ηy1) - φK * e^(-rT) * (H / S)^(2μ) * N(ηy1 - ησ√T),
+          and D the same with y2 in place of y1
+        - E = Rebate * e^(-rT) * (N(ηx2 - ησ√T) - (H / S)^(2μ) * N(ηy2 - ησ√T))
+        - F = Rebate * ((H / S)^(μ + λ) * N(ηz) + (H / S)^(μ - λ) * N(ηz - 2ηλσ√T))
+        - Down-and-Out Call (the default) = A - C + F if K > H, else B - D + F
+        - Down-and-In Call = C + E if K > H, else A - B + D + E
+        - Up-and-Out Call = F if K > H, else A - B + C - D + F
+        - Up-and-In Call = A + E if K > H, else B - C + D + E
+        - Down-and-Out Put = A - B + C - D + F if K > H, else F
+        - Down-and-In Put = B - C + D + E if K > H, else A + E
+        - Up-and-Out Put = B - D + F if K > H, else A - C + F
+        - Up-and-In Put = A - B + D + E if K > H, else C + E
+
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, H is the barrier, r is the continuously compounded risk-free rate, q is the
+        continuous dividend yield (ln(1 + dividend yield)), σ is the annualized volatility (the
+        standard deviation of the daily returns over the trailing 252 trading days times √252),
+        T is the time to expiration in years (days / 365), N is the cumulative standard normal
+        distribution and the Rebate defaults to 0.
+
+        A useful identity is in-out parity: without a rebate, a knock-in option plus its
+        corresponding knock-out option (same direction and barrier) equals the price of
+        the equivalent vanilla Black-Scholes option, since the underlying either does or
+        does not touch the barrier. With a rebate, both legs pay it in the scenario where
+        they do not exist, so the sum exceeds the vanilla price by the value of those
+        rebates.
 
         Also known as: knock-in option, knock-out option, down-and-out, down-and-in,
         up-and-out, up-and-in option.
@@ -2466,7 +2851,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             barrier_percentage (float, optional): The barrier level as a percentage of the current stock price.
-            Defaults to 0.9 which equals 90% of the current stock price.
+            Defaults to 0.9 which equals 90% of the current stock price. A down barrier needs a value below 1
+            and an up barrier a value above 1; otherwise the barrier is already breached.
             barrier_direction (str, optional): Either "down" or "up". Defaults to "down".
             knock_type (str, optional): Either "in" or "out". Defaults to "out".
             rebate (float, optional): The fixed cash amount paid out if the option knocks out (or fails to knock
@@ -2475,12 +2861,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -2490,18 +2880,64 @@ class Options:
             pd.DataFrame: Barrier option values containing the tickers and strike prices as the index and the
             time to expiration as the columns.
 
+        Raises:
+            ValueError: If barrier_percentage puts the barrier at or beyond the current stock price for the
+                given barrier_direction (at or below 1 for "up", at or above 1 for "down"), since such a
+                barrier is breached at the start and every price would be the rebate (knock-out) or the
+                vanilla price (knock-in).
+
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["META"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        barrier_option = toolkit.options.get_barrier_option()
+        barrier_option = toolkit.options.get_barrier_option(
+            strike_price_range=0.1, strike_step_size=10, expiration_time_range=91
+        )
 
-        barrier_option.loc['AMZN']
+        barrier_option.loc["META", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            590 |      70.211  |      70.5594 |      71.0161 |
+        |            600 |      63.6599 |      65.6623 |      66.9713 |
+        |            610 |      57.1775 |      60.7959 |      62.9446 |
+        |            620 |      50.8693 |      56.0077 |      58.9639 |
+        |            630 |      44.8284 |      51.341  |      55.0551 |
+        |            640 |      39.1312 |      46.8335 |      51.2414 |
+        |            650 |      33.8365 |      42.5169 |      47.543  |
+        |            660 |      28.9845 |      38.4166 |      43.9768 |
+        |            670 |      24.5979 |      34.5518 |      40.557  |
+        |            680 |      20.6836 |      30.9358 |      37.2945 |
+        |            690 |      17.2345 |      27.5763 |      34.1974 |
+        |            700 |      14.2322 |      24.4761 |      31.2713 |
+        |            710 |      11.6493 |      21.6334 |      28.519  |
+        |            720 |       9.4527 |      19.043  |      25.9413 |
         """
+        # The barrier is set relative to the spot, so a barrier on the wrong side of it is breached
+        # before the option starts. The prices would then be a flat rebate or the vanilla price,
+        # which hides a mistaken barrier_percentage or barrier_direction instead of reporting it.
+        if barrier_direction == "up" and barrier_percentage <= 1:
+            raise ValueError(
+                f"An up barrier must lie above the current stock price, so barrier_percentage must be above 1 "
+                f"(received {barrier_percentage}). Use barrier_direction='down' for a barrier below the stock price."
+            )
+        if barrier_direction == "down" and barrier_percentage >= 1:
+            raise ValueError(
+                f"A down barrier must lie below the current stock price, so barrier_percentage must be below 1 "
+                f"(received {barrier_percentage}). Use barrier_direction='up' for a barrier above the stock price."
+            )
+
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
 
@@ -2534,7 +2970,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
             barrier = stock_price.loc[ticker] * barrier_percentage
 
@@ -2606,20 +3042,25 @@ class Options:
         An Asian option's payoff depends on the average price of the underlying stock
         over the option's life, rather than the price at a single point in time, which
         typically makes it cheaper than the equivalent vanilla option (the averaging
-        reduces variance). The geometric-average version has a closed-form solution
-        based on an adjusted volatility and cost of carry:
+        reduces variance). This prices the continuously sampled geometric-average Asian
+        option only; the arithmetic-average version has no closed form and is not
+        offered. The geometric-average version has a closed-form solution based on an
+        adjusted volatility and cost of carry.
+
+        The formula is as follows:
 
         - σ_A = σ / √3
-        - b_A = 0.5 * (b — σ²/6), where b = r — q is the cost of carry
-        - d1 = (ln(S / K) + (b_A + σ_A²/2) * t) / (σ_A * √t)
-        - d2 = d1 — σ_A * √t
-        - Call Price = S * e^((b_A — r) * t) * N(d1) — K * e^(—r * t) * N(d2)
-        - Put Price = K * e^(—r * t) * N(—d2) — S * e^((b_A — r) * t) * N(—d1)
+        - b_A = 0.5 * (b - σ² / 6), where b = r - q is the cost of carry
+        - d1 = (ln(S / K) + (b_A + σ_A² / 2) * t) / (σ_A * √t)
+        - d2 = d1 - σ_A * √t
+        - Call Price = S * e^((b_A - r) * t) * N(d1) - K * e^(-r * t) * N(d2)
+        - Put Price = K * e^(-r * t) * N(-d2) - S * e^((b_A - r) * t) * N(-d1)
 
-        Where S is the stock price, K is the strike price, r is the risk-free rate, q is
-        the dividend yield, σ is the volatility, t is the time to expiration, N(d1) is
-        the cumulative normal distribution of d1 and N(d2) is the cumulative normal
-        distribution of d2.
+        Where S is the stock price (the traded close on the pricing date), K is the strike
+        price, r is the continuously compounded risk-free rate, q is the continuous dividend
+        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
+        of the daily returns over the trailing 252 trading days times √252), t is the time to
+        expiration in years (days / 365) and N is the cumulative standard normal distribution.
 
         Also known as: geometric Asian option, average rate option, average price
         option.
@@ -2633,12 +3074,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -2653,12 +3098,36 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        asian_option = toolkit.options.get_asian_option()
+        asian_option = toolkit.options.get_asian_option(
+            strike_price_range=0.1, strike_step_size=2, expiration_time_range=91
+        )
 
-        asian_option.loc['AMZN']
+        asian_option.loc["XOM", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            108 |      12.2984 |      12.3072 |      12.3784 |
+        |            110 |      10.3173 |      10.3976 |      10.5491 |
+        |            112 |       8.365  |       8.5609 |       8.8116 |
+        |            114 |       6.4839 |       6.8383 |       7.197  |
+        |            116 |       4.7442 |       5.2756 |       5.7352 |
+        |            118 |       3.2336 |       3.9144 |       4.4502 |
+        |            120 |       2.0276 |       2.7832 |       3.3568 |
+        |            122 |       1.1573 |       1.8907 |       2.4581 |
+        |            124 |       0.5964 |       1.2243 |       1.7458 |
+        |            126 |       0.276  |       0.7545 |       1.2016 |
+        |            128 |       0.1143 |       0.4421 |       0.8013 |
+        |            130 |       0.0423 |       0.2462 |       0.5176 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2692,7 +3161,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             for strike_price in strike_prices:
@@ -2772,6 +3241,17 @@ class Options:
         - Iron condor: short put + long put (lower strikes) + short call + long call
           (higher strikes).
 
+        The formula is as follows, for each stock price at expiration S(T) and one unit per leg:
+
+        - Call Leg Value = MAX(S(T) - K, 0)
+        - Put Leg Value = MAX(K - S(T), 0)
+        - Stock Leg Value = S(T)
+        - Leg P&L = Leg Value - Premium for a long leg, Premium - Leg Value for a short leg
+        - Strategy P&L = SUM(Leg P&L) over all legs
+
+        Where K is the leg's strike price and the premium is the price paid (long) or received
+        (short) for the leg, or the entry price of a stock leg. The P&L is not discounted.
+
         Also known as: option strategy payoff diagram, P&L profile.
 
         Args:
@@ -2796,17 +3276,72 @@ class Options:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AMZN", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+        toolkit = Toolkit(
+            ["TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
         straddle_legs = [
-            {"strike_price": 150, "put_option": False, "position": "long", "premium": 8},
-            {"strike_price": 150, "put_option": True, "position": "long", "premium": 6},
+            {"strike_price": 450, "put_option": False, "position": "long", "premium": 30},
+            {"strike_price": 450, "put_option": True, "position": "long", "premium": 28},
         ]
 
-        strategy_payoff = toolkit.options.get_strategy_payoff(legs=straddle_legs)
-
-        strategy_payoff["AMZN"]
+        toolkit.options.get_strategy_payoff(
+            legs=straddle_legs, stock_price_range=0.25, stock_price_step_size=5
+        )
         ```
+
+        Which returns:
+
+        |   Stock Price |   TSLA |
+        |--------------:|-------:|
+        |           335 |     57 |
+        |           340 |     52 |
+        |           345 |     47 |
+        |           350 |     42 |
+        |           355 |     37 |
+        |           360 |     32 |
+        |           365 |     27 |
+        |           370 |     22 |
+        |           375 |     17 |
+        |           380 |     12 |
+        |           385 |      7 |
+        |           390 |      2 |
+        |           395 |     -3 |
+        |           400 |     -8 |
+        |           405 |    -13 |
+        |           410 |    -18 |
+        |           415 |    -23 |
+        |           420 |    -28 |
+        |           425 |    -33 |
+        |           430 |    -38 |
+        |           435 |    -43 |
+        |           440 |    -48 |
+        |           445 |    -53 |
+        |           450 |    -58 |
+        |           455 |    -53 |
+        |           460 |    -48 |
+        |           465 |    -43 |
+        |           470 |    -38 |
+        |           475 |    -33 |
+        |           480 |    -28 |
+        |           485 |    -23 |
+        |           490 |    -18 |
+        |           495 |    -13 |
+        |           500 |     -8 |
+        |           505 |     -3 |
+        |           510 |      2 |
+        |           515 |      7 |
+        |           520 |     12 |
+        |           525 |     17 |
+        |           530 |     22 |
+        |           535 |     27 |
+        |           540 |     32 |
+        |           545 |     37 |
+        |           550 |     42 |
+        |           555 |     47 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -2869,8 +3404,8 @@ class Options:
         - Theta: measures the sensitivity of the value of the derivative to the passage of time, the "time decay."
         - Rho: measures sensitivity to the interest rate: it is the derivative of the option value with respect to
         the risk-free interest rate (for the relevant outstanding term).
-        - Epsilon: measures the percentage change in option value per percentage change in the underlying dividend yield,
-        a measure of the dividend risk.
+        - Epsilon: measures the change in option value per unit (1.00) change in the dividend yield, the derivative of
+        the value with respect to the dividend yield, a measure of the dividend risk.
         - Lambda: measures the percentage change in option value per percentage change in the underlying price, a measure of
         leverage, sometimes called gearing. This greek is also sometimes called Omega or Elasticity.
 
@@ -2890,7 +3425,8 @@ class Options:
         the passage of time. Veta is the second derivative of the value function; once to volatility and once to time.
         - Vera: also referred to as rhova, measures the rate of change in rho with respect to volatility. Vera is the
         second derivative of the value function; once to volatility and once to interest rate.
-        - Partial Derivative: measures the rate of change in the option price with respect to the strike price.
+        - Partial Derivative: the second derivative of the option price with respect to the strike price, the rate
+        at which the dual delta changes with the strike.
 
         **Third Order Greeks:**
 
@@ -2903,9 +3439,12 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the stock price (the traded close), risk free rate, dividend yield and volatility of the most recent
+        date are used; changing the start date prices the option as of that date instead. The volatility is the
+        annualized standard deviation of the daily returns over the year before that date and the dividend yield the
+        dividends of the 365 days up to that date relative to its close, so an earlier start date only uses what was
+        known on that date. The exception is a date in the first year of the price history: without a full year
+        before it, it takes the dividend yield of the first date that has one.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -2914,12 +3453,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -2952,30 +3495,30 @@ class Options:
 
         |   Strike Price |   Delta |   Dual Delta |   Vega |   Theta |    Rho |   Epsilon |   Lambda |   Gamma |   Dual Gamma |   Vanna |    Charm |   Vomma |    Vera |    Veta |     PD |   Speed |   Zomma |   Color |   Ultima |
         |---------------:|--------:|-------------:|-------:|--------:|-------:|----------:|---------:|--------:|-------------:|--------:|---------:|--------:|--------:|--------:|-------:|--------:|--------:|--------:|---------:|
-        |            180 |  1      |      -0.9999 | 0      | -0.0193 | 0.4931 |   -0.6533 |   4.0782 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
-        |            185 |  1      |      -0.9999 | 0      | -0.0198 | 0.5068 |   -0.6533 |   4.4595 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
-        |            190 |  1      |      -0.9999 | 0      | -0.0204 | 0.5205 |   -0.6533 |   4.9195 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
-        |            195 |  1      |      -0.9999 | 0      | -0.0209 | 0.5342 |   -0.6533 |   5.4853 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0.0002 |
-        |            200 |  1      |      -0.9999 | 0      | -0.0214 | 0.5479 |   -0.6533 |   6.1981 |  0      |       0      | -0      |   0.0003 |  0.0002 | -0      | -0      | 0      | -0      |  0      | -0.0002 |   0.0065 |
-        |            205 |  1      |      -0.9999 | 0      | -0.022  | 0.5616 |   -0.6533 |   7.1239 |  0      |       0      | -0.0001 |   0.0097 |  0.0048 | -0.0001 | -0      | 0      | -0      |  0      | -0.0053 |   0.1335 |
-        |            210 |  0.9999 |      -0.9998 | 0      | -0.0235 | 0.5752 |   -0.6532 |   8.3742 |  0      |       0      | -0.0015 |   0.1722 |  0.0714 | -0.001  | -0.0002 | 0      | -0      |  0.0007 | -0.0778 |   1.3082 |
-        |            215 |  0.9991 |      -0.9989 | 0.0004 | -0.0346 | 0.5884 |   -0.6527 |  10.1489 |  0.0004 |       0.0005 | -0.0143 |   1.6563 |  0.5604 | -0.0095 | -0.002  | 0.0005 | -0.0001 |  0.0051 | -0.5876 |   5.9321 |
-        |            220 |  0.9927 |      -0.9919 | 0.0025 | -0.1034 | 0.5979 |   -0.6485 |  12.8004 |  0.0025 |       0.003  | -0.0766 |   8.8524 |  2.3355 | -0.0507 | -0.0087 | 0.003  | -0.0008 |  0.0196 | -2.264  |  10.617  |
-        |            225 |  0.9614 |      -0.9584 | 0.0105 | -0.355  | 0.5908 |   -0.628  |  16.8575 |  0.0106 |       0.0119 | -0.2287 |  26.4045 |  5.0433 | -0.1523 | -0.0212 | 0.0119 | -0.0024 |  0.0343 | -3.9573 |   0.4951 |
-        |            230 |  0.8655 |      -0.8581 | 0.027  | -0.8792 | 0.5407 |   -0.5654 |  22.8791 |  0.0273 |       0.0294 | -0.3657 |  42.119  |  5.0451 | -0.2463 | -0.0294 | 0.0294 | -0.0039 |  0.008  | -0.8883 | -14.4266 |
-        |            235 |  0.6767 |      -0.6646 | 0.0448 | -1.4399 | 0.4279 |   -0.442  |  31.1644 |  0.0453 |       0.0467 | -0.2405 |  27.4427 |  1.3756 | -0.1694 | -0.0267 | 0.0467 | -0.0028 | -0.0575 |  6.6838 |  -6.0896 |
-        |            240 |  0.4305 |      -0.4174 | 0.049  | -1.5675 | 0.2745 |   -0.2812 |  41.601  |  0.0496 |       0.0489 |  0.1289 | -15.4004 |  0.2817 |  0.0708 | -0.0254 | 0.0489 |  0.0009 | -0.0752 |  8.707  |  -1.3284 |
-        |            245 |  0.2132 |      -0.2036 | 0.0363 | -1.1574 | 0.1367 |   -0.1393 |  53.7837 |  0.0367 |       0.0348 |  0.3795 | -44.314  |  3.7676 |  0.238  | -0.0302 | 0.0348 |  0.0035 | -0.0197 |  2.2468 | -13.8988 |
-        |            250 |  0.0803 |      -0.0754 | 0.0186 | -0.5925 | 0.0516 |   -0.0524 |  67.2285 |  0.0188 |       0.0171 |  0.3372 | -39.2457 |  5.9056 |  0.2152 | -0.0281 | 0.0171 |  0.0033 |  0.0301 | -3.518  |  -9.1559 |
-        |            255 |  0.0228 |      -0.0211 | 0.0067 | -0.2149 | 0.0147 |   -0.0149 |  81.5108 |  0.0068 |       0.006  |  0.1731 | -20.1217 |  4.3191 |  0.1112 | -0.0171 | 0.006  |  0.0017 |  0.0329 | -3.8307 |   7.2307 |
-        |            260 |  0.0049 |      -0.0044 | 0.0018 | -0.0563 | 0.0032 |   -0.0032 |  96.308  |  0.0018 |       0.0015 |  0.0584 |  -6.7872 |  1.8839 |  0.0377 | -0.0069 | 0.0015 |  0.0006 |  0.0162 | -1.8861 |  11.1559 |
-        |            265 |  0.0008 |      -0.0007 | 0.0003 | -0.0109 | 0.0005 |   -0.0005 | 111.391  |  0.0003 |       0.0003 |  0.0137 |  -1.5964 |  0.5417 |  0.0089 | -0.0019 | 0.0003 |  0.0001 |  0.0049 | -0.5728 |   6.0301 |
-        |            270 |  0.0001 |      -0.0001 | 0      | -0.0016 | 0.0001 |   -0.0001 | 126.604  |  0      |       0      |  0.0023 |  -0.2715 |  0.1086 |  0.0015 | -0.0004 | 0      |  0      |  0.001  | -0.1183 |   1.8733 |
-        |            275 |  0      |      -0      | 0      | -0.0002 | 0      |   -0      | 141.839  |  0      |       0      |  0.0003 |  -0.0343 |  0.0158 |  0.0002 | -0.0001 | 0      |  0      |  0.0002 | -0.0175 |   0.3819 |
-        |            280 |  0      |      -0      | 0      | -0      | 0      |   -0      | 157.025  |  0      |       0      |  0      |  -0.0033 |  0.0017 |  0      | -0      | 0      |  0      |  0      | -0.0019 |   0.0546 |
-        |            285 |  0      |      -0      | 0      | -0      | 0      |   -0      | 172.114  |  0      |       0      |  0      |  -0.0002 |  0.0001 |  0      | -0      | 0      |  0      |  0      | -0.0002 |   0.0057 |
-        |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      | 187.072  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0.0004 |
-        |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      | 201.877  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0      |
+        |            180 |  1      |      -0.9999 | 0      | -0.0191 | 0.4931 |   -0.6533 |   4.0782 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            185 |  1      |      -0.9999 | 0      | -0.0196 | 0.5068 |   -0.6533 |   4.4595 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            190 |  1      |      -0.9999 | 0      | -0.0202 | 0.5205 |   -0.6533 |   4.9195 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            195 |  1      |      -0.9999 | 0      | -0.0207 | 0.5342 |   -0.6533 |   5.4853 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            200 |  1      |      -0.9999 | 0      | -0.0212 | 0.5479 |   -0.6533 |   6.1981 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0.0001 |
+        |            205 |  1      |      -0.9999 | 0      | -0.0217 | 0.5616 |   -0.6533 |   7.1239 |  0      |       0      | -0      |   0.0002 |  0.0001 | -0      | -0      | 0      | -0      |  0      | -0.0002 |   0.0071 |
+        |            210 |  1      |      -0.9999 | 0      | -0.0223 | 0.5753 |   -0.6533 |   8.3748 |  0      |       0      | -0.0001 |   0.0124 |  0.0071 | -0.0001 | -0      | 0      | -0      |  0.0001 | -0.0079 |   0.2261 |
+        |            215 |  0.9999 |      -0.9998 | 0.0001 | -0.0243 | 0.5889 |   -0.6532 |  10.1573 |  0.0001 |       0.0001 | -0.0031 |   0.3048 |  0.1423 | -0.002  | -0.0004 | 0.0001 | -0      |  0.0016 | -0.1539 |   2.7483 |
+        |            220 |  0.9979 |      -0.9976 | 0.0008 | -0.0454 | 0.6013 |   -0.6519 |  12.8781 |  0.001  |       0.0011 | -0.0345 |   3.3891 |  1.2332 | -0.0227 | -0.0037 | 0.0011 | -0.0004 |  0.0129 | -1.2633 |  11.7212 |
+        |            225 |  0.9808 |      -0.9794 | 0.0058 | -0.1808 | 0.6037 |   -0.6408 |  17.297  |  0.0069 |       0.0078 | -0.1766 |  17.3444 |  4.5655 | -0.117  | -0.0152 | 0.0078 | -0.0022 |  0.0414 | -4.0652 |  10.4124 |
+        |            230 |  0.9022 |      -0.8971 | 0.0216 | -0.604  | 0.5653 |   -0.5894 |  24.4765 |  0.0256 |       0.0275 | -0.4047 |  39.6576 |  6.5361 | -0.2703 | -0.0283 | 0.0275 | -0.005  |  0.0303 | -2.9369 | -16.4877 |
+        |            235 |  0.7031 |      -0.6932 | 0.0432 | -1.1838 | 0.4463 |   -0.4593 |  35.2268 |  0.0513 |       0.0528 | -0.3236 |  31.4245 |  2.1541 | -0.2232 | -0.0273 | 0.0528 | -0.0043 | -0.0694 |  6.8815 | -10.901  |
+        |            240 |  0.4163 |      -0.4053 | 0.0487 | -1.3254 | 0.2665 |   -0.272  |  49.5371 |  0.0579 |       0.0571 |  0.173  | -17.5904 |  0.4562 |  0.0997 | -0.0256 | 0.0571 |  0.0016 | -0.1017 | 10.0098 |  -2.5045 |
+        |            245 |  0.1735 |      -0.1663 | 0.032  | -0.8684 | 0.1116 |   -0.1133 |  66.7011 |  0.038  |       0.036  |  0.4598 | -45.6744 |  5.3973 |  0.2916 | -0.0307 | 0.036  |  0.0051 | -0.0062 |  0.5668 | -20.8797 |
+        |            250 |  0.049  |      -0.0461 | 0.0127 | -0.343  | 0.0316 |   -0.032  |  85.8277 |  0.015  |       0.0137 |  0.316  | -31.292  |  6.5283 |  0.203  | -0.024  | 0.0137 |  0.0036 |  0.0497 | -4.9373 |  -2.5872 |
+        |            255 |  0.0092 |      -0.0086 | 0.0031 | -0.0841 | 0.006  |   -0.006  | 106.169  |  0.0037 |       0.0032 |  0.1099 | -10.8635 |  3.2297 |  0.0709 | -0.0103 | 0.0032 |  0.0013 |  0.0315 | -3.1218 |  15.635  |
+        |            260 |  0.0012 |      -0.0011 | 0.0005 | -0.0132 | 0.0008 |   -0.0008 | 127.197  |  0.0006 |       0.0005 |  0.0222 |  -2.1908 |  0.8418 |  0.0143 | -0.0025 | 0.0005 |  0.0003 |  0.0089 | -0.8831 |   9.8831 |
+        |            265 |  0.0001 |      -0.0001 | 0      | -0.0014 | 0.0001 |   -0.0001 | 148.561  |  0.0001 |       0      |  0.0028 |  -0.2741 |  0.1287 |  0.0018 | -0.0004 | 0      |  0      |  0.0014 | -0.1402 |   2.6    |
+        |            270 |  0      |      -0      | 0      | -0.0001 | 0      |   -0      | 170.037  |  0      |       0      |  0.0002 |  -0.0222 |  0.0123 |  0.0001 | -0      | 0      |  0      |  0.0001 | -0.0137 |   0.3703 |
+        |            275 |  0      |      -0      | 0      | -0      | 0      |   -0      | 191.483  |  0      |       0      |  0      |  -0.0012 |  0.0008 |  0      | -0      | 0      |  0      |  0      | -0.0009 |   0.0317 |
+        |            280 |  0      |      -0      | 0      | -0      | 0      |   -0      | 212.807  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0.0017 |
+        |            285 |  0      |      -0      | 0      | -0      | 0      |   -0      | 233.949  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0.0001 |
+        |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      | 254.872  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0      |
+        |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      | 275.552  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0      |
         """
         first_order_greeks = self.collect_first_order_greeks(
             start_date=start_date,
@@ -3048,17 +3591,20 @@ class Options:
         - Theta: measures the sensitivity of the value of the derivative to the passage of time, the "time decay."
         - Rho: measures sensitivity to the interest rate: it is the derivative of the option value with respect to
         the risk—free interest rate (for the relevant outstanding term).
-        - Epsilon: measures the percentage change in option value per percentage change in the underlying dividend yield,
-        a measure of the dividend risk.
+        - Epsilon: measures the change in option value per unit (1.00) change in the dividend yield, the derivative of
+        the value with respect to the dividend yield, a measure of the dividend risk.
         - Lambda: measures the percentage change in option value per percentage change in the underlying price, a measure of
         leverage, sometimes called gearing. This greek is also sometimes called Omega or Elasticity.
 
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the stock price (the traded close), risk free rate, dividend yield and volatility of the most recent
+        date are used; changing the start date prices the option as of that date instead. The volatility is the
+        annualized standard deviation of the daily returns over the year before that date and the dividend yield the
+        dividends of the 365 days up to that date relative to its close, so an earlier start date only uses what was
+        known on that date. The exception is a date in the first year of the price history: without a full year
+        before it, it takes the dividend yield of the first date that has one.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -3067,12 +3613,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3101,18 +3651,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   (Period('2026-01-29', 'D'), 'Delta') |   (Period('2026-01-29', 'D'), 'Dual Delta') |   (Period('2026-01-29', 'D'), 'Vega') |
-        |---------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|
-        |            290 |                                 0.2558 |                                     -0.2265 |                                0.2457 |
-        |            295 |                                 0.1996 |                                     -0.1745 |                                0.2137 |
-        |            300 |                                 0.1523 |                                     -0.1314 |                                0.18   |
-        |            305 |                                 0.1137 |                                     -0.0968 |                                0.1472 |
-        |            310 |                                 0.0831 |                                     -0.0698 |                                0.1169 |
-        |            315 |                                 0.0595 |                                     -0.0493 |                                0.0904 |
-        |            320 |                                 0.0417 |                                     -0.0341 |                                0.0682 |
-        |            325 |                                 0.0287 |                                     -0.0231 |                                0.0501 |
-        |            330 |                                 0.0194 |                                     -0.0154 |                                0.036  |
-        |            335 |                                 0.0128 |                                     -0.0101 |                                0.0253 |
+        |   Strike Price |   (Period('2026-01-01', 'D'), 'Delta') |   (Period('2026-01-01', 'D'), 'Dual Delta') |   (Period('2026-01-01', 'D'), 'Vega') |   (Period('2026-01-01', 'D'), 'Theta') |   (Period('2026-01-01', 'D'), 'Rho') |   (Period('2026-01-01', 'D'), 'Epsilon') |   (Period('2026-01-01', 'D'), 'Lambda') |   (Period('2026-01-02', 'D'), 'Delta') |   (Period('2026-01-02', 'D'), 'Dual Delta') |   (Period('2026-01-02', 'D'), 'Vega') |   (Period('2026-01-02', 'D'), 'Theta') |   (Period('2026-01-02', 'D'), 'Rho') |   (Period('2026-01-02', 'D'), 'Epsilon') |   (Period('2026-01-02', 'D'), 'Lambda') |   (Period('2026-01-03', 'D'), 'Delta') |   (Period('2026-01-03', 'D'), 'Dual Delta') |   (Period('2026-01-03', 'D'), 'Vega') |   (Period('2026-01-03', 'D'), 'Theta') |   (Period('2026-01-03', 'D'), 'Rho') |   (Period('2026-01-03', 'D'), 'Epsilon') |   (Period('2026-01-03', 'D'), 'Lambda') |   (Period('2026-01-04', 'D'), 'Delta') |   (Period('2026-01-04', 'D'), 'Dual Delta') |   (Period('2026-01-04', 'D'), 'Vega') |   (Period('2026-01-04', 'D'), 'Theta') |   (Period('2026-01-04', 'D'), 'Rho') |   (Period('2026-01-04', 'D'), 'Epsilon') |   (Period('2026-01-04', 'D'), 'Lambda') |   (Period('2026-01-05', 'D'), 'Delta') |   (Period('2026-01-05', 'D'), 'Dual Delta') |   (Period('2026-01-05', 'D'), 'Vega') |   (Period('2026-01-05', 'D'), 'Theta') |   (Period('2026-01-05', 'D'), 'Rho') |   (Period('2026-01-05', 'D'), 'Epsilon') |   (Period('2026-01-05', 'D'), 'Lambda') |   (Period('2026-01-06', 'D'), 'Delta') |   (Period('2026-01-06', 'D'), 'Dual Delta') |   (Period('2026-01-06', 'D'), 'Vega') |   (Period('2026-01-06', 'D'), 'Theta') |   (Period('2026-01-06', 'D'), 'Rho') |   (Period('2026-01-06', 'D'), 'Epsilon') |   (Period('2026-01-06', 'D'), 'Lambda') |   (Period('2026-01-07', 'D'), 'Delta') |   (Period('2026-01-07', 'D'), 'Dual Delta') |   (Period('2026-01-07', 'D'), 'Vega') |   (Period('2026-01-07', 'D'), 'Theta') |   (Period('2026-01-07', 'D'), 'Rho') |   (Period('2026-01-07', 'D'), 'Epsilon') |   (Period('2026-01-07', 'D'), 'Lambda') |   (Period('2026-01-08', 'D'), 'Delta') |   (Period('2026-01-08', 'D'), 'Dual Delta') |   (Period('2026-01-08', 'D'), 'Vega') |   (Period('2026-01-08', 'D'), 'Theta') |   (Period('2026-01-08', 'D'), 'Rho') |   (Period('2026-01-08', 'D'), 'Epsilon') |   (Period('2026-01-08', 'D'), 'Lambda') |   (Period('2026-01-09', 'D'), 'Delta') |   (Period('2026-01-09', 'D'), 'Dual Delta') |   (Period('2026-01-09', 'D'), 'Vega') |   (Period('2026-01-09', 'D'), 'Theta') |   (Period('2026-01-09', 'D'), 'Rho') |   (Period('2026-01-09', 'D'), 'Epsilon') |   (Period('2026-01-09', 'D'), 'Lambda') |   (Period('2026-01-10', 'D'), 'Delta') |   (Period('2026-01-10', 'D'), 'Dual Delta') |   (Period('2026-01-10', 'D'), 'Vega') |   (Period('2026-01-10', 'D'), 'Theta') |   (Period('2026-01-10', 'D'), 'Rho') |   (Period('2026-01-10', 'D'), 'Epsilon') |   (Period('2026-01-10', 'D'), 'Lambda') |   (Period('2026-01-11', 'D'), 'Delta') |   (Period('2026-01-11', 'D'), 'Dual Delta') |   (Period('2026-01-11', 'D'), 'Vega') |   (Period('2026-01-11', 'D'), 'Theta') |   (Period('2026-01-11', 'D'), 'Rho') |   (Period('2026-01-11', 'D'), 'Epsilon') |   (Period('2026-01-11', 'D'), 'Lambda') |   (Period('2026-01-12', 'D'), 'Delta') |   (Period('2026-01-12', 'D'), 'Dual Delta') |   (Period('2026-01-12', 'D'), 'Vega') |   (Period('2026-01-12', 'D'), 'Theta') |   (Period('2026-01-12', 'D'), 'Rho') |   (Period('2026-01-12', 'D'), 'Epsilon') |   (Period('2026-01-12', 'D'), 'Lambda') |   (Period('2026-01-13', 'D'), 'Delta') |   (Period('2026-01-13', 'D'), 'Dual Delta') |   (Period('2026-01-13', 'D'), 'Vega') |   (Period('2026-01-13', 'D'), 'Theta') |   (Period('2026-01-13', 'D'), 'Rho') |   (Period('2026-01-13', 'D'), 'Epsilon') |   (Period('2026-01-13', 'D'), 'Lambda') |   (Period('2026-01-14', 'D'), 'Delta') |   (Period('2026-01-14', 'D'), 'Dual Delta') |   (Period('2026-01-14', 'D'), 'Vega') |   (Period('2026-01-14', 'D'), 'Theta') |   (Period('2026-01-14', 'D'), 'Rho') |   (Period('2026-01-14', 'D'), 'Epsilon') |   (Period('2026-01-14', 'D'), 'Lambda') |   (Period('2026-01-15', 'D'), 'Delta') |   (Period('2026-01-15', 'D'), 'Dual Delta') |   (Period('2026-01-15', 'D'), 'Vega') |   (Period('2026-01-15', 'D'), 'Theta') |   (Period('2026-01-15', 'D'), 'Rho') |   (Period('2026-01-15', 'D'), 'Epsilon') |   (Period('2026-01-15', 'D'), 'Lambda') |   (Period('2026-01-16', 'D'), 'Delta') |   (Period('2026-01-16', 'D'), 'Dual Delta') |   (Period('2026-01-16', 'D'), 'Vega') |   (Period('2026-01-16', 'D'), 'Theta') |   (Period('2026-01-16', 'D'), 'Rho') |   (Period('2026-01-16', 'D'), 'Epsilon') |   (Period('2026-01-16', 'D'), 'Lambda') |   (Period('2026-01-17', 'D'), 'Delta') |   (Period('2026-01-17', 'D'), 'Dual Delta') |   (Period('2026-01-17', 'D'), 'Vega') |   (Period('2026-01-17', 'D'), 'Theta') |   (Period('2026-01-17', 'D'), 'Rho') |   (Period('2026-01-17', 'D'), 'Epsilon') |   (Period('2026-01-17', 'D'), 'Lambda') |   (Period('2026-01-18', 'D'), 'Delta') |   (Period('2026-01-18', 'D'), 'Dual Delta') |   (Period('2026-01-18', 'D'), 'Vega') |   (Period('2026-01-18', 'D'), 'Theta') |   (Period('2026-01-18', 'D'), 'Rho') |   (Period('2026-01-18', 'D'), 'Epsilon') |   (Period('2026-01-18', 'D'), 'Lambda') |   (Period('2026-01-19', 'D'), 'Delta') |   (Period('2026-01-19', 'D'), 'Dual Delta') |   (Period('2026-01-19', 'D'), 'Vega') |   (Period('2026-01-19', 'D'), 'Theta') |   (Period('2026-01-19', 'D'), 'Rho') |   (Period('2026-01-19', 'D'), 'Epsilon') |   (Period('2026-01-19', 'D'), 'Lambda') |   (Period('2026-01-20', 'D'), 'Delta') |   (Period('2026-01-20', 'D'), 'Dual Delta') |   (Period('2026-01-20', 'D'), 'Vega') |   (Period('2026-01-20', 'D'), 'Theta') |   (Period('2026-01-20', 'D'), 'Rho') |   (Period('2026-01-20', 'D'), 'Epsilon') |   (Period('2026-01-20', 'D'), 'Lambda') |   (Period('2026-01-21', 'D'), 'Delta') |   (Period('2026-01-21', 'D'), 'Dual Delta') |   (Period('2026-01-21', 'D'), 'Vega') |   (Period('2026-01-21', 'D'), 'Theta') |   (Period('2026-01-21', 'D'), 'Rho') |   (Period('2026-01-21', 'D'), 'Epsilon') |   (Period('2026-01-21', 'D'), 'Lambda') |   (Period('2026-01-22', 'D'), 'Delta') |   (Period('2026-01-22', 'D'), 'Dual Delta') |   (Period('2026-01-22', 'D'), 'Vega') |   (Period('2026-01-22', 'D'), 'Theta') |   (Period('2026-01-22', 'D'), 'Rho') |   (Period('2026-01-22', 'D'), 'Epsilon') |   (Period('2026-01-22', 'D'), 'Lambda') |   (Period('2026-01-23', 'D'), 'Delta') |   (Period('2026-01-23', 'D'), 'Dual Delta') |   (Period('2026-01-23', 'D'), 'Vega') |   (Period('2026-01-23', 'D'), 'Theta') |   (Period('2026-01-23', 'D'), 'Rho') |   (Period('2026-01-23', 'D'), 'Epsilon') |   (Period('2026-01-23', 'D'), 'Lambda') |   (Period('2026-01-24', 'D'), 'Delta') |   (Period('2026-01-24', 'D'), 'Dual Delta') |   (Period('2026-01-24', 'D'), 'Vega') |   (Period('2026-01-24', 'D'), 'Theta') |   (Period('2026-01-24', 'D'), 'Rho') |   (Period('2026-01-24', 'D'), 'Epsilon') |   (Period('2026-01-24', 'D'), 'Lambda') |   (Period('2026-01-25', 'D'), 'Delta') |   (Period('2026-01-25', 'D'), 'Dual Delta') |   (Period('2026-01-25', 'D'), 'Vega') |   (Period('2026-01-25', 'D'), 'Theta') |   (Period('2026-01-25', 'D'), 'Rho') |   (Period('2026-01-25', 'D'), 'Epsilon') |   (Period('2026-01-25', 'D'), 'Lambda') |   (Period('2026-01-26', 'D'), 'Delta') |   (Period('2026-01-26', 'D'), 'Dual Delta') |   (Period('2026-01-26', 'D'), 'Vega') |   (Period('2026-01-26', 'D'), 'Theta') |   (Period('2026-01-26', 'D'), 'Rho') |   (Period('2026-01-26', 'D'), 'Epsilon') |   (Period('2026-01-26', 'D'), 'Lambda') |   (Period('2026-01-27', 'D'), 'Delta') |   (Period('2026-01-27', 'D'), 'Dual Delta') |   (Period('2026-01-27', 'D'), 'Vega') |   (Period('2026-01-27', 'D'), 'Theta') |   (Period('2026-01-27', 'D'), 'Rho') |   (Period('2026-01-27', 'D'), 'Epsilon') |   (Period('2026-01-27', 'D'), 'Lambda') |   (Period('2026-01-28', 'D'), 'Delta') |   (Period('2026-01-28', 'D'), 'Dual Delta') |   (Period('2026-01-28', 'D'), 'Vega') |   (Period('2026-01-28', 'D'), 'Theta') |   (Period('2026-01-28', 'D'), 'Rho') |   (Period('2026-01-28', 'D'), 'Epsilon') |   (Period('2026-01-28', 'D'), 'Lambda') |   (Period('2026-01-29', 'D'), 'Delta') |   (Period('2026-01-29', 'D'), 'Dual Delta') |   (Period('2026-01-29', 'D'), 'Vega') |   (Period('2026-01-29', 'D'), 'Theta') |   (Period('2026-01-29', 'D'), 'Rho') |   (Period('2026-01-29', 'D'), 'Epsilon') |   (Period('2026-01-29', 'D'), 'Lambda') |
+        |---------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|---------------------------------------:|--------------------------------------------:|--------------------------------------:|---------------------------------------:|-------------------------------------:|-----------------------------------------:|----------------------------------------:|
+        |            290 |                                 0.0001 |                                     -0.0001 |                                     0 |                                -0.0007 |                               0.0001 |                                  -0.0001 |                                 250.951 |                                 0.0038 |                                     -0.0035 |                                0.0023 |                                -0.0185 |                               0.0056 |                                  -0.0056 |                                 136.163 |                                 0.0149 |                                     -0.0138 |                                0.0093 |                                -0.0506 |                               0.033  |                                  -0.0333 |                                 96.9305 |                                 0.0305 |                                     -0.0282 |                                0.0196 |                                -0.0803 |                               0.0895 |                                  -0.0907 |                                 76.8302 |                                 0.0475 |                                     -0.0438 |                                0.0315 |                                -0.1034 |                               0.1741 |                                  -0.1768 |                                 64.4873 |                                 0.0645 |                                     -0.0593 |                                0.0439 |                                -0.1204 |                               0.2829 |                                  -0.288  |                                 56.0765 |                                 0.0807 |                                     -0.0741 |                                0.0563 |                                -0.1327 |                               0.4124 |                                  -0.4208 |                                 49.9432 |                                 0.096  |                                     -0.088  |                                0.0685 |                                -0.1415 |                               0.5593 |                                  -0.572  |                                 45.2523 |                                 0.1102 |                                     -0.1008 |                                0.0804 |                                -0.1478 |                               0.7211 |                                  -0.7389 |                                 41.5355 |                                 0.1235 |                                     -0.1127 |                                0.0918 |                                -0.1522 |                               0.8957 |                                  -0.9196 |                                 38.5092 |                                 0.1358 |                                     -0.1237 |                                0.1029 |                                -0.1552 |                               1.0813 |                                  -1.1122 |                                 35.9912 |                                 0.1472 |                                     -0.1339 |                                0.1135 |                                -0.1573 |                               1.2766 |                                  -1.3155 |                                 33.8589 |                                 0.1578 |                                     -0.1433 |                                0.1237 |                                -0.1585 |                               1.4804 |                                  -1.5281 |                                 32.0267 |                                 0.1678 |                                     -0.1521 |                                0.1336 |                                -0.1592 |                               1.6918 |                                  -1.7493 |                                 30.4329 |                                 0.177  |                                     -0.1603 |                                0.1431 |                                -0.1594 |                               1.9099 |                                  -1.978  |                                 29.032  |                                 0.1858 |                                     -0.1679 |                                0.1523 |                                -0.1593 |                               2.134  |                                  -2.2137 |                                 27.7894 |                                 0.1939 |                                     -0.175  |                                0.1612 |                                -0.1589 |                               2.3637 |                                  -2.4557 |                                 26.6785 |                                 0.2017 |                                     -0.1817 |                                0.1698 |                                -0.1583 |                               2.5983 |                                  -2.7036 |                                 25.6784 |                                 0.2089 |                                     -0.188  |                                0.1782 |                                -0.1576 |                               2.8375 |                                  -2.9568 |                                 24.7725 |                                 0.2158 |                                     -0.1939 |                                0.1863 |                                -0.1568 |                               3.0808 |                                  -3.2151 |                                 23.9475 |                                 0.2224 |                                     -0.1995 |                                0.1942 |                                -0.1558 |                               3.328  |                                  -3.478  |                                 23.1925 |                                 0.2286 |                                     -0.2047 |                                0.2019 |                                -0.1548 |                               3.5787 |                                  -3.7452 |                                 22.4984 |                                 0.2345 |                                     -0.2097 |                                0.2094 |                                -0.1538 |                               3.8327 |                                  -4.0165 |                                 21.8578 |                                 0.2401 |                                     -0.2145 |                                0.2167 |                                -0.1527 |                               4.0898 |                                  -4.2916 |                                 21.2643 |                                 0.2454 |                                     -0.219  |                                0.2239 |                                -0.1516 |                               4.3497 |                                  -4.5704 |                                 20.7127 |                                 0.2506 |                                     -0.2233 |                                0.2308 |                                -0.1505 |                               4.6123 |                                  -4.8525 |                                 20.1984 |                                 0.2555 |                                     -0.2274 |                                0.2376 |                                -0.1494 |                               4.8773 |                                  -5.1379 |                                 19.7176 |                                 0.2602 |                                     -0.2313 |                                0.2443 |                                -0.1483 |                               5.1447 |                                  -5.4264 |                                 19.2669 |                                 0.2647 |                                     -0.235  |                                0.2508 |                                -0.1471 |                               5.4143 |                                  -5.7177 |                                 18.8433 |
+        |            295 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 305.838 |                                 0.0004 |                                     -0.0003 |                                0.0003 |                                -0.0021 |                               0.0005 |                                  -0.0005 |                                 162.333 |                                 0.0029 |                                     -0.0027 |                                0.0022 |                                -0.0121 |                               0.0065 |                                  -0.0066 |                                113.798  |                                 0.0087 |                                     -0.0079 |                                0.0067 |                                -0.0275 |                               0.0256 |                                  -0.0259 |                                 89.1566 |                                 0.017  |                                     -0.0154 |                                0.0134 |                                -0.0439 |                               0.0624 |                                  -0.0633 |                                 74.1443 |                                 0.0268 |                                     -0.0243 |                                0.0216 |                                -0.0591 |                               0.118  |                                  -0.1199 |                                 63.985  |                                 0.0375 |                                     -0.0339 |                                0.0307 |                                -0.0722 |                               0.1918 |                                  -0.1953 |                                 56.6221 |                                 0.0484 |                                     -0.0437 |                                0.0404 |                                -0.0832 |                               0.2825 |                                  -0.2882 |                                 51.0216 |                                 0.0593 |                                     -0.0534 |                                0.0504 |                                -0.0923 |                               0.3887 |                                  -0.3972 |                                 46.606  |                                 0.0699 |                                     -0.0629 |                                0.0604 |                                -0.0997 |                               0.5087 |                                  -0.5208 |                                 43.0268 |                                 0.0803 |                                     -0.0721 |                                0.0703 |                                -0.1058 |                               0.6412 |                                  -0.6576 |                                 40.061  |                                 0.0902 |                                     -0.0809 |                                0.0802 |                                -0.1108 |                               0.7849 |                                  -0.8064 |                                 37.5589 |                                 0.0998 |                                     -0.0894 |                                0.0899 |                                -0.1148 |                               0.9388 |                                  -0.9661 |                                 35.4166 |                                 0.1089 |                                     -0.0974 |                                0.0994 |                                -0.118  |                               1.1019 |                                  -1.1358 |                                 33.559  |                                 0.1177 |                                     -0.105  |                                0.1087 |                                -0.1207 |                               1.2734 |                                  -1.3145 |                                 31.9312 |                                 0.126  |                                     -0.1123 |                                0.1178 |                                -0.1228 |                               1.4524 |                                  -1.5017 |                                 30.4914 |                                 0.134  |                                     -0.1192 |                                0.1267 |                                -0.1244 |                               1.6384 |                                  -1.6965 |                                 29.2075 |                                 0.1416 |                                     -0.1258 |                                0.1354 |                                -0.1257 |                               1.8308 |                                  -1.8985 |                                 28.0547 |                                 0.1489 |                                     -0.1321 |                                0.1439 |                                -0.1267 |                               2.0291 |                                  -2.1071 |                                 27.0129 |                                 0.1559 |                                     -0.1381 |                                0.1522 |                                -0.1275 |                               2.2328 |                                  -2.3218 |                                 26.0663 |                                 0.1625 |                                     -0.1438 |                                0.1603 |                                -0.1281 |                               2.4415 |                                  -2.5424 |                                 25.2017 |                                 0.1689 |                                     -0.1493 |                                0.1682 |                                -0.1284 |                               2.6549 |                                  -2.7683 |                                 24.4086 |                                 0.1751 |                                     -0.1545 |                                0.176  |                                -0.1287 |                               2.8726 |                                  -2.9993 |                                 23.6779 |                                 0.181  |                                     -0.1595 |                                0.1835 |                                -0.1288 |                               3.0945 |                                  -3.2351 |                                 23.0022 |                                 0.1866 |                                     -0.1643 |                                0.1909 |                                -0.1288 |                               3.3201 |                                  -3.4754 |                                 22.3753 |                                 0.1921 |                                     -0.1689 |                                0.1982 |                                -0.1287 |                               3.5492 |                                  -3.7199 |                                 21.7918 |                                 0.1973 |                                     -0.1733 |                                0.2053 |                                -0.1285 |                               3.7818 |                                  -3.9685 |                                 21.2471 |                                 0.2024 |                                     -0.1775 |                                0.2123 |                                -0.1282 |                               4.0174 |                                  -4.221  |                                 20.7373 |                                 0.2073 |                                     -0.1816 |                                0.2191 |                                -0.1279 |                               4.2561 |                                  -4.477  |                                 20.2589 |
+        |            300 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 360.989 |                                 0      |                                     -0      |                                0      |                                -0.0002 |                               0      |                                  -0      |                                 188.858 |                                 0.0004 |                                     -0.0004 |                                0.0004 |                                -0.0021 |                               0.001  |                                  -0.001  |                                130.968  |                                 0.002  |                                     -0.0018 |                                0.0018 |                                -0.0075 |                               0.006  |                                  -0.0061 |                                101.735  |                                 0.0052 |                                     -0.0046 |                                0.0048 |                                -0.0155 |                               0.0191 |                                  -0.0193 |                                 84.0119 |                                 0.0098 |                                     -0.0088 |                                0.0091 |                                -0.0249 |                               0.0432 |                                  -0.0438 |                                 72.0724 |                                 0.0156 |                                     -0.0139 |                                0.0147 |                                -0.0345 |                               0.0799 |                                  -0.0812 |                                 63.4548 |                                 0.0222 |                                     -0.0197 |                                0.0213 |                                -0.0437 |                               0.1297 |                                  -0.132  |                                 56.9248 |                                 0.0293 |                                     -0.026  |                                0.0285 |                                -0.0521 |                               0.1926 |                                  -0.1964 |                                 51.7942 |                                 0.0368 |                                     -0.0326 |                                0.0362 |                                -0.0597 |                               0.2681 |                                  -0.2738 |                                 47.6489 |                                 0.0444 |                                     -0.0393 |                                0.0442 |                                -0.0664 |                               0.3554 |                                  -0.3636 |                                 44.2242 |                                 0.052  |                                     -0.046  |                                0.0525 |                                -0.0723 |                               0.454  |                                  -0.4652 |                                 41.3432 |                                 0.0597 |                                     -0.0527 |                                0.0609 |                                -0.0775 |                               0.5629 |                                  -0.5778 |                                 38.8827 |                                 0.0672 |                                     -0.0592 |                                0.0693 |                                -0.082  |                               0.6816 |                                  -0.7007 |                                 36.7546 |                                 0.0746 |                                     -0.0656 |                                0.0777 |                                -0.086  |                               0.8094 |                                  -0.8333 |                                 34.8939 |                                 0.0818 |                                     -0.0719 |                                0.086  |                                -0.0894 |                               0.9455 |                                  -0.9748 |                                 33.2518 |                                 0.0888 |                                     -0.078  |                                0.0944 |                                -0.0924 |                               1.0895 |                                  -1.1248 |                                 31.7905 |                                 0.0957 |                                     -0.0839 |                                0.1026 |                                -0.0949 |                               1.2407 |                                  -1.2828 |                                 30.481  |                                 0.1023 |                                     -0.0896 |                                0.1107 |                                -0.0972 |                               1.3987 |                                  -1.4481 |                                 29.2997 |                                 0.1088 |                                     -0.0951 |                                0.1187 |                                -0.0991 |                               1.563  |                                  -1.6204 |                                 28.2283 |                                 0.115  |                                     -0.1004 |                                0.1266 |                                -0.1008 |                               1.7333 |                                  -1.7993 |                                 27.2514 |                                 0.1211 |                                     -0.1056 |                                0.1344 |                                -0.1022 |                               1.9091 |                                  -1.9844 |                                 26.3565 |                                 0.127  |                                     -0.1106 |                                0.142  |                                -0.1035 |                               2.0901 |                                  -2.1753 |                                 25.5335 |                                 0.1327 |                                     -0.1154 |                                0.1496 |                                -0.1045 |                               2.2761 |                                  -2.3718 |                                 24.7735 |                                 0.1382 |                                     -0.12   |                                0.157  |                                -0.1055 |                               2.4666 |                                  -2.5735 |                                 24.0694 |                                 0.1436 |                                     -0.1245 |                                0.1643 |                                -0.1062 |                               2.6615 |                                  -2.7802 |                                 23.4149 |                                 0.1488 |                                     -0.1289 |                                0.1714 |                                -0.1069 |                               2.8605 |                                  -2.9917 |                                 22.8047 |                                 0.1538 |                                     -0.1331 |                                0.1785 |                                -0.1074 |                               3.0634 |                                  -3.2076 |                                 22.2343 |                                 0.1587 |                                     -0.1372 |                                0.1854 |                                -0.1078 |                               3.2699 |                                  -3.4279 |                                 21.6998 |
+        |            305 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 415.99  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 215.496 |                                 0.0001 |                                     -0      |                                0.0001 |                                -0.0003 |                               0.0001 |                                  -0.0001 |                                148.283  |                                 0.0004 |                                     -0.0003 |                                0.0004 |                                -0.0016 |                               0.0012 |                                  -0.0012 |                                114.451  |                                 0.0014 |                                     -0.0012 |                                0.0014 |                                -0.0046 |                               0.005  |                                  -0.005  |                                 94.005  |                                 0.0032 |                                     -0.0028 |                                0.0033 |                                -0.0091 |                               0.0139 |                                  -0.0141 |                                 80.272  |                                 0.0058 |                                     -0.0051 |                                0.0062 |                                -0.0146 |                               0.0299 |                                  -0.0303 |                                 70.3878 |                                 0.0093 |                                     -0.0081 |                                0.01   |                                -0.0206 |                               0.0542 |                                  -0.0551 |                                 62.9178 |                                 0.0133 |                                     -0.0117 |                                0.0146 |                                -0.0267 |                               0.0879 |                                  -0.0895 |                                 57.0633 |                                 0.018  |                                     -0.0157 |                                0.0199 |                                -0.0327 |                               0.1313 |                                  -0.1338 |                                 52.3441 |                                 0.023  |                                     -0.0201 |                                0.0257 |                                -0.0385 |                               0.1845 |                                  -0.1883 |                                 48.4539 |                                 0.0283 |                                     -0.0247 |                                0.0319 |                                -0.0439 |                               0.2473 |                                  -0.2529 |                                 45.1881 |                                 0.0338 |                                     -0.0294 |                                0.0385 |                                -0.049  |                               0.3196 |                                  -0.3273 |                                 42.4045 |                                 0.0394 |                                     -0.0343 |                                0.0454 |                                -0.0536 |                               0.4009 |                                  -0.4112 |                                 40.0013 |                                 0.0451 |                                     -0.0392 |                                0.0524 |                                -0.0578 |                               0.491  |                                  -0.5043 |                                 37.9039 |                                 0.0509 |                                     -0.0441 |                                0.0595 |                                -0.0617 |                               0.5893 |                                  -0.6061 |                                 36.0559 |                                 0.0566 |                                     -0.049  |                                0.0667 |                                -0.0652 |                               0.6955 |                                  -0.7164 |                                 34.4142 |                                 0.0623 |                                     -0.0538 |                                0.074  |                                -0.0683 |                               0.8093 |                                  -0.8346 |                                 32.9451 |                                 0.0679 |                                     -0.0586 |                                0.0813 |                                -0.0712 |                               0.9301 |                                  -0.9605 |                                 31.6219 |                                 0.0734 |                                     -0.0633 |                                0.0886 |                                -0.0738 |                               1.0576 |                                  -1.0936 |                                 30.4234 |                                 0.0789 |                                     -0.0679 |                                0.0959 |                                -0.0761 |                               1.1916 |                                  -1.2336 |                                 29.332  |                                 0.0842 |                                     -0.0724 |                                0.1031 |                                -0.0783 |                               1.3315 |                                  -1.3802 |                                 28.3337 |                                 0.0895 |                                     -0.0769 |                                0.1104 |                                -0.0802 |                               1.4772 |                                  -1.5332 |                                 27.4166 |                                 0.0947 |                                     -0.0812 |                                0.1175 |                                -0.0819 |                               1.6284 |                                  -1.6921 |                                 26.5708 |                                 0.0997 |                                     -0.0854 |                                0.1246 |                                -0.0834 |                               1.7847 |                                  -1.8567 |                                 25.788  |                                 0.1047 |                                     -0.0896 |                                0.1316 |                                -0.0848 |                               1.9459 |                                  -2.0268 |                                 25.0612 |                                 0.1095 |                                     -0.0936 |                                0.1386 |                                -0.0861 |                               2.1118 |                                  -2.2021 |                                 24.3844 |                                 0.1142 |                                     -0.0975 |                                0.1454 |                                -0.0872 |                               2.2821 |                                  -2.3824 |                                 23.7523 |                                 0.1189 |                                     -0.1014 |                                0.1523 |                                -0.0883 |                               2.4566 |                                  -2.5675 |                                 23.1606 |
+        |            310 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 470.605 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 242.094 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                165.632  |                                 0.0001 |                                     -0.0001 |                                0.0001 |                                -0.0003 |                               0.0002 |                                  -0.0002 |                                127.224  |                                 0.0003 |                                     -0.0003 |                                0.0004 |                                -0.0012 |                               0.0011 |                                  -0.0011 |                                104.06   |                                 0.0009 |                                     -0.0008 |                                0.0011 |                                -0.0029 |                               0.004  |                                  -0.004  |                                 88.5331 |                                 0.002  |                                     -0.0017 |                                0.0023 |                                -0.0055 |                               0.01   |                                  -0.0102 |                                 77.3795 |                                 0.0035 |                                     -0.003  |                                0.0043 |                                -0.0087 |                               0.0207 |                                  -0.021  |                                 68.9659 |                                 0.0056 |                                     -0.0048 |                                0.0068 |                                -0.0125 |                               0.0371 |                                  -0.0377 |                                 62.3837 |                                 0.0082 |                                     -0.0071 |                                0.0101 |                                -0.0165 |                               0.0599 |                                  -0.061  |                                 57.087  |                                 0.0112 |                                     -0.0096 |                                0.0139 |                                -0.0207 |                               0.0898 |                                  -0.0915 |                                 52.7279 |                                 0.0145 |                                     -0.0125 |                                0.0181 |                                -0.0249 |                               0.1271 |                                  -0.1297 |                                 49.0741 |                                 0.0182 |                                     -0.0156 |                                0.0229 |                                -0.029  |                               0.172  |                                  -0.1758 |                                 45.9645 |                                 0.022  |                                     -0.0189 |                                0.028  |                                -0.033  |                               0.2245 |                                  -0.2298 |                                 43.2838 |                                 0.0261 |                                     -0.0223 |                                0.0334 |                                -0.0368 |                               0.2845 |                                  -0.2917 |                                 40.9473 |                                 0.0303 |                                     -0.0259 |                                0.0391 |                                -0.0404 |                               0.352  |                                  -0.3613 |                                 38.8913 |                                 0.0346 |                                     -0.0296 |                                0.045  |                                -0.0438 |                               0.4268 |                                  -0.4386 |                                 37.0671 |                                 0.039  |                                     -0.0333 |                                0.051  |                                -0.047  |                               0.5086 |                                  -0.5233 |                                 35.4367 |                                 0.0435 |                                     -0.037  |                                0.0572 |                                -0.05   |                               0.5972 |                                  -0.6153 |                                 33.97   |                                 0.0479 |                                     -0.0408 |                                0.0635 |                                -0.0527 |                               0.6924 |                                  -0.7142 |                                 32.6428 |                                 0.0524 |                                     -0.0445 |                                0.0698 |                                -0.0553 |                               0.7939 |                                  -0.82   |                                 31.4357 |                                 0.0569 |                                     -0.0482 |                                0.0762 |                                -0.0577 |                               0.9015 |                                  -0.9322 |                                 30.3326 |                                 0.0613 |                                     -0.052  |                                0.0827 |                                -0.0599 |                               1.0149 |                                  -1.0507 |                                 29.3203 |                                 0.0658 |                                     -0.0556 |                                0.0892 |                                -0.062  |                               1.134  |                                  -1.1754 |                                 28.3876 |                                 0.0701 |                                     -0.0593 |                                0.0957 |                                -0.0639 |                               1.2584 |                                  -1.3058 |                                 27.5252 |                                 0.0745 |                                     -0.0629 |                                0.1021 |                                -0.0657 |                               1.388  |                                  -1.442  |                                 26.7252 |                                 0.0787 |                                     -0.0664 |                                0.1086 |                                -0.0673 |                               1.5226 |                                  -1.5835 |                                 25.9808 |                                 0.083  |                                     -0.0699 |                                0.1151 |                                -0.0688 |                               1.6619 |                                  -1.7303 |                                 25.2863 |                                 0.0871 |                                     -0.0733 |                                0.1215 |                                -0.0702 |                               1.8057 |                                  -1.8821 |                                 24.6366 |
+        |            315 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 524.702 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 268.551 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                182.942  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                139.995  |                                 0.0001 |                                     -0.0001 |                                0.0001 |                                -0.0003 |                               0.0002 |                                  -0.0002 |                                114.131  |                                 0.0002 |                                     -0.0002 |                                0.0003 |                                -0.0008 |                               0.001  |                                  -0.001  |                                 96.8174 |                                 0.0006 |                                     -0.0005 |                                0.0008 |                                -0.0018 |                               0.0031 |                                  -0.0031 |                                 84.3978 |                                 0.0012 |                                     -0.001  |                                0.0016 |                                -0.0034 |                               0.0072 |                                  -0.0073 |                                 75.0417 |                                 0.0022 |                                     -0.0019 |                                0.0029 |                                -0.0054 |                               0.0145 |                                  -0.0147 |                                 67.7318 |                                 0.0035 |                                     -0.003  |                                0.0047 |                                -0.0077 |                               0.0255 |                                  -0.0259 |                                 61.8571 |                                 0.0051 |                                     -0.0043 |                                0.0069 |                                -0.0104 |                               0.0411 |                                  -0.0418 |                                 57.0282 |                                 0.007  |                                     -0.006  |                                0.0097 |                                -0.0132 |                               0.0617 |                                  -0.0629 |                                 52.9853 |                                 0.0093 |                                     -0.0078 |                                0.0128 |                                -0.0162 |                               0.0879 |                                  -0.0897 |                                 49.5486 |                                 0.0117 |                                     -0.0099 |                                0.0163 |                                -0.0192 |                               0.1198 |                                  -0.1225 |                                 46.5891 |                                 0.0145 |                                     -0.0122 |                                0.0202 |                                -0.0222 |                               0.1578 |                                  -0.1614 |                                 44.0124 |                                 0.0174 |                                     -0.0146 |                                0.0244 |                                -0.0252 |                               0.2018 |                                  -0.2068 |                                 41.7473 |                                 0.0204 |                                     -0.0172 |                                0.0289 |                                -0.0281 |                               0.252  |                                  -0.2585 |                                 39.7396 |                                 0.0236 |                                     -0.0198 |                                0.0336 |                                -0.0309 |                               0.3083 |                                  -0.3166 |                                 37.9469 |                                 0.0269 |                                     -0.0226 |                                0.0386 |                                -0.0336 |                               0.3706 |                                  -0.3811 |                                 36.3357 |                                 0.0303 |                                     -0.0254 |                                0.0437 |                                -0.0362 |                               0.4389 |                                  -0.4519 |                                 34.8791 |                                 0.0338 |                                     -0.0283 |                                0.049  |                                -0.0387 |                               0.513  |                                  -0.5288 |                                 33.5554 |                                 0.0373 |                                     -0.0312 |                                0.0544 |                                -0.0411 |                               0.5929 |                                  -0.6118 |                                 32.3468 |                                 0.0409 |                                     -0.0342 |                                0.0599 |                                -0.0433 |                               0.6784 |                                  -0.7008 |                                 31.2385 |                                 0.0445 |                                     -0.0371 |                                0.0655 |                                -0.0454 |                               0.7692 |                                  -0.7955 |                                 30.2182 |                                 0.0481 |                                     -0.0401 |                                0.0712 |                                -0.0474 |                               0.8654 |                                  -0.896  |                                 29.2756 |                                 0.0517 |                                     -0.0431 |                                0.0769 |                                -0.0493 |                               0.9666 |                                  -1.0019 |                                 28.4017 |                                 0.0554 |                                     -0.046  |                                0.0827 |                                -0.0511 |                               1.0728 |                                  -1.1131 |                                 27.5893 |                                 0.059  |                                     -0.049  |                                0.0885 |                                -0.0528 |                               1.1838 |                                  -1.2296 |                                 26.8318 |                                 0.0626 |                                     -0.0519 |                                0.0943 |                                -0.0544 |                               1.2994 |                                  -1.3512 |                                 26.1236 |
+        |            320 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 578.202 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 294.805 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                200.161  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                152.724  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                124.183  |                                 0.0001 |                                     -0      |                                0.0001 |                                -0.0002 |                               0.0002 |                                  -0.0002 |                                105.096  |                                 0.0002 |                                     -0.0001 |                                0.0002 |                                -0.0006 |                               0.0008 |                                  -0.0009 |                                 91.4179 |                                 0.0004 |                                     -0.0003 |                                0.0006 |                                -0.0012 |                               0.0023 |                                  -0.0024 |                                 81.124  |                                 0.0008 |                                     -0.0007 |                                0.0012 |                                -0.0021 |                               0.0052 |                                  -0.0053 |                                 73.0892 |                                 0.0014 |                                     -0.0012 |                                0.002  |                                -0.0033 |                               0.0102 |                                  -0.0103 |                                 66.6379 |                                 0.0022 |                                     -0.0018 |                                0.0033 |                                -0.0049 |                               0.0177 |                                  -0.018  |                                 61.3401 |                                 0.0032 |                                     -0.0027 |                                0.0048 |                                -0.0066 |                               0.0284 |                                  -0.0289 |                                 56.9087 |                                 0.0045 |                                     -0.0037 |                                0.0067 |                                -0.0085 |                               0.0427 |                                  -0.0435 |                                 53.145  |                                 0.006  |                                     -0.005  |                                0.009  |                                -0.0106 |                               0.0611 |                                  -0.0623 |                                 49.9067 |                                 0.0077 |                                     -0.0064 |                                0.0116 |                                -0.0128 |                               0.0838 |                                  -0.0856 |                                 47.0895 |                                 0.0095 |                                     -0.0079 |                                0.0146 |                                -0.015  |                               0.1112 |                                  -0.1137 |                                 44.6152 |                                 0.0116 |                                     -0.0096 |                                0.0178 |                                -0.0173 |                               0.1433 |                                  -0.1468 |                                 42.4237 |                                 0.0138 |                                     -0.0114 |                                0.0213 |                                -0.0195 |                               0.1804 |                                  -0.185  |                                 40.4683 |                                 0.0161 |                                     -0.0134 |                                0.025  |                                -0.0218 |                               0.2225 |                                  -0.2284 |                                 38.7122 |                                 0.0186 |                                     -0.0154 |                                0.029  |                                -0.024  |                               0.2697 |                                  -0.2772 |                                 37.1259 |                                 0.0212 |                                     -0.0175 |                                0.0331 |                                -0.0262 |                               0.3219 |                                  -0.3312 |                                 35.6852 |                                 0.0238 |                                     -0.0197 |                                0.0375 |                                -0.0283 |                               0.3792 |                                  -0.3906 |                                 34.3707 |                                 0.0266 |                                     -0.0219 |                                0.042  |                                -0.0303 |                               0.4415 |                                  -0.4552 |                                 33.1661 |                                 0.0294 |                                     -0.0242 |                                0.0466 |                                -0.0323 |                               0.5087 |                                  -0.5251 |                                 32.0579 |                                 0.0322 |                                     -0.0265 |                                0.0514 |                                -0.0342 |                               0.5808 |                                  -0.6001 |                                 31.0346 |                                 0.0351 |                                     -0.0289 |                                0.0562 |                                -0.036  |                               0.6577 |                                  -0.6803 |                                 30.0867 |                                 0.0381 |                                     -0.0312 |                                0.0612 |                                -0.0378 |                               0.7392 |                                  -0.7654 |                                 29.2058 |                                 0.041  |                                     -0.0336 |                                0.0662 |                                -0.0394 |                               0.8254 |                                  -0.8555 |                                 28.385  |                                 0.044  |                                     -0.036  |                                0.0713 |                                -0.041  |                               0.9161 |                                  -0.9505 |                                 27.6181 |
+        |            325 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 631.061 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 320.813 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                217.254  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                165.381  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                134.19   |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                113.347  |                                 0      |                                     -0      |                                0.0001 |                                -0.0002 |                               0.0002 |                                  -0.0002 |                                 98.4212 |                                 0.0001 |                                     -0.0001 |                                0.0002 |                                -0.0004 |                               0.0007 |                                  -0.0007 |                                 87.1963 |                                 0.0003 |                                     -0.0002 |                                0.0004 |                                -0.0008 |                               0.0018 |                                  -0.0018 |                                 78.4411 |                                 0.0005 |                                     -0.0004 |                                0.0008 |                                -0.0014 |                               0.0038 |                                  -0.0039 |                                 71.4166 |                                 0.0009 |                                     -0.0007 |                                0.0014 |                                -0.0021 |                               0.0072 |                                  -0.0073 |                                 65.6521 |                                 0.0014 |                                     -0.0012 |                                0.0023 |                                -0.0031 |                               0.0124 |                                  -0.0126 |                                 60.8337 |                                 0.0021 |                                     -0.0017 |                                0.0034 |                                -0.0043 |                               0.0198 |                                  -0.0201 |                                 56.7441 |                                 0.0029 |                                     -0.0024 |                                0.0047 |                                -0.0056 |                               0.0298 |                                  -0.0304 |                                 53.2278 |                                 0.0039 |                                     -0.0032 |                                0.0064 |                                -0.007  |                               0.0427 |                                  -0.0436 |                                 50.1708 |                                 0.0051 |                                     -0.0041 |                                0.0083 |                                -0.0086 |                               0.0589 |                                  -0.0602 |                                 47.4875 |                                 0.0064 |                                     -0.0052 |                                0.0105 |                                -0.0102 |                               0.0787 |                                  -0.0804 |                                 45.1125 |                                 0.0078 |                                     -0.0064 |                                0.0129 |                                -0.0119 |                               0.1021 |                                  -0.1045 |                                 42.9947 |                                 0.0094 |                                     -0.0077 |                                0.0156 |                                -0.0136 |                               0.1294 |                                  -0.1327 |                                 41.0938 |                                 0.0111 |                                     -0.009  |                                0.0185 |                                -0.0153 |                               0.1608 |                                  -0.165  |                                 39.3776 |                                 0.0129 |                                     -0.0105 |                                0.0217 |                                -0.0171 |                               0.1963 |                                  -0.2017 |                                 37.82   |                                 0.0148 |                                     -0.012  |                                0.025  |                                -0.0188 |                               0.236  |                                  -0.2427 |                                 36.3996 |                                 0.0168 |                                     -0.0137 |                                0.0285 |                                -0.0206 |                               0.28   |                                  -0.2882 |                                 35.0986 |                                 0.0189 |                                     -0.0154 |                                0.0322 |                                -0.0223 |                               0.3282 |                                  -0.3382 |                                 33.9024 |                                 0.0211 |                                     -0.0171 |                                0.036  |                                -0.0239 |                               0.3808 |                                  -0.3927 |                                 32.7984 |                                 0.0233 |                                     -0.0189 |                                0.04   |                                -0.0256 |                               0.4375 |                                  -0.4517 |                                 31.7762 |                                 0.0256 |                                     -0.0207 |                                0.0441 |                                -0.0272 |                               0.4985 |                                  -0.5152 |                                 30.8269 |                                 0.028  |                                     -0.0226 |                                0.0483 |                                -0.0287 |                               0.5637 |                                  -0.5832 |                                 29.9426 |                                 0.0304 |                                     -0.0245 |                                0.0526 |                                -0.0302 |                               0.6331 |                                  -0.6556 |                                 29.1169 |
+        |            330 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 683.256 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 346.55  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                234.197  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                177.944  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                144.136  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                121.555  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                105.393  |                                 0      |                                     -0      |                                0.0001 |                                -0.0001 |                               0.0002 |                                  -0.0002 |                                 93.2459 |                                 0.0001 |                                     -0.0001 |                                0.0001 |                                -0.0003 |                               0.0006 |                                  -0.0006 |                                 83.7763 |                                 0.0002 |                                     -0.0001 |                                0.0003 |                                -0.0005 |                               0.0013 |                                  -0.0014 |                                 76.1828 |                                 0.0003 |                                     -0.0003 |                                0.0006 |                                -0.0009 |                               0.0028 |                                  -0.0028 |                                 69.9548 |                                 0.0006 |                                     -0.0005 |                                0.001  |                                -0.0014 |                               0.0051 |                                  -0.0052 |                                 64.7519 |                                 0.0009 |                                     -0.0007 |                                0.0016 |                                -0.002  |                               0.0088 |                                  -0.0089 |                                 60.3383 |                                 0.0014 |                                     -0.0011 |                                0.0024 |                                -0.0028 |                               0.0139 |                                  -0.0142 |                                 56.5454 |                                 0.0019 |                                     -0.0015 |                                0.0034 |                                -0.0037 |                               0.0209 |                                  -0.0213 |                                 53.2497 |                                 0.0026 |                                     -0.0021 |                                0.0045 |                                -0.0047 |                               0.0301 |                                  -0.0307 |                                 50.3584 |                                 0.0034 |                                     -0.0027 |                                0.0059 |                                -0.0058 |                               0.0417 |                                  -0.0426 |                                 47.8004 |                                 0.0043 |                                     -0.0034 |                                0.0076 |                                -0.0069 |                               0.0559 |                                  -0.0572 |                                 45.5207 |                                 0.0053 |                                     -0.0043 |                                0.0094 |                                -0.0082 |                               0.073  |                                  -0.0747 |                                 43.4755 |                                 0.0064 |                                     -0.0052 |                                0.0115 |                                -0.0095 |                               0.0932 |                                  -0.0954 |                                 41.6299 |                                 0.0076 |                                     -0.0061 |                                0.0137 |                                -0.0108 |                               0.1165 |                                  -0.1195 |                                 39.9556 |                                 0.009  |                                     -0.0072 |                                0.0162 |                                -0.0122 |                               0.1431 |                                  -0.147  |                                 38.4294 |                                 0.0104 |                                     -0.0083 |                                0.0188 |                                -0.0135 |                               0.1732 |                                  -0.178  |                                 37.0323 |                                 0.0119 |                                     -0.0095 |                                0.0216 |                                -0.0149 |                               0.2068 |                                  -0.2128 |                                 35.7481 |                                 0.0135 |                                     -0.0108 |                                0.0246 |                                -0.0163 |                               0.244  |                                  -0.2513 |                                 34.5636 |                                 0.0152 |                                     -0.0121 |                                0.0277 |                                -0.0177 |                               0.2848 |                                  -0.2936 |                                 33.4673 |                                 0.0169 |                                     -0.0135 |                                0.031  |                                -0.0191 |                               0.3293 |                                  -0.3397 |                                 32.4494 |                                 0.0187 |                                     -0.0149 |                                0.0344 |                                -0.0204 |                               0.3774 |                                  -0.3898 |                                 31.5019 |                                 0.0205 |                                     -0.0164 |                                0.0379 |                                -0.0218 |                               0.4292 |                                  -0.4437 |                                 30.6173 |
+        |            335 |                                 0      |                                     -0      |                                     0 |                                -0      |                               0      |                                  -0      |                                 734.777 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 371.998 |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                250.975  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                190.398  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                154.005  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                129.707  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                112.324  |                                 0      |                                     -0      |                                0      |                                -0      |                               0      |                                  -0      |                                 99.263  |                                 0      |                                     -0      |                                0      |                                -0.0001 |                               0.0002 |                                  -0.0002 |                                 89.0859 |                                 0.0001 |                                     -0      |                                0.0001 |                                -0.0002 |                               0.0004 |                                  -0.0004 |                                 80.9286 |                                 0.0001 |                                     -0.0001 |                                0.0002 |                                -0.0003 |                               0.001  |                                  -0.001  |                                 74.241  |                                 0.0002 |                                     -0.0002 |                                0.0004 |                                -0.0006 |                               0.002  |                                  -0.0021 |                                 68.6565 |                                 0.0004 |                                     -0.0003 |                                0.0007 |                                -0.0009 |                               0.0037 |                                  -0.0038 |                                 63.9212 |                                 0.0006 |                                     -0.0005 |                                0.0011 |                                -0.0013 |                               0.0062 |                                  -0.0063 |                                 59.8537 |                                 0.0009 |                                     -0.0007 |                                0.0017 |                                -0.0018 |                               0.0099 |                                  -0.0101 |                                 56.3208 |                                 0.0013 |                                     -0.001  |                                0.0024 |                                -0.0025 |                               0.0148 |                                  -0.0151 |                                 53.2227 |                                 0.0017 |                                     -0.0014 |                                0.0032 |                                -0.0031 |                               0.0214 |                                  -0.0218 |                                 50.4829 |                                 0.0023 |                                     -0.0018 |                                0.0043 |                                -0.0039 |                               0.0297 |                                  -0.0303 |                                 48.0421 |                                 0.0029 |                                     -0.0023 |                                0.0055 |                                -0.0048 |                               0.04   |                                  -0.0409 |                                 45.8533 |                                 0.0036 |                                     -0.0029 |                                0.0069 |                                -0.0057 |                               0.0525 |                                  -0.0537 |                                 43.8788 |                                 0.0044 |                                     -0.0035 |                                0.0084 |                                -0.0066 |                               0.0673 |                                  -0.0689 |                                 42.0884 |                                 0.0053 |                                     -0.0042 |                                0.0102 |                                -0.0076 |                               0.0847 |                                  -0.0868 |                                 40.4569 |                                 0.0063 |                                     -0.005  |                                0.0121 |                                -0.0087 |                               0.1046 |                                  -0.1074 |                                 38.9639 |                                 0.0073 |                                     -0.0058 |                                0.0141 |                                -0.0097 |                               0.1274 |                                  -0.1309 |                                 37.5922 |                                 0.0085 |                                     -0.0067 |                                0.0164 |                                -0.0108 |                               0.153  |                                  -0.1573 |                                 36.3273 |                                 0.0097 |                                     -0.0076 |                                0.0187 |                                -0.0119 |                               0.1816 |                                  -0.1869 |                                 35.1571 |                                 0.0109 |                                     -0.0086 |                                0.0213 |                                -0.0131 |                               0.2132 |                                  -0.2196 |                                 34.071  |                                 0.0123 |                                     -0.0096 |                                0.0239 |                                -0.0142 |                               0.2478 |                                  -0.2556 |                                 33.0602 |                                 0.0136 |                                     -0.0107 |                                0.0268 |                                -0.0153 |                               0.2856 |                                  -0.2948 |                                 32.1169 |
         """
         greeks = {}
 
@@ -3257,6 +3807,13 @@ class Options:
         is always between —e^(—q * t) and 0. Without a dividend yield those bounds collapse to the familiar
         0 to 1 and —1 to 0.
 
+        Delta is read as the hedge ratio: a call with a delta of 0.6 moves about $0.60 for a $1 move in the stock,
+        so a market maker that is short calls on 100 shares buys 60 shares to stay neutral. It is often used as a
+        quick gauge of how far in or out of the money an option is (traders talk of "25-delta" puts), and loosely
+        as the chance of finishing in the money, although that (risk-neutral) probability is N(d2), which
+        `get_dual_delta` gives up to discounting and sign. Delta changes with the stock price and with time (see
+        gamma and charm), so a delta hedge has to be rebalanced.
+
         Also known as: option price sensitivity to underlying, hedge ratio.
 
         Args:
@@ -3266,12 +3823,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-                means it will use the current dividend yield.
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3289,29 +3850,35 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["AMZN"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_delta().loc["AAPL"]
+        toolkit.options.get_delta(
+            strike_price_range=0.15, strike_step_size=5, expiration_time_range=91
+        ).loc["AMZN", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0027 |       0.0119 |       0.0256 |       0.0412 |       0.0571 |       0.0726 |       0.0873 |       0.1011 |
-        |            295 |            0 |       0.0002 |       0.0023 |       0.0071 |       0.0144 |       0.0233 |       0.0331 |       0.0434 |       0.0537 |
-        |            300 |            0 |       0      |       0.0003 |       0.0016 |       0.0043 |       0.0084 |       0.0135 |       0.0196 |       0.0262 |
-        |            305 |            0 |       0      |       0      |       0.0003 |       0.0011 |       0.0026 |       0.005  |       0.0081 |       0.0118 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.0016 |       0.003  |       0.0049 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |       0.001  |       0.0019 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |       0.0007 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            195 |       0.9632 |       0.9073 |       0.8707 |
+        |            200 |       0.9374 |       0.8736 |       0.8369 |
+        |            205 |       0.9004 |       0.8332 |       0.7989 |
+        |            210 |       0.8508 |       0.7865 |       0.7571 |
+        |            215 |       0.7887 |       0.7344 |       0.7121 |
+        |            220 |       0.7154 |       0.6779 |       0.6647 |
+        |            225 |       0.6338 |       0.6183 |       0.6156 |
+        |            230 |       0.5476 |       0.5572 |       0.5658 |
+        |            235 |       0.461  |       0.496  |       0.516  |
+        |            240 |       0.378  |       0.4362 |       0.467  |
+        |            245 |       0.3017 |       0.379  |       0.4195 |
+        |            250 |       0.2346 |       0.3254 |       0.374  |
+        |            255 |       0.1777 |       0.2762 |       0.3311 |
+        |            260 |       0.1313 |       0.2317 |       0.2911 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3346,7 +3913,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -3408,8 +3975,8 @@ class Options:
         """
         Calculate the dual delta of an option based on the Black Scholes Model. The Black Scholes Model
         is a mathematical model used to estimate the price of European—style options. The dual delta is
-        the actual probability of an option finishing in the money which is the first derivative
-        of option price with respect to strike.
+        the first derivative of the option price with respect to the strike price; up to the discount
+        factor and its sign it is the risk-neutral probability of the option finishing in the money.
 
         The dual delta calculation is the theoretical value of the dual delta. The actual dual delta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3431,7 +3998,7 @@ class Options:
         a call Dual Delta of —0.5 corresponds to a roughly 50% chance of finishing in the money. It is negative for a
         call, since raising the strike lowers the call's value, and positive for a put.
 
-        Also known as: cash delta, binary option delta.
+        Also known as: strike delta, binary option delta.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -3440,12 +4007,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option dual delta. Defaults to False which means
             it will calculate the call option dual delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3463,29 +4034,40 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["JPM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_dual_delta().loc["AAPL"]
+        toolkit.options.get_dual_delta(
+            strike_price_range=0.15, strike_step_size=5, expiration_time_range=91
+        ).loc["JPM", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |           -0 |      -0.0025 |      -0.011  |      -0.0237 |      -0.0379 |      -0.0524 |      -0.0665 |      -0.0798 |      -0.0923 |
-        |            295 |           -0 |      -0.0002 |      -0.0021 |      -0.0065 |      -0.0131 |      -0.0211 |      -0.0299 |      -0.0391 |      -0.0483 |
-        |            300 |           -0 |      -0      |      -0.0003 |      -0.0014 |      -0.0038 |      -0.0074 |      -0.0121 |      -0.0174 |      -0.0232 |
-        |            305 |           -0 |      -0      |      -0      |      -0.0003 |      -0.001  |      -0.0023 |      -0.0044 |      -0.0071 |      -0.0103 |
-        |            310 |           -0 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0006 |      -0.0014 |      -0.0026 |      -0.0042 |
-        |            315 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0004 |      -0.0009 |      -0.0016 |
-        |            320 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0006 |
-        |            325 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |
-        |            330 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
-        |            335 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            275 |      -0.9832 |      -0.9341 |      -0.8885 |
+        |            280 |      -0.9717 |      -0.91   |      -0.8604 |
+        |            285 |      -0.9533 |      -0.8799 |      -0.8278 |
+        |            290 |      -0.9258 |      -0.8434 |      -0.791  |
+        |            295 |      -0.8874 |      -0.8005 |      -0.7504 |
+        |            300 |      -0.8368 |      -0.7519 |      -0.7065 |
+        |            305 |      -0.7742 |      -0.6982 |      -0.6599 |
+        |            310 |      -0.7009 |      -0.6406 |      -0.6113 |
+        |            315 |      -0.6195 |      -0.5805 |      -0.5616 |
+        |            320 |      -0.5336 |      -0.5193 |      -0.5116 |
+        |            325 |      -0.4474 |      -0.4585 |      -0.4621 |
+        |            330 |      -0.3649 |      -0.3995 |      -0.4139 |
+        |            335 |      -0.2892 |      -0.3435 |      -0.3676 |
+        |            340 |      -0.2227 |      -0.2915 |      -0.3237 |
+        |            345 |      -0.1667 |      -0.2441 |      -0.2827 |
+        |            350 |      -0.1213 |      -0.2018 |      -0.2449 |
+        |            355 |      -0.0858 |      -0.1646 |      -0.2105 |
+        |            360 |      -0.059  |      -0.1327 |      -0.1794 |
+        |            365 |      -0.0395 |      -0.1056 |      -0.1518 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3520,7 +4102,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -3609,6 +4191,12 @@ class Options:
 
         Note that the vega of a call option and put option are equal to each other.
 
+        Vega is quoted per volatility point: a vega of 0.25 means the option gains about $0.25 when volatility rises
+        from 20% to 21%. It is largest for at-the-money options and grows with the square root of the time to
+        expiry, so long-dated options are mostly a bet on volatility while short-dated ones are mostly a bet on
+        gamma. Desks sum vega across positions per expiry, since short- and long-dated implied volatilities rarely
+        move by the same amount.
+
         Also known as: option sensitivity to volatility changes.
 
         Args:
@@ -3618,12 +4206,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -3639,29 +4231,35 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["NFLX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_vega().loc["AAPL"]
+        toolkit.options.get_vega(
+            strike_price_range=0.15, strike_step_size=2, expiration_time_range=91
+        ).loc["NFLX", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0017 |       0.0076 |       0.0169 |       0.028  |       0.0398 |       0.0518 |       0.0637 |       0.0753 |
-        |            295 |            0 |       0.0002 |       0.0017 |       0.0056 |       0.0116 |       0.0191 |       0.0277 |       0.0369 |       0.0465 |
-        |            300 |            0 |       0      |       0.0003 |       0.0015 |       0.004  |       0.0079 |       0.013  |       0.0191 |       0.0259 |
-        |            305 |            0 |       0      |       0      |       0.0003 |       0.0012 |       0.0028 |       0.0054 |       0.0089 |       0.0131 |
-        |            310 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0009 |       0.002  |       0.0037 |       0.0061 |
-        |            315 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0007 |       0.0014 |       0.0026 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0005 |       0.001  |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             80 |       0.0248 |       0.0678 |       0.1032 |
+        |             82 |       0.037  |       0.0837 |       0.1196 |
+        |             84 |       0.0515 |       0.0998 |       0.1354 |
+        |             86 |       0.067  |       0.1149 |       0.1498 |
+        |             88 |       0.0819 |       0.1283 |       0.1623 |
+        |             90 |       0.0945 |       0.1392 |       0.1723 |
+        |             92 |       0.1032 |       0.1468 |       0.1797 |
+        |             94 |       0.1071 |       0.1509 |       0.1842 |
+        |             96 |       0.1059 |       0.1514 |       0.1857 |
+        |             98 |       0.1001 |       0.1486 |       0.1845 |
+        |            100 |       0.0908 |       0.1427 |       0.1806 |
+        |            102 |       0.0791 |       0.1343 |       0.1744 |
+        |            104 |       0.0664 |       0.1241 |       0.1664 |
+        |            106 |       0.0538 |       0.1126 |       0.1568 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3696,7 +4294,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -3787,6 +4385,11 @@ class Options:
         - If Theta is positive, the option gains value with each day that passes. This happens for instance on a deep
         in-the-money European put, where the discounting of the strike dominates.
 
+        Theta is the cost of holding an option for one more calendar day, all else equal, and is the other side of
+        gamma: a long at-the-money option close to expiry has the most gamma and pays for it with the most negative
+        theta. Because it is per calendar day, a weekend counts as two days of decay; desks that use a trading-day
+        convention divide the yearly figure by 252 instead, which gives a larger daily number.
+
         Also known as: time decay, option time value erosion.
 
         Args:
@@ -3796,12 +4399,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option theta. Defaults to False which means
             it will calculate the call option theta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3819,29 +4426,32 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["AVGO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_theta().loc["AAPL"]
+        toolkit.options.get_theta(
+            strike_price_range=0.15, strike_step_size=10
+        ).loc["AVGO", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.0004 |      -0.0138 |      -0.0417 |      -0.0695 |      -0.0922 |      -0.1094 |      -0.1223 |      -0.1318 |      -0.1388 |
-        |            295 |      -0      |      -0.0015 |      -0.0095 |      -0.023  |      -0.0381 |      -0.0525 |      -0.0653 |      -0.0762 |      -0.0854 |
-        |            300 |      -0      |      -0.0001 |      -0.0016 |      -0.0061 |      -0.0131 |      -0.0217 |      -0.0306 |      -0.0393 |      -0.0475 |
-        |            305 |      -0      |      -0      |      -0.0002 |      -0.0013 |      -0.0038 |      -0.0077 |      -0.0127 |      -0.0182 |      -0.024  |
-        |            310 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0009 |      -0.0024 |      -0.0047 |      -0.0076 |      -0.0111 |
-        |            315 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0007 |      -0.0015 |      -0.0029 |      -0.0047 |
-        |            320 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0005 |      -0.001  |      -0.0018 |
-        |            325 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0007 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            290 |      -0.0622 |      -0.1332 |      -0.18   |
+        |            300 |      -0.1272 |      -0.2073 |      -0.2284 |
+        |            310 |      -0.2474 |      -0.2972 |      -0.2762 |
+        |            320 |      -0.4168 |      -0.3897 |      -0.3184 |
+        |            330 |      -0.5934 |      -0.4679 |      -0.3511 |
+        |            340 |      -0.7151 |      -0.5165 |      -0.371  |
+        |            350 |      -0.7358 |      -0.5271 |      -0.3771 |
+        |            360 |      -0.6538 |      -0.4999 |      -0.3696 |
+        |            370 |      -0.5071 |      -0.4432 |      -0.3502 |
+        |            380 |      -0.347  |      -0.369  |      -0.3216 |
+        |            390 |      -0.2114 |      -0.2901 |      -0.287  |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3876,7 +4486,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -3976,12 +4586,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option rho. Defaults to False which means
             it will calculate the call option rho.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -3999,29 +4613,30 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["PG"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_rho().loc["AAPL"]
+        toolkit.options.get_rho(
+            strike_price_range=0.15, strike_step_size=5, expiration_time_range=181
+        ).loc["PG", ["2026-01-30", "2026-03-31", "2026-06-29"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.004  |       0.0263 |       0.0752 |       0.1507 |       0.25   |       0.3698 |       0.5073 |       0.6599 |
-        |            295 |            0 |       0.0004 |       0.005  |       0.0209 |       0.0528 |       0.1022 |       0.1692 |       0.2526 |       0.3512 |
-        |            300 |            0 |       0      |       0.0007 |       0.0047 |       0.0158 |       0.0367 |       0.0693 |       0.1144 |       0.1719 |
-        |            305 |            0 |       0      |       0.0001 |       0.0009 |       0.004  |       0.0116 |       0.0255 |       0.0472 |       0.0776 |
-        |            310 |            0 |       0      |       0      |       0.0001 |       0.0009 |       0.0032 |       0.0085 |       0.0178 |       0.0323 |
-        |            315 |            0 |       0      |       0      |       0      |       0.0002 |       0.0008 |       0.0025 |       0.0061 |       0.0125 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.002  |       0.0045 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0006 |       0.0015 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
+        |   Strike Price |   2026-01-30 |   2026-03-31 |   2026-06-29 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            120 |       9.8242 |      28.3961 |      52.5163 |
+        |            125 |      10.1773 |      28.2204 |      50.9291 |
+        |            130 |      10.255  |      26.8642 |      47.8651 |
+        |            135 |       9.5384 |      24.1409 |      43.4449 |
+        |            140 |       7.609  |      20.248  |      38.0022 |
+        |            145 |       4.8851 |      15.7391 |      32.0076 |
+        |            150 |       2.4336 |      11.3025 |      25.961  |
+        |            155 |       0.9292 |       7.4974 |      20.2949 |
+        |            160 |       0.2728 |       4.6028 |      15.3122 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4056,7 +4671,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4152,12 +4767,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option epsilon. Defaults to False which means
             it will calculate the call option epsilon.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -4175,29 +4794,31 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["KO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_epsilon().loc["AAPL"]
+        toolkit.options.get_epsilon(
+            strike_price_range=0.15, strike_step_size=2, expiration_time_range=181
+        ).loc["KO", ["2026-01-30", "2026-03-31", "2026-06-29"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |           -0 |      -0.0041 |      -0.0266 |      -0.0761 |      -0.153  |      -0.2544 |      -0.3773 |      -0.5186 |      -0.6759 |
-        |            295 |           -0 |      -0.0004 |      -0.005  |      -0.0211 |      -0.0535 |      -0.1038 |      -0.1722 |      -0.2576 |      -0.3588 |
-        |            300 |           -0 |      -0      |      -0.0007 |      -0.0048 |      -0.0159 |      -0.0372 |      -0.0704 |      -0.1164 |      -0.1753 |
-        |            305 |           -0 |      -0      |      -0.0001 |      -0.0009 |      -0.0041 |      -0.0117 |      -0.0259 |      -0.0479 |      -0.0789 |
-        |            310 |           -0 |      -0      |      -0      |      -0.0001 |      -0.0009 |      -0.0033 |      -0.0086 |      -0.018  |      -0.0328 |
-        |            315 |           -0 |      -0      |      -0      |      -0      |      -0.0002 |      -0.0008 |      -0.0026 |      -0.0062 |      -0.0127 |
-        |            320 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0007 |      -0.002  |      -0.0045 |
-        |            325 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0006 |      -0.0015 |
-        |            330 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0005 |
-        |            335 |           -0 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
+        |   Strike Price |   2026-01-30 |   2026-03-31 |   2026-06-29 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             60 |      -5.7266 |     -16.5433 |     -30.9881 |
+        |             62 |      -5.6893 |     -15.8719 |     -29.2684 |
+        |             64 |      -5.5266 |     -14.7634 |     -27.0588 |
+        |             66 |      -5.0603 |     -13.1795 |     -24.4187 |
+        |             68 |      -4.1522 |     -11.1958 |     -21.4667 |
+        |             70 |      -2.9117 |      -8.9944 |     -18.3606 |
+        |             72 |      -1.6892 |      -6.8079 |     -15.2693 |
+        |             74 |      -0.7977 |      -4.8468 |     -12.3463 |
+        |             76 |      -0.3054 |      -3.2454 |      -9.7093 |
+        |             78 |      -0.0951 |      -2.0461 |      -7.4315 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4232,7 +4853,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4293,8 +4914,9 @@ class Options:
     ):
         """
         Calculate the lambda of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The lambda is
-        the rate of change of the option price with respect to the underlying price.
+        is a mathematical model used to estimate the price of European—style options. The lambda, or
+        elasticity, is the percentage change in the option price for a 1% change in the price of the
+        underlying asset, i.e. the leverage the option gives.
 
         The lambda calculation is the theoretical value of the lambda. The actual lambda can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -4329,12 +4951,16 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
-            means it will use the dividend yield as obtained through annual historical data.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             put_option (bool, optional): Whether to calculate the put option lambda. Defaults to False which means
             it will calculate the call option lambda.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -4352,29 +4978,35 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["V"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_lambda().loc["AAPL"]
+        toolkit.options.get_lambda(
+            strike_price_range=0.1, strike_step_size=5, expiration_time_range=91
+        ).loc["V", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      258.394 |      139.654 |      99.1523 |      78.4369 |      65.7343 |      57.0891 |      50.7916 |      45.9798 |      42.1704 |
-        |            295 |      313.218 |      165.83  |     116.034  |      90.7777 |      75.4041 |      65.0088 |      57.4801 |      51.7573 |      47.2479 |
-        |            300 |      368.224 |      192.315 |     133.19   |     103.35   |      85.2695 |      73.0955 |      64.3129 |      57.6609 |      52.4367 |
-        |            305 |      423.035 |      218.886 |     150.47   |     116.045  |      95.2489 |      81.2854 |      71.2387 |      63.6482 |      57.7011 |
-        |            310 |      477.435 |      245.396 |     167.771  |     128.787  |     105.282  |      89.53   |      78.2174 |      69.6858 |      63.0127 |
-        |            315 |      531.3   |      271.755 |     185.023  |     141.52   |     115.324  |      97.7925 |      85.2182 |      75.7472 |      68.3487 |
-        |            320 |      584.56  |      297.902 |     202.178  |     154.205  |     125.343  |     106.045  |      92.2175 |      81.8122 |      73.6913 |
-        |            325 |      637.175 |      323.8   |     219.202  |     166.813  |     135.315  |     114.268  |      99.1974 |      87.8648 |      79.0265 |
-        |            330 |      689.124 |      349.421 |     236.074  |     179.325  |     145.222  |     122.445  |     106.144  |      93.893  |      84.3433 |
-        |            335 |      740.398 |      374.753 |     252.778  |     191.727  |     155.051  |     130.565  |     113.048  |      99.8874 |      89.6332 |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            315 |       9.0898 |       8.0785 |       7.3271 |
+        |            320 |      10.1189 |       8.7379 |       7.8111 |
+        |            325 |      11.2877 |       9.4477 |       8.321  |
+        |            330 |      12.5998 |      10.2062 |       8.8559 |
+        |            335 |      14.0544 |      11.0116 |       9.4143 |
+        |            340 |      15.647  |      11.8613 |       9.9949 |
+        |            345 |      17.37   |      12.7522 |      10.5961 |
+        |            350 |      19.2134 |      13.6812 |      11.2162 |
+        |            355 |      21.1656 |      14.6449 |      11.8537 |
+        |            360 |      23.2145 |      15.6398 |      12.5069 |
+        |            365 |      25.3476 |      16.6627 |      13.1742 |
+        |            370 |      27.553  |      17.7102 |      13.8541 |
+        |            375 |      29.8195 |      18.7791 |      14.5451 |
+        |            380 |      32.1368 |      19.8667 |      15.2458 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4409,7 +5041,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4486,14 +5118,18 @@ class Options:
         the passage of time. Veta is the second derivative of the value function; once to volatility and once to time.
         - Vera: also referred to as rhova, measures the rate of change in rho with respect to volatility. Vera is the
         second derivative of the value function; once to volatility and once to interest rate.
-        - Partial Derivative: measures the rate of change in the option price with respect to the strike price.
+        - Partial Derivative: the second derivative of the option price with respect to the strike price, the rate
+        at which the dual delta changes with the strike.
 
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the stock price (the traded close), risk free rate, dividend yield and volatility of the most recent
+        date are used; changing the start date prices the option as of that date instead. The volatility is the
+        annualized standard deviation of the daily returns over the year before that date and the dividend yield the
+        dividends of the 365 days up to that date relative to its close, so an earlier start date only uses what was
+        known on that date. The exception is a date in the first year of the price history: without a full year
+        before it, it takes the dividend yield of the first date that has one.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -4502,10 +5138,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
@@ -4536,18 +5175,18 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   (Period('2026-01-29', 'D'), 'Gamma') |   (Period('2026-01-29', 'D'), 'Dual Gamma') |   (Period('2026-01-29', 'D'), 'Vanna') |
-        |---------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|
-        |            290 |                                 0.0129 |                                      0.0113 |                                 0.7399 |
-        |            295 |                                 0.0113 |                                      0.0095 |                                 0.8038 |
-        |            300 |                                 0.0095 |                                      0.0077 |                                 0.8101 |
-        |            305 |                                 0.0078 |                                      0.0061 |                                 0.7692 |
-        |            310 |                                 0.0062 |                                      0.0047 |                                 0.6948 |
-        |            315 |                                 0.0048 |                                      0.0035 |                                 0.6009 |
-        |            320 |                                 0.0036 |                                      0.0026 |                                 0.5001 |
-        |            325 |                                 0.0026 |                                      0.0018 |                                 0.402  |
-        |            330 |                                 0.0019 |                                      0.0013 |                                 0.313  |
-        |            335 |                                 0.0013 |                                      0.0009 |                                 0.2367 |
+        |   Strike Price |   (Period('2026-01-01', 'D'), 'Gamma') |   (Period('2026-01-01', 'D'), 'Dual Gamma') |   (Period('2026-01-01', 'D'), 'Vanna') |   (Period('2026-01-01', 'D'), 'Charm') |   (Period('2026-01-01', 'D'), 'Vomma') |   (Period('2026-01-01', 'D'), 'Vera') |   (Period('2026-01-01', 'D'), 'Veta') |   (Period('2026-01-01', 'D'), 'PD') |   (Period('2026-01-02', 'D'), 'Gamma') |   (Period('2026-01-02', 'D'), 'Dual Gamma') |   (Period('2026-01-02', 'D'), 'Vanna') |   (Period('2026-01-02', 'D'), 'Charm') |   (Period('2026-01-02', 'D'), 'Vomma') |   (Period('2026-01-02', 'D'), 'Vera') |   (Period('2026-01-02', 'D'), 'Veta') |   (Period('2026-01-02', 'D'), 'PD') |   (Period('2026-01-03', 'D'), 'Gamma') |   (Period('2026-01-03', 'D'), 'Dual Gamma') |   (Period('2026-01-03', 'D'), 'Vanna') |   (Period('2026-01-03', 'D'), 'Charm') |   (Period('2026-01-03', 'D'), 'Vomma') |   (Period('2026-01-03', 'D'), 'Vera') |   (Period('2026-01-03', 'D'), 'Veta') |   (Period('2026-01-03', 'D'), 'PD') |   (Period('2026-01-04', 'D'), 'Gamma') |   (Period('2026-01-04', 'D'), 'Dual Gamma') |   (Period('2026-01-04', 'D'), 'Vanna') |   (Period('2026-01-04', 'D'), 'Charm') |   (Period('2026-01-04', 'D'), 'Vomma') |   (Period('2026-01-04', 'D'), 'Vera') |   (Period('2026-01-04', 'D'), 'Veta') |   (Period('2026-01-04', 'D'), 'PD') |   (Period('2026-01-05', 'D'), 'Gamma') |   (Period('2026-01-05', 'D'), 'Dual Gamma') |   (Period('2026-01-05', 'D'), 'Vanna') |   (Period('2026-01-05', 'D'), 'Charm') |   (Period('2026-01-05', 'D'), 'Vomma') |   (Period('2026-01-05', 'D'), 'Vera') |   (Period('2026-01-05', 'D'), 'Veta') |   (Period('2026-01-05', 'D'), 'PD') |   (Period('2026-01-06', 'D'), 'Gamma') |   (Period('2026-01-06', 'D'), 'Dual Gamma') |   (Period('2026-01-06', 'D'), 'Vanna') |   (Period('2026-01-06', 'D'), 'Charm') |   (Period('2026-01-06', 'D'), 'Vomma') |   (Period('2026-01-06', 'D'), 'Vera') |   (Period('2026-01-06', 'D'), 'Veta') |   (Period('2026-01-06', 'D'), 'PD') |   (Period('2026-01-07', 'D'), 'Gamma') |   (Period('2026-01-07', 'D'), 'Dual Gamma') |   (Period('2026-01-07', 'D'), 'Vanna') |   (Period('2026-01-07', 'D'), 'Charm') |   (Period('2026-01-07', 'D'), 'Vomma') |   (Period('2026-01-07', 'D'), 'Vera') |   (Period('2026-01-07', 'D'), 'Veta') |   (Period('2026-01-07', 'D'), 'PD') |   (Period('2026-01-08', 'D'), 'Gamma') |   (Period('2026-01-08', 'D'), 'Dual Gamma') |   (Period('2026-01-08', 'D'), 'Vanna') |   (Period('2026-01-08', 'D'), 'Charm') |   (Period('2026-01-08', 'D'), 'Vomma') |   (Period('2026-01-08', 'D'), 'Vera') |   (Period('2026-01-08', 'D'), 'Veta') |   (Period('2026-01-08', 'D'), 'PD') |   (Period('2026-01-09', 'D'), 'Gamma') |   (Period('2026-01-09', 'D'), 'Dual Gamma') |   (Period('2026-01-09', 'D'), 'Vanna') |   (Period('2026-01-09', 'D'), 'Charm') |   (Period('2026-01-09', 'D'), 'Vomma') |   (Period('2026-01-09', 'D'), 'Vera') |   (Period('2026-01-09', 'D'), 'Veta') |   (Period('2026-01-09', 'D'), 'PD') |   (Period('2026-01-10', 'D'), 'Gamma') |   (Period('2026-01-10', 'D'), 'Dual Gamma') |   (Period('2026-01-10', 'D'), 'Vanna') |   (Period('2026-01-10', 'D'), 'Charm') |   (Period('2026-01-10', 'D'), 'Vomma') |   (Period('2026-01-10', 'D'), 'Vera') |   (Period('2026-01-10', 'D'), 'Veta') |   (Period('2026-01-10', 'D'), 'PD') |   (Period('2026-01-11', 'D'), 'Gamma') |   (Period('2026-01-11', 'D'), 'Dual Gamma') |   (Period('2026-01-11', 'D'), 'Vanna') |   (Period('2026-01-11', 'D'), 'Charm') |   (Period('2026-01-11', 'D'), 'Vomma') |   (Period('2026-01-11', 'D'), 'Vera') |   (Period('2026-01-11', 'D'), 'Veta') |   (Period('2026-01-11', 'D'), 'PD') |   (Period('2026-01-12', 'D'), 'Gamma') |   (Period('2026-01-12', 'D'), 'Dual Gamma') |   (Period('2026-01-12', 'D'), 'Vanna') |   (Period('2026-01-12', 'D'), 'Charm') |   (Period('2026-01-12', 'D'), 'Vomma') |   (Period('2026-01-12', 'D'), 'Vera') |   (Period('2026-01-12', 'D'), 'Veta') |   (Period('2026-01-12', 'D'), 'PD') |   (Period('2026-01-13', 'D'), 'Gamma') |   (Period('2026-01-13', 'D'), 'Dual Gamma') |   (Period('2026-01-13', 'D'), 'Vanna') |   (Period('2026-01-13', 'D'), 'Charm') |   (Period('2026-01-13', 'D'), 'Vomma') |   (Period('2026-01-13', 'D'), 'Vera') |   (Period('2026-01-13', 'D'), 'Veta') |   (Period('2026-01-13', 'D'), 'PD') |   (Period('2026-01-14', 'D'), 'Gamma') |   (Period('2026-01-14', 'D'), 'Dual Gamma') |   (Period('2026-01-14', 'D'), 'Vanna') |   (Period('2026-01-14', 'D'), 'Charm') |   (Period('2026-01-14', 'D'), 'Vomma') |   (Period('2026-01-14', 'D'), 'Vera') |   (Period('2026-01-14', 'D'), 'Veta') |   (Period('2026-01-14', 'D'), 'PD') |   (Period('2026-01-15', 'D'), 'Gamma') |   (Period('2026-01-15', 'D'), 'Dual Gamma') |   (Period('2026-01-15', 'D'), 'Vanna') |   (Period('2026-01-15', 'D'), 'Charm') |   (Period('2026-01-15', 'D'), 'Vomma') |   (Period('2026-01-15', 'D'), 'Vera') |   (Period('2026-01-15', 'D'), 'Veta') |   (Period('2026-01-15', 'D'), 'PD') |   (Period('2026-01-16', 'D'), 'Gamma') |   (Period('2026-01-16', 'D'), 'Dual Gamma') |   (Period('2026-01-16', 'D'), 'Vanna') |   (Period('2026-01-16', 'D'), 'Charm') |   (Period('2026-01-16', 'D'), 'Vomma') |   (Period('2026-01-16', 'D'), 'Vera') |   (Period('2026-01-16', 'D'), 'Veta') |   (Period('2026-01-16', 'D'), 'PD') |   (Period('2026-01-17', 'D'), 'Gamma') |   (Period('2026-01-17', 'D'), 'Dual Gamma') |   (Period('2026-01-17', 'D'), 'Vanna') |   (Period('2026-01-17', 'D'), 'Charm') |   (Period('2026-01-17', 'D'), 'Vomma') |   (Period('2026-01-17', 'D'), 'Vera') |   (Period('2026-01-17', 'D'), 'Veta') |   (Period('2026-01-17', 'D'), 'PD') |   (Period('2026-01-18', 'D'), 'Gamma') |   (Period('2026-01-18', 'D'), 'Dual Gamma') |   (Period('2026-01-18', 'D'), 'Vanna') |   (Period('2026-01-18', 'D'), 'Charm') |   (Period('2026-01-18', 'D'), 'Vomma') |   (Period('2026-01-18', 'D'), 'Vera') |   (Period('2026-01-18', 'D'), 'Veta') |   (Period('2026-01-18', 'D'), 'PD') |   (Period('2026-01-19', 'D'), 'Gamma') |   (Period('2026-01-19', 'D'), 'Dual Gamma') |   (Period('2026-01-19', 'D'), 'Vanna') |   (Period('2026-01-19', 'D'), 'Charm') |   (Period('2026-01-19', 'D'), 'Vomma') |   (Period('2026-01-19', 'D'), 'Vera') |   (Period('2026-01-19', 'D'), 'Veta') |   (Period('2026-01-19', 'D'), 'PD') |   (Period('2026-01-20', 'D'), 'Gamma') |   (Period('2026-01-20', 'D'), 'Dual Gamma') |   (Period('2026-01-20', 'D'), 'Vanna') |   (Period('2026-01-20', 'D'), 'Charm') |   (Period('2026-01-20', 'D'), 'Vomma') |   (Period('2026-01-20', 'D'), 'Vera') |   (Period('2026-01-20', 'D'), 'Veta') |   (Period('2026-01-20', 'D'), 'PD') |   (Period('2026-01-21', 'D'), 'Gamma') |   (Period('2026-01-21', 'D'), 'Dual Gamma') |   (Period('2026-01-21', 'D'), 'Vanna') |   (Period('2026-01-21', 'D'), 'Charm') |   (Period('2026-01-21', 'D'), 'Vomma') |   (Period('2026-01-21', 'D'), 'Vera') |   (Period('2026-01-21', 'D'), 'Veta') |   (Period('2026-01-21', 'D'), 'PD') |   (Period('2026-01-22', 'D'), 'Gamma') |   (Period('2026-01-22', 'D'), 'Dual Gamma') |   (Period('2026-01-22', 'D'), 'Vanna') |   (Period('2026-01-22', 'D'), 'Charm') |   (Period('2026-01-22', 'D'), 'Vomma') |   (Period('2026-01-22', 'D'), 'Vera') |   (Period('2026-01-22', 'D'), 'Veta') |   (Period('2026-01-22', 'D'), 'PD') |   (Period('2026-01-23', 'D'), 'Gamma') |   (Period('2026-01-23', 'D'), 'Dual Gamma') |   (Period('2026-01-23', 'D'), 'Vanna') |   (Period('2026-01-23', 'D'), 'Charm') |   (Period('2026-01-23', 'D'), 'Vomma') |   (Period('2026-01-23', 'D'), 'Vera') |   (Period('2026-01-23', 'D'), 'Veta') |   (Period('2026-01-23', 'D'), 'PD') |   (Period('2026-01-24', 'D'), 'Gamma') |   (Period('2026-01-24', 'D'), 'Dual Gamma') |   (Period('2026-01-24', 'D'), 'Vanna') |   (Period('2026-01-24', 'D'), 'Charm') |   (Period('2026-01-24', 'D'), 'Vomma') |   (Period('2026-01-24', 'D'), 'Vera') |   (Period('2026-01-24', 'D'), 'Veta') |   (Period('2026-01-24', 'D'), 'PD') |   (Period('2026-01-25', 'D'), 'Gamma') |   (Period('2026-01-25', 'D'), 'Dual Gamma') |   (Period('2026-01-25', 'D'), 'Vanna') |   (Period('2026-01-25', 'D'), 'Charm') |   (Period('2026-01-25', 'D'), 'Vomma') |   (Period('2026-01-25', 'D'), 'Vera') |   (Period('2026-01-25', 'D'), 'Veta') |   (Period('2026-01-25', 'D'), 'PD') |   (Period('2026-01-26', 'D'), 'Gamma') |   (Period('2026-01-26', 'D'), 'Dual Gamma') |   (Period('2026-01-26', 'D'), 'Vanna') |   (Period('2026-01-26', 'D'), 'Charm') |   (Period('2026-01-26', 'D'), 'Vomma') |   (Period('2026-01-26', 'D'), 'Vera') |   (Period('2026-01-26', 'D'), 'Veta') |   (Period('2026-01-26', 'D'), 'PD') |   (Period('2026-01-27', 'D'), 'Gamma') |   (Period('2026-01-27', 'D'), 'Dual Gamma') |   (Period('2026-01-27', 'D'), 'Vanna') |   (Period('2026-01-27', 'D'), 'Charm') |   (Period('2026-01-27', 'D'), 'Vomma') |   (Period('2026-01-27', 'D'), 'Vera') |   (Period('2026-01-27', 'D'), 'Veta') |   (Period('2026-01-27', 'D'), 'PD') |   (Period('2026-01-28', 'D'), 'Gamma') |   (Period('2026-01-28', 'D'), 'Dual Gamma') |   (Period('2026-01-28', 'D'), 'Vanna') |   (Period('2026-01-28', 'D'), 'Charm') |   (Period('2026-01-28', 'D'), 'Vomma') |   (Period('2026-01-28', 'D'), 'Vera') |   (Period('2026-01-28', 'D'), 'Veta') |   (Period('2026-01-28', 'D'), 'PD') |   (Period('2026-01-29', 'D'), 'Gamma') |   (Period('2026-01-29', 'D'), 'Dual Gamma') |   (Period('2026-01-29', 'D'), 'Vanna') |   (Period('2026-01-29', 'D'), 'Charm') |   (Period('2026-01-29', 'D'), 'Vomma') |   (Period('2026-01-29', 'D'), 'Vera') |   (Period('2026-01-29', 'D'), 'Veta') |   (Period('2026-01-29', 'D'), 'PD') |
+        |---------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|---------------------------------------:|--------------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|--------------------------------------:|--------------------------------------:|------------------------------------:|
+        |            290 |                                 0.0001 |                                      0.0001 |                                 0.0035 |                                -0.2099 |                                 0.1908 |                                0.0026 |                               -0.0003 |                              0.0001 |                                 0.0017 |                                      0.0015 |                                 0.0936 |                                -2.7876 |                                 5.033  |                                0.1382 |                               -0.0047 |                              0.0015 |                                 0.0047 |                                      0.0041 |                                 0.2559 |                                -5.0939 |                                13.6998 |                                0.5641 |                               -0.009  |                              0.0041 |                                 0.0075 |                                      0.0066 |                                 0.4055 |                                -6.0731 |                                21.6262 |                                1.1865 |                               -0.0113 |                              0.0066 |                                 0.0096 |                                      0.0084 |                                 0.5212 |                                -6.2652 |                                27.6936 |                                1.898  |                               -0.0123 |                              0.0084 |                                 0.0111 |                                      0.0098 |                                 0.6061 |                                -6.0898 |                                32.0774 |                                2.6364 |                               -0.0125 |                              0.0098 |                                 0.0123 |                                      0.0108 |                                 0.6671 |                                -5.7631 |                                35.1695 |                                3.3701 |                               -0.0123 |                              0.0108 |                                 0.0131 |                                      0.0115 |                                 0.7106 |                                -5.3877 |                                37.3143 |                                4.0839 |                               -0.012  |                              0.0115 |                                 0.0136 |                                      0.012  |                                 0.7413 |                                -5.011  |                                38.7714 |                                4.7707 |                               -0.0116 |                              0.012  |                                 0.014  |                                      0.0123 |                                 0.7626 |                                -4.6535 |                                39.7283 |                                5.4281 |                               -0.0112 |                              0.0123 |                                 0.0142 |                                      0.0125 |                                 0.777  |                                -4.3235 |                                40.3187 |                                6.0558 |                               -0.0108 |                              0.0125 |                                 0.0144 |                                      0.0127 |                                 0.7863 |                                -4.0227 |                                40.6389 |                                6.6545 |                               -0.0104 |                              0.0127 |                                 0.0145 |                                      0.0127 |                                 0.7918 |                                -3.7502 |                                40.7583 |                                7.2257 |                               -0.01   |                              0.0127 |                                 0.0145 |                                      0.0128 |                                 0.7943 |                                -3.5042 |                                40.7278 |                                7.7707 |                               -0.0097 |                              0.0128 |                                 0.0145 |                                      0.0128 |                                 0.7948 |                                -3.282  |                                40.5849 |                                8.2912 |                               -0.0094 |                              0.0128 |                                 0.0145 |                                      0.0127 |                                 0.7935 |                                -3.0811 |                                40.3576 |                                8.7888 |                               -0.0091 |                              0.0127 |                                 0.0144 |                                      0.0127 |                                 0.791  |                                -2.8992 |                                40.0669 |                                9.265  |                               -0.0088 |                              0.0127 |                                 0.0144 |                                      0.0126 |                                 0.7876 |                                -2.7341 |                                39.7289 |                                9.7211 |                               -0.0085 |                              0.0126 |                                 0.0143 |                                      0.0126 |                                 0.7834 |                                -2.5839 |                                39.3558 |                               10.1583 |                               -0.0082 |                              0.0126 |                                 0.0142 |                                      0.0125 |                                 0.7786 |                                -2.4469 |                                38.9571 |                               10.5779 |                               -0.008  |                              0.0125 |                                 0.0141 |                                      0.0124 |                                 0.7735 |                                -2.3217 |                                38.5399 |                               10.9809 |                               -0.0078 |                              0.0124 |                                 0.014  |                                      0.0123 |                                 0.7681 |                                -2.2069 |                                38.1101 |                               11.3682 |                               -0.0076 |                              0.0123 |                                 0.0139 |                                      0.0122 |                                 0.7624 |                                -2.1013 |                                37.6719 |                               11.7409 |                               -0.0074 |                              0.0122 |                                 0.0138 |                                      0.0121 |                                 0.7566 |                                -2.0041 |                                37.229  |                               12.0996 |                               -0.0072 |                              0.0121 |                                 0.0136 |                                      0.012  |                                 0.7507 |                                -1.9144 |                                36.7839 |                               12.4452 |                               -0.007  |                              0.012  |                                 0.0135 |                                      0.0119 |                                 0.7448 |                                -1.8313 |                                36.3388 |                               12.7783 |                               -0.0069 |                              0.0119 |                                 0.0134 |                                      0.0118 |                                 0.7388 |                                -1.7543 |                                35.8954 |                               13.0996 |                               -0.0067 |                              0.0118 |                                 0.0133 |                                      0.0117 |                                 0.7329 |                                -1.6827 |                                35.4549 |                               13.4096 |                               -0.0066 |                              0.0117 |                                 0.0132 |                                      0.0116 |                                 0.7269 |                                -1.616  |                                35.0184 |                               13.7088 |                               -0.0065 |                              0.0116 |
+        |            295 |                                 0      |                                      0      |                                 0.0001 |                                -0.0035 |                                 0.004  |                                0      |                               -0      |                              0      |                                 0.0002 |                                      0.0002 |                                 0.0137 |                                -0.4074 |                                 0.933  |                                0.0203 |                               -0.0008 |                              0.0002 |                                 0.0011 |                                      0.001  |                                 0.0772 |                                -1.5339 |                                 5.2401 |                                0.1707 |                               -0.0032 |                              0.001  |                                 0.0026 |                                      0.0022 |                                 0.1756 |                                -2.624  |                                11.886  |                                0.5159 |                               -0.0057 |                              0.0022 |                                 0.0041 |                                      0.0035 |                                 0.2805 |                                -3.3607 |                                18.9241 |                                1.0262 |                               -0.0076 |                              0.0035 |                                 0.0055 |                                      0.0047 |                                 0.3769 |                                -3.7724 |                                25.3508 |                                1.6489 |                               -0.0088 |                              0.0047 |                                 0.0067 |                                      0.0057 |                                 0.46   |                                -3.9558 |                                30.8432 |                                2.3393 |                               -0.0095 |                              0.0057 |                                 0.0077 |                                      0.0065 |                                 0.5294 |                                -3.9933 |                                35.3873 |                                3.0658 |                               -0.0098 |                              0.0065 |                                 0.0085 |                                      0.0072 |                                 0.5865 |                                -3.942  |                                39.0826 |                                3.8072 |                               -0.01   |                              0.0072 |                                 0.0092 |                                      0.0078 |                                 0.6331 |                                -3.8389 |                                42.0567 |                                4.5499 |                               -0.01   |                              0.0078 |                                 0.0097 |                                      0.0083 |                                 0.6709 |                                -3.7074 |                                44.4324 |                                5.2849 |                               -0.0099 |                              0.0083 |                                 0.0102 |                                      0.0086 |                                 0.7016 |                                -3.5622 |                                46.3167 |                                6.0068 |                               -0.0098 |                              0.0086 |                                 0.0105 |                                      0.0089 |                                 0.7263 |                                -3.4122 |                                47.7991 |                                6.7122 |                               -0.0096 |                              0.0089 |                                 0.0108 |                                      0.0092 |                                 0.7462 |                                -3.263  |                                48.953  |                                7.3993 |                               -0.0094 |                              0.0092 |                                 0.011  |                                      0.0094 |                                 0.762  |                                -3.1176 |                                49.8377 |                                8.067  |                               -0.0092 |                              0.0094 |                                 0.0112 |                                      0.0095 |                                 0.7746 |                                -2.9781 |                                50.5015 |                                8.715  |                               -0.009  |                              0.0095 |                                 0.0114 |                                      0.0096 |                                 0.7845 |                                -2.8454 |                                50.9835 |                                9.3434 |                               -0.0088 |                              0.0096 |                                 0.0115 |                                      0.0097 |                                 0.7921 |                                -2.7198 |                                51.3153 |                                9.9524 |                               -0.0086 |                              0.0097 |                                 0.0115 |                                      0.0098 |                                 0.7979 |                                -2.6014 |                                51.523  |                               10.5425 |                               -0.0084 |                              0.0098 |                                 0.0116 |                                      0.0098 |                                 0.8021 |                                -2.4901 |                                51.6275 |                               11.1143 |                               -0.0082 |                              0.0098 |                                 0.0116 |                                      0.0099 |                                 0.805  |                                -2.3855 |                                51.6463 |                               11.6683 |                               -0.008  |                              0.0099 |                                 0.0116 |                                      0.0099 |                                 0.8067 |                                -2.2874 |                                51.5937 |                               12.2054 |                               -0.0078 |                              0.0099 |                                 0.0117 |                                      0.0099 |                                 0.8076 |                                -2.1953 |                                51.4815 |                               12.726  |                               -0.0077 |                              0.0099 |                                 0.0116 |                                      0.0099 |                                 0.8077 |                                -2.1088 |                                51.3196 |                               13.2309 |                               -0.0075 |                              0.0099 |                                 0.0116 |                                      0.0099 |                                 0.8071 |                                -2.0277 |                                51.1162 |                               13.7207 |                               -0.0073 |                              0.0099 |                                 0.0116 |                                      0.0099 |                                 0.806  |                                -1.9514 |                                50.8782 |                               14.1959 |                               -0.0072 |                              0.0099 |                                 0.0116 |                                      0.0098 |                                 0.8044 |                                -1.8797 |                                50.6114 |                               14.6573 |                               -0.007  |                              0.0098 |                                 0.0115 |                                      0.0098 |                                 0.8024 |                                -1.8121 |                                50.3206 |                               15.1052 |                               -0.0069 |                              0.0098 |                                 0.0115 |                                      0.0098 |                                 0.8001 |                                -1.7485 |                                50.0101 |                               15.5403 |                               -0.0068 |                              0.0098 |
+        |            300 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0012 |                                -0.0359 |                                 0.0994 |                                0.0018 |                               -0.0001 |                              0      |                                 0.0002 |                                      0.0002 |                                 0.0164 |                                -0.3247 |                                 1.3411 |                                0.0362 |                               -0.0008 |                              0.0002 |                                 0.0007 |                                      0.0006 |                                 0.0577 |                                -0.8604 |                                 4.7168 |                                0.1699 |                               -0.0022 |                              0.0006 |                                 0.0014 |                                      0.0012 |                                 0.1198 |                                -1.4326 |                                 9.7724 |                                0.4397 |                               -0.0037 |                              0.0012 |                                 0.0023 |                                      0.0019 |                                 0.1918 |                                -1.9152 |                                15.6059 |                                0.8423 |                               -0.005  |                              0.0019 |                                 0.0032 |                                      0.0026 |                                 0.2653 |                                -2.275  |                                21.5289 |                                1.355  |                               -0.0061 |                              0.0026 |                                 0.004  |                                      0.0033 |                                 0.3354 |                                -2.5214 |                                27.1446 |                                1.9517 |                               -0.0069 |                              0.0033 |                                 0.0048 |                                      0.004  |                                 0.3997 |                                -2.6762 |                                32.2652 |                                2.6088 |                               -0.0075 |                              0.004  |                                 0.0055 |                                      0.0045 |                                 0.4573 |                                -2.7617 |                                36.8262 |                                3.307  |                               -0.0079 |                              0.0045 |                                 0.0061 |                                      0.005  |                                 0.5083 |                                -2.7964 |                                40.8302 |                                4.0316 |                               -0.0082 |                              0.005  |                                 0.0067 |                                      0.0055 |                                 0.5531 |                                -2.7947 |                                44.312  |                                4.7711 |                               -0.0083 |                              0.0055 |                                 0.0071 |                                      0.0059 |                                 0.5922 |                                -2.7675 |                                47.3199 |                                5.5172 |                               -0.0084 |                              0.0059 |                                 0.0075 |                                      0.0062 |                                 0.6262 |                                -2.7227 |                                49.9062 |                                6.2637 |                               -0.0084 |                              0.0062 |                                 0.0079 |                                      0.0065 |                                 0.6557 |                                -2.6661 |                                52.121  |                                7.0061 |                               -0.0084 |                              0.0065 |                                 0.0082 |                                      0.0067 |                                 0.6812 |                                -2.602  |                                54.0108 |                                7.7408 |                               -0.0083 |                              0.0067 |                                 0.0085 |                                      0.0069 |                                 0.7033 |                                -2.5334 |                                55.6173 |                                8.4657 |                               -0.0083 |                              0.0069 |                                 0.0087 |                                      0.0071 |                                 0.7224 |                                -2.4624 |                                56.9771 |                                9.179  |                               -0.0082 |                              0.0071 |                                 0.0089 |                                      0.0073 |                                 0.7388 |                                -2.3906 |                                58.1222 |                                9.8796 |                               -0.0081 |                              0.0073 |                                 0.009  |                                      0.0074 |                                 0.753  |                                -2.3191 |                                59.0806 |                               10.5666 |                               -0.008  |                              0.0074 |                                 0.0092 |                                      0.0075 |                                 0.7652 |                                -2.2487 |                                59.8762 |                               11.2396 |                               -0.0078 |                              0.0075 |                                 0.0093 |                                      0.0076 |                                 0.7756 |                                -2.1799 |                                60.5298 |                               11.8984 |                               -0.0077 |                              0.0076 |                                 0.0094 |                                      0.0077 |                                 0.7844 |                                -2.113  |                                61.0597 |                               12.5429 |                               -0.0076 |                              0.0077 |                                 0.0095 |                                      0.0078 |                                 0.7919 |                                -2.0483 |                                61.4812 |                               13.1731 |                               -0.0075 |                              0.0078 |                                 0.0096 |                                      0.0079 |                                 0.7983 |                                -1.9859 |                                61.8079 |                               13.7891 |                               -0.0074 |                              0.0079 |                                 0.0096 |                                      0.0079 |                                 0.8036 |                                -1.9259 |                                62.0515 |                               14.3912 |                               -0.0072 |                              0.0079 |                                 0.0097 |                                      0.0079 |                                 0.8079 |                                -1.8682 |                                62.2222 |                               14.9796 |                               -0.0071 |                              0.0079 |                                 0.0097 |                                      0.008  |                                 0.8115 |                                -1.8129 |                                62.3288 |                               15.5545 |                               -0.007  |                              0.008  |                                 0.0097 |                                      0.008  |                                 0.8143 |                                -1.7598 |                                62.3791 |                               16.1163 |                               -0.0069 |                              0.008  |
+        |            305 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0001 |                                -0.002  |                                 0.0064 |                                0.0001 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0025 |                                -0.0498 |                                 0.2408 |                                0.0056 |                               -0.0001 |                              0      |                                 0.0002 |                                      0.0001 |                                 0.0148 |                                -0.2199 |                                 1.4116 |                                0.0435 |                               -0.0006 |                              0.0001 |                                 0.0004 |                                      0.0003 |                                 0.0417 |                                -0.4973 |                                 3.9745 |                                0.1532 |                               -0.0014 |                              0.0003 |                                 0.0008 |                                      0.0007 |                                 0.0818 |                                -0.8152 |                                 7.7878 |                                0.36   |                               -0.0024 |                              0.0007 |                                 0.0014 |                                      0.0011 |                                 0.1309 |                                -1.12   |                                12.435  |                                0.6705 |                               -0.0034 |                              0.0011 |                                 0.0019 |                                      0.0015 |                                 0.1846 |                                -1.3844 |                                17.4972 |                                1.0778 |                               -0.0042 |                              0.0015 |                                 0.0025 |                                      0.002  |                                 0.2395 |                                -1.5994 |                                22.6526 |                                1.5692 |                               -0.005  |                              0.002  |                                 0.003  |                                      0.0024 |                                 0.2933 |                                -1.7662 |                                27.6854 |                                2.1302 |                               -0.0056 |                              0.0024 |                                 0.0036 |                                      0.0028 |                                 0.3447 |                                -1.8902 |                                32.4643 |                                2.7467 |                               -0.006  |                              0.0028 |                                 0.0041 |                                      0.0032 |                                 0.3929 |                                -1.9781 |                                36.9187 |                                3.4063 |                               -0.0064 |                              0.0032 |                                 0.0045 |                                      0.0036 |                                 0.4374 |                                -2.0367 |                                41.0175 |                                4.0984 |                               -0.0067 |                              0.0036 |                                 0.0049 |                                      0.0039 |                                 0.4784 |                                -2.0716 |                                44.7551 |                                4.8141 |                               -0.0069 |                              0.0039 |                                 0.0053 |                                      0.0042 |                                 0.5157 |                                -2.088  |                                48.141  |                                5.5462 |                               -0.0071 |                              0.0042 |                                 0.0057 |                                      0.0045 |                                 0.5496 |                                -2.0898 |                                51.1935 |                                6.2888 |                               -0.0072 |                              0.0045 |                                 0.006  |                                      0.0048 |                                 0.5803 |                                -2.0803 |                                53.935  |                                7.0371 |                               -0.0073 |                              0.0048 |                                 0.0063 |                                      0.005  |                                 0.6081 |                                -2.0622 |                                56.39   |                                7.7874 |                               -0.0073 |                              0.005  |                                 0.0065 |                                      0.0052 |                                 0.6331 |                                -2.0376 |                                58.5828 |                                8.5366 |                               -0.0073 |                              0.0052 |                                 0.0067 |                                      0.0054 |                                 0.6557 |                                -2.0082 |                                60.5371 |                                9.2824 |                               -0.0073 |                              0.0054 |                                 0.007  |                                      0.0055 |                                 0.6761 |                                -1.9752 |                                62.275  |                               10.0227 |                               -0.0073 |                              0.0055 |                                 0.0071 |                                      0.0057 |                                 0.6944 |                                -1.9397 |                                63.8171 |                               10.7561 |                               -0.0072 |                              0.0057 |                                 0.0073 |                                      0.0058 |                                 0.7108 |                                -1.9025 |                                65.1823 |                               11.4815 |                               -0.0072 |                              0.0058 |                                 0.0075 |                                      0.0059 |                                 0.7256 |                                -1.8642 |                                66.3877 |                               12.1978 |                               -0.0071 |                              0.0059 |                                 0.0076 |                                      0.006  |                                 0.7389 |                                -1.8254 |                                67.4488 |                               12.9046 |                               -0.0071 |                              0.006  |                                 0.0077 |                                      0.0061 |                                 0.7508 |                                -1.7864 |                                68.3798 |                               13.6011 |                               -0.007  |                              0.0061 |                                 0.0078 |                                      0.0062 |                                 0.7614 |                                -1.7476 |                                69.1932 |                               14.2871 |                               -0.0069 |                              0.0062 |                                 0.0079 |                                      0.0063 |                                 0.7709 |                                -1.7091 |                                69.9004 |                               14.9624 |                               -0.0068 |                              0.0063 |                                 0.008  |                                      0.0064 |                                 0.7795 |                                -1.6711 |                                70.5116 |                               15.6267 |                               -0.0068 |                              0.0064 |
+        |            310 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0.0001 |                                 0.0003 |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0003 |                                -0.0057 |                                 0.0313 |                                0.0006 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.003  |                                -0.0447 |                                 0.3281 |                                0.0089 |                               -0.0001 |                              0      |                                 0.0001 |                                      0.0001 |                                 0.012  |                                -0.143  |                                 1.3081 |                                0.0442 |                               -0.0005 |                              0.0001 |                                 0.0003 |                                      0.0002 |                                 0.0297 |                                -0.2956 |                                 3.2325 |                                0.131  |                               -0.001  |                              0.0002 |                                 0.0005 |                                      0.0004 |                                 0.0561 |                                -0.4791 |                                 6.0922 |                                0.2879 |                               -0.0016 |                              0.0004 |                                 0.0008 |                                      0.0006 |                                 0.0895 |                                -0.6704 |                                 9.7079 |                                0.5241 |                               -0.0023 |                              0.0006 |                                 0.0012 |                                      0.0009 |                                 0.1279 |                                -0.8528 |                                13.8459 |                                0.8407 |                               -0.0029 |                              0.0009 |                                 0.0015 |                                      0.0012 |                                 0.1693 |                                -1.0171 |                                18.2857 |                                1.2332 |                               -0.0035 |                              0.0012 |                                 0.0019 |                                      0.0015 |                                 0.2119 |                                -1.1593 |                                22.8467 |                                1.6944 |                               -0.0041 |                              0.0015 |                                 0.0023 |                                      0.0018 |                                 0.2546 |                                -1.2785 |                                27.3933 |                                2.2156 |                               -0.0045 |                              0.0018 |                                 0.0027 |                                      0.0021 |                                 0.2964 |                                -1.376  |                                31.8295 |                                2.788  |                               -0.0049 |                              0.0021 |                                 0.003  |                                      0.0023 |                                 0.3367 |                                -1.4538 |                                36.0911 |                                3.4034 |                               -0.0053 |                              0.0023 |                                 0.0034 |                                      0.0026 |                                 0.3752 |                                -1.5142 |                                40.1381 |                                4.0542 |                               -0.0056 |                              0.0026 |                                 0.0037 |                                      0.0029 |                                 0.4116 |                                -1.5597 |                                43.9485 |                                4.7335 |                               -0.0058 |                              0.0029 |                                 0.004  |                                      0.0031 |                                 0.4458 |                                -1.5924 |                                47.5125 |                                5.4354 |                               -0.006  |                              0.0031 |                                 0.0043 |                                      0.0033 |                                 0.4779 |                                -1.6145 |                                50.8292 |                                6.155  |                               -0.0061 |                              0.0033 |                                 0.0046 |                                      0.0035 |                                 0.5077 |                                -1.6276 |                                53.9035 |                                6.8877 |                               -0.0062 |                              0.0035 |                                 0.0048 |                                      0.0037 |                                 0.5355 |                                -1.6333 |                                56.7443 |                                7.6299 |                               -0.0063 |                              0.0037 |                                 0.0051 |                                      0.0039 |                                 0.5613 |                                -1.6329 |                                59.3623 |                                8.3784 |                               -0.0064 |                              0.0039 |                                 0.0053 |                                      0.0041 |                                 0.5853 |                                -1.6274 |                                61.7701 |                                9.1305 |                               -0.0064 |                              0.0041 |                                 0.0055 |                                      0.0042 |                                 0.6074 |                                -1.6179 |                                63.9803 |                                9.884  |                               -0.0065 |                              0.0042 |                                 0.0057 |                                      0.0044 |                                 0.6279 |                                -1.6051 |                                66.006  |                               10.637  |                               -0.0065 |                              0.0044 |                                 0.0058 |                                      0.0045 |                                 0.6468 |                                -1.5896 |                                67.8598 |                               11.3878 |                               -0.0065 |                              0.0045 |                                 0.006  |                                      0.0046 |                                 0.6642 |                                -1.5721 |                                69.5538 |                               12.1351 |                               -0.0065 |                              0.0046 |                                 0.0061 |                                      0.0047 |                                 0.6803 |                                -1.5528 |                                71.0998 |                               12.8779 |                               -0.0065 |                              0.0047 |                                 0.0063 |                                      0.0048 |                                 0.6952 |                                -1.5323 |                                72.5086 |                               13.6152 |                               -0.0064 |                              0.0048 |                                 0.0064 |                                      0.0049 |                                 0.7089 |                                -1.5108 |                                73.7905 |                               14.3463 |                               -0.0064 |                              0.0049 |
+        |            315 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0.0005 |                                 0.003  |                                0.0001 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0005 |                                -0.0073 |                                 0.0605 |                                0.0015 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0029 |                                -0.0346 |                                 0.3553 |                                0.0107 |                               -0.0001 |                              0      |                                 0.0001 |                                      0.0001 |                                 0.0093 |                                -0.0924 |                                 1.1367 |                                0.0411 |                               -0.0003 |                              0.0001 |                                 0.0002 |                                      0.0001 |                                 0.0211 |                                -0.1801 |                                 2.5762 |                                0.1085 |                               -0.0007 |                              0.0001 |                                 0.0003 |                                      0.0002 |                                 0.0387 |                                -0.2893 |                                 4.7144 |                                0.2269 |                               -0.0011 |                              0.0002 |                                 0.0005 |                                      0.0004 |                                 0.0616 |                                -0.4097 |                                 7.4883 |                                0.4054 |                               -0.0015 |                              0.0004 |                                 0.0007 |                                      0.0005 |                                 0.0888 |                                -0.5325 |                                10.7793 |                                0.6482 |                               -0.002  |                              0.0005 |                                 0.001  |                                      0.0007 |                                 0.1192 |                                -0.651  |                                14.4523 |                                0.9558 |                               -0.0025 |                              0.0007 |                                 0.0012 |                                      0.0009 |                                 0.1519 |                                -0.7611 |                                18.378  |                                1.3255 |                               -0.0029 |                              0.0009 |                                 0.0015 |                                      0.0011 |                                 0.1858 |                                -0.8607 |                                22.4443 |                                1.7532 |                               -0.0033 |                              0.0011 |                                 0.0018 |                                      0.0013 |                                 0.2202 |                                -0.9486 |                                26.5596 |                                2.2336 |                               -0.0037 |                              0.0013 |                                 0.0021 |                                      0.0015 |                                 0.2546 |                                -1.025  |                                30.6523 |                                2.7611 |                               -0.0041 |                              0.0015 |                                 0.0023 |                                      0.0017 |                                 0.2884 |                                -1.0901 |                                34.6683 |                                3.3301 |                               -0.0044 |                              0.0017 |                                 0.0026 |                                      0.0019 |                                 0.3214 |                                -1.1449 |                                38.5685 |                                3.9352 |                               -0.0046 |                              0.0019 |                                 0.0028 |                                      0.0021 |                                 0.3533 |                                -1.1903 |                                42.3255 |                                4.5713 |                               -0.0048 |                              0.0021 |                                 0.0031 |                                      0.0023 |                                 0.384  |                                -1.2272 |                                45.9212 |                                5.2337 |                               -0.005  |                              0.0023 |                                 0.0033 |                                      0.0025 |                                 0.4134 |                                -1.2566 |                                49.345  |                                5.9183 |                               -0.0052 |                              0.0025 |                                 0.0036 |                                      0.0026 |                                 0.4413 |                                -1.2794 |                                52.5915 |                                6.6212 |                               -0.0053 |                              0.0026 |                                 0.0038 |                                      0.0028 |                                 0.4679 |                                -1.2965 |                                55.6594 |                                7.339  |                               -0.0055 |                              0.0028 |                                 0.004  |                                      0.003  |                                 0.493  |                                -1.3085 |                                58.5505 |                                8.0689 |                               -0.0056 |                              0.003  |                                 0.0042 |                                      0.0031 |                                 0.5168 |                                -1.3162 |                                61.2686 |                                8.8081 |                               -0.0056 |                              0.0031 |                                 0.0043 |                                      0.0032 |                                 0.5393 |                                -1.3202 |                                63.8191 |                                9.5544 |                               -0.0057 |                              0.0032 |                                 0.0045 |                                      0.0034 |                                 0.5605 |                                -1.321  |                                66.2083 |                               10.3057 |                               -0.0058 |                              0.0034 |                                 0.0047 |                                      0.0035 |                                 0.5804 |                                -1.319  |                                68.4433 |                               11.0602 |                               -0.0058 |                              0.0035 |                                 0.0048 |                                      0.0036 |                                 0.5991 |                                -1.3147 |                                70.5311 |                               11.8164 |                               -0.0058 |                              0.0036 |                                 0.005  |                                      0.0037 |                                 0.6168 |                                -1.3085 |                                72.4794 |                               12.573  |                               -0.0058 |                              0.0037 |
+        |            320 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0.0002 |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0001 |                                -0.001  |                                 0.009  |                                0.0002 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0006 |                                -0.0071 |                                 0.0809 |                                0.0022 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0025 |                                -0.0252 |                                 0.3435 |                                0.0112 |                               -0.0001 |                              0      |                                 0.0001 |                                      0      |                                 0.007  |                                -0.0601 |                                 0.9529 |                                0.0363 |                               -0.0002 |                              0      |                                 0.0001 |                                      0.0001 |                                 0.015  |                                -0.1122 |                                 2.0293 |                                0.0883 |                               -0.0005 |                              0.0001 |                                 0.0002 |                                      0.0001 |                                 0.0269 |                                -0.1788 |                                 3.627  |                                0.1774 |                               -0.0007 |                              0.0001 |                                 0.0003 |                                      0.0002 |                                 0.0426 |                                -0.2553 |                                 5.738  |                                0.3118 |                               -0.001  |                              0.0002 |                                 0.0005 |                                      0.0003 |                                 0.0618 |                                -0.3371 |                                 8.3113 |                                0.4967 |                               -0.0014 |                              0.0003 |                                 0.0006 |                                      0.0004 |                                 0.084  |                                -0.4203 |                                11.2722 |                                0.7347 |                               -0.0017 |                              0.0004 |                                 0.0008 |                                      0.0006 |                                 0.1085 |                                -0.5017 |                                14.5378 |                                1.0263 |                               -0.0021 |                              0.0006 |                                 0.001  |                                      0.0007 |                                 0.1347 |                                -0.5793 |                                18.0271 |                                1.3701 |                               -0.0024 |                              0.0007 |                                 0.0012 |                                      0.0009 |                                 0.1622 |                                -0.6516 |                                21.6659 |                                1.7638 |                               -0.0028 |                              0.0009 |                                 0.0014 |                                      0.001  |                                 0.1903 |                                -0.7179 |                                25.39   |                                2.2043 |                               -0.0031 |                              0.001  |                                 0.0016 |                                      0.0012 |                                 0.2188 |                                -0.7777 |                                29.1456 |                                2.6878 |                               -0.0034 |                              0.0012 |                                 0.0018 |                                      0.0013 |                                 0.2473 |                                -0.8311 |                                32.8888 |                                3.2105 |                               -0.0036 |                              0.0013 |                                 0.002  |                                      0.0014 |                                 0.2755 |                                -0.8783 |                                36.5845 |                                3.7688 |                               -0.0039 |                              0.0014 |                                 0.0022 |                                      0.0016 |                                 0.3033 |                                -0.9195 |                                40.2057 |                                4.3587 |                               -0.0041 |                              0.0016 |                                 0.0024 |                                      0.0017 |                                 0.3304 |                                -0.9552 |                                43.7318 |                                4.9767 |                               -0.0043 |                              0.0017 |                                 0.0026 |                                      0.0019 |                                 0.3567 |                                -0.9857 |                                47.1477 |                                5.6196 |                               -0.0044 |                              0.0019 |                                 0.0028 |                                      0.002  |                                 0.3823 |                                -1.0115 |                                50.4428 |                                6.284  |                               -0.0046 |                              0.002  |                                 0.003  |                                      0.0021 |                                 0.4069 |                                -1.0331 |                                53.6102 |                                6.9672 |                               -0.0047 |                              0.0021 |                                 0.0031 |                                      0.0023 |                                 0.4306 |                                -1.0508 |                                56.6456 |                                7.6665 |                               -0.0048 |                              0.0023 |                                 0.0033 |                                      0.0024 |                                 0.4534 |                                -1.0651 |                                59.5473 |                                8.3794 |                               -0.0049 |                              0.0024 |                                 0.0035 |                                      0.0025 |                                 0.4752 |                                -1.0763 |                                62.3153 |                                9.1039 |                               -0.005  |                              0.0025 |                                 0.0036 |                                      0.0026 |                                 0.4961 |                                -1.0848 |                                64.9507 |                                9.8379 |                               -0.0051 |                              0.0026 |                                 0.0037 |                                      0.0027 |                                 0.516  |                                -1.0908 |                                67.4562 |                               10.5796 |                               -0.0051 |                              0.0027 |
+        |            325 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0.0001 |                                 0.0011 |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0001 |                                -0.0013 |                                 0.0156 |                                0.0004 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0006 |                                -0.006  |                                 0.0902 |                                0.0027 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0021 |                                -0.0179 |                                 0.3116 |                                0.0108 |                               -0.0001 |                              0      |                                 0      |                                      0      |                                 0.0053 |                                -0.0394 |                                 0.782  |                                0.0311 |                               -0.0002 |                              0      |                                 0.0001 |                                      0.0001 |                                 0.0107 |                                -0.0713 |                                 1.5883 |                                0.071  |                               -0.0003 |                              0.0001 |                                 0.0001 |                                      0.0001 |                                 0.0189 |                                -0.1128 |                                 2.7834 |                                0.1382 |                               -0.0005 |                              0.0001 |                                 0.0002 |                                      0.0001 |                                 0.0297 |                                -0.1619 |                                 4.3836 |                                0.2393 |                               -0.0007 |                              0.0001 |                                 0.0003 |                                      0.0002 |                                 0.0433 |                                -0.2164 |                                 6.3749 |                                0.3795 |                               -0.001  |                              0.0002 |                                 0.0004 |                                      0.0003 |                                 0.0593 |                                -0.274  |                                 8.722  |                                0.5624 |                               -0.0012 |                              0.0003 |                                 0.0005 |                                      0.0004 |                                 0.0775 |                                -0.3327 |                                11.3771 |                                0.7898 |                               -0.0015 |                              0.0004 |                                 0.0006 |                                      0.0005 |                                 0.0974 |                                -0.391  |                                14.2872 |                                1.0625 |                               -0.0018 |                              0.0005 |                                 0.0008 |                                      0.0006 |                                 0.1188 |                                -0.4475 |                                17.399  |                                1.3798 |                               -0.0021 |                              0.0006 |                                 0.0009 |                                      0.0007 |                                 0.1413 |                                -0.5014 |                                20.6617 |                                1.7406 |                               -0.0023 |                              0.0007 |                                 0.0011 |                                      0.0008 |                                 0.1646 |                                -0.5521 |                                24.0293 |                                2.1429 |                               -0.0026 |                              0.0008 |                                 0.0013 |                                      0.0009 |                                 0.1884 |                                -0.5993 |                                27.4611 |                                2.5843 |                               -0.0028 |                              0.0009 |                                 0.0014 |                                      0.001  |                                 0.2124 |                                -0.6427 |                                30.9221 |                                3.0625 |                               -0.003  |                              0.001  |                                 0.0016 |                                      0.0011 |                                 0.2365 |                                -0.6823 |                                34.3825 |                                3.5746 |                               -0.0032 |                              0.0011 |                                 0.0017 |                                      0.0012 |                                 0.2605 |                                -0.7182 |                                37.8177 |                                4.1181 |                               -0.0034 |                              0.0012 |                                 0.0019 |                                      0.0013 |                                 0.2843 |                                -0.7504 |                                41.2076 |                                4.6901 |                               -0.0036 |                              0.0013 |                                 0.002  |                                      0.0014 |                                 0.3077 |                                -0.7792 |                                44.536  |                                5.2881 |                               -0.0038 |                              0.0014 |                                 0.0022 |                                      0.0015 |                                 0.3306 |                                -0.8047 |                                47.79   |                                5.9095 |                               -0.0039 |                              0.0015 |                                 0.0023 |                                      0.0016 |                                 0.3531 |                                -0.8272 |                                50.96   |                                6.552  |                               -0.004  |                              0.0016 |                                 0.0025 |                                      0.0017 |                                 0.3749 |                                -0.8468 |                                54.0383 |                                7.2134 |                               -0.0042 |                              0.0017 |                                 0.0026 |                                      0.0018 |                                 0.3962 |                                -0.8638 |                                57.0199 |                                7.8915 |                               -0.0043 |                              0.0018 |                                 0.0028 |                                      0.0019 |                                 0.4168 |                                -0.8783 |                                59.901  |                                8.5843 |                               -0.0044 |                              0.0019 |
+        |            330 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0.0001 |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0.0002 |                                 0.0026 |                                0.0001 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0001 |                                -0.0013 |                                 0.0208 |                                0.0006 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0006 |                                -0.0048 |                                 0.0909 |                                0.0029 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0017 |                                -0.0126 |                                 0.2721 |                                0.01   |                               -0.0001 |                              0      |                                 0      |                                      0      |                                 0.0039 |                                -0.0262 |                                 0.6338 |                                0.0261 |                               -0.0001 |                              0      |                                 0      |                                      0      |                                 0.0077 |                                -0.0462 |                                 1.2395 |                                0.0567 |                               -0.0002 |                              0      |                                 0.0001 |                                      0.0001 |                                 0.0133 |                                -0.0725 |                                 2.1356 |                                0.1074 |                               -0.0003 |                              0.0001 |                                 0.0001 |                                      0.0001 |                                 0.0209 |                                -0.1044 |                                 3.3471 |                                0.1836 |                               -0.0005 |                              0.0001 |                                 0.0002 |                                      0.0001 |                                 0.0305 |                                -0.1408 |                                 4.879  |                                0.2899 |                               -0.0007 |                              0.0001 |                                 0.0003 |                                      0.0002 |                                 0.0421 |                                -0.1805 |                                 6.7196 |                                0.4299 |                               -0.0009 |                              0.0002 |                                 0.0003 |                                      0.0002 |                                 0.0555 |                                -0.2223 |                                 8.8454 |                                0.6061 |                               -0.0011 |                              0.0002 |                                 0.0004 |                                      0.0003 |                                 0.0705 |                                -0.2651 |                                11.2252 |                                0.8203 |                               -0.0013 |                              0.0003 |                                 0.0005 |                                      0.0004 |                                 0.0869 |                                -0.308  |                                13.8241 |                                1.0732 |                               -0.0015 |                              0.0004 |                                 0.0006 |                                      0.0004 |                                 0.1046 |                                -0.3502 |                                16.606  |                                1.3647 |                               -0.0017 |                              0.0004 |                                 0.0008 |                                      0.0005 |                                 0.1232 |                                -0.3912 |                                19.5351 |                                1.6942 |                               -0.0019 |                              0.0005 |                                 0.0009 |                                      0.0006 |                                 0.1426 |                                -0.4306 |                                22.5782 |                                2.0607 |                               -0.0022 |                              0.0006 |                                 0.001  |                                      0.0007 |                                 0.1625 |                                -0.4679 |                                25.7044 |                                2.4628 |                               -0.0024 |                              0.0007 |                                 0.0011 |                                      0.0008 |                                 0.1829 |                                -0.5031 |                                28.8859 |                                2.8988 |                               -0.0025 |                              0.0008 |                                 0.0012 |                                      0.0008 |                                 0.2035 |                                -0.536  |                                32.0983 |                                3.3669 |                               -0.0027 |                              0.0008 |                                 0.0014 |                                      0.0009 |                                 0.2242 |                                -0.5666 |                                35.3202 |                                3.8651 |                               -0.0029 |                              0.0009 |                                 0.0015 |                                      0.001  |                                 0.2449 |                                -0.5948 |                                38.5334 |                                4.3915 |                               -0.0031 |                              0.001  |                                 0.0016 |                                      0.0011 |                                 0.2655 |                                -0.6207 |                                41.7221 |                                4.9441 |                               -0.0032 |                              0.0011 |                                 0.0017 |                                      0.0012 |                                 0.2859 |                                -0.6443 |                                44.8734 |                                5.5208 |                               -0.0033 |                              0.0012 |                                 0.0019 |                                      0.0013 |                                 0.3061 |                                -0.6658 |                                47.9762 |                                6.1199 |                               -0.0035 |                              0.0013 |                                 0.002  |                                      0.0014 |                                 0.326  |                                -0.6852 |                                51.0219 |                                6.7394 |                               -0.0036 |                              0.0014 |
+        |            335 |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0      |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0      |                                 0.0004 |                                0      |                               -0      |                              0      |                                 0      |                                      0      |                                 0      |                                -0.0002 |                                 0.0042 |                                0.0001 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0001 |                                -0.0012 |                                 0.0238 |                                0.0007 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0005 |                                -0.0037 |                                 0.086  |                                0.0029 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0013 |                                -0.0089 |                                 0.232  |                                0.0089 |                               -0      |                              0      |                                 0      |                                      0      |                                 0.0029 |                                -0.0176 |                                 0.5099 |                                0.0216 |                               -0.0001 |                              0      |                                 0      |                                      0      |                                 0.0056 |                                -0.0304 |                                 0.9667 |                                0.0451 |                               -0.0002 |                              0      |                                 0.0001 |                                      0      |                                 0.0095 |                                -0.0474 |                                 1.6409 |                                0.0835 |                               -0.0002 |                              0      |                                 0.0001 |                                      0.0001 |                                 0.0148 |                                -0.0684 |                                 2.5589 |                                0.1411 |                               -0.0004 |                              0.0001 |                                 0.0001 |                                      0.0001 |                                 0.0217 |                                -0.0929 |                                 3.7341 |                                0.2217 |                               -0.0005 |                              0.0001 |                                 0.0002 |                                      0.0001 |                                 0.03   |                                -0.1202 |                                 5.1681 |                                0.3287 |                               -0.0006 |                              0.0001 |                                 0.0002 |                                      0.0001 |                                 0.0399 |                                -0.1498 |                                 6.8528 |                                0.4648 |                               -0.0008 |                              0.0001 |                                 0.0003 |                                      0.0002 |                                 0.0511 |                                -0.1809 |                                 8.7727 |                                0.6321 |                               -0.0009 |                              0.0002 |                                 0.0004 |                                      0.0002 |                                 0.0636 |                                -0.2128 |                                10.9072 |                                0.832  |                               -0.0011 |                              0.0002 |                                 0.0004 |                                      0.0003 |                                 0.0773 |                                -0.2452 |                                13.2328 |                                1.0653 |                               -0.0013 |                              0.0003 |                                 0.0005 |                                      0.0003 |                                 0.092  |                                -0.2774 |                                15.7244 |                                1.3322 |                               -0.0015 |                              0.0003 |                                 0.0006 |                                      0.0004 |                                 0.1075 |                                -0.309  |                                18.3569 |                                1.6327 |                               -0.0016 |                              0.0004 |                                 0.0007 |                                      0.0005 |                                 0.1237 |                                -0.3399 |                                21.1055 |                                1.9662 |                               -0.0018 |                              0.0005 |                                 0.0008 |                                      0.0005 |                                 0.1406 |                                -0.3697 |                                23.947  |                                2.3318 |                               -0.002  |                              0.0005 |                                 0.0009 |                                      0.0006 |                                 0.1578 |                                -0.3982 |                                26.8596 |                                2.7286 |                               -0.0022 |                              0.0006 |                                 0.001  |                                      0.0007 |                                 0.1755 |                                -0.4254 |                                29.8235 |                                3.1553 |                               -0.0023 |                              0.0007 |                                 0.0011 |                                      0.0007 |                                 0.1933 |                                -0.4511 |                                32.8207 |                                3.6106 |                               -0.0025 |                              0.0007 |                                 0.0012 |                                      0.0008 |                                 0.2114 |                                -0.4753 |                                35.8352 |                                4.0931 |                               -0.0026 |                              0.0008 |                                 0.0013 |                                      0.0009 |                                 0.2294 |                                -0.498  |                                38.8528 |                                4.6012 |                               -0.0027 |                              0.0009 |                                 0.0014 |                                      0.0009 |                                 0.2475 |                                -0.5192 |                                41.8612 |                                5.1335 |                               -0.0029 |                              0.0009 |
         """
         greeks = {}
 
@@ -4695,6 +5334,12 @@ class Options:
 
         Note that the gamma of a call option and put option are equal to each other.
 
+        Gamma is largest for at-the-money options close to expiry, which is where a delta hedge needs the most
+        frequent rebalancing and where a short option position can lose money fastest on a sharp move. Because it
+        is per $1 move in the underlying, it is not comparable across stocks with different prices; risk reports
+        therefore use dollar gamma (Gamma x S^2 / 100, the change in the dollar delta for a 1% move) when they add
+        up gamma across underlyings.
+
         Also known as: rate of change of delta, option convexity.
 
         Args:
@@ -4704,12 +5349,15 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
                 means it will use the current dividend yield.
-            means it will use the current risk free rate.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -4725,29 +5373,31 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["PFE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_gamma().loc["AAPL"]
+        toolkit.options.get_gamma(
+            strike_price_range=0.2, strike_step_size=1
+        ).loc["PFE", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0013 |       0.0039 |       0.0065 |       0.0086 |       0.0101 |       0.0113 |       0.0122 |       0.0128 |
-        |            295 |            0 |       0.0001 |       0.0009 |       0.0021 |       0.0035 |       0.0049 |       0.0061 |       0.0071 |       0.0079 |
-        |            300 |            0 |       0      |       0.0001 |       0.0006 |       0.0012 |       0.002  |       0.0028 |       0.0036 |       0.0044 |
-        |            305 |            0 |       0      |       0      |       0.0001 |       0.0004 |       0.0007 |       0.0012 |       0.0017 |       0.0022 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0004 |       0.0007 |       0.001  |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0003 |       0.0004 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             19 |       0      |       0      |       0.0002 |
+        |             20 |       0      |       0      |       0.0022 |
+        |             21 |       0      |       0.0012 |       0.0135 |
+        |             22 |       0.0013 |       0.0165 |       0.0502 |
+        |             23 |       0.0395 |       0.0929 |       0.1195 |
+        |             24 |       0.2623 |       0.2399 |       0.1926 |
+        |             25 |       0.4395 |       0.3114 |       0.2199 |
+        |             26 |       0.2178 |       0.2197 |       0.1852 |
+        |             27 |       0.0366 |       0.0903 |       0.119  |
+        |             28 |       0.0023 |       0.0229 |       0.0601 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4782,7 +5432,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -4863,7 +5513,7 @@ class Options:
 
         Note that the dual gamma of a call option and put option are equal to each other.
 
-        Also known as: cash gamma, binary option gamma.
+        Also known as: strike gamma, binary option gamma.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -4872,10 +5522,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -4893,29 +5546,31 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["T"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_dual_gamma().loc["AAPL"]
+        toolkit.options.get_dual_gamma(
+            strike_price_range=0.2, strike_step_size=1
+        ).loc["T", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0011 |       0.0034 |       0.0057 |       0.0075 |       0.0089 |       0.0099 |       0.0106 |       0.0112 |
-        |            295 |            0 |       0.0001 |       0.0007 |       0.0018 |       0.003  |       0.0041 |       0.0051 |       0.006  |       0.0067 |
-        |            300 |            0 |       0      |       0.0001 |       0.0005 |       0.001  |       0.0016 |       0.0023 |       0.003  |       0.0036 |
-        |            305 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0009 |       0.0013 |       0.0018 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0008 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             19 |       0      |       0      |       0      |
+        |             20 |       0      |       0      |       0.0007 |
+        |             21 |       0      |       0.0003 |       0.008  |
+        |             22 |       0.0003 |       0.0089 |       0.0445 |
+        |             23 |       0.0254 |       0.0864 |       0.1339 |
+        |             24 |       0.2943 |       0.2846 |       0.235  |
+        |             25 |       0.5063 |       0.3616 |       0.2566 |
+        |             26 |       0.1612 |       0.198  |       0.1842 |
+        |             27 |       0.0115 |       0.0513 |       0.0911 |
+        |             28 |       0.0002 |       0.0068 |       0.0323 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -4950,7 +5605,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5044,10 +5699,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -5065,29 +5723,38 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["DIS"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_vanna().loc["AAPL"]
+        toolkit.options.get_vanna(
+            strike_price_range=0.15, strike_step_size=2, expiration_time_range=91
+        ).loc["DIS", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |        0.002 |       0.0727 |       0.2189 |       0.3641 |       0.482  |       0.5714 |       0.6378 |       0.6864 |       0.7219 |
-        |            295 |        0     |       0.0098 |       0.0625 |       0.1511 |       0.2501 |       0.3443 |       0.4275 |       0.4984 |       0.5577 |
-        |            300 |        0     |       0.0008 |       0.0126 |       0.0477 |       0.1035 |       0.1705 |       0.2407 |       0.3089 |       0.3725 |
-        |            305 |        0     |       0      |       0.0019 |       0.0118 |       0.035  |       0.0709 |       0.1162 |       0.1667 |       0.2193 |
-        |            310 |        0     |       0      |       0.0002 |       0.0023 |       0.0098 |       0.0252 |       0.0488 |       0.0795 |       0.1153 |
-        |            315 |        0     |       0      |       0      |       0.0004 |       0.0023 |       0.0077 |       0.018  |       0.0338 |       0.0547 |
-        |            320 |        0     |       0      |       0      |       0      |       0.0005 |       0.0021 |       0.0059 |       0.0129 |       0.0236 |
-        |            325 |        0     |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0017 |       0.0045 |       0.0093 |
-        |            330 |        0     |       0      |       0      |       0      |       0      |       0.0001 |       0.0005 |       0.0014 |       0.0034 |
-        |            335 |        0     |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0004 |       0.0011 |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             96 |      -0.3179 |      -0.595  |      -0.6673 |
+        |             98 |      -0.4447 |      -0.6644 |      -0.6908 |
+        |            100 |      -0.5731 |      -0.706  |      -0.6877 |
+        |            102 |      -0.6795 |      -0.7113 |      -0.6555 |
+        |            104 |      -0.7374 |      -0.675  |      -0.5938 |
+        |            106 |      -0.7246 |      -0.5954 |      -0.504  |
+        |            108 |      -0.6296 |      -0.4753 |      -0.3894 |
+        |            110 |      -0.455  |      -0.3212 |      -0.2548 |
+        |            112 |      -0.2189 |      -0.1429 |      -0.1063 |
+        |            114 |       0.0498 |       0.048  |       0.0496 |
+        |            116 |       0.3172 |       0.2394 |       0.2062 |
+        |            118 |       0.5518 |       0.4196 |       0.3572 |
+        |            120 |       0.73   |       0.5791 |       0.4969 |
+        |            122 |       0.8397 |       0.7104 |       0.621  |
+        |            124 |       0.8799 |       0.8092 |       0.7259 |
+        |            126 |       0.8593 |       0.874  |       0.8096 |
+        |            128 |       0.7923 |       0.9055 |       0.8713 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5122,7 +5789,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5220,10 +5887,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             put_option (bool, optional): Whether to calculate the put option charm. Defaults to False which means
@@ -5243,29 +5913,42 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["HD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_charm().loc["AAPL"]
+        toolkit.options.get_charm(
+            strike_price_range=0.15, strike_step_size=5
+        ).loc["HD", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.1219 |      -2.1684 |      -4.3673 |      -5.466  |      -5.8053 |      -5.7531 |      -5.52   |      -5.214  |      -4.8883 |
-        |            295 |      -0.0018 |      -0.2932 |      -1.2452 |      -2.2622 |      -3.0038 |      -3.4539 |      -3.6845 |      -3.7674 |      -3.7563 |
-        |            300 |      -0      |      -0.0241 |      -0.2509 |      -0.7139 |      -1.2405 |      -1.7063 |      -2.0685 |      -2.3276 |      -2.5    |
-        |            305 |      -0      |      -0.0012 |      -0.0368 |      -0.1762 |      -0.4184 |      -0.7087 |      -0.9966 |      -1.2536 |      -1.4681 |
-        |            310 |      -0      |      -0      |      -0.004  |      -0.0347 |      -0.1172 |      -0.2513 |      -0.4181 |      -0.5965 |      -0.7705 |
-        |            315 |      -0      |      -0      |      -0.0003 |      -0.0055 |      -0.0276 |      -0.077  |      -0.1544 |      -0.2533 |      -0.3648 |
-        |            320 |      -0      |      -0      |      -0      |      -0.0007 |      -0.0056 |      -0.0206 |      -0.0506 |      -0.0968 |      -0.1571 |
-        |            325 |      -0      |      -0      |      -0      |      -0.0001 |      -0.001  |      -0.0048 |      -0.0149 |      -0.0335 |      -0.0619 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.001  |      -0.0039 |      -0.0106 |      -0.0225 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0002 |      -0.0009 |      -0.0031 |      -0.0075 |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            290 |       0.0264 |       0.0405 |       0.1976 |
+        |            295 |       0.0268 |       0.0759 |       0.3318 |
+        |            300 |       0.0307 |       0.1725 |       0.5237 |
+        |            305 |       0.057  |       0.3912 |       0.7661 |
+        |            310 |       0.1842 |       0.8002 |       1.0313 |
+        |            315 |       0.6282 |       1.4225 |       1.2703 |
+        |            320 |       1.7329 |       2.1637 |       1.4208 |
+        |            325 |       3.6145 |       2.778  |       1.4233 |
+        |            330 |       5.5276 |       2.9353 |       1.2407 |
+        |            335 |       5.8386 |       2.3899 |       0.8728 |
+        |            340 |       3.3619 |       1.1522 |       0.3608 |
+        |            345 |      -1.0897 |      -0.4685 |      -0.2214 |
+        |            350 |      -5.0645 |      -1.9986 |      -0.7863 |
+        |            355 |      -6.6129 |      -3.026  |      -1.2543 |
+        |            360 |      -5.7284 |      -3.3722 |      -1.5715 |
+        |            365 |      -3.7535 |      -3.1179 |      -1.7176 |
+        |            370 |      -1.9567 |      -2.5018 |      -1.7047 |
+        |            375 |      -0.8339 |      -1.7829 |      -1.5677 |
+        |            380 |      -0.2958 |      -1.1446 |      -1.3518 |
+        |            385 |      -0.0885 |      -0.6684 |      -1.1018 |
+        |            390 |      -0.0225 |      -0.3577 |      -0.8537 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5300,7 +5983,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5394,10 +6077,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -5415,29 +6101,41 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["UNH"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_vomma().loc["AAPL"]
+        toolkit.options.get_vomma(
+            strike_price_range=0.15, strike_step_size=5, expiration_time_range=91
+        ).loc["UNH", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       0.1147 |       4.0503 |      12.1539 |      20.1454 |      26.5649 |      31.3784 |      34.8886 |      37.4084 |      39.19   |
-        |            295 |       0.0021 |       0.6886 |       4.3631 |      10.5122 |      17.3543 |      23.8166 |      29.4816 |      34.2668 |      38.2294 |
-        |            300 |       0      |       0.0679 |       1.0569 |       3.9921 |       8.6324 |      14.1844 |      19.971  |      25.5686 |      30.756  |
-        |            305 |       0      |       0.0041 |       0.1806 |       1.1491 |       3.3979 |       6.8791 |      11.2436 |      16.1003 |      21.1301 |
-        |            310 |       0      |       0.0002 |       0.0225 |       0.2578 |       1.086  |       2.7837 |       5.3854 |       8.7516 |      12.6739 |
-        |            315 |       0      |       0      |       0.0021 |       0.046  |       0.2872 |       0.9566 |       2.2315 |       4.1727 |       6.7401 |
-        |            320 |       0      |       0      |       0.0001 |       0.0067 |       0.0638 |       0.283  |       0.8102 |       1.7664 |       3.2153 |
-        |            325 |       0      |       0      |       0      |       0.0008 |       0.0121 |       0.0729 |       0.2604 |       0.6704 |       1.3886 |
-        |            330 |       0      |       0      |       0      |       0.0001 |       0.002  |       0.0165 |       0.0748 |       0.23   |       0.5471 |
-        |            335 |       0      |       0      |       0      |       0      |       0.0003 |       0.0033 |       0.0193 |       0.0718 |       0.1979 |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            280 |      51.2037 |      52.1525 |      47.8087 |
+        |            285 |      47.8315 |      45.2094 |      40.3451 |
+        |            290 |      42.7785 |      37.8599 |      32.9563 |
+        |            295 |      36.4224 |      30.4288 |      25.8629 |
+        |            300 |      29.2618 |      23.2357 |      19.2678 |
+        |            305 |      21.867  |      16.58   |      13.3503 |
+        |            310 |      14.8246 |      10.7274 |       8.2623 |
+        |            315 |       8.6826 |       5.8997 |       4.1252 |
+        |            320 |       3.903  |       2.267  |       1.0283 |
+        |            325 |       0.8248 |      -0.0555 |      -0.9713 |
+        |            330 |      -0.3565 |      -1.0091 |      -1.8478 |
+        |            335 |       0.4043 |      -0.5893 |      -1.605  |
+        |            340 |       3.0105 |       1.1584 |      -0.274  |
+        |            345 |       7.2433 |       4.1444 |       2.0906 |
+        |            350 |      12.7898 |       8.2425 |       5.4135 |
+        |            355 |      19.2757 |      13.2979 |       9.6027 |
+        |            360 |      26.2986 |      19.1359 |      14.5533 |
+        |            365 |      33.459  |      25.5694 |      20.1513 |
+        |            370 |      40.3869 |      32.4074 |      26.2771 |
+        |            375 |      46.762  |      39.4615 |      32.8086 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5472,7 +6170,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5568,10 +6266,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -5589,29 +6290,37 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["LLY"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_vera().loc["AAPL"]
+        toolkit.options.get_vera(
+            strike_price_range=0.15, strike_step_size=20, expiration_time_range=181
+        ).loc["LLY", ["2026-01-30", "2026-03-31", "2026-06-29"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       0.0015 |       0.107  |       0.4814 |       1.0633 |       1.7516 |       2.4813 |       3.2167 |       3.9394 |       4.6401 |
-        |            295 |       0      |       0.0145 |       0.1379 |       0.4427 |       0.9131 |       1.5031 |       2.1696 |       2.8806 |       3.6137 |
-        |            300 |       0      |       0.0012 |       0.0279 |       0.1403 |       0.3789 |       0.7469 |       1.2264 |       1.7937 |       2.4263 |
-        |            305 |       0      |       0.0001 |       0.0041 |       0.0347 |       0.1283 |       0.3115 |       0.5938 |       0.9714 |       1.4337 |
-        |            310 |       0      |       0      |       0.0004 |       0.0068 |       0.036  |       0.1108 |       0.25   |       0.4641 |       0.7559 |
-        |            315 |       0      |       0      |       0      |       0.0011 |       0.0085 |       0.034  |       0.0925 |       0.1977 |       0.3592 |
-        |            320 |       0      |       0      |       0      |       0.0001 |       0.0017 |       0.0091 |       0.0304 |       0.0758 |       0.1551 |
-        |            325 |       0      |       0      |       0      |       0      |       0.0003 |       0.0021 |       0.0089 |       0.0263 |       0.0613 |
-        |            330 |       0      |       0      |       0      |       0      |       0      |       0.0004 |       0.0024 |       0.0083 |       0.0223 |
-        |            335 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0006 |       0.0024 |       0.0075 |
+        |   Strike Price |   2026-01-30 |   2026-03-31 |   2026-06-29 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            920 |     -45.0097 |    -157.22   |    -295.3    |
+        |            940 |     -50.1028 |    -152.347  |    -280.257  |
+        |            960 |     -52.655  |    -143.627  |    -261.579  |
+        |            980 |     -52.0124 |    -131.274  |    -239.616  |
+        |           1000 |     -47.8631 |    -115.645  |    -214.77   |
+        |           1020 |     -40.3005 |     -97.2153 |    -187.477  |
+        |           1040 |     -29.8155 |     -76.5467 |    -158.194  |
+        |           1060 |     -17.222  |     -54.2559 |    -127.389  |
+        |           1080 |      -3.5353 |     -30.9814 |     -95.5245 |
+        |           1100 |      10.1718 |      -7.3538 |     -63.0514 |
+        |           1120 |      22.905  |      16.0301 |     -30.3978 |
+        |           1140 |      33.8572 |      38.6281 |       2.0364 |
+        |           1160 |      42.4753 |      59.9686 |      33.8855 |
+        |           1180 |      48.4829 |      79.6604 |      64.8218 |
+        |           1200 |      51.8631 |      97.3981 |      94.5578 |
+        |           1220 |      52.8138 |     112.963  |     122.847  |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5646,7 +6355,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5722,13 +6431,13 @@ class Options:
         volatility, t is the time to expiration, N'(d1) is the standard normal probability density at d1 and N(d2) is
         the cumulative normal distribution of d2.
 
-        The formula as usually published carries a leading minus sign because it differentiates with respect to the
-        time to maturity, which runs opposite to elapsed calendar time. That sign is absorbed here so that Veta,
-        like Theta, Charm and Color, measures the change per unit of time that passes: a long option loses Vega as
-        expiry approaches, so its Veta is negative.
+        This expression equals dVega/dt, the change in Vega as calendar time passes (the negative of the derivative
+        with respect to the remaining time to maturity t), and is used as is, without a change of sign. Veta thus,
+        like Theta, Charm and Color, measures the change per unit of time that passes: an option close to the money
+        loses Vega as expiry approaches, so its Veta is typically negative.
 
         It is common practice to divide the mathematical result of veta by 100 times the number of days per year to
-        reduce the value to the percentage change in vega per one day. This is also done here.
+        express it as the change in Vega (per percentage point of volatility) per calendar day. This is also done here.
 
         The Veta can be interpreted as follows:
 
@@ -5746,10 +6455,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -5767,29 +6479,35 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["AZO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_veta().loc["AAPL"]
+        toolkit.options.get_veta(
+            strike_price_range=0.1, strike_step_size=50
+        ).loc["AZO", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.0002 |      -0.0037 |      -0.0079 |      -0.0104 |      -0.0116 |      -0.012  |      -0.012  |      -0.0118 |      -0.0115 |
-        |            295 |      -0      |      -0.0006 |      -0.0027 |      -0.005  |      -0.0069 |      -0.0081 |      -0.0089 |      -0.0094 |      -0.0096 |
-        |            300 |      -0      |      -0.0001 |      -0.0006 |      -0.0018 |      -0.0032 |      -0.0045 |      -0.0056 |      -0.0065 |      -0.0071 |
-        |            305 |      -0      |      -0      |      -0.0001 |      -0.0005 |      -0.0012 |      -0.0021 |      -0.003  |      -0.0039 |      -0.0046 |
-        |            310 |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0008 |      -0.0014 |      -0.002  |      -0.0027 |
-        |            315 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.0006 |      -0.0009 |      -0.0014 |
-        |            320 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0002 |      -0.0004 |      -0.0006 |
-        |            325 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0001 |      -0.0003 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |      -0      |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |           3050 |      -0.0051 |      -0.0325 |      -0.0541 |
+        |           3100 |      -0.0189 |      -0.0561 |      -0.0651 |
+        |           3150 |      -0.051  |      -0.0816 |      -0.0722 |
+        |           3200 |      -0.1    |      -0.1011 |      -0.0746 |
+        |           3250 |      -0.1436 |      -0.1082 |      -0.0728 |
+        |           3300 |      -0.1551 |      -0.1037 |      -0.0692 |
+        |           3350 |      -0.1403 |      -0.096  |      -0.0664 |
+        |           3400 |      -0.1344 |      -0.0946 |      -0.0665 |
+        |           3450 |      -0.1525 |      -0.1026 |      -0.0701 |
+        |           3500 |      -0.1688 |      -0.1146 |      -0.0762 |
+        |           3550 |      -0.154  |      -0.1213 |      -0.0826 |
+        |           3600 |      -0.1108 |      -0.1163 |      -0.0869 |
+        |           3650 |      -0.063  |      -0.0994 |      -0.0875 |
+        |           3700 |      -0.0288 |      -0.0759 |      -0.0835 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5824,7 +6542,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -5884,7 +6602,8 @@ class Options:
         """
         Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
         is a mathematical model used to estimate the price of European—style options. The partial derivative is
-        the rate of change of the option price with respect to the strike price.
+        the second derivative of the option price with respect to the strike price, the rate at which the dual
+        delta changes with the strike.
 
         Note that this uses a single, flat assumed volatility (the same value at every strike price) rather than
         the market's actual implied volatility smile. This means it is NOT the Breeden-Litzenberger risk-neutral
@@ -5904,7 +6623,7 @@ class Options:
         e^(—r * t) * N'(d2) / (K * σ * sqrt(t)), i.e. to the Dual Gamma, since both are the second derivative of the
         option price with respect to the strike price.
 
-        Also known as: numerical derivative, option sensitivity.
+        Also known as: second strike derivative, lognormal risk-neutral density.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -5913,10 +6632,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -5934,29 +6656,43 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["BAC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_partial_derivative().loc["AAPL"]
+        toolkit.options.get_partial_derivative(
+            strike_price_range=0.2, strike_step_size=1
+        ).loc["BAC", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0011 |       0.0034 |       0.0057 |       0.0075 |       0.0089 |       0.0099 |       0.0106 |       0.0112 |
-        |            295 |            0 |       0.0001 |       0.0007 |       0.0018 |       0.003  |       0.0041 |       0.0051 |       0.006  |       0.0067 |
-        |            300 |            0 |       0      |       0.0001 |       0.0005 |       0.001  |       0.0016 |       0.0023 |       0.003  |       0.0036 |
-        |            305 |            0 |       0      |       0      |       0.0001 |       0.0003 |       0.0006 |       0.0009 |       0.0013 |       0.0018 |
-        |            310 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0005 |       0.0008 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0003 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             44 |       0      |       0      |       0.0014 |
+        |             45 |       0      |       0.0001 |       0.0032 |
+        |             46 |       0      |       0.0005 |       0.0066 |
+        |             47 |       0      |       0.0019 |       0.0124 |
+        |             48 |       0.0003 |       0.0056 |       0.0213 |
+        |             49 |       0.0017 |       0.014  |       0.0332 |
+        |             50 |       0.008  |       0.0296 |       0.0478 |
+        |             51 |       0.0269 |       0.0536 |       0.0635 |
+        |             52 |       0.0665 |       0.0833 |       0.0783 |
+        |             53 |       0.1241 |       0.1125 |       0.09   |
+        |             54 |       0.1769 |       0.1328 |       0.0967 |
+        |             55 |       0.1956 |       0.1382 |       0.0975 |
+        |             56 |       0.1701 |       0.1275 |       0.0927 |
+        |             57 |       0.1178 |       0.105  |       0.0832 |
+        |             58 |       0.0657 |       0.0776 |       0.0708 |
+        |             59 |       0.0299 |       0.0518 |       0.0573 |
+        |             60 |       0.0112 |       0.0314 |       0.0441 |
+        |             61 |       0.0035 |       0.0173 |       0.0325 |
+        |             62 |       0.0009 |       0.0088 |       0.0229 |
+        |             63 |       0.0002 |       0.0041 |       0.0155 |
+        |             64 |       0      |       0.0018 |       0.0101 |
+        |             65 |       0      |       0.0007 |       0.0063 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -5991,7 +6727,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6061,9 +6797,12 @@ class Options:
         For a deeper explanation, please have a look at: https://en.wikipedia.org/wiki/Greeks_(finance) and the
         references to the literature as found on this page.
 
-        By default the most recent risk free rate, dividend yield and stock price is used, you can alter this by changing
-        the start date. The volatility is calculated based on the daily returns of the stock price and the selected
-        period (this can be altered by defining this accordingly when defining the Toolkit class, start_date and end_date).
+        By default the stock price (the traded close), risk free rate, dividend yield and volatility of the most recent
+        date are used; changing the start date prices the option as of that date instead. The volatility is the
+        annualized standard deviation of the daily returns over the year before that date and the dividend yield the
+        dividends of the 365 days up to that date relative to its close, so an earlier start date only uses what was
+        known on that date. The exception is a date in the first year of the price history: without a full year
+        before it, it takes the dividend yield of the first date that has one.
 
         Args:
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
@@ -6072,10 +6811,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -6104,36 +6846,36 @@ class Options:
 
         Which returns:
 
-        |   Strike Price |   (Period('2026-01-29', 'D'), 'Speed') |   (Period('2026-01-29', 'D'), 'Zomma') |   (Period('2026-01-29', 'D'), 'Color') |
-        |---------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|
-        |            215 |                                -0.0001 |                                 0.0048 |                                -0.018  |
-        |            220 |                                -0.0001 |                                 0.0044 |                                -0.0166 |
-        |            225 |                                -0.0001 |                                 0.0038 |                                -0.0139 |
-        |            230 |                                -0.0001 |                                 0.0028 |                                -0.0099 |
-        |            235 |                                -0.0001 |                                 0.0015 |                                -0.0047 |
-        |            240 |                                -0.0001 |                                -0.0001 |                                 0.0015 |
-        |            245 |                                -0.0001 |                                -0.0018 |                                 0.0084 |
-        |            250 |                                -0.0001 |                                -0.0037 |                                 0.0157 |
-        |            255 |                                -0.0001 |                                -0.0056 |                                 0.023  |
-        |            260 |                                -0.0001 |                                -0.0074 |                                 0.0301 |
-        |            265 |                                -0.0001 |                                -0.009  |                                 0.0364 |
-        |            270 |                                -0.0001 |                                -0.0104 |                                 0.0418 |
-        |            275 |                                -0.0001 |                                -0.0115 |                                 0.046  |
-        |            280 |                                -0.0001 |                                -0.0123 |                                 0.0488 |
-        |            285 |                                -0      |                                -0.0127 |                                 0.0501 |
-        |            290 |                                -0      |                                -0.0127 |                                 0.05   |
-        |            295 |                                -0      |                                -0.0123 |                                 0.0485 |
-        |            300 |                                 0      |                                -0.0117 |                                 0.0456 |
-        |            305 |                                 0      |                                -0.0107 |                                 0.0417 |
-        |            310 |                                 0      |                                -0.0095 |                                 0.0368 |
-        |            315 |                                 0      |                                -0.0081 |                                 0.0313 |
-        |            320 |                                 0.0001 |                                -0.0066 |                                 0.0252 |
-        |            325 |                                 0.0001 |                                -0.0051 |                                 0.019  |
-        |            330 |                                 0.0001 |                                -0.0035 |                                 0.0127 |
-        |            335 |                                 0.0001 |                                -0.0019 |                                 0.0065 |
-        |            340 |                                 0.0001 |                                -0.0005 |                                 0.0007 |
-        |            345 |                                 0.0001 |                                 0.0009 |                                -0.0047 |
-        |            350 |                                 0.0001 |                                 0.0021 |                                -0.0095 |
+        |   Strike Price |   (Period('2026-01-01', 'D'), 'Speed') |   (Period('2026-01-01', 'D'), 'Zomma') |   (Period('2026-01-01', 'D'), 'Color') |   (Period('2026-01-01', 'D'), 'Ultima') |   (Period('2026-01-02', 'D'), 'Speed') |   (Period('2026-01-02', 'D'), 'Zomma') |   (Period('2026-01-02', 'D'), 'Color') |   (Period('2026-01-02', 'D'), 'Ultima') |   (Period('2026-01-03', 'D'), 'Speed') |   (Period('2026-01-03', 'D'), 'Zomma') |   (Period('2026-01-03', 'D'), 'Color') |   (Period('2026-01-03', 'D'), 'Ultima') |   (Period('2026-01-04', 'D'), 'Speed') |   (Period('2026-01-04', 'D'), 'Zomma') |   (Period('2026-01-04', 'D'), 'Color') |   (Period('2026-01-04', 'D'), 'Ultima') |   (Period('2026-01-05', 'D'), 'Speed') |   (Period('2026-01-05', 'D'), 'Zomma') |   (Period('2026-01-05', 'D'), 'Color') |   (Period('2026-01-05', 'D'), 'Ultima') |   (Period('2026-01-06', 'D'), 'Speed') |   (Period('2026-01-06', 'D'), 'Zomma') |   (Period('2026-01-06', 'D'), 'Color') |   (Period('2026-01-06', 'D'), 'Ultima') |   (Period('2026-01-07', 'D'), 'Speed') |   (Period('2026-01-07', 'D'), 'Zomma') |   (Period('2026-01-07', 'D'), 'Color') |   (Period('2026-01-07', 'D'), 'Ultima') |   (Period('2026-01-08', 'D'), 'Speed') |   (Period('2026-01-08', 'D'), 'Zomma') |   (Period('2026-01-08', 'D'), 'Color') |   (Period('2026-01-08', 'D'), 'Ultima') |   (Period('2026-01-09', 'D'), 'Speed') |   (Period('2026-01-09', 'D'), 'Zomma') |   (Period('2026-01-09', 'D'), 'Color') |   (Period('2026-01-09', 'D'), 'Ultima') |   (Period('2026-01-10', 'D'), 'Speed') |   (Period('2026-01-10', 'D'), 'Zomma') |   (Period('2026-01-10', 'D'), 'Color') |   (Period('2026-01-10', 'D'), 'Ultima') |   (Period('2026-01-11', 'D'), 'Speed') |   (Period('2026-01-11', 'D'), 'Zomma') |   (Period('2026-01-11', 'D'), 'Color') |   (Period('2026-01-11', 'D'), 'Ultima') |   (Period('2026-01-12', 'D'), 'Speed') |   (Period('2026-01-12', 'D'), 'Zomma') |   (Period('2026-01-12', 'D'), 'Color') |   (Period('2026-01-12', 'D'), 'Ultima') |   (Period('2026-01-13', 'D'), 'Speed') |   (Period('2026-01-13', 'D'), 'Zomma') |   (Period('2026-01-13', 'D'), 'Color') |   (Period('2026-01-13', 'D'), 'Ultima') |   (Period('2026-01-14', 'D'), 'Speed') |   (Period('2026-01-14', 'D'), 'Zomma') |   (Period('2026-01-14', 'D'), 'Color') |   (Period('2026-01-14', 'D'), 'Ultima') |   (Period('2026-01-15', 'D'), 'Speed') |   (Period('2026-01-15', 'D'), 'Zomma') |   (Period('2026-01-15', 'D'), 'Color') |   (Period('2026-01-15', 'D'), 'Ultima') |   (Period('2026-01-16', 'D'), 'Speed') |   (Period('2026-01-16', 'D'), 'Zomma') |   (Period('2026-01-16', 'D'), 'Color') |   (Period('2026-01-16', 'D'), 'Ultima') |   (Period('2026-01-17', 'D'), 'Speed') |   (Period('2026-01-17', 'D'), 'Zomma') |   (Period('2026-01-17', 'D'), 'Color') |   (Period('2026-01-17', 'D'), 'Ultima') |   (Period('2026-01-18', 'D'), 'Speed') |   (Period('2026-01-18', 'D'), 'Zomma') |   (Period('2026-01-18', 'D'), 'Color') |   (Period('2026-01-18', 'D'), 'Ultima') |   (Period('2026-01-19', 'D'), 'Speed') |   (Period('2026-01-19', 'D'), 'Zomma') |   (Period('2026-01-19', 'D'), 'Color') |   (Period('2026-01-19', 'D'), 'Ultima') |   (Period('2026-01-20', 'D'), 'Speed') |   (Period('2026-01-20', 'D'), 'Zomma') |   (Period('2026-01-20', 'D'), 'Color') |   (Period('2026-01-20', 'D'), 'Ultima') |   (Period('2026-01-21', 'D'), 'Speed') |   (Period('2026-01-21', 'D'), 'Zomma') |   (Period('2026-01-21', 'D'), 'Color') |   (Period('2026-01-21', 'D'), 'Ultima') |   (Period('2026-01-22', 'D'), 'Speed') |   (Period('2026-01-22', 'D'), 'Zomma') |   (Period('2026-01-22', 'D'), 'Color') |   (Period('2026-01-22', 'D'), 'Ultima') |   (Period('2026-01-23', 'D'), 'Speed') |   (Period('2026-01-23', 'D'), 'Zomma') |   (Period('2026-01-23', 'D'), 'Color') |   (Period('2026-01-23', 'D'), 'Ultima') |   (Period('2026-01-24', 'D'), 'Speed') |   (Period('2026-01-24', 'D'), 'Zomma') |   (Period('2026-01-24', 'D'), 'Color') |   (Period('2026-01-24', 'D'), 'Ultima') |   (Period('2026-01-25', 'D'), 'Speed') |   (Period('2026-01-25', 'D'), 'Zomma') |   (Period('2026-01-25', 'D'), 'Color') |   (Period('2026-01-25', 'D'), 'Ultima') |   (Period('2026-01-26', 'D'), 'Speed') |   (Period('2026-01-26', 'D'), 'Zomma') |   (Period('2026-01-26', 'D'), 'Color') |   (Period('2026-01-26', 'D'), 'Ultima') |   (Period('2026-01-27', 'D'), 'Speed') |   (Period('2026-01-27', 'D'), 'Zomma') |   (Period('2026-01-27', 'D'), 'Color') |   (Period('2026-01-27', 'D'), 'Ultima') |   (Period('2026-01-28', 'D'), 'Speed') |   (Period('2026-01-28', 'D'), 'Zomma') |   (Period('2026-01-28', 'D'), 'Color') |   (Period('2026-01-28', 'D'), 'Ultima') |   (Period('2026-01-29', 'D'), 'Speed') |   (Period('2026-01-29', 'D'), 'Zomma') |   (Period('2026-01-29', 'D'), 'Color') |   (Period('2026-01-29', 'D'), 'Ultima') |
+        |---------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|---------------------------------------:|---------------------------------------:|---------------------------------------:|----------------------------------------:|
+        |            215 |                                -0      |                                 0      |                                -0      |                                  0      |                                -0      |                                 0      |                                -0      |                                  0.0002 |                                -0      |                                 0      |                                -0.0001 |                                  0.0462 |                                -0      |                                 0      |                                -0.0012 |                                  0.6517 |                                -0      |                                 0.0002 |                                -0.0046 |                                  2.8961 |                                -0      |                                 0.0005 |                                -0.01   |                                  7.3099 |                                -0      |                                 0.001  |                                -0.0163 |                                 13.4344 |                                -0      |                                 0.0016 |                                -0.0224 |                                 20.3143 |                                -0      |                                 0.0022 |                                -0.0277 |                                 27.0161 |                                -0      |                                 0.0028 |                                -0.0318 |                                 32.8627 |                                -0      |                                 0.0034 |                                -0.0346 |                                 37.4633 |                                -0      |                                 0.0039 |                                -0.0364 |                                 40.6574 |                                -0      |                                 0.0043 |                                -0.0373 |                                 42.4423 |                                -0      |                                 0.0047 |                                -0.0374 |                                 42.9099 |                                -0.0001 |                                 0.0049 |                                -0.037  |                                 42.2021 |                                -0.0001 |                                 0.0052 |                                -0.0362 |                                 40.4799 |                                -0.0001 |                                 0.0053 |                                -0.0351 |                                 37.9056 |                                -0.0001 |                                 0.0054 |                                -0.0338 |                                 34.6322 |                                -0.0001 |                                 0.0055 |                                -0.0323 |                                 30.7978 |                                -0.0001 |                                 0.0055 |                                -0.0308 |                                 26.5243 |                                -0.0001 |                                 0.0055 |                                -0.0292 |                                 21.9168 |                                -0.0001 |                                 0.0055 |                                -0.0277 |                                 17.0646 |                                -0.0001 |                                 0.0054 |                                -0.0262 |                                 12.043  |                                -0.0001 |                                 0.0053 |                                -0.0247 |                                  6.9146 |                                -0.0001 |                                 0.0052 |                                -0.0232 |                                  1.731  |                                -0.0001 |                                 0.0051 |                                -0.0219 |                                 -3.4654 |                                -0.0001 |                                 0.005  |                                -0.0205 |                                 -8.6404 |                                -0.0001 |                                 0.0049 |                                -0.0193 |                                -13.7662 |                                -0.0001 |                                 0.0048 |                                -0.0181 |                                -18.8211 |
+        |            220 |                                -0      |                                 0      |                                -0      |                                  0      |                                -0      |                                 0      |                                -0      |                                  0.0023 |                                -0      |                                 0      |                                -0.0007 |                                  0.2279 |                                -0      |                                 0.0002 |                                -0.0045 |                                  1.9556 |                                -0      |                                 0.0005 |                                -0.0124 |                                  6.4192 |                                -0      |                                 0.0012 |                                -0.0222 |                                 13.1726 |                                -0      |                                 0.0019 |                                -0.0315 |                                 20.7745 |                                -0      |                                 0.0028 |                                -0.0389 |                                 27.857  |                                -0      |                                 0.0035 |                                -0.0442 |                                 33.5462 |                                -0      |                                 0.0042 |                                -0.0473 |                                 37.4485 |                                -0.0001 |                                 0.0048 |                                -0.0488 |                                 39.5046 |                                -0.0001 |                                 0.0052 |                                -0.0489 |                                 39.847  |                                -0.0001 |                                 0.0056 |                                -0.0481 |                                 38.6989 |                                -0.0001 |                                 0.0058 |                                -0.0465 |                                 36.3117 |                                -0.0001 |                                 0.006  |                                -0.0446 |                                 32.9304 |                                -0.0001 |                                 0.0061 |                                -0.0424 |                                 28.7768 |                                -0.0001 |                                 0.0061 |                                -0.04   |                                 24.043  |                                -0.0001 |                                 0.0061 |                                -0.0376 |                                 18.8906 |                                -0.0001 |                                 0.006  |                                -0.0352 |                                 13.4528 |                                -0.0001 |                                 0.0059 |                                -0.0329 |                                  7.8377 |                                -0.0001 |                                 0.0058 |                                -0.0307 |                                  2.132  |                                -0.0001 |                                 0.0057 |                                -0.0285 |                                 -3.5961 |                                -0.0001 |                                 0.0055 |                                -0.0265 |                                 -9.2928 |                                -0.0001 |                                 0.0053 |                                -0.0246 |                                -14.917  |                                -0.0001 |                                 0.0052 |                                -0.0228 |                                -20.4373 |                                -0.0001 |                                 0.005  |                                -0.0211 |                                -25.8304 |                                -0.0001 |                                 0.0048 |                                -0.0195 |                                -31.0792 |                                -0.0001 |                                 0.0046 |                                -0.018  |                                -36.1721 |                                -0.0001 |                                 0.0044 |                                -0.0167 |                                -41.1014 |
+        |            225 |                                -0      |                                 0      |                                -0      |                                  0      |                                -0      |                                 0      |                                -0.0001 |                                  0.0214 |                                -0      |                                 0.0001 |                                -0.0032 |                                  0.8894 |                                -0      |                                 0.0005 |                                -0.014  |                                  4.8702 |                                -0      |                                 0.0013 |                                -0.0293 |                                 12.1181 |                                -0      |                                 0.0023 |                                -0.0439 |                                 20.5173 |                                -0      |                                 0.0034 |                                -0.0548 |                                 27.9779 |                                -0      |                                 0.0044 |                                -0.0615 |                                 33.339  |                                -0.0001 |                                 0.0051 |                                -0.0646 |                                 36.2509 |                                -0.0001 |                                 0.0058 |                                -0.065  |                                 36.8391 |                                -0.0001 |                                 0.0062 |                                -0.0636 |                                 35.4429 |                                -0.0001 |                                 0.0065 |                                -0.061  |                                 32.4609 |                                -0.0001 |                                 0.0067 |                                -0.0577 |                                 28.2735 |                                -0.0001 |                                 0.0067 |                                -0.054  |                                 23.212  |                                -0.0001 |                                 0.0067 |                                -0.0502 |                                 17.5492 |                                -0.0001 |                                 0.0066 |                                -0.0464 |                                 11.5031 |                                -0.0001 |                                 0.0065 |                                -0.0427 |                                  5.2433 |                                -0.0001 |                                 0.0063 |                                -0.0392 |                                 -1.1003 |                                -0.0001 |                                 0.0061 |                                -0.0359 |                                 -7.4303 |                                -0.0001 |                                 0.0059 |                                -0.0328 |                                -13.6747 |                                -0.0001 |                                 0.0057 |                                -0.03   |                                -19.7816 |                                -0.0001 |                                 0.0055 |                                -0.0273 |                                -25.7145 |                                -0.0001 |                                 0.0052 |                                -0.0249 |                                -31.4487 |                                -0.0001 |                                 0.005  |                                -0.0227 |                                -36.9686 |                                -0.0001 |                                 0.0047 |                                -0.0206 |                                -42.2655 |                                -0.0001 |                                 0.0045 |                                -0.0188 |                                -47.3358 |                                -0.0001 |                                 0.0043 |                                -0.017  |                                -52.1796 |                                -0.0001 |                                 0.004  |                                -0.0155 |                                -56.8001 |                                -0.0001 |                                 0.0038 |                                -0.014  |                                -61.2021 |
+        |            230 |                                -0      |                                 0      |                                -0      |                                  0      |                                -0      |                                 0      |                                -0.0009 |                                  0.1466 |                                -0      |                                 0.0003 |                                -0.0126 |                                  2.7616 |                                -0      |                                 0.0013 |                                -0.0367 |                                 10.0594 |                                -0      |                                 0.0027 |                                -0.0608 |                                 19.3768 |                                -0.0001 |                                 0.0041 |                                -0.0774 |                                 27.319  |                                -0.0001 |                                 0.0053 |                                -0.086  |                                 32.2266 |                                -0.0001 |                                 0.0063 |                                -0.0883 |                                 33.8627 |                                -0.0001 |                                 0.0069 |                                -0.0865 |                                 32.6688 |                                -0.0001 |                                 0.0073 |                                -0.0821 |                                 29.2873 |                                -0.0001 |                                 0.0075 |                                -0.0765 |                                 24.34   |                                -0.0001 |                                 0.0075 |                                -0.0703 |                                 18.3477 |                                -0.0001 |                                 0.0074 |                                -0.064  |                                 11.717  |                                -0.0001 |                                 0.0073 |                                -0.0579 |                                  4.7522 |                                -0.0001 |                                 0.007  |                                -0.0522 |                                 -2.3262 |                                -0.0001 |                                 0.0068 |                                -0.0469 |                                 -9.3622 |                                -0.0001 |                                 0.0064 |                                -0.042  |                                -16.2485 |                                -0.0001 |                                 0.0061 |                                -0.0376 |                                -22.9138 |                                -0.0001 |                                 0.0058 |                                -0.0336 |                                -29.3128 |                                -0.0001 |                                 0.0055 |                                -0.03   |                                -35.4195 |                                -0.0001 |                                 0.0051 |                                -0.0267 |                                -41.221  |                                -0.0001 |                                 0.0048 |                                -0.0238 |                                -46.7141 |                                -0.0001 |                                 0.0045 |                                -0.0212 |                                -51.9022 |                                -0.0001 |                                 0.0042 |                                -0.0188 |                                -56.793  |                                -0.0001 |                                 0.0039 |                                -0.0167 |                                -61.3971 |                                -0.0001 |                                 0.0036 |                                -0.0148 |                                -65.7271 |                                -0.0001 |                                 0.0033 |                                -0.013  |                                -69.7963 |                                -0.0001 |                                 0.0031 |                                -0.0115 |                                -73.6186 |                                -0.0001 |                                 0.0028 |                                -0.0101 |                                -77.208  |
+        |            235 |                                -0      |                                 0      |                                -0      |                                  0.0003 |                                -0      |                                 0.0001 |                                -0.006  |                                  0.7369 |                                -0      |                                 0.0011 |                                -0.0402 |                                  6.8209 |                                -0      |                                 0.0029 |                                -0.0824 |                                 17.1105 |                                -0.0001 |                                 0.0049 |                                -0.1103 |                                 25.8465 |                                -0.0001 |                                 0.0064 |                                -0.1216 |                                 30.2851 |                                -0.0001 |                                 0.0075 |                                -0.1215 |                                 30.3907 |                                -0.0001 |                                 0.0082 |                                -0.115  |                                 27.1328 |                                -0.0001 |                                 0.0084 |                                -0.1054 |                                 21.5931 |                                -0.0001 |                                 0.0084 |                                -0.0947 |                                 14.6651 |                                -0.0001 |                                 0.0083 |                                -0.0841 |                                  7.0056 |                                -0.0001 |                                 0.008  |                                -0.0741 |                                 -0.932  |                                -0.0001 |                                 0.0076 |                                -0.0649 |                                 -8.8474 |                                -0.0001 |                                 0.0071 |                                -0.0567 |                                -16.5502 |                                -0.0001 |                                 0.0067 |                                -0.0494 |                                -23.9254 |                                -0.0001 |                                 0.0062 |                                -0.043  |                                -30.9092 |                                -0.0001 |                                 0.0058 |                                -0.0373 |                                -37.4717 |                                -0.0001 |                                 0.0053 |                                -0.0324 |                                -43.6053 |                                -0.0001 |                                 0.0049 |                                -0.028  |                                -49.3163 |                                -0.0001 |                                 0.0045 |                                -0.0242 |                                -54.62   |                                -0.0001 |                                 0.0041 |                                -0.0208 |                                -59.5365 |                                -0.0001 |                                 0.0037 |                                -0.0178 |                                -64.0887 |                                -0.0001 |                                 0.0033 |                                -0.0152 |                                -68.3004 |                                -0.0001 |                                 0.003  |                                -0.013  |                                -72.1954 |                                -0.0001 |                                 0.0027 |                                -0.0109 |                                -75.7969 |                                -0.0001 |                                 0.0023 |                                -0.0091 |                                -79.127  |                                -0.0001 |                                 0.0021 |                                -0.0076 |                                -82.2065 |                                -0.0001 |                                 0.0018 |                                -0.0062 |                                -85.0551 |                                -0.0001 |                                 0.0015 |                                -0.0049 |                                -87.6906 |
+        |            240 |                                -0      |                                 0      |                                -0.0002 |                                  0.0079 |                                -0      |                                 0.0005 |                                -0.0292 |                                  2.7238 |                                -0      |                                 0.0028 |                                -0.1053 |                                 13.2964 |                                -0.0001 |                                 0.0056 |                                -0.1584 |                                 23.4962 |                                -0.0001 |                                 0.0077 |                                -0.1751 |                                 27.6953 |                                -0.0002 |                                 0.009  |                                -0.1694 |                                 26.0801 |                                -0.0002 |                                 0.0095 |                                -0.1535 |                                 20.5216 |                                -0.0002 |                                 0.0096 |                                -0.1344 |                                 12.7461 |                                -0.0002 |                                 0.0093 |                                -0.1155 |                                  3.9649 |                                -0.0002 |                                 0.0088 |                                -0.0982 |                                 -5.0606 |                                -0.0002 |                                 0.0082 |                                -0.083  |                                -13.8839 |                                -0.0002 |                                 0.0075 |                                -0.0698 |                                -22.261  |                                -0.0002 |                                 0.0069 |                                -0.0586 |                                -30.0728 |                                -0.0002 |                                 0.0062 |                                -0.049  |                                -37.2753 |                                -0.0002 |                                 0.0056 |                                -0.0409 |                                -43.8678 |                                -0.0002 |                                 0.005  |                                -0.034  |                                -49.8739 |                                -0.0002 |                                 0.0044 |                                -0.0281 |                                -55.33   |                                -0.0002 |                                 0.0039 |                                -0.0232 |                                -60.2776 |                                -0.0001 |                                 0.0034 |                                -0.0189 |                                -64.7599 |                                -0.0001 |                                 0.0029 |                                -0.0153 |                                -68.819  |                                -0.0001 |                                 0.0025 |                                -0.0122 |                                -72.4946 |                                -0.0001 |                                 0.0021 |                                -0.0095 |                                -75.8236 |                                -0.0001 |                                 0.0017 |                                -0.0072 |                                -78.8397 |                                -0.0001 |                                 0.0014 |                                -0.0053 |                                -81.5736 |                                -0.0001 |                                 0.0011 |                                -0.0036 |                                -84.0528 |                                -0.0001 |                                 0.0007 |                                -0.0021 |                                -86.3023 |                                -0.0001 |                                 0.0005 |                                -0.0008 |                                -88.3444 |                                -0.0001 |                                 0.0002 |                                 0.0003 |                                -90.1989 |                                -0.0001 |                                -0      |                                 0.0012 |                                -91.8839 |
+        |            245 |                                -0      |                                 0      |                                -0.0028 |                                  0.107  |                                -0      |                                 0.0019 |                                -0.1076 |                                  7.3595 |                                -0.0001 |                                 0.006  |                                -0.2274 |                                 19.9799 |                                -0.0002 |                                 0.0092 |                                -0.2596 |                                 24.7342 |                                -0.0002 |                                 0.0107 |                                -0.2416 |                                 21.3397 |                                -0.0002 |                                 0.011  |                                -0.2069 |                                 13.2918 |                                -0.0002 |                                 0.0106 |                                -0.1707 |                                  3.3131 |                                -0.0002 |                                 0.0099 |                                -0.1383 |                                 -7.0299 |                                -0.0002 |                                 0.009  |                                -0.111  |                                -16.9457 |                                -0.0002 |                                 0.008  |                                -0.0886 |                                -26.0824 |                                -0.0002 |                                 0.007  |                                -0.0705 |                                -34.3209 |                                -0.0002 |                                 0.0061 |                                -0.0558 |                                -41.6597 |                                -0.0002 |                                 0.0052 |                                -0.0438 |                                -48.1524 |                                -0.0002 |                                 0.0044 |                                -0.0342 |                                -53.8753 |                                -0.0002 |                                 0.0037 |                                -0.0263 |                                -58.9105 |                                -0.0002 |                                 0.003  |                                -0.0199 |                                -63.3376 |                                -0.0002 |                                 0.0024 |                                -0.0146 |                                -67.2303 |                                -0.0002 |                                 0.0019 |                                -0.0102 |                                -70.6543 |                                -0.0002 |                                 0.0014 |                                -0.0067 |                                -73.6681 |                                -0.0002 |                                 0.0009 |                                -0.0037 |                                -76.3227 |                                -0.0001 |                                 0.0005 |                                -0.0012 |                                -78.6623 |                                -0.0001 |                                 0.0001 |                                 0.0008 |                                -80.7258 |                                -0.0001 |                                -0.0002 |                                 0.0025 |                                -82.5464 |                                -0.0001 |                                -0.0006 |                                 0.0039 |                                -84.1533 |                                -0.0001 |                                -0.0008 |                                 0.0051 |                                -85.5717 |                                -0.0001 |                                -0.0011 |                                 0.0061 |                                -86.8236 |                                -0.0001 |                                -0.0014 |                                 0.0069 |                                -87.928  |                                -0.0001 |                                -0.0016 |                                 0.0076 |                                -88.9017 |                                -0.0001 |                                -0.0018 |                                 0.0081 |                                -89.7592 |
+        |            250 |                                -0      |                                 0.0003 |                                -0.0306 |                                  0.8572 |                                -0.0001 |                                 0.0054 |                                -0.3043 |                                 14.2006 |                                -0.0002 |                                 0.0106 |                                -0.4024 |                                 21.6781 |                                -0.0003 |                                 0.0127 |                                -0.3589 |                                 16.7711 |                                -0.0003 |                                 0.0126 |                                -0.2843 |                                  6.0745 |                                -0.0003 |                                 0.0115 |                                -0.2159 |                                 -5.9653 |                                -0.0003 |                                 0.0101 |                                -0.1611 |                                -17.4029 |                                -0.0003 |                                 0.0086 |                                -0.1192 |                                -27.5631 |                                -0.0003 |                                 0.0071 |                                -0.0875 |                                -36.3191 |                                -0.0003 |                                 0.0058 |                                -0.0635 |                                -43.7586 |                                -0.0003 |                                 0.0046 |                                -0.0454 |                                -50.0394 |                                -0.0002 |                                 0.0036 |                                -0.0315 |                                -55.3291 |                                -0.0002 |                                 0.0026 |                                -0.0208 |                                -59.7824 |                                -0.0002 |                                 0.0018 |                                -0.0126 |                                -63.5337 |                                -0.0002 |                                 0.0011 |                                -0.0062 |                                -66.6966 |                                -0.0002 |                                 0.0004 |                                -0.0012 |                                -69.3662 |                                -0.0002 |                                -0.0001 |                                 0.0027 |                                -71.6209 |                                -0.0002 |                                -0.0006 |                                 0.0058 |                                -73.5259 |                                -0.0002 |                                -0.0011 |                                 0.0082 |                                -75.1353 |                                -0.0002 |                                -0.0015 |                                 0.01   |                                -76.4939 |                                -0.0002 |                                -0.0018 |                                 0.0115 |                                -77.639  |                                -0.0001 |                                -0.0022 |                                 0.0126 |                                -78.6019 |                                -0.0001 |                                -0.0024 |                                 0.0135 |                                -79.4086 |                                -0.0001 |                                -0.0027 |                                 0.0142 |                                -80.0814 |                                -0.0001 |                                -0.0029 |                                 0.0146 |                                -80.6387 |                                -0.0001 |                                -0.0031 |                                 0.015  |                                -81.0964 |                                -0.0001 |                                -0.0033 |                                 0.0152 |                                -81.468  |                                -0.0001 |                                -0.0035 |                                 0.0154 |                                -81.7649 |                                -0.0001 |                                -0.0036 |                                 0.0154 |                                -81.997  |
+        |            255 |                                -0      |                                 0.0019 |                                -0.2109 |                                  4.0061 |                                -0.0003 |                                 0.0115 |                                -0.655  |                                 18.2481 |                                -0.0004 |                                 0.0152 |                                -0.5732 |                                 13.2127 |                                -0.0004 |                                 0.0144 |                                -0.4056 |                                 -0.3183 |                                -0.0004 |                                 0.0121 |                                -0.2723 |                                -14.2005 |                                -0.0004 |                                 0.0097 |                                -0.1794 |                                -26.0918 |                                -0.0004 |                                 0.0074 |                                -0.1163 |                                -35.7065 |                                -0.0003 |                                 0.0054 |                                -0.0733 |                                -43.3256 |                                -0.0003 |                                 0.0037 |                                -0.0437 |                                -49.3266 |                                -0.0003 |                                 0.0023 |                                -0.023  |                                -54.0501 |                                -0.0003 |                                 0.0011 |                                -0.0085 |                                -57.7725 |                                -0.0003 |                                 0.0001 |                                 0.0018 |                                -60.7099 |                                -0.0002 |                                -0.0008 |                                 0.0092 |                                -63.0291 |                                -0.0002 |                                -0.0015 |                                 0.0144 |                                -64.8588 |                                -0.0002 |                                -0.0021 |                                 0.0182 |                                -66.2983 |                                -0.0002 |                                -0.0026 |                                 0.0208 |                                -67.4251 |                                -0.0002 |                                -0.0031 |                                 0.0226 |                                -68.2996 |                                -0.0002 |                                -0.0035 |                                 0.0238 |                                -68.9696 |                                -0.0002 |                                -0.0038 |                                 0.0246 |                                -69.473  |                                -0.0002 |                                -0.0041 |                                 0.025  |                                -69.8401 |                                -0.0002 |                                -0.0044 |                                 0.0252 |                                -70.0953 |                                -0.0001 |                                -0.0046 |                                 0.0252 |                                -70.2583 |                                -0.0001 |                                -0.0048 |                                 0.0251 |                                -70.3454 |                                -0.0001 |                                -0.005  |                                 0.0248 |                                -70.3695 |                                -0.0001 |                                -0.0051 |                                 0.0245 |                                -70.3417 |                                -0.0001 |                                -0.0052 |                                 0.0241 |                                -70.2708 |                                -0.0001 |                                -0.0053 |                                 0.0237 |                                -70.1642 |                                -0.0001 |                                -0.0054 |                                 0.0233 |                                -70.0283 |                                -0.0001 |                                -0.0055 |                                 0.0228 |                                -69.8682 |
+        |            260 |                                -0.0002 |                                 0.008  |                                -0.9052 |                                 10.3989 |                                -0.0006 |                                 0.0185 |                                -1.0466 |                                 11.7619 |                                -0.0006 |                                 0.0166 |                                -0.6246 |                                 -4.8617 |                                -0.0006 |                                 0.0123 |                                -0.3431 |                                -20.4075 |                                -0.0005 |                                 0.0082 |                                -0.1818 |                                -31.9628 |                                -0.0005 |                                 0.005  |                                -0.0893 |                                -40.1561 |                                -0.0004 |                                 0.0024 |                                -0.035  |                                -45.9203 |                                -0.0004 |                                 0.0004 |                                -0.0023 |                                -49.9805 |                                -0.0003 |                                -0.0011 |                                 0.0176 |                                -52.8434 |                                -0.0003 |                                -0.0023 |                                 0.0298 |                                -54.8558 |                                -0.0003 |                                -0.0033 |                                 0.0371 |                                -56.2562 |                                -0.0003 |                                -0.0041 |                                 0.0414 |                                -57.2105 |                                -0.0002 |                                -0.0047 |                                 0.0437 |                                -57.8362 |                                -0.0002 |                                -0.0052 |                                 0.0447 |                                -58.2172 |                                -0.0002 |                                -0.0056 |                                 0.0448 |                                -58.4148 |                                -0.0002 |                                -0.006  |                                 0.0444 |                                -58.4741 |                                -0.0002 |                                -0.0062 |                                 0.0437 |                                -58.4287 |                                -0.0002 |                                -0.0065 |                                 0.0427 |                                -58.304  |                                -0.0002 |                                -0.0067 |                                 0.0415 |                                -58.1193 |                                -0.0002 |                                -0.0068 |                                 0.0403 |                                -57.8893 |                                -0.0001 |                                -0.0069 |                                 0.0391 |                                -57.6255 |                                -0.0001 |                                -0.007  |                                 0.0378 |                                -57.3368 |                                -0.0001 |                                -0.0071 |                                 0.0366 |                                -57.0301 |                                -0.0001 |                                -0.0072 |                                 0.0354 |                                -56.7108 |                                -0.0001 |                                -0.0072 |                                 0.0342 |                                -56.3833 |                                -0.0001 |                                -0.0073 |                                 0.033  |                                -56.0509 |                                -0.0001 |                                -0.0073 |                                 0.0319 |                                -55.7163 |                                -0.0001 |                                -0.0073 |                                 0.0309 |                                -55.3816 |                                -0.0001 |                                -0.0073 |                                 0.0298 |                                -55.0486 |
+        |            265 |                                -0.0008 |                                 0.0208 |                                -2.3611 |                                 12.3941 |                                -0.001  |                                 0.0202 |                                -1.1439 |                                 -6.1305 |                                -0.0009 |                                 0.0116 |                                -0.4337 |                                -23.5888 |                                -0.0007 |                                 0.0051 |                                -0.1389 |                                -33.9314 |                                -0.0006 |                                 0.0007 |                                -0.0104 |                                -39.8486 |                                -0.0005 |                                -0.0023 |                                 0.0481 |                                -43.2328 |                                -0.0004 |                                -0.0043 |                                 0.0747 |                                -45.1384 |                                -0.0004 |                                -0.0058 |                                 0.086  |                                -46.1536 |                                -0.0003 |                                -0.0068 |                                 0.0896 |                                -46.6172 |                                -0.0003 |                                -0.0076 |                                 0.0891 |                                -46.732  |                                -0.0003 |                                -0.0081 |                                 0.0867 |                                -46.6232 |                                -0.0002 |                                -0.0085 |                                 0.0832 |                                -46.3706 |                                -0.0002 |                                -0.0088 |                                 0.0794 |                                -46.0259 |                                -0.0002 |                                -0.009  |                                 0.0754 |                                -45.6236 |                                -0.0002 |                                -0.0092 |                                 0.0715 |                                -45.1868 |                                -0.0002 |                                -0.0093 |                                 0.0677 |                                -44.7314 |                                -0.0002 |                                -0.0093 |                                 0.0642 |                                -44.2681 |                                -0.0002 |                                -0.0094 |                                 0.0608 |                                -43.8043 |                                -0.0001 |                                -0.0094 |                                 0.0577 |                                -43.3453 |                                -0.0001 |                                -0.0094 |                                 0.0548 |                                -42.8944 |                                -0.0001 |                                -0.0094 |                                 0.0521 |                                -42.4539 |                                -0.0001 |                                -0.0093 |                                 0.0496 |                                -42.0255 |                                -0.0001 |                                -0.0093 |                                 0.0473 |                                -41.61   |                                -0.0001 |                                -0.0093 |                                 0.0451 |                                -41.208  |                                -0.0001 |                                -0.0092 |                                 0.0431 |                                -40.8196 |                                -0.0001 |                                -0.0092 |                                 0.0412 |                                -40.4448 |                                -0.0001 |                                -0.0091 |                                 0.0394 |                                -40.0836 |                                -0.0001 |                                -0.0091 |                                 0.0378 |                                -39.7356 |                                -0.0001 |                                -0.009  |                                 0.0362 |                                -39.4006 |
+        |            270 |                                -0.0018 |                                 0.0296 |                                -3.3565 |                                 -1.1372 |                                -0.0014 |                                 0.0102 |                                -0.568  |                                -22.8451 |                                -0.001  |                                -0.0007 |                                 0.0379 |                                -31.161  |                                -0.0007 |                                -0.0062 |                                 0.1856 |                                -34.1546 |                                -0.0006 |                                -0.0092 |                                 0.2155 |                                -35.0519 |                                -0.0005 |                                -0.0108 |                                 0.2108 |                                -35.0499 |                                -0.0004 |                                -0.0118 |                                 0.1959 |                                -34.6438 |                                -0.0003 |                                -0.0123 |                                 0.1789 |                                -34.058  |                                -0.0003 |                                -0.0126 |                                 0.1625 |                                -33.4006 |                                -0.0003 |                                -0.0127 |                                 0.1476 |                                -32.7261 |                                -0.0002 |                                -0.0127 |                                 0.1344 |                                -32.0618 |                                -0.0002 |                                -0.0127 |                                 0.1228 |                                -31.4217 |                                -0.0002 |                                -0.0126 |                                 0.1126 |                                -30.8123 |                                -0.0002 |                                -0.0125 |                                 0.1036 |                                -30.2359 |                                -0.0002 |                                -0.0124 |                                 0.0957 |                                -29.6929 |                                -0.0002 |                                -0.0122 |                                 0.0887 |                                -29.1825 |                                -0.0001 |                                -0.0121 |                                 0.0825 |                                -28.7031 |                                -0.0001 |                                -0.0119 |                                 0.077  |                                -28.2529 |                                -0.0001 |                                -0.0118 |                                 0.072  |                                -27.8301 |                                -0.0001 |                                -0.0116 |                                 0.0675 |                                -27.4329 |                                -0.0001 |                                -0.0115 |                                 0.0635 |                                -27.0595 |                                -0.0001 |                                -0.0113 |                                 0.0598 |                                -26.7082 |                                -0.0001 |                                -0.0112 |                                 0.0565 |                                -26.3775 |                                -0.0001 |                                -0.0111 |                                 0.0535 |                                -26.0659 |                                -0.0001 |                                -0.0109 |                                 0.0507 |                                -25.7721 |                                -0.0001 |                                -0.0108 |                                 0.0482 |                                -25.4949 |                                -0.0001 |                                -0.0107 |                                 0.0458 |                                -25.2331 |                                -0.0001 |                                -0.0105 |                                 0.0437 |                                -24.9857 |                                -0.0001 |                                -0.0104 |                                 0.0417 |                                -24.7519 |
+        |            275 |                                -0.0028 |                                 0.0104 |                                -1.1552 |                                -17.2898 |                                -0.0014 |                                -0.0119 |                                 0.6953 |                                -23.4003 |                                -0.0009 |                                -0.0175 |                                 0.6759 |                                -23.3625 |                                -0.0006 |                                -0.0191 |                                 0.5505 |                                -22.3833 |                                -0.0005 |                                -0.0193 |                                 0.4456 |                                -21.3102 |                                -0.0004 |                                -0.0191 |                                 0.3664 |                                -20.3192 |                                -0.0003 |                                -0.0186 |                                 0.3069 |                                -19.4414 |                                -0.0003 |                                -0.0181 |                                 0.2613 |                                -18.6713 |                                -0.0002 |                                -0.0176 |                                 0.2257 |                                -17.9957 |                                -0.0002 |                                -0.0171 |                                 0.1974 |                                -17.4007 |                                -0.0002 |                                -0.0166 |                                 0.1744 |                                -16.8739 |                                -0.0002 |                                -0.0162 |                                 0.1556 |                                -16.4053 |                                -0.0002 |                                -0.0158 |                                 0.1399 |                                -15.9864 |                                -0.0002 |                                -0.0154 |                                 0.1266 |                                -15.6101 |                                -0.0001 |                                -0.015  |                                 0.1153 |                                -15.2707 |                                -0.0001 |                                -0.0146 |                                 0.1056 |                                -14.9635 |                                -0.0001 |                                -0.0143 |                                 0.0971 |                                -14.6846 |                                -0.0001 |                                -0.014  |                                 0.0898 |                                -14.4305 |                                -0.0001 |                                -0.0137 |                                 0.0833 |                                -14.1986 |                                -0.0001 |                                -0.0134 |                                 0.0776 |                                -13.9863 |                                -0.0001 |                                -0.0132 |                                 0.0724 |                                -13.7917 |                                -0.0001 |                                -0.0129 |                                 0.0679 |                                -13.6129 |                                -0.0001 |                                -0.0127 |                                 0.0638 |                                -13.4486 |                                -0.0001 |                                -0.0125 |                                 0.06   |                                -13.2972 |                                -0.0001 |                                -0.0123 |                                 0.0567 |                                -13.1578 |                                -0.0001 |                                -0.0121 |                                 0.0536 |                                -13.0292 |                                -0.0001 |                                -0.0119 |                                 0.0508 |                                -12.9106 |                                -0.0001 |                                -0.0117 |                                 0.0483 |                                -12.8012 |                                -0.0001 |                                -0.0115 |                                 0.0459 |                                -12.7002 |
+        |            280 |                                -0.0024 |                                -0.0372 |                                 4.2755 |                                -11.6654 |                                -0.001  |                                -0.0362 |                                 2.0747 |                                 -9.6792 |                                -0.0006 |                                -0.0325 |                                 1.2421 |                                 -8.3992 |                                -0.0004 |                                -0.0295 |                                 0.8448 |                                 -7.5475 |                                -0.0003 |                                -0.0271 |                                 0.6212 |                                 -6.9397 |                                -0.0003 |                                -0.0252 |                                 0.4812 |                                 -6.4835 |                                -0.0002 |                                -0.0236 |                                 0.3868 |                                 -6.1285 |                                -0.0002 |                                -0.0223 |                                 0.3197 |                                 -5.8449 |                                -0.0002 |                                -0.0212 |                                 0.2699 |                                 -5.6138 |                                -0.0002 |                                -0.0202 |                                 0.2319 |                                 -5.4228 |                                -0.0001 |                                -0.0194 |                                 0.202  |                                 -5.263  |                                -0.0001 |                                -0.0186 |                                 0.178  |                                 -5.1284 |                                -0.0001 |                                -0.0179 |                                 0.1584 |                                 -5.0142 |                                -0.0001 |                                -0.0173 |                                 0.1422 |                                 -4.9169 |                                -0.0001 |                                -0.0168 |                                 0.1286 |                                 -4.834  |                                -0.0001 |                                -0.0163 |                                 0.117  |                                 -4.7632 |                                -0.0001 |                                -0.0158 |                                 0.107  |                                 -4.7028 |                                -0.0001 |                                -0.0154 |                                 0.0984 |                                 -4.6515 |                                -0.0001 |                                -0.015  |                                 0.0909 |                                 -4.6082 |                                -0.0001 |                                -0.0147 |                                 0.0843 |                                 -4.5719 |                                -0.0001 |                                -0.0143 |                                 0.0785 |                                 -4.5419 |                                -0.0001 |                                -0.014  |                                 0.0733 |                                 -4.5174 |                                -0.0001 |                                -0.0137 |                                 0.0686 |                                 -4.498  |                                -0.0001 |                                -0.0135 |                                 0.0645 |                                 -4.4832 |                                -0.0001 |                                -0.0132 |                                 0.0607 |                                 -4.4725 |                                -0.0001 |                                -0.013  |                                 0.0573 |                                 -4.4656 |                                -0.0001 |                                -0.0127 |                                 0.0542 |                                 -4.4621 |                                -0.0001 |                                -0.0125 |                                 0.0514 |                                 -4.4619 |                                -0.0001 |                                -0.0123 |                                 0.0488 |                                 -4.4646 |
+        |            285 |                                -0.0004 |                                -0.068  |                                 7.7676 |                                 -0.1059 |                                -0.0002 |                                -0.0482 |                                 2.7508 |                                 -0.094  |                                -0.0002 |                                -0.0394 |                                 1.4983 |                                 -0.0977 |                                -0.0001 |                                -0.0341 |                                 0.9736 |                                 -0.1072 |                                -0.0001 |                                -0.0305 |                                 0.6969 |                                 -0.1202 |                                -0.0001 |                                -0.0279 |                                 0.5303 |                                 -0.1357 |                                -0.0001 |                                -0.0258 |                                 0.4209 |                                 -0.153  |                                -0.0001 |                                -0.0241 |                                 0.3446 |                                 -0.172  |                                -0.0001 |                                -0.0228 |                                 0.2889 |                                 -0.1924 |                                -0.0001 |                                -0.0216 |                                 0.2467 |                                 -0.2141 |                                -0.0001 |                                -0.0206 |                                 0.2139 |                                 -0.2369 |                                -0.0001 |                                -0.0197 |                                 0.1878 |                                 -0.2609 |                                -0.0001 |                                -0.0189 |                                 0.1666 |                                 -0.2858 |                                -0.0001 |                                -0.0182 |                                 0.1491 |                                 -0.3118 |                                -0.0001 |                                -0.0176 |                                 0.1344 |                                 -0.3386 |                                -0.0001 |                                -0.0171 |                                 0.1221 |                                 -0.3663 |                                -0.0001 |                                -0.0166 |                                 0.1115 |                                 -0.3949 |                                -0.0001 |                                -0.0161 |                                 0.1023 |                                 -0.4242 |                                -0.0001 |                                -0.0157 |                                 0.0944 |                                 -0.4544 |                                -0.0001 |                                -0.0153 |                                 0.0874 |                                 -0.4853 |                                -0.0001 |                                -0.0149 |                                 0.0813 |                                 -0.517  |                                -0.0001 |                                -0.0146 |                                 0.0758 |                                 -0.5493 |                                -0.0001 |                                -0.0142 |                                 0.0709 |                                 -0.5824 |                                -0.0001 |                                -0.0139 |                                 0.0665 |                                 -0.6161 |                                -0      |                                -0.0137 |                                 0.0626 |                                 -0.6505 |                                -0      |                                -0.0134 |                                 0.059  |                                 -0.6856 |                                -0      |                                -0.0132 |                                 0.0558 |                                 -0.7213 |                                -0      |                                -0.0129 |                                 0.0529 |                                 -0.7576 |                                -0      |                                -0.0127 |                                 0.0502 |                                 -0.7945 |
+        |            290 |                                 0.0018 |                                -0.0469 |                                 5.3291 |                                 -8.8672 |                                 0.0006 |                                -0.0407 |                                 2.3116 |                                 -6.8533 |                                 0.0003 |                                -0.0354 |                                 1.3414 |                                 -5.7179 |                                 0.0002 |                                -0.0316 |                                 0.8991 |                                 -4.9794 |                                 0.0001 |                                -0.0288 |                                 0.6554 |                                 -4.4521 |                                 0.0001 |                                -0.0266 |                                 0.5049 |                                 -4.0524 |                                 0      |                                -0.0249 |                                 0.4042 |                                 -3.7368 |                                 0      |                                -0.0234 |                                 0.3331 |                                 -3.4803 |                                 0      |                                -0.0222 |                                 0.2806 |                                 -3.2672 |                                -0      |                                -0.0211 |                                 0.2406 |                                 -3.0872 |                                -0      |                                -0.0202 |                                 0.2093 |                                 -2.9333 |                                -0      |                                -0.0194 |                                 0.1842 |                                 -2.8003 |                                -0      |                                -0.0187 |                                 0.1638 |                                 -2.6845 |                                -0      |                                -0.018  |                                 0.1469 |                                 -2.5831 |                                -0      |                                -0.0175 |                                 0.1327 |                                 -2.4937 |                                -0      |                                -0.0169 |                                 0.1206 |                                 -2.4148 |                                -0      |                                -0.0165 |                                 0.1103 |                                 -2.3449 |                                -0      |                                -0.016  |                                 0.1014 |                                 -2.2829 |                                -0      |                                -0.0156 |                                 0.0936 |                                 -2.2279 |                                -0      |                                -0.0152 |                                 0.0868 |                                 -2.1791 |                                -0      |                                -0.0149 |                                 0.0807 |                                 -2.1359 |                                -0      |                                -0.0145 |                                 0.0754 |                                 -2.0976 |                                -0      |                                -0.0142 |                                 0.0706 |                                 -2.064  |                                -0      |                                -0.0139 |                                 0.0663 |                                 -2.0345 |                                -0      |                                -0.0137 |                                 0.0624 |                                 -2.0087 |                                -0      |                                -0.0134 |                                 0.0589 |                                 -1.9865 |                                -0      |                                -0.0132 |                                 0.0557 |                                 -1.9676 |                                -0      |                                -0.0129 |                                 0.0527 |                                 -1.9516 |                                -0      |                                -0.0127 |                                 0.0501 |                                 -1.9385 |
+        |            295 |                                 0.0027 |                                 0.0005 |                                -0.0932 |                                -18.8061 |                                 0.0012 |                                -0.019  |                                 1.0689 |                                -21.4283 |                                 0.0006 |                                -0.0226 |                                 0.8532 |                                -20.22   |                                 0.0004 |                                -0.0231 |                                 0.6528 |                                -18.7408 |                                 0.0003 |                                -0.0226 |                                 0.512  |                                -17.412  |                                 0.0002 |                                -0.0219 |                                 0.4132 |                                -16.2711 |                                 0.0002 |                                -0.0211 |                                 0.3417 |                                -15.2945 |                                 0.0001 |                                -0.0203 |                                 0.2883 |                                -14.4524 |                                 0.0001 |                                -0.0196 |                                 0.2473 |                                -13.7195 |                                 0.0001 |                                -0.019  |                                 0.2151 |                                -13.0756 |                                 0.0001 |                                -0.0184 |                                 0.1893 |                                -12.5051 |                                 0      |                                -0.0178 |                                 0.1682 |                                -11.9957 |                                 0      |                                -0.0173 |                                 0.1508 |                                -11.5377 |                                 0      |                                -0.0168 |                                 0.1361 |                                -11.1235 |                                 0      |                                -0.0163 |                                 0.1237 |                                -10.7469 |                                 0      |                                -0.0159 |                                 0.1131 |                                -10.4028 |                                 0      |                                -0.0155 |                                 0.1039 |                                -10.0872 |                                 0      |                                -0.0152 |                                 0.0959 |                                 -9.7967 |                                 0      |                                -0.0149 |                                 0.0888 |                                 -9.5283 |                                -0      |                                -0.0145 |                                 0.0826 |                                 -9.2797 |                                -0      |                                -0.0142 |                                 0.0771 |                                 -9.0487 |                                -0      |                                -0.014  |                                 0.0721 |                                 -8.8337 |                                -0      |                                -0.0137 |                                 0.0677 |                                 -8.6331 |                                -0      |                                -0.0134 |                                 0.0637 |                                 -8.4456 |                                -0      |                                -0.0132 |                                 0.0601 |                                 -8.27   |                                -0      |                                -0.013  |                                 0.0568 |                                 -8.1053 |                                -0      |                                -0.0128 |                                 0.0538 |                                 -7.9508 |                                -0      |                                -0.0126 |                                 0.0511 |                                 -7.8054 |                                -0      |                                -0.0124 |                                 0.0486 |                                 -7.6687 |
+        |            300 |                                 0.0022 |                                 0.0289 |                                -3.3231 |                                 -7.8443 |                                 0.0013 |                                 0.0042 |                                -0.2538 |                                -26.4756 |                                 0.0008 |                                -0.0065 |                                 0.2387 |                                -31.5829 |                                 0.0006 |                                -0.0113 |                                 0.3162 |                                -32.6003 |                                 0.0004 |                                -0.0136 |                                 0.306  |                                -32.246  |                                 0.0003 |                                -0.0148 |                                 0.2769 |                                -31.4026 |                                 0.0002 |                                -0.0153 |                                 0.2463 |                                -30.3989 |                                 0.0002 |                                -0.0155 |                                 0.2186 |                                -29.3679 |                                 0.0002 |                                -0.0155 |                                 0.1947 |                                -28.3655 |                                 0.0001 |                                -0.0154 |                                 0.1742 |                                -27.4139 |                                 0.0001 |                                -0.0153 |                                 0.1568 |                                -26.5206 |                                 0.0001 |                                -0.0151 |                                 0.142  |                                -25.6863 |                                 0.0001 |                                -0.0149 |                                 0.1292 |                                -24.9085 |                                 0.0001 |                                -0.0146 |                                 0.1182 |                                -24.1834 |                                 0.0001 |                                -0.0144 |                                 0.1086 |                                -23.5069 |                                 0      |                                -0.0142 |                                 0.1002 |                                -22.8749 |                                 0      |                                -0.014  |                                 0.0928 |                                -22.2836 |                                 0      |                                -0.0137 |                                 0.0863 |                                -21.7293 |                                 0      |                                -0.0135 |                                 0.0805 |                                -21.2087 |                                 0      |                                -0.0133 |                                 0.0753 |                                -20.7191 |                                 0      |                                -0.0131 |                                 0.0706 |                                -20.2578 |                                 0      |                                -0.0129 |                                 0.0664 |                                -19.8223 |                                 0      |                                -0.0127 |                                 0.0626 |                                -19.4107 |                                 0      |                                -0.0125 |                                 0.0591 |                                -19.0211 |                                 0      |                                -0.0124 |                                 0.056  |                                -18.6518 |                                 0      |                                -0.0122 |                                 0.0531 |                                -18.3012 |                                 0      |                                -0.012  |                                 0.0504 |                                -17.968  |                                 0      |                                -0.0119 |                                 0.048  |                                -17.6509 |                                 0      |                                -0.0117 |                                 0.0458 |                                -17.349  |
+        |            305 |                                 0.0012 |                                 0.0282 |                                -3.2278 |                                  9.1554 |                                 0.0012 |                                 0.0187 |                                -1.083  |                                -15.6876 |                                 0.0009 |                                 0.0074 |                                -0.2912 |                                -30.891  |                                 0.0006 |                                 0.0003 |                                -0.0165 |                                -38.2669 |                                 0.0005 |                                -0.004  |                                 0.0859 |                                -41.7383 |                                 0.0004 |                                -0.0068 |                                 0.1238 |                                -43.2294 |                                 0.0003 |                                -0.0085 |                                 0.1353 |                                -43.6696 |                                 0.0003 |                                -0.0097 |                                 0.1353 |                                -43.5322 |                                 0.0002 |                                -0.0105 |                                 0.1304 |                                -43.0719 |                                 0.0002 |                                -0.011  |                                 0.1235 |                                -42.4316 |                                 0.0002 |                                -0.0114 |                                 0.116  |                                -41.6947 |                                 0.0001 |                                -0.0116 |                                 0.1085 |                                -40.9108 |                                 0.0001 |                                -0.0118 |                                 0.1015 |                                -40.1103 |                                 0.0001 |                                -0.0118 |                                 0.0949 |                                -39.3114 |                                 0.0001 |                                -0.0119 |                                 0.0888 |                                -38.5255 |                                 0.0001 |                                -0.0118 |                                 0.0832 |                                -37.7593 |                                 0.0001 |                                -0.0118 |                                 0.0782 |                                -37.0167 |                                 0.0001 |                                -0.0118 |                                 0.0735 |                                -36.2998 |                                 0.0001 |                                -0.0117 |                                 0.0693 |                                -35.6092 |                                 0      |                                -0.0116 |                                 0.0654 |                                -34.9451 |                                 0      |                                -0.0115 |                                 0.0618 |                                -34.3071 |                                 0      |                                -0.0114 |                                 0.0586 |                                -33.6945 |                                 0      |                                -0.0113 |                                 0.0556 |                                -33.1064 |                                 0      |                                -0.0112 |                                 0.0528 |                                -32.5417 |                                 0      |                                -0.0111 |                                 0.0503 |                                -31.9994 |                                 0      |                                -0.011  |                                 0.0479 |                                -31.4785 |                                 0      |                                -0.0109 |                                 0.0457 |                                -30.9779 |                                 0      |                                -0.0108 |                                 0.0437 |                                -30.4967 |                                 0      |                                -0.0107 |                                 0.0418 |                                -30.0338 |
+        |            310 |                                 0.0005 |                                 0.0159 |                                -1.8152 |                                 14.1155 |                                 0.0008 |                                 0.0224 |                                -1.2862 |                                  2.4964 |                                 0.0008 |                                 0.0159 |                                -0.6122 |                                -18.0399 |                                 0.0006 |                                 0.0093 |                                -0.2734 |                                -32.44   |                                 0.0005 |                                 0.0044 |                                -0.1059 |                                -41.551  |                                 0.0004 |                                 0.0008 |                                -0.0198 |                                -47.215  |                                 0.0004 |                                -0.0018 |                                 0.0257 |                                -50.6998 |                                 0.0003 |                                -0.0038 |                                 0.05   |                                -52.7901 |                                 0.0003 |                                -0.0052 |                                 0.0627 |                                -53.9704 |                                 0.0002 |                                -0.0063 |                                 0.0688 |                                -54.5457 |                                 0.0002 |                                -0.0071 |                                 0.0712 |                                -54.7126 |                                 0.0002 |                                -0.0077 |                                 0.0713 |                                -54.6007 |                                 0.0001 |                                -0.0082 |                                 0.0702 |                                -54.2976 |                                 0.0001 |                                -0.0086 |                                 0.0683 |                                -53.8632 |                                 0.0001 |                                -0.0089 |                                 0.066  |                                -53.3394 |                                 0.0001 |                                -0.0091 |                                 0.0635 |                                -52.7558 |                                 0.0001 |                                -0.0093 |                                 0.061  |                                -52.1335 |                                 0.0001 |                                -0.0094 |                                 0.0584 |                                -51.4877 |                                 0.0001 |                                -0.0095 |                                 0.056  |                                -50.8294 |                                 0.0001 |                                -0.0096 |                                 0.0536 |                                -50.1666 |                                 0.0001 |                                -0.0096 |                                 0.0513 |                                -49.5052 |                                 0.0001 |                                -0.0097 |                                 0.0492 |                                -48.8493 |                                 0      |                                -0.0097 |                                 0.0471 |                                -48.2021 |                                 0      |                                -0.0097 |                                 0.0452 |                                -47.5656 |                                 0      |                                -0.0097 |                                 0.0433 |                                -46.9414 |                                 0      |                                -0.0096 |                                 0.0416 |                                -46.3305 |                                 0      |                                -0.0096 |                                 0.04   |                                -45.7335 |                                 0      |                                -0.0096 |                                 0.0384 |                                -45.1509 |                                 0      |                                -0.0096 |                                 0.037  |                                -44.5828 |
+        |            315 |                                 0.0002 |                                 0.0062 |                                -0.7113 |                                  9.4638 |                                 0.0005 |                                 0.0186 |                                -1.0681 |                                 16.2432 |                                 0.0006 |                                 0.0185 |                                -0.7095 |                                  0.1324 |                                 0.0005 |                                 0.0145 |                                -0.4214 |                                -17.5553 |                                 0.0005 |                                 0.0104 |                                -0.2429 |                                -31.5763 |                                 0.0004 |                                 0.0068 |                                -0.135  |                                -41.8849 |                                 0.0004 |                                 0.004  |                                -0.0688 |                                -49.3073 |                                 0.0003 |                                 0.0017 |                                -0.0274 |                                -54.6171 |                                 0.0003 |                                -0.0002 |                                -0.0011 |                                -58.3985 |                                 0.0002 |                                -0.0017 |                                 0.0158 |                                -61.0704 |                                 0.0002 |                                -0.0028 |                                 0.0267 |                                -62.9296 |                                 0.0002 |                                -0.0038 |                                 0.0336 |                                -64.1878 |                                 0.0002 |                                -0.0046 |                                 0.038  |                                -64.9971 |                                 0.0002 |                                -0.0052 |                                 0.0406 |                                -65.4684 |                                 0.0001 |                                -0.0058 |                                 0.042  |                                -65.6834 |                                 0.0001 |                                -0.0062 |                                 0.0425 |                                -65.7029 |                                 0.0001 |                                -0.0066 |                                 0.0425 |                                -65.5727 |                                 0.0001 |                                -0.0069 |                                 0.0421 |                                -65.3279 |                                 0.0001 |                                -0.0071 |                                 0.0415 |                                -64.9952 |                                 0.0001 |                                -0.0073 |                                 0.0406 |                                -64.5952 |                                 0.0001 |                                -0.0075 |                                 0.0397 |                                -64.1442 |                                 0.0001 |                                -0.0077 |                                 0.0387 |                                -63.6548 |                                 0.0001 |                                -0.0078 |                                 0.0376 |                                -63.1369 |                                 0.0001 |                                -0.0079 |                                 0.0366 |                                -62.5984 |                                 0.0001 |                                -0.008  |                                 0.0355 |                                -62.0457 |                                 0.0001 |                                -0.008  |                                 0.0344 |                                -61.4836 |                                 0      |                                -0.0081 |                                 0.0334 |                                -60.9162 |                                 0      |                                -0.0081 |                                 0.0324 |                                -60.3467 |                                 0      |                                -0.0082 |                                 0.0314 |                                -59.7775 |
+        |            320 |                                 0      |                                 0.0018 |                                -0.208  |                                  4.0675 |                                 0.0003 |                                 0.0124 |                                -0.7105 |                                 20.4355 |                                 0.0004 |                                 0.0168 |                                -0.6437 |                                 15.6617 |                                 0.0004 |                                 0.0161 |                                -0.4649 |                                  0.6304 |                                 0.0004 |                                 0.0137 |                                -0.317  |                                -15.1561 |                                 0.0004 |                                 0.0109 |                                -0.212  |                                -28.7855 |                                 0.0003 |                                 0.0083 |                                -0.1397 |                                -39.819  |                                 0.0003 |                                 0.006  |                                -0.09   |                                -48.5361 |                                 0.0003 |                                 0.0041 |                                -0.0555 |                                -55.3575 |                                 0.0002 |                                 0.0025 |                                -0.0312 |                                -60.674  |                                 0.0002 |                                 0.0011 |                                -0.014  |                                -64.8075 |                                 0.0002 |                                -0.0001 |                                -0.0016 |                                -68.0117 |                                 0.0002 |                                -0.0011 |                                 0.0072 |                                -70.4835 |                                 0.0002 |                                -0.0019 |                                 0.0136 |                                -72.3756 |                                 0.0002 |                                -0.0027 |                                 0.0182 |                                -73.8059 |                                 0.0001 |                                -0.0033 |                                 0.0215 |                                -74.8667 |                                 0.0001 |                                -0.0038 |                                 0.0239 |                                -75.6302 |                                 0.0001 |                                -0.0043 |                                 0.0255 |                                -76.1533 |                                 0.0001 |                                -0.0047 |                                 0.0265 |                                -76.4813 |                                 0.0001 |                                -0.005  |                                 0.0272 |                                -76.6505 |                                 0.0001 |                                -0.0053 |                                 0.0275 |                                -76.6898 |                                 0.0001 |                                -0.0056 |                                 0.0277 |                                -76.6229 |                                 0.0001 |                                -0.0058 |                                 0.0276 |                                -76.469  |                                 0.0001 |                                -0.006  |                                 0.0274 |                                -76.2437 |                                 0.0001 |                                -0.0062 |                                 0.0271 |                                -75.96   |                                 0.0001 |                                -0.0063 |                                 0.0268 |                                -75.6285 |                                 0.0001 |                                -0.0065 |                                 0.0263 |                                -75.258  |                                 0.0001 |                                -0.0066 |                                 0.0259 |                                -74.8559 |                                 0      |                                -0.0067 |                                 0.0254 |                                -74.4282 |
+        |            325 |                                 0      |                                 0.0004 |                                -0.0471 |                                  1.2505 |                                 0.0001 |                                 0.007  |                                -0.3988 |                                 17.2785 |                                 0.0003 |                                 0.013  |                                -0.4987 |                                 24.002  |                                 0.0003 |                                 0.015  |                                -0.4314 |                                 16.3756 |                                 0.0003 |                                 0.0145 |                                -0.3349 |                                  2.9042 |                                 0.0003 |                                 0.013  |                                -0.2502 |                                -11.3946 |                                 0.0003 |                                 0.0111 |                                -0.1841 |                                -24.5224 |                                 0.0003 |                                 0.0092 |                                -0.1342 |                                -35.8892 |                                 0.0003 |                                 0.0074 |                                -0.097  |                                -45.4716 |                                 0.0002 |                                 0.0058 |                                -0.0692 |                                -53.447  |                                 0.0002 |                                 0.0044 |                                -0.0482 |                                -60.0435 |                                 0.0002 |                                 0.0031 |                                -0.0323 |                                -65.4824 |                                 0.0002 |                                 0.002  |                                -0.0202 |                                -69.9586 |                                 0.0002 |                                 0.0011 |                                -0.011  |                                -73.6369 |                                 0.0002 |                                 0.0002 |                                -0.0038 |                                -76.6538 |                                 0.0001 |                                -0.0005 |                                 0.0017 |                                -79.1215 |                                 0.0001 |                                -0.0012 |                                 0.006  |                                -81.1321 |                                 0.0001 |                                -0.0017 |                                 0.0094 |                                -82.7608 |                                 0.0001 |                                -0.0023 |                                 0.0119 |                                -84.0696 |                                 0.0001 |                                -0.0027 |                                 0.0139 |                                -85.1093 |                                 0.0001 |                                -0.0031 |                                 0.0155 |                                -85.9222 |                                 0.0001 |                                -0.0035 |                                 0.0166 |                                -86.5433 |                                 0.0001 |                                -0.0038 |                                 0.0175 |                                -87.0017 |                                 0.0001 |                                -0.0041 |                                 0.0181 |                                -87.3218 |                                 0.0001 |                                -0.0043 |                                 0.0186 |                                -87.5242 |                                 0.0001 |                                -0.0045 |                                 0.0189 |                                -87.626  |                                 0.0001 |                                -0.0047 |                                 0.0191 |                                -87.6419 |                                 0.0001 |                                -0.0049 |                                 0.0191 |                                -87.5844 |                                 0.0001 |                                -0.0051 |                                 0.0191 |                                -87.464  |
+        |            330 |                                 0      |                                 0.0001 |                                -0.0085 |                                  0.2902 |                                 0.0001 |                                 0.0034 |                                -0.194  |                                 11.4716 |                                 0.0002 |                                 0.009  |                                -0.3423 |                                 24.9764 |                                 0.0002 |                                 0.0124 |                                -0.3557 |                                 26.2308 |                                 0.0003 |                                 0.0135 |                                -0.3116 |                                 18.3287 |                                 0.0003 |                                 0.0133 |                                -0.2554 |                                  6.3319 |                                 0.0003 |                                 0.0123 |                                -0.2034 |                                 -6.674  |                                 0.0003 |                                 0.011  |                                -0.1598 |                                -19.1842 |                                 0.0002 |                                 0.0096 |                                -0.1247 |                                -30.5722 |                                 0.0002 |                                 0.0082 |                                -0.0967 |                                -40.6494 |                                 0.0002 |                                 0.0069 |                                -0.0746 |                                -49.4305 |                                 0.0002 |                                 0.0057 |                                -0.0571 |                                -57.017  |                                 0.0002 |                                 0.0047 |                                -0.0432 |                                -63.5398 |                                 0.0002 |                                 0.0037 |                                -0.0321 |                                -69.1325 |                                 0.0002 |                                 0.0028 |                                -0.0232 |                                -73.9198 |                                 0.0002 |                                 0.002  |                                -0.016  |                                -78.0129 |                                 0.0001 |                                 0.0013 |                                -0.0102 |                                -81.5088 |                                 0.0001 |                                 0.0006 |                                -0.0055 |                                -84.4911 |                                 0.0001 |                                 0      |                                -0.0017 |                                -87.0314 |                                 0.0001 |                                -0.0005 |                                 0.0014 |                                -89.1907 |                                 0.0001 |                                -0.001  |                                 0.0039 |                                -91.021  |                                 0.0001 |                                -0.0014 |                                 0.006  |                                -92.5666 |                                 0.0001 |                                -0.0018 |                                 0.0077 |                                -93.8654 |                                 0.0001 |                                -0.0022 |                                 0.0091 |                                -94.9496 |                                 0.0001 |                                -0.0025 |                                 0.0102 |                                -95.8471 |                                 0.0001 |                                -0.0028 |                                 0.0111 |                                -96.5817 |                                 0.0001 |                                -0.003  |                                 0.0118 |                                -97.1739 |                                 0.0001 |                                -0.0033 |                                 0.0124 |                                -97.6415 |                                 0.0001 |                                -0.0035 |                                 0.0128 |                                -97.9997 |
+        |            335 |                                 0      |                                 0      |                                -0.0012 |                                  0.0526 |                                 0      |                                 0.0015 |                                -0.0833 |                                  6.3454 |                                 0.0001 |                                 0.0056 |                                -0.2125 |                                 21.1017 |                                 0.0001 |                                 0.0093 |                                -0.2675 |                                 29.5581 |                                 0.0002 |                                 0.0115 |                                -0.2647 |                                 28.571  |                                 0.0002 |                                 0.0123 |                                -0.2369 |                                 21.1681 |                                 0.0002 |                                 0.0122 |                                -0.2023 |                                 10.513  |                                 0.0002 |                                 0.0116 |                                -0.1687 |                                 -1.3055 |                                 0.0002 |                                 0.0108 |                                -0.1391 |                                -13.1029 |                                 0.0002 |                                 0.0098 |                                -0.1138 |                                -24.2715 |                                 0.0002 |                                 0.0087 |                                -0.0928 |                                -34.5374 |                                 0.0002 |                                 0.0077 |                                -0.0753 |                                -43.8114 |                                 0.0002 |                                 0.0067 |                                -0.0609 |                                -52.1013 |                                 0.0002 |                                 0.0058 |                                -0.049  |                                -59.4634 |                                 0.0002 |                                 0.0049 |                                -0.0392 |                                -65.9749 |                                 0.0002 |                                 0.0041 |                                -0.0311 |                                -71.7192 |                                 0.0001 |                                 0.0034 |                                -0.0243 |                                -76.7783 |                                 0.0001 |                                 0.0027 |                                -0.0187 |                                -81.229  |                                 0.0001 |                                 0.0021 |                                -0.014  |                                -85.1412 |                                 0.0001 |                                 0.0015 |                                -0.01   |                                -88.5775 |                                 0.0001 |                                 0.001  |                                -0.0067 |                                -91.5935 |                                 0.0001 |                                 0.0005 |                                -0.0039 |                                -94.2381 |                                 0.0001 |                                 0      |                                -0.0015 |                                -96.5544 |                                 0.0001 |                                -0.0004 |                                 0.0005 |                                -98.5802 |                                 0.0001 |                                -0.0007 |                                 0.0022 |                               -100.349  |                                 0.0001 |                                -0.0011 |                                 0.0036 |                               -101.888  |                                 0.0001 |                                -0.0014 |                                 0.0048 |                               -103.226  |                                 0.0001 |                                -0.0017 |                                 0.0058 |                               -104.382  |                                 0.0001 |                                -0.002  |                                 0.0067 |                               -105.378  |
+        |            340 |                                 0      |                                 0      |                                -0.0001 |                                  0.0076 |                                 0      |                                 0.0006 |                                -0.0319 |                                  3.0177 |                                 0      |                                 0.0032 |                                -0.1209 |                                 15.3892 |                                 0.0001 |                                 0.0065 |                                -0.1863 |                                 27.7438 |                                 0.0001 |                                 0.0091 |                                -0.209  |                                 33.0367 |                                 0.0002 |                                 0.0106 |                                -0.2043 |                                 31.2557 |                                 0.0002 |                                 0.0113 |                                -0.1866 |                                 24.5979 |                                 0.0002 |                                 0.0114 |                                -0.1645 |                                 15.1681 |                                 0.0002 |                                 0.011  |                                -0.1421 |                                  4.468  |                                 0.0002 |                                 0.0104 |                                -0.1214 |                                 -6.5486 |                                 0.0002 |                                 0.0097 |                                -0.103  |                                -17.3174 |                                 0.0002 |                                 0.0089 |                                -0.087  |                                -27.528  |                                 0.0002 |                                 0.0081 |                                -0.0733 |                                -37.0276 |                                 0.0002 |                                 0.0073 |                                -0.0616 |                                -45.7585 |                                 0.0002 |                                 0.0065 |                                -0.0516 |                                -53.7187 |                                 0.0001 |                                 0.0058 |                                -0.0431 |                                -60.9374 |                                 0.0001 |                                 0.0051 |                                -0.0359 |                                -67.46   |                                 0.0001 |                                 0.0044 |                                -0.0297 |                                -73.3392 |                                 0.0001 |                                 0.0038 |                                -0.0244 |                                -78.6296 |                                 0.0001 |                                 0.0032 |                                -0.0199 |                                -83.3846 |                                 0.0001 |                                 0.0027 |                                -0.016  |                                -87.6547 |                                 0.0001 |                                 0.0022 |                                -0.0127 |                                -91.4869 |                                 0.0001 |                                 0.0017 |                                -0.0098 |                                -94.9242 |                                 0.0001 |                                 0.0013 |                                -0.0074 |                                -98.0055 |                                 0.0001 |                                 0.0009 |                                -0.0052 |                               -100.766  |                                 0.0001 |                                 0.0005 |                                -0.0034 |                               -103.238  |                                 0.0001 |                                 0.0001 |                                -0.0018 |                               -105.449  |                                 0.0001 |                                -0.0002 |                                -0.0004 |                               -107.425  |                                 0.0001 |                                -0.0005 |                                 0.0008 |                               -109.188  |
+        |            345 |                                 0      |                                 0      |                                -0      |                                  0.0009 |                                 0      |                                 0.0002 |                                -0.011  |                                  1.2588 |                                 0      |                                 0.0017 |                                -0.0636 |                                  9.9868 |                                 0.0001 |                                 0.0042 |                                -0.1213 |                                 22.9769 |                                 0.0001 |                                 0.0068 |                                -0.1553 |                                 32.6056 |                                 0.0001 |                                 0.0087 |                                -0.1662 |                                 36.1616 |                                 0.0001 |                                 0.0099 |                                -0.1624 |                                 34.2435 |                                 0.0001 |                                 0.0105 |                                -0.151  |                                 28.3978 |                                 0.0002 |                                 0.0106 |                                -0.1364 |                                 20.0949 |                                 0.0002 |                                 0.0104 |                                -0.1211 |                                 10.4575 |                                 0.0002 |                                 0.0101 |                                -0.1064 |                                  0.2642 |                                 0.0002 |                                 0.0096 |                                -0.0928 |                                 -9.9746 |                                 0.0002 |                                 0.009  |                                -0.0806 |                                -19.9405 |                                 0.0001 |                                 0.0083 |                                -0.0698 |                                -29.4457 |                                 0.0001 |                                 0.0077 |                                -0.0603 |                                -38.3889 |                                 0.0001 |                                 0.0071 |                                -0.052  |                                -46.7248 |                                 0.0001 |                                 0.0064 |                                -0.0448 |                                -54.4442 |                                 0.0001 |                                 0.0058 |                                -0.0385 |                                -61.5597 |                                 0.0001 |                                 0.0052 |                                -0.033  |                                -68.0969 |                                 0.0001 |                                 0.0047 |                                -0.0282 |                                -74.0886 |                                 0.0001 |                                 0.0042 |                                -0.024  |                                -79.571  |                                 0.0001 |                                 0.0037 |                                -0.0203 |                                -84.5812 |                                 0.0001 |                                 0.0032 |                                -0.0171 |                                -89.1556 |                                 0.0001 |                                 0.0027 |                                -0.0143 |                                -93.3294 |                                 0.0001 |                                 0.0023 |                                -0.0118 |                                -97.1354 |                                 0.0001 |                                 0.0019 |                                -0.0097 |                               -100.605  |                                 0.0001 |                                 0.0016 |                                -0.0077 |                               -103.765  |                                 0.0001 |                                 0.0012 |                                -0.0061 |                               -106.644  |                                 0.0001 |                                 0.0009 |                                -0.0046 |                               -109.264  |
+        |            350 |                                 0      |                                 0      |                                -0      |                                  0.0001 |                                 0      |                                 0.0001 |                                -0.0035 |                                  0.4671 |                                 0      |                                 0.0008 |                                -0.0312 |                                  5.8736 |                                 0      |                                 0.0026 |                                -0.0745 |                                 17.2697 |                                 0.0001 |                                 0.0048 |                                -0.1094 |                                 28.8861 |                                 0.0001 |                                 0.0067 |                                -0.1286 |                                 36.5375 |                                 0.0001 |                                 0.0082 |                                -0.1346 |                                 39.185  |                                 0.0001 |                                 0.0092 |                                -0.1321 |                                 37.4407 |                                 0.0001 |                                 0.0097 |                                -0.1247 |                                 32.4054 |                                 0.0001 |                                 0.0099 |                                -0.1148 |                                 25.144  |                                 0.0001 |                                 0.0099 |                                -0.1042 |                                 16.518  |                                 0.0001 |                                 0.0097 |                                -0.0936 |                                  7.1686 |                                 0.0001 |                                 0.0093 |                                -0.0835 |                                 -2.4505 |                                 0.0001 |                                 0.0089 |                                -0.0741 |                                -12.0295 |                                 0.0001 |                                 0.0084 |                                -0.0656 |                                -21.3647 |                                 0.0001 |                                 0.0079 |                                -0.058  |                                -30.3278 |                                 0.0001 |                                 0.0074 |                                -0.0511 |                                -38.8436 |                                 0.0001 |                                 0.0069 |                                -0.045  |                                -46.8732 |                                 0.0001 |                                 0.0063 |                                -0.0396 |                                -54.4023 |                                 0.0001 |                                 0.0058 |                                -0.0347 |                                -61.4333 |                                 0.0001 |                                 0.0053 |                                -0.0304 |                                -67.9791 |                                 0.0001 |                                 0.0049 |                                -0.0266 |                                -74.0592 |                                 0.0001 |                                 0.0044 |                                -0.0233 |                                -79.6971 |                                 0.0001 |                                 0.004  |                                -0.0202 |                                -84.9181 |                                 0.0001 |                                 0.0036 |                                -0.0176 |                                -89.7482 |                                 0.0001 |                                 0.0032 |                                -0.0152 |                                -94.2134 |                                 0.0001 |                                 0.0028 |                                -0.013  |                                -98.3388 |                                 0.0001 |                                 0.0025 |                                -0.0111 |                               -102.148  |                                 0.0001 |                                 0.0021 |                                -0.0094 |                               -105.665  |
         """
         greeks = {}
 
@@ -6240,10 +6982,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -6261,29 +7006,28 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["F"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_speed().loc["AAPL"]
+        toolkit.options.get_speed(
+            strike_price_range=0.25, strike_step_size=1
+        ).loc["F", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |            0 |       0.0005 |       0.0011 |       0.0013 |       0.0014 |       0.0014 |       0.0013 |       0.0012 |       0.0011 |
-        |            295 |            0 |       0.0001 |       0.0003 |       0.0006 |       0.0007 |       0.0008 |       0.0009 |       0.0009 |       0.0009 |
-        |            300 |            0 |       0      |       0.0001 |       0.0002 |       0.0003 |       0.0004 |       0.0005 |       0.0006 |       0.0006 |
-        |            305 |            0 |       0      |       0      |       0      |       0.0001 |       0.0002 |       0.0002 |       0.0003 |       0.0004 |
-        |            310 |            0 |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |       0.0001 |       0.0002 |
-        |            315 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0001 |
-        |            320 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            325 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            330 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
-        |            335 |            0 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0      |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |              9 |       0      |       0      |      -0.0002 |
+        |             10 |       0      |      -0.0003 |      -0.0098 |
+        |             11 |      -0.0026 |      -0.0366 |      -0.0832 |
+        |             12 |      -0.3232 |      -0.3013 |      -0.1804 |
+        |             13 |      -0.2804 |      -0.124  |      -0.061  |
+        |             14 |       0.5578 |       0.3088 |       0.1259 |
+        |             15 |       0.0474 |       0.136  |       0.1319 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6318,7 +7062,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6412,10 +7156,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -6433,29 +7180,33 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["CSCO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_zomma().loc["AAPL"]
+        toolkit.options.get_zomma(
+            strike_price_range=0.15, strike_step_size=2
+        ).loc["CSCO", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       0.0016 |       0.027  |       0.0499 |       0.057  |       0.0548 |       0.0487 |       0.0413 |       0.034  |       0.0272 |
-        |            295 |       0      |       0.0048 |       0.0195 |       0.0336 |       0.0421 |       0.0456 |       0.0457 |       0.0437 |       0.0406 |
-        |            300 |       0      |       0.0005 |       0.0049 |       0.0135 |       0.0226 |       0.0299 |       0.0348 |       0.0376 |       0.0387 |
-        |            305 |       0      |       0      |       0.0009 |       0.004  |       0.0093 |       0.0153 |       0.0209 |       0.0255 |       0.029  |
-        |            310 |       0      |       0      |       0.0001 |       0.0009 |       0.003  |       0.0064 |       0.0104 |       0.0145 |       0.0183 |
-        |            315 |       0      |       0      |       0      |       0.0002 |       0.0008 |       0.0022 |       0.0044 |       0.0071 |       0.0101 |
-        |            320 |       0      |       0      |       0      |       0      |       0.0002 |       0.0007 |       0.0016 |       0.0031 |       0.0049 |
-        |            325 |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0005 |       0.0012 |       0.0022 |
-        |            330 |       0      |       0      |       0      |       0      |       0      |       0      |       0.0002 |       0.0004 |       0.0009 |
-        |            335 |       0      |       0      |       0      |       0      |       0      |       0      |       0      |       0.0001 |       0.0003 |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             64 |       0      |       0.0022 |       0.0379 |
+        |             66 |       0.0002 |       0.0168 |       0.085  |
+        |             68 |       0.0062 |       0.0729 |       0.1319 |
+        |             70 |       0.0671 |       0.1714 |       0.1246 |
+        |             72 |       0.2478 |       0.1771 |       0.0182 |
+        |             74 |       0.156  |      -0.0713 |      -0.1589 |
+        |             76 |      -0.4947 |      -0.4015 |      -0.3028 |
+        |             78 |      -0.5373 |      -0.4265 |      -0.3184 |
+        |             80 |       0.1031 |      -0.1274 |      -0.2014 |
+        |             82 |       0.2943 |       0.1514 |      -0.032  |
+        |             84 |       0.1311 |       0.2138 |       0.0997 |
+        |             86 |       0.0273 |       0.1413 |       0.1536 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6490,7 +7241,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6565,10 +7316,11 @@ class Options:
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration and N'(d1) is the standard normal probability density at d1.
 
-        The formula as usually published carries a leading minus sign because it differentiates with respect to the
-        time to maturity, which runs opposite to elapsed calendar time. That sign is absorbed here so that Color,
-        like Theta, Charm and Veta, measures the change per unit of time that passes. The result is per year, matching
-        Charm; divide by 365 for gamma decay per calendar day.
+        This expression equals dGamma/dt, the change in Gamma as calendar time passes (the negative of the derivative
+        with respect to the remaining time to maturity t), so Color, like Theta, Charm and Veta, measures the change
+        per unit of time that passes. Tables that print the expression with a leading minus sign give the derivative
+        with respect to the time to maturity instead. The result is per year, matching Charm; divide by 365 for gamma
+        decay per calendar day.
 
         The Color can be interpreted as follows:
 
@@ -6588,10 +7340,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -6609,29 +7364,30 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["PEP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_color().loc["AAPL"]
+        toolkit.options.get_color(
+            strike_price_range=0.15, strike_step_size=5
+        ).loc["PEP", ["2026-01-07", "2026-01-14", "2026-01-28"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |      -0.0976 |      -0.8053 |      -0.9984 |      -0.8599 |      -0.6654 |      -0.496  |      -0.3642 |      -0.2651 |      -0.1912 |
-        |            295 |      -0.0018 |      -0.144  |      -0.3886 |      -0.5035 |      -0.5074 |      -0.46   |      -0.3968 |      -0.3338 |      -0.2772 |
-        |            300 |      -0      |      -0.0146 |      -0.098  |      -0.2022 |      -0.2714 |      -0.3002 |      -0.3005 |      -0.2847 |      -0.2613 |
-        |            305 |      -0      |      -0.0009 |      -0.0171 |      -0.0601 |      -0.1113 |      -0.1531 |      -0.1797 |      -0.1926 |      -0.195  |
-        |            310 |      -0      |      -0      |      -0.0022 |      -0.0137 |      -0.0365 |      -0.0639 |      -0.0893 |      -0.1093 |      -0.1229 |
-        |            315 |      -0      |      -0      |      -0.0002 |      -0.0025 |      -0.0098 |      -0.0224 |      -0.0379 |      -0.0536 |      -0.0675 |
-        |            320 |      -0      |      -0      |      -0      |      -0.0004 |      -0.0022 |      -0.0067 |      -0.014  |      -0.0231 |      -0.0329 |
-        |            325 |      -0      |      -0      |      -0      |      -0      |      -0.0004 |      -0.0018 |      -0.0046 |      -0.0089 |      -0.0145 |
-        |            330 |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0004 |      -0.0013 |      -0.0031 |      -0.0058 |
-        |            335 |      -0      |      -0      |      -0      |      -0      |      -0      |      -0.0001 |      -0.0003 |      -0.001  |      -0.0021 |
+        |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-28 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            120 |       0      |      -0.0035 |      -0.0323 |
+        |            125 |      -0.0026 |      -0.0527 |      -0.0911 |
+        |            130 |      -0.1387 |      -0.2563 |      -0.1154 |
+        |            135 |      -0.9333 |      -0.2703 |       0.0108 |
+        |            140 |       0.6313 |       0.475  |       0.2228 |
+        |            145 |       1.9641 |       0.7561 |       0.279  |
+        |            150 |      -0.8506 |       0.0102 |       0.1184 |
+        |            155 |      -0.6021 |      -0.3776 |      -0.0689 |
+        |            160 |      -0.0689 |      -0.2173 |      -0.1354 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6666,7 +7422,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.
@@ -6761,10 +7517,13 @@ class Options:
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
             strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration. Defaults to 30 which equals
-            30 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None which
-            means it will use the current risk free rate.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -6782,29 +7541,30 @@ class Options:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "ASML"],
+            ["NKE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.options.get_ultima().loc["AAPL"]
+        toolkit.options.get_ultima(
+            strike_price_range=0.15, strike_step_size=2, expiration_time_range=91
+        ).loc["NKE", ["2026-01-30", "2026-03-01", "2026-03-31"]]
         ```
 
         Which returns:
 
-        |   Strike Price |   2026-01-01 |   2026-01-02 |   2026-01-03 |   2026-01-04 |   2026-01-05 |   2026-01-06 |   2026-01-07 |   2026-01-08 |   2026-01-09 |
-        |---------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        |            290 |       4.4479 |      59.5728 |      81.1739 |      53.6643 |       6.762  |     -42.4233 |     -87.2163 |    -125.733  |    -157.986  |
-        |            295 |       0.1375 |      19.5947 |      69.0758 |     100.071  |      99.471  |      76.366  |      41.3441 |       1.6829 |     -38.3689 |
-        |            300 |       0.0014 |       3.0559 |      28.3789 |      70.9546 |     106.42   |     123.366  |     121.898  |     106.326  |      81.3579 |
-        |            305 |       0      |       0.2627 |       7.1602 |      31.4362 |      67.9124 |     103.693  |     130.022  |     143.805  |     145.467  |
-        |            310 |       0      |       0.0135 |       1.2162 |       9.8489 |      31.1181 |      62.0504 |      95.5641 |     125.461  |     148.082  |
-        |            315 |       0      |       0.0004 |       0.1464 |       2.3133 |      10.9951 |      28.9922 |      54.9184 |      84.8689 |     114.693  |
-        |            320 |       0      |       0      |       0.0129 |       0.4222 |       3.1152 |      11.062  |      26.0298 |      47.5385 |      73.4872 |
-        |            325 |       0      |       0      |       0.0009 |       0.0614 |       0.7262 |       3.5422 |      10.4864 |      22.8123 |      40.5143 |
-        |            330 |       0      |       0      |       0      |       0.0073 |       0.1419 |       0.9702 |       3.6628 |       9.5798 |      19.6698 |
-        |            335 |       0      |       0      |       0      |       0.0007 |       0.0236 |       0.2306 |       1.1254 |       3.5734 |       8.5425 |
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             54 |     -30.4566 |     -65.1764 |     -73.0765 |
+        |             56 |     -46.1558 |     -58.2569 |     -57.796  |
+        |             58 |     -42.7252 |     -40.9146 |     -37.735  |
+        |             60 |     -25.0168 |     -20.763  |     -18.6404 |
+        |             62 |      -6.6538 |      -5.5465 |      -5.3442 |
+        |             64 |      -0.2364 |      -0.4387 |      -0.7623 |
+        |             66 |      -9.4832 |      -6.7211 |      -5.5464 |
+        |             68 |     -28.3077 |     -22.0046 |     -18.3164 |
+        |             70 |     -45.8895 |     -41.5496 |     -36.2787 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -6839,7 +7599,7 @@ class Options:
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
-                else self._dividend_yield[ticker].iloc[-1]
+                else self._dividend_yield_on(ticker, start_date)
             )
 
             # Every strike price and time to expiration in one call on arrays.

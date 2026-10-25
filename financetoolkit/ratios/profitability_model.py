@@ -91,32 +91,6 @@ def get_ebitda_margin(
     return (operating_income + depreciation_and_amortization) / revenue
 
 
-def get_interest_coverage_ratio(
-    operating_income: pd.Series | pd.DataFrame,
-    interest_expense: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
-    """
-    Compute the Interest Coverage Ratio, a metric that reveals a company's ability to
-    cover its interest expenses out of its operating profit. It measures how many times
-    over the operating income covers the interest payments due on outstanding debt, and
-    is a standard indicator of default risk: a higher ratio is better.
-
-    The formula is as follows:
-
-        Interest Coverage Ratio = Operating Income / Interest Expense
-
-    Also known as: times interest earned, TIE.
-
-    Args:
-        operating_income (float or pd.Series): Operating income of the company.
-        interest_expense (float or pd.Series): Interest expense of the company.
-
-    Returns:
-        float | pd.Series: The Interest Coverage Ratio
-    """
-    return operating_income / interest_expense
-
-
 def get_interest_burden_ratio(
     income_before_tax: pd.Series | pd.DataFrame,
     operating_income: pd.Series | pd.DataFrame,
@@ -132,8 +106,8 @@ def get_interest_burden_ratio(
     signals a heavy interest load. Values slightly above 1 occur when non-operating
     income (e.g. interest income) exceeds interest expense.
 
-    This is the reciprocal of, and should not be confused with, the interest coverage
-    ratio, which divides operating profit by interest expense and is unbounded above.
+    It should not be confused with the interest coverage ratio, which divides operating
+    profit by interest expense and is unbounded above.
 
     The formula is as follows:
 
@@ -176,8 +150,12 @@ def get_effective_tax_rate(
     Calculate the effective tax rate, a financial ratio that measures the percentage of pretax income
     that is paid as taxes.
 
+    The rate is only meaningful for a positive income before tax: with a pre-tax loss the
+    ratio of a tax charge (or benefit) to the loss flips sign. The Ratios module passes
+    NaN for those periods; this function divides the inputs as given.
+
     Args:
-        income_tax_expense (float or pd.Series): The amount of income tax paid by the company.
+        income_tax_expense (float or pd.Series): The income tax expense of the company.
         income_before_tax (float or pd.Series): The company's income before taxes.
 
     Returns:
@@ -255,32 +233,34 @@ def get_return_on_equity(
 
 
 def get_return_on_invested_capital(
-    net_income: pd.Series | pd.DataFrame,
-    dividends: pd.Series | float,
+    operating_income: pd.Series | pd.DataFrame,
+    income_tax_expense: pd.Series | pd.DataFrame,
+    income_before_tax: pd.Series | pd.DataFrame,
     average_total_equity: pd.Series | pd.DataFrame,
     average_total_debt: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the return on invested capital, a financial ratio that measures the company's return on
-    the capital invested in it, including both equity and debt.
+    Calculate the return on invested capital, a financial ratio that measures the company's
+    after-tax operating return on the capital invested in it, including both equity and debt.
 
-    This uses the simplified, net-income-based formulation of ROIC (Net Income minus
-    Dividends, divided by Debt plus Equity) rather than the NOPAT / Invested Capital
-    formulation (EBIT × (1 - tax rate) / Invested Capital). The net-income-based
-    version is a commonly cited alternative that avoids needing a separate tax-rate
-    input, at the cost of not stripping out the effect of financing (interest) from
-    the numerator.
+    The numerator is the net operating profit after taxes (NOPAT): operating income (EBIT)
+    taxed at the effective tax rate (Damodaran). Because EBIT is before interest, the
+    return does not depend on how the capital is financed. The effective tax rate is
+    Income Tax Expense / Income Before Tax, bounded to [0, 1]; with a pre-tax loss it is
+    undefined and set to 0, so an operating loss is not offset by a tax credit. A missing
+    tax expense or income before tax gives NaN.
 
     The formula is as follows:
 
-        Return on Invested Capital = (Net Income - Dividends) / (Average Total Equity
-            + Average Total Debt)
+        Return on Invested Capital = Operating Income x (1 - Effective Tax Rate) /
+            (Average Total Equity + Average Total Debt)
 
-    Also known as: ROIC (net-income-basis).
+    Also known as: ROIC, return on capital (ROC).
 
     Args:
-        net_income (float or pd.Series): The company's net income.
-        dividends (float or pd.Series): The dividends paid by the company.
+        operating_income (float or pd.Series): The company's operating income (EBIT).
+        income_tax_expense (float or pd.Series): The company's income tax expense.
+        income_before_tax (float or pd.Series): The company's income before taxes.
         average_total_equity (float or pd.Series): Average total equity of the company.
             This is typically calculated as (beginning total equity + ending total equity) / 2.
         average_total_debt (float or pd.Series): Average total debt of the company.
@@ -289,7 +269,18 @@ def get_return_on_invested_capital(
     Returns:
         float | pd.Series: The return on invested capital value.
     """
-    return (net_income - dividends) / (average_total_equity + average_total_debt)
+    # Only a pre-tax loss (or zero) sets the rate to 0; a missing tax expense or income before
+    # tax stays NaN, so an unreported figure is not read as a tax-free year.
+    effective_tax_rate = (
+        income_tax_expense / income_before_tax.where(income_before_tax > 0)
+    ).clip(lower=0, upper=1)
+    effective_tax_rate = effective_tax_rate.mask(income_before_tax <= 0, 0)
+
+    net_operating_profit_after_taxes = operating_income * (1 - effective_tax_rate)
+
+    return net_operating_profit_after_taxes / (
+        average_total_equity + average_total_debt
+    )
 
 
 def get_income_quality_ratio(
@@ -314,51 +305,42 @@ def get_income_quality_ratio(
 def get_return_on_tangible_assets(
     net_income: pd.Series | pd.DataFrame,
     average_total_assets: pd.Series | pd.DataFrame,
-    average_intangible_assets: pd.Series | pd.DataFrame,
-    average_total_liabilities: pd.Series | pd.DataFrame,
+    average_goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the return on tangible assets, which measures the amount of profit
-    generated relative to a company's net tangible assets (i.e. its tangible book
-    value: total assets net of both liabilities and intangible assets such as
-    goodwill).
+    generated relative to a company's tangible assets: total assets minus goodwill and
+    other intangible assets.
 
-    This differs from the simpler "net income / (total assets - intangible assets)"
-    formulation in that it also nets out total liabilities, so the denominator
-    reflects the tangible equity actually backing the business rather than the
-    gross tangible asset base. Compare `get_tangible_asset_value` in the valuation
-    module, which is a related but distinct net tangible asset base: it excludes
-    Goodwill specifically, whereas this function excludes Intangible Assets, and
-    Goodwill and Intangible Assets are two separate balance-sheet line items that
-    can differ substantially (e.g. one is a subset of, or need not equal, the
-    other), so the two functions' denominators are not interchangeable.
+    Liabilities are not deducted, so the ratio measures the return on the whole tangible
+    asset base, however it is financed, and stays comparable between companies with
+    different leverage. `get_tangible_asset_value` in the valuation module makes the same
+    deduction of goodwill and intangible assets but also deducts the liabilities.
 
     The formula is as follows:
 
         Return on Tangible Assets = Net Income / (Average Total Assets -
-            Average Intangible Assets - Average Total Liabilities)
+            Average Goodwill and Intangible Assets)
 
     Args:
         net_income (float or pd.Series): The net income of the company.
         average_total_assets (float or pd.Series): Average total assets of the company.
             This is typically calculated as (beginning total assets + ending total assets) / 2.
-        average_intangible_assets (float or pd.Series): Average intangible assets of the company.
-        average_total_liabilities (float or pd.Series): Average total liabilities of the company.
+        average_goodwill_and_intangible_assets (float or pd.Series): Average goodwill and
+            other intangible assets of the company.
 
     Returns:
         float | pd.Series: The return on tangible assets value.
     """
     average_tangible_assets = (
-        average_total_assets - average_intangible_assets - average_total_liabilities
+        average_total_assets - average_goodwill_and_intangible_assets
     )
 
     return net_income / average_tangible_assets
 
 
 def get_return_on_capital_employed(
-    net_income: pd.Series | pd.DataFrame,
-    interest_expense: pd.Series | pd.DataFrame,
-    tax_expense: pd.Series | pd.DataFrame,
+    operating_income: pd.Series | pd.DataFrame,
     total_assets: pd.Series | pd.DataFrame,
     total_current_liabilities: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
@@ -366,19 +348,22 @@ def get_return_on_capital_employed(
     Calculate the return on capital employed (ROCE), a profitability ratio that measures
     the amount of return a company generates from the capital it has invested in the business.
 
+    The formula is as follows:
+
+        Return on Capital Employed = EBIT / (Total Assets - Total Current Liabilities)
+
+    Operating income is used as EBIT, so non-operating income and expenses do not enter
+    the return.
+
     Args:
-        net_income (float or pd.Series): Net income of the company.
-        interest_expense (float or pd.Series): Interest expense of the company.
-        tax_expense (float or pd.Series): Tax expense of the company.
+        operating_income (float or pd.Series): Operating income (EBIT) of the company.
         total_assets (float or pd.Series): Total assets of the company.
         total_current_liabilities (float or pd.Series): Total current liabilities of the company.
 
     Returns:
         float | pd.Series: The ROCE value.
     """
-    return (net_income + interest_expense + tax_expense) / (
-        total_assets - total_current_liabilities
-    )
+    return operating_income / (total_assets - total_current_liabilities)
 
 
 def get_net_income_per_ebt(
@@ -509,6 +494,10 @@ def get_cash_tax_rate(
     Calculate the cash tax rate, which measures the percentage of pretax income that
     is actually paid out in cash taxes, as opposed to the accrual-based effective tax
     rate.
+
+    As for the effective tax rate, the rate is only meaningful for a positive income before
+    tax. The Ratios module passes NaN for periods with a pre-tax loss; this function divides
+    the inputs as given.
 
     Args:
         income_taxes_paid (float or pd.Series): Income taxes paid by the company, as

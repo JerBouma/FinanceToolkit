@@ -1,6 +1,7 @@
 # ruff: noqa
 """Toolkit Controller Tests""" ""
 import pandas as pd
+import pytest
 
 from financetoolkit import Toolkit
 
@@ -236,3 +237,195 @@ def test_toolkit_converts_each_period_once(monkeypatch):
     rounded = toolkit.get_historical_data(period="monthly", rounding=0)
     assert len(conversions) == conversions_after_first + 1
     assert not rounded.equals(first)
+
+
+def test_toolkit_cash_flow_trailing_keeps_the_cash_balances():
+    """A trailing window starts with the first period's cash and ends with the last's."""
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        cash=cash_dataset,
+        convert_currency=False,
+        start_date="2017-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+
+    statement = toolkit.get_cash_flow_statement(rounding=None).loc["AAPL"]
+    trailing = toolkit.get_cash_flow_statement(trailing=2, rounding=None).loc["AAPL"]
+
+    periods = statement.columns
+    for previous, current in zip(periods[:-1], periods[1:]):
+        assert (
+            trailing.loc["Cash End of Period", current]
+            == statement.loc["Cash End of Period", current]
+        )
+        assert (
+            trailing.loc["Cash Beginning of Period", current]
+            == statement.loc["Cash Beginning of Period", previous]
+        )
+        assert trailing.loc["Net Change in Cash", current] == (
+            statement.loc["Net Change in Cash", [previous, current]].sum()
+        )
+
+    assert pd.isna(trailing.loc["Cash End of Period", periods[0]])
+
+
+def test_toolkit_income_trailing_does_not_sum_the_tax_rate():
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        income=income_dataset,
+        convert_currency=False,
+        start_date="2017-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    statement = toolkit.get_income_statement()
+
+    # Yahoo Finance statements hold a Tax Rate for Calcs row, a ratio.
+    income = toolkit._income_statement
+    tax_rate = income.xs("Net Income", level=1, drop_level=False) * 0 + 0.21
+    tax_rate.index = pd.MultiIndex.from_tuples(
+        [(ticker, "Tax Rate for Calcs") for ticker, _ in tax_rate.index]
+    )
+    toolkit._income_statement = pd.concat([income, tax_rate])
+
+    trailing = toolkit.get_income_statement(trailing=2).loc["AAPL"]
+
+    assert trailing.loc["Tax Rate for Calcs"].dropna().eq(0.21).all()
+    assert len(trailing.loc["Tax Rate for Calcs"].dropna()) > 0
+    assert (
+        trailing.loc["Weighted Average Shares"].iloc[-1]
+        == statement.loc["AAPL"].loc["Weighted Average Shares"].iloc[-1]
+    )
+    assert trailing.loc["Revenue"].iloc[-1] == pytest.approx(
+        statement.loc["AAPL"].loc["Revenue"].iloc[-2:].sum()
+    )
+
+
+def test_toolkit_period_risk_free_rate_is_the_average_daily_yield():
+    """The yield of a period is the average of its daily yields, not its last one."""
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical_dataset,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
+
+    treasury = toolkit.get_treasury_data(period="quarterly", rounding=None)
+    daily_yield = treasury_data.xs("10 Year", level=1, axis=1)["Adj Close"]
+    # Rounded like every other Toolkit output (4 decimals by default).
+    expected = daily_yield.groupby(daily_yield.index.asfreq("Q")).mean().round(4)
+
+    period_rate = toolkit._quarterly_risk_free_rate["Adj Close"]
+    pd.testing.assert_series_equal(
+        period_rate, expected.reindex(period_rate.index), check_names=False
+    )
+    # The treasury data itself keeps the closing yield of each period.
+    last_yield = daily_yield.groupby(daily_yield.index.asfreq("Q")).last()
+    pd.testing.assert_series_equal(
+        treasury["Adj Close", "10 Year"],
+        last_yield.reindex(treasury.index),
+        check_names=False,
+    )
+
+
+def _fiscal_exchange_rate_toolkit():
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        income=income_dataset.loc[["AAPL"]],
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    days = pd.period_range("2019-01-01", "2023-12-31", freq="D")
+    rates = pd.Series(range(len(days)), index=days, dtype=float) / 1000 + 1
+    toolkit._daily_exchange_rate_data = pd.DataFrame({("Adj Close", "EURUSD=X"): rates})
+    toolkit._statement_currencies = pd.Series({"AAPL": "EURUSD=X"})
+    # Apple's fiscal years end on the last Saturday of September.
+    toolkit._statistics_statement = pd.DataFrame(
+        [["2020-09-26", "2021-09-25", "2022-09-24", "2023-09-30"]],
+        index=pd.MultiIndex.from_tuples([("AAPL", "Period End Date")]),
+        columns=income_dataset.columns,
+    )
+    return toolkit, rates.set_axis(days.to_timestamp())
+
+
+def test_toolkit_statement_exchange_rates_use_the_fiscal_period():
+    toolkit, rates = _fiscal_exchange_rate_toolkit()
+    statement = toolkit._income_statement
+
+    closing = toolkit._get_statement_exchange_rates(statement, rate="closing")["AAPL"]
+    average = toolkit._get_statement_exchange_rates(statement, rate="average")["AAPL"]
+    opening = toolkit._get_statement_exchange_rates(statement, rate="opening")["AAPL"]
+
+    # The closing rate is the rate on the fiscal year end, not on 31 December.
+    assert closing[pd.Period("2021", "Y")] == pytest.approx(rates["2021-09-25"])
+    # The average runs from the day after the previous fiscal year end to this one.
+    assert average[pd.Period("2021", "Y")] == pytest.approx(
+        rates["2020-09-27":"2021-09-25"].mean()
+    )
+    # The first period has no previous period, so its window is the year before its end.
+    assert average[pd.Period("2020", "Y")] == pytest.approx(
+        rates["2019-09-27":"2020-09-26"].mean()
+    )
+    assert opening[pd.Period("2022", "Y")] == pytest.approx(rates["2021-09-25"])
+
+
+def test_toolkit_period_end_dates_fall_back_to_the_label():
+    toolkit, _ = _fiscal_exchange_rate_toolkit()
+    toolkit._statistics_statement = pd.DataFrame()
+    toolkit._fiscal_year_adjustments = {
+        "AAPL": [{"fiscal_year": 2023, "calendar_year": 2022}]
+    }
+
+    end_dates = toolkit._get_period_end_dates(toolkit._income_statement).loc["AAPL"]
+
+    assert end_dates[pd.Period("2021", "Y")] == pd.Timestamp("2021-12-31")
+    # A label moved back a year ends at the latest on 31 May of the next year.
+    assert end_dates[pd.Period("2022", "Y")] == pd.Timestamp("2023-05-31")
+
+
+def test_toolkit_statement_exchange_rates_are_not_rounded(monkeypatch):
+    from financetoolkit import toolkit_controller
+
+    captured = {}
+
+    def fake_historical_data(**kwargs):
+        captured["rounding"] = kwargs["rounding"]
+        days = pd.period_range("2022-01-01", "2022-01-10", freq="D")
+        frame = pd.DataFrame(
+            {
+                (column, "KRWUSD=X"): [0.000771234] * len(days)
+                for column in ["Open", "High", "Low", "Close", "Adj Close"]
+            },
+            index=days,
+        )
+        return frame, []
+
+    monkeypatch.setattr(
+        toolkit_controller, "_get_historical_data", fake_historical_data
+    )
+
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        income=income_dataset.loc[["AAPL"]],
+        convert_currency=False,
+        start_date="2022-01-01",
+        end_date="2022-01-10",
+        sleep_timer=False,
+    )
+    toolkit._currencies = ["KRWUSD=X"]
+
+    returned = toolkit.get_exchange_rates()
+
+    # Fetched unrounded for the statement translation; only the returned rates are rounded.
+    assert captured["rounding"] is None
+    assert (
+        toolkit._daily_exchange_rate_data[("Adj Close", "KRWUSD=X")].iloc[0]
+        == 0.000771234
+    )
+    assert returned["Adj Close"].iloc[0] == 0.0008

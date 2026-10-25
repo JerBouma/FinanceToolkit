@@ -34,9 +34,11 @@ def _group_and_scale(
 ) -> pd.Series | pd.DataFrame:
     """
     Groups a daily estimator "term" (e.g. a squared log high/low ratio) by the given
-    period and scales the resulting (already period-average) variance to an annualized
-    Volatility figure, in the same way as `risk_model.get_volatility` scales the daily
-    Variance of close-to-close returns.
+    period and returns, per period, the daily Variance it implies: the mean of the
+    term, or the Variance of a daily return series. It does not scale anything; the
+    callers multiply the result by the number of trading days in the period (e.g.
+    252 / 52 for weekly) and take the square root, in the same way as
+    `risk_model.get_volatility` scales the daily Variance of close-to-close returns.
 
     Args:
         daily_term (pd.Series | pd.DataFrame): The daily estimator term to group.
@@ -54,7 +56,8 @@ def _group_and_scale(
         DatetimeIndex/PeriodIndex on `daily_term`.
 
     Returns:
-        pd.Series | pd.DataFrame: The period Variance (not yet annualized).
+        pd.Series | pd.DataFrame: The daily Variance per period, not yet scaled to the
+        period.
     """
     dates = (
         groups
@@ -365,7 +368,9 @@ def get_yang_zhang_volatility(
     dates = (
         groups
         if groups is not None
-        else open_to_close_returns.index.asfreq(PERIOD_TRANSLATION[period])
+        else to_period_index(open_to_close_returns.index).asfreq(
+            PERIOD_TRANSLATION[period]
+        )
     )
     number_of_days = open_to_close_returns.groupby(dates).count()
 
@@ -438,8 +443,8 @@ def get_har_rv_forecast(
         pd.Series | pd.DataFrame: The fitted HAR-RV forecast of Realized Variance,
         indexed by the date the forecast was made (i.e. the forecast target is
         `horizon` days ahead of each index date). The first `monthly_window - 1`
-        (rolling window burn-in) and last `horizon` (no future data available to
-        forecast against) values are NaN.
+        values (the rolling window burn-in) are NaN; the last `horizon` values are the
+        forecasts of days that have not been observed yet.
 
     Raises:
         TypeError: If `realized_variance` is not a pd.Series or pd.DataFrame.
@@ -481,9 +486,14 @@ def get_har_rv_forecast(
         y = estimation_sample["target"].to_numpy()
 
         coefficients, _, _, _ = np.linalg.lstsq(x, y, rcond=None)
-        fitted_values = x @ coefficients
 
-        forecast = pd.Series(fitted_values, index=estimation_sample.index)
+        # The coefficients are estimated where the target is known, and the forecast is
+        # made wherever its inputs are, so the last `horizon` days get a forecast too.
+        inputs = regression_frame[["daily", "weekly", "monthly"]].dropna()
+        forecast = pd.Series(
+            np.column_stack([np.ones(len(inputs)), inputs.to_numpy()]) @ coefficients,
+            index=inputs.index,
+        )
 
         return forecast.reindex(realized_variance.index)
 

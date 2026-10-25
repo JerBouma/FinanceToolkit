@@ -37,8 +37,9 @@ def get_risk_neutral_density(
     Where C(K) is the Black-Scholes call price at strike K, using the SVI-smoothed
     implied volatility at that strike (rather than the raw, noisy market quotes),
     r is the risk-free rate and t is the time to expiration. The second derivative
-    is approximated numerically via a central finite difference on a fine,
-    evenly-spaced strike grid, since the smile only gives implied volatility at a
+    is approximated numerically via the three-point central difference
+    (C(K - h) - 2 * C(K) + C(K + h)) / h^2 on a fine, evenly-spaced strike grid with
+    spacing h, since the smile only gives implied volatility at a
     sparse set of traded strikes.
 
     See the paper: Breeden, D.T., & Litzenberger, R.H. (1978), "Prices of
@@ -71,8 +72,9 @@ def get_risk_neutral_density(
 
     Returns:
         pd.Series: The risk-neutral probability density, indexed by strike price.
-            The first and last grid points are dropped, since the central finite
-            difference needs a neighbor on each side.
+            The first and last grid points are dropped, since the central difference
+            needs a neighbor on each side, so the Series holds number_of_strikes - 2
+            points.
     """
     strike_grid = np.linspace(
         forward_price * (1 - strike_price_range),
@@ -96,8 +98,14 @@ def get_risk_neutral_density(
         put_option=False,
     )
 
-    density = np.exp(risk_free_rate * time_to_expiration) * np.gradient(
-        np.gradient(call_price, strike_step), strike_step
+    # The three-point stencil (C(K - h) - 2 C(K) + C(K + h)) / h^2 is the second-order accurate
+    # second difference on spacing h. Applying np.gradient twice instead gives a stencil on spacing 2h
+    # (four times the truncation error) and one-sided differences at the second and penultimate points,
+    # which biases those points by about 20%.
+    density = (
+        np.exp(risk_free_rate * time_to_expiration)
+        * np.diff(call_price, 2)
+        / strike_step**2
     )
 
-    return pd.Series(density[1:-1], index=strike_grid[1:-1], name="Density")
+    return pd.Series(density, index=strike_grid[1:-1], name="Density")

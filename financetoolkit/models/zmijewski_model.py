@@ -105,7 +105,7 @@ def get_zmijewski_score(
 
     The formula is as follows:
 
-        X = -4.3 - 4.5 * (Net Income / Total Assets) + 5.7 * (Total Liabilities / Total Assets)
+        X = -4.336 - 4.513 * (Net Income / Total Assets) + 5.679 * (Total Liabilities / Total Assets)
         - 0.004 * (Current Assets / Current Liabilities)
 
     Also known as: Zmijewski Score, ZFC score, bankruptcy prediction, financial distress score.
@@ -126,15 +126,18 @@ def get_zmijewski_score(
     - The raw X value is not itself a probability. Use `get_zmijewski_bankruptcy_probability` to convert
     it into a probability of bankruptcy via the standard normal cumulative distribution function
     (probit link), NOT the logistic transform used for the Ohlson O-Score.
+    - The coefficients are Zmijewski's (1984) probit estimates at full precision. Secondary sources
+    differ on the sign of the liquidity coefficient (0.004 on the current ratio); its contribution is
+    below 0.01 for any common current ratio, so the score and the probability hardly depend on it.
 
     References:
     - Zmijewski, Mark E. "Methodological Issues Related to the Estimation of Financial Distress
     Prediction Models." Journal of Accounting Research, Vol. 22, 1984, pp. 59-82.
     """
     return (
-        -4.3
-        - 4.5 * net_income_to_total_assets_ratio
-        + 5.7 * total_liabilities_to_total_assets_ratio
+        -4.336
+        - 4.513 * net_income_to_total_assets_ratio
+        + 5.679 * total_liabilities_to_total_assets_ratio
         - 0.004 * current_assets_to_current_liabilities_ratio
     )
 

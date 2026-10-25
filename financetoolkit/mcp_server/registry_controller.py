@@ -67,7 +67,24 @@ _OPAQUE_TYPES = {
     "DataFrame",
 }
 
+
 # Injected into each tool's Args docstring so FastMCP can surface them.
+def _curve_maturity(maturity: Any) -> float | str:
+    """A curve maturity as a number of years, or the label itself ("10Y", "6M")."""
+    try:
+        return float(maturity)
+    except (TypeError, ValueError):
+        label = str(maturity).strip().upper()
+        if label[:-1].replace(".", "", 1).isdigit() and label[-1:] in (
+            "D",
+            "W",
+            "M",
+            "Y",
+        ):
+            return label
+        raise
+
+
 # The indicators whose own limit also takes a negative number, for the last rows.
 NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
 
@@ -185,7 +202,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "bond_price": "Clean price of the bond per 100 face value.",
     "coupon_rate": "Annual coupon rate as a decimal, e.g. 0.05 for 5 %.",
     "years_to_maturity": "Years remaining until the bond matures.",
-    "maturities": "Comma-separated bond maturity labels, e.g. '3month,2year,10year'.",
+    "maturities": "Comma-separated maturities, e.g. '1M,3M,6M,1Y'.",
     "strike_rate": "Option strike price.",
     "factors_to_calculate": "Comma-separated factor names to include in the calculation.",
     "growth_rate": "Assumed constant growth rate as a decimal.",
@@ -1205,14 +1222,15 @@ class ToolRegistry:
                 ):
                     method_kwargs[pname] = value
 
-            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number.
+            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number; a
+            # label such as "10Y" or "6M" is passed on for the indicator to read.
             curve_note = None
             for curve in CURVE_PARAMETERS:
                 given = method_kwargs.get(curve)
                 if isinstance(given, dict):
                     try:
                         method_kwargs[curve] = {
-                            float(maturity): float(rate)
+                            _curve_maturity(maturity): float(rate)
                             for maturity, rate in given.items()
                         }
                     except (TypeError, ValueError):
@@ -1229,8 +1247,10 @@ class ToolRegistry:
                 curve_note = (
                     f"{', '.join(f'`{curve}`' for curve in missing_curves)} "
                     f"{'was' if len(missing_curves) == 1 else 'were'} not given, so a fixed "
-                    "sample curve was used for illustration, not market data. Pass the "
-                    "current curve, e.g. from get_treasury_rates in the rates tool."
+                    "sample curve was used for illustration, not market data. Pass a "
+                    "current zero-coupon (spot) curve from the rates tool, e.g. "
+                    "get_bank_of_england_yield_curve or get_hqm_corporate_bond_yield_curve "
+                    "with rate='spot'; get_treasury_rates is a par curve."
                 )
 
             # The economic inputs of a calculation that the caller left to their defaults

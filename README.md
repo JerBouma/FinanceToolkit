@@ -296,31 +296,22 @@ The past shows how much risk came with the returns; the option market puts a pri
 companies_today = Toolkit(["NVDA", "AMD", "INTC"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
 # Get the at-the-money implied volatility of the six nearest expirations
-companies_today.options.get_implied_volatility_term_structure(number_of_expirations=6)
+term_structure = companies_today.options.get_implied_volatility_term_structure(number_of_expirations=6)
+
+# Show the results for Nvidia
+term_structure.loc["NVDA"]
 ```
 
-For example, the implied volatility for each expiration is shown below.
+For example, Nvidia's implied volatility for each expiration is shown below.
 
-|                        |   Days to Expiration |   At-the-Money Volatility |
-|:-----------------------|---------------------:|--------------------------:|
-| ('NVDA', '2026-10-26') |                    1 |                    0.3558 |
-| ('NVDA', '2026-10-28') |                    3 |                    0.4155 |
-| ('NVDA', '2026-10-30') |                    5 |                    0.4152 |
-| ('NVDA', '2026-11-02') |                    8 |                    0.3882 |
-| ('NVDA', '2026-11-04') |                   10 |                    0.4096 |
-| ('NVDA', '2026-11-06') |                   12 |                    0.3985 |
-| ('AMD', '2026-10-26')  |                    1 |                    0.5029 |
-| ('AMD', '2026-10-28')  |                    3 |                    0.5792 |
-| ('AMD', '2026-10-30')  |                    5 |                    0.6276 |
-| ('AMD', '2026-11-02')  |                    8 |                    0.5866 |
-| ('AMD', '2026-11-04')  |                   10 |                    0.7242 |
-| ('AMD', '2026-11-06')  |                   12 |                    0.7236 |
-| ('INTC', '2026-10-30') |                    5 |                    0.97   |
-| ('INTC', '2026-11-06') |                   12 |                    0.7948 |
-| ('INTC', '2026-11-13') |                   19 |                    0.7225 |
-| ('INTC', '2026-11-20') |                   26 |                    0.6897 |
-| ('INTC', '2026-11-27') |                   33 |                    0.6474 |
-| ('INTC', '2026-12-04') |                   40 |                    0.6305 |
+| Expiration   |   Days to Expiration |   At-the-Money Volatility |
+|:-------------|---------------------:|--------------------------:|
+| 2026-10-26   |                    1 |                    0.3558 |
+| 2026-10-28   |                    3 |                    0.4155 |
+| 2026-10-30   |                    5 |                    0.4152 |
+| 2026-11-02   |                    8 |                    0.3882 |
+| 2026-11-04   |                   10 |                    0.4096 |
+| 2026-11-06   |                   12 |                    0.3985 |
 
 And below this term structure is plotted for each of the three companies.
 

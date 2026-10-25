@@ -3,6 +3,9 @@
 __docformat__ = "google"
 
 
+from collections.abc import Callable
+from functools import cached_property
+
 import numpy as np
 import pandas as pd
 
@@ -69,9 +72,9 @@ class Options:
     def __init__(
         self,
         tickers: list[str],
-        daily_historical: pd.DataFrame = pd.DataFrame(),
-        annual_historical: pd.DataFrame = pd.DataFrame(),
-        risk_free_rate: pd.DataFrame = pd.DataFrame(),
+        daily_historical: pd.DataFrame | Callable[[], pd.DataFrame] = pd.DataFrame(),
+        annual_historical: pd.DataFrame | Callable[[], pd.DataFrame] = pd.DataFrame(),
+        risk_free_rate: pd.DataFrame | Callable[[], pd.DataFrame] = pd.DataFrame(),
         quarterly: bool = False,
         rounding: int | None = 4,
         start_date: str | None = None,
@@ -82,11 +85,18 @@ class Options:
         metrics such as the First, Second and Third Order Greeks, the Black Scholes Model and the Option
         Chains as well as Implied Volatilities, Breeden—Litzenberger and more.
 
+        Each dataset is either the data itself or a function without arguments that retrieves
+        it, which is called when a calculation first needs that dataset. The Toolkit passes
+        functions, so no prices or Treasury yields are retrieved before a calculation asks for
+        them.
+
         Args:
             tickers (str | list[str]): The tickers to use.
-            daily_historical (pd.DataFrame, optional): The daily historical data. Defaults to pd.DataFrame().
-            annual_historical (pd.DataFrame, optional): The annual historical data. Defaults to pd.DataFrame().
-            risk_free_rate (pd.DataFrame, optional): The risk free rate, a Treasury yield quoted on a
+            daily_historical (pd.DataFrame | Callable[[], pd.DataFrame], optional): The daily
+                historical data. Defaults to pd.DataFrame().
+            annual_historical (pd.DataFrame | Callable[[], pd.DataFrame], optional): The annual
+                historical data. Defaults to pd.DataFrame().
+            risk_free_rate (pd.DataFrame | Callable[[], pd.DataFrame], optional): The risk free rate, a Treasury yield quoted on a
                 semi-annual bond-equivalent basis ("Adj Close" column) that is converted to continuous
                 compounding. Every maturity goes through this conversion, so the 13-week bill rate,
                 quoted as a discount rate, is approximated as a bond-equivalent yield.
@@ -141,25 +151,53 @@ class Options:
         |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      | 201.877  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0      |
         """
         self._tickers = tickers
-        self._daily_historical = daily_historical
+        self._daily_historical_source = daily_historical
+        self._annual_historical_source = annual_historical
+        self._risk_free_rate_source = risk_free_rate
         self._quarterly = quarterly
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
 
+    @cached_property
+    def _daily_historical(self) -> pd.DataFrame:
+        """The daily historical data, retrieved when a calculation first needs it."""
+        if callable(self._daily_historical_source):
+            return self._daily_historical_source()
+        return self._daily_historical_source
+
+    @cached_property
+    def _annual_historical(self) -> pd.DataFrame:
+        """The annual historical data, retrieved when a calculation first needs it."""
+        if callable(self._annual_historical_source):
+            return self._annual_historical_source()
+        return self._annual_historical_source
+
+    @cached_property
+    def _prices(self) -> pd.DataFrame:
+        """The spot prices."""
         # The spot price is the traded close. On a past pricing date the Adj Close is lowered by
         # every dividend paid after that date, which was not known yet and which the dividend
         # yield q already accounts for. Returns (and so the volatility) do use the Adj Close.
-        self._prices = self._daily_historical[
+        return self._daily_historical[
             "Close" if "Close" in self._daily_historical else "Adj Close"
         ]
 
+    @cached_property
+    def _volatility(self) -> pd.DataFrame:
+        """The annualized volatility of the year of daily returns up to each date."""
         # The volatility on a date is that of the year of daily returns up to it, so a past
         # pricing date uses only what was known on that date.
-        self._volatility = self._daily_historical["Return"].rolling(
+        return self._daily_historical["Return"].rolling(
             TRAILING_DAYS, min_periods=MINIMUM_VOLATILITY_DAYS
         ).std() * np.sqrt(TRAILING_DAYS)
 
+    @cached_property
+    def _risk_free_rate(self) -> pd.Series:
+        """The continuously compounded risk free rate, retrieved when first needed."""
+        risk_free_rate = self._risk_free_rate_source
+        if not isinstance(risk_free_rate, pd.DataFrame):
+            risk_free_rate = risk_free_rate()
         # The Toolkit's risk-free rate is a US Treasury yield (the 10-year by default, set with the
         # Toolkit's risk_free_rate parameter: '13w', '5y', '10y' or '30y'), quoted on a semi-annual
         # bond-equivalent basis. The option formulas discount continuously through e^(-r * t), so
@@ -168,11 +206,13 @@ class Options:
         # arrives here without its maturity, so it goes through the same semi-annual conversion;
         # a 13-week discount rate of 5% sits 13 basis points below its bond-equivalent yield,
         # which makes the '13w' rate an approximation.  # noqa: E501
-        self._risk_free_rate = options_model.get_continuously_compounded_rate(
+        return options_model.get_continuously_compounded_rate(
             risk_free_rate["Adj Close"]
         )
-        self._annual_historical = annual_historical
 
+    @cached_property
+    def _dividend_yield(self) -> dict[str, pd.Series]:
+        """The dividend yield of every year per ticker, as the Black Scholes formula uses it."""
         # Calculate Dividend Yield, relevant for Black Scholes formula, relative to the traded
         # close like the spot price.
         dividend_yield = valuation_model.get_dividend_yield(
@@ -182,7 +222,7 @@ class Options:
             ].T,
         )
 
-        self._dividend_yield = {ticker: pd.Series() for ticker in self._tickers}
+        dividend_yields = {ticker: pd.Series() for ticker in self._tickers}
 
         for ticker in self._tickers:
             dividend_yield_cleaned = dividend_yield.loc[
@@ -193,17 +233,23 @@ class Options:
                 # An empty value means the company pays no dividends, so 0 is correct.
                 dividend_yield_cleaned = dividend_yield.loc[ticker]
 
-            self._dividend_yield[ticker] = dividend_yield_cleaned
+            dividend_yields[ticker] = dividend_yield_cleaned
 
+        return dividend_yields
+
+    @cached_property
+    def _daily_dividend_yield(self) -> pd.DataFrame:
+        """The trailing dividend yield on every date."""
         # The dividend yield on a date: the dividends of the 365 days up to it over the close of
         # that date, see options_model.get_trailing_dividend_yield.
-        self._daily_dividend_yield = pd.DataFrame()
-        if "Close" in self._daily_historical:
-            self._daily_dividend_yield = options_model.get_trailing_dividend_yield(
-                close=self._daily_historical["Close"],
-                adjusted_close=self._daily_historical["Adj Close"],
-                dividends=self._daily_historical.get("Dividends"),
-            )
+        if "Close" not in self._daily_historical:
+            return pd.DataFrame()
+
+        return options_model.get_trailing_dividend_yield(
+            close=self._daily_historical["Close"],
+            adjusted_close=self._daily_historical["Adj Close"],
+            dividends=self._daily_historical.get("Dividends"),
+        )
 
     def _warn_if_spot_is_stale(self) -> None:
         """

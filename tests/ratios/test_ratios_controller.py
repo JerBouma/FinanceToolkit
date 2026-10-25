@@ -792,3 +792,37 @@ def test_quarterly_forward_ratios_use_a_year_of_estimates():
     assert forward_peg[pd.Period("2024Q1", "Q")] == pytest.approx(
         (50 / 4.6) / (growth * 100)
     )
+
+
+def test_ratios_call_only_the_loaders_a_ratio_needs(ratios_module):
+    from financetoolkit.helpers import LazyDict
+    from financetoolkit.ratios.ratios_controller import Ratios
+
+    loaded = []
+
+    def loader(name, data):
+        def load():
+            loaded.append(name)
+            return data
+
+        return load
+
+    historical = {
+        "period": ratios_module._historical_data,
+        "daily": ratios_module._daily_historical_data,
+    }
+    ratios = Ratios(
+        loader("tickers", ratios_module._tickers),
+        LazyDict(lambda key: loader(key, historical[key])()),
+        loader("balance", ratios_module._balance_sheet_statement),
+        loader("income", ratios_module._income_statement),
+        loader("cash", ratios_module._cash_flow_statement),
+    )
+
+    assert loaded == []
+
+    ratios.get_gross_margin()
+    assert sorted(loaded) == ["income", "tickers"]
+
+    ratios.get_price_to_earnings_ratio()
+    assert sorted(loaded) == ["income", "period", "tickers"]

@@ -4,6 +4,8 @@ __docformat__ = "google"
 
 
 import warnings
+from collections.abc import Callable
+from functools import cached_property
 
 import numpy as np
 import pandas as pd
@@ -49,11 +51,11 @@ class Ratios:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers: list[str] | Callable[[], list[str]],
         historical: dict[str, pd.DataFrame],
-        balance: pd.DataFrame,
-        income: pd.DataFrame,
-        cash: pd.DataFrame,
+        balance: pd.DataFrame | Callable[[], pd.DataFrame],
+        income: pd.DataFrame | Callable[[], pd.DataFrame],
+        cash: pd.DataFrame | Callable[[], pd.DataFrame],
         quarterly: bool = False,
         rounding: int | None = 4,
         start_date: str | None = None,
@@ -62,18 +64,27 @@ class Ratios:
         sleep_timer: bool = False,
         user_subscription: str = "Free",
         analyst_estimates_cache: dict | None = None,
-        period_end_dates: pd.DataFrame | None = None,
+        period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
 
+        Each dataset is either the data itself or a function without arguments that retrieves
+        it, which is called when a ratio first needs that dataset. The Toolkit passes functions,
+        so a ratio retrieves only what it uses: the gross margin only the income statement, a
+        valuation ratio also the prices.
+
         Args:
-            tickers (str | list[str]): The tickers to use for the calculations.
-            historical (dict[str, pd.DataFrame]): The historical data to use for the calculations.
-                Typically includes a "period" and "daily" key to access the respective data.
-            balance (pd.DataFrame): The balance sheet data to use for the calculations.
-            income (pd.DataFrame): The income statement data to use for the calculations.
-            cash (pd.DataFrame): The cash flow statement data to use for the calculations.
+            tickers (list[str] | Callable[[], list[str]]): The tickers to use for the calculations.
+            historical (dict[str, pd.DataFrame]): The historical data to use for the calculations,
+                with a "period" and a "daily" key. A LazyDict (financetoolkit.helpers) retrieves
+                each when it is first read.
+            balance (pd.DataFrame | Callable[[], pd.DataFrame]): The balance sheet data to use for
+                the calculations.
+            income (pd.DataFrame | Callable[[], pd.DataFrame]): The income statement data to use
+                for the calculations.
+            cash (pd.DataFrame | Callable[[], pd.DataFrame]): The cash flow statement data to use
+                for the calculations.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
             api_key (str, optional): FinancialModelingPrep API key, used only by
@@ -93,10 +104,10 @@ class Ratios:
                 instance), so this is what makes the fetch-once behaviour survive across separate
                 `toolkit.ratios.<method>()` calls rather than resetting every time. Defaults to
                 None, which uses a private dict scoped to this instance only.
-            period_end_dates (pd.DataFrame, optional): The last day of the fiscal period behind
-                each statement column, with the tickers as index and the periods as columns, as
-                the Toolkit determines it. Daily ratios (show_daily=True) apply each period's
-                figures from that day on. Defaults to None, which applies them from the end of
+            period_end_dates (pd.DataFrame | Callable[[], pd.DataFrame], optional): The last day
+                of the fiscal period behind each statement column, with the tickers as index and
+                the periods as columns, as the Toolkit determines it. Daily ratios
+                (show_daily=True) apply each period's figures from that day on. Defaults to None, which applies them from the end of
                 the calendar period the column is labelled with.
 
         As an example:
@@ -142,13 +153,12 @@ class Ratios:
         | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         """
-        self._tickers = tickers
-        self._tickers_without_portfolio = [
-            ticker for ticker in tickers if ticker != "Portfolio"
-        ]
-        self._balance_sheet_statement: pd.DataFrame = balance
-        self._income_statement: pd.DataFrame = income
-        self._cash_flow_statement: pd.DataFrame = cash
+        self._tickers_source = tickers
+        self._balance_source = balance
+        self._income_source = income
+        self._cash_source = cash
+        self._period_end_dates_source = period_end_dates
+        self._historical = historical
         self._api_key: str = api_key
         self._sleep_timer: bool = sleep_timer
         self._user_subscription: str = user_subscription
@@ -163,11 +173,6 @@ class Ratios:
         self._portfolio_weights: dict | None = None
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
-        self._period_end_dates: pd.DataFrame | None = period_end_dates
-
-        # Initialization of Historical Data
-        self._historical_data: pd.DataFrame = historical["period"]
-        self._daily_historical_data: pd.DataFrame = historical["daily"]
 
         # Initialization of Fundamentals Variables
         self._all_ratios: pd.DataFrame = pd.DataFrame()
@@ -183,6 +188,71 @@ class Ratios:
         self._solvency_ratios_growth: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios: pd.DataFrame = pd.DataFrame()
         self._valuation_ratios_growth: pd.DataFrame = pd.DataFrame()
+
+    @cached_property
+    def _tickers(self) -> list[str]:
+        """The tickers, retrieved when first needed."""
+        return (
+            self._tickers_source()
+            if callable(self._tickers_source)
+            else self._tickers_source
+        )
+
+    @cached_property
+    def _tickers_without_portfolio(self) -> list[str]:
+        """The tickers other than the Portfolio."""
+        return [ticker for ticker in self._tickers if ticker != "Portfolio"]
+
+    @cached_property
+    def _balance_sheet_statement(self) -> pd.DataFrame:
+        """The balance sheet statement, retrieved when a ratio first needs it."""
+        return (
+            self._balance_source()
+            if callable(self._balance_source)
+            else self._balance_source
+        )
+
+    @cached_property
+    def _income_statement(self) -> pd.DataFrame:
+        """The income statement, retrieved when a ratio first needs it."""
+        return (
+            self._income_source()
+            if callable(self._income_source)
+            else self._income_source
+        )
+
+    @cached_property
+    def _cash_flow_statement(self) -> pd.DataFrame:
+        """The cash flow statement, retrieved when a ratio first needs it."""
+        return self._cash_source() if callable(self._cash_source) else self._cash_source
+
+    @cached_property
+    def _period_end_dates(self) -> pd.DataFrame | None:
+        """The fiscal period end dates, retrieved when a daily ratio first needs them."""
+        if callable(self._period_end_dates_source):
+            return self._period_end_dates_source()
+        return self._period_end_dates_source
+
+    @property
+    def _historical_data(self) -> pd.DataFrame:
+        """The historical data of the period (yearly or quarterly)."""
+        return self._historical["period"]
+
+    @property
+    def _daily_historical_data(self) -> pd.DataFrame:
+        """The daily historical data."""
+        return self._historical["daily"]
+
+    def _load_statements(self) -> None:
+        """
+        Retrieves the three statements before a collection, so that it fails once, naming
+        the reason, when none of them can be retrieved rather than once for every ratio.
+        """
+        _ = (
+            self._balance_sheet_statement,
+            self._income_statement,
+            self._cash_flow_statement,
+        )
 
     def _get_days(self, days: int | float | None, trailing: int | None) -> float:
         """
@@ -349,6 +419,7 @@ class Ratios:
         | Shareholder Yield           |  0.0332      |  0.0491      |  0.0304      |  0.0286      |  0.026       |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
+        self._load_statements()
 
         # Every category is collected with this call's settings: ratios stored by an earlier
         # call can have been calculated with another trailing, days, diluted or dividend choice.
@@ -498,6 +569,7 @@ class Ratios:
         | Daily Cash Op Expenses |     2.42866e+08 |    1.9146e+08  |    1.96523e+08 |   2.08227e+08 |   2.59301e+08 |   2.00967e+08 |   2.06301e+08 |   2.21526e+08 |   2.71915e+08 |   2.05767e+08 |   2.19077e+08 |   2.36808e+08 |   2.944e+08   |
         | Defensive Interval     |   462.75        |  533.014       |  528.665       | 516.69        | 536.183       | 661.014       | 674.731       | 630.576       | 576.11        | 723.055       | 687.408       | 656.109       | 647.955       |
         """
+        self._load_statements()
         # Custom ratios build on the ratios with their default settings.
         if self._all_ratios.empty or self._all_ratios_settings != (
             False,
@@ -753,6 +825,7 @@ class Ratios:
         | Deferred Revenue Ratio               |   0.0208 |   0.0201 |   0.021  |   0.0211 |   0.0218 |
         | Working Capital Turnover Ratio       |  15.346  | -85.519  | -37.7268 | -31.0999 | -20.2615 |
         """
+        self._load_statements()
 
         efficiency_ratios_dict: dict = {}
 
@@ -3009,6 +3082,7 @@ class Ratios:
         | Short Term Coverage Ratio          |   6.6635    |   5.7864     |   6.9933    |   5.6638     |   5.4839     |
         | Defensive Interval Ratio           | 132.153     | 105.836      | 129.097     | 140.35       | 127.05       |
         """
+        self._load_statements()
         liquidity_ratios_dict: dict = {}
 
         liquidity_ratios_dict["Current Ratio"] = self.get_current_ratio(
@@ -4027,6 +4101,7 @@ class Ratios:
         | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         """
+        self._load_statements()
         profitability_ratios_dict: dict = {}
 
         profitability_ratios_dict["Gross Margin"] = self.get_gross_margin(
@@ -6547,6 +6622,7 @@ class Ratios:
         | Preferred Dividend Coverage Ratio | nan      | nan      | nan      | nan      | nan      |
         | Interest Paid to Expense Ratio    |   1.0159 |   0.9775 |   0.9669 | nan      | nan      |
         """
+        self._load_statements()
         solvency_ratios_dict: dict = {}
 
         solvency_ratios_dict["Debt-to-Assets Ratio"] = self.get_debt_to_assets_ratio(
@@ -8322,6 +8398,7 @@ class Ratios:
         | Shareholder Yield           |  0.0332      |  0.0491      |  0.0304      |  0.0286      |  0.026       |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
+        self._load_statements()
         valuation_ratios_dict: dict = {}
 
         valuation_ratios_dict["Earnings per Share"] = self.get_earnings_per_share(

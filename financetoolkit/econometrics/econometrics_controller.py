@@ -4,6 +4,8 @@ __docformat__ = "google"
 
 import itertools
 import warnings
+from collections.abc import Callable
+from functools import cached_property
 
 import numpy as np
 import pandas as pd
@@ -23,7 +25,7 @@ from financetoolkit.econometrics import (
     time_series_model,
     unitroot_model,
 )
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -56,7 +58,7 @@ class Econometrics:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers: list[str] | Callable[[], list[str]],
         historical_data: dict[str, pd.DataFrame] | None = None,
         intraday_period: str | None = None,
         quarterly: bool = False,
@@ -67,10 +69,14 @@ class Econometrics:
         """
         Initializes the Econometrics Controller Class.
 
+        The Toolkit passes the tickers as a function without arguments and the historical data
+        as a LazyDict (financetoolkit.helpers), so a method retrieves the data of the period it
+        is calculated over when it is first needed, and nothing else.
+
         Args:
-            tickers (str | list[str]): The tickers to use for the Toolkit instance.
+            tickers (list[str] | Callable[[], list[str]]): The tickers to use for the Toolkit instance.
             historical_data (dict[str, pd.DataFrame] | None, optional): The historical data per period.
-                Defaults to pd.DataFrame().
+                Defaults to None, which is treated as an empty dictionary.
             intraday_period (str | None, optional): The intraday period used for within-period calculations.
                 Defaults to None.
             quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
@@ -89,9 +95,9 @@ class Econometrics:
         ```
         """
         # Mirrors the Risk controller: the Toolkit always passes the period dict, and an
-        # explicit empty dict keeps the daily lookups below raising a plain KeyError.
+        # explicit empty dict keeps the lookups raising a plain KeyError.
         self._historical_data = historical_data if historical_data is not None else {}
-        self._tickers = tickers
+        self._tickers_source = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
@@ -100,28 +106,26 @@ class Econometrics:
         # Memo for the sliced-and-dropna'd frames handed to the calculations: nearly
         # every method starts from the same (period, column) slice, and re-copying it
         # per call adds up when many metrics are collected in a row (as the MCP server
-        # does). The historical data is never mutated after initialisation, and the
+        # does). The historical data is never mutated once retrieved, and the
         # slices are treated as read-only by every caller, so sharing them is safe.
         self._data_cache: dict[tuple, pd.DataFrame] = {}
 
-        # Within Return Calculations. Missing returns stay NaN (not 0), so a ticker
-        # without data in part of a period is not treated as flat there.
-        daily_historical_data = self._historical_data["daily"].copy()
-        intraday_historical_data = self._historical_data["intraday"].copy()
-
-        daily_historical_data.index = pd.DatetimeIndex(
-            daily_historical_data.to_timestamp().index
+        # The returns within each period, built when a method first asks for a period.
+        # Missing returns stay NaN (not 0), so a ticker without data in part of a period is
+        # not treated as flat there.
+        self._within_historical_data = LazyDict(
+            lambda period: determine_within_historical_data(
+                period, self._historical_data, intraday_period
+            )
         )
 
-        if not self._historical_data["intraday"].empty:
-            intraday_historical_data.index = pd.DatetimeIndex(
-                intraday_historical_data.to_timestamp().index
-            )
-
-        self._within_historical_data = determine_within_historical_data(
-            daily_historical_data=daily_historical_data,
-            intraday_historical_data=intraday_historical_data,
-            intraday_period=intraday_period,
+    @cached_property
+    def _tickers(self) -> list[str]:
+        """The tickers, retrieved when first needed."""
+        return (
+            self._tickers_source()
+            if callable(self._tickers_source)
+            else self._tickers_source
         )
 
     @handle_portfolio

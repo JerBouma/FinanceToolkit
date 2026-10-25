@@ -47,7 +47,7 @@ from financetoolkit.fmp_model import (
     get_stock_splits as _get_stock_splits,
 )
 from financetoolkit.fundamentals_model import collect_financial_statements
-from financetoolkit.helpers import determine_period_end_dates
+from financetoolkit.helpers import LazyDict, determine_period_end_dates
 from financetoolkit.historical_model import (
     calculate_period_average as _calculate_period_average,
     convert_daily_to_other_period as _convert_daily_to_other_period,
@@ -550,85 +550,23 @@ class Toolkit:
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
 
-        empty_data: list = []
-
-        if (
-            not self._api_key
-            and (
-                self._balance_sheet_statement.empty
-                or self._income_statement.empty
-                or self._cash_flow_statement.empty
-            )
-            and self._enforce_source == "FinancialModelingPrep"
-        ):
-            raise ValueError(
-                "The ratios class requires an API key from FinancialModelPrep if you wish to enforce the usage. "
-                "of Financial Modeling Prep. Get an API key here: https://www.jeroenbouma.com/fmp"
-            )
-
-        if self._balance_sheet_statement.empty:
-            empty_data.append("Balance Sheet Statement")
-        if self._income_statement.empty:
-            empty_data.append("Income Statement")
-        if self._cash_flow_statement.empty:
-            empty_data.append("Cash Flow Statement")
-
-        if empty_data:
-            logger.info("Obtaining financial statements")
-            for statement in empty_data:
-                if statement == "Balance Sheet Statement":
-                    self.get_balance_sheet_statement()
-                if statement == "Income Statement":
-                    self.get_income_statement()
-                if statement == "Cash Flow Statement":
-                    self.get_cash_flow_statement()
-
-        if (
-            self._balance_sheet_statement.empty
-            and self._income_statement.empty
-            and self._cash_flow_statement.empty
-        ):
-            raise ValueError(
-                "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because no tickers are equities, you have reached the API limit or "
-                "entered an invalid API key."
-            )
-
-        if not self._start_date:
-            self._start_date = (
-                f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
-            )
-        if not self._end_date:
-            self._end_date = (
-                f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
-            )
-
-        if self._quarterly:
-            self.get_historical_data(period="quarterly")
-        else:
-            self.get_historical_data(period="yearly")
-
-        historical = {
-            "period": (
-                self._quarterly_historical_data
-                if self._quarterly
-                else self._yearly_historical_data
-            ),
-            "daily": self._daily_historical_data,
-        }
-
-        tickers = (
-            self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
-        )
+        # Every dataset is retrieved when a ratio first needs it, so a ratio downloads only
+        # what it uses (the gross margin only the income statement).
+        period = "quarterly" if self._quarterly else "yearly"
 
         ratios = Ratios(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            tickers=lambda: self._get_statement_tickers("Ratios")
+            + (["Portfolio"] if "Portfolio" in self._tickers else []),
+            historical=LazyDict(
+                lambda key: self._get_module_historical_data(
+                    period if key == "period" else key
+                )
             ),
-            historical=historical,
-            balance=self._balance_sheet_statement,
-            income=self._income_statement,
-            cash=self._cash_flow_statement,
+            balance=lambda: self._get_module_statement(
+                "balance_sheet_statement", "Ratios"
+            ),
+            income=lambda: self._get_module_statement("income_statement", "Ratios"),
+            cash=lambda: self._get_module_statement("cash_flow_statement", "Ratios"),
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -637,7 +575,9 @@ class Toolkit:
             sleep_timer=self._sleep_timer,
             user_subscription=self._fmp_plan,
             analyst_estimates_cache=self._analyst_estimates_cache,
-            period_end_dates=self._get_period_end_dates(),
+            period_end_dates=lambda: self._get_period_end_dates(
+                self._get_module_statement("balance_sheet_statement", "Ratios")
+            ),
         )
 
         if self._portfolio_weights:
@@ -686,85 +626,16 @@ class Toolkit:
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.models.models_controller import Models  # noqa: PLC0415
 
-        empty_data: list = []
-
-        if not self._api_key and (
-            self._balance_sheet_statement.empty
-            or self._income_statement.empty
-            or self._cash_flow_statement.empty
-        ):
-            raise ValueError(
-                "The models class requires an API key from FinancialModelPrep. "
-                "Get an API key here: https://www.jeroenbouma.com/fmp"
-            )
-
-        if self._balance_sheet_statement.empty:
-            empty_data.append("Balance Sheet Statement")
-        if self._income_statement.empty:
-            empty_data.append("Income Statement")
-        if self._cash_flow_statement.empty:
-            empty_data.append("Cash Flow Statement")
-
-        if empty_data:
-            logger.info("Obtaining financial statements")
-            for statement in empty_data:
-                if statement == "Balance Sheet Statement":
-                    self.get_balance_sheet_statement()
-                if statement == "Income Statement":
-                    self.get_income_statement()
-                if statement == "Cash Flow Statement":
-                    self.get_cash_flow_statement()
-
-        if (
-            self._balance_sheet_statement.empty
-            and self._income_statement.empty
-            and self._cash_flow_statement.empty
-        ):
-            raise ValueError(
-                "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because no tickers are equities, you have reached the API limit or "
-                "entered an invalid API key."
-            )
-
-        if not self._start_date:
-            self._start_date = (
-                f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
-            )
-        if not self._end_date:
-            self._end_date = (
-                f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
-            )
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        historical_data = {
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
-        risk_free_rate_data = {
-            "daily": self._daily_risk_free_rate,
-            "weekly": self._weekly_risk_free_rate,
-            "monthly": self._monthly_risk_free_rate,
-            "quarterly": self._quarterly_risk_free_rate,
-            "yearly": self._yearly_risk_free_rate,
-        }
-
-        tickers = (
-            self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
-        )
-
+        # Every dataset is retrieved when a model first needs it.
         return Models(
-            tickers=tickers,
-            historical_data=historical_data,
-            risk_free_rate_data=risk_free_rate_data,
-            balance=self._balance_sheet_statement,
-            income=self._income_statement,
-            cash=self._cash_flow_statement,
+            tickers=lambda: self._get_statement_tickers("Models"),
+            historical_data=LazyDict(self._get_module_historical_data),
+            risk_free_rate_data=LazyDict(self._get_module_risk_free_rate),
+            balance=lambda: self._get_module_statement(
+                "balance_sheet_statement", "Models"
+            ),
+            income=lambda: self._get_module_statement("income_statement", "Models"),
+            cash=lambda: self._get_module_statement("cash_flow_statement", "Models"),
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -833,21 +704,12 @@ class Toolkit:
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.options.options_controller import Options  # noqa: PLC0415
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        self.get_historical_data(period="daily")
-        self.get_historical_data(period="yearly")
-
+        # The prices and the risk free rate are retrieved when a calculation first needs them.
         return Options(
             tickers=self._tickers,
-            daily_historical=self._daily_historical_data,
-            annual_historical=self._yearly_historical_data,
-            risk_free_rate=self._daily_risk_free_rate,
+            daily_historical=lambda: self._get_module_historical_data("daily"),
+            annual_historical=lambda: self._get_module_historical_data("yearly"),
+            risk_free_rate=lambda: self._get_module_risk_free_rate("daily"),
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -901,42 +763,10 @@ class Toolkit:
             Technicals,
         )
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
+        # The prices of a period are retrieved when an indicator first asks for that period.
         technicals = Technicals(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
-            ),
-            historical_data=historical_data,
+            tickers=lambda: self._get_historical_tickers(include_benchmark=True),
+            historical_data=LazyDict(self._get_module_historical_data),
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
@@ -1004,54 +834,14 @@ class Toolkit:
             Performance,
         )
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
-        risk_free_rate_data = {
-            "daily": self._daily_risk_free_rate["Adj Close"],
-            "weekly": self._weekly_risk_free_rate["Adj Close"],
-            "monthly": self._monthly_risk_free_rate["Adj Close"],
-            "quarterly": self._quarterly_risk_free_rate["Adj Close"],
-            "yearly": self._yearly_risk_free_rate["Adj Close"],
-        }
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        if "Benchmark" in tickers:
-            tickers.remove("Benchmark")
-
+        # The prices and risk free rate of a period are retrieved when a metric first asks
+        # for that period.
         performance = Performance(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            tickers=lambda: self._get_historical_tickers(include_benchmark=False),
+            historical_data=LazyDict(self._get_module_historical_data),
+            risk_free_rate_data=LazyDict(
+                lambda period: self._get_module_risk_free_rate(period)["Adj Close"]
             ),
-            historical_data=historical_data,
-            risk_free_rate_data=risk_free_rate_data,
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -1108,51 +898,14 @@ class Toolkit:
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
-        risk_free_rate_data = {
-            "daily": self._daily_risk_free_rate["Adj Close"],
-            "weekly": self._weekly_risk_free_rate["Adj Close"],
-            "monthly": self._monthly_risk_free_rate["Adj Close"],
-            "quarterly": self._quarterly_risk_free_rate["Adj Close"],
-            "yearly": self._yearly_risk_free_rate["Adj Close"],
-        }
-
+        # The prices and risk free rate of a period are retrieved when a metric first asks
+        # for that period.
         risk = Risk(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            tickers=lambda: self._get_historical_tickers(include_benchmark=True),
+            historical_data=LazyDict(self._get_module_historical_data),
+            risk_free_rate_data=LazyDict(
+                lambda period: self._get_module_risk_free_rate(period)["Adj Close"]
             ),
-            historical_data=historical_data,
-            risk_free_rate_data=risk_free_rate_data,
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
@@ -1208,42 +961,10 @@ class Toolkit:
                 "pip install financetoolkit[econometrics]"
             ) from error
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
+        # The prices of a period are retrieved when a method first asks for that period.
         econometrics = Econometrics(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
-            ),
-            historical_data=historical_data,
+            tickers=lambda: self._get_historical_tickers(include_benchmark=True),
+            historical_data=LazyDict(self._get_module_historical_data),
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
@@ -2357,9 +2078,9 @@ class Toolkit:
                     period=period, risk_free_rate=self._risk_free_rate
                 )
 
-            # Every module (risk, performance, models, ...) asks for every period when it
-            # is created, so the conversion is kept until the daily data it was made from
-            # or one of its settings changes. The daily data is compared by identity, as
+            # Every module (risk, performance, models, ...) asks for a period again each
+            # time it is accessed, so the conversion is kept until the daily data it was made
+            # from or one of its settings changes. The daily data is compared by identity, as
             # it is replaced rather than changed when it is retrieved again.
             settings = (
                 self._start_date,
@@ -5500,6 +5221,160 @@ class Toolkit:
             the chosen folder.
         """
         _get_normalization_files(path)
+
+    def _get_module_statement(self, statement: str, module: str) -> pd.DataFrame:
+        """
+        Returns a financial statement for the Ratios or Models module, retrieving it when a
+        calculation first needs it. When the statement cannot be retrieved, the other
+        statements are retrieved as well to tell whether any data is available at all.
+
+        Args:
+            statement (str): "balance_sheet_statement", "income_statement" or
+                "cash_flow_statement".
+            module (str): "Ratios" or "Models", the module the statement is for.
+
+        Returns:
+            pd.DataFrame: The statement, which is empty when only it could not be retrieved.
+
+        Raises:
+            ValueError: When an API key is required but missing, or when none of the
+                statements can be retrieved.
+        """
+        if getattr(self, f"_{statement}").empty:
+            if not self._api_key and module == "Models":
+                raise ValueError(
+                    "The models class requires an API key from FinancialModelPrep. "
+                    "Get an API key here: https://www.jeroenbouma.com/fmp"
+                )
+            if not self._api_key and self._enforce_source == "FinancialModelingPrep":
+                raise ValueError(
+                    "The ratios class requires an API key from FinancialModelPrep if you wish to enforce the usage. "
+                    "of Financial Modeling Prep. Get an API key here: https://www.jeroenbouma.com/fmp"
+                )
+
+            logger.info("Obtaining financial statements")
+            getattr(self, f"get_{statement}")()
+
+        if getattr(self, f"_{statement}").empty:
+            statements = [
+                "balance_sheet_statement",
+                "income_statement",
+                "cash_flow_statement",
+            ]
+            for other in statements:
+                if other != statement and getattr(self, f"_{other}").empty:
+                    getattr(self, f"get_{other}")()
+
+            if all(getattr(self, f"_{other}").empty for other in statements):
+                raise ValueError(
+                    f"The datasets could not be populated and therefore the {module} class cannot "
+                    "calculate this. This is usually because no tickers are equities, you have "
+                    "reached the API limit or entered an invalid API key."
+                )
+
+        return getattr(self, f"_{statement}")
+
+    def _get_statement_tickers(self, module: str) -> list[str]:
+        """
+        Returns the tickers with financial statements, which leaves out those without (such as
+        ETFs). The statements hold the same tickers, so the first one already retrieved names
+        them; otherwise the balance sheet statement is retrieved.
+
+        Args:
+            module (str): "Ratios" or "Models", the module the tickers are for.
+
+        Returns:
+            list[str]: The tickers of the financial statements.
+        """
+        retrieved = [
+            statement
+            for statement in (
+                self._balance_sheet_statement,
+                self._income_statement,
+                self._cash_flow_statement,
+            )
+            if not statement.empty
+        ]
+        statement = (
+            retrieved[0]
+            if retrieved
+            else self._get_module_statement("balance_sheet_statement", module)
+        )
+
+        return statement.index.get_level_values(0).unique().tolist()
+
+    def _get_module_historical_data(self, period: str) -> pd.DataFrame:
+        """
+        Returns the historical data of a period for the modules, retrieved when a calculation
+        first asks for that period. The daily data is downloaded once and the weekly, monthly,
+        quarterly and yearly data is converted from it; the intraday data is only downloaded
+        when the Toolkit has an intraday_period.
+
+        Args:
+            period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
+
+        Returns:
+            pd.DataFrame: The historical data of the period, empty for intraday data without an
+            intraday_period.
+
+        Raises:
+            KeyError: For any other period, as a dictionary of the periods would.
+        """
+        if period == "intraday":
+            if self._intraday_period:
+                self.get_intraday_data(period=self._intraday_period)
+            return self._intraday_historical_data
+
+        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+            raise KeyError(period)
+
+        self.get_historical_data(period=period)
+
+        return getattr(self, f"_{period}_historical_data")
+
+    def _get_module_risk_free_rate(self, period: str) -> pd.DataFrame:
+        """
+        Returns the risk free rate of a period for the modules, retrieved with the historical
+        data of that period when a calculation first asks for it.
+
+        Args:
+            period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
+
+        Returns:
+            pd.DataFrame: The risk free rate of the period.
+
+        Raises:
+            KeyError: For any other period, as a dictionary of the periods would.
+        """
+        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+            raise KeyError(period)
+
+        self.get_historical_data(period=period)
+
+        return getattr(self, f"_{period}_risk_free_rate")
+
+    def _get_historical_tickers(self, include_benchmark: bool) -> list[str]:
+        """
+        Returns the tickers of the daily historical data, retrieving it when needed, followed
+        by the Portfolio when the Toolkit holds one.
+
+        Args:
+            include_benchmark (bool): Whether to keep the Benchmark.
+
+        Returns:
+            list[str]: The tickers of the historical data.
+        """
+        tickers = (
+            self._get_module_historical_data("daily")
+            .columns.get_level_values(1)
+            .unique()
+            .tolist()
+        )
+
+        if not include_benchmark and "Benchmark" in tickers:
+            tickers.remove("Benchmark")
+
+        return tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
 
     def _get_period_end_dates(
         self, statement: pd.DataFrame | None = None

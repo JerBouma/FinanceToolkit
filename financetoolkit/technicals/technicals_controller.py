@@ -3,6 +3,8 @@
 __docformat__ = "google"
 
 import warnings
+from collections.abc import Callable
+from functools import cached_property
 
 import pandas as pd
 
@@ -42,7 +44,7 @@ class Technicals:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers: list[str] | Callable[[], list[str]],
         historical_data: dict[str, pd.DataFrame],
         rounding: int | None = 4,
         start_date: str | None = None,
@@ -51,8 +53,12 @@ class Technicals:
         """
         Initializes the Technicals Controller Class.
 
+        The Toolkit passes the tickers as a function without arguments and the historical data
+        as a LazyDict (financetoolkit.helpers), so an indicator retrieves the data of the period
+        it is calculated over when it is first needed, and nothing else.
+
         Args:
-            tickers (str | list[str]): The tickers to use for the calculation.
+            tickers (list[str] | Callable[[], list[str]]): The tickers to use for the calculation.
             historical_data (dict[str, pd.DataFrame]): The historical data per period.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             start_date (str | None, optional): The start date to use for the calculation. Defaults to None.
@@ -83,7 +89,7 @@ class Technicals:
         | 2025-12-30 | 19.2603 | 21.7824 |     13.6713 |
         | 2025-12-31 | 18.7103 | 20.3475 |     12.9966 |
         """
-        self._tickers = tickers
+        self._tickers_source = tickers
         self._historical_data = historical_data
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
@@ -103,6 +109,15 @@ class Technicals:
         self._overlap_indicators_growth: pd.DataFrame = pd.DataFrame()
         self._volatility_indicators: pd.DataFrame = pd.DataFrame()
         self._volatility_indicators_growth: pd.DataFrame = pd.DataFrame()
+
+    @cached_property
+    def _tickers(self) -> list[str]:
+        """The tickers, retrieved when first needed."""
+        return (
+            self._tickers_source()
+            if callable(self._tickers_source)
+            else self._tickers_source
+        )
 
     @handle_errors
     def collect_all_indicators(

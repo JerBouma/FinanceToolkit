@@ -4,11 +4,13 @@ __docformat__ = "google"
 
 import itertools
 import warnings
+from collections.abc import Callable
+from functools import cached_property
 
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.risk import (
     backtesting_model,
     copula_model,
@@ -128,7 +130,7 @@ class Risk:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers: list[str] | Callable[[], list[str]],
         historical_data: dict[str, pd.DataFrame] | None = None,
         risk_free_rate_data: dict[str, pd.Series] | None = None,
         intraday_period: str | None = None,
@@ -140,8 +142,12 @@ class Risk:
         """
         Initializes the Risk Controller Class.
 
+        The Toolkit passes the tickers as a function without arguments and the period
+        dictionaries as a LazyDict (financetoolkit.helpers), so a metric retrieves the data of
+        the period it is calculated over when it is first needed, and nothing else.
+
         Args:
-            tickers (str | list[str]): The tickers to use for the Toolkit instance.
+            tickers (list[str] | Callable[[], list[str]]): The tickers to use for the Toolkit instance.
             historical_data (dict[str, pd.DataFrame] | None, optional): The historical data per period.
                 Defaults to None, which is treated as an empty dictionary.
             risk_free_rate_data (dict[str, pd.Series] | None, optional): The annualized risk free rate
@@ -177,44 +183,40 @@ class Risk:
         | Benchmark | -0.1279 |
         """
         self._historical_data = historical_data if historical_data is not None else {}
+        rates = risk_free_rate_data if risk_free_rate_data is not None else {}
         # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
-        self._risk_free_rate_data: dict[str, pd.Series] = {}
-        for frequency, rate in (risk_free_rate_data or {}).items():
-            period_rate = convert_annualized_rate_to_period(rate, frequency)
-            # The conversion is also typed for scalars; a Series in gives a Series out.
-            if not isinstance(period_rate, pd.Series):
-                raise TypeError(f"Expected a risk free rate series for {frequency}.")
-            self._risk_free_rate_data[frequency] = period_rate
-        self._tickers = tickers
+        self._risk_free_rate_data = LazyDict(
+            lambda frequency: convert_annualized_rate_to_period(
+                rates[frequency], frequency
+            )
+        )
+        self._tickers_source = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._portfolio_weights: dict | None = None
 
-        # Within Return Calculations. Missing values stay missing: filling them with 0 would turn a period without data (e.g. before a listing, or the lone boundary observation at the start of the range) into 0% returns, i.e. a VaR, skewness or drawdown of exactly 0 instead of no value.  # noqa: E501
-        daily_historical_data = self._historical_data["daily"].copy()
-        intraday_historical_data = self._historical_data["intraday"].copy()
-
-        daily_historical_data.index = pd.DatetimeIndex(
-            daily_historical_data.to_timestamp().index
-        )
-
-        if not self._historical_data["intraday"].empty:
-            intraday_historical_data.index = pd.DatetimeIndex(
-                intraday_historical_data.to_timestamp().index
+        # The returns within each period, built when a metric first asks for a period. Missing values stay missing: filling them with 0 would turn a period without data (e.g. before a listing, or the lone boundary observation at the start of the range) into 0% returns, i.e. a VaR, skewness or drawdown of exactly 0 instead of no value.  # noqa: E501
+        self._within_historical_data = LazyDict(
+            lambda period: determine_within_historical_data(
+                period, self._historical_data, intraday_period
             )
-
-        self._within_historical_data = determine_within_historical_data(
-            daily_historical_data=daily_historical_data,
-            intraday_historical_data=intraday_historical_data,
-            intraday_period=intraday_period,
         )
 
         # Memo for the return slices handed to the calculations, keyed by (period,
         # within_period): nearly every method starts from that slice and the MCP server
         # collects many metrics per session. Neither frame is mutated after this point.
         self._data_cache: dict[tuple[str, bool], pd.DataFrame] = {}
+
+    @cached_property
+    def _tickers(self) -> list[str]:
+        """The tickers, retrieved when first needed."""
+        return (
+            self._tickers_source()
+            if callable(self._tickers_source)
+            else self._tickers_source
+        )
 
     @handle_portfolio
     def _get_returns(self, period: str, within_period: bool) -> pd.DataFrame:

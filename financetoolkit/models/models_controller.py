@@ -2,8 +2,12 @@
 
 __docformat__ = "google"
 
+from collections.abc import Callable
+from functools import cached_property
+
 import pandas as pd
 
+from financetoolkit.helpers import LazyDict
 from financetoolkit.models import (
     altman_model,
     beneish_model,
@@ -49,12 +53,12 @@ class Models:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers: list[str] | Callable[[], list[str]],
         historical_data: dict[str, pd.DataFrame],
         risk_free_rate_data: dict[str, pd.DataFrame],
-        balance: pd.DataFrame,
-        income: pd.DataFrame,
-        cash: pd.DataFrame,
+        balance: pd.DataFrame | Callable[[], pd.DataFrame],
+        income: pd.DataFrame | Callable[[], pd.DataFrame],
+        cash: pd.DataFrame | Callable[[], pd.DataFrame],
         quarterly: bool = False,
         rounding: int | None = 4,
         start_date: str | None = None,
@@ -63,13 +67,18 @@ class Models:
         """
         Initializes the Models Controller Class.
 
+        The tickers and statements are either the data itself or a function without arguments
+        that retrieves it, and the period dictionaries can be a LazyDict (financetoolkit.helpers)
+        that retrieves a period when it is first read. The Toolkit passes these, so a model
+        retrieves only the data it uses, when it is calculated.
+
         Args:
-            tickers (str | list[str]): The ticker(s) to use for the models.
+            tickers (list[str] | Callable[[], list[str]]): The ticker(s) to use for the models.
             historical_data (dict[str, pd.DataFrame]): The historical data per period.
             risk_free_rate_data (dict[str, pd.DataFrame]): The risk free rate data per period.
-            balance (pd.DataFrame): The balance sheet data.
-            income (pd.DataFrame): The income statement data.
-            cash (pd.DataFrame): The cash flow statement data.
+            balance (pd.DataFrame | Callable[[], pd.DataFrame]): The balance sheet data.
+            income (pd.DataFrame | Callable[[], pd.DataFrame]): The income statement data.
+            cash (pd.DataFrame | Callable[[], pd.DataFrame]): The cash flow statement data.
             quarterly (bool, optional): Whether to use quarterly or yearly data. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
 
@@ -98,11 +107,11 @@ class Models:
         | Equity Multiplier       |   3.1426 |   3.0843 |   2.9152 |
         | Return on Equity        |   0.002  |   0.0211 |   0.0418 |
         """
-        self._tickers = tickers
+        self._tickers_source = tickers
         self._benchmark_name = "Benchmark"
-        self._balance_sheet_statement: pd.DataFrame = balance
-        self._income_statement: pd.DataFrame = income
-        self._cash_flow_statement: pd.DataFrame = cash
+        self._balance_source = balance
+        self._income_source = income
+        self._cash_source = cash
         self._quarterly = quarterly
         self._rounding = rounding
         self._start_date: str | None = start_date
@@ -112,15 +121,11 @@ class Models:
         self._historical_data = historical_data
         self._risk_free_rate_data = risk_free_rate_data
 
-        # Within Period Calculations
-        daily_historical_data = self._historical_data["daily"].copy()
-
-        daily_historical_data.index = pd.DatetimeIndex(
-            daily_historical_data.to_timestamp().index
-        )
-
-        self._within_historical_data = helpers.determine_within_historical_data(
-            daily_historical_data=daily_historical_data,
+        # The daily returns within each period, built when a model first asks for a period.
+        self._within_historical_data = LazyDict(
+            lambda period: helpers.determine_within_historical_data(
+                period, self._historical_data["daily"]
+            )
         )
 
         # Initialization of Model Variables
@@ -133,6 +138,38 @@ class Models:
         self._weighted_average_cost_of_capital: pd.DataFrame = pd.DataFrame()
         self._weighted_average_cost_of_capital_growth: pd.DataFrame = pd.DataFrame()
         self._intrinsic_values: pd.DataFrame = pd.DataFrame()
+
+    @cached_property
+    def _tickers(self) -> list[str]:
+        """The tickers, retrieved when first needed."""
+        return (
+            self._tickers_source()
+            if callable(self._tickers_source)
+            else self._tickers_source
+        )
+
+    @cached_property
+    def _balance_sheet_statement(self) -> pd.DataFrame:
+        """The balance sheet statement, retrieved when a model first needs it."""
+        return (
+            self._balance_source()
+            if callable(self._balance_source)
+            else self._balance_source
+        )
+
+    @cached_property
+    def _income_statement(self) -> pd.DataFrame:
+        """The income statement, retrieved when a model first needs it."""
+        return (
+            self._income_source()
+            if callable(self._income_source)
+            else self._income_source
+        )
+
+    @cached_property
+    def _cash_flow_statement(self) -> pd.DataFrame:
+        """The cash flow statement, retrieved when a model first needs it."""
+        return self._cash_source() if callable(self._cash_source) else self._cash_source
 
     @handle_errors
     def get_dupont_analysis(

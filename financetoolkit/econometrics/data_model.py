@@ -11,7 +11,7 @@ import pandas as pd
 PERIODS = {"weekly": "W-SUN", "monthly": "M", "quarterly": "Q-DEC", "yearly": "Y-DEC"}
 
 # How the change of a series from one observation to the next is calculated.
-CHANGES = ("percentage", "log", "difference", "none")
+CHANGES = ("percentage", "log", "difference", None)
 
 # The columns the methods read: the series as given (named like the price columns of the
 # Toolkit's historical data, so every method's default works) and its changes (the returns).
@@ -156,7 +156,7 @@ def to_series_frame(data: pd.DataFrame | pd.Series | dict) -> pd.DataFrame:
     return frame
 
 
-def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
+def get_changes(levels: pd.DataFrame, changes: str | None) -> pd.DataFrame:
     """
     The change of every series from one observation to the next. Every series is taken
     at its own observations, so a monthly series next to a daily one gets its monthly
@@ -165,9 +165,9 @@ def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
 
     Args:
         levels (pd.DataFrame): The series.
-        changes (str): "percentage" (the relative change, like a return), "log" (the log
+        changes (str | None): "percentage" (the relative change, like a return), "log" (the log
             change), "difference" (the first difference, for rates and ratios that can be
-            zero or negative) or "none" (the series are changes already). The percentage
+            zero or negative) or None (the series are changes already). The percentage
             change is (x - previous) / |previous|, so a rise from -10 to -5 is +50%
             rather than -50%; a change from zero is NaN.
 
@@ -177,9 +177,10 @@ def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
     """
     if changes not in CHANGES:
         raise ValueError(
-            f"The changes must be one of {', '.join(CHANGES)}, not {changes!r}."
+            "The changes must be 'percentage', 'log', 'difference' or None, "
+            f"not {changes!r}."
         )
-    if changes == "none":
+    if changes is None:
         return levels
 
     def change(column: pd.Series) -> pd.Series:
@@ -201,7 +202,7 @@ def get_changes(levels: pd.DataFrame, changes: str) -> pd.DataFrame:
 
 def build_historical_data(
     data: pd.DataFrame | pd.Series | dict,
-    changes: str = "percentage",
+    changes: str | None = "percentage",
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> tuple[dict[str, pd.DataFrame], list[str]]:
@@ -217,7 +218,7 @@ def build_historical_data(
 
     Args:
         data (pd.DataFrame | pd.Series | dict): The data, see to_series_frame.
-        changes (str, optional): How the changes are calculated, see get_changes.
+        changes (str | None, optional): How the changes are calculated, see get_changes.
             Defaults to "percentage".
         start_date (str | None, optional): The first date to keep. Defaults to None.
         end_date (str | None, optional): The last date to keep. Defaults to None.
@@ -228,7 +229,7 @@ def build_historical_data(
     """
     if changes not in CHANGES:
         raise ValueError(
-            f"The changes must be one of {', '.join(CHANGES)}, not {changes!r}."
+            f"The changes must be one of 'percentage', 'log', 'difference' or None, not {changes!r}."
         )
 
     levels = to_series_frame(data)

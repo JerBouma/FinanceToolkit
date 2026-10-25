@@ -74,7 +74,7 @@ class Econometrics:
         start_date: str | None = None,
         end_date: str | None = None,
         data: pd.DataFrame | pd.Series | dict | None = None,
-        changes: str = "percentage",
+        changes: str | None = "percentage",
     ):
         """
         Initializes the Econometrics Controller Class, either with the historical data of a
@@ -108,9 +108,9 @@ class Econometrics:
             end_date (str | None, optional): The end date to use for the calculations. Defaults to None.
             data (pd.DataFrame | pd.Series | dict | None, optional): Any data to analyze instead
                 of the Toolkit's prices, with a series per column. Defaults to None.
-            changes (str, optional): How the changes ("Return") of the data are calculated:
+            changes (str | None, optional): How the changes ("Return") of the data are calculated:
                 "percentage" (relative changes, as returns), "log", "difference" (first
-                differences, for rates and ratios that can be zero or negative) or "none"
+                differences, for rates and ratios that can be zero or negative) or None
                 (the data are changes already). The percentage change divides by the
                 absolute previous value, so a negative series that rises has a positive
                 change. Defaults to "percentage".

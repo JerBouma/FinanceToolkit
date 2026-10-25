@@ -1167,6 +1167,9 @@ class ToolRegistry:
             changes = (
                 kwargs.pop("changes", None) if module_name == "econometrics" else None
             ) or "percentage"
+            # A tool argument is text, so 'none' stands for changes=None (the series are
+            # changes already).
+            changes = None if str(changes).lower() == "none" else changes
 
             # Return an actionable error rather than a confusing AttributeError later.
             effective_category = category

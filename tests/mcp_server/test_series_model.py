@@ -133,3 +133,24 @@ def test_series_errors_are_explained(indicator_answers):
     )
     # Without series, the tickers are still required.
     assert "requires a `tickers` parameter" in call_econometrics(indicator="get_ols")
+
+
+def test_changes_none_reaches_econometrics_as_none(indicator_answers, monkeypatch):
+    received = []
+
+    def fake_with_data(
+        method_name, data, changes="percentage", **kwargs
+    ):  # noqa: ARG001
+        received.append(changes)
+        return pd.DataFrame({"Value": [1.0]})
+
+    monkeypatch.setattr(
+        ToolkitProvider, "call_econometrics_with_data", staticmethod(fake_with_data)
+    )
+    series = "macroeconomics:get_inflation_rate:Germany,France"
+
+    call_econometrics(indicator="get_ols", series=series, changes="none")
+    call_econometrics(indicator="get_ols", series=series)
+
+    # A tool argument is text: 'none' is changes=None, and no argument is the default.
+    assert received == [None, "percentage"]

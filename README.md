@@ -351,7 +351,7 @@ For example, the yield curve at the end of each year is shown below.
 |   2024 |    0.044  |    0.0439 |    0.0437 |    0.0424 |   0.0416 |   0.0425 |   0.0427 |   0.0438 |   0.0448 |    0.0458 |    0.0486 |    0.0478 |
 |   2025 |    0.0374 |    0.0367 |    0.0367 |    0.0359 |   0.0348 |   0.0347 |   0.0355 |   0.0373 |   0.0394 |    0.0418 |    0.0479 |    0.0484 |
 
-And below inflation and the policy rate are plotted for each month, next to the yield curve at the end of the last five years. When short-term yields lie above long-term ones, as at the end of 2022 and 2023, the curve is inverted.
+And below the yield curve at the end of each year is plotted. It went from almost zero at the short end in 2021 to above 4% across all maturities a year later, and when short-term yields lie above long-term ones, as at the end of 2022 and 2023, the curve is inverted.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/economics-dark.png">
@@ -391,23 +391,17 @@ regressions = pd.concat(
     }
 )
 
-# Show the results
-regressions
+# Show the results for Nvidia
+regressions.loc["NVDA"]
 ```
 
-For example, the coefficients for each company are shown below.
+For example, the coefficients for Nvidia are shown below.
 
-|                                    |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-|:-----------------------------------|--------------:|-------------:|--------------:|----------:|
-| ('NVDA', 'Intercept')              |        0.049  |       0.0129 |        3.8028 |    0.0003 |
-| ('NVDA', 'Real Yield')             |      -22.8132 |       5.6358 |       -4.0479 |    0.0001 |
-| ('NVDA', 'Inflation Expectations') |       18.1329 |       9.1029 |        1.992  |    0.0493 |
-| ('AMD', 'Intercept')               |        0.047  |       0.0151 |        3.1182 |    0.0024 |
-| ('AMD', 'Real Yield')              |      -34.1771 |       6.59   |       -5.1862 |    0      |
-| ('AMD', 'Inflation Expectations')  |       10.8116 |      10.644  |        1.0157 |    0.3124 |
-| ('INTC', 'Intercept')              |        0.0078 |       0.0107 |        0.7316 |    0.4663 |
-| ('INTC', 'Real Yield')             |      -18.6985 |       4.6705 |       -4.0035 |    0.0001 |
-| ('INTC', 'Inflation Expectations') |       -1.1572 |       7.5438 |       -0.1534 |    0.8784 |
+|                        |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+|:-----------------------|--------------:|-------------:|--------------:|----------:|
+| Intercept              |        0.049  |       0.0129 |        3.8028 |    0.0003 |
+| Real Yield             |      -22.8132 |       5.6358 |       -4.0479 |    0.0001 |
+| Inflation Expectations |       18.1329 |       9.1029 |        1.992  |    0.0493 |
 
 And below each coefficient is shown with its 95% confidence interval. The yields are decimals, so a change of 0.001 is 0.1 percentage point, and a coefficient of -20 means a monthly return 2% lower for every 0.1 percentage point the yield rose. All three are valued on earnings that lie far ahead, which a higher real yield discounts more heavily: a 0.1 percentage point rise in the real yield went with a monthly return about 2.3% lower for Nvidia, 3.4% lower for AMD and 1.9% lower for Intel, each significant at the 1% level. Rising inflation expectations, often a sign of a growing economy, went with a higher return for Nvidia, significant at the 5% level, but made no significant difference for AMD and Intel. Short-term rates matter less than they might seem: the 3-month yield shows no significant relation with these returns, as the Federal Reserve's policy rate reaches growth companies mainly through the long-term real yields it moves.
 

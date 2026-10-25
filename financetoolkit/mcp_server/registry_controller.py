@@ -268,8 +268,10 @@ ASSUMED_INPUTS = (
     "notional",
 )
 
-# The yield curves the fixed income calculations take, which default to a sample curve.
+# The yield curves the fixed income calculations take, which default to a sample curve,
+# except for the calculations that default to the current market curve.
 CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
+MARKET_CURVE_METHODS = ("get_option_adjusted_spread",)
 
 # A window of at most this many days can be empty for lack of trading days alone.
 SHORT_WINDOW_DAYS = 3
@@ -1249,6 +1251,7 @@ class ToolRegistry:
                 for curve in CURVE_PARAMETERS
                 if curve in accepted_params
                 and method_kwargs.get(curve) in (None, "", {})
+                and method_name not in MARKET_CURVE_METHODS
             ]:
                 curve_note = (
                     f"{', '.join(f'`{curve}`' for curve in missing_curves)} "

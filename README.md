@@ -386,7 +386,7 @@ monthly_returns["Real Yield"] = real_yield[("United States", "10Y")].diff()
 monthly_returns["Inflation Expectations"] = inflation_expectations[("United States", "10Y")].diff()
 
 # The data are changes already
-econometrics = Econometrics(data=monthly_returns, changes="none")
+econometrics = Econometrics(data=monthly_returns, changes=None)
 
 # Regress the return of each company on the change in the real yield and inflation expectations
 regressions = pd.concat(
@@ -421,38 +421,38 @@ The module also covers unit root and cointegration tests, Granger causality, pan
 
 ## Comparing the Sector's ETFs
 
-Rather than picking three companies, a fund holds the whole industry. The [ETF](https://www.jeroenbouma.com/projects/financetoolkit/docs/etf) module analyzes the holdings, sector and country weightings, tracking, concentration, overlap, valuation and liquidity of any fund, here two of the largest semiconductor funds, SMH and SOXX:
+Rather than picking three companies, a fund holds the whole industry. The [ETF](https://www.jeroenbouma.com/projects/financetoolkit/docs/etf) module analyzes the holdings, sector and country weightings, tracking, concentration, overlap, valuation and liquidity of any fund. Below it compares six semiconductor funds: three focused on the United States (SOXX, XSD and PSI), one global fund (SMH) and two that hold a single country, China (SMHC) and South Korea (KCHP):
 
 ```python
-# Initialize the Toolkit for two semiconductor funds
+# Initialize the Toolkit for six semiconductor funds
 funds = Toolkit(
-    ["SMH", "SOXX"],
+    ["SOXX", "XSD", "PSI", "SMH", "SMHC", "KCHP"],
     api_key="FINANCIAL_MODELING_PREP_KEY",
     start_date="2017-12-31",
     end_date="2025-12-31",
 )
 
-# How concentrated each fund is and how much the two hold of the same
+# Where each fund invests, how concentrated it is and how much the funds hold of the same
+country_weightings = funds.etf.get_country_weightings()
 concentration = funds.etf.get_concentration()
 overlap = funds.etf.get_overlap()
 
-# The weight of Nvidia, AMD and Intel in each fund
-holdings = funds.etf.get_holdings()
-weights = holdings.loc[(slice(None), ["NVDA", "AMD", "INTC"]), "Weight"].unstack(level=0)
-
-# Show the weights
-weights
+# Show the overlap between every pair of funds
+overlap.round(2)
 ```
 
-For example, the weight of each of the three companies in both funds is shown below. Holdings are those of today, as funds publish their current holdings only.
+For example, the overlap between every pair of funds is shown below: the share of the two portfolios that is the same. Holdings are those of today, as funds publish their current holdings only.
 
-| Asset   |       SMH |      SOXX |
-|:--------|----------:|----------:|
-| NVDA    | 0.209238  | 0.0810958 |
-| AMD     | 0.0537416 | 0.0931787 |
-| INTC    | 0.0398394 | 0.0824532 |
+|      |   SOXX |   XSD |   PSI |   SMH |   SMHC |   KCHP |
+|:-----|-------:|------:|------:|------:|-------:|-------:|
+| SOXX |   1    |  0.38 |  0.46 |  0.7  |   0    |      0 |
+| XSD  |   0.38 |  1    |  0.34 |  0.28 |   0    |      0 |
+| PSI  |   0.46 |  0.34 |  1    |  0.38 |   0    |      0 |
+| SMH  |   0.7  |  0.28 |  0.38 |  1    |   0    |      0 |
+| SMHC |   0    |  0    |  0    |  0    |   1.08 |      0 |
+| KCHP |   0    |  0    |  0    |  0    |   0    |      1 |
 
-And below these weights are plotted next to the weight of the ten largest holdings of each fund and the overlap between the two.
+The three US funds and SMH largely hold the same companies, with SOXX and SMH sharing 70% of their portfolios. SMH holds the most outside the United States, 9% in Taiwan and 6% in the Netherlands. The China and Korea funds share nothing with any other fund, which is what diversification within one sector looks like. Below, the country weights of each fund are plotted next to the overlap.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/etf-dark.png">

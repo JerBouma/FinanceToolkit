@@ -516,3 +516,50 @@ def test_get_fixed_effects_two_way_absorbs_an_entity_plus_date_regressor(balance
     )
     assert abs(result["regression"]["coefficients"][0] - 2.0) < 0.05
     panel_data_model.get_fixed_effects(y, x, entity_effects=True, time_effects=False)
+
+
+def test_get_fixed_effects_two_way_on_a_weakly_connected_panel():
+    # A staircase of short overlapping histories (entity i observed on dates 3i to 3i + 4)
+    # connects the entities only through two shared dates each, where alternating entity
+    # and time demeaning converges very slowly. The sparse least squares fit must still
+    # flag an absorbed a_i + b_t and match the intercepts of a dense dummy-variable fit.
+    rng = np.random.default_rng(5)
+    index = pd.MultiIndex.from_tuples(
+        [(f"E{i}", t) for i in range(60) for t in range(3 * i, 3 * i + 5)],
+        names=["entity", "time"],
+    )
+    entities = index.get_level_values("entity")
+    dates = index.get_level_values("time")
+    entity_part = pd.Series(rng.standard_normal(60), index=entities.unique())
+    date_part = pd.Series(rng.standard_normal(dates.nunique()), index=dates.unique())
+    ab = 1e3 * (
+        5
+        + entity_part.reindex(entities).to_numpy()
+        + date_part.reindex(dates).to_numpy()
+    )
+    x = pd.DataFrame({"own": rng.standard_normal(len(index)), "ab": ab}, index=index)
+    y = 10 + 2.0 * x["own"] + ab / 1e3 + rng.standard_normal(len(index))
+
+    with pytest.raises(ValueError, match=r"absorb one or more regressors \(ab\)"):
+        panel_data_model.get_fixed_effects(y, x, entity_effects=True, time_effects=True)
+
+    result = panel_data_model.get_fixed_effects(
+        y, x[["own"]], entity_effects=True, time_effects=True
+    )
+    beta = result["regression"]["coefficients"][0]
+    fitted = (
+        result["entity_effects"].reindex(entities).to_numpy()
+        + result["time_effects"].reindex(dates).to_numpy()
+        + beta * x["own"].to_numpy()
+    )
+
+    dummies = np.column_stack(
+        [
+            x["own"].to_numpy(),
+            pd.get_dummies(entities).to_numpy(float),
+            pd.get_dummies(dates).to_numpy(float)[:, 1:],
+        ]
+    )
+    coefficients = np.linalg.lstsq(dummies, y.to_numpy(), rcond=None)[0]
+    np.testing.assert_allclose(beta, coefficients[0], rtol=1e-10)
+    np.testing.assert_allclose(fitted, dummies @ coefficients, rtol=1e-10, atol=1e-10)

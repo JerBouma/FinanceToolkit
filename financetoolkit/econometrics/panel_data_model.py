@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 from linearmodels.panel import PanelOLS, RandomEffects
 from linearmodels.panel.utility import AbsorbingEffectError
-from scipy import stats
+from scipy import sparse, stats
+from scipy.sparse.linalg import lsmr
 
 from financetoolkit.utilities.statistics_model import to_multi_index
 
@@ -18,15 +19,14 @@ ENTITY_TIME_INDEX_LEVELS = 2
 # The 5% level for flagging whether Hausman rejects Random Effects.
 SIGNIFICANCE_LEVEL = 0.05
 
-# Alternating projections for two-way effects converge in one pass on a balanced panel
-# and in a handful on an unbalanced one; this only bounds a pathological case.
-TWO_WAY_MAX_ITERATIONS = 1000
-TWO_WAY_TOLERANCE = 1e-12
+# Stopping tolerances of the sparse least squares fit on the entity and time dummies:
+# near machine precision, so the fit is exact on weakly connected panels too.
+TWO_WAY_SOLVER_TOLERANCE = 1e-15
 
 # A regressor is absorbed when the variation the fixed effects leave of it is below this
 # share of its scale. The within-group range of a one-way absorbed regressor is exactly 0;
-# two-way demeaning leaves rounding noise of up to about 1e-13 on a sparse unbalanced
-# panel, while a genuine regressor such as 1e6 plus noise of 1e-4 keeps about 3e-10.
+# the two-way least squares fit leaves rounding noise of about 1e-14, also on weakly
+# connected panels, while a genuine regressor such as 1e6 plus noise of 1e-4 keeps about 3e-10.
 ONE_WAY_ABSORBED_SHARE = 1e-12
 TWO_WAY_ABSORBED_SHARE = 1e-11
 
@@ -133,33 +133,68 @@ def _two_way_demean(
     data: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Removes the entity and time means of every column by alternating projections:
-    demeaning by entity, then by time, until a pass no longer changes the data. This is
-    the two-way within transformation `x_it - a_i - b_t` of a balanced or unbalanced
-    panel (one pass suffices on a balanced one).
+    Removes the entity and time effects of every column by regressing it on the entity
+    and time dummies with sparse least squares (LSMR). This is the two-way within
+    transformation `x_it - a_i - b_t` of a balanced or unbalanced panel, exact also on a
+    weakly connected one (short overlapping histories, groups of entities sharing only
+    a few dates) where alternating entity and time demeaning stalls.
 
     Returns:
         tuple: The demeaned data and the entity part `a_i` and time part `b_t` that were
         removed, all per observation. The split between `a_i` and `b_t` is only unique
         up to a level shift.
+
+    Raises:
+        ValueError: If the least squares fit does not converge.
     """
-    # The data's own scale makes the stopping rule hold for large-valued columns too,
-    # whose rounding noise alone exceeds an absolute tolerance.
-    tolerance = TWO_WAY_TOLERANCE * data.abs().max().clip(lower=1.0)
-    demeaned = data
-    entity_part = data * 0.0
-    time_part = data * 0.0
+    entity_codes, entities = pd.factorize(data.index.get_level_values("entity"))
+    time_codes, _ = pd.factorize(data.index.get_level_values("time"))
+    rows = np.arange(len(data))
+    dummies = sparse.csr_matrix(
+        (
+            np.ones(2 * len(data)),
+            (np.r_[rows, rows], np.r_[entity_codes, len(entities) + time_codes]),
+        )
+    )
+    # Scaling each dummy by one over the square root of its number of observations
+    # (Jacobi preconditioning) cuts the iterations on a large staggered panel from about
+    # 300 to 15; a weakly connected staircase of short histories still takes over 100.
+    column_scale = 1 / np.sqrt(np.asarray(dummies.sum(axis=0)).ravel())
+    scaled_dummies = dummies @ sparse.diags(column_scale)
 
-    for _ in range(TWO_WAY_MAX_ITERATIONS):
-        entity_means = demeaned.groupby(level="entity").transform("mean")
-        time_means = (demeaned - entity_means).groupby(level="time").transform("mean")
-        demeaned = demeaned - entity_means - time_means
-        entity_part += entity_means
-        time_part += time_means
-        if ((entity_means + time_means).abs().max() < tolerance).all():
-            break
+    # The column mean goes to the entity part first: it lies in the span of the dummies,
+    # and removing it keeps a large level (prices, market caps) out of the solver's
+    # relative tolerance. conlim=0 drops the condition number stop, so only a converged
+    # fit or the iteration limit ends the solve.
+    values = data.to_numpy(dtype=float)
+    entity_part = np.tile(values.mean(axis=0), (len(data), 1))
+    time_part = np.zeros_like(values)
+    for column in range(values.shape[1]):
+        scaled_solution, istop, iterations = lsmr(
+            scaled_dummies,
+            values[:, column] - entity_part[:, column],
+            atol=TWO_WAY_SOLVER_TOLERANCE,
+            btol=TWO_WAY_SOLVER_TOLERANCE,
+            conlim=0,
+            maxiter=10 * dummies.shape[1],
+        )[:3]
+        # LSMR stops without a least squares solution on a condition number beyond
+        # 1 / machine precision (6) or at the iteration limit (7).
+        if istop in (6, 7):
+            raise ValueError(
+                f"The two-way fixed effects fit of {data.columns[column]} did not "
+                f"converge (LSMR stop code {istop} after {iterations} iterations)."
+            )
+        solution = scaled_solution * column_scale
+        entity_part[:, column] += solution[: len(entities)][entity_codes]
+        time_part[:, column] = solution[len(entities) :][time_codes]
 
-    return demeaned, entity_part, time_part
+    index, columns = data.index, data.columns
+    return (
+        pd.DataFrame(values - entity_part - time_part, index=index, columns=columns),
+        pd.DataFrame(entity_part, index=index, columns=columns),
+        pd.DataFrame(time_part, index=index, columns=columns),
+    )
 
 
 def _effect_intercepts(
@@ -183,7 +218,7 @@ def _effect_intercepts(
     effects into a single column for the two-way case, so this separates them from the
     fitted slope coefficients directly. For a balanced panel the two-way solution is the
     closed form `alpha_i = rbar_i.` and `lambda_t = rbar_.t - rbar_..`; an unbalanced panel
-    is solved by alternating projections, which converge to the same least squares fit.
+    is solved by sparse least squares on the entity and time dummies.
     """
     residual_from_slope = pd.Series(
         y_panel.to_numpy() - x_panel.to_numpy() @ coefficients, index=y_panel.index

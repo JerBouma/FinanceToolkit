@@ -9,6 +9,7 @@ import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -385,6 +386,34 @@ def period_of_result(result: pd.DataFrame) -> str | None:
     return None
 
 
+class LazyDict(dict):
+    """
+    A dictionary that retrieves an entry through `loader` when it is first read and keeps
+    it, so a module loads only the data a calculation asks for (e.g. the prices of a single
+    period). A plain dictionary of the same data behaves the same, without the loading.
+
+    Args:
+        loader (Callable[[str], Any]): Returns the entry of a key, and raises a KeyError for a
+            key without an entry as a plain dictionary does.
+    """
+
+    def __init__(self, loader: Callable[[str], Any]):
+        super().__init__()
+        self._loader = loader
+
+    def __missing__(self, key: str) -> Any:
+        self[key] = self._loader(key)
+        return self[key]
+
+    def get(
+        self, key: str, default: Any = None
+    ) -> Any:  # ty: ignore[invalid-method-override]
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
 def handle_portfolio(func):
     """
     A decorator that processes the result of a function to handle portfolio data.
@@ -408,11 +437,12 @@ def handle_portfolio(func):
         # Call the original function
         result = func(self, *args, **kwargs)
 
-        # Check if "Portfolio" is in self._tickers
+        # Check if "Portfolio" is in self._tickers, only for a result to add it to: a module
+        # retrieves its tickers when first needed, which a failed calculation must not do.
         if (
-            isinstance(self._tickers, list | str)
+            isinstance(result, pd.DataFrame)
+            and isinstance(self._tickers, list | str)
             and "Portfolio" in self._tickers
-            and isinstance(result, pd.DataFrame)
         ):
             sig = inspect.signature(func)
             bound_args = sig.bind(self, *args, **kwargs)

@@ -429,3 +429,150 @@ def test_toolkit_statement_exchange_rates_are_not_rounded(monkeypatch):
         == 0.000771234
     )
     assert returned["Adj Close"].iloc[0] == 0.0008
+
+
+def _counting_toolkit(test_toolkit):
+    """
+    A Toolkit without data whose retrieval methods record what they retrieve and take it
+    from the test Toolkit, so a test can tell what a module loads.
+    """
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        api_key="",
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    calls = []
+
+    def statement_getter(name):
+        def getter(*args, **kwargs):
+            calls.append(name)
+            setattr(toolkit, f"_{name}", getattr(test_toolkit, f"_{name}"))
+
+        return getter
+
+    for name in ("balance_sheet_statement", "income_statement", "cash_flow_statement"):
+        setattr(toolkit, f"get_{name}", statement_getter(name))
+
+    def get_historical_data(period="daily", **kwargs):
+        calls.append(f"{period} prices")
+        test_toolkit.get_historical_data(period=period)
+        for attribute in (
+            "_daily_historical_data",
+            "_daily_risk_free_rate",
+            f"_{period}_historical_data",
+            f"_{period}_risk_free_rate",
+        ):
+            setattr(toolkit, attribute, getattr(test_toolkit, attribute))
+
+    def get_intraday_data(*args, **kwargs):
+        calls.append("intraday prices")
+
+    toolkit.get_historical_data = get_historical_data
+    toolkit.get_intraday_data = get_intraday_data
+
+    return toolkit, calls
+
+
+def test_module_access_loads_nothing(test_toolkit):
+    toolkit, calls = _counting_toolkit(test_toolkit)
+    toolkit._intraday_period = "1hour"
+
+    for module in (
+        "ratios",
+        "models",
+        "options",
+        "technicals",
+        "performance",
+        "risk",
+        "econometrics",
+    ):
+        getattr(toolkit, module)
+
+    assert calls == []
+
+
+def test_ratio_loads_only_the_statement_it_uses(test_toolkit):
+    toolkit, calls = _counting_toolkit(test_toolkit)
+
+    gross_margin = toolkit.ratios.get_gross_margin()
+
+    assert calls == ["income_statement"]
+    pd.testing.assert_frame_equal(gross_margin, test_toolkit.ratios.get_gross_margin())
+
+
+def test_valuation_ratio_loads_prices(test_toolkit):
+    toolkit, calls = _counting_toolkit(test_toolkit)
+
+    price_to_book = toolkit.ratios.get_price_to_book_ratio()
+
+    assert "yearly prices" in calls
+    assert "cash_flow_statement" not in calls
+    pd.testing.assert_frame_equal(
+        price_to_book, test_toolkit.ratios.get_price_to_book_ratio()
+    )
+
+
+def test_weekly_metric_loads_only_the_weekly_period(test_toolkit):
+    toolkit, calls = _counting_toolkit(test_toolkit)
+    toolkit._intraday_period = "1hour"
+
+    performance = toolkit.performance
+    within_weeks = performance.get_sharpe_ratio(period="weekly")
+    rolling_weeks = performance.get_sharpe_ratio(period="weekly", rolling=4)
+
+    # The daily prices are the base the weekly prices are converted from; no other period
+    # and no intraday data is retrieved.
+    assert set(calls) == {"weekly prices", "daily prices"}
+    assert set(performance._historical_data) == {"weekly", "daily"}
+    assert set(performance._within_historical_data) == {"weekly"}
+    pd.testing.assert_frame_equal(
+        within_weeks, test_toolkit.performance.get_sharpe_ratio(period="weekly")
+    )
+    pd.testing.assert_frame_equal(
+        rolling_weeks,
+        test_toolkit.performance.get_sharpe_ratio(period="weekly", rolling=4),
+    )
+
+
+def test_repeated_module_access_does_not_retrieve_again(test_toolkit):
+    toolkit, calls = _counting_toolkit(test_toolkit)
+    # The Models module requires an API key to retrieve statements.
+    toolkit._api_key = "API_KEY"
+
+    toolkit.ratios.get_gross_margin()
+    toolkit.ratios.get_gross_margin()
+    altman_z_score = toolkit.models.get_altman_z_score()
+
+    # The Toolkit keeps the statements it retrieved, so only the first use retrieves one.
+    assert calls.count("income_statement") == 1
+    pd.testing.assert_frame_equal(
+        altman_z_score, test_toolkit.models.get_altman_z_score()
+    )
+
+
+def test_collection_without_statements_fails_once():
+    toolkit = Toolkit(
+        tickers=["QQQ"],
+        api_key="",
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    calls = []
+
+    for name in ("balance_sheet_statement", "income_statement", "cash_flow_statement"):
+        setattr(toolkit, f"get_{name}", lambda name=name: calls.append(name))
+
+    assert toolkit.ratios.get_gross_margin().empty
+    calls.clear()
+
+    # The collection retrieves the statements once before its ratios rather than per ratio.
+    assert toolkit.ratios.collect_profitability_ratios().empty
+    assert sorted(calls) == [
+        "balance_sheet_statement",
+        "cash_flow_statement",
+        "income_statement",
+    ]

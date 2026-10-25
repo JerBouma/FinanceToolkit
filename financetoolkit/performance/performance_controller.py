@@ -3,16 +3,16 @@
 __docformat__ = "google"
 
 import warnings
+from collections.abc import Callable
+from functools import cached_property
 
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.performance import performance_model
-from financetoolkit.performance.helpers import (
-    determine_within_dataset,
-    determine_within_historical_data,
-)
+from financetoolkit.performance.helpers import determine_within_dataset
+from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.risk.risk_model import (
     get_kurtosis,
     get_max_drawdown,
@@ -54,7 +54,7 @@ class Performance:
 
     def __init__(
         self,
-        tickers: str | list[str],
+        tickers: list[str] | Callable[[], list[str]],
         historical_data: dict[str, pd.DataFrame],
         risk_free_rate_data: dict[str, pd.Series],
         quarterly: bool | None = None,
@@ -67,8 +67,12 @@ class Performance:
         """
         Initializes the Performance Controller Class.
 
+        The Toolkit passes the tickers as a function without arguments and the period
+        dictionaries as a LazyDict (financetoolkit.helpers), so a metric retrieves the data of
+        the period it is calculated over when it is first needed, and nothing else.
+
         Args:
-            tickers (str | list[str]): The tickers to use for the calculations.
+            tickers (list[str] | Callable[[], list[str]]): The tickers to use for the calculations.
             historical_data (dict[str, pd.DataFrame]): The historical data to use for the calculations.
             risk_free_rate_data (dict[str, pd.Series]): The annualized risk free rate per period frequency.
             quarterly (bool | None, optional): Whether to use quarterly data. Defaults to None.
@@ -118,28 +122,24 @@ class Performance:
         | 2025Q3 |  0.1031 |  0.1768 |
         | 2025Q4 |  0.0236 |  0.0495 |
         """
-        self._tickers = tickers
-        self._tickers_without_portfolio = [
-            ticker for ticker in tickers if ticker != "Portfolio"
-        ]
+        self._tickers_source = tickers
         self._benchmark_name = "Benchmark"
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._progress_bar: bool = progress_bar
+        self._intraday_period: str | None = intraday_period
         self._portfolio_weights: dict | None = None
 
         # Historical Data
         self._historical_data = historical_data
         # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
-        self._risk_free_rate_data: dict[str, pd.Series] = {}
-        for frequency, rate in risk_free_rate_data.items():
-            period_rate = convert_annualized_rate_to_period(rate, frequency)
-            # The conversion is also typed for scalars; a Series in gives a Series out.
-            if not isinstance(period_rate, pd.Series):
-                raise TypeError(f"Expected a risk free rate series for {frequency}.")
-            self._risk_free_rate_data[frequency] = period_rate
+        self._risk_free_rate_data = LazyDict(
+            lambda frequency: convert_annualized_rate_to_period(
+                risk_free_rate_data[frequency], frequency
+            )
+        )
 
         # Fama and French
         self._fama_and_french_dataset: pd.DataFrame = pd.DataFrame()
@@ -149,37 +149,13 @@ class Performance:
         self._factor_asset_correlations: pd.DataFrame = pd.DataFrame()
         self._factor_correlations: pd.DataFrame = pd.DataFrame()
 
-        # Within Period Calculations
-        daily_historical_data = self._historical_data["daily"].copy()
-
-        excess_return = performance_model.get_excess_return(
-            daily_historical_data["Return"], self._risk_free_rate_data["daily"]
-        )
-        excess_return.columns = pd.MultiIndex.from_product(
-            [["Excess Return"], excess_return.columns]
-        )
-        daily_historical_data = pd.concat(
-            [daily_historical_data, excess_return], axis=1
-        )
-
-        intraday_historical_data = self._historical_data["intraday"].copy()
-
-        daily_historical_data.index = pd.DatetimeIndex(
-            daily_historical_data.to_timestamp().index
-        )
-
-        if not self._historical_data["intraday"].empty:
-            intraday_historical_data = self._add_intraday_excess_return(
-                intraday_historical_data
+        # The daily and intraday data with their excess returns, and the within period data
+        # built from them, each made when a metric first asks for it.
+        self._excess_historical_data = LazyDict(self._add_excess_return)
+        self._within_historical_data = LazyDict(
+            lambda period: determine_within_historical_data(
+                period, self._excess_historical_data, self._intraday_period
             )
-            intraday_historical_data.index = pd.DatetimeIndex(
-                intraday_historical_data.to_timestamp().index
-            )
-
-        self._within_historical_data = determine_within_historical_data(
-            daily_historical_data=daily_historical_data,
-            intraday_historical_data=intraday_historical_data,
-            intraday_period=intraday_period,
         )
 
         # Memo for the column slices handed to the calculations, keyed by (period,
@@ -189,6 +165,48 @@ class Performance:
         self._data_cache: dict[
             tuple[str, str, bool, bool], pd.DataFrame | pd.Series
         ] = {}
+
+    @cached_property
+    def _tickers(self) -> list[str]:
+        """The tickers, retrieved when first needed."""
+        return (
+            self._tickers_source()
+            if callable(self._tickers_source)
+            else self._tickers_source
+        )
+
+    @cached_property
+    def _tickers_without_portfolio(self) -> list[str]:
+        """The tickers other than the Portfolio."""
+        return [ticker for ticker in self._tickers if ticker != "Portfolio"]
+
+    def _add_excess_return(self, period: str) -> pd.DataFrame:
+        """
+        The daily or intraday historical data with an "Excess Return" block, the data the
+        within-period calculations nest.
+
+        Args:
+            period (str): "daily" or "intraday".
+
+        Returns:
+            pd.DataFrame: The historical data with its "Excess Return" columns; intraday data
+            stays empty without intraday bars.
+        """
+        if period == "intraday":
+            intraday_historical_data = self._historical_data["intraday"]
+            if intraday_historical_data.empty:
+                return intraday_historical_data
+            return self._add_intraday_excess_return(intraday_historical_data.copy())
+
+        daily_historical_data = self._historical_data["daily"]
+        excess_return = performance_model.get_excess_return(
+            daily_historical_data["Return"], self._risk_free_rate_data["daily"]
+        )
+        excess_return.columns = pd.MultiIndex.from_product(
+            [["Excess Return"], excess_return.columns]
+        )
+
+        return pd.concat([daily_historical_data, excess_return], axis=1)
 
     def _add_intraday_excess_return(self, intraday_data: pd.DataFrame) -> pd.DataFrame:
         """

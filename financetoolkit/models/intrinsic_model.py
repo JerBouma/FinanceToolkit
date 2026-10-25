@@ -6,6 +6,7 @@ from math import fsum
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import brentq
 
 # pylint: disable=too-many-locals
 
@@ -509,3 +510,235 @@ def get_residual_income(
         )
 
     return net_income - (cost_of_equity * book_value_of_equity)
+
+
+def _equity_value_per_share(
+    cash_flow: float | np.ndarray,
+    growth_rate: float | np.ndarray,
+    perpetual_growth_rate: float | np.ndarray,
+    weighted_average_cost_of_capital: float | np.ndarray,
+    net_cash: float,
+    shares_outstanding: float,
+    periods: int,
+) -> float | np.ndarray:
+    """
+    The DCF value per share of `get_intrinsic_value`, written so that every rate may also be
+    an array of scenarios.
+    """
+    years = np.arange(1, periods + 1)
+    growth = np.asarray(growth_rate, dtype=float)[..., None]
+    perpetual = np.asarray(perpetual_growth_rate, dtype=float)
+    wacc = np.asarray(weighted_average_cost_of_capital, dtype=float)
+    projections = cash_flow * (1 + growth) ** years
+    present_value = (projections / (1 + wacc[..., None]) ** years).sum(axis=-1)
+    terminal = projections[..., -1] * (1 + perpetual) / (wacc - perpetual)
+    enterprise_value = present_value + terminal / (1 + wacc) ** periods
+    return (enterprise_value + net_cash) / shares_outstanding
+
+
+def get_implied_growth_rate(
+    share_price: float,
+    cash_flow: float,
+    perpetual_growth_rate: float,
+    weighted_average_cost_of_capital: float,
+    cash_and_cash_equivalents: float,
+    total_debt: float,
+    shares_outstanding: float,
+    periods: int = 5,
+) -> float:
+    """
+    The growth rate the share price implies (a reverse DCF): the yearly growth of the cash
+    flow over the projection periods at which the Discounted Cash Flow value per share of
+    `get_intrinsic_value` equals the share price. Rather than asking what a company is
+    worth, it asks what the market expects, which can then be judged against the company's
+    history and prospects.
+
+    For more information, see the following book:
+
+    - Mauboussin, M.J. and Rappaport, A. (2001). "Expectations Investing: Reading Stock
+      Prices for Better Returns." Harvard Business School Press.
+
+    Args:
+        share_price (float): The current share price.
+        cash_flow (float): The base cash flow, e.g. the latest Free Cash Flow.
+        perpetual_growth_rate (float): The growth after the projection periods.
+        weighted_average_cost_of_capital (float): The discount rate.
+        cash_and_cash_equivalents (float): The cash and cash equivalents.
+        total_debt (float): The total debt.
+        shares_outstanding (float): The number of shares outstanding.
+        periods (int, optional): The number of projection periods. Defaults to 5.
+
+    Returns:
+        float: The implied yearly growth rate, or NaN when no growth rate between -90% and
+        +500% a year reproduces the share price (e.g. a negative cash flow).
+    """
+    if cash_flow <= 0 or weighted_average_cost_of_capital <= perpetual_growth_rate:
+        return np.nan
+
+    net_cash = cash_and_cash_equivalents - total_debt
+
+    def difference(growth: float) -> float:
+        return (
+            float(
+                _equity_value_per_share(
+                    cash_flow,
+                    growth,
+                    perpetual_growth_rate,
+                    weighted_average_cost_of_capital,
+                    net_cash,
+                    shares_outstanding,
+                    periods,
+                )
+            )
+            - share_price
+        )
+
+    lower, upper = -0.9, 5.0
+    # No sign change, or a missing input (NaN), means no growth rate gives the price.
+    if not difference(lower) * difference(upper) <= 0:
+        return np.nan
+
+    return float(brentq(difference, lower, upper, maxiter=500))
+
+
+def get_earnings_power_value(
+    revenue: pd.Series,
+    operating_income: pd.Series,
+    income_tax_expense: pd.Series,
+    income_before_tax: pd.Series,
+    weighted_average_cost_of_capital: float,
+    cash_and_cash_equivalents: float,
+    total_debt: float,
+    shares_outstanding: float,
+) -> pd.Series:
+    """
+    The Earnings Power Value (Greenwald): the value of the company's current, sustainable
+    earnings if they never grew, NOPAT / WACC. Earnings are normalized by applying the
+    average operating margin over the given periods to the latest revenue, which smooths out
+    a single good or bad year. Comparing it with the market value shows how much of the
+    price rests on growth: a price far above the EPV requires growth that creates value.
+    The NOPAT is capitalized as a yearly amount, so every period should cover a year (for
+    quarterly statements, the sum of four quarters).
+
+    For more information, see the following book:
+
+    - Greenwald, B.C.N., Kahn, J., Sonkin, P.D. and van Biema, M. (2001). "Value
+      Investing: From Graham to Buffett and Beyond." Wiley.
+
+    Args:
+        revenue (pd.Series): The revenue over the normalization periods, each a year.
+        operating_income (pd.Series): The operating income over the same periods.
+        income_tax_expense (pd.Series): The income tax expense over the same periods.
+        income_before_tax (pd.Series): The income before tax over the same periods.
+        weighted_average_cost_of_capital (float): The discount rate.
+        cash_and_cash_equivalents (float): The latest cash and cash equivalents.
+        total_debt (float): The latest total debt.
+        shares_outstanding (float): The number of shares outstanding.
+
+    Returns:
+        pd.Series: The Average Operating Margin, Normalized Operating Income, Tax Rate,
+        Normalized NOPAT, Earnings Power Value (of the firm), Equity Value and Earnings
+        Power Value per Share.
+
+    Notes:
+    - Maintenance capital expenditure is assumed to equal depreciation, so operating income
+      stands in for the cash the business can distribute without shrinking.
+    """
+    margin = float((operating_income / revenue).mean())
+    normalized_operating_income = margin * float(revenue.iloc[-1])
+    tax_rate = float(np.clip((income_tax_expense / income_before_tax).mean(), 0, 1))
+    nopat = normalized_operating_income * (1 - tax_rate)
+    earnings_power_value = nopat / weighted_average_cost_of_capital
+    equity_value = earnings_power_value + cash_and_cash_equivalents - total_debt
+
+    return pd.Series(
+        {
+            "Average Operating Margin": margin,
+            "Normalized Operating Income": normalized_operating_income,
+            "Tax Rate": tax_rate,
+            "Normalized NOPAT": nopat,
+            "Earnings Power Value": earnings_power_value,
+            "Equity Value": equity_value,
+            "Earnings Power Value per Share": equity_value / shares_outstanding,
+        }
+    )
+
+
+def get_monte_carlo_intrinsic_value(
+    cash_flow: float,
+    growth_rate: float,
+    growth_rate_volatility: float,
+    perpetual_growth_rate: float,
+    perpetual_growth_rate_volatility: float,
+    weighted_average_cost_of_capital: float,
+    weighted_average_cost_of_capital_volatility: float,
+    cash_and_cash_equivalents: float,
+    total_debt: float,
+    shares_outstanding: float,
+    periods: int = 5,
+    simulations: int = 10000,
+    seed: int | None = 0,
+) -> np.ndarray:
+    """
+    The distribution of the Discounted Cash Flow value per share when the growth rate, the
+    perpetual growth rate and the discount rate are uncertain. Each simulation draws the
+    three rates from normal distributions around their expected values and calculates the
+    value as in `get_intrinsic_value`. Draws in which the discount rate does not exceed the
+    perpetual growth rate are redrawn, as the terminal value is undefined there.
+
+    Args:
+        cash_flow (float): The base cash flow, e.g. the latest Free Cash Flow.
+        growth_rate (float): The expected yearly growth over the projection periods.
+        growth_rate_volatility (float): The standard deviation of the growth rate.
+        perpetual_growth_rate (float): The expected growth after the projection periods.
+        perpetual_growth_rate_volatility (float): Its standard deviation.
+        weighted_average_cost_of_capital (float): The expected discount rate.
+        weighted_average_cost_of_capital_volatility (float): Its standard deviation.
+        cash_and_cash_equivalents (float): The cash and cash equivalents.
+        total_debt (float): The total debt.
+        shares_outstanding (float): The number of shares outstanding.
+        periods (int, optional): The number of projection periods. Defaults to 5.
+        simulations (int, optional): The number of simulations. Defaults to 10,000.
+        seed (int | None, optional): The seed of the random numbers, for reproducible
+            results. Defaults to 0.
+
+    Returns:
+        np.ndarray: The simulated values per share.
+    """
+    rng = np.random.default_rng(seed)
+    growth = rng.normal(growth_rate, growth_rate_volatility, simulations)
+    perpetual = rng.normal(
+        perpetual_growth_rate, perpetual_growth_rate_volatility, simulations
+    )
+    wacc = rng.normal(
+        weighted_average_cost_of_capital,
+        weighted_average_cost_of_capital_volatility,
+        simulations,
+    )
+
+    # Redraw the discount rates that do not exceed the perpetual growth rate (with a small
+    # margin, as a spread close to zero makes the terminal value explode).
+    for _ in range(100):
+        invalid = wacc <= perpetual + 0.005
+        if not invalid.any():
+            break
+        wacc[invalid] = rng.normal(
+            weighted_average_cost_of_capital,
+            weighted_average_cost_of_capital_volatility,
+            int(invalid.sum()),
+        )
+    else:
+        raise ValueError(
+            "The discount rate is too often below the perpetual growth rate; lower the "
+            "volatilities or widen the gap between the two."
+        )
+
+    return _equity_value_per_share(
+        cash_flow,
+        growth,
+        perpetual,
+        wacc,
+        cash_and_cash_equivalents - total_debt,
+        shares_outstanding,
+        periods,
+    )

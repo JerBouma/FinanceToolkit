@@ -1275,7 +1275,8 @@ def get_hill_estimator(
         k (int | float, optional): The number of upper order statistics to use. If a
         float in (0, 1) it is interpreted as the fraction of the strictly positive
         (loss- or gain-side, depending on `tail`) observations to use, rounded down
-        to the nearest integer with a minimum of 1. Defaults to 0.1 (the top 10%).
+        to the nearest integer with a minimum of 1 (0 when there are no such
+        observations). Defaults to 0.1 (the top 10%).
         tail (str, optional): Which tail to estimate, one of "left" (the loss tail,
         i.e. the negated returns) or "right" (the gain tail, i.e. the raw returns).
         Defaults to "left".
@@ -1322,7 +1323,8 @@ def get_hill_estimator(
 
         n = len(tail_values)
         number_of_order_statistics = int(k * n) if isinstance(k, float) else k
-        number_of_order_statistics = max(number_of_order_statistics, 1)
+        # At least one order statistic when there is data, and none when there is not (a period before a ticker listed, or without a single loss or gain), so the count reports what was actually used.  # noqa: E501
+        number_of_order_statistics = max(number_of_order_statistics, 1) if n else 0
 
         if number_of_order_statistics >= n:
             return pd.Series(
@@ -1373,6 +1375,10 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     deviation already converts the lag^(2H) scaling of the underlying Variance into
     lag^H.
 
+    Di Matteo et al. (2005) apply it to the logarithm of the price, X_t = ln(P_t), so the
+    lagged differences are log returns over the lag and their dispersion does not depend
+    on the price level; pass log prices for that estimate.
+
     Also known as: generalized Hurst exponent, structure-function Hurst estimator.
 
     For more information about the method, see the following paper:
@@ -1382,7 +1388,7 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     Stage of Development." Journal of Banking & Finance, 29(4), 827-851.
 
     Args:
-        data (pd.Series): A Series of values (e.g. prices) to calculate the Hurst
+        data (pd.Series): A Series of levels (e.g. log prices) to calculate the Hurst
         Exponent for.
         max_lag (int, optional): The maximum lag, included, to use when estimating the
         exponent; the regression runs over the lags 2 up to and including `max_lag`.

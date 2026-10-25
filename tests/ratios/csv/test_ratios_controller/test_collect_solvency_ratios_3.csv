@@ -2,7 +2,7 @@
 AAPL,Debt-to-Assets Ratio,0.3835,0.3822,0.3453
 AAPL,Asset Coverage Ratio,1.8292,1.7138,1.8187
 AAPL,Debt-to-Equity Ratio,2.0151,2.3646,2.1589
-AAPL,Debt Service Coverage Ratio,9.7767,10.4762,10.1238
+AAPL,Debt Service Coverage Ratio,5.6612,5.9286,5.8555
 AAPL,Equity Multiplier,5.255,6.1862,6.252
 AAPL,Free Cash Flow Yield,0.0555,0.0964,
 AAPL,Net-Debt to EBITDA Ratio,0.4703,0.4195,0.3705
@@ -16,7 +16,7 @@ AAPL,Interest Paid to Expense Ratio,1.031,0.9957,0.9714
 MSFT,Debt-to-Assets Ratio,0.2185,0.1847,0.1561
 MSFT,Asset Coverage Ratio,3.3948,3.9258,4.6597
 MSFT,Debt-to-Equity Ratio,0.5331,0.4183,0.3252
-MSFT,Debt Service Coverage Ratio,13.5844,18.2744,24.938
+MSFT,Debt Service Coverage Ratio,8.7932,11.7823,16.6481
 MSFT,Equity Multiplier,2.4399,2.2643,2.0839
 MSFT,Free Cash Flow Yield,0.0396,0.0671,
 MSFT,Net-Debt to EBITDA Ratio,0.3765,0.2811,0.1813

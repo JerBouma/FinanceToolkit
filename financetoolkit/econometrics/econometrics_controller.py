@@ -176,21 +176,21 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["BTCUSD", "^GSPC", "EURUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_arch_lm_test(period="quarterly")
+        toolkit.econometrics.get_arch_lm_test()
         ```
 
         Which returns:
 
-        |                   |   AMZN |   TSLA |
-        |:------------------|-------:|-------:|
-        | ARCH-LM Statistic | 9.5073 | 1.6855 |
-        | P-Value           | 0.0905 | 0.8907 |
+        |                   |   BTCUSD |   ^GSPC |   EURUSD |
+        |:------------------|---------:|--------:|---------:|
+        | ARCH-LM Statistic |  53.9533 | 165.389 |  67.7588 |
+        | P-Value           |   0      |   0     |   0      |
         """
         period = period if period else "daily"
 
@@ -269,21 +269,21 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^GSPC", "BTCUSD", "TLT"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_jarque_bera_test(period="quarterly")
+        toolkit.econometrics.get_jarque_bera_test(period="monthly")
         ```
 
         Which returns:
 
-        |                       |   AMZN |   TSLA |
-        |:----------------------|-------:|-------:|
-        | Jarque-Bera Statistic | 1.852  | 0.3192 |
-        | P-Value               | 0.3961 | 0.8525 |
+        |                       |   ^GSPC |   BTCUSD |    TLT |
+        |:----------------------|--------:|---------:|-------:|
+        | Jarque-Bera Statistic |  2.6001 |   1.0834 | 0.6166 |
+        | P-Value               |  0.2725 |   0.5818 | 0.7347 |
         """
         period = period if period else "daily"
 
@@ -365,21 +365,21 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["WMT", "COST", "TGT"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_ljung_box_test(period="quarterly", within_period=False)
+        toolkit.econometrics.get_ljung_box_test()
         ```
 
         Which returns:
 
-        |                     |   AMZN |   TSLA |
-        |:--------------------|-------:|-------:|
-        | Ljung-Box Statistic | 8.702  | 9.7873 |
-        | P-Value             | 0.5606 | 0.4594 |
+        |                     |     WMT |    COST |     TGT |
+        |:--------------------|--------:|--------:|--------:|
+        | Ljung-Box Statistic | 12.8794 | 10.9863 | 11.9887 |
+        | P-Value             |  0.2305 |  0.3586 |  0.2858 |
         """
         period = period if period else "daily"
 
@@ -467,22 +467,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["XLE", "XLF", "XLK"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_variance_ratio_test(period="quarterly", within_period=False)
+        toolkit.econometrics.get_variance_ratio_test()
         ```
 
         Which returns:
 
-        |                          |    AMZN |    TSLA |
-        |:-------------------------|--------:|--------:|
-        | Variance Ratio           |  0.8952 |  0.7879 |
-        | Variance Ratio Statistic | -0.4568 | -0.9247 |
-        | P-Value                  |  0.6478 |  0.3551 |
+        |                          |    XLE |    XLF |     XLK |
+        |:-------------------------|-------:|-------:|--------:|
+        | Variance Ratio           | 1.0241 | 1.024  |  0.9603 |
+        | Variance Ratio Statistic | 0.8525 | 0.8515 | -1.4046 |
+        | P-Value                  | 0.3939 | 0.3945 |  0.1601 |
         """
         period = period if period else "daily"
 
@@ -563,27 +563,28 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["BA", "AIR.PA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2019-01-01",
-            end_date="2023-12-31",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_cusum_test(period="quarterly", within_period=False)
+        # The critical values are the asymptotic Brownian Bridge boundaries, so they
+        # are the same constants for every asset.
+        toolkit.econometrics.get_cusum_test()
         ```
 
-        Which returns (the critical values are the asymptotic Brownian Bridge
-        boundaries, so they are the same constants for every asset):
+        Which returns:
 
-        |                       |      AAPL |      MSFT |
-        |:----------------------|----------:|----------:|
-        | CUSUM Statistic       |  0.771233 |  0.706108 |
-        | P-Value               |  0.591571 |  0.701045 |
-        | Observations          | 19        | 19        |
-        | Critical Value 1%     |  1.63     |  1.63     |
-        | Critical Value 5%     |  1.36     |  1.36     |
-        | Critical Value 10%    |  1.22     |  1.22     |
-        | Reject Stability (5%) |  0        |  0        |
+        |                       |          BA |      AIR.PA |
+        |:----------------------|------------:|------------:|
+        | CUSUM Statistic       |    0.685425 |    0.441916 |
+        | P-Value               |    0.735342 |    0.989762 |
+        | Observations          | 1291        | 1291        |
+        | Critical Value 1%     |    1.63     |    1.63     |
+        | Critical Value 5%     |    1.36     |    1.36     |
+        | Critical Value 10%    |    1.22     |    1.22     |
+        | Reject Stability (5%) |    0        |    0        |
         """
         period = period if period else "daily"
 
@@ -800,27 +801,27 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["EURUSD", "USDJPY", "GBPUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2019-01-01",
-            end_date="2023-12-31",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_augmented_dickey_fuller(period="quarterly")
+        toolkit.econometrics.get_augmented_dickey_fuller()
         ```
 
         Which returns:
 
-        |                       |         AMZN |      TSLA |
-        |:----------------------|-------------:|----------:|
-        | ADF Statistic         | -7.15693     | -2.23772  |
-        | P-Value               |  3.03759e-10 |  0.192841 |
-        | Lags Used             |  8           |  8        |
-        | Observations          | 11           | 11        |
-        | Critical Value 1%     | -4.22324     | -4.22324  |
-        | Critical Value 5%     | -3.18937     | -3.18937  |
-        | Critical Value 10%    | -2.72984     | -2.72984  |
-        | Reject Unit Root (5%) |  1           |  0        |
+        |                       |      EURUSD |      USDJPY |      GBPUSD |
+        |:----------------------|------------:|------------:|------------:|
+        | ADF Statistic         |   -1.83568  |   -1.70039  |   -1.8101   |
+        | P-Value               |    0.362896 |    0.430912 |    0.375458 |
+        | Lags Used             |    5        |    0        |    2        |
+        | Observations          | 1345        | 1350        | 1348        |
+        | Critical Value 1%     |   -3.43522  |   -3.4352   |   -3.43521  |
+        | Critical Value 5%     |   -2.86369  |   -2.86368  |   -2.86369  |
+        | Critical Value 10%    |   -2.56792  |   -2.56791  |   -2.56791  |
+        | Reject Unit Root (5%) |    0        |    0        |    0        |
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
@@ -898,28 +899,28 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^GSPC", "^N225"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2019-01-01",
-            end_date="2023-12-31",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_kpss_test(period="quarterly")
+        toolkit.econometrics.get_kpss_test()
         ```
 
         Which returns:
 
-        |                           |    AMZN |    TSLA |
-        |:--------------------------|--------:|--------:|
-        | KPSS Statistic            |  0.1739 |  0.5193 |
-        | P-Value                   |  0.1    |  0.0373 |
-        | Lags Used                 |  2      |  2      |
-        | Observations              | 20      | 20      |
-        | Critical Value 1%         |  0.739  |  0.739  |
-        | Critical Value 2.5%       |  0.574  |  0.574  |
-        | Critical Value 5%         |  0.463  |  0.463  |
-        | Critical Value 10%        |  0.347  |  0.347  |
-        | Reject Stationarity (5%)  |  0      |  1      |
+        |                          |      ^GSPC |      ^N225 |
+        |:-------------------------|-----------:|-----------:|
+        | KPSS Statistic           |    4.72819 |    4.79639 |
+        | P-Value                  |    0.01    |    0.01    |
+        | Lags Used                |   21       |   21       |
+        | Observations             | 1298       | 1298       |
+        | Critical Value 1%        |    0.739   |    0.739   |
+        | Critical Value 2.5%      |    0.574   |    0.574   |
+        | Critical Value 5%        |    0.463   |    0.463   |
+        | Critical Value 10%       |    0.347   |    0.347   |
+        | Reject Stationarity (5%) |    1       |    1       |
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
@@ -994,26 +995,26 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["GCUSD", "SIUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_phillips_perron_test(period="quarterly")
+        toolkit.econometrics.get_phillips_perron_test()
         ```
 
         Which returns:
 
-        |                           |      AMZN |     TSLA |
-        |:--------------------------|----------:|---------:|
-        | Phillips-Perron Statistic | -0.773263 | -1.92247 |
-        | Lags Used                 |  7        |  7       |
-        | Observations              | 19        | 19       |
-        | Critical Value 1%         | -3.43     | -3.43    |
-        | Critical Value 5%         | -2.86     | -2.86    |
-        | Critical Value 10%        | -2.57     | -2.57    |
-        | Reject Unit Root (5%)     |  0        |  0       |
+        |                           |      GCUSD |      SIUSD |
+        |:--------------------------|-----------:|-----------:|
+        | Phillips-Perron Statistic |    3.36586 |    4.51679 |
+        | Lags Used                 |   22       |   22       |
+        | Observations              | 1300       | 1300       |
+        | Critical Value 1%         |   -3.43    |   -3.43    |
+        | Critical Value 5%         |   -2.86    |   -2.86    |
+        | Critical Value 10%        |   -2.57    |   -2.57    |
+        | Reject Unit Root (5%)     |    0       |    0       |
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
@@ -1102,28 +1103,28 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["CLUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2019-01-01",
-            end_date="2023-12-31",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_zivot_andrews_test(period="weekly")
+        toolkit.econometrics.get_zivot_andrews_test()
         ```
 
         Which returns:
 
-        |                         |        AAPL |       MSFT |
-        |:------------------------|------------:|-----------:|
-        | Zivot-Andrews Statistic |  -4.71085   |  -4.43116  |
-        | P-Value                 |   0.0685808 |   0.141445 |
-        | Break Index             | 169         | 169        |
-        | Observations            | 261         | 261        |
-        | Lags Used               |   0         |   0        |
-        | Critical Value 1%       |  -5.27644   |  -5.27644  |
-        | Critical Value 5%       |  -4.81067   |  -4.81067  |
-        | Critical Value 10%      |  -4.56618   |  -4.56618  |
-        | Reject Unit Root (5%)   |   0         |   0        |
+        |                         |       CLUSD |
+        |:------------------------|------------:|
+        | Zivot-Andrews Statistic |   -4.1369   |
+        | P-Value                 |    0.271885 |
+        | Break Index             |  243        |
+        | Observations            | 1280        |
+        | Lags Used               |   10        |
+        | Critical Value 1%       |   -5.27644  |
+        | Critical Value 5%       |   -4.81067  |
+        | Critical Value 10%      |   -4.56618  |
+        | Reject Unit Root (5%)   |    0        |
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(
@@ -1205,26 +1206,24 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["KO", "PEP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_engle_granger_cointegration(period="quarterly")
+        engle_granger = toolkit.econometrics.get_engle_granger_cointegration()
+
+        # The 1% and 10% critical values follow the same pattern as the 5% one.
+        engle_granger[["Engle-Granger Statistic", "P-Value", "Critical Value 5%", "Cointegrated (5%)"]]
         ```
 
-        Which returns: (the 1%/10% critical value columns follow the same pattern as
-        |                  |   Engle-Granger Statistic |   P-Value |   Critical Value 1% |   Critical Value 5% |   Critical Value 10% | Cointegrated (5%)   |
-        |:-----------------|--------------------------:|----------:|--------------------:|--------------------:|---------------------:|:--------------------|
-        | ('AAPL', 'MSFT') |                  -3.26596 | 0.0595728 |            -4.56573 |            -3.67661 |             -3.27521 | False               |
-        | ('MSFT', 'AAPL') |                  -2.56708 | 0.250313  |            -4.56573 |            -3.67661 |             -3.27521 | False               |
-        5%, omitted here for width)
+        Which returns:
 
-        |                  |   Engle-Granger Statistic |   P-Value |   Critical Value 1% |   Critical Value 5% |   Critical Value 10% | Cointegrated (5%)   |
-        |:-----------------|--------------------------:|----------:|--------------------:|--------------------:|---------------------:|:--------------------|
-        | ('AAPL', 'MSFT') |                        -0 |    0.9859 |            -4.56573 |            -3.67661 |             -3.27521 | False               |
-        | ('MSFT', 'AAPL') |                        -0 |    0.9859 |            -4.56573 |            -3.67661 |             -3.27521 | False               |
+        |               |   Engle-Granger Statistic |   P-Value |   Critical Value 5% | Cointegrated (5%)   |
+        |:--------------|--------------------------:|----------:|--------------------:|:--------------------|
+        | ('KO', 'PEP') |                   -1.0266 |    0.8977 |              -3.341 | False               |
+        | ('PEP', 'KO') |                   -2.0565 |    0.4991 |              -3.341 | False               |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)
@@ -1239,7 +1238,9 @@ class Econometrics:
             for ticker_a, ticker_b in pairs
         }
 
-        result = pd.DataFrame(rows).T
+        # Transposing rows that mix numbers and a boolean leaves object columns, which
+        # pandas does not round, so the numeric columns are restored first.
+        result = pd.DataFrame(rows).T.infer_objects()
         result.index = result.index.set_names(["Dependent", "Independent"])
 
         return apply_rounding(
@@ -1310,22 +1311,24 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["V", "MA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_johansen_cointegration(period="quarterly")
+        johansen = toolkit.econometrics.get_johansen_cointegration()
+
+        # The maximum eigenvalue statistic columns follow the same pattern as the trace ones.
+        johansen[["Eigenvalue", "Trace Statistic", "Trace Critical Value 95%", "Reject (Trace, 5%)"]]
         ```
 
-        Which returns: (showing the trace-statistic columns; the max-eigenvalue-statistic
-        columns follow the same pattern)
+        Which returns:
 
         |        |   Eigenvalue |   Trace Statistic |   Trace Critical Value 95% | Reject (Trace, 5%)   |
         |:-------|-------------:|------------------:|---------------------------:|:---------------------|
-        | r <= 0 |       0.528  |           13.6694 |                    15.4943 | False                |
-        | r <= 1 |       0.0086 |            0.1564 |                     3.8415 | False                |
+        | r <= 0 |       0.0107 |           13.9015 |                    15.4943 | False                |
+        | r <= 1 |       0.0003 |            0.3612 |                     3.8415 | False                |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)
@@ -1400,21 +1403,21 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["CLUSD", "XLE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_granger_causality(period="weekly", max_lag=3)
+        toolkit.econometrics.get_granger_causality()
         ```
 
         Which returns:
 
         |                  |   F-Statistic |   P-Value | Granger-Causes (5%)   |
         |:-----------------|--------------:|----------:|:----------------------|
-        | ('AAPL', 'MSFT') |       2.47418 | 0.0621177 | False                 |
-        | ('MSFT', 'AAPL') |       1.44163 | 0.231182  | False                 |
+        | ('CLUSD', 'XLE') |        4.2749 |    0.0007 | True                  |
+        | ('XLE', 'CLUSD') |        1.5533 |    0.1705 | False                 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -1429,7 +1432,9 @@ class Econometrics:
             for ticker_a, ticker_b in pairs
         }
 
-        result = pd.DataFrame(rows).T
+        # Transposing rows that mix numbers and a boolean leaves object columns, which
+        # pandas does not round, so the numeric columns are restored first.
+        result = pd.DataFrame(rows).T.infer_objects()
         result.index = result.index.set_names(["Dependent", "Independent"])
 
         return apply_rounding(
@@ -1510,7 +1515,7 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["XOM", "CVX", "SHEL", "BP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -1521,12 +1526,12 @@ class Econometrics:
 
         Which returns:
 
-        |                           |      AAPL |      MSFT |
-        |:--------------------------|----------:|----------:|
-        | Diebold-Mariano Statistic |   -2.1569 |   -1.3434 |
-        | P-Value                   |    0.0312 |    0.1794 |
-        | Mean Loss Differential    |   -0      |   -0      |
-        | Observations              | 1232      | 1232      |
+        |                           |       XOM |       CVX |      SHEL |        BP |
+        |:--------------------------|----------:|----------:|----------:|----------:|
+        | Diebold-Mariano Statistic |   -2.8128 |   -2.2451 |   -0.3298 |   -0.1563 |
+        | P-Value                   |    0.005  |    0.0249 |    0.7416 |    0.8758 |
+        | Mean Loss Differential    |    0      |    0      |    0      |    0      |
+        | Observations              | 1232      | 1232      | 1232      | 1232      |
         """
         if method_a not in ("ewma", "rolling") or method_b not in ("ewma", "rolling"):
             raise ValueError("method_a and method_b must be 'ewma' or 'rolling'.")
@@ -1644,37 +1649,25 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["XOM", "USO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        # AMZN (the first ticker) is dependent; TSLA is independent
-        toolkit.econometrics.get_ols(period="quarterly")
-
-        # Or, override which ticker is dependent/independent, and pull in Benchmark too
-        toolkit.econometrics.get_ols(
-            dependent_ticker="AMZN",
-            independent_tickers=["TSLA", "Benchmark"],
-            period="quarterly",
-            cov_type="HC1",
-        )
-        # Or, simply opt every default independent ticker (here, just TSLA) into
-        # including Benchmark too:
-        toolkit.econometrics.get_ols(period="quarterly", include_benchmark=True)
-
-        # Or, use Newey-West (HAC) standard errors for time-series regressions
-        # where errors may be both heteroskedastic and autocorrelated:
-        toolkit.econometrics.get_ols(period="quarterly", cov_type="HAC", maxlags=4)
+        # XOM (the first ticker) is dependent; USO and the Benchmark are independent.
+        # dependent_ticker and independent_tickers choose others, cov_type='HC1' gives
+        # heteroskedasticity-robust and cov_type='HAC' (with maxlags) Newey-West standard errors.
+        toolkit.econometrics.get_ols(include_benchmark=True)
         ```
 
-        Which returns: (for the first call, AMZN regressed on TSLA)
+        Which returns:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0069 |       0.04   |        0.1731 |    0.8626 |
-        | TSLA      |        0.3094 |       0.1116 |        2.7738 |    0.0055 |
+        | Intercept |        0.0005 |       0.0004 |        1.5047 |    0.1327 |
+        | USO       |        0.4878 |       0.0172 |       28.4214 |    0      |
+        | Benchmark |        0.366  |       0.0333 |       10.9991 |    0      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2010,25 +2003,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["AAPL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_logistic_regression(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
-        )
+        # AAPL (the first ticker) is dependent; the Benchmark is independent
+        toolkit.econometrics.get_logistic_regression(include_benchmark=True)
         ```
 
         Which returns:
 
         |           |   Coefficient |   Std. Error |   z-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0124 |       0.1626 |       -0.0763 |    0.9392 |
-        | MSFT      |        6.8387 |       7.6454 |        0.8945 |    0.3711 |
-        | Benchmark |       89.7491 |      15.0025 |        5.9823 |    0      |
+        | Intercept |       -0.0275 |       0.15   |       -0.1836 |    0.8543 |
+        | Benchmark |      164.846  |      25.4127 |        6.4868 |    0      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2118,25 +2108,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["TSLA", "QQQ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_probit_regression(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
-        )
+        # TSLA (the first ticker) is dependent; QQQ is independent
+        toolkit.econometrics.get_probit_regression()
         ```
 
         Which returns:
 
         |           |   Coefficient |   Std. Error |   z-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0156 |       0.0946 |       -0.1652 |    0.8688 |
-        | MSFT      |        3.1338 |       4.2175 |        0.743  |    0.4575 |
-        | Benchmark |       52.7578 |       8.2654 |        6.383  |    0      |
+        | Intercept |       -0.0848 |       0.0913 |       -0.9294 |    0.3527 |
+        | QQQ       |       78.1324 |      11.1444 |        7.0109 |    0      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2229,25 +2216,24 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["BAC", "KRE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_quantile_regression(
-            independent_tickers=["MSFT", "Benchmark"], tau=0.5, period="weekly"
-        )
+        # BAC (the first ticker) is dependent; KRE and the Benchmark are independent.
+        # tau=0.05 describes how the worst 5% of days respond.
+        toolkit.econometrics.get_quantile_regression(include_benchmark=True, tau=0.05)
         ```
 
         Which returns:
 
         |           |   Coefficient |   Std. Error |
         |:----------|--------------:|-------------:|
-        | Intercept |       -0.0004 |       0.0017 |
-        | MSFT      |        0.1922 |       0.0732 |
-        | Benchmark |        0.9121 |       0.1089 |
+        | Intercept |       -0.0146 |       0.0006 |
+        | KRE       |        0.5271 |       0.0484 |
+        | Benchmark |        0.3965 |       0.1133 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2354,24 +2340,23 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["AAPL", "MSFT", "JPM", "XOM", "JNJ", "PG", "KO", "WMT", "CAT", "NEE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        # Benchmark (the default factor) is the single risk factor; AAPL and MSFT
-        # are the test assets. add_constant=False since only 2 assets are available.
-        toolkit.econometrics.get_fama_macbeth_regression(
-            period="weekly", add_constant=False
-        )
+        # The Benchmark (the default factor) is the single risk factor and the ten
+        # stocks are the test assets.
+        toolkit.econometrics.get_fama_macbeth_regression(period="monthly")
         ```
 
         Which returns:
 
         |           |   Risk Premium |   Std. Error |   t-Statistic |   P-Value |
         |:----------|---------------:|-------------:|--------------:|----------:|
-        | Benchmark |         0.0032 |       0.0017 |        1.8775 |    0.0616 |
+        | Intercept |         0.0066 |       0.0058 |        1.1505 |    0.2547 |
+        | Benchmark |         0.0101 |       0.008  |        1.2668 |    0.2103 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2504,20 +2489,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["MSFT", "ORCL", "SAP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_two_sample_t_test(period="weekly")
+        toolkit.econometrics.get_two_sample_t_test()
         ```
 
         Which returns:
 
         |                  |   T-Statistic |   Degrees of Freedom |   P-Value |   Mean A |   Mean B |
         |:-----------------|--------------:|---------------------:|----------:|---------:|---------:|
-        | ('AAPL', 'MSFT') |       -0.0515 |               511.12 |    0.9589 |   0.0036 |   0.0037 |
+        | ('MSFT', 'ORCL') |       -0.528  |              2176.24 |    0.5975 |   0.0008 |   0.0012 |
+        | ('MSFT', 'SAP')  |        0.1389 |              2504.05 |    0.8895 |   0.0008 |   0.0007 |
+        | ('ORCL', 'SAP')  |        0.6326 |              2210.92 |    0.5271 |   0.0012 |   0.0007 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2531,7 +2518,9 @@ class Econometrics:
             )
         }
 
-        result = pd.DataFrame(rows).T
+        # Transposing rows that mix numbers and a boolean leaves object columns, which
+        # pandas does not round, so the numeric columns are restored first.
+        result = pd.DataFrame(rows).T.infer_objects()
         result.index = result.index.set_names(["Ticker A", "Ticker B"])
 
         return apply_rounding(
@@ -2942,25 +2931,25 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["SMCI", "NVDA", "TSM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
         toolkit.econometrics.get_hausman_wu_test(
-            "AAPL", "MSFT", "Benchmark", period="weekly"
+            dependent_ticker="SMCI", suspect_ticker="NVDA", instrument_tickers="TSM"
         )
         ```
 
         Which returns:
 
-        |                    |        0 |
+        |                    |    Value |
         |:-------------------|---------:|
-        | V-Hat Coefficient  |  -1.0052 |
-        | T-Statistic        | -10.2346 |
-        | Degrees of Freedom | 257      |
-        | P-Value            |   0      |
+        | V-Hat Coefficient  |  -0.4021 |
+        | T-Statistic        |  -2.3377 |
+        | Degrees of Freedom | 246      |
+        | P-Value            |   0.0202 |
         | Endogenous (5%)    |   1      |
         """
         period = period if period else "daily"
@@ -3090,25 +3079,23 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["CAT", "DE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_breusch_pagan_test(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
-        )
+        # CAT (the first ticker) is dependent; DE is independent
+        toolkit.econometrics.get_breusch_pagan_test()
         ```
 
         Which returns:
 
-        |                              |      0 |
-        |:-----------------------------|-------:|
-        | Breusch-Pagan Statistic      | 0.2068 |
-        | P-Value                      | 0.9018 |
-        | Reject Homoskedasticity (5%) | 0      |
+        |                              |   Value |
+        |:-----------------------------|--------:|
+        | Breusch-Pagan Statistic      |  0.0129 |
+        | P-Value                      |  0.9096 |
+        | Reject Homoskedasticity (5%) |  0      |
         """
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
@@ -3189,25 +3176,23 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["GS", "MS"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_white_test(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
-        )
+        # GS (the first ticker) is dependent; MS is independent
+        toolkit.econometrics.get_white_test()
         ```
 
         Which returns:
 
-        |                              |      0 |
-        |:-----------------------------|-------:|
-        | White Statistic              | 1.5118 |
-        | P-Value                      | 0.9117 |
-        | Reject Homoskedasticity (5%) | 0      |
+        |                              |   Value |
+        |:-----------------------------|--------:|
+        | White Statistic              | 11.5102 |
+        | P-Value                      |  0.0032 |
+        | Reject Homoskedasticity (5%) |  1      |
         """
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
@@ -3293,23 +3278,21 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["HD", "LOW"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_durbin_watson_test(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
-        )
+        # HD (the first ticker) is dependent; LOW is independent
+        toolkit.econometrics.get_durbin_watson_test()
         ```
 
         Which returns:
 
-        |                         | 0                  |
+        |                         | Value              |
         |:------------------------|:-------------------|
-        | Durbin-Watson Statistic | 2.1372             |
+        | Durbin-Watson Statistic | 1.8584             |
         | Interpretation          | No Strong Evidence |
         """
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -3386,21 +3369,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["GOOGL", "META", "AMZN"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_vif(period="weekly")
+        toolkit.econometrics.get_vif()
         ```
 
         Which returns:
 
-        |      |    VIF |
-        |:-----|-------:|
-        | AAPL | 1.4546 |
-        | MSFT | 1.4546 |
+        |       |    VIF |
+        |:------|-------:|
+        | GOOGL | 1.4431 |
+        | META  | 1.8234 |
+        | AMZN  | 2.0804 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3482,25 +3466,23 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["NKE", "ADS.DE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_ramsey_reset_test(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
-        )
+        # NKE (the first ticker) is dependent; ADS.DE is independent
+        toolkit.econometrics.get_ramsey_reset_test()
         ```
 
         Which returns:
 
-        |                                   |      0 |
-        |:----------------------------------|-------:|
-        | RESET F-Statistic                 | 0.7233 |
-        | P-Value                           | 0.4861 |
-        | Reject Correct Specification (5%) | 0      |
+        |                                   |   Value |
+        |:----------------------------------|--------:|
+        | RESET F-Statistic                 |  1.4847 |
+        | P-Value                           |  0.2285 |
+        | Reject Correct Specification (5%) |  0      |
         """
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
@@ -3594,27 +3576,23 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["NVDA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        # AAPL (the first ticker) is dependent; MSFT and Benchmark are independent
-        toolkit.econometrics.get_chow_test(
-            break_date="2021-06-30",
-            independent_tickers=["MSFT", "Benchmark"],
-            period="weekly",
-        )
+        # NVDA is dependent and the Benchmark independent, with a break at the launch of ChatGPT
+        toolkit.econometrics.get_chow_test(break_date="2022-11-30", include_benchmark=True)
         ```
 
         Which returns:
 
-        |                                 |      0 |
-        |:--------------------------------|-------:|
-        | Chow F-Statistic                | 3.6234 |
-        | P-Value                         | 0.0137 |
-        | Reject No Structural Break (5%) | 1      |
+        |                                 |   Value |
+        |:--------------------------------|--------:|
+        | Chow F-Statistic                |  0.811  |
+        | P-Value                         |  0.4447 |
+        | Reject No Structural Break (5%) |  0      |
         """
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
@@ -3714,21 +3692,23 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["SMCI", "NVDA", "TSM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_iv_2sls("AAPL", "MSFT", "Benchmark", period="weekly")
+        toolkit.econometrics.get_iv_2sls(
+            dependent_ticker="SMCI", endogenous_ticker="NVDA", instrument_tickers="TSM"
+        )
         ```
 
         Which returns:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0005 |       0.0022 |       -0.2361 |    0.8135 |
-        | MSFT      |        1.0951 |       0.0887 |       12.3511 |    0      |
+        | Intercept |       -0.0008 |       0.0027 |       -0.2931 |    0.7697 |
+        | NVDA      |        1.2518 |       0.1094 |       11.441  |    0      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3829,14 +3809,17 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["NVDA", "INTC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
         toolkit.econometrics.get_difference_in_differences(
-            treated_tickers="AAPL", treatment_date="2021-06-30", period="weekly"
+            treated_tickers="NVDA",
+            control_tickers="INTC",
+            treatment_date="2023-06-01",
+            period="monthly",
         )
         ```
 
@@ -3844,10 +3827,10 @@ class Econometrics:
 
         |                |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:---------------|--------------:|-------------:|--------------:|----------:|
-        | Intercept      |        0.0078 |       0.0045 |        1.7302 |    0.084  |
-        | Treated        |       -0.0047 |       0.0078 |       -0.6015 |    0.5477 |
-        | Post           |       -0.005  |       0.0047 |       -1.0591 |    0.2899 |
-        | Treated x Post |        0.0056 |       0.0082 |        0.6779 |    0.498  |
+        | Intercept      |       -0.0126 |       0.0262 |       -0.4794 |    0.6325 |
+        | Treated        |        0.0669 |       0.0371 |        1.8061 |    0.0735 |
+        | Post           |        0.0291 |       0.0362 |        0.8044 |    0.4229 |
+        | Treated x Post |       -0.0246 |       0.0511 |       -0.4817 |    0.6309 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3963,14 +3946,15 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["COIN", "BTCUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2022-01-01",
             end_date="2025-12-31",
         )
 
+        # COIN's return on days Bitcoin rises versus days it falls
         toolkit.econometrics.get_regression_discontinuity(
-            "AAPL", "MSFT", cutoff=0.0, period="weekly"
+            dependent_ticker="COIN", running_variable_ticker="BTCUSD", cutoff=0
         )
         ```
 
@@ -3978,14 +3962,14 @@ class Econometrics:
 
         |               |    Value |
         |:--------------|---------:|
-        | Discontinuity |  -0.0009 |
-        | Std. Error    |   0.0067 |
-        | t-Statistic   |  -0.1394 |
-        | P-Value       |   0.8892 |
+        | Discontinuity |   0.0031 |
+        | Std. Error    |   0.0027 |
+        | t-Statistic   |   1.1191 |
+        | P-Value       |   0.2633 |
         | Cutoff        |   0      |
-        | Bandwidth     |   0.0993 |
-        | N Left        | 116      |
-        | N Right       | 141      |
+        | Bandwidth     |   0.1497 |
+        | N Left        | 729      |
+        | N Right       | 728      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -4065,28 +4049,32 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["XOM", "USO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
+        # XOM's return on days USO rises more than 2%, matched on the Benchmark's return
         toolkit.econometrics.get_propensity_score_matching(
-            "AAPL", "MSFT", "Benchmark", period="weekly"
+            dependent_ticker="XOM",
+            treatment_ticker="USO",
+            covariate_tickers="Benchmark",
+            treatment_threshold=0.02,
         )
         ```
 
         Which returns:
 
-        |               |        0 |
-        |:--------------|---------:|
-        | ATT           |   0.0078 |
-        | Std. Error    |   0.0054 |
-        | t-Statistic   |   1.4538 |
-        | P-Value       |   0.1516 |
-        | Matched Pairs |  57      |
-        | N Treated     | 144      |
-        | N Control     | 116      |
+        |               |     Value |
+        |:--------------|----------:|
+        | ATT           |    0.0163 |
+        | Std. Error    |    0.0016 |
+        | t-Statistic   |    9.9366 |
+        | P-Value       |    0      |
+        | Matched Pairs |  181      |
+        | N Treated     |  185      |
+        | N Control     | 1069      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -4195,32 +4183,28 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["BA", "AIR.PA", "LMT", "GD", "RTX", "NOC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
+            start_date="2023-01-01",
+            end_date="2024-12-31",
         )
 
-        toolkit.econometrics.get_synthetic_control(
-            "AAPL",
-            treatment_period="2021-07-01",
-            donor_tickers=["MSFT", "Benchmark"],
-            period="weekly",
-        )
+        # Boeing after the 737 MAX 9 grounding, with the other aerospace companies as donors
+        toolkit.econometrics.get_synthetic_control(treated_ticker="BA", treatment_period="2024-01-08")
         ```
 
         Which returns:
 
-        |                          |        0 |
+        |                          |    Value |
         |:-------------------------|---------:|
-        | Average Treatment Effect |   0.0008 |
-        | Pre-Treatment RMSPE      |   0.0222 |
-        | Post-Treatment RMSPE     |   0.0308 |
-        | RMSPE Ratio              |   1.3885 |
-        | P-Value                  |   0.3333 |
-        | N Donors                 |   2      |
-        | N Pre-Periods            |  24      |
-        | N Post-Periods           | 236      |
+        | Average Treatment Effect |  -0.0017 |
+        | Pre-Treatment RMSPE      |   0.0156 |
+        | Post-Treatment RMSPE     |   0.0204 |
+        | RMSPE Ratio              |   1.3094 |
+        | P-Value                  |   0.5    |
+        | N Donors                 |   5      |
+        | N Pre-Periods            | 260      |
+        | N Post-Periods           | 255      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -4466,24 +4450,25 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["XOM", "CVX", "SHEL", "BP", "TTE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_fixed_effects(
-            independent_tickers="Benchmark", period="weekly"
-        )
+        toolkit.econometrics.get_fixed_effects(independent_tickers="Benchmark")
         ```
 
         Which returns:
 
         |                     |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:--------------------|--------------:|-------------:|--------------:|----------:|
-        | Benchmark           |        1.1403 |       0.0482 |       23.6381 |         0 |
-        | Entity Effect: AAPL |        0.0004 |     nan      |      nan      |       nan |
-        | Entity Effect: MSFT |        0.0006 |     nan      |      nan      |       nan |
+        | Benchmark           |        0.5795 |       0.0183 |       31.7272 |         0 |
+        | Entity Effect: BP   |        0.0004 |     nan      |      nan      |       nan |
+        | Entity Effect: CVX  |        0.0004 |     nan      |      nan      |       nan |
+        | Entity Effect: SHEL |        0.0005 |     nan      |      nan      |       nan |
+        | Entity Effect: TTE  |        0.0004 |     nan      |      nan      |       nan |
+        | Entity Effect: XOM  |        0.0008 |     nan      |      nan      |       nan |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
             independent_tickers,
@@ -4583,22 +4568,21 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY",
-                                      start_date="2021-01-01",
-                                      end_date="2025-12-31",
+            ["JPM", "BAC", "C", "WFC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_random_effects(
-            independent_column="Volume", period="weekly"
-        )
+        toolkit.econometrics.get_random_effects(independent_tickers="Benchmark")
         ```
 
         Which returns:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |         0.006 |       0.0029 |        2.0339 |    0.0423 |
-        | Volume    |        -0     |       0      |       -1.0495 |    0.2943 |
+        | Intercept |        0.0003 |       0.0002 |        1.7192 |    0.0856 |
+        | Benchmark |        0.9788 |       0.0183 |       53.4931 |    0      |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
             independent_tickers,
@@ -4679,23 +4663,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY",
-                                      start_date="2021-01-01",
-                                      end_date="2025-12-31",
+            ["AAPL", "MSFT", "AMZN"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_hausman_test(
-            independent_column="Volume", period="weekly"
-        )
+        toolkit.econometrics.get_hausman_test(independent_column="Volume", period="weekly")
         ```
 
         Which returns:
 
         |                           |   Value |
         |:--------------------------|--------:|
-        | Hausman Statistic         |  0.5873 |
+        | Hausman Statistic         |  0.5866 |
         | Degrees of Freedom        |  1      |
-        | P-Value                   |  0.4435 |
+        | P-Value                   |  0.4438 |
         | Prefer Fixed Effects (5%) |  0      |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
@@ -4774,24 +4757,29 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["GCUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_arima_forecast(period="quarterly")
+        toolkit.econometrics.get_arima_forecast(forecast_steps=10)
         ```
 
         Which returns:
 
-        |   Step |    AAPL |    MSFT |
-        |-------:|--------:|--------:|
-        |      1 | 265.182 | 493.438 |
-        |      2 | 267.177 | 506.734 |
-        |      3 | 272.247 | 520.271 |
-        |      4 | 278.508 | 533.944 |
-        |      5 | 285.232 | 547.694 |
+        |   Step |   GCUSD |
+        |-------:|--------:|
+        |      1 | 4348.34 |
+        |      2 | 4348.38 |
+        |      3 | 4350.82 |
+        |      4 | 4352.47 |
+        |      5 | 4354.38 |
+        |      6 | 4356.2  |
+        |      7 | 4358.05 |
+        |      8 | 4359.89 |
+        |      9 | 4361.73 |
+        |     10 | 4363.57 |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)
@@ -4886,24 +4874,39 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["^VIX", "^VIX3M"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_var_forecast(period="quarterly")
+        toolkit.econometrics.get_var_forecast(column="Adj Close", forecast_steps=20)
         ```
 
         Which returns:
 
-        |   Step |    AAPL |   MSFT |
-        |-------:|--------:|-------:|
-        |      1 | -0.0185 | 0.0141 |
-        |      2 |  0.0547 | 0.0584 |
-        |      3 |  0.0514 | 0.0432 |
-        |      4 |  0.0445 | 0.0412 |
-        |      5 |  0.046  | 0.0431 |
+        |   Step |    ^VIX |   ^VIX3M |
+        |-------:|--------:|---------:|
+        |      1 | 15.2712 |  18.3667 |
+        |      2 | 15.5578 |  18.5342 |
+        |      3 | 15.8138 |  18.6846 |
+        |      4 | 16.0425 |  18.82   |
+        |      5 | 16.2471 |  18.9418 |
+        |      6 | 16.4301 |  19.0517 |
+        |      7 | 16.5941 |  19.1509 |
+        |      8 | 16.7411 |  19.2406 |
+        |      9 | 16.873  |  19.322  |
+        |     10 | 16.9915 |  19.3958 |
+        |     11 | 17.0981 |  19.4629 |
+        |     12 | 17.1942 |  19.5241 |
+        |     13 | 17.2808 |  19.58   |
+        |     14 | 17.359  |  19.6311 |
+        |     15 | 17.4298 |  19.6781 |
+        |     16 | 17.494  |  19.7213 |
+        |     17 | 17.5523 |  19.7611 |
+        |     18 | 17.6053 |  19.7979 |
+        |     19 | 17.6536 |  19.8321 |
+        |     20 | 17.6978 |  19.8639 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -4977,25 +4980,40 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["^VIX", "^OVX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_impulse_response_function(period="quarterly", periods=5)
+        toolkit.econometrics.get_impulse_response_function(column="Adj Close", periods=20)
         ```
 
         Which returns:
 
-        |   Horizon |   ('AAPL', 'AAPL') |   ('AAPL', 'MSFT') |   ('MSFT', 'AAPL') |   ('MSFT', 'MSFT') |
+        |   Horizon |   ('^VIX', '^VIX') |   ('^VIX', '^OVX') |   ('^OVX', '^VIX') |   ('^OVX', '^OVX') |
         |----------:|-------------------:|-------------------:|-------------------:|-------------------:|
-        |         0 |             0.141  |             0.0571 |             0      |             0.1247 |
-        |         1 |            -0.0213 |            -0.035  |             0.0658 |             0.0248 |
-        |         2 |            -0.0107 |             0      |            -0.0109 |            -0.0167 |
-        |         3 |             0.0039 |             0.0035 |            -0.0048 |             0.0003 |
-        |         4 |             0.0004 |            -0.0006 |             0.0019 |             0.0016 |
-        |         5 |            -0.0005 |            -0.0003 |             0.0002 |            -0.0003 |
+        |         0 |             1.7975 |             1.1106 |             0      |             2.4048 |
+        |         1 |             1.6806 |             1.1595 |             0.022  |             2.2148 |
+        |         2 |             1.5725 |             1.1956 |             0.0407 |             2.0416 |
+        |         3 |             1.4723 |             1.2207 |             0.0565 |             1.8834 |
+        |         4 |             1.3794 |             1.2361 |             0.0698 |             1.7389 |
+        |         5 |             1.2933 |             1.2433 |             0.0807 |             1.6069 |
+        |         6 |             1.2133 |             1.2434 |             0.0897 |             1.4861 |
+        |         7 |             1.1389 |             1.2374 |             0.097  |             1.3755 |
+        |         8 |             1.0698 |             1.2262 |             0.1027 |             1.2743 |
+        |         9 |             1.0054 |             1.2106 |             0.1071 |             1.1814 |
+        |        10 |             0.9454 |             1.1914 |             0.1104 |             1.0963 |
+        |        11 |             0.8895 |             1.1691 |             0.1126 |             1.0181 |
+        |        12 |             0.8374 |             1.1444 |             0.114  |             0.9462 |
+        |        13 |             0.7887 |             1.1176 |             0.1146 |             0.8801 |
+        |        14 |             0.7432 |             1.0893 |             0.1145 |             0.8193 |
+        |        15 |             0.7006 |             1.0597 |             0.1139 |             0.7633 |
+        |        16 |             0.6608 |             1.0292 |             0.1129 |             0.7117 |
+        |        17 |             0.6236 |             0.9981 |             0.1114 |             0.664  |
+        |        18 |             0.5886 |             0.9667 |             0.1096 |             0.6201 |
+        |        19 |             0.5559 |             0.9351 |             0.1075 |             0.5794 |
+        |        20 |             0.5252 |             0.9034 |             0.1052 |             0.5418 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -5067,24 +5085,39 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["^VIX", "^GVZ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_variance_decomposition(period="quarterly", periods=5)
+        toolkit.econometrics.get_variance_decomposition(column="Adj Close", periods=20)
         ```
 
         Which returns:
 
-        |   Horizon |   ('AAPL', 'AAPL') |   ('AAPL', 'MSFT') |   ('MSFT', 'AAPL') |   ('MSFT', 'MSFT') |
+        |   Horizon |   ('^VIX', '^VIX') |   ('^VIX', '^GVZ') |   ('^GVZ', '^VIX') |   ('^GVZ', '^GVZ') |
         |----------:|-------------------:|-------------------:|-------------------:|-------------------:|
-        |         1 |             1      |             0      |             0.1735 |             0.8265 |
-        |         2 |             0.8246 |             0.1754 |             0.2172 |             0.7828 |
-        |         3 |             0.8215 |             0.1785 |             0.2144 |             0.7856 |
-        |         4 |             0.8209 |             0.1791 |             0.2148 |             0.7852 |
-        |         5 |             0.8208 |             0.1792 |             0.2148 |             0.7852 |
+        |         1 |             1      |             0      |             0.1832 |             0.8168 |
+        |         2 |             1      |             0      |             0.1925 |             0.8075 |
+        |         3 |             0.9999 |             0.0001 |             0.2016 |             0.7984 |
+        |         4 |             0.9998 |             0.0002 |             0.2104 |             0.7896 |
+        |         5 |             0.9997 |             0.0003 |             0.219  |             0.781  |
+        |         6 |             0.9996 |             0.0004 |             0.2273 |             0.7727 |
+        |         7 |             0.9995 |             0.0005 |             0.2354 |             0.7646 |
+        |         8 |             0.9993 |             0.0007 |             0.2432 |             0.7568 |
+        |         9 |             0.9991 |             0.0009 |             0.2506 |             0.7494 |
+        |        10 |             0.9989 |             0.0011 |             0.2578 |             0.7422 |
+        |        11 |             0.9987 |             0.0013 |             0.2647 |             0.7353 |
+        |        12 |             0.9985 |             0.0015 |             0.2714 |             0.7286 |
+        |        13 |             0.9983 |             0.0017 |             0.2777 |             0.7223 |
+        |        14 |             0.9981 |             0.0019 |             0.2837 |             0.7163 |
+        |        15 |             0.9978 |             0.0022 |             0.2895 |             0.7105 |
+        |        16 |             0.9976 |             0.0024 |             0.2949 |             0.7051 |
+        |        17 |             0.9974 |             0.0026 |             0.3002 |             0.6998 |
+        |        18 |             0.9971 |             0.0029 |             0.3051 |             0.6949 |
+        |        19 |             0.9969 |             0.0031 |             0.3098 |             0.6902 |
+        |        20 |             0.9967 |             0.0033 |             0.3142 |             0.6858 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -5175,18 +5208,18 @@ class Econometrics:
         )
 
         # The two share classes of Alphabet are cointegrated: their prices cannot drift apart.
-        toolkit.econometrics.get_vecm_forecast(period="daily")
+        toolkit.econometrics.get_vecm_forecast()
         ```
 
         Which returns:
 
         |   Step |   GOOGL |    GOOG |
         |-------:|--------:|--------:|
-        |      1 | 312.565 | 313.351 |
-        |      2 | 312.747 | 313.551 |
-        |      3 | 312.926 | 313.745 |
-        |      4 | 313.105 | 313.94  |
-        |      5 | 313.285 | 314.133 |
+        |      1 | 312.569 | 313.352 |
+        |      2 | 312.75  | 313.553 |
+        |      3 | 312.929 | 313.747 |
+        |      4 | 313.109 | 313.941 |
+        |      5 | 313.289 | 314.135 |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)
@@ -5252,20 +5285,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["IVV", "VOO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_rmse(period="quarterly")
+        toolkit.econometrics.get_rmse(include_benchmark=True)
         ```
 
         Which returns:
 
-        |                  |   RMSE |
-        |:-----------------|-------:|
-        | ('AAPL', 'MSFT') | 0.1396 |
+        |                      |   RMSE |
+        |:---------------------|-------:|
+        | ('IVV', 'VOO')       | 0.0004 |
+        | ('IVV', 'Benchmark') | 0.0009 |
+        | ('VOO', 'Benchmark') | 0.001  |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -5340,20 +5375,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["GLD", "IAU", "GLDM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_mae(period="quarterly")
+        toolkit.econometrics.get_mae()
         ```
 
         Which returns:
 
-        |                  |    MAE |
-        |:-----------------|-------:|
-        | ('AAPL', 'MSFT') | 0.1035 |
+        |                 |    MAE |
+        |:----------------|-------:|
+        | ('GLD', 'IAU')  | 0.0002 |
+        | ('GLD', 'GLDM') | 0.0003 |
+        | ('IAU', 'GLDM') | 0.0003 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -5459,24 +5496,22 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["BTCUSD", "ETHUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_out_of_sample_validation(
-            period="weekly", model="arima", p=1, d=1, q=1
-        )
+        toolkit.econometrics.get_out_of_sample_validation()
         ```
 
         Which returns:
 
-        |                      |    AAPL |    MSFT |
-        |:---------------------|--------:|--------:|
-        | RMSE                 | 44.5713 | 38.7415 |
-        | MAE                  | 38.6048 | 32.369  |
-        | Holdout Observations | 53      | 53      |
+        |                      |   BTCUSD |   ETHUSD |
+        |:---------------------|---------:|---------:|
+        | RMSE                 | 11392.5  |  971.073 |
+        | MAE                  |  9783.02 |  821.838 |
+        | Holdout Observations |   365    |  365     |
         """
         period = period if period else "daily"
         prices = self._get_price_column(period, column)
@@ -5619,24 +5654,25 @@ class Econometrics:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["NVDA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
+            start_date="2022-01-01",
+            end_date="2023-12-31",
         )
 
-        toolkit.econometrics.get_event_study(event_date="2023-05-04")
+        # NVDA's abnormal return around its May 2023 earnings release
+        toolkit.econometrics.get_event_study(event_date="2023-05-25")
         ```
 
         Which returns:
 
-        |                                |        0 |
+        |                                |    Value |
         |:-------------------------------|---------:|
-        | Cumulative Abnormal Return     |   0.0207 |
-        | CAR t-statistic                |   0.4243 |
-        | CAR p-value                    |   0.6717 |
-        | Alpha                          |   0.0004 |
-        | Beta                           |   1.3001 |
+        | Cumulative Abnormal Return     |   0.2044 |
+        | CAR t-statistic                |   1.9468 |
+        | CAR p-value                    |   0.0527 |
+        | Alpha                          |   0.0018 |
+        | Beta                           |   2.0781 |
         | Estimation Window Observations | 250      |
         """
         # Not `_get_price_column`: its daily branch checks intraday for emptiness.

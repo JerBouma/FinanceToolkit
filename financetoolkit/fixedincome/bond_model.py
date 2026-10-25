@@ -22,7 +22,17 @@ def get_number_of_periods(years_to_maturity: float, frequency: int) -> int:
 
     Returns:
         int: The number of coupon periods.
+
+    Raises:
+        ValueError: If the years to maturity are not positive, as a bond that has matured
+            has no cash flows left to price.
     """
+    if not years_to_maturity > 0:
+        raise ValueError(
+            f"The years to maturity must be positive, got {years_to_maturity}: a matured bond has no "
+            "cash flows left to price."
+        )
+
     periods = years_to_maturity * frequency
     whole_periods = round(periods)
 

@@ -23,12 +23,66 @@ N_MULTI_START_POINTS = 32
 BACKCAST_OBSERVATIONS = 75
 BACKCAST_DECAY = 0.94
 
+# A fit needs at least two returns: one for the sample Variance its bounds anchor to and one more for the recursion.  # noqa: E501
+MINIMUM_FIT_OBSERVATIONS = 2
+
+
+def _apply_per_column(
+    returns: pd.DataFrame, function, forecast: bool = False, **kwargs
+) -> pd.DataFrame:
+    """
+    Applies a single-series GARCH-family function to every column of `returns` on that
+    column's own non-missing returns.
+
+    Fitting all columns on the rows where every column has a return would cut each
+    series down to the shortest history (a ticker that listed later, or one with a gap),
+    and the recursion cannot run over missing values, so each column is fitted on its
+    own observations instead.
+
+    Args:
+        returns (pd.DataFrame): A DataFrame of returns, one column per series, which may
+            hold missing values.
+        function (callable): The function to apply to the np.ndarray of each column's
+            returns, such as `get_garch` or `get_garch_forecast`.
+        forecast (bool, optional): Whether `function` returns a forecast (a fixed number
+            of steps ahead, indexed 0 to time_steps - 1) rather than one value per
+            observation (indexed by the column's own dates). Defaults to False.
+        **kwargs: The keyword arguments passed on to `function`.
+
+    Returns:
+        pd.DataFrame: The results, one column per column of `returns`. Columns with fewer
+        than two returns are NaN, and so are the dates a column has no return for.
+    """
+    results = {}
+
+    for column in returns.columns:
+        column_returns = returns[column].dropna()
+
+        if len(column_returns) < MINIMUM_FIT_OBSERVATIONS:
+            continue
+
+        values = np.asarray(function(column_returns.to_numpy(), **kwargs))
+
+        results[column] = (
+            pd.Series(values)
+            if forecast
+            else pd.Series(values, index=column_returns.index[: len(values)])
+        )
+
+    if forecast:
+        return pd.DataFrame(results, columns=returns.columns, dtype=float)
+
+    return pd.DataFrame(
+        results, index=returns.index, columns=returns.columns, dtype=float
+    )
+
 
 def _fit_multi_start(
     wrapper_func,
     bounds: list[tuple[float, float]],
     initial_guess: list[float],
     model_name: str,
+    number_of_points: int = N_MULTI_START_POINTS,
 ) -> np.ndarray:
     """
     Fits a GARCH-family log-likelihood by running `scipy.optimize.minimize` (L-BFGS-B)
@@ -59,6 +113,9 @@ def _fit_multi_start(
         to the Sobol-sampled ones.
         model_name (str): The model name to include in the warning message if every
         attempt fails.
+        number_of_points (int, optional): The number of Sobol-sampled starting points tried
+        in addition to the initial guess; 0 runs a single local search from the initial
+        guess. Defaults to N_MULTI_START_POINTS (32).
 
     Returns:
         np.ndarray: The fitted weights from the best-scoring successful attempt, or an
@@ -81,7 +138,7 @@ def _fit_multi_start(
     starts = np.vstack(
         [
             (np.asarray(initial_guess, dtype=float) - lower) / span,
-            sampler.random(N_MULTI_START_POINTS),
+            sampler.random(number_of_points),
         ]
     )
 
@@ -325,7 +382,8 @@ def get_garch(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_garch,
                     weights=weights,
                     time_steps=time_steps,
@@ -333,15 +391,15 @@ def get_garch(
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             garch = pd.concat(period_data_list, axis=0)
 
             return garch
-        return returns.aggregate(
+        return _apply_per_column(
+            returns,
             get_garch,
             weights=weights,
             time_steps=time_steps,
@@ -425,23 +483,34 @@ def get_garch_forecast(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_garch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
+                    get_garch_forecast,
+                    forecast=True,
+                    weights=weights,
+                    time_steps=time_steps,
+                    p=p,
+                    q=q,
                 )
-                period_data.name = sub_period
                 period_data.columns = [
                     col + " " + str(sub_period) for col in period_data.columns
                 ]
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             garch_forecast = pd.concat(period_data_list, axis=1)
 
             return garch_forecast
 
-        return returns.aggregate(
-            get_garch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+        return _apply_per_column(
+            returns,
+            get_garch_forecast,
+            forecast=True,
+            weights=weights,
+            time_steps=time_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, pd.Series):
         return get_garch_forecast(
@@ -514,6 +583,11 @@ def get_gjr_garch_weights(
     - alpha + gamma / 2 + beta < 1 (the GJR-GARCH stationarity condition, assuming a
       symmetric error distribution)
 
+    The fitted GARCH(1, 1) weights with gamma = 0 serve as an extra starting point and
+    as a floor: GARCH is the special case gamma = 0, so a local search from them competes
+    with the multi-start result, and when both end at a lower log-likelihood than the
+    GARCH fit (a local optimum), the GARCH weights with gamma = 0 are returned instead.
+
     Args:
         returns (np.ndarray): A np.ndarray of returns.
         t (int): Time steps to optimize GJR-GARCH for.
@@ -539,6 +613,14 @@ def get_gjr_garch_weights(
 
     initial_guess = [initial_omega, 0.05, 0.1, 0.8]
 
+    # GARCH is GJR-GARCH with gamma = 0, so the GJR-GARCH likelihood can never be lower at its optimum than the GARCH one. The four-parameter surface does have local optima the multi-start search can settle in (on simulated series it stopped below the GARCH likelihood), so the GARCH fit is both an extra starting point and a floor: a local search from it competes with the multi-start result, and the GARCH weights with gamma 0 are kept when neither does better.  # noqa: E501
+    garch_weights = get_garch_weights(returns, t, p, q)
+    nested_weights = (
+        np.array([garch_weights[0], garch_weights[1], 0.0, garch_weights[2]])
+        if np.all(np.isfinite(garch_weights))
+        else None
+    )
+
     def wrapper_func(parameters):
         alpha, gamma, beta = parameters[1], parameters[2], parameters[3]
         if alpha + gamma / 2 + beta >= 1:  # Stationarity constraint
@@ -547,7 +629,30 @@ def get_gjr_garch_weights(
             return np.inf
         return gjr_garch_log_maximization(parameters, returns, t, p, q)
 
-    return _fit_multi_start(wrapper_func, bounds, initial_guess, "GJR-GARCH")
+    weights = _fit_multi_start(wrapper_func, bounds, initial_guess, "GJR-GARCH")
+
+    if nested_weights is None:
+        return weights
+
+    # A separate local search rather than one more start in the multi-start search: only the best start is polished there, so an extra start can displace the one that polishes to the higher likelihood.  # noqa: E501
+    candidates = [
+        weights,
+        _fit_multi_start(
+            wrapper_func,
+            bounds,
+            nested_weights,
+            "GJR-GARCH (local search from the GARCH fit)",
+            number_of_points=0,
+        ),
+        nested_weights,
+    ]
+    scores = [
+        wrapper_func(candidate) if np.all(np.isfinite(candidate)) else np.inf
+        for candidate in candidates
+    ]
+
+    # The first candidate wins ties, so the GARCH weights are only returned when the search ends below them.  # noqa: E501
+    return candidates[int(np.argmin(scores))]
 
 
 def get_gjr_garch(
@@ -601,7 +706,8 @@ def get_gjr_garch(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_gjr_garch,
                     weights=weights,
                     time_steps=time_steps,
@@ -609,15 +715,15 @@ def get_gjr_garch(
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             gjr_garch = pd.concat(period_data_list, axis=0)
 
             return gjr_garch
-        return returns.aggregate(
+        return _apply_per_column(
+            returns,
             get_gjr_garch,
             weights=weights,
             time_steps=time_steps,
@@ -702,27 +808,34 @@ def get_gjr_garch_forecast(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_gjr_garch_forecast,
+                    forecast=True,
                     weights=weights,
                     time_steps=time_steps,
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
                 period_data.columns = [
                     col + " " + str(sub_period) for col in period_data.columns
                 ]
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             gjr_garch_forecast = pd.concat(period_data_list, axis=1)
 
             return gjr_garch_forecast
 
-        return returns.aggregate(
-            get_gjr_garch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+        return _apply_per_column(
+            returns,
+            get_gjr_garch_forecast,
+            forecast=True,
+            weights=weights,
+            time_steps=time_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, pd.Series):
         return get_gjr_garch_forecast(
@@ -870,7 +983,8 @@ def get_egarch(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_egarch,
                     weights=weights,
                     time_steps=time_steps,
@@ -878,15 +992,15 @@ def get_egarch(
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             egarch = pd.concat(period_data_list, axis=0)
 
             return egarch
-        return returns.aggregate(
+        return _apply_per_column(
+            returns,
             get_egarch,
             weights=weights,
             time_steps=time_steps,
@@ -988,27 +1102,34 @@ def get_egarch_forecast(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
                     get_egarch_forecast,
+                    forecast=True,
                     weights=weights,
                     time_steps=time_steps,
                     p=p,
                     q=q,
                 )
-                period_data.name = sub_period
                 period_data.columns = [
                     col + " " + str(sub_period) for col in period_data.columns
                 ]
 
-                if not period_data.empty:
+                if not period_data.dropna(how="all").empty:
                     period_data_list.append(period_data)
 
             egarch_forecast = pd.concat(period_data_list, axis=1)
 
             return egarch_forecast
 
-        return returns.aggregate(
-            get_egarch_forecast, weights=weights, time_steps=time_steps, p=p, q=q
+        return _apply_per_column(
+            returns,
+            get_egarch_forecast,
+            forecast=True,
+            weights=weights,
+            time_steps=time_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, pd.Series):
         return get_egarch_forecast(

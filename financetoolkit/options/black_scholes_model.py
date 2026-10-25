@@ -6,7 +6,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
-from scipy.special import ndtr
+from scipy.special import log_ndtr, ndtr
 from scipy.stats import norm
 
 # The volatility range the implied volatility is solved within.
@@ -653,6 +653,27 @@ def _bivariate_normal_cdf(x: float, y: float, correlation: float) -> float:
     return float(probability)
 
 
+def _power_times_probability(base: float, exponent: float, probability: float) -> float:
+    """
+    Helper function that returns base^exponent * probability in log space. In the
+    Bjerksund-Stensland approximation the exponent grows like 1 / σ², so at low volatility
+    the power overflows while the probability it multiplies underflows to zero; their
+    product is finite and small, which the separate factors (inf * 0) would lose.
+
+    Args:
+        base (float): The positive base of the power.
+        exponent (float): The exponent of the power.
+        probability (float): The (non-negative) probability the power multiplies.
+
+    Returns:
+        float: The product base^exponent * probability.
+    """
+    if probability <= 0:
+        return 0.0
+
+    return float(np.exp(exponent * np.log(base) + np.log(probability)))
+
+
 def _phi(
     stock_price: float,
     time_to_expiration: float,
@@ -662,6 +683,7 @@ def _phi(
     risk_free_rate: float,
     cost_of_carry: float,
     volatility: float,
+    scale_price: float = 1.0,
 ) -> float:
     """
     Helper function, the "phi" function of the Bjerksund-Stensland approximation: the
@@ -685,9 +707,13 @@ def _phi(
         cost_of_carry (float): The cost of carry, defined as risk_free_rate minus
             dividend_yield.
         volatility (float): The volatility of the stock.
+        scale_price (float): The price P the result is expressed in, returning
+            φ / P^γ. The γ = β terms of the approximation are multiplied by α = (I — K) * I^(—β),
+            which together with S^β overflows at low volatility; passing P = I lets the caller
+            compute (I — K) * (S / I)^β directly. Defaults to 1.0 (the plain φ).
 
     Returns:
-        float: The value of the phi function.
+        float: The value of the phi function divided by scale_price^gamma.
     """
     volatility_time = volatility * np.sqrt(time_to_expiration)
 
@@ -709,10 +735,14 @@ def _phi(
 
     d2 = d1 - 2 * np.log(boundary_price / stock_price) / volatility_time
 
-    return (
-        np.exp(lambda_)
-        * stock_price**gamma
-        * (ndtr(d1) - (boundary_price / stock_price) ** kappa * ndtr(d2))
+    # Both powers are taken in log space: S^γ and (I / S)^κ overflow at low volatility (γ and
+    # κ grow like 1 / σ²) while the normal probabilities they multiply underflow.  # noqa: E501
+    return float(
+        np.exp(lambda_ + gamma * np.log(stock_price / scale_price))
+        * (
+            ndtr(d1)
+            - np.exp(kappa * np.log(boundary_price / stock_price) + log_ndtr(d2))
+        )
     )
 
 
@@ -727,12 +757,15 @@ def _psi(
     risk_free_rate: float,
     cost_of_carry: float,
     volatility: float,
+    scale_price: float = 1.0,
 ) -> float:
     """
     Helper function, the "psi" function of the Bjerksund-Stensland (2002) approximation:
     the two-period counterpart of phi, for a claim paying S^gamma at expiration T that is
-    knocked out when the stock price reaches the boundary I1 before t1 or the boundary I2
-    between t1 and T, and only pays when S_T is below H.
+    knocked out when the stock price reaches the boundary I2 = I(T) before t1 or the
+    boundary I1 = I(t1) between t1 and T, and only pays when S_T is below H. The boundary
+    before t1 is the higher one, since the early-exercise boundary of a call falls towards
+    the strike as expiration approaches.
 
     - ψ = e^(λT) * S^γ * [M(—e1, —f1, ρ) — (I2 / S)^κ * M(—e2, —f2, ρ)
       — (I1 / S)^κ * M(—e3, —f3, —ρ) + (I1 / I2)^κ * M(—e4, —f4, —ρ)]
@@ -751,16 +784,19 @@ def _psi(
         gamma (float): The gamma exponent used within the formula.
         trigger_price (float): The price level ("H" in the reference formula) used
             within the payoff condition.
-        second_boundary_price (float): The flat boundary I2 between t1 and T.
-        first_boundary_price (float): The flat boundary I1 before t1.
-        first_time (float): The time t1 at which the boundary steps from I1 to I2.
+        second_boundary_price (float): The flat boundary I2 = I(T) that applies before t1.
+        first_boundary_price (float): The flat boundary I1 = I(t1) that applies between
+            t1 and T.
+        first_time (float): The time t1 at which the boundary steps from I2 to I1.
         risk_free_rate (float): The risk-free interest rate.
         cost_of_carry (float): The cost of carry, defined as risk_free_rate minus
             dividend_yield.
         volatility (float): The volatility of the stock.
+        scale_price (float): The price P the result is expressed in, returning
+            ψ / P^γ, see ``_phi``. Defaults to 1.0 (the plain ψ).
 
     Returns:
-        float: The value of the psi function.
+        float: The value of the psi function divided by scale_price^gamma.
     """
     drift = cost_of_carry + (gamma - 0.5) * volatility**2
     volatility_first_time = volatility * np.sqrt(first_time)
@@ -799,17 +835,70 @@ def _psi(
     )
     kappa = 2 * cost_of_carry / volatility**2 + (2 * gamma - 1)
 
-    return (
-        np.exp(lambda_ * time_to_expiration)
-        * stock_price**gamma
+    # The powers are combined with their probabilities in log space, see ``_phi``.
+    return float(
+        np.exp(lambda_ * time_to_expiration + gamma * np.log(stock_price / scale_price))
         * (
             _bivariate_normal_cdf(-e1, -f1, correlation)
-            - (i2 / stock_price) ** kappa * _bivariate_normal_cdf(-e2, -f2, correlation)
-            - (i1 / stock_price) ** kappa
-            * _bivariate_normal_cdf(-e3, -f3, -correlation)
-            + (i1 / i2) ** kappa * _bivariate_normal_cdf(-e4, -f4, -correlation)
+            - _power_times_probability(
+                i2 / stock_price, kappa, _bivariate_normal_cdf(-e2, -f2, correlation)
+            )
+            - _power_times_probability(
+                i1 / stock_price, kappa, _bivariate_normal_cdf(-e3, -f3, -correlation)
+            )
+            + _power_times_probability(
+                i1 / i2, kappa, _bivariate_normal_cdf(-e4, -f4, -correlation)
+            )
         )
     )
+
+
+def _american_call_binomial_value(
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    cost_of_carry: float,
+    volatility: float,
+    time_to_expiration: float,
+    steps: int = 1000,
+) -> float:
+    """
+    Helper function that prices an American call with a recombining binomial tree, the
+    fallback of the Bjerksund-Stensland approximation where its boundary is undefined.
+
+    The tree centres its moves on the cost of carry, u = e^(b * Δt + σ√Δt) and
+    d = e^(b * Δt — σ√Δt), with p = (e^(b * Δt) — d) / (u — d). Unlike the Cox-Ross-Rubinstein
+    moves u = e^(σ√Δt), this keeps p between 0 and 1 at any volatility and cost of carry.
+
+    Args:
+        stock_price (float): The current stock price.
+        strike_price (float): The option's strike price.
+        risk_free_rate (float): The risk-free interest rate.
+        cost_of_carry (float): The cost of carry, defined as risk_free_rate minus
+            dividend_yield.
+        volatility (float): The volatility of the stock.
+        time_to_expiration (float): The time to expiration of the option, in years.
+        steps (int): The number of time steps of the tree. Defaults to 1000.
+
+    Returns:
+        float: The value of the American call option.
+    """
+    time_delta = time_to_expiration / steps
+    up = np.exp(cost_of_carry * time_delta + volatility * np.sqrt(time_delta))
+    down = np.exp(cost_of_carry * time_delta - volatility * np.sqrt(time_delta))
+    probability = (np.exp(cost_of_carry * time_delta) - down) / (up - down)
+    discount = np.exp(-risk_free_rate * time_delta)
+
+    # The prices at the last step, from all down moves to all up moves.
+    prices = stock_price * down**steps * (up / down) ** np.arange(steps + 1)
+    values = np.maximum(prices - strike_price, 0.0)
+
+    for _ in range(steps):
+        prices = prices[:-1] / down
+        values = discount * (probability * values[1:] + (1 - probability) * values[:-1])
+        values = np.maximum(values, prices - strike_price)
+
+    return float(values[0])
 
 
 def _bjerksund_stensland_call(
@@ -823,7 +912,9 @@ def _bjerksund_stensland_call(
     """
     Prices an American call option using the Bjerksund-Stensland (2002) closed-form
     approximation with a two-step flat early-exercise boundary. Puts are priced through
-    the put-call transformation applied by get_bjerksund_stensland.
+    the put-call transformation applied by get_bjerksund_stensland. The value is floored
+    at the European price and the exercise value, and a binomial tree takes over where the
+    boundary falls to or below the strike.
 
     Args:
         stock_price (float): The current stock price.
@@ -841,21 +932,27 @@ def _bjerksund_stensland_call(
         # At expiration the option is worth its exercise value; the formulas divide by σ√t.
         return max(stock_price - strike_price, 0.0)
 
-    if cost_of_carry >= risk_free_rate:
-        # Never optimal to exercise early when cost of carry >= the risk-free rate.
-        dividend_yield = risk_free_rate - cost_of_carry
-        d1 = get_d1(
+    exercise_value = max(stock_price - strike_price, 0.0)
+
+    # The generalized Black-Scholes price of the European call with the same cost of carry,
+    # through the dividend yield q = r — b. The American value is never below it.
+    european_value = float(
+        get_black_scholes(
             stock_price=stock_price,
             strike_price=strike_price,
             risk_free_rate=risk_free_rate,
             volatility=volatility,
             time_to_expiration=time_to_expiration,
-            dividend_yield=dividend_yield,
+            dividend_yield=risk_free_rate - cost_of_carry,
         )
-        d2 = get_d2(d1=d1, volatility=volatility, time_to_expiration=time_to_expiration)
-        return stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(
-            d1
-        ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(d2)
+    )
+
+    if cost_of_carry >= risk_free_rate:
+        # Early exercise is not optimal when the cost of carry is at least the risk-free rate,
+        # except with a negative risk-free rate, where paying the strike later costs more
+        # than paying it now and deep in-the-money calls are exercised; the exercise value
+        # floors the price there.  # noqa: E501
+        return max(european_value, exercise_value)
 
     # The boundary steps at the golden-ratio point of the option's life, the split that
     # Bjerksund and Stensland (2002) found to give the most accurate prices.
@@ -880,14 +977,34 @@ def _bjerksund_stensland_call(
     first_boundary = boundary(first_time)
     second_boundary = boundary(time_to_expiration)
 
+    if not np.isfinite(second_boundary) or second_boundary <= strike_price:
+        # The boundary function is built for I > K. With a negative cost of carry and low
+        # volatility (b * T + 2σ√T < 0) or a non-positive risk-free rate it falls to or
+        # below the strike, where the approximation would exercise options that are out of
+        # the money; a binomial tree prices the option instead.  # noqa: E501
+        return max(
+            _american_call_binomial_value(
+                stock_price=stock_price,
+                strike_price=strike_price,
+                risk_free_rate=risk_free_rate,
+                cost_of_carry=cost_of_carry,
+                volatility=volatility,
+                time_to_expiration=time_to_expiration,
+            ),
+            european_value,
+            exercise_value,
+        )
+
     if stock_price >= second_boundary:
         # Immediate exercise is optimal.
-        return stock_price - strike_price
+        return max(exercise_value, european_value)
 
-    alpha_first = (first_boundary - strike_price) * first_boundary ** (-beta)
-    alpha_second = (second_boundary - strike_price) * second_boundary ** (-beta)
-
-    def phi(gamma: float, trigger_price: float, boundary_price: float) -> float:
+    def phi(
+        gamma: float,
+        trigger_price: float,
+        boundary_price: float,
+        scale_price: float = 1.0,
+    ) -> float:
         return _phi(
             stock_price=stock_price,
             time_to_expiration=first_time,
@@ -897,9 +1014,10 @@ def _bjerksund_stensland_call(
             risk_free_rate=risk_free_rate,
             cost_of_carry=cost_of_carry,
             volatility=volatility,
+            scale_price=scale_price,
         )
 
-    def psi(gamma: float, trigger_price: float) -> float:
+    def psi(gamma: float, trigger_price: float, scale_price: float = 1.0) -> float:
         return _psi(
             stock_price=stock_price,
             time_to_expiration=time_to_expiration,
@@ -911,25 +1029,43 @@ def _bjerksund_stensland_call(
             risk_free_rate=risk_free_rate,
             cost_of_carry=cost_of_carry,
             volatility=volatility,
+            scale_price=scale_price,
         )
 
-    return float(
-        alpha_second * stock_price**beta
-        - alpha_second * phi(beta, second_boundary, second_boundary)
+    # α * S^β and α * φ(β) are written as (I — K) * (S / I)^β and (I — K) * φ(β) / I^β: at low
+    # volatility β is large and S^β and I^(—β) overflow and underflow on their own.  # noqa: E501
+    first_premium = first_boundary - strike_price
+    second_premium = second_boundary - strike_price
+
+    value = (
+        second_premium * (stock_price / second_boundary) ** beta
+        - second_premium
+        * phi(beta, second_boundary, second_boundary, scale_price=second_boundary)
         + phi(1, second_boundary, second_boundary)
         - phi(1, first_boundary, second_boundary)
         - strike_price * phi(0, second_boundary, second_boundary)
         + strike_price * phi(0, first_boundary, second_boundary)
-        + alpha_first * phi(beta, first_boundary, second_boundary)
-        - alpha_first * psi(beta, first_boundary)
+        + first_premium
+        * phi(beta, first_boundary, second_boundary, scale_price=first_boundary)
+        - first_premium * psi(beta, first_boundary, scale_price=first_boundary)
         + psi(1, first_boundary)
         - psi(1, strike_price)
         - strike_price * psi(0, first_boundary)
         + strike_price * psi(0, strike_price)
     )
 
+    if not np.isfinite(value):
+        # Extreme inputs can still leave the approximation undefined; the European price is
+        # then the closest lower bound of the American value.  # noqa: E501
+        value = european_value
 
-@np.errstate(divide="ignore", invalid="ignore")
+    # The flat-boundary approximation is a lower bound that can fall below the European
+    # price (high volatility, long maturities) or the exercise value; as in QuantLib the
+    # result is floored at both.
+    return float(max(value, european_value, exercise_value))
+
+
+@np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore")
 def get_bjerksund_stensland(
     stock_price: float,
     strike_price: float,
@@ -981,6 +1117,13 @@ def get_bjerksund_stensland(
     through the put-call transformation:
 
     - AmericanPut(S, K, T, r, b, σ) = AmericanCall(K, S, T, r — b, —b, σ)
+
+    An American option is worth at least its European counterpart and its exercise value,
+    while the flat-boundary approximation can fall below the European price at high
+    volatility and long maturities. The result is therefore floored at both, as QuantLib
+    does. Where the boundary I2 falls to or below the strike (a negative cost of carry at low
+    volatility, or a non-positive risk-free rate), the approximation would exercise options
+    that are out of the money, and a 1,000-step binomial tree prices the option instead.
 
     Args:
         stock_price (float): The current stock price.

@@ -1,7 +1,13 @@
 """Risk Controller Tests""" ""
 # pylint: disable=missing-function-docstring
 
+import copy
+
+import numpy as np
+import pandas as pd
 import pytest
+
+from financetoolkit.risk import risk_model
 
 # AAPL's EGARCH fit sits on a near-flat ridge a different libm/BLAS can tip either way; see garch_model.py.
 EGARCH_PLATFORM_DRIFT = pytest.mark.xfail(
@@ -527,3 +533,35 @@ def test_get_value_at_risk_cf_is_not_a_distribution(risk_module):
     result = risk_module.get_value_at_risk(distribution="cf")
 
     assert result.empty
+
+
+def test_get_hurst_exponent_uses_log_prices(risk_module):
+    hurst_exponent = risk_module.get_hurst_exponent(rounding=10)
+    log_prices = np.log(risk_module._historical_data["daily"]["Adj Close"])
+
+    for ticker in hurst_exponent.index:
+        assert hurst_exponent[ticker] == pytest.approx(
+            risk_model.get_hurst_exponent(log_prices[ticker]), abs=1e-9
+        )
+
+
+def test_garch_parameters_fit_each_ticker_on_its_own_history(risk_module):
+    risk = copy.copy(risk_module)
+    risk._data_cache = {}
+    risk._historical_data = dict(risk_module._historical_data)
+    daily = risk_module._historical_data["daily"].copy()
+    tickers = daily["Return"].columns
+    # The first ticker lists 100 days later than the others.
+    daily.loc[daily.index[:100], ("Return", tickers[0])] = np.nan
+    risk._historical_data["daily"] = daily
+
+    full = risk_module.get_garch_parameters(rounding=10)
+    late = risk.get_garch_parameters(rounding=10)
+
+    # The other tickers keep their full history, and so their fit.
+    pd.testing.assert_series_equal(full[tickers[1]], late[tickers[1]])
+    assert not np.allclose(full[tickers[0]], late[tickers[0]])
+
+    garch = risk.get_garch(rounding=10)
+    assert garch[tickers[0]].iloc[:99].isna().all()
+    assert garch[tickers[1]].notna().all()

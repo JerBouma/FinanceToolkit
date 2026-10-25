@@ -279,3 +279,59 @@ def test_ice_bofa_option_adjusted_spread_is_decimal(monkeypatch):
         fred_model.get_rating_option_adjusted_spread("2024-01-01", "2024-01-15", "key"),
     ):
         assert oas.to_numpy() == pytest.approx(0.0077)
+
+
+def test_maturity_in_years_reads_days_and_weeks():
+    """Day and week labels, which the MCP server accepts, count calendar days of a 365-day year."""
+    assert fixedincome_controller._maturity_in_years("1D") == 1 / 365
+    assert fixedincome_controller._maturity_in_years("1W") == 7 / 365
+    assert fixedincome_controller._maturity_in_years("2w") == 14 / 365
+    assert fixedincome_controller._maturity_in_years("36M") == 3.0
+    assert fixedincome_controller._maturity_in_years("10Y") == 10.0
+
+
+def test_present_value_and_duration_follow_rounding():
+    """The rounding parameter applies to the bond prices and durations, not a fixed 2 decimals."""
+    fixedincome = fixedincome_controller.FixedIncome(rounding=6)
+
+    price = fixedincome.get_present_value(
+        coupon_rate=[0.05],
+        years_to_maturity=[0.01],
+        frequency=12,
+        show_input_info=False,
+    ).iloc[0, 0]
+    duration = fixedincome.get_duration(
+        duration_type="macaulay",
+        coupon_rate=[0.05],
+        years_to_maturity=[2.5],
+        yield_to_maturity=0.06,
+        show_input_info=False,
+    ).iloc[0, 0]
+
+    assert price != round(price, 2)
+    assert duration != round(duration, 2)
+
+    unrounded = fixedincome_controller.FixedIncome(rounding=None)
+    assert unrounded.get_present_value(
+        coupon_rate=[0.05], years_to_maturity=[5], show_input_info=False
+    ).iloc[0, 0] == pytest.approx(88.0219, abs=1e-4)
+
+
+def test_collect_bond_statistics_is_named_value():
+    statistics = fixedincome_controller.FixedIncome().collect_bond_statistics(
+        years_to_maturity=2.5, show_input_info=False
+    )
+
+    assert statistics.name == "Value"
+    assert statistics["Years to Maturity"] == 2.5
+
+
+def test_matured_bond_raises_a_clear_value_error():
+    """A maturity of zero or less has no cash flows; it is rejected rather than failing on an empty array."""
+    fixedincome = fixedincome_controller.FixedIncome()
+
+    for years in (0, -1):
+        with pytest.raises(ValueError, match="years to maturity must be positive"):
+            fixedincome.get_present_value(
+                coupon_rate=[0.05], years_to_maturity=[years], show_input_info=False
+            )

@@ -188,6 +188,111 @@ def convert_period_end_dates_to_calendar_periods(
     return calendar_periods
 
 
+PERIOD_END_DATE = "Period End Date"
+
+
+def determine_period_end_dates(
+    periods: pd.PeriodIndex,
+    tickers: list[str],
+    quarter: bool,
+    statistics_statement: pd.DataFrame | None = None,
+    fiscal_year_adjustments: dict | None = None,
+) -> pd.DataFrame:
+    """
+    Determines the last day of the fiscal period behind every statement column per ticker.
+
+    Statements are labelled with calendar periods (see
+    convert_period_end_dates_to_calendar_periods), but a fiscal period ends on its own date:
+    Microsoft's fiscal year labelled 2023 ends on 30 June 2023 and NVIDIA's fiscal year
+    labelled 2023 on 28 January 2024. That date is what daily ratios need (the figures of a
+    period apply from its end) and what currency translation needs (the closing rate on the
+    period end and the average rate over the fiscal period, IAS 21.39-40).
+
+    The date is taken from the Period End Date statistic, which FinancialModelingPrep
+    statements carry. When it is not available (another source, an older cache or a dataset
+    supplied to the Toolkit), the latest date the period can end on given its label is used,
+    so that figures are never applied before the period ended:
+
+        - A label that was not moved from its fiscal period ends at the end of the labelled
+          period (31 December for a year, the last day of the quarter for a quarter).
+        - A label that was moved back (listed in fiscal_year_adjustments) belongs to a fiscal
+          year ending in January through May of the next year, so it ends at the latest on
+          31 May of that year, or to a fiscal quarter ending in the month after the labelled
+          quarter, so it ends at the latest on the last day of that month.
+
+    Args:
+        periods (pd.PeriodIndex): The statement periods (the columns of the statements).
+        tickers (list[str]): The tickers to determine the end dates for.
+        quarter (bool): Whether the periods are quarters. Years when False.
+        statistics_statement (pd.DataFrame | None, optional): The statistics statement with a
+            (ticker, item) index and the periods as columns, holding the Period End Date row
+            when the source reports it. Defaults to None.
+        fiscal_year_adjustments (dict | None, optional): The registry of relabelled periods
+            per ticker, as filled by convert_period_end_dates_to_calendar_periods. Defaults
+            to None.
+
+    Returns:
+        pd.DataFrame: The period end dates (Timestamps) with the tickers as index and the
+        periods as columns.
+    """
+    periods = pd.PeriodIndex(periods)
+    label_ends = pd.Series(
+        periods.to_timestamp(how="end").normalize(),
+        index=periods,
+        dtype="datetime64[ns]",
+    )
+
+    if quarter:
+        # The last day of the month after the labelled quarter.
+        shifted_ends = pd.Series(
+            ((periods.asfreq("M", how="end") + 1).to_timestamp(how="end")).normalize(),
+            index=periods,
+            dtype="datetime64[ns]",
+        )
+    else:
+        # 31 May of the year after the labelled year.
+        shifted_ends = pd.Series(
+            pd.to_datetime([f"{period.year + 1}-05-31" for period in periods]),
+            index=periods,
+            dtype="datetime64[ns]",
+        )
+
+    reported = pd.DataFrame()
+
+    if (
+        statistics_statement is not None
+        and not statistics_statement.empty
+        and isinstance(statistics_statement.index, pd.MultiIndex)
+        and PERIOD_END_DATE in statistics_statement.index.get_level_values(1)
+    ):
+        reported = statistics_statement.xs(PERIOD_END_DATE, level=1).apply(
+            pd.to_datetime, errors="coerce"
+        )
+        reported.columns = pd.PeriodIndex(reported.columns)
+
+    period_end_dates = {}
+
+    for ticker in tickers:
+        shifted_labels = {
+            str(adjustment["calendar_year"])
+            for adjustment in (fiscal_year_adjustments or {}).get(ticker, [])
+        }
+        fallback = label_ends.where(
+            ~pd.Index([str(period) for period in periods]).isin(shifted_labels),
+            shifted_ends,
+        )
+
+        if ticker in reported.index:
+            ticker_dates = (
+                reported.loc[ticker].reindex(periods).astype("datetime64[ns]")
+            )
+            period_end_dates[ticker] = ticker_dates.fillna(fallback)
+        else:
+            period_end_dates[ticker] = fallback
+
+    return pd.DataFrame(period_end_dates, index=periods).T
+
+
 def enrich_historical_data(
     historical_data: pd.DataFrame,
     start: str | None = None,

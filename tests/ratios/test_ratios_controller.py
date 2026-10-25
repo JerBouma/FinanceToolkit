@@ -710,3 +710,85 @@ def test_tax_rates_are_nan_for_pre_tax_losses(ratios_module):
     assert pd.isna(ratios.get_effective_tax_rate().loc["AAPL"].loc[YEAR])
     assert pd.isna(ratios.get_cash_tax_rate().loc["AAPL"].loc[YEAR])
     assert ratios.get_effective_tax_rate().loc["MSFT"].notna().all()
+
+
+def test_map_period_data_to_daily_data_starts_at_the_fiscal_period_end():
+    from financetoolkit.ratios.helpers import map_period_data_to_daily_data
+
+    # A fiscal year ending in January is labelled with the calendar year before it.
+    periods = pd.PeriodIndex(["2022", "2023"], freq="Y")
+    period_data = pd.DataFrame(
+        [[1.0, 2.0], [1.0, 2.0]], index=["NVDA", "XYZ"], columns=periods
+    )
+    period_end_dates = pd.DataFrame(
+        [pd.to_datetime(["2023-01-29", "2024-01-28"])], index=["NVDA"], columns=periods
+    )
+    daily_dates = pd.period_range("2023-12-28", "2024-02-02", freq="D")
+
+    daily = map_period_data_to_daily_data(
+        period_data, daily_dates, period_end_dates=period_end_dates
+    )
+
+    # NVDA's fiscal 2023 figures apply from 28 January 2024, not from 31 December 2023.
+    assert daily.loc[pd.Period("2024-01-27", "D"), "NVDA"] == 1
+    assert daily.loc[pd.Period("2024-01-28", "D"), "NVDA"] == 2
+    # A ticker without end dates uses the end of the label.
+    assert daily.loc[pd.Period("2023-12-31", "D"), "XYZ"] == 2
+
+
+def test_debt_service_coverage_ratio_scales_the_principal_to_the_window(ratios_module):
+    income = ratios_module._income_statement.loc["AAPL"]
+    balance = ratios_module._balance_sheet_statement.loc["AAPL"]
+    cash = ratios_module._cash_flow_statement.loc["AAPL"]
+
+    result = ratios_module.get_debt_service_coverage_ratio(trailing=2, rounding=None)
+
+    window = lambda frame, item: frame.loc[item].rolling(2)  # noqa: E731
+    # Two years of earnings and interest against two years of the principal due in a year.
+    expected = (
+        window(income, "Operating Income").sum()
+        + window(cash, "Depreciation and Amortization").sum()
+    ) / (
+        window(income, "Interest Expense").sum()
+        + window(balance, "Short Term Debt").mean() * 2
+    )
+
+    assert result.loc["AAPL"].loc[YEAR] == _approx(expected.loc[YEAR])
+
+
+def test_quarterly_forward_ratios_use_a_year_of_estimates():
+    ratios, income = _quarterly_ratios()
+    estimate_quarters = pd.period_range("2024Q1", periods=6, freq="Q")
+    estimates = pd.DataFrame(
+        [[1.0, 1.1, 1.2, 1.3, 1.4, 1.5]],
+        index=pd.MultiIndex.from_tuples([("XYZ", "Estimated EPS Average")]),
+        columns=estimate_quarters,
+    )
+    ratios._analyst_estimates_cache["data"] = estimates
+    eps = income.loc["XYZ"].loc["Net Income"] / 10
+    ratios._income_statement = pd.concat(
+        [
+            income,
+            pd.DataFrame(
+                [eps.to_numpy()],
+                index=pd.MultiIndex.from_tuples([("XYZ", "EPS Diluted")]),
+                columns=income.columns,
+            ),
+        ]
+    )
+
+    forward = ratios.get_forward_price_earnings_ratio(rounding=None).loc["XYZ"]
+    forward_peg = ratios.get_forward_price_earnings_growth_ratio(rounding=None).loc[
+        "XYZ"
+    ]
+
+    # The price over the estimates of the quarter and the next three.
+    assert forward[pd.Period("2024Q1", "Q")] == pytest.approx(50 / 4.6)
+    assert forward[pd.Period("2024Q2", "Q")] == pytest.approx(50 / 5.0)
+    assert pd.isna(forward[pd.Period("2024Q4", "Q")])
+
+    # The next twelve months against the last four reported quarters, a year apart.
+    growth = 4.6 / eps.iloc[-4:].sum() - 1
+    assert forward_peg[pd.Period("2024Q1", "Q")] == pytest.approx(
+        (50 / 4.6) / (growth * 100)
+    )

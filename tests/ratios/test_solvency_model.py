@@ -131,3 +131,16 @@ def test_get_preferred_dividend_coverage_ratio_masks_zero_dividends():
 
     assert result.iloc[0] == 5
     assert pd.isna(result.iloc[1])
+
+
+def test_get_debt_service_coverage_ratio_scales_the_principal_to_a_quarter():
+    # A quarter of earnings and interest against a quarter of the principal due in a year.
+    result = solvency_model.get_debt_service_coverage_ratio(
+        operating_income=pd.Series([20.0]),
+        depreciation_and_amortization=pd.Series([5.0]),
+        interest_expense=pd.Series([2.5]),
+        short_term_debt=pd.Series([40.0]),
+        window_years=0.25,
+    )
+
+    assert result.iloc[0] == 2

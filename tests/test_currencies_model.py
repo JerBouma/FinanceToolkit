@@ -498,3 +498,99 @@ def test_convert_currencies_uses_the_rate_of_each_item():
     )
     # Without a beginning balance the period keeps its converted values.
     assert result.loc[("ASML", "Net Change in Cash"), "2020"] == pytest.approx(110)
+
+
+def _cash_statement(rows, ticker="SAP"):
+    periods = ["2020", "2021", "2022"]
+    return pd.DataFrame(
+        list(rows.values()),
+        index=pd.MultiIndex.from_tuples([(ticker, item) for item in rows]),
+        columns=periods,
+        dtype=float,
+    )
+
+
+def test_cash_flows_excluding_forex_follow_the_source_convention():
+    # FinancialModelingPrep: Net Change in Cash includes the exchange rate effect.
+    fmp = _cash_statement(
+        {
+            "Net Change in Cash": [6.0, -1.0, 3.0],
+            "Forex Changes on Cash": [1.0, 2.0, -1.0],
+            "Cash Beginning of Period": [100.0, 106.0, 105.0],
+            "Cash End of Period": [106.0, 105.0, 108.0],
+        }
+    )
+    # Yahoo Finance: Net Change in Cash excludes it.
+    yahoo = fmp.copy()
+    yahoo.loc[("SAP", "Net Change in Cash")] = [5.0, -3.0, 4.0]
+
+    expected = [5.0, -3.0, 4.0]
+    assert (
+        currencies_model.get_cash_flows_excluding_forex(fmp, "SAP").tolist() == expected
+    )
+    assert (
+        currencies_model.get_cash_flows_excluding_forex(yahoo, "SAP").tolist()
+        == expected
+    )
+
+
+def test_convert_currencies_reconciles_cash_without_a_forex_row():
+    statement = _cash_statement(
+        {
+            "Net Change in Cash": [5.0, -3.0, 4.0],
+            "Cash Beginning of Period": [100.0, 105.0, 102.0],
+            "Cash End of Period": [105.0, 102.0, 106.0],
+        }
+    )
+    periods = statement.columns
+    average_rates = pd.DataFrame({"SAP": [1.1, 1.2, 1.3]}, index=periods)
+    closing_rates = pd.DataFrame({"SAP": [1.15, 1.25, 1.35]}, index=periods)
+
+    result = currencies_model.convert_currencies(
+        statement,
+        pd.Series({"SAP": "EURUSD=X"}),
+        average_rates,
+        item_exchange_rate_data={
+            "Cash End of Period": closing_rates,
+            "Cash Beginning of Period": closing_rates.shift(1),
+        },
+    )
+
+    # The ticker columns are used as the rates of that ticker, and the missing Forex Changes
+    # on Cash row is added with the exchange rate effect.
+    forex = result.loc[("SAP", "Forex Changes on Cash"), "2021"]
+    assert forex == pytest.approx(102 * 1.25 - 105 * 1.15 - (-3) * 1.2)
+    assert result.loc[("SAP", "Net Change in Cash"), "2021"] == pytest.approx(
+        102 * 1.25 - 105 * 1.15
+    )
+
+
+def test_statement_exchange_rates_follow_the_fiscal_period():
+    days = pd.period_range("2019-01-01", "2022-12-31", freq="D")
+    daily = pd.DataFrame({"EURUSD=X": np.linspace(1, 2, len(days))}, index=days)
+    reference = daily["EURUSD=X"].set_axis(days.to_timestamp())
+    periods = pd.PeriodIndex(["2020", "2021", "2022"], freq="Y")
+    end_dates = pd.DataFrame(
+        [pd.to_datetime(["2020-06-30", "2021-06-30", "2022-06-30"])],
+        index=["MSFT"],
+        columns=periods,
+    )
+    currencies = pd.Series({"MSFT": "EURUSD=X", "NONE": np.nan})
+
+    closing, average, opening = (
+        currencies_model.get_statement_exchange_rates(
+            daily, end_dates, currencies, quarter=False, rate=rate
+        )["MSFT"]
+        for rate in ["closing", "average", "opening"]
+    )
+
+    assert closing.iloc[1] == pytest.approx(reference["2021-06-30"])
+    assert average.iloc[1] == pytest.approx(reference["2020-07-01":"2021-06-30"].mean())
+    assert opening.iloc[1] == pytest.approx(reference["2020-06-30"])
+    # A weekend end date takes the last rate before it.
+    weekend = end_dates.copy()
+    weekend.iloc[0, 0] = pd.Timestamp("2020-06-28")
+    daily_weekdays = daily[days.to_timestamp().dayofweek < 5]
+    assert currencies_model.get_statement_exchange_rates(
+        daily_weekdays, weekend, currencies, quarter=False
+    )["MSFT"].iloc[0] == pytest.approx(reference["2020-06-26"])

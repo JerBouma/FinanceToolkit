@@ -68,6 +68,15 @@ TREASURY_MATURITIES = {
 }
 
 
+# Each maturity label unit as (days or months it spans, those per year): days and weeks count calendar days of a 365-day year. Multiplying first and dividing last keeps 36M exactly 3.0 and 1W exactly 7/365 years.  # noqa: E501
+MATURITY_UNITS: dict[str, tuple[int, int]] = {
+    "D": (1, 365),
+    "W": (7, 365),
+    "M": (1, 12),
+    "Y": (1, 1),
+}
+
+
 def _maturity_in_months(label: str) -> float:
     """
     Converts a maturity label such as "3M" or "10Y" into months, for sorting a curve.
@@ -83,11 +92,15 @@ def _maturity_in_months(label: str) -> float:
 
 def _maturity_in_years(maturity) -> float:
     """
-    Converts a maturity, a number of years or a label such as "6M" or "10Y", into years.
+    Converts a maturity, a number of years or a label such as "1W", "6M" or "10Y", into years.
+
+    Days and weeks count in calendar days (a year of 365 days), so "1D" is 1/365 and "1W"
+    is 7/365 of a year, while months are twelfths of a year.
 
     Args:
-        maturity (float | int | str): The maturity in years, or a label ending in "M"
-            (months) or "Y" (years) as the yield curve methods return them.
+        maturity (float | int | str): The maturity in years, or a label ending in "D"
+            (days), "W" (weeks), "M" (months) or "Y" (years) as the yield curve methods
+            and the MCP server pass them.
 
     Returns:
         float: The maturity in years.
@@ -105,14 +118,16 @@ def _maturity_in_years(maturity) -> float:
     except ValueError:
         pass
 
-    if label[-1:] in ("M", "Y"):
+    if label[-1:] in MATURITY_UNITS:
+        length, per_year = MATURITY_UNITS[label[-1]]
+
         try:
-            return _maturity_in_months(label) / 12
+            return float(label[:-1]) * length / per_year
         except ValueError:
             pass
 
     raise ValueError(
-        f"The maturity {maturity!r} is not a number of years or a label such as '6M' or '10Y'."
+        f"The maturity {maturity!r} is not a number of years or a label such as '1W', '6M' or '10Y'."
     )
 
 
@@ -209,7 +224,7 @@ class FixedIncome:
             start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
             end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
             quarterly (bool, optional): Whether to return the data quarterly. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to, or None to skip rounding. Defaults to 4.
             fred_api_key (str, optional): A FRED API key used to retrieve ICE BofA bond index data
                 (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
                 https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set via the FRED_API_KEY
@@ -317,7 +332,7 @@ class FixedIncome:
         self,
         par_value: float = 100,
         coupon_rate: float = 0.05,
-        years_to_maturity: int = 5,
+        years_to_maturity: float = 5,
         yield_to_maturity: float = 0.08,
         frequency: int = 1,
         show_input_info: bool = True,
@@ -356,7 +371,7 @@ class FixedIncome:
         Args:
             par_value (float): The face value of the bond. Defaults to 100.
             coupon_rate (float): The annual coupon rate (in decimal). Defaults to 0.05.
-            years_to_maturity (int): The number of years until the bond matures. Defaults to 5.
+            years_to_maturity (float): The number of years until the bond matures. Defaults to 5.
             yield_to_maturity (float): The yield to maturity of the bond (in decimal). Defaults to 0.08.
             frequency (int): The number of coupon payments per year. Defaults to 1.
             show_input_info (bool, optional): Whether to display input information. Defaults to True.
@@ -491,7 +506,8 @@ class FixedIncome:
                 frequency,
             )
 
-        return apply_rounding(pd.Series(bond_statistics), self._rounding)
+        # Named so that the statistics render under a "Value" header rather than an unnamed "0" column.  # noqa: E501
+        return apply_rounding(pd.Series(bond_statistics, name="Value"), self._rounding)
 
     def get_present_value(
         self,
@@ -553,11 +569,11 @@ class FixedIncome:
 
         Which returns:
 
-        |   Coupon Rate |     5 |    10 |    15 |
-        |--------------:|------:|------:|------:|
-        |          0.03 | 80.04 | 66.45 | 57.2  |
-        |          0.05 | 88.02 | 79.87 | 74.32 |
-        |          0.07 | 96.01 | 93.29 | 91.44 |
+        |   Coupon Rate |       5 |      10 |      15 |
+        |--------------:|--------:|--------:|--------:|
+        |          0.03 | 80.0364 | 66.4496 | 57.2026 |
+        |          0.05 | 88.0219 | 79.8698 | 74.3216 |
+        |          0.07 | 96.0073 | 93.2899 | 91.4405 |
         """
         coupon_rate = (
             np.round(
@@ -616,7 +632,7 @@ class FixedIncome:
                 frequency,
             )
 
-        return bond_prices_df.round(2)
+        return apply_rounding(bond_prices_df, self._rounding)
 
     def get_duration(
         self,
@@ -684,11 +700,11 @@ class FixedIncome:
 
         Which returns:
 
-        |   Coupon Rate |    5 |   10 |    15 |
-        |--------------:|-----:|-----:|------:|
-        |          0.03 | 4.33 | 7.82 | 10.4  |
-        |          0.05 | 4.18 | 7.26 |  9.41 |
-        |          0.07 | 4.05 | 6.87 |  8.79 |
+        |   Coupon Rate |      5 |     10 |      15 |
+        |--------------:|-------:|-------:|--------:|
+        |          0.03 | 4.3312 | 7.8207 | 10.3951 |
+        |          0.05 | 4.1774 | 7.2645 |  9.4072 |
+        |          0.07 | 4.0491 | 6.8683 |  8.7891 |
         """
         duration_type_lower = duration_type.lower()
 
@@ -779,7 +795,7 @@ class FixedIncome:
                 duration_type_lower.title(),
             )
 
-        return bond_prices_df.round(2)
+        return apply_rounding(bond_prices_df, self._rounding)
 
     def get_yield_to_maturity(
         self,
@@ -1955,6 +1971,11 @@ class FixedIncome:
             pandas.DataFrame: The derivative prices rounded to the specified decimal places.
             pandas.DataFrame (optional): The derivative payoffs rounded to the specified decimal places if include_payoff is True.
 
+        In the example below the result has one column per expiry date and one row per strike.
+        The strikes below the 3.25% forward are worthless because a receiver swaption only
+        pays when the fixed rate it locks in exceeds the prevailing forward, and at a 1%
+        lognormal volatility a 50 basis point gap is far out of reach.
+
         As an example:
 
         ```python
@@ -1971,7 +1992,7 @@ class FixedIncome:
         )
         ```
 
-        Which returns, with one column per expiry date and one row per strike:
+        Which returns:
 
         |   Strike Rate |   2026-12-31 |   2027-12-31 |   2030-12-30 |   2035-12-29 |
         |--------------:|-------------:|-------------:|-------------:|-------------:|
@@ -1979,10 +2000,6 @@ class FixedIncome:
         |        0.0325 |      1224.91 |      3300.15 |      11280.4 |      25086.1 |
         |        0.0375 |     47237.2  |     89991.1  |     194547   |     305934   |
         |        0.0425 |     94474.3  |    179982    |     389094   |     611868   |
-
-        The strikes below the 3.25% forward are worthless because a receiver swaption only
-        pays when the fixed rate it locks in exceeds the prevailing forward, and at a 1%
-        lognormal volatility a 50 basis point gap is far out of reach.
         """
         model_lower = model.lower()
 
@@ -2287,9 +2304,11 @@ class FixedIncome:
         - United States: the U.S. Department of the Treasury's par yield curve, 1 month to
           30 years, from 1990.
         - Euro Area: the yield curve the European Central Bank estimates from the bonds of
-          all euro area central governments, 3 months to 30 years, from 2004.
+          all euro area central governments, 3 months to 30 years, from 2004, as zero-coupon
+          (spot) rates of a Svensson model, continuously compounded.
         - Germany: the term structure the Deutsche Bundesbank estimates from listed federal
-          securities, 1 to 30 years.
+          securities, 1 to 30 years, as zero-coupon (spot) rates of a Svensson model,
+          continuously compounded.
         - United Kingdom: the Bank of England's nominal par yields of gilts, 5, 10 and 20
           years.
         - Japan: the Ministry of Finance's Japanese government bond yields, 1 to 40 years,
@@ -2312,6 +2331,13 @@ class FixedIncome:
 
         The yields are returned as decimal fractions per annum (0.0419 for 4.19%), with one
         column per country and maturity, sorted from the shortest to the longest maturity.
+        Each curve is returned as its source publishes it: the Euro Area and Germany curves
+        are continuously compounded zero-coupon rates, while the other countries publish
+        par or benchmark bond yields, which compound with the coupon frequency of their
+        bonds. The two are not interchangeable: a continuously compounded zero rate r
+        equals an annually compounded zero rate of exp(r) - 1, and a par yield is the
+        coupon rate at which a bond prices at par, which differs from the zero rate of the
+        same maturity whenever the curve is not flat.
         Weekly and monthly periods take the yields on the last trading day of each period
         (weeks end on Friday).
 

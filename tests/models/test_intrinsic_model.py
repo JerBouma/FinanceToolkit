@@ -205,3 +205,26 @@ def test_residual_income_charges_the_beginning_book_value():
 
     assert residual_income.isna().iloc[0]
     assert residual_income.iloc[1] == pytest.approx(12.0 - 0.1 * 100.0)
+
+
+def test_intrinsic_value_adds_back_the_short_term_investments():
+    inputs = {
+        "cash_flow": 500,
+        "growth_rate": 0.05,
+        "perpetual_growth_rate": 0.02,
+        "weighted_average_cost_of_capital": 0.1,
+        "cash_and_cash_equivalents": 100,
+        "total_debt": 100,
+        "shares_outstanding": 100,
+    }
+    without = intrinsic_model.get_intrinsic_value(**inputs)
+    with_investments = intrinsic_model.get_intrinsic_value(
+        **inputs, short_term_investments=50
+    )
+
+    assert with_investments.loc["Enterprise Value"].iloc[0] == pytest.approx(
+        without.loc["Enterprise Value"].iloc[0]
+    )
+    assert with_investments.loc["Equity Value"].iloc[0] == pytest.approx(
+        without.loc["Equity Value"].iloc[0] + 50
+    )

@@ -153,3 +153,114 @@ def test_egarch_parameters_match_the_arch_package():
     reference[0] -= 2 * np.log(100) * (1 - reference[3])
 
     np.testing.assert_allclose(weights, reference, atol=1e-3)
+
+
+@pytest.mark.parametrize(
+    ("variance_function", "forecast_function", "weights"),
+    [
+        (garch_model.get_garch, garch_model.get_garch_forecast, [2e-6, 0.08, 0.9]),
+        (
+            garch_model.get_gjr_garch,
+            garch_model.get_gjr_garch_forecast,
+            [2e-6, 0.03, 0.1, 0.85],
+        ),
+        (
+            garch_model.get_egarch,
+            garch_model.get_egarch_forecast,
+            [-0.3, 0.12, -0.08, 0.97],
+        ),
+    ],
+)
+def test_garch_family_runs_each_column_on_its_own_returns(
+    variance_function, forecast_function, weights
+):
+    dates = pd.bdate_range("2023-01-02", periods=400)
+    returns = pd.DataFrame(
+        {
+            "Full": simulate_garch(2e-6, 0.08, 0.9, n=400, seed=3),
+            "Late": simulate_garch(2e-6, 0.08, 0.9, n=400, seed=4),
+        },
+        index=dates,
+    )
+    # Late lists after 150 days and misses two days later on.
+    returns.iloc[:150, 1] = np.nan
+    returns.iloc[[220, 300], 1] = np.nan
+
+    variance = variance_function(returns, weights)
+    forecast = forecast_function(returns, weights, time_steps=5)
+
+    # The full column is untouched by the other column's missing days.
+    np.testing.assert_allclose(
+        variance["Full"], variance_function(returns["Full"].to_numpy(), weights)
+    )
+    np.testing.assert_allclose(
+        forecast["Full"], forecast_function(returns["Full"].to_numpy(), weights, 5)
+    )
+
+    # The late column runs on its own observations and is missing where it has none.
+    late = returns["Late"].dropna()
+    np.testing.assert_allclose(
+        variance["Late"].dropna(), variance_function(late.to_numpy(), weights)
+    )
+    assert variance["Late"].dropna().index.equals(late.index)
+    np.testing.assert_allclose(
+        forecast["Late"], forecast_function(late.to_numpy(), weights, 5)
+    )
+
+
+def simulate_garch_student_t(omega, alpha, beta, n, seed):
+    rng = np.random.default_rng(seed)
+    returns = np.empty(n)
+    variance = omega / (1 - alpha - beta)
+    for step in range(n):
+        returns[step] = np.sqrt(variance) * rng.standard_t(5) / np.sqrt(5 / 3)
+        variance = omega + alpha * returns[step] ** 2 + beta * variance
+    return returns
+
+
+def test_gjr_garch_fit_is_never_below_the_garch_fit(monkeypatch):
+    # On this path the multi-start search alone settles in a local optimum (Beta 0.45)
+    # with a log-likelihood 0.49 below the GARCH fit; arch reaches the GARCH optimum.
+    returns = simulate_garch_student_t(1e-5, 0.1, 0.8, n=260, seed=15)
+    garch_weights = garch_model.get_garch_weights(returns)
+    nested_weights = [garch_weights[0], garch_weights[1], 0.0, garch_weights[2]]
+
+    # GARCH is GJR-GARCH with gamma = 0: the likelihoods agree at that point.
+    assert garch_model.gjr_garch_log_maximization(
+        nested_weights, returns, len(returns)
+    ) == pytest.approx(
+        garch_model.garch_log_maximization(garch_weights, returns, len(returns))
+    )
+
+    fitted = garch_model.get_gjr_garch_weights(returns)
+    assert garch_model.gjr_garch_log_maximization(
+        fitted, returns, len(returns)
+    ) <= garch_model.garch_log_maximization(garch_weights, returns, len(returns))
+    assert fitted[3] == pytest.approx(0.9315, abs=1e-3)
+
+    arch = pytest.importorskip("arch")
+    reference = arch.arch_model(
+        returns * 100, mean="Zero", vol="GARCH", p=1, o=1, q=1, rescale=False
+    ).fit(disp="off")
+    # The log-likelihood of the unscaled returns, with the constant the fit leaves out.
+    log_likelihood = -0.5 * (
+        garch_model.gjr_garch_log_maximization(fitted, returns, len(returns))
+        + len(returns) * np.log(2 * np.pi)
+    )
+    assert log_likelihood == pytest.approx(
+        reference.loglikelihood + len(returns) * np.log(100), abs=1e-3
+    )
+
+    # A search that settles in a worse local optimum falls back to the GARCH weights.
+    original = garch_model._fit_multi_start
+
+    def stuck(wrapper_func, bounds, initial_guess, model_name, **kwargs):
+        if model_name.startswith("GJR-GARCH"):
+            return np.array([garch_weights[0], 0.01, 0.02, 0.5])
+        return original(wrapper_func, bounds, initial_guess, model_name, **kwargs)
+
+    monkeypatch.setattr(garch_model, "_fit_multi_start", stuck)
+
+    np.testing.assert_allclose(
+        garch_model.get_gjr_garch_weights(returns), nested_weights
+    )

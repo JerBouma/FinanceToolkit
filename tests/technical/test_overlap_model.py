@@ -192,3 +192,23 @@ def test_kaufman_adaptive_moving_average_first_value_is_one_update_of_the_seed()
 
     assert kama.iloc[:window].isna().all()
     assert kama.iloc[window] == pytest.approx(expected)
+
+
+def test_kaufman_adaptive_moving_average_follows_flat_prices():
+    # On flat prices the efficiency ratio is 1 (TA-Lib), so KAMA keeps tracking the price
+    # instead of turning NaN on 0 / 0.
+    prices = pd.Series([10.0] * 15 + [11.0, 12.0, 13.0], dtype=float)
+    kama = overlap_model.get_kaufman_adaptive_moving_average(prices, window=5)
+
+    assert kama.iloc[:5].isna().all()
+    assert kama.iloc[5:15].eq(10.0).all()
+    assert kama.iloc[15:].notna().all()
+    assert kama.iloc[-1] > 10.0
+
+
+def test_kaufman_adaptive_moving_average_is_nan_only_for_missing_prices():
+    prices = pd.Series([10.0, 10.5, None, 11.0, 11.5, 12.0, 12.5, 13.0], dtype=float)
+    kama = overlap_model.get_kaufman_adaptive_moving_average(prices, window=2)
+
+    assert kama.iloc[:5].isna().all()
+    assert kama.iloc[5:].notna().all()

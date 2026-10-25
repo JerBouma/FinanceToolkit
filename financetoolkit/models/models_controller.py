@@ -195,25 +195,23 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["GOOGL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        dupont_analysis = toolkit.models.get_dupont_analysis()
-
-        dupont_analysis.loc["AAPL"]
+        toolkit.models.get_dupont_analysis()
         ```
 
         Which returns:
 
         |                   |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:------------------|-------:|-------:|-------:|-------:|-------:|
-        | Net Profit Margin | 0.2588 | 0.2531 | 0.2531 | 0.2397 | 0.2692 |
-        | Asset Turnover    | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
-        | Equity Multiplier | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
-        | Return on Equity  | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
+        | Net Profit Margin | 0.2951 | 0.212  | 0.2401 | 0.286  | 0.3281 |
+        | Asset Turnover    | 0.759  | 0.7807 | 0.8009 | 0.821  | 0.7706 |
+        | Equity Multiplier | 1.4317 | 1.4269 | 1.4228 | 1.4013 | 1.4122 |
+        | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
         if trailing:
             self._dupont_analysis = dupont_model.get_dupont_analysis(
@@ -355,27 +353,25 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["MSFT"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        extended_dupont_analysis = toolkit.models.get_extended_dupont_analysis()
-
-        extended_dupont_analysis.loc["AAPL"]
+        toolkit.models.get_extended_dupont_analysis()
         ```
 
         Which returns:
 
         |                         |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:------------------------|-------:|-------:|-------:|-------:|-------:|
-        | Interest Burden Ratio   | 1.0024 | 0.9972 | 0.9951 | 1.0022 | 0.9976 |
-        | Tax Burden Ratio        | 0.867  | 0.838  | 0.8528 | 0.7591 | 0.8439 |
-        | Operating Profit Margin | 0.2978 | 0.3029 | 0.2982 | 0.3151 | 0.3197 |
-        | Asset Turnover          | 1.0841 | 1.1206 | 1.0868 | 1.0899 | 1.1493 |
-        | Equity Multiplier       | 5.255  | 6.1862 | 6.252  | 6.0251 | 5.5418 |
-        | Return on Equity        | 1.4744 | 1.7546 | 1.7195 | 1.5741 | 1.7142 |
+        | Interest Burden Ratio   | 1.017  | 1.004  | 1.0089 | 0.985  | 0.9619 |
+        | Tax Burden Ratio        | 0.8617 | 0.8689 | 0.8102 | 0.8177 | 0.8237 |
+        | Operating Profit Margin | 0.4159 | 0.4206 | 0.4177 | 0.4464 | 0.4562 |
+        | Asset Turnover          | 0.5293 | 0.5676 | 0.5456 | 0.5305 | 0.4981 |
+        | Equity Multiplier       | 2.4399 | 2.2643 | 2.0839 | 1.9468 | 1.8484 |
+        | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
         """
         if trailing:
             self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
@@ -544,28 +540,25 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["F"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        enterprise_value_breakdown = toolkit.models.get_enterprise_value_breakdown()
-
-        enterprise_value_breakdown.loc["AAPL"]
+        toolkit.models.get_enterprise_value_breakdown().loc[
+            ["Market Capitalization", "Total Debt", "Cash and Cash Equivalents", "Enterprise Value"]
+        ]
         ```
 
         Which returns:
 
-        |                           |          2021 |          2022 |          2023 |          2024 |          2025 |
-        |:--------------------------|--------------:|--------------:|--------------:|--------------:|--------------:|
-        | Share Price               | 177.57        | 129.93        | 192.53        | 250.42        | 271.86        |
-        | Market Capitalization     |   2.9947e+12  |   2.12121e+12 |   3.04439e+12 |   3.8585e+12  |   4.07918e+12 |
-        | Total Debt                |   1.36522e+11 |   1.3248e+11  |   1.2393e+11  |   1.19059e+11 |   1.12377e+11 |
-        | Minority Interest         |   0           |   0           |   0           |   0           |   0           |
-        | Preferred Equity          |   0           |   0           |   0           |   0           |   0           |
-        | Cash and Cash Equivalents |   3.494e+10   |   2.3646e+10  |   2.9965e+10  |   2.9943e+10  |   3.5934e+10  |
-        | Enterprise Value          |   3.06859e+12 |   2.20539e+12 |   3.10676e+12 |   3.91238e+12 |   4.13686e+12 |
+        |                           |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:--------------------------|------------:|------------:|------------:|------------:|------------:|
+        | Market Capitalization     | 8.37862e+10 | 4.66828e+10 | 4.92598e+10 | 3.98079e+10 | 5.22045e+10 |
+        | Total Debt                | 1.39485e+11 | 1.40474e+11 | 1.51107e+11 | 1.60862e+11 | 1.67573e+11 |
+        | Cash and Cash Equivalents | 2.054e+10   | 2.5134e+10  | 2.4862e+10  | 2.2935e+10  | 2.3356e+10  |
+        | Enterprise Value          | 1.73781e+11 | 1.43012e+11 | 1.60221e+11 | 1.62345e+11 | 1.81318e+11 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -716,23 +709,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["INTC", "QCOM", "TXN"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_tobins_q_ratio().loc["AAPL"]
+        toolkit.models.get_tobins_q_ratio().xs("Tobin's Q Ratio", level=1)
         ```
 
         Which returns:
 
-        |                        |        2021 |        2022 |        2023 |        2024 |         2025 |
-        |:-----------------------|------------:|------------:|------------:|------------:|-------------:|
-        | Market Value of Equity | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 |  3.8585e+12 |  4.07918e+12 |
-        | Total Liabilities      | 2.87912e+11 | 3.02083e+11 | 2.90437e+11 |  3.0803e+11 |  2.85508e+11 |
-        | Total Assets           | 3.51002e+11 | 3.52755e+11 | 3.52583e+11 |  3.6498e+11 |  3.59241e+11 |
-        | Tobin's Q Ratio        | 9.3521      | 6.8696      | 9.4583      | 11.4158     | 12.1497      |
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | INTC | 1.6843 | 1.0312 | 1.5308 | 0.9022 | 1.2499 |
+        | QCOM | 5.8537 | 3.1828 | 3.7679 | 3.671  | 4.3465 |
+        | TXN  | 7.6086 | 6.0875 | 5.3046 | 5.3769 | 5.1094 |
         """
         tobins_q_ratio = {}
 
@@ -980,25 +972,24 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["VZ", "T", "TMUS"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2022-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_weighted_average_cost_of_capital().loc["AAPL"]
+        toolkit.models.get_weighted_average_cost_of_capital().xs(
+            "Weighted Average Cost of Capital", level=1
+        )
         ```
 
         Which returns:
 
-        |                                  |        2021 |        2022 |        2023 |        2024 |        2025 |
-        |:---------------------------------|------------:|------------:|------------:|------------:|------------:|
-        | Market Value Equity              | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
-        | Market Value Debt                | 1.36522e+11 | 1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
-        | Cost of Equity                   | 0.1305      | 0.1442      | 0.1376      | 0.1273      | 0.1533      |
-        | Cost of Debt                     | 0.0194      | 0.0221      | 0.0317      | 0           | 0           |
-        | Corporate Tax Rate               | 0.133       | 0.162       | 0.1472      | 0.2409      | 0.1561      |
-        | Weighted Average Cost of Capital | 0.1255      | 0.1368      | 0.1333      | 0.1235      | 0.1492      |
+        |      |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|
+        | T    | 0.0787 | 0.0754 | 0.0259 | 0.0496 |
+        | TMUS | 0.1087 | 0.0776 | 0.072  | 0.0645 |
+        | VZ   | 0.0562 | 0.0727 | 0.0346 | 0.0425 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1173,7 +1164,7 @@ class Models:
 
         The formula is as follows:
 
-            - NOPAT = EBIT * (1 - Effective Tax Rate)
+            - NOPAT = EBIT * (1 - Corporate Tax Rate)
             - Invested Capital = Total Equity + Total Debt
             - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital)
 
@@ -1207,6 +1198,9 @@ class Models:
         company is destroying value.
         - EBIT is the reported Operating Income, as in the other models of this module and the
         EBIT based ratios of the Ratios module.
+        - The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before Tax)
+        kept within 0 and 1, and 0 for a period without a pre-tax profit, the same rate the
+        Weighted Average Cost of Capital uses (see `get_weighted_average_cost_of_capital`).
         - Invested Capital is the sum of the two-period average of Total Equity and the two-period
         average of Total Debt, i.e. the capital employed over the course of the period rather than
         its closing balance, consistent with the Return on Invested Capital calculation in the
@@ -1222,23 +1216,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["V", "MA", "HD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2022-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_economic_value_added().loc["AAPL"]
+        toolkit.models.get_economic_value_added().xs("Economic Value Added", level=1)
         ```
 
         Which returns:
 
-        |                                  |        2021 |        2022 |        2023 |        2024 |        2025 |
-        |:---------------------------------|------------:|------------:|------------:|------------:|------------:|
-        | Net Operating Profit After Taxes | 9.44563e+10 | 1.00083e+11 | 9.74768e+10 | 9.35318e+10 | 1.12281e+11 |
-        | Invested Capital                 | 1.93614e+11 | 1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
-        | Weighted Average Cost of Capital | 0.1255      | 0.1368      | 0.1333      | 0.1235      | 0.1492      |
-        | Economic Value Added             | 7.01567e+10 | 7.39066e+10 | 7.28641e+10 | 7.11773e+10 | 8.52711e+10 |
+        |    |        2022 |        2023 |        2024 |        2025 |
+        |:---|------------:|------------:|------------:|------------:|
+        | HD | 9.57216e+09 | 5.61294e+09 | 6.25513e+09 | 5.96403e+09 |
+        | MA | 6.03519e+09 | 7.72427e+09 | 1.00151e+10 | 1.06193e+10 |
+        | V  | 3.68483e+09 | 6.85635e+09 | 1.04752e+10 | 8.9369e+09  |
         """
         eva = {}
 
@@ -1282,7 +1275,8 @@ class Models:
         )
 
         ebit = self._earnings_before_interest_and_taxes(trailing)
-        effective_tax_rate = profitability_model.get_effective_tax_rate(
+        # The tax rate the WACC uses: kept within 0 and 1 and 0 without a pre-tax profit, so that a tax benefit does not lift NOPAT above EBIT and a loss year is not taxed at the ratio of two negatives.  # noqa: E501
+        effective_tax_rate = wacc_model.get_corporate_tax_rate(
             income_tax_expense=income_tax_expense,
             income_before_tax=income_before_tax,
         )
@@ -1402,23 +1396,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["LLY", "JNJ", "MRK"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_market_value_added().loc["AAPL"]
+        toolkit.models.get_market_value_added().xs("Market Value Added", level=1)
         ```
 
         Which returns:
 
-        |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
-        |:-----------------------|------------:|------------:|------------:|------------:|------------:|
-        | Market Value of Equity | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
-        | Market Value of Debt   | 1.36522e+11 | 1.3248e+11  | 1.2393e+11  | 1.19059e+11 | 1.12377e+11 |
-        | Invested Capital       | 1.93614e+11 | 1.91382e+11 | 1.84614e+11 | 1.81042e+11 | 1.8106e+11  |
-        | Market Value Added     | 2.93761e+12 | 2.06231e+12 | 2.98371e+12 | 3.79651e+12 | 4.01049e+12 |
+        |     |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:----|------------:|------------:|------------:|------------:|------------:|
+        | JNJ | 3.88033e+11 | 3.9811e+11  | 3.23373e+11 | 2.84859e+11 | 4.31897e+11 |
+        | LLY | 2.56073e+11 | 3.37326e+11 | 5.20216e+11 | 6.89575e+11 | 9.49091e+11 |
+        | MRK | 1.63289e+11 | 2.38554e+11 | 2.37969e+11 | 2.11776e+11 | 2.20502e+11 |
         """
         mva = {}
 
@@ -1546,7 +1539,8 @@ class Models:
             (Weighted Average Cost of Capital — Perpetual Growth Rate)
             - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value /
             (1 + Weighted Average Cost of Capital)^Periods
-            - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents
+            - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents + Short Term
+            Investments
             - Intrinsic Value = Equity Value / Weighted Average Shares Diluted
 
         The base cash flow is by default the Free Cash Flow to the Firm (see `get_free_cash_flow_to_firm`),
@@ -1591,6 +1585,10 @@ class Models:
         several years into one base cash flow, which logs a warning.
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
         and the valuation is not calculated.
+        - The Total Debt, Cash and Cash Equivalents and Short Term Investments are those of the most
+        recent period. Short Term Investments are added back with the cash, the same cash and marketable
+        securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
+        such row.
         - The Equity Value is divided by the Weighted Average Shares Diluted of the most recent period.
 
         As an example:
@@ -1599,24 +1597,26 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["ADBE", "CRM", "INTU"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_intrinsic_valuation(0.05, 0.025, 0.094).loc["AAPL"]
+        toolkit.models.get_intrinsic_valuation(
+            growth_rate=0.08,
+            perpetual_growth_rate=0.025,
+            weighted_average_cost_of_capital=0.09,
+        ).xs("Intrinsic Value", level=1)
         ```
 
         Which returns:
 
-        |                      |   Periods = 5 |
-        |:---------------------|--------------:|
-        | Terminal Value       |   1.6355e+12  |
-        | Cash Flow Projection |   1.10097e+11 |
-        | Enterprise Value     |   1.42566e+12 |
-        | Equity Value         |   1.34921e+12 |
-        | Intrinsic Value      |  89.9194      |
+        |      |   Periods = 5 |
+        |:-----|--------------:|
+        | ADBE |       389.526 |
+        | CRM  |       190.408 |
+        | INTU |       304.583 |
         """
         if cash_flow_type not in [
             "Free Cash Flow to Firm",
@@ -1725,6 +1725,20 @@ class Models:
                 total_debt=self._balance_sheet_statement.loc[ticker, "Total Debt"]
                 .dropna()
                 .iloc[-1],
+                # Added back with the cash, as get_enterprise_value_breakdown deducts both.
+                short_term_investments=(
+                    self._balance_sheet_statement.loc[ticker, "Short Term Investments"]
+                    .dropna()
+                    .iloc[-1]
+                    if "Short Term Investments"
+                    in self._balance_sheet_statement.loc[ticker].index
+                    and self._balance_sheet_statement.loc[
+                        ticker, "Short Term Investments"
+                    ]
+                    .notna()
+                    .any()
+                    else 0.0
+                ),
                 shares_outstanding=self._income_statement.loc[
                     ticker, "Weighted Average Shares Diluted"
                 ]
@@ -1760,7 +1774,7 @@ class Models:
 
         The formula is as follows:
 
-            - NOPAT = EBIT * (1 - Effective Tax Rate)
+            - NOPAT = EBIT * (1 - Corporate Tax Rate)
             - FCFF = NOPAT + Depreciation and Amortization - Capital Expenditure -
             Change in Net Working Capital
 
@@ -1783,6 +1797,9 @@ class Models:
         Notes:
         - EBIT is the reported Operating Income, as in the Altman Z-Score and Economic Value
         Added calculations elsewhere in this module.
+        - The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before Tax)
+        kept within 0 and 1, and 0 for a period without a pre-tax profit, the same rate the
+        Weighted Average Cost of Capital uses (see `get_weighted_average_cost_of_capital`).
         - The Capital Expenditure and Change in Working Capital line items from the cash flow
         statement are stored using a cash-flow-impact sign convention (a use of cash is
         negative). This method negates them internally so that they represent positive
@@ -1797,24 +1814,21 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["XOM", "CVX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_free_cash_flow_to_firm().loc["AAPL"]
+        toolkit.models.get_free_cash_flow_to_firm().xs("Free Cash Flow to Firm", level=1)
         ```
 
         Which returns:
 
-        |                                  |        2021 |         2022 |        2023 |         2024 |        2025 |
-        |:---------------------------------|------------:|-------------:|------------:|-------------:|------------:|
-        | Net Operating Profit After Taxes | 9.44563e+10 |  1.00083e+11 | 9.74768e+10 |  9.35318e+10 | 1.12281e+11 |
-        | Depreciation and Amortization    | 1.1284e+10  |  1.1104e+10  | 1.1519e+10  |  1.1445e+10  | 1.1698e+10  |
-        | Capital Expenditure              | 1.1085e+10  |  1.0708e+10  | 1.0959e+10  |  9.447e+09   | 1.2715e+10  |
-        | Change in Net Working Capital    | 4.911e+09   | -1.2e+09     | 6.577e+09   | -3.651e+09   | 2.5e+10     |
-        | Free Cash Flow to Firm           | 8.97443e+10 |  1.01679e+11 | 9.14598e+10 |  9.91808e+10 | 8.62639e+10 |
+        |     |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:----|------------:|------------:|------------:|------------:|------------:|
+        | CVX | 1.98409e+10 | 3.51075e+10 | 2.2617e+10  | 1.97109e+10 | 1.16812e+10 |
+        | XOM | 3.08399e+10 | 5.28525e+10 | 2.78286e+10 | 2.68446e+10 | 1.83253e+10 |
         """
         fcff = {}
 
@@ -1860,7 +1874,8 @@ class Models:
         )
 
         ebit = self._earnings_before_interest_and_taxes(trailing)
-        effective_tax_rate = profitability_model.get_effective_tax_rate(
+        # The tax rate the WACC uses: kept within 0 and 1 and 0 without a pre-tax profit, so that a tax benefit does not lift NOPAT above EBIT and a loss year is not taxed at the ratio of two negatives.  # noqa: E501
+        effective_tax_rate = wacc_model.get_corporate_tax_rate(
             income_tax_expense=income_tax_expense,
             income_before_tax=income_before_tax,
         )
@@ -1958,25 +1973,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["CMCSA", "CHTR", "VZ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_free_cash_flow_to_equity().loc["AAPL"]
+        toolkit.models.get_free_cash_flow_to_equity().xs("Free Cash Flow to Equity", level=1)
         ```
 
         Which returns:
 
-        |                               |        2021 |         2022 |        2023 |        2024 |        2025 |
-        |:------------------------------|------------:|-------------:|------------:|------------:|------------:|
-        | Net Income                    | 9.468e+10   |  9.9803e+10  |  9.6995e+10 |  9.3736e+10 |  1.1201e+11 |
-        | Depreciation and Amortization | 1.1284e+10  |  1.1104e+10  |  1.1519e+10 |  1.1445e+10 |  1.1698e+10 |
-        | Capital Expenditure           | 1.1085e+10  |  1.0708e+10  |  1.0959e+10 |  9.447e+09  |  1.2715e+10 |
-        | Change in Net Working Capital | 4.911e+09   | -1.2e+09     |  6.577e+09  | -3.651e+09  |  2.5e+10    |
-        | Net Borrowing                 | 1.2665e+10  | -1.23e+08    | -9.901e+09  | -5.998e+09  | -8.483e+09  |
-        | Free Cash Flow to Equity      | 1.02633e+11 |  1.01276e+11 |  8.1077e+10 |  9.3387e+10 |  7.751e+10  |
+        |       |       2021 |       2022 |       2023 |        2024 |       2025 |
+        |:------|-----------:|-----------:|-----------:|------------:|-----------:|
+        | CHTR  | 1.5532e+10 | 1.1e+10    | 1.955e+09  | -1.31e+09   | 2.43e+09   |
+        | CMCSA | 6.168e+09  | 3.618e+09  | 1.1394e+10 |  1.6448e+10 | 2.1732e+10 |
+        | VZ    | 3.9649e+10 | 1.5507e+10 | 8.042e+09  |  1.0354e+10 | 2.3559e+10 |
         """
         fcfe = {}
 
@@ -2083,6 +2095,27 @@ class Models:
 
         return dividends_per_share
 
+    def _annual_dividends_per_share(self) -> pd.DataFrame:
+        """
+        Returns the annual Dividends per Share the dividend discount models start from: the
+        dividends of each complete year, or with quarterly data the sum of the trailing four
+        complete quarters. The rates of return and growth rates of these models are annual, so a
+        single quarter's dividend would understate the base dividend by about a factor four.
+
+        Returns:
+            pd.DataFrame: The annual Dividends per Share per period (rows) and ticker (columns),
+            without the first three quarters of quarterly data, which lack a full trailing year.
+        """
+        dividends_per_share = self._complete_period_dividends()
+
+        if self._quarterly:
+            # Only a full trailing year of quarters gives an annual dividend; fewer quarters would understate it.  # noqa: E501
+            dividends_per_share = (
+                dividends_per_share.rolling(4, min_periods=4).sum().iloc[3:]
+            )
+
+        return dividends_per_share
+
     @handle_errors
     def get_gorden_growth_model(
         self,
@@ -2122,7 +2155,8 @@ class Models:
         Args:
             rate_of_return (float): The required rate of return.
             growth_rate (float): The growth rate of the dividends.
-            project_periods (int, optional): The number of periods to project the the stock price. Defaults to 5.
+            project_periods (int, optional): The number of years to project the intrinsic value for, beyond the
+                last complete period. Defaults to 5.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
 
         Returns:
@@ -2131,12 +2165,16 @@ class Models:
         Notes:
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
         ensure the results are accurate (given your beliefs)
-        - Each historical period is valued off that period's *actual* Dividends per Share, and only the
-        periods beyond the last complete one are projected forward at the given growth rate. The current,
-        unfinished period is projected as well, since its dividends so far cover only part of it. The first
-        period of the historical window will therefore often be understated, since it only covers the part
-        of the year that falls inside the requested date range and so captures only part of the year's
-        dividends. Use a start_date at least one full period before the first period you intend to read.
+        - The rate of return and the growth rate are annual rates, so the model values an annual dividend:
+        the Dividends per Share of each year, or with quarterly data the sum of the trailing four complete
+        quarters. The first three quarters of quarterly data lack a full trailing year and are left out.
+        - Each historical period is valued off that period's *actual* annual Dividends per Share, and only
+        the years beyond the last complete period are projected forward at the given growth rate, one year
+        per projection period (four quarters apart with quarterly data). With yearly data the current,
+        unfinished year is projected as well, since its dividends so far cover only part of it. The first
+        year of the historical window will often be understated, since it only covers the part of the year
+        that falls inside the requested date range and so captures only part of the year's dividends. Use a
+        start_date at least one full year before the first period you intend to read.
 
         As an example:
 
@@ -2144,66 +2182,67 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["KO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_gorden_growth_model(0.20, 0.05)
+        toolkit.models.get_gorden_growth_model(rate_of_return=0.08, growth_rate=0.04)
         ```
 
         Which returns:
 
-        |      |   AAPL |    MSFT |
-        |:-----|-------:|--------:|
-        | 2021 | 6.055  | 16.1    |
-        | 2022 | 6.37   | 17.78   |
-        | 2023 | 6.65   | 19.53   |
-        | 2024 | 6.93   | 21.56   |
-        | 2025 | 7.21   | 23.8    |
-        | 2026 | 7.5705 | 24.99   |
-        | 2027 | 7.949  | 26.2395 |
-        | 2028 | 8.3465 | 27.5515 |
-        | 2029 | 8.7638 | 28.929  |
-        | 2030 | 9.202  | 30.3755 |
+        |      |      KO |
+        |:-----|--------:|
+        | 2021 | 43.68   |
+        | 2022 | 45.76   |
+        | 2023 | 47.84   |
+        | 2024 | 50.44   |
+        | 2025 | 53.04   |
+        | 2026 | 55.1616 |
+        | 2027 | 57.3681 |
+        | 2028 | 59.6628 |
+        | 2029 | 62.0493 |
+        | 2030 | 64.5313 |
         """
-        dividends_per_share = self._complete_period_dividends()
+        dividends_per_share = self._annual_dividends_per_share()
+
+        # The rate of return and growth rate are annual, so each projection step is one year: four quarters ahead with quarterly data.  # noqa: E501
+        step = 4 if self._quarterly else 1
+        last_known_period = dividends_per_share.index[-1]
+        projected_periods = [
+            last_known_period + step * distance
+            for distance in range(1, project_periods + 1)
+        ]
 
         gorden_growth_model: dict[str, dict[str, float]] = {}
 
-        periods = pd.period_range(
-            start=dividends_per_share.index[0],
-            periods=project_periods + len(dividends_per_share.index),
-            freq="Q" if self._quarterly else "Y",
-        )
-
         for ticker in self._tickers:
             gorden_growth_model[ticker] = {}
-            last_known_period = dividends_per_share.index[0]
 
-            for period in periods:
-                if period in dividends_per_share.index:
-                    dividends_per_share_value = dividends_per_share.loc[period, ticker]
-                    last_known_period = period
-                else:
-                    distance = periods.get_loc(period) - periods.get_loc(
-                        last_known_period
-                    )
-                    dividends_per_share_value = (
-                        dividends_per_share.loc[last_known_period, ticker]
-                        * (1 + growth_rate) ** distance
-                    )
-
+            for period in dividends_per_share.index:
                 gorden_growth_model[ticker][period] = (
                     intrinsic_model.get_gorden_growth_model(
-                        dividends_per_share=dividends_per_share_value,
+                        dividends_per_share=dividends_per_share.loc[period, ticker],
                         rate_of_return=rate_of_return,
                         growth_rate=growth_rate,
                     )
                 )
 
-        gorden_growth_model_df = pd.DataFrame(gorden_growth_model)
+            for distance, period in enumerate(projected_periods, start=1):
+                gorden_growth_model[ticker][period] = (
+                    intrinsic_model.get_gorden_growth_model(
+                        dividends_per_share=dividends_per_share.loc[
+                            last_known_period, ticker
+                        ]
+                        * (1 + growth_rate) ** distance,
+                        rate_of_return=rate_of_return,
+                        growth_rate=growth_rate,
+                    )
+                )
+
+        gorden_growth_model_df = pd.DataFrame(gorden_growth_model).dropna(how="all")
 
         gorden_growth_model_df = apply_rounding(
             gorden_growth_model_df, rounding if rounding is not None else self._rounding
@@ -2250,7 +2289,7 @@ class Models:
             applied to dividends from the end of the high-growth phase onward. Can be one
             number to use for all tickers, or a list or dict that contains a stable growth
             rate for each ticker.
-            high_growth_periods (int, optional): The number of periods in the explicit
+            high_growth_periods (int, optional): The number of years in the explicit
             high-growth phase. Defaults to 5.
             rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
 
@@ -2263,10 +2302,12 @@ class Models:
         each input parameter to ensure the results are accurate (given your beliefs).
         - The Rate of Return must be greater than the Stable Growth Rate, otherwise the
         Terminal Value formula divides by a non-positive number.
-        - The base dividend used for the projection is the Dividends Per Share of the last complete
-        period for each ticker; the current, unfinished period is left out since its dividends so far
-        cover only part of it. For companies that do not pay a dividend, this model is
-        not meaningful (the projections and resulting intrinsic value will be zero).
+        - The base dividend used for the projection is the annual Dividends Per Share of the last complete
+        period for each ticker: the last complete year, or with quarterly data the sum of the last four
+        complete quarters, since the rates are annual and each projection period is a year. The current,
+        unfinished period is left out since its dividends so far cover only part of it. For companies that
+        do not pay a dividend, this model is not meaningful (the projections and resulting intrinsic value
+        will be zero).
 
         As an example:
 
@@ -2274,26 +2315,28 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["JNJ", "PG", "PEP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_two_stage_dividend_discount_model(0.10, 0.12, 0.03).loc["AAPL"]
+        toolkit.models.get_two_stage_dividend_discount_model(
+            rate_of_return=0.08,
+            high_growth_rate=0.06,
+            stable_growth_rate=0.03,
+        ).xs("Intrinsic Value", level=1)
         ```
 
         Which returns:
 
-        |                                 |   High-Growth Periods = 5 |
-        |:--------------------------------|--------------------------:|
-        | Final High-Growth Dividend      |                    1.8152 |
-        | High-Growth Phase Present Value |                    5.4378 |
-        | Terminal Value                  |                   26.7095 |
-        | Terminal Value Present Value    |                   16.5845 |
-        | Intrinsic Value                 |                   22.0223 |
+        |     |   High-Growth Periods = 5 |
+        |:----|--------------------------:|
+        | JNJ |                  120.743  |
+        | PEP |                  132.078  |
+        | PG  |                   98.1193 |
         """
-        dividends_per_share = self._complete_period_dividends()
+        dividends_per_share = self._annual_dividends_per_share()
 
         if isinstance(rate_of_return, list):
             if len(rate_of_return) != len(self._tickers):
@@ -2444,23 +2487,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["V", "MA", "AXP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2022-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_residual_income().loc["AAPL"]
+        toolkit.models.get_residual_income().xs("Residual Income", level=1)
         ```
 
         Which returns:
 
-        |                      |        2021 |       2022 |        2023 |        2024 |       2025 |
-        |:---------------------|------------:|-----------:|------------:|------------:|-----------:|
-        | Net Income           | 9.468e+10   | 9.9803e+10 | 9.6995e+10  | 9.3736e+10  | 1.1201e+11 |
-        | Cost of Equity       | 0.1305      | 0.1442     | 0.1376      | 0.1273      | 0.1533     |
-        | Book Value of Equity | 6.5339e+10  | 6.309e+10  | 5.0672e+10  | 6.2146e+10  | 5.695e+10  |
-        | Residual Income      | 8.61558e+10 | 9.0708e+10 | 9.00202e+10 | 8.58257e+10 | 1.0328e+11 |
+        |     |        2022 |        2023 |        2024 |        2025 |
+        |:----|------------:|------------:|------------:|------------:|
+        | AXP | 2.05135e+09 | 1.68244e+09 | 3.53878e+09 | 1.9205e+09  |
+        | MA  | 8.21049e+09 | 9.901e+09   | 1.17405e+10 | 1.37721e+10 |
+        | V   | 7.63433e+09 | 1.11901e+10 | 1.3996e+10  | 1.28472e+10 |
         """
         residual_income = {}
 
@@ -2609,27 +2651,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["BA", "LMT", "GD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        altman_z_score = toolkit.models.get_altman_z_score()
-
-        altman_z_score.loc["AAPL"]
+        toolkit.models.get_altman_z_score().xs("Altman Z-Score", level=1)
         ```
 
         Which returns:
 
-        |                                   |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:----------------------------------|--------:|--------:|--------:|--------:|--------:|
-        | Working Capital to Total Assets   |  0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
-        | Retained Earnings to Total Assets |  0.0158 | -0.0087 | -0.0006 | -0.0525 | -0.0397 |
-        | EBIT to Total Assets              |  0.3104 |  0.3386 |  0.3242 |  0.3376 |  0.3704 |
-        | Market Value to Total Liabilities | 10.4015 |  7.022  | 10.4821 | 12.5264 | 14.2874 |
-        | Sales to Total Assets             |  1.0422 |  1.1179 |  1.0871 |  1.0714 |  1.1584 |
-        | Altman Z-Score                    |  8.3615 |  6.373  |  8.4394 |  9.5508 | 10.8385 |
+        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:----|-------:|-------:|-------:|-------:|-------:|
+        | BA  | 1.4229 | 1.3175 | 1.5588 | 1.0004 | 1.5145 |
+        | GD  | 3.2646 | 3.4357 | 3.4691 | 3.6147 | 4.2102 |
+        | LMT | 4.1234 | 4.104  | 3.8137 | 3.5273 | 3.3165 |
         """
         altman_z_score = {}
 
@@ -2854,38 +2891,31 @@ class Models:
         Returns:
             pd.DataFrame: DataFrame containing the Piotroski F-Score and its components.
 
+        Periods for which the financial statements have not been reported yet are returned as NaN
+        rather than being scored zero across the board.
+
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA", "MSFT"],
+            ["F", "GM", "TSLA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_piotroski_score().loc["AAPL"]
+        toolkit.models.get_piotroski_score().xs("Piotroski Score", level=1)
         ```
 
         Which returns:
 
-        |                                     |   2022 |   2023 |   2024 |   2025 |
-        |:------------------------------------|-------:|-------:|-------:|-------:|
-        | Return on Assets Criteria           |      1 |      1 |      1 |      1 |
-        | Operating Cashflow Criteria         |      1 |      1 |      1 |      1 |
-        | Change in Return on Assets Criteria |      0 |      0 |      0 |      1 |
-        | Accruals Criteria                   |      1 |      1 |      1 |      0 |
-        | Change in Leverage Criteria         |      1 |      1 |      1 |      1 |
-        | Change in Current Ratio Criteria    |      0 |      1 |      0 |      1 |
-        | Number of Shares Criteria           |      1 |      1 |      1 |      1 |
-        | Gross Margin Criteria               |      1 |      1 |      1 |      1 |
-        | Asset Turnover Criteria             |      0 |      0 |      1 |      1 |
-        | Piotroski Score                     |      6 |      7 |      7 |      8 |
-
-        Periods for which the financial statements have not been reported yet are returned as NaN
-        rather than being scored zero across the board.
+        |      |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|
+        | F    |      5 |      6 |      6 |      3 |
+        | GM   |      6 |      6 |      7 |      5 |
+        | TSLA |      8 |      3 |      4 |      5 |
         """
         piotroski_score = {}
 
@@ -3180,28 +3210,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["NFLX", "DIS", "CMCSA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_beneish_m_score().loc["AAPL"]
+        toolkit.models.get_beneish_m_score().xs("Beneish M-Score", level=1)
         ```
 
         Which returns:
 
-        |                                 |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:--------------------------------|--------:|--------:|--------:|--------:|--------:|
-        | Days Sales in Receivables Index |  1.0322 |  1.0975 |  1.0297 |  1.0647 |  1.0349 |
-        | Gross Margin Index              |  0.9151 |  0.9647 |  0.9814 |  0.9551 |  0.9851 |
-        | Asset Quality Index             |  1.1404 |  0.9841 |  0.9387 |  1.0389 |  0.9863 |
-        | Sales Growth Index              |  1.3326 |  1.0779 |  0.972  |  1.0202 |  1.0643 |
-        | Depreciation Index              |  1.0566 |  1.0635 |  0.9982 |  0.8725 |  1.0539 |
-        | SGA Expenses Index              |  0.8279 |  1.0595 |  1.0222 |  1.026  |  0.9938 |
-        | Leverage Index                  |  1.0608 |  1.0729 |  0.9516 |  1.0526 |  0.9455 |
-        | Total Accruals to Total Assets  | -0.0267 | -0.0634 | -0.0384 | -0.0672 |  0.0015 |
-        | Beneish M-Score                 | -2.2503 | -2.6691 | -2.6802 | -2.7611 | -2.3721 |
+        |       |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:------|--------:|--------:|--------:|--------:|--------:|
+        | CMCSA | -2.6609 | -2.8625 | -2.661  | -2.6852 | -2.734  |
+        | DIS   | -2.5143 | -2.5357 | -2.6392 | -2.6963 | -2.595  |
+        | NFLX  | -1.6697 | -1.3345 | -2.5628 | -2.3319 | -2.1611 |
         """
         beneish_m_score = {}
 
@@ -3475,41 +3499,31 @@ class Models:
         - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of
         Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
 
+        Note that the first period is NaN because the Change in Net Income and Negative Income
+        Indicator components require a prior period to compare against.
+
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["CCL", "RCL", "NCLH"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        ohlson_o_score = toolkit.models.get_ohlson_o_score()
-
-        ohlson_o_score.loc["AAPL"]
+        toolkit.models.get_ohlson_o_score().xs("Ohlson O-Score", level=1)
         ```
 
         Which returns:
 
-        |                                            |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:-------------------------------------------|--------:|--------:|--------:|--------:|--------:|
-        | Log of Total Assets                        | 26.5841 | 26.589  | 26.5886 | 26.6231 | 26.6073 |
-        | Total Liabilities to Total Assets          |  0.8203 |  0.8564 |  0.8237 |  0.844  |  0.7948 |
-        | Working Capital to Total Assets            |  0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
-        | Current Liabilities to Current Assets      |  0.9306 |  1.1372 |  1.0121 |  1.153  |  1.1195 |
-        | Negative Equity Indicator                  |  0      |  0      |  0      |  0      |  0      |
-        | Net Income to Total Assets                 |  0.2697 |  0.2829 |  0.2751 |  0.2568 |  0.3118 |
-        | Funds from Operations to Total Liabilities |  0.3614 |  0.4044 |  0.3806 |  0.3839 |  0.3905 |
-        | Negative Income Indicator                  |  0      |  0      |  0      |  0      |  0      |
-        | Change in Net Income                       |  0.245  |  0.0263 | -0.0143 | -0.0171 |  0.0888 |
-        | Ohlson O-Score                             | -8.5895 | -8.2408 | -8.4318 | -8.1898 | -8.7015 |
-        | Ohlson Bankruptcy Probability              |  0.0002 |  0.0003 |  0.0002 |  0.0003 |  0.0002 |
-
-        Note that the first period is NaN because the Change in Net Income and Negative Income
-        Indicator components require a prior period to compare against.
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | CCL  | -5.7604 | -5.4419 | -6.2136 | -6.8358 | -6.78   |
+        | NCLH | -4.4192 | -4.1038 | -5.0639 | -5.269  | -4.9984 |
+        | RCL  | -4.9997 | -5.0496 | -6.2194 | -6.3642 | -6.6839 |
         """
         ohlson_o_score = {}
 
@@ -3737,26 +3751,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["DAL", "UAL", "AAL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        zmijewski_score = toolkit.models.get_zmijewski_score()
-
-        zmijewski_score.loc["AAPL"]
+        toolkit.models.get_zmijewski_score().xs("Zmijewski Score", level=1)
         ```
 
         Which returns:
 
-        |                                       |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:--------------------------------------|--------:|--------:|--------:|--------:|--------:|
-        | Net Income to Total Assets            |  0.2697 |  0.2829 |  0.2751 |  0.2568 |  0.3118 |
-        | Total Liabilities to Total Assets     |  0.8203 |  0.8564 |  0.8237 |  0.844  |  0.7948 |
-        | Current Assets to Current Liabilities |  1.0746 |  0.8794 |  0.988  |  0.8673 |  0.8933 |
-        | Zmijewski Score                       | -0.8994 | -0.7531 | -0.9034 | -0.7056 | -1.2333 |
-        | Zmijewski Bankruptcy Probability      |  0.1842 |  0.2257 |  0.1831 |  0.2402 |  0.1087 |
+        |     |   2021 |   2022 |   2023 |    2024 |    2025 |
+        |:----|-------:|-------:|-------:|--------:|--------:|
+        | AAL | 2.1018 | 1.8402 | 1.7502 |  1.6446 |  1.6755 |
+        | DAL | 1.017  | 0.7425 | 0.2026 | -0.0177 | -0.3885 |
+        | UAL | 1.0493 | 0.7082 | 0.4288 |  0.1763 |  0.0073 |
         """
         zmijewski_score = {}
 
@@ -3922,24 +3932,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["M", "KSS", "GAP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_springate_score().loc["AAPL"]
+        toolkit.models.get_springate_score().xs("Springate Score", level=1)
         ```
 
         Which returns:
 
-        |                                 |   2021 |    2022 |    2023 |    2024 |    2025 |
-        |:--------------------------------|-------:|--------:|--------:|--------:|--------:|
-        | Working Capital to Total Assets | 0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
-        | EBIT to Total Assets            | 0.3104 |  0.3386 |  0.3242 |  0.3376 |  0.3704 |
-        | EBT to Current Liabilities      | 0.8703 |  0.7735 |  0.7827 |  0.7001 |  0.8014 |
-        | Sales to Total Assets           | 1.0422 |  1.1179 |  1.0871 |  1.0714 |  1.1584 |
-        | Springate Score                 | 1.9716 |  1.9429 |  1.9416 |  1.861  |  2.0786 |
+        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:----|-------:|-------:|-------:|-------:|-------:|
+        | GAP | 0.8575 | 0.6249 | 0.9346 | 1.1942 | 1.1859 |
+        | KSS | 1.2226 | 0.5896 | 0.809  | 0.6373 | 0.759  |
+        | M   | 1.2937 | 1.1721 | 0.7495 | 0.9653 | 1.015  |
         """
         springate_score = {}
 
@@ -4112,23 +4120,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["F", "GM", "STLA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_grover_score().loc["AAPL"]
+        toolkit.models.get_grover_score().xs("Grover Score", level=1)
         ```
 
         Which returns:
 
-        |                                 |   2021 |    2022 |    2023 |    2024 |    2025 |
-        |:--------------------------------|-------:|--------:|--------:|--------:|--------:|
-        | Working Capital to Total Assets | 0.0267 | -0.0527 | -0.0049 | -0.0641 | -0.0492 |
-        | EBIT to Total Assets            | 0.3104 |  0.3386 |  0.3242 |  0.3376 |  0.3704 |
-        | Return on Assets                | 0.2697 |  0.2829 |  0.2751 |  0.2568 |  0.3118 |
-        | Grover Score                    | 1.1532 |  1.1181 |  1.148  |  1.0963 |  1.2316 |
+        |      |   2021 |   2022 |   2023 |   2024 |    2025 |
+        |:-----|-------:|-------:|-------:|-------:|--------:|
+        | F    | 0.2398 | 0.2688 | 0.2442 | 0.2194 |  0.1363 |
+        | GM   | 0.2379 | 0.2474 | 0.2157 | 0.2846 |  0.1825 |
+        | STLA | 0.477  | 0.5941 | 0.5796 | 0.2001 | -0.3018 |
         """
         grover_score = {}
 
@@ -4298,29 +4305,22 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["DIS", "FOXA", "CMCSA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_fulmer_h_score().loc["AAPL"]
+        toolkit.models.get_fulmer_h_score().xs("Fulmer H-Score", level=1)
         ```
 
         Which returns:
 
-        |                                      |    2021 |    2022 |    2023 |     2024 |     2025 |
-        |:-------------------------------------|--------:|--------:|--------:|---------:|---------:|
-        | Retained Earnings to Total Assets    |  0.0158 | -0.0087 | -0.0006 |  -0.0525 |  -0.0397 |
-        | Sales to Total Assets                |  1.0422 |  1.1179 |  1.0871 |   1.0714 |   1.1584 |
-        | EBT to Total Equity                  |  1.731  |  2.3505 |  1.8301 |   2.1683 |   1.8001 |
-        | Cash Flow to Total Liabilities       |  0.3614 |  0.4044 |  0.3806 |   0.3839 |   0.3905 |
-        | Debt to Total Assets                 |  0.3889 |  0.3756 |  0.3515 |   0.3262 |   0.3128 |
-        | Current Liabilities to Total Assets  |  0.3575 |  0.4365 |  0.4121 |   0.4833 |   0.4611 |
-        | Log of Tangible Total Assets         | 26.5841 | 26.589  | 26.5886 |  26.6231 |  26.6073 |
-        | Working Capital to Total Liabilities |  0.0325 | -0.0615 | -0.006  |  -0.076  |  -0.0619 |
-        | Log of EBIT to Interest Expense      |  3.7182 |  3.7074 |  3.3694 | nan      | nan      |
-        | Fulmer H-Score                       | 14.252  | 14.3098 | 13.9834 | nan      | nan      |
+        |       |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:------|--------:|--------:|--------:|--------:|--------:|
+        | CMCSA | 11.6317 | 11.6248 | 11.7028 | 11.8104 | 11.9431 |
+        | DIS   | 10.8945 | 11.5241 | 12.0105 | 12.4096 | 12.7101 |
+        | FOXA  | 10.9776 | 11.0388 | 10.9996 | 11.0274 | 11.8441 |
         """
         fulmer_h_score = {}
 
@@ -4595,9 +4595,9 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["NVDA", "TXN", "ADI"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2022-01-01",
             end_date="2025-12-31",
         )
 
@@ -4606,12 +4606,12 @@ class Models:
 
         Which returns:
 
-        | Date   |     AAPL |    TSLA |
-        |:-------|---------:|--------:|
-        | 2022   |  87.5241 | 103.349 |
-        | 2023   | 147.966  | 230.336 |
-        | 2024   | 202.626  | 395.734 |
-        | 2025   | 223.16   | 445.228 |
+        | Date   |     ADI |     NVDA |     TXN |
+        |:-------|--------:|---------:|--------:|
+        | 2022   | 144.669 |  14.2204 | 124.854 |
+        | 2023   | 174.632 |  46.6789 | 144.668 |
+        | 2024   | 203.027 | 128.862  | 169.902 |
+        | 2025   | 257.776 | 174.087  | 154.735 |
         """
         # Full precision, so that the rounding of the display does not move the no-growth value.
         wacc_components = self.get_weighted_average_cost_of_capital(
@@ -4727,8 +4727,7 @@ class Models:
 
         The SGR assumes the company keeps its leverage and pays out only through dividends. Companies that
         return cash mainly through share buybacks have a low payout ratio on paper and a return on equity
-        inflated by a shrinking equity base, so their SGR overstates what they can fund internally (Apple's
-        exceeds 100% in every year of the example below).
+        inflated by a shrinking equity base, so their SGR overstates what they can fund internally.
 
         Also known as: SGR, self-sustainable growth rate.
 
@@ -4750,8 +4749,10 @@ class Models:
         - Following Higgins ("Analysis for Financial Management"), the Return on Equity is measured
         on the equity at the beginning of the period (the previous period's closing balance, or that of
         `trailing` periods back with `trailing` set): the retained earnings then grow that equity by
-        exactly the SGR. This equals ROE * b / (1 - ROE * b) with the Return on Equity measured on the
-        ending equity.
+        exactly the SGR. The two forms are equal under the model's assumption that equity grows only
+        through retained earnings: with that assumption the SGR equals ROE * b / (1 - ROE * b) with the
+        Return on Equity measured on the ending equity. Share issuance, buybacks and other changes in
+        equity break the equality.
 
         As an example:
 
@@ -4759,7 +4760,7 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["NKE", "LULU", "DECK"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -4772,8 +4773,9 @@ class Models:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 1.2276 | 1.3467 | 1.6177 | 1.2632 | 1.696  |
-        | MSFT | 0.3783 | 0.3846 | 0.3156 | 0.3218 | 0.2896 |
+        | DECK | 0.3129 | 0.3359 | 0.4302 | 0.4584 | 0.4075 |
+        | LULU | 0.3812 | 0.312  | 0.4923 | 0.4288 | 0.3652 |
+        | NKE  | 0.3297 | 0.2001 | 0.2521 | 0.0637 | 0.0531 |
         """
         net_income = (
             self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
@@ -4861,10 +4863,11 @@ class Models:
         no additional debt is raised to fund growth, whereas the SGR assumes the company
         maintains its current level of financial leverage.
         - The Return on Assets is measured on the Total Assets at the end of the period, as in
-        Ross, Westerfield and Jaffe ("Corporate Finance"). The formula then equals the Return on
-        Assets on the beginning Total Assets times the Retention Ratio, the growth the retained
-        earnings add to the beginning assets, consistent with the beginning-equity definition of
-        the Sustainable Growth Rate.
+        Ross, Westerfield and Jaffe ("Corporate Finance"). Under the model's assumption that assets
+        grow only through retained earnings, the formula equals the Return on Assets on the beginning
+        Total Assets times the Retention Ratio, the growth the retained earnings add to the beginning
+        assets, consistent with the beginning-equity definition of the Sustainable Growth Rate. Assets
+        funded otherwise (new debt, equity or payables) break the equality.
 
         As an example:
 
@@ -4872,7 +4875,7 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["ADBE", "INTU", "ADSK"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -4885,8 +4888,9 @@ class Models:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.2962 | 0.3173 | 0.3029 | 0.274  | 0.3677 |
-        | MSFT | 0.1548 | 0.176  | 0.1462 | 0.1489 | 0.1436 |
+        | ADBE | 0.2151 | 0.2122 | 0.2229 | 0.2254 | 0.3188 |
+        | ADSK | 0.0613 | 0.0955 | 0.1006 | 0.1144 | 0.0991 |
+        | INTU | 0.1004 | 0.0489 | 0.0569 | 0.0639 | 0.0782 |
         """
         net_income = (
             self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
@@ -4985,6 +4989,10 @@ class Models:
         with quarterly data the Earnings per Share are the sum of the last four quarters by default.
         - Earnings and Book Value per Share use the Weighted Average Shares Diluted (or the Weighted
         Average Shares with diluted=False).
+        - Only the Earnings per Share are trailing: the earnings are a flow over the trailing periods,
+        divided by the average shares over those periods. The Book Value per Share is a stock, the Total
+        Shareholder Equity minus the Preferred Stock at the end of the period divided by the shares of
+        that period.
 
         As an example:
 
@@ -4992,7 +5000,7 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["BAC", "C", "WFC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -5003,10 +5011,11 @@ class Models:
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:-----|--------:|--------:|--------:|--------:|--------:|
-        | AAPL | 21.7378 | 20.662  | 23.2901 | 22.4927 | 28.7292 |
-        | TSLA | 18.1054 | 32.3757 | 41.7451 | 30.9185 | 23.7345 |
+        |     |     2021 |     2022 |    2023 |     2024 |     2025 |
+        |:----|---------:|---------:|--------:|---------:|---------:|
+        | BAC |  47.9904 |  46.3468 | 47.4941 |  50.4045 |  56.4118 |
+        | C   | 142.751  | 120.826  | 93.472  | 117.004  | 127.785  |
+        | WFC |  68.3912 |  55.5576 | 69.7188 |  74.7554 |  85.6834 |
         """
         # Graham's multiples apply to annual earnings, so a quarterly Earnings per Share is the trailing twelve months.  # noqa: E501
         if trailing is None and self._quarterly:
@@ -5033,27 +5042,13 @@ class Models:
             average_outstanding_shares=avg_shares,
         )
 
-        total_shareholder_equity = (
-            self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
-        )
-        preferred_stock = (
-            self._balance_sheet_statement.loc[:, "Preferred Stock", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Preferred Stock", :]
-        )
-
+        # Book value is a stock at the balance sheet date, so equity and preferred stock stay point in time and are divided by the latest shares; only the earnings, a flow, cover the trailing year.  # noqa: E501
         book_value_per_share = valuation_model.get_book_value_per_share(
-            total_shareholder_equity=total_shareholder_equity,
-            preferred_equity=preferred_stock,
-            common_shares_outstanding=avg_shares,
+            total_shareholder_equity=self._balance_sheet_statement.loc[
+                :, "Total Shareholder Equity", :
+            ],
+            preferred_equity=self._balance_sheet_statement.loc[:, "Preferred Stock", :],
+            common_shares_outstanding=average_shares,
         )
 
         graham_number = intrinsic_model.get_graham_number(

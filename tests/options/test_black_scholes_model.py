@@ -63,3 +63,52 @@ def test_bjerksund_stensland_at_expiration_is_the_exercise_value():
         )
         == 0
     )
+
+
+def test_bjerksund_stensland_is_never_below_the_european_or_exercise_value():
+    import itertools
+    import math
+
+    for S, r, q, sigma, T, put in itertools.product(
+        (50.0, 100.0, 150.0),
+        (-0.01, 0.0, 0.02, 0.08),
+        (0.0, 0.03, 0.12),
+        (0.05, 0.3, 1.0),
+        (1 / 365, 0.25, 2.0),
+        (False, True),
+    ):
+        price = black_scholes_model.get_bjerksund_stensland(
+            S, 100.0, r, sigma, T, q, put
+        )
+        european = float(
+            black_scholes_model.get_black_scholes(S, 100.0, r, sigma, T, q, put)
+        )
+        exercise = max(100.0 - S, 0.0) if put else max(S - 100.0, 0.0)
+
+        assert math.isfinite(price)
+        assert price >= european - 1e-8
+        assert price >= exercise - 1e-8
+
+
+def test_bjerksund_stensland_stays_finite_and_close_at_low_volatility():
+    """
+    Finite-difference references from QuantLib's FdBlackScholesVanillaEngine (400 time and
+    800 space steps). At low volatility with a negative cost of carry the boundary of the
+    approximation falls below the strike, where a binomial tree takes over.
+    """
+    cases = [
+        # S, K, r, q, sigma, T, put, finite difference
+        (100.0, 100.0, 0.08, 0.0, 0.05, 2.0, True, 0.5654),
+        (100.0, 100.0, 0.02, 0.12, 0.05, 2.0, False, 0.4513),
+        (50.0, 100.0, 0.02, 0.12, 0.05, 2.0, False, 0.0),
+    ]
+
+    for S, K, r, q, sigma, T, put, finite_difference in cases:
+        price = black_scholes_model.get_bjerksund_stensland(S, K, r, sigma, T, q, put)
+        assert abs(price - finite_difference) < 5e-3
+
+    for sigma in (0.001, 0.005, 0.01):
+        price = black_scholes_model.get_bjerksund_stensland(
+            100.0, 100.0, 0.05, sigma, 1.0, 0.0, True
+        )
+        assert price == price and price >= 0  # noqa: PLR0124

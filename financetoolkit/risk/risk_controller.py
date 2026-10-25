@@ -525,7 +525,8 @@ class Risk:
             quantile of a Student-T distribution fitted by maximum likelihood.
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
-            1 - `threshold_percentile`. Defaults to 0.95.
+            1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
+            Defaults to 0.95.
 
         Returns:
             pd.Series: VaR values with time as the index.
@@ -541,7 +542,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["BTCUSD", "ETHUSD", "^GSPC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -552,13 +553,13 @@ class Risk:
 
         Which returns:
 
-        |      |    AMZN |    TSLA |   Benchmark |
-        |:-----|--------:|--------:|------------:|
-        | 2021 | -0.0253 | -0.05   |     -0.0126 |
-        | 2022 | -0.0518 | -0.0714 |     -0.0262 |
-        | 2023 | -0.0273 | -0.0505 |     -0.0139 |
-        | 2024 | -0.0248 | -0.0522 |     -0.0132 |
-        | 2025 | -0.0305 | -0.0553 |     -0.0165 |
+        |      |   BTCUSD |   ETHUSD |   ^GSPC |   Benchmark |
+        |:-----|---------:|---------:|--------:|------------:|
+        | 2021 |  -0.0626 |  -0.0838 | -0.0087 |     -0.0089 |
+        | 2022 |  -0.0574 |  -0.0742 | -0.02   |     -0.0203 |
+        | 2023 |  -0.0313 |  -0.0374 | -0.0116 |     -0.0117 |
+        | 2024 |  -0.0407 |  -0.0533 | -0.0094 |     -0.0096 |
+        | 2025 |  -0.0358 |  -0.0569 | -0.0113 |     -0.0113 |
         """
         period = period if period else "daily"
 
@@ -688,7 +689,8 @@ class Risk:
             logistic, cornish-fisher or evt). Defaults to "historic".
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
-            1 - `threshold_percentile`. Defaults to 0.95.
+            1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
+            Defaults to 0.95.
 
         Returns:
             pd.Series: CVaR values with time as the index.
@@ -704,24 +706,23 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["XOM", "CVX", "COP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_conditional_value_at_risk(period="yearly", within_period=True)
+        toolkit.risk.get_conditional_value_at_risk()
         ```
 
         Which returns:
 
-        |      |    AMZN |    TSLA |   Benchmark |
-        |:-----|--------:|--------:|------------:|
-        | 2021 | -0.0327 | -0.0683 |     -0.0183 |
-        | 2022 | -0.0685 | -0.0914 |     -0.0335 |
-        | 2023 | -0.0413 | -0.071  |     -0.0157 |
-        | 2024 | -0.0372 | -0.0776 |     -0.0189 |
-        | 2025 | -0.047  | -0.0821 |     -0.0275 |
+        |           |   Value |
+        |:----------|--------:|
+        | XOM       | -0.0359 |
+        | CVX       | -0.0383 |
+        | COP       | -0.0532 |
+        | Benchmark | -0.0275 |
         """
         period = period if period else "daily"
 
@@ -867,7 +868,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["CLUSD", "NGUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -878,13 +879,13 @@ class Risk:
 
         Which returns:
 
-        |      |    AMZN |    TSLA |   Benchmark |
+        |      |   CLUSD |   NGUSD |   Benchmark |
         |:-----|--------:|--------:|------------:|
-        | 2021 | -0.0368 | -0.0824 |     -0.0188 |
-        | 2022 | -0.0795 | -0.1061 |     -0.0381 |
-        | 2023 | -0.0483 | -0.08   |     -0.0192 |
-        | 2024 | -0.0417 | -0.0952 |     -0.0185 |
-        | 2025 | -0.0526 | -0.0967 |     -0.0293 |
+        | 2021 | -0.0496 | -0.0837 |     -0.0185 |
+        | 2022 | -0.0718 | -0.1505 |     -0.0373 |
+        | 2023 | -0.0509 | -0.1079 |     -0.0187 |
+        | 2024 | -0.0436 | -0.1183 |     -0.018  |
+        | 2025 | -0.0474 | -0.1001 |     -0.0279 |
         """
         period = period if period else "daily"
 
@@ -987,7 +988,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^STOXX50E", "^N225", "^GSPC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -998,13 +999,13 @@ class Risk:
 
         Which returns:
 
-        |      |    AMZN |    TSLA |   Benchmark |
-        |:-----|--------:|--------:|------------:|
-        | 2021 | -0.1324 | -0.3407 |     -0.0413 |
-        | 2022 | -0.4989 | -0.6603 |     -0.2343 |
-        | 2023 | -0.1756 | -0.2867 |     -0.0806 |
-        | 2024 | -0.1612 | -0.3664 |     -0.0576 |
-        | 2025 | -0.2721 | -0.4558 |     -0.1434 |
+        |      |   ^STOXX50E |   ^N225 |   ^GSPC |   Benchmark |
+        |:-----|------------:|--------:|--------:|------------:|
+        | 2021 |     -0.0628 | -0.1001 | -0.042  |     -0.0413 |
+        | 2022 |     -0.24   | -0.1312 | -0.2422 |     -0.2344 |
+        | 2023 |     -0.0912 | -0.0813 | -0.0834 |     -0.0807 |
+        | 2024 |     -0.0818 | -0.1612 | -0.0574 |     -0.0565 |
+        | 2025 |     -0.123  | -0.1603 | -0.1469 |     -0.1457 |
         """
         period = period if period else "daily"
 
@@ -1118,7 +1119,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["QQQ", "TLT", "GLD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -1129,13 +1130,13 @@ class Risk:
 
         Which returns:
 
-        |      |   AMZN |   TSLA |   Benchmark |
-        |:-----|-------:|-------:|------------:|
-        | 2021 | 0.8574 | 1.017  |      1.1304 |
-        | 2022 | 0.8415 | 1.0049 |      0.9524 |
-        | 2023 | 1.2609 | 1.1958 |      1.0466 |
-        | 2024 | 1.1246 | 1.1942 |      0.9091 |
-        | 2025 | 0.9359 | 1.0702 |      0.93   |
+        |      |    QQQ |    TLT |    GLD |   Benchmark |
+        |:-----|-------:|-------:|-------:|------------:|
+        | 2021 | 0.9646 | 1.0836 | 0.7734 |      1.1304 |
+        | 2022 | 0.9109 | 0.8904 | 1.0385 |      0.9524 |
+        | 2023 | 1.2227 | 1.1695 | 1.1281 |      1.0466 |
+        | 2024 | 0.9029 | 0.8128 | 1.072  |      0.9091 |
+        | 2025 | 0.8622 | 1.104  | 1.2495 |      0.93   |
         """
         period = period if period else "daily"
 
@@ -1245,7 +1246,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["META", "NFLX", "AMZN"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -1256,13 +1257,13 @@ class Risk:
 
         Which returns:
 
-        |      |    AMZN |    TSLA |   Benchmark |
-        |:-----|--------:|--------:|------------:|
-        | 2021 | -0.1456 | -0.3625 |     -0.051  |
-        | 2022 | -0.5197 | -0.7272 |     -0.245  |
-        | 2023 | -0.1965 | -0.3273 |     -0.0999 |
-        | 2024 | -0.1949 | -0.4281 |     -0.0841 |
-        | 2025 | -0.3088 | -0.4821 |     -0.1877 |
+        |      |    META |    NFLX |    AMZN |   Benchmark |
+        |:-----|--------:|--------:|--------:|------------:|
+        | 2021 | -0.1972 | -0.173  | -0.1456 |     -0.051  |
+        | 2022 | -0.7372 | -0.7237 | -0.5197 |     -0.245  |
+        | 2023 | -0.1298 | -0.2752 | -0.1965 |     -0.0999 |
+        | 2024 | -0.1842 | -0.1345 | -0.1949 |     -0.0841 |
+        | 2025 | -0.3416 | -0.3073 | -0.3088 |     -0.1877 |
         """
         period = period if period else "daily"
 
@@ -1354,7 +1355,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^GSPC", "^HSI", "^FTSE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -1365,13 +1366,13 @@ class Risk:
 
         Which returns:
 
-        |      |   AMZN |   TSLA |   Benchmark |
-        |:-----|-------:|-------:|------------:|
-        | 2021 |     30 |     28 |          21 |
-        | 2022 |    248 |    247 |         195 |
-        | 2023 |     25 |     73 |          63 |
-        | 2024 |     23 |     77 |          14 |
-        | 2025 |     52 |     57 |          34 |
+        |      |   ^GSPC |   ^HSI |   ^FTSE |   Benchmark |
+        |:-----|--------:|-------:|--------:|------------:|
+        | 2021 |      22 |    217 |      15 |          22 |
+        | 2022 |     201 |    200 |     173 |         201 |
+        | 2023 |      64 |    225 |      98 |          64 |
+        | 2024 |      14 |     35 |      58 |          14 |
+        | 2025 |      34 |     13 |      27 |          34 |
         """
         period = period if period else "daily"
 
@@ -1468,7 +1469,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["TLT", "IEF", "HYG"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -1479,13 +1480,13 @@ class Risk:
 
         Which returns:
 
-        |      |   AMZN |   TSLA |   Benchmark |
-        |:-----|-------:|-------:|------------:|
-        | 2021 |    nan |    159 |          12 |
-        | 2022 |    nan |    nan |         nan |
-        | 2023 |     46 |    nan |          23 |
-        | 2024 |     66 |     51 |          32 |
-        | 2025 |    135 |    114 |          54 |
+        |      |   TLT |   IEF |   HYG |   Benchmark |
+        |:-----|------:|------:|------:|------------:|
+        | 2021 |   nan |   nan |    19 |          12 |
+        | 2022 |   nan |   nan |   nan |         nan |
+        | 2023 |   nan |   nan |    98 |          23 |
+        | 2024 |   nan |   nan |    14 |          32 |
+        | 2025 |   100 |    49 |    23 |          54 |
         """
         period = period if period else "daily"
 
@@ -1600,7 +1601,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["BA", "AIR.PA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -1611,13 +1612,13 @@ class Risk:
 
         Which returns:
 
-        |      |   AMZN |   TSLA |   Benchmark |
-        |:-----|-------:|-------:|------------:|
-        | 2021 | 0.0418 | 0.0833 |      0.013  |
-        | 2022 | 0.106  | 0.1365 |      0.0481 |
-        | 2023 | 0.0472 | 0.0827 |      0.0198 |
-        | 2024 | 0.0388 | 0.0908 |      0.0164 |
-        | 2025 | 0.0555 | 0.0982 |      0.027  |
+        |      |     BA |   AIR.PA |   Benchmark |
+        |:-----|-------:|---------:|------------:|
+        | 2021 | 0.0555 |   0.0408 |      0.0129 |
+        | 2022 | 0.0901 |   0.0606 |      0.0477 |
+        | 2023 | 0.0433 |   0.0288 |      0.0194 |
+        | 2024 | 0.0686 |   0.0423 |      0.0162 |
+        | 2025 | 0.0635 |   0.0499 |      0.0267 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1692,6 +1693,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates GARCH for each
         asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others; dates without a return for an asset are NaN.
         - If `growth` is set to True, the method calculates the growth of GARCH values using the specified `lag`.
 
         As an example:
@@ -1700,38 +1703,24 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["BTCUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_garch(period="quarterly")
+        toolkit.risk.get_garch().tail(5)
         ```
 
         Which returns:
 
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021Q2 | 0.0254 | 0.103  |      0.0066 |
-        | 2021Q3 | 0.0254 | 0.0854 |      0.0065 |
-        | 2021Q4 | 0.0254 | 0.0888 |      0.0064 |
-        | 2022Q1 | 0.0254 | 0.1084 |      0.0063 |
-        | 2022Q2 | 0.0254 | 0.0854 |      0.0063 |
-        | 2022Q3 | 0.0254 | 0.11   |      0.0062 |
-        | 2022Q4 | 0.0254 | 0.0911 |      0.0061 |
-        | 2023Q1 | 0.0254 | 0.1356 |      0.006  |
-        | 2023Q2 | 0.0254 | 0.1675 |      0.0059 |
-        | 2023Q3 | 0.0254 | 0.0973 |      0.0058 |
-        | 2023Q4 | 0.0254 | 0.0856 |      0.0058 |
-        | 2024Q1 | 0.0254 | 0.0853 |      0.0057 |
-        | 2024Q2 | 0.0254 | 0.1003 |      0.0056 |
-        | 2024Q3 | 0.0254 | 0.0881 |      0.0055 |
-        | 2024Q4 | 0.0254 | 0.1035 |      0.0054 |
-        | 2025Q1 | 0.0254 | 0.1372 |      0.0054 |
-        | 2025Q2 | 0.0254 | 0.1078 |      0.0053 |
-        | 2025Q3 | 0.0254 | 0.0942 |      0.0052 |
-        | 2025Q4 | 0.0254 | 0.1134 |      0.0051 |
+        | Date       |   BTCUSD |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-27 |   0.0004 |           0 |
+        | 2025-12-28 |   0.0004 |           0 |
+        | 2025-12-29 |   0.0004 |           0 |
+        | 2025-12-30 |   0.0004 |           0 |
+        | 2025-12-31 |   0.0004 |           0 |
         """
         period = period if period else "daily"
 
@@ -1749,7 +1738,8 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
+        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
+        returns = self._get_returns(period, within_period).dropna(how="all")
 
         garch_sigma_2 = garch_model.get_garch(
             returns=returns,
@@ -1823,6 +1813,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the sigma_2
         forecast for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others.
         - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
         the specified `lag`.
 
@@ -1832,29 +1824,29 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^GSPC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_garch_forecast(period="quarterly")
+        toolkit.risk.get_garch_forecast()
         ```
 
         Which returns:
 
-        |        |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0254 | 0.0853 |      0.0051 |
-        | 2026Q2 | 0.0254 | 0.1003 |      0.005  |
-        | 2026Q3 | 0.0254 | 0.1029 |      0.0049 |
-        | 2026Q4 | 0.0254 | 0.1034 |      0.0049 |
-        | 2027Q1 | 0.0254 | 0.1034 |      0.0048 |
-        | 2027Q2 | 0.0254 | 0.1035 |      0.0047 |
-        | 2027Q3 | 0.0254 | 0.1035 |      0.0047 |
-        | 2027Q4 | 0.0254 | 0.1035 |      0.0046 |
-        | 2028Q1 | 0.0254 | 0.1035 |      0.0045 |
-        | 2028Q2 | 0.0254 | 0.1035 |      0.0045 |
+        |            |   ^GSPC |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2026-01-01 |  0.0001 |      0      |
+        | 2026-01-02 |  0.0001 |      0.0001 |
+        | 2026-01-05 |  0.0001 |      0.0001 |
+        | 2026-01-06 |  0.0001 |      0.0001 |
+        | 2026-01-07 |  0.0001 |      0.0001 |
+        | 2026-01-08 |  0.0001 |      0.0001 |
+        | 2026-01-09 |  0.0001 |      0.0001 |
+        | 2026-01-12 |  0.0001 |      0.0001 |
+        | 2026-01-13 |  0.0001 |      0.0001 |
+        | 2026-01-14 |  0.0001 |      0.0001 |
         """
         period = period if period else "daily"
 
@@ -1872,11 +1864,10 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
+        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
+        returns = self._get_returns(period, within_period).dropna(how="all")
 
-        sigma_2_forecast = garch_model.get_garch_forecast(
-            returns, None, time_steps
-        ).dropna()
+        sigma_2_forecast = garch_model.get_garch_forecast(returns, None, time_steps)
 
         # The forecast steps continue the period of the returns (business days for daily).
         period_symbol = {
@@ -1967,6 +1958,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and fits a
         GARCH(1, 1) model for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others.
 
         As an example:
 
@@ -1974,22 +1967,22 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["LOW", "SBUX", "TSLA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_garch_parameters(period="daily", rounding=6)
+        toolkit.risk.get_garch_parameters(rounding=6)
         ```
 
         Which returns:
 
-        |       |     AMZN |     TSLA |   Benchmark |
-        |:------|---------:|---------:|------------:|
-        | Omega | 5.9e-05  | 3.3e-05  |    4e-06    |
-        | Alpha | 0.199892 | 0.034278 |    0.10995  |
-        | Beta  | 0.69455  | 0.943306 |    0.857926 |
+        |       |      LOW |     SBUX |     TSLA |   Benchmark |
+        |:------|---------:|---------:|---------:|------------:|
+        | Omega | 2.1e-05  | 0.000102 | 1.6e-05  |    5e-06    |
+        | Alpha | 0.035763 | 0.057692 | 0.048602 |    0.154079 |
+        | Beta  | 0.875036 | 0.715864 | 0.940197 |    0.811018 |
         """
         period = period if period else "daily"
 
@@ -1998,12 +1991,13 @@ class Risk:
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
 
-        returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
+        returns = self._historical_data[period]["Return"]
 
         parameters = pd.DataFrame(
             {
+                # Each ticker is fitted on its own non-missing returns, see get_garch.
                 ticker: garch_model.get_garch_weights(
-                    returns[ticker].to_numpy(), t=optimization_t
+                    returns[ticker].dropna().to_numpy(), t=optimization_t
                 )
                 for ticker in returns.columns
             },
@@ -2066,6 +2060,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates
         GJR-GARCH for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others; dates without a return for an asset are NaN.
         - If `growth` is set to True, the method calculates the growth of GJR-GARCH values using the
         specified `lag`.
 
@@ -2075,38 +2071,24 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["NVDA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_gjr_garch(period="quarterly")
+        toolkit.risk.get_gjr_garch().tail(5)
         ```
 
         Which returns:
 
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021Q2 | 0.0263 | 0.1079 |      0.0066 |
-        | 2021Q3 | 0.0242 | 0.0913 |      0.0065 |
-        | 2021Q4 | 0.0229 | 0.0867 |      0.0064 |
-        | 2022Q1 | 0.0216 | 0.0853 |      0.0063 |
-        | 2022Q2 | 0.0208 | 0.085  |      0.0063 |
-        | 2022Q3 | 0.0386 | 0.1369 |      0.0062 |
-        | 2022Q4 | 0.0332 | 0.0994 |      0.0061 |
-        | 2023Q1 | 0.0393 | 0.1951 |      0.006  |
-        | 2023Q2 | 0.0338 | 0.1157 |      0.006  |
-        | 2023Q3 | 0.0297 | 0.0935 |      0.0059 |
-        | 2023Q4 | 0.0267 | 0.088  |      0.0059 |
-        | 2024Q1 | 0.0245 | 0.0857 |      0.0058 |
-        | 2024Q2 | 0.0228 | 0.1167 |      0.0058 |
-        | 2024Q3 | 0.0216 | 0.0938 |      0.0057 |
-        | 2024Q4 | 0.0209 | 0.0873 |      0.0057 |
-        | 2025Q1 | 0.0201 | 0.0855 |      0.0056 |
-        | 2025Q2 | 0.0223 | 0.1325 |      0.0056 |
-        | 2025Q3 | 0.0212 | 0.0982 |      0.0056 |
-        | 2025Q4 | 0.0204 | 0.0886 |      0.0055 |
+        | Date       |   NVDA |   Benchmark |
+        |:-----------|-------:|------------:|
+        | 2025-12-24 | 0.0005 |      0.0001 |
+        | 2025-12-26 | 0.0005 |      0.0001 |
+        | 2025-12-29 | 0.0005 |      0      |
+        | 2025-12-30 | 0.0005 |      0      |
+        | 2025-12-31 | 0.0005 |      0      |
         """
         period = period if period else "daily"
 
@@ -2124,7 +2106,8 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
+        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
+        returns = self._get_returns(period, within_period).dropna(how="all")
 
         gjr_garch_sigma_2 = garch_model.get_gjr_garch(
             returns=returns,
@@ -2192,6 +2175,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the
         sigma_2 forecast for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others.
         - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
         the specified `lag`.
 
@@ -2201,29 +2186,29 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["CLUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_gjr_garch_forecast(period="quarterly")
+        toolkit.risk.get_gjr_garch_forecast()
         ```
 
         Which returns:
 
-        |        |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0198 | 0.0859 |      0.0055 |
-        | 2026Q2 | 0.0209 | 0.101  |      0.0055 |
-        | 2026Q3 | 0.0217 | 0.1081 |      0.0055 |
-        | 2026Q4 | 0.0224 | 0.1113 |      0.0054 |
-        | 2027Q1 | 0.023  | 0.1129 |      0.0054 |
-        | 2027Q2 | 0.0235 | 0.1136 |      0.0054 |
-        | 2027Q3 | 0.0239 | 0.1139 |      0.0054 |
-        | 2027Q4 | 0.0242 | 0.114  |      0.0053 |
-        | 2028Q1 | 0.0244 | 0.1141 |      0.0053 |
-        | 2028Q2 | 0.0246 | 0.1142 |      0.0053 |
+        |            |   CLUSD |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2026-01-01 |  0.0003 |      0      |
+        | 2026-01-02 |  0.0003 |      0      |
+        | 2026-01-05 |  0.0003 |      0.0001 |
+        | 2026-01-06 |  0.0003 |      0.0001 |
+        | 2026-01-07 |  0.0003 |      0.0001 |
+        | 2026-01-08 |  0.0003 |      0.0001 |
+        | 2026-01-09 |  0.0003 |      0.0001 |
+        | 2026-01-12 |  0.0003 |      0.0001 |
+        | 2026-01-13 |  0.0003 |      0.0001 |
+        | 2026-01-14 |  0.0004 |      0.0001 |
         """
         period = period if period else "daily"
 
@@ -2241,11 +2226,10 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
+        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
+        returns = self._get_returns(period, within_period).dropna(how="all")
 
-        sigma_2_forecast = garch_model.get_gjr_garch_forecast(
-            returns, None, time_steps
-        ).dropna()
+        sigma_2_forecast = garch_model.get_gjr_garch_forecast(returns, None, time_steps)
 
         # The forecast steps continue the period of the returns (business days for daily).
         period_symbol = {
@@ -2322,6 +2306,11 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and fits a
         GJR-GARCH(1, 1, 1) model for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others.
+        - GJR-GARCH nests GARCH (gamma = 0), so the fit never ends at a lower log-likelihood than the
+        GARCH(1, 1) fit of `get_garch_parameters`: if the search does, the GARCH weights with a Gamma of 0
+        are returned.
 
         As an example:
 
@@ -2329,23 +2318,23 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^GSPC", "^STOXX50E"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_gjr_garch_parameters(period="daily", rounding=6)
+        toolkit.risk.get_gjr_garch_parameters(rounding=6)
         ```
 
         Which returns:
 
-        |       |     AMZN |     TSLA |   Benchmark |
-        |:------|---------:|---------:|------------:|
-        | Omega | 2.9e-05  | 3.8e-05  |    3e-06    |
-        | Alpha | 0.032278 | 0.016799 |    0        |
-        | Gamma | 0.141638 | 0.042582 |    0.200974 |
-        | Beta  | 0.843795 | 0.937679 |    0.874133 |
+        |       |    ^GSPC |   ^STOXX50E |   Benchmark |
+        |:------|---------:|------------:|------------:|
+        | Omega | 3e-06    |    1e-05    |    3e-06    |
+        | Alpha | 0        |    0        |    0        |
+        | Gamma | 0.210531 |    0.308907 |    0.221968 |
+        | Beta  | 0.870765 |    0.764269 |    0.865708 |
         """
         period = period if period else "daily"
 
@@ -2354,12 +2343,13 @@ class Risk:
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
 
-        returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
+        returns = self._historical_data[period]["Return"]
 
         parameters = pd.DataFrame(
             {
+                # Each ticker is fitted on its own non-missing returns, see get_garch.
                 ticker: garch_model.get_gjr_garch_weights(
-                    returns[ticker].to_numpy(), t=optimization_t
+                    returns[ticker].dropna().to_numpy(), t=optimization_t
                 )
                 for ticker in returns.columns
             },
@@ -2422,6 +2412,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates
         EGARCH for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others; dates without a return for an asset are NaN.
         - If `growth` is set to True, the method calculates the growth of EGARCH values using the
         specified `lag`.
 
@@ -2480,7 +2472,8 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
+        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
+        returns = self._get_returns(period, within_period).dropna(how="all")
 
         egarch_sigma_2 = garch_model.get_egarch(
             returns=returns,
@@ -2547,6 +2540,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the
         sigma_2 forecast for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others.
         - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
         the specified `lag`.
 
@@ -2596,11 +2591,10 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        returns = self._get_returns(period, within_period).dropna().replace(0, 1e-100)
+        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
+        returns = self._get_returns(period, within_period).dropna(how="all")
 
-        sigma_2_forecast = garch_model.get_egarch_forecast(
-            returns, None, time_steps
-        ).dropna()
+        sigma_2_forecast = garch_model.get_egarch_forecast(returns, None, time_steps)
 
         # The forecast steps continue the period of the returns (business days for daily).
         period_symbol = {
@@ -2670,6 +2664,8 @@ class Risk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and fits an
         EGARCH(1, 1) model for each asset in the Toolkit instance.
+        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
+        does not shorten the sample of the others.
         - EGARCH's log-variance parameterization is less constrained than plain GARCH, which makes it
         prone to unstable, boundary-hugging fits on short return histories, which include quarterly
         data over a few years. Prefer daily or weekly returns.
@@ -2705,12 +2701,13 @@ class Risk:
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
 
-        returns = self._historical_data[period]["Return"].dropna().replace(0, 1e-100)
+        returns = self._historical_data[period]["Return"]
 
         parameters = pd.DataFrame(
             {
+                # Each ticker is fitted on its own non-missing returns, see get_garch.
                 ticker: garch_model.get_egarch_weights(
-                    returns[ticker].to_numpy(), t=optimization_t
+                    returns[ticker].dropna().to_numpy(), t=optimization_t
                 )
                 for ticker in returns.columns
             },
@@ -2821,23 +2818,23 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^GSPC", "^STOXX50E"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_tail_dependence_coefficient("AMZN", "TSLA", period="weekly")
+        toolkit.risk.get_tail_dependence_coefficient("^GSPC", "^STOXX50E")
         ```
 
         Which returns:
 
-        |                       |    Value |
-        |:----------------------|---------:|
-        | Lower Tail Dependence |   0.0769 |
-        | Upper Tail Dependence |   0.1538 |
-        | Correlation           |   0.4393 |
-        | Observations          | 260      |
+        |                       |     Value |
+        |:----------------------|----------:|
+        | Lower Tail Dependence |    0.3231 |
+        | Upper Tail Dependence |    0.3387 |
+        | Correlation           |    0.4545 |
+        | Observations          | 1289      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -2938,25 +2935,26 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["GCUSD", "SIUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_copula_parameters("AMZN", "TSLA", copula="clayton", period="weekly")
+        toolkit.risk.get_copula_parameters("GCUSD", "SIUSD", copula="student-t")
         ```
 
         Which returns:
 
-        |                       |    Value |
-        |:----------------------|---------:|
-        | Theta                 |   0.6155 |
-        | Lower Tail Dependence |   0.3243 |
-        | Upper Tail Dependence |   0      |
-        | Log-Likelihood        |  21.68   |
-        | AIC                   | -41.3599 |
-        | Observations          | 260      |
+        |                       |      Value |
+        |:----------------------|-----------:|
+        | Rho                   |     0.7498 |
+        | Degrees of Freedom    |     8.1362 |
+        | Lower Tail Dependence |     0.2821 |
+        | Upper Tail Dependence |     0.2821 |
+        | Log-Likelihood        |   532.413  |
+        | AIC                   | -1060.83   |
+        | Observations          |  1300      |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3066,29 +3064,24 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["HD", "LOW"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_copula_simulation(
-            "AMZN", "TSLA", copula="clayton", period="weekly", n_simulations=5000
-        ).describe()
+        toolkit.risk.get_copula_simulation("HD", "LOW", n_simulations=30).head(5)
         ```
 
         Which returns:
 
-        |       |          AMZN |          TSLA |
-        |:------|--------------:|--------------:|
-        | count | 5000          | 5000          |
-        | mean  |    0.00206652 |    0.00380104 |
-        | std   |    0.0435259  |    0.0792412  |
-        | min   |   -0.1382     |   -0.1796     |
-        | 25%   |   -0.022325   |   -0.049125   |
-        | 50%   |    0.0004     |   -0.0001     |
-        | 75%   |    0.0297     |    0.052725   |
-        | max   |    0.1385     |    0.3331     |
+        |    |      HD |     LOW |
+        |---:|--------:|--------:|
+        |  0 |  0.0001 | -0.0073 |
+        |  1 | -0.012  | -0.0059 |
+        |  2 |  0.0332 |  0.0247 |
+        |  3 |  0.0001 | -0.0019 |
+        |  4 |  0.0038 | -0.0019 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3243,13 +3236,13 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["V", "MA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        copulas = toolkit.risk.get_best_fitting_copula("AMZN", "TSLA", period="weekly")
+        copulas = toolkit.risk.get_best_fitting_copula("V", "MA")
 
         copulas[["Lower Tail Dependence", "Upper Tail Dependence", "Log-Likelihood", "AIC"]]
         ```
@@ -3258,11 +3251,11 @@ class Risk:
 
         | Copula    |   Lower Tail Dependence |   Upper Tail Dependence |   Log-Likelihood |      AIC |
         |:----------|------------------------:|------------------------:|-----------------:|---------:|
-        | Frank     |                  0      |                  0      |          32.3868 | -62.7736 |
-        | Gaussian  |                  0      |                  0      |          30.2817 | -58.5634 |
-        | Student-T |                  0.0198 |                  0.0198 |          30.5851 | -57.1701 |
-        | Gumbel    |                  0      |                  0.3659 |          27.8687 | -53.7375 |
-        | Clayton   |                  0.3243 |                  0      |          21.68   | -41.3599 |
+        | Student-T |                  0.5596 |                  0.5596 |          946.907 | -1889.81 |
+        | Gaussian  |                  0      |                  0      |          912.208 | -1822.42 |
+        | Gumbel    |                  0      |                  0.7388 |          892.134 | -1782.27 |
+        | Frank     |                  0      |                  0      |          826.803 | -1651.61 |
+        | Clayton   |                  0.7852 |                  0      |          757.472 | -1512.94 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3395,24 +3388,21 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["GS", "JPM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_covar("AMZN", "TSLA", period="weekly")
+        toolkit.risk.get_covar("GS", "JPM").loc[["CoVaR", "Delta-CoVaR"]]
         ```
 
         Which returns:
 
-        |                               |    Value |
-        |:------------------------------|---------:|
-        | CoVaR                         |  -0.1041 |
-        | Delta-CoVaR                   |  -0.0423 |
-        | Quantile Regression Slope     |   0.3256 |
-        | Quantile Regression Intercept |  -0.062  |
-        | Observations                  | 260      |
+        |             |   Value |
+        |:------------|--------:|
+        | CoVaR       | -0.0353 |
+        | Delta-CoVaR | -0.0206 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3522,22 +3512,22 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA", "MSFT"],
+            ["VTI", "TLT", "GLD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_marginal_value_at_risk(weights={"AMZN": 0.5, "TSLA": 0.3, "MSFT": 0.2})
+        toolkit.risk.get_marginal_value_at_risk(weights={"VTI": 0.6, "TLT": 0.3, "GLD": 0.1})
         ```
 
         Which returns:
 
-        |      |   Marginal VaR |
-        |:-----|---------------:|
-        | AMZN |        -0.0297 |
-        | TSLA |        -0.05   |
-        | MSFT |        -0.0182 |
+        |     |   Marginal VaR |
+        |:----|---------------:|
+        | VTI |        -0.0159 |
+        | TLT |        -0.0078 |
+        | GLD |        -0.0053 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3631,23 +3621,26 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA", "MSFT"],
+            ["VTI", "AGG", "GLD", "VNQ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_component_value_at_risk(weights={"AMZN": 0.5, "TSLA": 0.3, "MSFT": 0.2})
+        toolkit.risk.get_component_value_at_risk(
+            weights={"VTI": 0.5, "AGG": 0.3, "GLD": 0.1, "VNQ": 0.1}
+        )
         ```
 
         Which returns:
 
         |           |   Component VaR |
         |:----------|----------------:|
-        | AMZN      |         -0.0149 |
-        | TSLA      |         -0.015  |
-        | MSFT      |         -0.0036 |
-        | Portfolio |         -0.0335 |
+        | VTI       |         -0.0081 |
+        | AGG       |         -0.0008 |
+        | GLD       |         -0.0005 |
+        | VNQ       |         -0.0015 |
+        | Portfolio |         -0.0109 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
@@ -3712,7 +3705,9 @@ class Risk:
             distribution (str, optional): The distribution to use for the rolling VaR estimates, one of
             "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
             alpha (float, optional): The tail probability for the VaR estimates (e.g., 0.05 for the 95%
-            confidence level). Defaults to 0.05.
+            confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
+            Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an
+            empty result (with a logged error).
             window_size (int, optional): The rolling window size (in number of return observations) used to
             estimate each VaR value. Defaults to 252 (approximately one trading year of daily returns).
             test (str, optional): Which test(s) to run, one of "kupiec", "christoffersen" or "both". Defaults
@@ -3734,23 +3729,21 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["EURUSD", "USDJPY", "GBPUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_var_backtest(window_size=252)
+        toolkit.risk.get_var_backtest(test="kupiec")
         ```
 
         Which returns:
 
-        |                          |   AMZN |   TSLA |   Benchmark |
-        |:-------------------------|-------:|-------:|------------:|
-        | Kupiec Statistic         | 1.9421 | 0.1736 |      0.312  |
-        | P-Value                  | 0.1634 | 0.677  |      0.5765 |
-        | Christoffersen Statistic | 0.5605 | 5.9293 |      4.7906 |
-        | P-Value                  | 0.4541 | 0.0149 |      0.0286 |
+        |                  |   EURUSD |   USDJPY |   GBPUSD |   Benchmark |
+        |:-----------------|---------:|---------:|---------:|------------:|
+        | Kupiec Statistic |   8.3686 |   1.8323 |   2.2039 |      0.0836 |
+        | P-Value          |   0.0038 |   0.1759 |   0.1377 |      0.7725 |
         """
         period = period if period else "daily"
 
@@ -3823,7 +3816,9 @@ class Risk:
             distribution (str, optional): The distribution to use for the rolling VaR/CVaR estimates,
             one of "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
             alpha (float, optional): The tail probability for the VaR/CVaR estimates (e.g., 0.05 for the 95%
-            confidence level). Defaults to 0.05.
+            confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
+            Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an
+            empty result (with a logged error).
             window_size (int, optional): The rolling window size (in number of return observations) used
             to estimate each VaR/CVaR value. Defaults to 252 (approximately one trading year of daily
             returns).
@@ -3853,23 +3848,21 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["BA", "DAL", "CCL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_acerbi_szekely_test(window_size=100)
+        toolkit.risk.get_acerbi_szekely_test().loc[["Acerbi-Szekely Statistic", "P-Value"]]
         ```
 
         Which returns:
 
-        |                          |    AMZN |    TSLA |   Benchmark |
-        |:-------------------------|--------:|--------:|------------:|
-        | Acerbi-Szekely Statistic |  0.2146 |  0.2444 |      0.3931 |
-        | Standard Error           |  0.1615 |  0.1543 |      0.1554 |
-        | P-Value                  |  0.0919 |  0.0566 |      0.0057 |
-        | Breaches                 | 65      | 70      |     78      |
+        |                          |     BA |    DAL |    CCL |   Benchmark |
+        |:-------------------------|-------:|-------:|-------:|------------:|
+        | Acerbi-Szekely Statistic | 0.1548 | 0.2473 | 0.1402 |      0.2394 |
+        | P-Value                  | 0.176  | 0.0762 | 0.1963 |      0.0785 |
         """
         period = period if period else "daily"
 
@@ -3956,7 +3949,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["MSFT", "AAPL", "TSLA"],
+            ["NFLX", "DIS", "WBD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3967,13 +3960,13 @@ class Risk:
 
         Which returns:
 
-        |      |    MSFT |    AAPL |    TSLA |   Benchmark |
+        |      |    NFLX |     DIS |     WBD |   Benchmark |
         |:-----|--------:|--------:|--------:|------------:|
-        | 2021 | -0.0195 | -0.0748 |  0.667  |     -0.3334 |
-        | 2022 |  0.1478 |  0.3168 | -0.026  |      0.0454 |
-        | 2023 |  0.3773 | -0.0686 |  0.0021 |     -0.0206 |
-        | 2024 | -0.888  |  0.4447 |  0.8937 |     -0.5242 |
-        | 2025 |  1.3116 |  1.1306 |  0.4045 |      1.5069 |
+        | 2021 |  1.8966 |  0.2848 | -2.1536 |     -0.3334 |
+        | 2022 | -2.1029 | -0.5086 | -0.0126 |      0.0454 |
+        | 2023 |  1.5636 | -0.2155 | -0.42   |     -0.0206 |
+        | 2024 |  0.872  |  0.7012 |  0.6324 |     -0.5242 |
+        | 2025 | -0.2855 |  0.6672 |  1.9711 |      1.5069 |
         """
         period = period if period else "daily"
 
@@ -4091,24 +4084,24 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["MSFT", "AAPL", "TSLA"],
+            ["BTCUSD", "ETHUSD", "SOLUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_kurtosis(period="yearly", within_period=True)
+        toolkit.risk.get_kurtosis(period="yearly", within_period=True, fisher=True)
         ```
 
         Which returns:
 
-        |      |    MSFT |    AAPL |   TSLA |   Benchmark |
-        |:-----|--------:|--------:|-------:|------------:|
-        | 2021 |  3.377  |  3.4006 | 7.4582 |      3.7144 |
-        | 2022 |  3.896  |  4.0553 | 3.386  |      3.3635 |
-        | 2023 |  4.4636 |  4.4756 | 4.3336 |      2.843  |
-        | 2024 |  5.1739 |  6.6112 | 7.5225 |      4.7961 |
-        | 2025 | 13.1151 | 17.0892 | 7.7019 |     26.576  |
+        |      |   BTCUSD |   ETHUSD |   SOLUSD |   Benchmark |
+        |:-----|---------:|---------:|---------:|------------:|
+        | 2021 |   1.6215 |   3.5555 |   2.46   |      2.5374 |
+        | 2022 |   4.0666 |   2.545  |   6.8965 |      2.359  |
+        | 2023 |   3.2756 |   2.4865 |   5.3817 |      1.416  |
+        | 2024 |   1.9522 |   4.0366 |   0.2918 |      3.8134 |
+        | 2025 |   2.3709 |   4.0428 |   4.1957 |     45.0722 |
         """
         period = period if period else "daily"
 
@@ -4198,8 +4191,8 @@ class Risk:
             Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
             k (int | float, optional): The number of upper order statistics to use. If a float in (0, 1)
-            it is interpreted as the fraction of the strictly positive observations to use. Defaults to
-            0.1 (the top 10%).
+            it is interpreted as the fraction of the strictly positive observations to use. A period
+            without such observations reports NaN with 0 observations used. Defaults to 0.1 (the top 10%).
             tail (str, optional): Which tail to estimate, one of "left" (the loss tail) or "right" (the
             gain tail). Defaults to "left".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -4219,23 +4212,23 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["BTCUSD", "^GSPC", "GCUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_hill_estimator(period="weekly", within_period=False)
+        toolkit.risk.get_hill_estimator(k=60)
         ```
 
         Which returns:
 
-        |                       |    AMZN |    TSLA |   Benchmark |
-        |:----------------------|--------:|--------:|------------:|
-        | Hill Tail Index       |  3.2425 |  9.5123 |      2.7487 |
-        | Hill Shape (xi)       |  0.3084 |  0.1051 |      0.3638 |
-        | Standard Error        |  0.936  |  2.746  |      0.8288 |
-        | Observations Used (k) | 12      | 12      |     11      |
+        |                       |   BTCUSD |   ^GSPC |   GCUSD |   Benchmark |
+        |:----------------------|---------:|--------:|--------:|------------:|
+        | Hill Tail Index       |   3.4392 |  2.9068 |  3.0565 |      2.7613 |
+        | Hill Shape (xi)       |   0.2908 |  0.344  |  0.3272 |      0.3621 |
+        | Standard Error        |   0.444  |  0.3753 |  0.3946 |      0.3565 |
+        | Observations Used (k) |  60      | 60      | 60      |     60      |
         """
         period = period if period else "daily"
 
@@ -4313,7 +4306,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["WMT", "TGT", "COST"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -4324,13 +4317,13 @@ class Risk:
 
         Which returns:
 
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021   | 0.0578 | 0.3    |      0.0167 |
-        | 2022   | 0.2508 | 0.4446 |      0.0588 |
-        | 2023   | 0.109  | 0.2922 |      0.0171 |
-        | 2024   | 0.0789 | 0.4032 |      0.0158 |
-        | 2025   | 0.1184 | 0.4031 |      0.038  |
+        | Date   |    WMT |    TGT |   COST |   Benchmark |
+        |:-------|-------:|-------:|-------:|------------:|
+        | 2021   | 0.0278 | 0.0559 | 0.0359 |      0.0167 |
+        | 2022   | 0.0714 | 0.2131 | 0.0984 |      0.0588 |
+        | 2023   | 0.0245 | 0.0965 | 0.0365 |      0.0171 |
+        | 2024   | 0.0313 | 0.1377 | 0.0355 |      0.0158 |
+        | 2025   | 0.063  | 0.1166 | 0.0467 |      0.038  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4447,13 +4440,16 @@ class Risk:
         estimators need the Open, High, Low and Close.
         - If `growth` is set to True, the method calculates the growth of Volatility values using the specified `lag`.
 
+        Passing `method="parkinson"` (or another range-based estimator) uses the daily trading range instead of
+        only the closes.
+
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["EURUSD", "BTCUSD", "^GSPC", "GCUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -4464,29 +4460,13 @@ class Risk:
 
         Which returns:
 
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021   | 0.2404 | 0.5477 |      0.1293 |
-        | 2022   | 0.5008 | 0.6668 |      0.2425 |
-        | 2023   | 0.3302 | 0.5406 |      0.1307 |
-        | 2024   | 0.2809 | 0.635  |      0.1257 |
-        | 2025   | 0.3442 | 0.6349 |      0.1948 |
-
-        And, using the daily trading range instead of only the closes:
-
-        ```python
-        toolkit.risk.get_volatility(period="yearly", method="parkinson")
-        ```
-
-        Which returns:
-
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021   | 0.2089 | 0.4563 |      0.1073 |
-        | 2022   | 0.3717 | 0.5547 |      0.1916 |
-        | 2023   | 0.2617 | 0.438  |      0.1101 |
-        | 2024   | 0.219  | 0.4357 |      0.0989 |
-        | 2025   | 0.267  | 0.5062 |      0.152  |
+        | Date   |   EURUSD |   BTCUSD |   ^GSPC |   GCUSD |   Benchmark |
+        |:-------|---------:|---------:|--------:|--------:|------------:|
+        | 2021   |   0.0574 |   0.6758 |  0.1    |  0.1156 |      0.0993 |
+        | 2022   |   0.091  |   0.531  |  0.189  |  0.1216 |      0.1897 |
+        | 2023   |   0.0764 |   0.3662 |  0.1042 |  0.1088 |      0.104  |
+        | 2024   |   0.0665 |   0.4441 |  0.098  |  0.1201 |      0.0975 |
+        | 2025   |   0.0831 |   0.3485 |  0.1457 |  0.1554 |      0.152  |
         """
         if method not in (
             "close_to_close",
@@ -4617,33 +4597,34 @@ class Risk:
         - If `growth` is set to True, the method calculates the growth of the HAR-RV forecast values
         using the specified `lag`.
 
+        In the example below, the last row is the forecast for the first trading day after the end date,
+        which has not been observed yet.
+
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["SPY", "QQQ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
+            benchmark_ticker=None,
         )
 
-        toolkit.risk.get_har_rv_forecast(estimator="squared_return").tail()
+        toolkit.risk.get_har_rv_forecast(estimator="squared_return").tail(5)
         ```
 
         Which returns:
 
-        | Date       |   AMZN |   TSLA |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-24 | 0.0003 | 0.0011 |      0.0001 |
-        | 2025-12-26 | 0.0003 | 0.0011 |      0.0001 |
-        | 2025-12-29 | 0.0003 | 0.0011 |      0.0001 |
-        | 2025-12-30 | 0.0003 | 0.0011 |      0.0001 |
-        | 2025-12-31 | 0.0003 | 0.0011 |      0.0001 |
-
-        The last row is the forecast for the first trading day after 2025-12-31, which has not
-        been observed yet.
+        | Date       |    SPY |    QQQ |
+        |:-----------|-------:|-------:|
+        | 2025-12-24 | 0.0001 | 0.0001 |
+        | 2025-12-26 | 0.0001 | 0.0001 |
+        | 2025-12-29 | 0.0001 | 0.0001 |
+        | 2025-12-30 | 0.0001 | 0.0001 |
+        | 2025-12-31 | 0.0001 | 0.0001 |
         """
         if estimator not in (
             "squared_return",
@@ -4759,33 +4740,33 @@ class Risk:
         - If `growth` is set to True, the method calculates the growth of the Amihud Illiquidity values
         using the specified `lag`.
 
+        A `scale` of one billion is used in the example below: liquid stocks trade so much dollar volume
+        relative to their typical daily price move that the default `scale` of 1,000,000 (as in Amihud's
+        original paper) can round their values to 0.0 at the default precision.
+
         As an example:
 
         ```python
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["SNAP", "ETSY", "LYFT"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_amihud_illiquidity(period="quarterly", scale=1e12)
+        toolkit.risk.get_amihud_illiquidity(scale=1e9)
         ```
 
         Which returns:
 
         |           |   Value |
         |:----------|--------:|
-        | AMZN      |  0.2447 |
-        | TSLA      |  0.1704 |
-        | Benchmark |  0.0306 |
-
-        Note that a large `scale` is used here since these are liquid, large-cap
-        stocks with very high dollar trading volume relative to their typical daily
-        price move -- the default `scale` of 1,000,000 (as used in Amihud's original
-        1980s/1990s-era paper) would round these to 0.0 at the default precision.
+        | SNAP      |  0.0634 |
+        | ETSY      |  0.0768 |
+        | LYFT      |  0.1277 |
+        | Benchmark |  0.0002 |
         """
         period = period if period else "daily"
 
@@ -4894,7 +4875,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["KO", "PEP", "PG"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -4905,11 +4886,12 @@ class Risk:
 
         Which returns:
 
-        |                |      AMZN |     TSLA |   Benchmark |
-        |:---------------|----------:|---------:|------------:|
-        | Roll Spread    |  0.917291 |  3.64757 |    1.97906  |
-        | Autocovariance | -0.210356 | -3.32619 |   -0.979167 |
-        | Valid Estimate |  1        |  1       |    1        |
+        |                      |          KO |         PEP |         PG |   Benchmark |
+        |:---------------------|------------:|------------:|-----------:|------------:|
+        | Roll Spread          |  0.173128   |  0.72957    |  0.751753  |  1.97906    |
+        | Relative Roll Spread |  0.0028038  |  0.00449337 |  0.0049553 |  0.00408282 |
+        | Autocovariance       | -0.00749332 | -0.133068   | -0.141283  | -0.979167   |
+        | Valid Estimate       |  1          |  1          |  1         |  1          |
         """
         period = period if period else "daily"
 
@@ -4990,7 +4972,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["ADBE", "CRM", "ORCL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -5001,13 +4983,13 @@ class Risk:
 
         Which returns:
 
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021   | 0.2404 | 0.5477 |      0.1293 |
-        | 2022   | 0.5008 | 0.6668 |      0.2425 |
-        | 2023   | 0.3302 | 0.5406 |      0.1307 |
-        | 2024   | 0.2809 | 0.635  |      0.1257 |
-        | 2025   | 0.3442 | 0.6349 |      0.1948 |
+        | Date   |   ADBE |    CRM |   ORCL |   Benchmark |
+        |:-------|-------:|-------:|-------:|------------:|
+        | 2021   | 0.2924 | 0.282  | 0.2927 |      0.1293 |
+        | 2022   | 0.4506 | 0.4722 | 0.3053 |      0.2425 |
+        | 2023   | 0.3178 | 0.2958 | 0.302  |      0.1307 |
+        | 2024   | 0.3663 | 0.3594 | 0.3226 |      0.1257 |
+        | 2025   | 0.3062 | 0.319  | 0.6169 |      0.1948 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5102,24 +5084,23 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["NEE", "DUK", "SO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_downside_deviation(period="yearly", within_period=True)
+        toolkit.risk.get_downside_deviation()
         ```
 
         Which returns:
 
-        |      |   AMZN |   TSLA |   Benchmark |
-        |:-----|-------:|-------:|------------:|
-        | 2021 | 0.0108 | 0.0221 |      0.0054 |
-        | 2022 | 0.0229 | 0.0318 |      0.011  |
-        | 2023 | 0.013  | 0.022  |      0.0053 |
-        | 2024 | 0.0117 | 0.0243 |      0.0055 |
-        | 2025 | 0.0146 | 0.0268 |      0.0081 |
+        |           |   Value |
+        |:----------|--------:|
+        | NEE       |  0.0124 |
+        | DUK       |  0.0074 |
+        | SO        |  0.0079 |
+        | Benchmark |  0.0081 |
         """
         period = period if period else "daily"
 
@@ -5215,7 +5196,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["KO", "PEP", "MDLZ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -5226,13 +5207,13 @@ class Risk:
 
         Which returns:
 
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021   | 0.0114 | 0.0246 |      0.0061 |
-        | 2022   | 0.0235 | 0.032  |      0.0119 |
-        | 2023   | 0.0156 | 0.0255 |      0.0064 |
-        | 2024   | 0.0132 | 0.0286 |      0.0058 |
-        | 2025   | 0.015  | 0.0292 |      0.0074 |
+        | Date   |     KO |    PEP |   MDLZ |   Benchmark |
+        |:-------|-------:|-------:|-------:|------------:|
+        | 2021   | 0.007  | 0.0069 | 0.0073 |      0.0061 |
+        | 2022   | 0.0091 | 0.009  | 0.0098 |      0.0119 |
+        | 2023   | 0.0063 | 0.007  | 0.008  |      0.0064 |
+        | 2024   | 0.0061 | 0.0076 | 0.0082 |      0.0058 |
+        | 2025   | 0.0083 | 0.0104 | 0.0104 |      0.0074 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5312,9 +5293,9 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["MSFT", "ORCL", "IBM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2023-01-01",
             end_date="2025-12-31",
         )
 
@@ -5323,13 +5304,11 @@ class Risk:
 
         Which returns:
 
-        | Date   |     AMZN |     TSLA |   Benchmark |
-        |:-------|---------:|---------:|------------:|
-        | 2021   |  51.2239 |  16.7257 |      7.4324 |
-        | 2022   | -14.1455 | -12.7544 |    -22.3928 |
-        | 2023   |   8.0356 |  10.0506 |      8.5443 |
-        | 2024   |  10.9398 |  14.7623 |      8.6564 |
-        | 2025   |  49.9543 |  32.8037 |     16.8499 |
+        | Date   |    MSFT |    ORCL |     IBM |   Benchmark |
+        |:-------|--------:|--------:|--------:|------------:|
+        | 2023   |  8.0237 | 16.2298 | 12.0942 |      8.3745 |
+        | 2024   | 22.4294 |  9.8256 | 10.3503 |      8.6564 |
+        | 2025   | 21.9925 | 28.2432 | 12.934  |     16.8499 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5417,29 +5396,24 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["USDJPY", "EURUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_ewma_volatility()
+        toolkit.risk.get_ewma_volatility().tail(5)
         ```
 
         Which returns:
 
-        | Date       |   AMZN |   TSLA |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-17 | 0.018  | 0.0276 |      0.007  |
-        | 2025-12-18 | 0.0175 | 0.029  |      0.0073 |
-        | 2025-12-19 | 0.018  | 0.0294 |      0.0073 |
-        | 2025-12-22 | 0.0175 | 0.0285 |      0.0075 |
-        | 2025-12-23 | 0.017  | 0.0279 |      0.0074 |
-        | 2025-12-24 | 0.017  | 0.0271 |      0.0073 |
-        | 2025-12-26 | 0.0164 | 0.0263 |      0.0071 |
-        | 2025-12-29 | 0.0159 | 0.026  |      0.0069 |
-        | 2025-12-30 | 0.0155 | 0.0264 |      0.0067 |
-        | 2025-12-31 | 0.015  | 0.0258 |      0.0065 |
+        | Date       |   USDJPY |   EURUSD |   Benchmark |
+        |:-----------|---------:|---------:|------------:|
+        | 2025-12-26 |   0.0046 |   0.0046 |      0.0057 |
+        | 2025-12-28 |   0.0045 |   0.0044 |      0.0055 |
+        | 2025-12-29 |   0.0043 |   0.0043 |      0.0054 |
+        | 2025-12-30 |   0.0042 |   0.0042 |      0.0052 |
+        | 2025-12-31 |   0.0041 |   0.0045 |      0.0051 |
         """
         returns = self._historical_data["daily"]["Return"]
         ewma_volatility = risk_model.get_ewma_volatility(returns, lambda_)
@@ -5490,10 +5464,11 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["SPY", "QQQ", "IWM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
+            benchmark_ticker=None,
         )
 
         toolkit.risk.get_autocorrelation()
@@ -5501,18 +5476,18 @@ class Risk:
 
         Which returns:
 
-        |   Lag |    AMZN |    TSLA |   Benchmark |
-        |------:|--------:|--------:|------------:|
-        |     1 | -0.0125 | -0.026  |     -0.031  |
-        |     2 | -0.0064 |  0.0128 |     -0.0069 |
-        |     3 | -0.0113 | -0.0109 |     -0.0626 |
-        |     4 |  0.0112 |  0.0189 |     -0.0344 |
-        |     5 | -0.0144 | -0.0213 |     -0.0075 |
-        |     6 |  0.0048 |  0.045  |     -0.0104 |
-        |     7 | -0.0523 |  0.0309 |     -0.0109 |
-        |     8 | -0.0309 |  0.0198 |     -0.0063 |
-        |     9 | -0.0103 |  0.063  |      0.0399 |
-        |    10 | -0.0083 | -0.0499 |     -0.0111 |
+        |   Lag |     SPY |     QQQ |     IWM |
+        |------:|--------:|--------:|--------:|
+        |     1 | -0.031  | -0.0387 | -0.0092 |
+        |     2 | -0.0069 | -0.001  | -0.0254 |
+        |     3 | -0.0626 | -0.0629 | -0.0055 |
+        |     4 | -0.0344 | -0.0216 | -0.0437 |
+        |     5 | -0.0075 | -0.0071 | -0.016  |
+        |     6 | -0.0104 |  0      | -0.0112 |
+        |     7 | -0.0109 |  0.0031 | -0.013  |
+        |     8 | -0.0063 | -0.0118 | -0.0168 |
+        |     9 |  0.0399 |  0.0505 |  0.0285 |
+        |    10 | -0.0111 | -0.0214 | -0.0059 |
         """
         returns = self._historical_data["daily"]["Return"]
 
@@ -5532,7 +5507,7 @@ class Risk:
         rounding: int | None = None,
     ):
         """
-        Calculate the Hurst Exponent of each asset's daily (adjusted close) price series, a
+        Calculate the Hurst Exponent of each asset's daily (adjusted close) log price series, a
         measure of long-term memory that indicates whether the price is mean-reverting,
         trending, or a random walk.
 
@@ -5557,7 +5532,9 @@ class Risk:
 
         Notes:
         - The exponent is estimated with the generalized Hurst (structure function) method of
-        Di Matteo, Aste & Dacorogna (2005), see `risk_model.get_hurst_exponent`.
+        Di Matteo, Aste & Dacorogna (2005) on the logarithm of the adjusted close, as in that paper,
+        see `risk_model.get_hurst_exponent`. The lagged differences of log prices are log returns,
+        so the estimate does not depend on the price level.
 
         As an example:
 
@@ -5565,7 +5542,7 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["EURUSD", "GCUSD", "BTCUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -5578,14 +5555,16 @@ class Risk:
 
         |           |   Value |
         |:----------|--------:|
-        | AMZN      |  0.459  |
-        | TSLA      |  0.5198 |
-        | Benchmark |  0.4361 |
+        | EURUSD    |  0.4229 |
+        | GCUSD     |  0.4886 |
+        | BTCUSD    |  0.5057 |
+        | Benchmark |  0.4621 |
         """
         # The estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series. Feeding it returns, which are already differenced, collapses the exponent towards zero.  # noqa: E501
-        prices = self._historical_data["daily"]["Adj Close"]
+        # Log prices, as in Di Matteo et al. (2005): their lagged differences are log returns over the lag, whose dispersion does not depend on the price level, whereas price differences grow with the price and tilt the slope on a series that trends over the sample.  # noqa: E501
+        log_prices = np.log(self._historical_data["daily"]["Adj Close"])
 
-        hurst_exponent = prices.apply(
+        hurst_exponent = log_prices.apply(
             lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)
         )
 

@@ -614,7 +614,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "AMZN"],
+            ["NVDA", "TSLA", "JPM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -625,13 +625,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |   AAPL |   AMZN |
-        |:-------|-------:|-------:|
-        | 2021   | 1.3196 | 1.0437 |
-        | 2022   | 1.3025 | 1.6344 |
-        | 2023   | 1.1148 | 1.5303 |
-        | 2024   | 0.9686 | 1.5491 |
-        | 2025   | 1.2551 | 1.3254 |
+        | Date   |   NVDA |   TSLA |    JPM |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 2.0429 | 1.9542 | 0.8378 |
+        | 2022   | 2.2015 | 1.7398 | 0.8813 |
+        | 2023   | 2.0247 | 2.2485 | 0.8724 |
+        | 2024   | 2.659  | 2.3803 | 0.8013 |
+        | 2025   | 1.8732 | 2.2343 | 0.9478 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -741,9 +741,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["JPM", "GS", "MS"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -752,12 +752,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.2458 | -0.3382 |
-        | 2023   |  0.2873 |  0.5392 |
-        | 2024   |  0.2423 |  0.5341 |
-        | 2025   |  0.2115 |  0.343  |
+        | Date   |     JPM |      GS |      MS |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.2426 |  0.2808 |  0.3177 |
+        | 2022   | -0.1567 | -0.173  | -0.1915 |
+        | 2023   |  0.2334 |  0.276  |  0.3055 |
+        | 2024   |  0.2077 |  0.28   |  0.2632 |
+        | 2025   |  0.1702 |  0.221  |  0.2174 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -845,24 +846,20 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["CAT", "PFE", "ORCL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_factor_asset_correlations()["AAPL"]
+        toolkit.performance.get_factor_asset_correlations()["CAT"]
         ```
 
         Which returns:
 
-        |      |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
-        |:-----|---------:|--------:|--------:|--------:|--------:|
-        | 2021 |   0.6658 | -0.0576 | -0.4358 | -0.1185 | -0.0526 |
-        | 2022 |   0.8797 |  0.0564 | -0.5479 | -0.2578 | -0.4763 |
-        | 2023 |   0.6988 | -0.0082 | -0.2835 | -0.1015 | -0.4615 |
-        | 2024 |   0.5184 |  0.0352 | -0.3176 | -0.056  | -0.0848 |
-        | 2025 |   0.7408 |  0.0656 | -0.2096 | -0.1083 |  0.0755 |
+        |      |   Mkt-RF |    SMB |     HML |     RMW |     CMA |
+        |:-----|---------:|-------:|--------:|--------:|--------:|
+        | 2025 |    0.698 | 0.2883 | -0.2279 | -0.2868 | -0.0246 |
         """
 
         factors_to_calculate = (
@@ -983,10 +980,11 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["SPY"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2023-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
+            benchmark_ticker=None,
         )
 
         toolkit.performance.get_factor_correlations()
@@ -994,23 +992,13 @@ class Performance:
 
         Which returns:
 
-        |                                     |   Mkt-RF |     SMB |     HML |     RMW |     CMA |
-        |:------------------------------------|---------:|--------:|--------:|--------:|--------:|
-        | (Period('2023', 'Y-DEC'), 'Mkt-RF') |   1      |  0.297  | -0.0436 | -0.327  | -0.4582 |
-        | (Period('2023', 'Y-DEC'), 'SMB')    |   0.297  |  1      |  0.4115 | -0.3984 |  0.0737 |
-        | (Period('2023', 'Y-DEC'), 'HML')    |  -0.0436 |  0.4115 |  1      |  0.2133 |  0.6075 |
-        | (Period('2023', 'Y-DEC'), 'RMW')    |  -0.327  | -0.3984 |  0.2133 |  1      |  0.3029 |
-        | (Period('2023', 'Y-DEC'), 'CMA')    |  -0.4582 |  0.0737 |  0.6075 |  0.3029 |  1      |
-        | (Period('2024', 'Y-DEC'), 'Mkt-RF') |   1      |  0.2546 | -0.2273 | -0.3827 | -0.1223 |
-        | (Period('2024', 'Y-DEC'), 'SMB')    |   0.2546 |  1      |  0.418  | -0.4877 |  0.0798 |
-        | (Period('2024', 'Y-DEC'), 'HML')    |  -0.2273 |  0.418  |  1      |  0.1307 |  0.0939 |
-        | (Period('2024', 'Y-DEC'), 'RMW')    |  -0.3827 | -0.4877 |  0.1307 |  1      | -0.1003 |
-        | (Period('2024', 'Y-DEC'), 'CMA')    |  -0.1223 |  0.0798 |  0.0939 | -0.1003 |  1      |
-        | (Period('2025', 'Y-DEC'), 'Mkt-RF') |   1      |  0.1744 | -0.3814 | -0.4273 |  0.0586 |
-        | (Period('2025', 'Y-DEC'), 'SMB')    |   0.1744 |  1      |  0.2143 | -0.2924 |  0.2143 |
-        | (Period('2025', 'Y-DEC'), 'HML')    |  -0.3814 |  0.2143 |  1      |  0.3573 |  0.2218 |
-        | (Period('2025', 'Y-DEC'), 'RMW')    |  -0.4273 | -0.2924 |  0.3573 |  1      |  0.0657 |
-        | (Period('2025', 'Y-DEC'), 'CMA')    |   0.0586 |  0.2143 |  0.2218 |  0.0657 |  1      |
+        |                    |   Mkt-RF |     SMB |     HML |     RMW |    CMA |
+        |:-------------------|---------:|--------:|--------:|--------:|-------:|
+        | ('2025', 'Mkt-RF') |   1      |  0.1744 | -0.3814 | -0.4273 | 0.0586 |
+        | ('2025', 'SMB')    |   0.1744 |  1      |  0.2143 | -0.2924 | 0.2143 |
+        | ('2025', 'HML')    |  -0.3814 |  0.2143 |  1      |  0.3573 | 0.2218 |
+        | ('2025', 'RMW')    |  -0.4273 | -0.2924 |  0.3573 |  1      | 0.0657 |
+        | ('2025', 'CMA')    |   0.0586 |  0.2143 |  0.2218 |  0.0657 | 1      |
         """
         factors_to_calculate = (
             factors_to_calculate
@@ -1177,25 +1165,25 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["IWM", "VTV", "MTUM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
         # Calculate Fama and French 5 Factor model scores
-        toolkit.performance.get_fama_and_french_model()["AAPL"]
+        toolkit.performance.get_fama_and_french_model()["IWM"].drop(columns="Mean Squared Error (MSE)")
         ```
 
         Which returns:
 
-        |      |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   RMW Slope |   CMA Slope |   Mean Squared Error (MSE) |   R Squared |
-        |:-----|------------:|---------------:|------------:|------------:|------------:|------------:|---------------------------:|------------:|
-        | 2021 |      0      |         1.3139 |     -0.2738 |     -0.9794 |      0.3119 |      1.6356 |                     0.0001 |      0.7584 |
-        | 2022 |     -0.0001 |         1.257  |     -0.2958 |     -0.616  |      0.2338 |      0.6823 |                     0.0001 |      0.8179 |
-        | 2023 |      0.0003 |         1.1312 |     -0.089  |     -0.4462 |      0.4516 |     -0.0059 |                     0.0001 |      0.5907 |
-        | 2024 |      0.0002 |         0.8769 |      0.265  |     -0.5833 |      0.7337 |      0.0608 |                     0.0001 |      0.35   |
-        | 2025 |     -0.0001 |         1.4479 |     -0.076  |      0.1071 |      0.8066 |      0.0263 |                     0.0002 |      0.6029 |
+        |      |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   RMW Slope |   CMA Slope |   R Squared |
+        |:-----|------------:|---------------:|------------:|------------:|------------:|------------:|------------:|
+        | 2021 |     -0.0003 |         1.0529 |      0.8267 |      0.0728 |     -0.1204 |     -0.0334 |      0.9868 |
+        | 2022 |     -0.0001 |         1.0343 |      0.893  |      0.0645 |     -0.0553 |      0.0654 |      0.9917 |
+        | 2023 |     -0.0001 |         1.0292 |      0.8647 |      0.141  |     -0.0731 |      0.0794 |      0.9871 |
+        | 2024 |      0      |         1.0396 |      0.8723 |      0.1568 |     -0.0685 |      0.0143 |      0.9838 |
+        | 2025 |      0      |         0.9702 |      0.8649 |      0.1317 |     -0.1871 |     -0.0235 |      0.9826 |
         """
         if method not in ["simple", "multi"]:
             raise ValueError(
@@ -1494,39 +1482,25 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["XOM", "HD", "ADBE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_carhart_four_factor_model(period="quarterly")["AMZN"]
+        toolkit.performance.get_carhart_four_factor_model(period="quarterly")["XOM"].drop(
+            columns="Mean Squared Error (MSE)"
+        )
         ```
 
-        Which returns (columns are Intercept, Mkt-RF/SMB/HML/MOM Slope, MSE and R Squared, per ticker):
+        Which returns:
 
-        |        |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   MOM Slope |   Mean Squared Error (MSE) |   R Squared |
-        |:-------|------------:|---------------:|------------:|------------:|------------:|---------------------------:|------------:|
-        | 2021Q1 |      0.0007 |         0.693  |     -0.3265 |     -0.4391 |      0.1835 |                     0.0001 |      0.6836 |
-        | 2021Q2 |      0.0005 |         0.8978 |     -0.0839 |     -0.5207 |     -0.0226 |                     0.0001 |      0.4758 |
-        | 2021Q3 |     -0.0004 |         1.3049 |     -0.1957 |     -0.5054 |     -0.1656 |                     0.0001 |      0.363  |
-        | 2021Q4 |     -0.001  |         1.1025 |     -0.3979 |     -0.4752 |     -0.2752 |                     0.0001 |      0.4805 |
-        | 2022Q1 |      0.0011 |         1.3057 |     -0.6168 |      0.0545 |     -0.9572 |                     0.0004 |      0.5827 |
-        | 2022Q2 |     -0.0011 |         1.4273 |     -0.6967 |     -0.3486 |     -0.4826 |                     0.0003 |      0.7936 |
-        | 2022Q3 |      0.0027 |         1.34   |     -1.311  |      0.0417 |     -0.9466 |                     0.0001 |      0.8026 |
-        | 2022Q4 |     -0.0042 |         0.9708 |     -0.8204 |     -0.6269 |     -0.633  |                     0.0003 |      0.7038 |
-        | 2023Q1 |     -0.0004 |         1.0735 |     -0.1457 |     -0.4162 |     -0.7099 |                     0.0002 |      0.6934 |
-        | 2023Q2 |      0.001  |         0.9296 |     -0.321  |     -1.2957 |     -0.7959 |                     0.0002 |      0.4925 |
-        | 2023Q3 |      0.0006 |         1.7583 |     -0.6457 |     -0.1542 |     -0.3941 |                     0.0002 |      0.3885 |
-        | 2023Q4 |      0.0007 |         1.3123 |      0.5404 |     -0.0812 |      1.3102 |                     0.0001 |      0.5996 |
-        | 2024Q1 |     -0.0006 |         1.6036 |     -0.2896 |     -0.2613 |      0.407  |                     0.0001 |      0.6386 |
-        | 2024Q2 |      0.0002 |         1.0116 |      0.3988 |     -0.9563 |     -0.0864 |                     0.0001 |      0.4468 |
-        | 2024Q3 |     -0.0016 |         1.4312 |     -0.1908 |     -0.0594 |      0.2389 |                     0.0002 |      0.5795 |
-        | 2024Q4 |      0.0019 |         1.6443 |     -0.2264 |     -0.506  |     -0.1046 |                     0.0002 |      0.5502 |
-        | 2025Q1 |     -0.0006 |         1.1099 |      0.2159 |     -0.2128 |      0.1184 |                     0.0001 |      0.647  |
-        | 2025Q2 |     -0      |         1.0987 |      0.4679 |     -0.6058 |     -0.2748 |                     0.0002 |      0.8102 |
-        | 2025Q3 |     -0.002  |         1.9426 |     -0.6088 |      0.1629 |      0.0168 |                     0.0002 |      0.288  |
-        | 2025Q4 |      0.0004 |         1.8577 |     -0.6249 |     -0.6308 |     -0.574  |                     0.0002 |      0.4685 |
+        |        |   Intercept |   Mkt-RF Slope |   SMB Slope |   HML Slope |   MOM Slope |   R Squared |
+        |:-------|------------:|---------------:|------------:|------------:|------------:|------------:|
+        | 2025Q1 |      0.0021 |         0.7335 |      0.2739 |      0.4818 |     -0.7225 |      0.317  |
+        | 2025Q2 |     -0.0002 |         0.8881 |     -0.7307 |      1.6062 |     -0.7248 |      0.6805 |
+        | 2025Q3 |      0.0003 |         0.3232 |     -0.1805 |      0.6496 |     -0.2369 |      0.2179 |
+        | 2025Q4 |      0.0005 |         0.4852 |     -0.2193 |      0.6778 |     -0.0933 |      0.1938 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -1672,9 +1646,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["COST", "WMT", "TGT"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -1683,12 +1657,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.0822 | -0.4685 |
-        | 2023   |  0.2283 |  0.7554 |
-        | 2024   |  0.0583 |  0.3764 |
-        | 2025   | -0.0867 | -0.0636 |
+        | Date   |    COST |     WMT |     TGT |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.2309 | -0.2676 |  0.0418 |
+        | 2022   | -0.0087 |  0.1772 | -0.1606 |
+        | 2023   |  0.2282 | -0.133  | -0.2753 |
+        | 2024   |  0.1474 |  0.4911 | -0.2715 |
+        | 2025   | -0.2311 |  0.0677 | -0.4221 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=False)
@@ -1794,9 +1769,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["UNH", "JNJ", "PFE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -1805,12 +1780,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.0182 | -0.3121 |
-        | 2023   |  0.2028 |  0.478  |
-        | 2024   |  0.0648 |  0.0911 |
-        | 2025   | -0.121  | -0.2294 |
+        | Date   |     UNH |     JNJ |     PFE |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.2601 | -0.0093 |  0.6493 |
+        | 2022   |  0.1608 |  0.0945 | -0.0261 |
+        | 2023   | -0.0951 | -0.2013 | -0.5539 |
+        | 2024   | -0.0911 | -0.0803 | -0.1158 |
+        | 2025   | -0.4155 |  0.4249 | -0.0976 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -1913,9 +1889,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["UNP", "UPS", "FDX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -1924,12 +1900,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.2254 | -0.3908 |
-        | 2023   |  0.4041 |  0.4348 |
-        | 2024   |  0.2736 |  0.245  |
-        | 2025   |  0.0379 |  0.0316 |
+        | Date   |     UNP |     UPS |     FDX |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.2344 |  0.3677 | -0.0077 |
+        | 2022   | -0.2789 | -0.2134 | -0.3426 |
+        | 2023   |  0.2003 | -0.0898 |  0.4279 |
+        | 2024   | -0.163  | -0.3386 |  0.1571 |
+        | 2025   | -0.0065 | -0.2648 |  0.008  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2132,6 +2109,8 @@ class Performance:
         convention, i.e. a Normal distribution has a kurtosis of 3, not 0. Internally this calls
         `risk_model.get_kurtosis(..., fisher=False)`.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - `get_sharpe_ratio(method="probabilistic")` returns the probability that each Sharpe ratio is genuine,
+        i.e. above `benchmark_sharpe_ratio` once the sample length, skewness and kurtosis are accounted for.
 
         As an example:
 
@@ -2139,40 +2118,25 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["SPY", "TLT", "GLD", "BTCUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
+            benchmark_ticker=None,
         )
 
-        toolkit.performance.get_sharpe_ratio()
+        toolkit.performance.get_sharpe_ratio(annualize=True)
         ```
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2021   |  0.0859 |  0.0581 |
-        | 2022   | -0.0482 | -0.0812 |
-        | 2023   |  0.1189 |  0.095  |
-        | 2024   |  0.07   |  0.0637 |
-        | 2025   |  0.0188 |  0.0263 |
-
-        And, asking for the probability that these Sharpe ratios are genuine instead:
-
-        ```python
-        toolkit.performance.get_sharpe_ratio(method="probabilistic")
-        ```
-
-        Which returns:
-
-        | Date   |   AAPL |   TSLA |
-        |:-------|-------:|-------:|
-        | 2021   | 0.9117 | 0.8251 |
-        | 2022   | 0.2241 | 0.0999 |
-        | 2023   | 0.9688 | 0.9323 |
-        | 2024   | 0.8698 | 0.8496 |
-        | 2025   | 0.6177 | 0.6618 |
+        | Date   |     SPY |     TLT |     GLD |   BTCUSD |
+        |:-------|--------:|--------:|--------:|---------:|
+        | 2021   |  1.9355 | -0.2283 | -0.6241 |   0.6316 |
+        | 2022   | -0.608  | -0.9215 |  0.4971 |  -1.1891 |
+        | 2023   |  1.1567 |  0.7714 |  0.8362 |   1.6139 |
+        | 2024   |  1.5203 | -0.6917 |  1.4238 |   1.3959 |
+        | 2025   |  0.3606 |  0.2664 |  1.7105 |  -0.1906 |
         """
         if method not in ("standard", "adjusted", "probabilistic", "deflated"):
             raise ValueError(
@@ -2367,7 +2331,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["V", "MA", "AXP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -2378,13 +2342,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2021   |  0.129  |  0.0906 |
-        | 2022   | -0.0675 | -0.1069 |
-        | 2023   |  0.1839 |  0.1462 |
-        | 2024   |  0.1071 |  0.1044 |
-        | 2025   |  0.0283 |  0.0391 |
+        | Date   |       V |      MA |     AXP |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.0058 |  0.0163 |  0.1221 |
+        | 2022   | -0.0049 | -0.001  | -0.0138 |
+        | 2023   |  0.129  |  0.1007 |  0.0922 |
+        | 2024   |  0.0911 |  0.1065 |  0.1909 |
+        | 2025   |  0.038  |  0.0273 |  0.0726 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2471,9 +2435,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["VZ", "T", "TMUS"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -2482,12 +2446,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -4.4186 | -4.9807 |
-        | 2023   | 13.8927 | 11.818  |
-        | 2024   |  7.7225 |  6.4185 |
-        | 2025   |  0.9488 |  0.7201 |
+        | Date   |      VZ |       T |    TMUS |
+        |:-------|--------:|--------:|--------:|
+        | 2021   | -3.7069 | -2.0886 | -3.7462 |
+        | 2022   | -4.3869 |  0.7109 |  4.3646 |
+        | 2023   | -0.3236 | -1.4171 |  3.5546 |
+        | 2024   |  2.6617 | 15.933  | 13.5977 |
+        | 2025   |  1.4725 |  2.6824 | -2.3337 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -2578,9 +2543,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["VTI", "VEA", "VWO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -2589,12 +2554,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.8706 | -0.8942 |
-        | 2023   |  3.2719 |  3.1074 |
-        | 2024   |  1.9958 |  1.4606 |
-        | 2025   |  0.2913 |  0.2356 |
+        | Date   |     VTI |     VEA |     VWO |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  4.9482 |  1.643  |  0.0948 |
+        | 2022   | -0.7709 | -0.5338 | -0.6106 |
+        | 2023   |  2.4416 |  1.483  |  0.7946 |
+        | 2024   |  2.7771 |  0.3321 |  1.1734 |
+        | 2025   |  0.8851 |  2.6195 |  1.7646 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2684,9 +2650,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["NEE", "DUK", "SO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -2695,12 +2661,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -1.0669 | -1.4667 |
-        | 2023   |  3.3669 |  4.1946 |
-        | 2024   |  1.9699 |  2.1599 |
-        | 2025   |  0.445  |  0.3793 |
+        | Date   |     NEE |     DUK |     SO |
+        |:-------|--------:|--------:|-------:|
+        | 2021   |  1.2842 |  1.4182 | 1.2009 |
+        | 2022   | -0.3726 |  0.1186 | 0.4819 |
+        | 2023   | -0.8979 | -0.0838 | 0.1342 |
+        | 2024   |  1.307  |  1.1541 | 1.5685 |
+        | 2025   |  0.9868 |  0.9407 | 0.6777 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2787,9 +2754,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["BA", "LMT", "RTX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -2798,12 +2765,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.1137 | -0.1156 |
-        | 2023   |  0.5152 |  0.4137 |
-        | 2024   |  0.2621 |  0.1775 |
-        | 2025   |  0.0249 |  0.0192 |
+        | Date   |      BA |     LMT |     RTX |
+        |:-------|--------:|--------:|--------:|
+        | 2021   | -0.0305 |  0.014  |  0.3334 |
+        | 2022   | -0.0181 |  0.3247 |  0.109  |
+        | 2023   |  0.2136 | -0.0588 | -0.0744 |
+        | 2024   | -0.0697 |  0.0508 |  0.6619 |
+        | 2025   |  0.1203 | -0.0134 |  1.0527 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2900,9 +2868,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["HD", "LOW"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -2911,12 +2879,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
+        | Date   |      HD |     LOW |
         |:-------|--------:|--------:|
-        | 2022   | -0.1698 | -0.2176 |
-        | 2023   |  0.3296 |  0.276  |
-        | 2024   |  0.189  |  0.1575 |
-        | 2025   |  0.0714 |  0.0646 |
+        | 2021   |  0.39   |  0.3481 |
+        | 2022   | -0.1634 | -0.1482 |
+        | 2023   |  0.0932 |  0.0955 |
+        | 2024   |  0.1083 |  0.0921 |
+        | 2025   | -0.0718 |  0.0055 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         period_returns = self._get_column(period, "Return", within_period=False)
@@ -3019,7 +2988,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["VOO", "RSP", "QQQ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3030,13 +2999,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |   AAPL |   TSLA |
-        |:-------|-------:|-------:|
-        | 2021   | 0.0118 | 0.0316 |
-        | 2022   | 0.0115 | 0.0344 |
-        | 2023   | 0.009  | 0.0304 |
-        | 2024   | 0.0121 | 0.0369 |
-        | 2025   | 0.0139 | 0.0328 |
+        | Date   |    VOO |    RSP |    QQQ |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 0.0002 | 0.0038 | 0.0059 |
+        | 2022   | 0.0003 | 0.0034 | 0.0067 |
+        | 2023   | 0.0002 | 0.0038 | 0.005  |
+        | 2024   | 0.0003 | 0.0046 | 0.0047 |
+        | 2025   | 0.001  | 0.0051 | 0.0041 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3141,7 +3110,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["XLK", "XLE", "XLV"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3152,13 +3121,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2021   |  0.0266 |  0.0306 |
-        | 2022   | -0.025  | -0.0758 |
-        | 2023   |  0.0794 |  0.0798 |
-        | 2024   |  0.0207 |  0.0486 |
-        | 2025   | -0.0127 |  0.015  |
+        | Date   |     XLK |     XLE |     XLV |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.0377 |  0.047  | -0.0204 |
+        | 2022   | -0.0557 |  0.1406 |  0.0776 |
+        | 2023   |  0.147  | -0.0655 | -0.1316 |
+        | 2024   | -0.0053 | -0.0549 | -0.1084 |
+        | 2025   |  0.042  | -0.0246 | -0.0114 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3253,7 +3222,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["QQQ", "SCHD", "USMV"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3264,13 +3233,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |   AAPL |   TSLA |
-        |:-------|-------:|-------:|
-        | 2021   | 1.3706 | 2.0314 |
-        | 2022   | 1.3036 | 1.6853 |
-        | 2023   | 1.1755 | 2.2452 |
-        | 2024   | 1.1049 | 2.4646 |
-        | 2025   | 1.0147 | 2.1704 |
+        | Date   |    QQQ |   SCHD |   USMV |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 1.1827 | 0.832  | 0.6961 |
+        | 2022   | 1.2845 | 0.7129 | 0.7051 |
+        | 2023   | 1.3244 | 0.765  | 0.6077 |
+        | 2024   | 1.3372 | 0.5237 | 0.5323 |
+        | 2025   | 1.2056 | 0.5019 | 0.4674 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -3348,7 +3317,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["XLU", "SPLV", "ARKK"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3359,13 +3328,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |   AAPL |   TSLA |
-        |:-------|-------:|-------:|
-        | 2021   | 1.432  | 2.2762 |
-        | 2022   | 1.3242 | 2.0929 |
-        | 2023   | 0.9726 | 1.9565 |
-        | 2024   | 1.0583 | 2.5642 |
-        | 2025   | 1.1139 | 2.4078 |
+        | Date   |    XLU |   SPLV |   ARKK |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 0.3911 | 0.5358 | 2.0537 |
+        | 2022   | 0.4698 | 0.4991 | 2.5005 |
+        | 2023   | 0.7024 | 0.6177 | 2.3265 |
+        | 2024   | 0.2051 | 0.3127 | 2.5483 |
+        | 2025   | 0.3459 | 0.3223 | 2.0919 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -3433,7 +3402,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["AAPL", "MSFT", "GOOGL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3444,13 +3413,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |   AAPL |   TSLA |
-        |:-------|-------:|-------:|
-        | 2021   | 0.4921 | 0.496  |
-        | 2022   | 0.4781 | 0.498  |
-        | 2023   | 0.576  | 0.532  |
-        | 2024   | 0.5    | 0.4683 |
-        | 2025   | 0.472  | 0.468  |
+        | Date   |   AAPL |   MSFT |   GOOGL |
+        |:-------|-------:|-------:|--------:|
+        | 2021   | 0.4921 | 0.5119 |  0.5278 |
+        | 2022   | 0.4781 | 0.4582 |  0.4502 |
+        | 2023   | 0.576  | 0.512  |  0.524  |
+        | 2024   | 0.5    | 0.4881 |  0.5317 |
+        | 2025   | 0.472  | 0.484  |  0.564  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -3525,7 +3494,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["LLY", "MRK", "ABBV"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3536,13 +3505,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2021   |  0.0943 |  0.0653 |
-        | 2022   | -0.052  | -0.0815 |
-        | 2023   |  0.1284 |  0.1026 |
-        | 2024   |  0.0767 |  0.0749 |
-        | 2025   |  0.0186 |  0.0275 |
+        | Date   |    LLY |     MRK |    ABBV |
+        |:-------|-------:|--------:|--------:|
+        | 2021   | 0.1248 |  0.0091 |  0.0811 |
+        | 2022   | 0.0844 |  0.1426 |  0.0552 |
+        | 2023   | 0.1351 | -0.004  | -0.0059 |
+        | 2024   | 0.0652 | -0.0191 |  0.0298 |
+        | 2025   | 0.0513 |  0.0193 |  0.064  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)
@@ -3622,7 +3591,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["BLK", "SCHW", "BX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3633,13 +3602,13 @@ class Performance:
 
         Which returns:
 
-        |      |   AAPL |   TSLA |
-        |:-----|-------:|-------:|
-        | 2021 | 1.2632 | 1.1824 |
-        | 2022 | 0.8943 | 0.8129 |
-        | 2023 | 1.4099 | 1.3043 |
-        | 2024 | 1.2509 | 1.2098 |
-        | 2025 | 1.0903 | 1.0871 |
+        |      |    BLK |   SCHW |     BX |
+        |:-----|-------:|-------:|-------:|
+        | 2021 | 1.2446 | 1.3257 | 1.5958 |
+        | 2022 | 0.9272 | 1.0318 | 0.8945 |
+        | 2023 | 1.1525 | 0.9625 | 1.3792 |
+        | 2024 | 1.2732 | 1.094  | 1.2109 |
+        | 2025 | 1.0728 | 1.2867 | 0.9944 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3719,7 +3688,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["GCUSD", "SIUSD", "HGUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3730,13 +3699,13 @@ class Performance:
 
         Which returns:
 
-        |      |    AAPL |    TSLA |
-        |:-----|--------:|--------:|
-        | 2021 |  0.2632 |  0.1824 |
-        | 2022 | -0.1057 | -0.1871 |
-        | 2023 |  0.4099 |  0.3043 |
-        | 2024 |  0.2509 |  0.2098 |
-        | 2025 |  0.0903 |  0.0871 |
+        |      |   GCUSD |   SIUSD |   HGUSD |
+        |:-----|--------:|--------:|--------:|
+        | 2021 | -0.0617 | -0.0653 |  0.1797 |
+        | 2022 |  0.0115 |  0.0413 | -0.0663 |
+        | 2023 |  0.1812 |  0.0233 |  0.0337 |
+        | 2024 |  0.3038 |  0.1403 |  0.0446 |
+        | 2025 |  0.5152 |  0.5701 |  0.2573 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3809,7 +3778,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["BTCUSD", "ETHUSD", "^GSPC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -3820,13 +3789,13 @@ class Performance:
 
         Which returns:
 
-        |                                       |   AAPL |   TSLA |   Benchmark |
-        |:--------------------------------------|-------:|-------:|------------:|
-        | Compound Annual Growth Rate (CAGR)    | 0.1667 | 0.1311 |      0.1469 |
-        | Compound Quarterly Growth Rate (CQGR) | 0.0393 | 0.0313 |      0.0348 |
-        | Compound Monthly Growth Rate (CMGR)   | 0.0129 | 0.0103 |      0.0115 |
-        | Compound Weekly Growth Rate (CWGR)    | 0.003  | 0.0024 |      0.0026 |
-        | Compound Daily Growth Rate (CDGR)     | 0.0006 | 0.0005 |      0.0005 |
+        |                                       |   BTCUSD |   ETHUSD |   ^GSPC |   Benchmark |
+        |:--------------------------------------|---------:|---------:|--------:|------------:|
+        | Compound Annual Growth Rate (CAGR)    |   0.2438 |   0.3236 |  0.1312 |      0.1469 |
+        | Compound Quarterly Growth Rate (CQGR) |   0.0561 |   0.0726 |  0.0313 |      0.0348 |
+        | Compound Monthly Growth Rate (CMGR)   |   0.0183 |   0.0236 |  0.0103 |      0.0115 |
+        | Compound Weekly Growth Rate (CWGR)    |   0.0042 |   0.0054 |  0.0024 |      0.0026 |
+        | Compound Daily Growth Rate (CDGR)     |   0.0009 |   0.0011 |  0.0005 |      0.0005 |
         """
         compound_growth_rates = {}
 
@@ -3889,6 +3858,10 @@ class Performance:
         The compounding starts at 1 at the beginning of the date range, so the first value
         is 1 plus the return of the first period.
 
+        A period without any daily return for a ticker (before it listed, or a gap in its
+        history) is NaN rather than 0, and the cumulative return carries the previous value
+        past such a period.
+
         Also known as: periodic return.
 
         Args:
@@ -3917,24 +3890,24 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["ASML.AS", "SAP.DE", "MC.PA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_returns(period="yearly")
+        toolkit.performance.get_returns()
         ```
 
         Which returns:
 
-        | Date   |    AMZN |    TSLA |   Benchmark |
-        |:-------|--------:|--------:|------------:|
-        | 2021   |  0.0465 |  0.4488 |      0.3056 |
-        | 2022   | -0.496  | -0.6503 |     -0.1816 |
-        | 2023   |  0.8089 |  1.0174 |      0.2616 |
-        | 2024   |  0.4449 |  0.6255 |      0.2492 |
-        | 2025   |  0.0516 |  0.1129 |      0.1776 |
+        | Date   |   ASML.AS |   SAP.DE |   MC.PA |   Benchmark |
+        |:-------|----------:|---------:|--------:|------------:|
+        | 2021   |    0.748  |   0.2018 |  0.4345 |      0.3058 |
+        | 2022   |   -0.2789 |  -0.2049 | -0.0478 |     -0.1818 |
+        | 2023   |    0.3664 |   0.4709 |  0.0958 |      0.2615 |
+        | 2024   |    0.0035 |   0.7229 | -0.1179 |      0.2493 |
+        | 2025   |    0.3709 |  -0.115  |  0.0393 |      0.1778 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3991,6 +3964,10 @@ class Performance:
         The compounding starts at 1 at the beginning of the date range, so the first value
         is 1 plus the excess return of the first period.
 
+        A period without any daily return for a ticker (before it listed, or a gap in its
+        history) is NaN rather than 0, and the cumulative excess return carries the previous
+        value past such a period.
+
         Also known as: return minus the risk-free rate.
 
         Args:
@@ -4024,24 +4001,24 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["MCD", "SBUX", "CMG"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_excess_return(period="yearly")
+        toolkit.performance.get_excess_return()
         ```
 
         Which returns:
 
-        | Date   |    AMZN |    TSLA |   Benchmark |
-        |:-------|--------:|--------:|------------:|
-        | 2021   |  0.0321 |  0.4344 |      0.2912 |
-        | 2022   | -0.5256 | -0.6799 |     -0.2112 |
-        | 2023   |  0.7693 |  0.9778 |      0.222  |
-        | 2024   |  0.4028 |  0.5834 |      0.2071 |
-        | 2025   |  0.0087 |  0.07   |      0.1347 |
+        | Date   |     MCD |    SBUX |     CMG |   Benchmark |
+        |:-------|--------:|--------:|--------:|------------:|
+        | 2021   |  0.2901 |  0.1399 |  0.3099 |      0.2912 |
+        | 2022   | -0.0255 | -0.1604 | -0.2359 |     -0.2112 |
+        | 2023   |  0.1112 | -0.0511 |  0.6093 |      0.222  |
+        | 2024   | -0.0405 | -0.0669 |  0.2772 |      0.2071 |
+        | 2025   |  0.0359 | -0.0956 | -0.4292 |      0.1347 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4110,22 +4087,24 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["TLT", "GLD", "EFA", "VNQ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_correlation_matrix()
+        toolkit.performance.get_correlation_matrix(period="monthly")
         ```
 
         Which returns:
 
-        |           |   AMZN |   TSLA |   Benchmark |
-        |:----------|-------:|-------:|------------:|
-        | AMZN      | 1      | 0.9985 |      0.912  |
-        | TSLA      | 0.9985 | 1      |      0.9315 |
-        | Benchmark | 0.912  | 0.9315 |      1      |
+        |           |    TLT |    GLD |    EFA |    VNQ |   Benchmark |
+        |:----------|-------:|-------:|-------:|-------:|------------:|
+        | TLT       | 1      | 0.3747 | 0.6185 | 0.6626 |      0.5646 |
+        | GLD       | 0.3747 | 1      | 0.3918 | 0.2266 |      0.1283 |
+        | EFA       | 0.6185 | 0.3918 | 1      | 0.781  |      0.7999 |
+        | VNQ       | 0.6626 | 0.2266 | 0.781  | 1      |      0.8282 |
+        | Benchmark | 0.5646 | 0.1283 | 0.7999 | 0.8282 |      1      |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4170,22 +4149,24 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["^GSPC", "EURUSD", "GCUSD", "CLUSD"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_covariance_matrix()
+        toolkit.performance.get_covariance_matrix(period="monthly")
         ```
 
         Which returns:
 
-        |           |   AMZN |   TSLA |   Benchmark |
-        |:----------|-------:|-------:|------------:|
-        | AMZN      | 0.3122 | 0.4018 |      0.1064 |
-        | TSLA      | 0.4018 | 0.5186 |      0.1401 |
-        | Benchmark | 0.1064 | 0.1401 |      0.0436 |
+        |           |   ^GSPC |   EURUSD |   GCUSD |   CLUSD |   Benchmark |
+        |:----------|--------:|---------:|--------:|--------:|------------:|
+        | ^GSPC     |  0.0019 |   0.0003 |  0.0003 |  0.0003 |      0.0019 |
+        | EURUSD    |  0.0003 |   0.0005 |  0.0005 | -0.0001 |      0.0003 |
+        | GCUSD     |  0.0003 |   0.0005 |  0.0018 | -0.0007 |      0.0003 |
+        | CLUSD     |  0.0003 |  -0.0001 | -0.0007 |  0.0067 |      0.0003 |
+        | Benchmark |  0.0019 |   0.0003 |  0.0003 |  0.0003 |      0.0019 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4265,9 +4246,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["ADBE", "CRM", "ORCL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -4276,12 +4257,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.1098 | -0.6057 |
-        | 2023   |  1.44   |  1.0578 |
-        | 2024   |  0.3386 |  0.1626 |
-        | 2025   | -0.5668 | -0.4983 |
+        | Date   |    ADBE |     CRM |    ORCL |
+        |:-------|--------:|--------:|--------:|
+        | 2021   | -1.1711 | -0.8087 |  0.5274 |
+        | 2022   | -0.4641 | -0.6351 |  0.5198 |
+        | 2023   |  1.5758 |  2.7157 |  0.1366 |
+        | 2024   | -1.6901 | -0.1944 |  0.9946 |
+        | 2025   | -1.4152 | -1.4877 | -0.1032 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4425,23 +4407,24 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["QQQ", "IWM", "XLE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_fama_decomposition().xs("AAPL", level=0, axis=1)
+        toolkit.performance.get_fama_decomposition().xs("Selectivity", level=1, axis=1)
         ```
 
         Which returns:
 
-        | Date   |   Selectivity |   Diversification |
-        |:-------|--------------:|------------------:|
-        | 2022   |        0.0177 |           -0.0359 |
-        | 2023   |        0.1053 |            0.0975 |
-        | 2024   |       -0.108  |            0.1728 |
-        | 2025   |       -0.1765 |            0.0555 |
+        | Date   |     QQQ |     IWM |     XLE |
+        |:-------|--------:|--------:|--------:|
+        | 2021   | -0.123  | -0.3304 | -0.1035 |
+        | 2022   | -0.0751 |  0.0106 |  0.9216 |
+        | 2023   |  0.2052 | -0.2125 | -0.4352 |
+        | 2024   | -0.0824 | -0.2697 | -0.28   |
+        | 2025   |  0.0022 | -0.0738 | -0.1338 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4573,9 +4556,9 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["CAT", "DE", "HON"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
@@ -4584,12 +4567,13 @@ class Performance:
 
         Which returns:
 
-        | Date   |    AAPL |    TSLA |
-        |:-------|--------:|--------:|
-        | 2022   | -0.4128 | -0.4696 |
-        | 2023   |  1.0736 |  0.8708 |
-        | 2024   |  0.5644 |  0.4736 |
-        | 2025   |  0.0659 |  0.0544 |
+        | Date   |    CAT |      DE |     HON |
+        |:-------|-------:|--------:|--------:|
+        | 2021   | 0.287  |  0.4693 | -0.0376 |
+        | 2022   | 0.2125 |  0.2897 |  0.0386 |
+        | 2023   | 0.3701 | -0.1499 | -0.0915 |
+        | 2024   | 0.3598 |  0.063  |  0.1513 |
+        | 2025   | 0.8327 |  0.1243 | -0.1867 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4677,7 +4661,7 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["TSLA", "AMD", "PLTR"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -4688,12 +4672,13 @@ class Performance:
 
         Which returns:
 
-        |      |   AAPL |   TSLA |
-        |:-----|-------:|-------:|
-        | 2022 | 1.0788 | 0.9469 |
-        | 2023 | 1.0726 | 1.1169 |
-        | 2024 | 1.1443 | 1.3081 |
-        | 2025 | 1.0729 | 1.0925 |
+        |      |   TSLA |    AMD |   PLTR |
+        |:-----|-------:|-------:|-------:|
+        | 2021 | 1.2069 | 1.1556 | 1.2789 |
+        | 2022 | 0.9469 | 0.9396 | 0.9301 |
+        | 2023 | 1.1169 | 1.3483 | 1.6236 |
+        | 2024 | 1.3081 | 0.8908 | 2.0305 |
+        | 2025 | 1.0925 | 1.4024 | 1.0683 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -4773,24 +4758,24 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["ARKK", "JEPI"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_treynor_mazuy_model().xs("AAPL", level=0, axis=1)
+        toolkit.performance.get_treynor_mazuy_model().xs("ARKK", level=0, axis=1)
         ```
 
         Which returns:
 
-        |      |   Alpha |   Beta |   Gamma |   R Squared |
-        |:-----|--------:|-------:|--------:|------------:|
-        | 2021 | -0.0007 | 1.3256 |  9.7914 |      0.4696 |
-        | 2022 | -0.0007 | 1.3052 |  2.7494 |      0.7846 |
-        | 2023 | -0.0003 | 1.0941 | 14.3671 |      0.5257 |
-        | 2024 |  0.0009 | 0.9437 | -9.4488 |      0.294  |
-        | 2025 | -0.0005 | 1.2233 |  1.6355 |      0.569  |
+        |      |   Alpha |   Beta |    Gamma |   R Squared |
+        |:-----|--------:|-------:|---------:|------------:|
+        | 2021 | -0.0034 | 1.6646 |  12.4821 |      0.2937 |
+        | 2022 | -0.0035 | 2.1567 |   6.9512 |      0.5959 |
+        | 2023 |  0.0015 | 2.2614 | -14.8854 |      0.529  |
+        | 2024 | -0.001  | 2.1368 |  -3.1566 |      0.5658 |
+        | 2025 |  0.0006 | 1.8994 |  -1.3437 |      0.6767 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)
@@ -4891,24 +4876,24 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "TSLA"],
+            ["BRK-B", "FBCG"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_henriksson_merton_model().xs("AAPL", level=0, axis=1)
+        toolkit.performance.get_henriksson_merton_model().xs("FBCG", level=0, axis=1)
         ```
 
         Which returns:
 
         |      |   Alpha |   Beta |   Up Market Beta |   R Squared |
         |:-----|--------:|-------:|-----------------:|------------:|
-        | 2021 | -0.0005 | 1.2444 |           0.1472 |      0.4658 |
-        | 2022 | -0.0011 | 1.2201 |           0.1682 |      0.7839 |
-        | 2023 | -0.0006 | 0.9032 |           0.3952 |      0.5214 |
-        | 2024 |  0.0013 | 1.1394 |          -0.3575 |      0.2925 |
-        | 2025 | -0.0009 | 1.173  |           0.1517 |      0.567  |
+        | 2021 | -0.0004 | 1.4217 |          -0.064  |      0.7204 |
+        | 2022 | -0.0009 | 1.4208 |           0.0312 |      0.885  |
+        | 2023 |  0.0004 | 1.359  |           0.0602 |      0.8342 |
+        | 2024 |  0      | 1.4674 |           0.0496 |      0.8536 |
+        | 2025 |  0.0002 | 1.3907 |          -0.0759 |      0.8893 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)

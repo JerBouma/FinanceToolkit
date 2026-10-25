@@ -6696,8 +6696,8 @@ class Economics:
         sovereign debt crisis (e.g. a default or restructuring of government debt), and 0 marks a
         year in which it was not.
 
-        The crisis dating stops well short of the present -- the series currently ends in 2017 --
-        so recent years are NaN rather than 0.
+        The crisis dating stops short of the present and ends in a different year per country
+        (2017 for Argentina, for example), so the years after it are NaN rather than 0.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -6722,20 +6722,22 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='1980-01-01', end_date="2025-12-31")
+        economics = Economics(start_date="1999-01-01", end_date="2005-12-31")
 
-        economics.get_sovereign_debt_crisis(countries='Argentina')
+        economics.get_sovereign_debt_crisis(countries=["Argentina", "Ecuador", "Greece"])
         ```
 
         Which returns:
 
-        |      |   Argentina |
-        |:-----|------------:|
-        | 2021 |         nan |
-        | 2022 |         nan |
-        | 2023 |         nan |
-        | 2024 |         nan |
-        | 2025 |         nan |
+        |      |   Argentina |   Ecuador |   Greece |
+        |:-----|------------:|----------:|---------:|
+        | 1999 |           0 |         1 |        0 |
+        | 2000 |           0 |         0 |        0 |
+        | 2001 |           1 |         0 |        0 |
+        | 2002 |           0 |         0 |        0 |
+        | 2003 |           0 |         0 |        0 |
+        | 2004 |           0 |         0 |        0 |
+        | 2005 |           1 |         0 |        0 |
         """
 
         sovereign_debt_crisis = gmdb_model.get_sovereign_debt_crisis(
@@ -6773,8 +6775,8 @@ class Economics:
         crisis (e.g. a sharp, disorderly depreciation or collapse of the exchange rate), and 0
         marks a year in which it was not.
 
-        The crisis dating stops well short of the present -- the series currently ends in 2017 --
-        so recent years are NaN rather than 0.
+        The crisis dating stops short of the present and ends in a different year per country,
+        so the years after it are NaN rather than 0.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html
@@ -6850,8 +6852,8 @@ class Economics:
         banking crisis (e.g. bank runs, large-scale bank failures or government intervention to
         prevent them), and 0 marks a year in which it was not.
 
-        The crisis dating stops well short of the present -- the series currently ends in 2020 --
-        so recent years are NaN rather than 0.
+        The crisis dating stops short of the present and ends in a different year per country,
+        so the years after it are NaN rather than 0.
 
         Data comes from the Global Macro Database (GMDB), further information about the
         variable can be found within https://www.globalmacrodata.com/documentation.html

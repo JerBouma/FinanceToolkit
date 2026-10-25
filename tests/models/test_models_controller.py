@@ -269,6 +269,12 @@ def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module)
             ]
             .dropna()
             .iloc[-1],
+            # The marketable securities are added back with the cash, as the EV breakdown deducts both.
+            short_term_investments=models_module._balance_sheet_statement.loc[
+                ticker, "Short Term Investments"
+            ]
+            .dropna()
+            .iloc[-1],
         ).round(10)
         pd.testing.assert_frame_equal(valuation.loc[ticker], expected)
 
@@ -426,3 +432,124 @@ def test_dividend_discount_models_drop_an_unfinished_period():
     assert complete("2024-12-31").index[-1] == years[-1]
     # Data ending in June leaves 2024 unfinished, so 2023 is the last complete year.
     assert complete("2024-06-28").index[-1] == years[-2]
+
+
+def test_operating_profit_after_taxes_uses_the_wacc_tax_rate(models_module):
+    import pandas as pd
+
+    from financetoolkit.models import wacc_model
+
+    income = models_module._income_statement
+    tax_rate = wacc_model.get_corporate_tax_rate(
+        income.loc[:, "Income Tax Expense", :], income.loc[:, "Income Before Tax", :]
+    )
+    expected = (income.loc[:, "Operating Income", :] * (1 - tax_rate)).round(6)
+
+    for result in (
+        models_module.get_economic_value_added(rounding=6),
+        models_module.get_free_cash_flow_to_firm(rounding=6),
+    ):
+        nopat = result.xs("Net Operating Profit After Taxes", level=1)
+        pd.testing.assert_frame_equal(
+            nopat,
+            expected.loc[nopat.index, nopat.columns],
+            check_names=False,
+            check_freq=False,
+        )
+
+
+def test_quarterly_dividend_discount_models_use_an_annual_dividend(
+    models_module, monkeypatch
+):
+    import pandas as pd
+    import pytest
+
+    from financetoolkit.models import intrinsic_model
+
+    monkeypatch.setattr(models_module, "_quarterly", True)
+
+    quarterly_dividends = models_module._complete_period_dividends()
+    annual_dividend = quarterly_dividends.rolling(4).sum().iloc[-1]
+    last_quarter = quarterly_dividends.index[-1]
+
+    gordon = models_module.get_gorden_growth_model(
+        rate_of_return=0.08, growth_rate=0.03, project_periods=2, rounding=10
+    )
+    # The last complete quarter is valued off the trailing four quarters of dividends.
+    assert gordon.loc[last_quarter, "AAPL"] == pytest.approx(
+        annual_dividend["AAPL"] * 1.03 / 0.05
+    )
+    # The projection steps are years, four quarters apart.
+    assert list(gordon.index[-2:]) == [last_quarter + 4, last_quarter + 8]
+    assert gordon.loc[last_quarter + 8, "AAPL"] == pytest.approx(
+        annual_dividend["AAPL"] * 1.03**2 * 1.03 / 0.05
+    )
+
+    two_stage = models_module.get_two_stage_dividend_discount_model(
+        0.08, 0.1, 0.03, rounding=10
+    )
+    expected = intrinsic_model.get_two_stage_dividend_discount_model(
+        dividends_per_share=annual_dividend["MSFT"],
+        rate_of_return=0.08,
+        high_growth_rate=0.1,
+        stable_growth_rate=0.03,
+    ).round(10)
+    pd.testing.assert_frame_equal(two_stage.loc["MSFT"], expected)
+
+
+def test_graham_number_trails_only_the_earnings(models_module):
+    import numpy as np
+    import pandas as pd
+
+    income = models_module._income_statement
+    balance = models_module._balance_sheet_statement
+    shares = income.loc[:, "Weighted Average Shares Diluted", :]
+
+    earnings_per_share = (
+        income.loc[:, "Net Income", :].T.rolling(2).sum() / shares.T.rolling(2).mean()
+    ).T
+    # Book value is point in time: the closing equity over the shares of that period.
+    book_value_per_share = (
+        balance.loc[:, "Total Shareholder Equity", :]
+        - balance.loc[:, "Preferred Stock", :]
+    ) / shares
+    expected = np.sqrt(22.5 * earnings_per_share * book_value_per_share).round(6)
+
+    graham = models_module.get_graham_number(trailing=2, rounding=6)
+    pd.testing.assert_frame_equal(
+        graham,
+        expected.loc[graham.index, graham.columns],
+        check_names=False,
+        check_freq=False,
+    )
+
+
+def test_wacc_with_a_period_missing_from_the_balance_sheet():
+    """A year the balance sheet lacks leaves the WACC of that year missing, not an error."""
+    import pandas as pd  # noqa: PLC0415
+
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    balance = pd.read_pickle("tests/datasets/balance_dataset.pickle")
+    balance = balance.drop(columns=[c for c in balance.columns if str(c) == "2022"])
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=balance,
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+        use_cached_data=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    wacc = toolkit.models.get_weighted_average_cost_of_capital()
+
+    assert not wacc.empty
+    assert wacc.loc[("AAPL", "Weighted Average Cost of Capital"), "2020"] > 0

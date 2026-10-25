@@ -332,23 +332,100 @@ def test_toolkit_period_risk_free_rate_is_the_average_daily_yield():
     )
 
 
-def test_toolkit_statement_exchange_rates_are_period_averages():
+def _fiscal_exchange_rate_toolkit():
     toolkit = Toolkit(
         tickers=["AAPL"],
-        income=income_dataset,
+        income=income_dataset.loc[["AAPL"]],
         convert_currency=False,
         start_date="2019-12-31",
         end_date="2023-01-01",
         sleep_timer=False,
     )
-    toolkit._daily_exchange_rate_data = pd.DataFrame(
-        {("Adj Close", "EURUSD=X"): [1.0, 1.2, 1.1, 1.3]},
-        index=pd.PeriodIndex(
-            ["2021-03-01", "2021-12-31", "2022-01-03", "2022-06-30"], freq="D"
-        ),
+    days = pd.period_range("2019-01-01", "2023-12-31", freq="D")
+    rates = pd.Series(range(len(days)), index=days, dtype=float) / 1000 + 1
+    toolkit._daily_exchange_rate_data = pd.DataFrame({("Adj Close", "EURUSD=X"): rates})
+    toolkit._statement_currencies = pd.Series({"AAPL": "EURUSD=X"})
+    # Apple's fiscal years end on the last Saturday of September.
+    toolkit._statistics_statement = pd.DataFrame(
+        [["2020-09-26", "2021-09-25", "2022-09-24", "2023-09-30"]],
+        index=pd.MultiIndex.from_tuples([("AAPL", "Period End Date")]),
+        columns=income_dataset.columns,
+    )
+    return toolkit, rates.set_axis(days.to_timestamp())
+
+
+def test_toolkit_statement_exchange_rates_use_the_fiscal_period():
+    toolkit, rates = _fiscal_exchange_rate_toolkit()
+    statement = toolkit._income_statement
+
+    closing = toolkit._get_statement_exchange_rates(statement, rate="closing")["AAPL"]
+    average = toolkit._get_statement_exchange_rates(statement, rate="average")["AAPL"]
+    opening = toolkit._get_statement_exchange_rates(statement, rate="opening")["AAPL"]
+
+    # The closing rate is the rate on the fiscal year end, not on 31 December.
+    assert closing[pd.Period("2021", "Y")] == pytest.approx(rates["2021-09-25"])
+    # The average runs from the day after the previous fiscal year end to this one.
+    assert average[pd.Period("2021", "Y")] == pytest.approx(
+        rates["2020-09-27":"2021-09-25"].mean()
+    )
+    # The first period has no previous period, so its window is the year before its end.
+    assert average[pd.Period("2020", "Y")] == pytest.approx(
+        rates["2019-09-27":"2020-09-26"].mean()
+    )
+    assert opening[pd.Period("2022", "Y")] == pytest.approx(rates["2021-09-25"])
+
+
+def test_toolkit_period_end_dates_fall_back_to_the_label():
+    toolkit, _ = _fiscal_exchange_rate_toolkit()
+    toolkit._statistics_statement = pd.DataFrame()
+    toolkit._fiscal_year_adjustments = {
+        "AAPL": [{"fiscal_year": 2023, "calendar_year": 2022}]
+    }
+
+    end_dates = toolkit._get_period_end_dates(toolkit._income_statement).loc["AAPL"]
+
+    assert end_dates[pd.Period("2021", "Y")] == pd.Timestamp("2021-12-31")
+    # A label moved back a year ends at the latest on 31 May of the next year.
+    assert end_dates[pd.Period("2022", "Y")] == pd.Timestamp("2023-05-31")
+
+
+def test_toolkit_statement_exchange_rates_are_not_rounded(monkeypatch):
+    from financetoolkit import toolkit_controller
+
+    captured = {}
+
+    def fake_historical_data(**kwargs):
+        captured["rounding"] = kwargs["rounding"]
+        days = pd.period_range("2022-01-01", "2022-01-10", freq="D")
+        frame = pd.DataFrame(
+            {
+                (column, "KRWUSD=X"): [0.000771234] * len(days)
+                for column in ["Open", "High", "Low", "Close", "Adj Close"]
+            },
+            index=days,
+        )
+        return frame, []
+
+    monkeypatch.setattr(
+        toolkit_controller, "_get_historical_data", fake_historical_data
     )
 
-    average_rates = toolkit._get_average_statement_exchange_rates()
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        income=income_dataset.loc[["AAPL"]],
+        convert_currency=False,
+        start_date="2022-01-01",
+        end_date="2022-01-10",
+        sleep_timer=False,
+    )
+    toolkit._currencies = ["KRWUSD=X"]
 
-    assert average_rates["EURUSD=X"].tolist() == pytest.approx([1.1, 1.2])
-    assert [str(period) for period in average_rates.index] == ["2021", "2022"]
+    returned = toolkit.get_exchange_rates()
+
+    # Fetched unrounded for the statement translation; only the returned rates are rounded.
+    assert captured["rounding"] is None
+    assert (
+        toolkit._daily_exchange_rate_data[("Adj Close", "KRWUSD=X")].iloc[0]
+        == 0.000771234
+    )
+    assert returned["Adj Close"].iloc[0] == 0.0008

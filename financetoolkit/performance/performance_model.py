@@ -2132,6 +2132,8 @@ def get_returns(
 
         - Period Return = ((1 + Return 1) * (1 + Return 2) * ... * (1 + Return N)) - 1
 
+    A period without any return (e.g. before a ticker listed) is NaN rather than 0.
+
     If cumulative is set to True, the period returns are compounded further into
     a cumulative return, following the formula:
 
@@ -2168,7 +2170,8 @@ def get_returns(
         else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
-    period_returns = (1 + returns).groupby(dates).prod() - 1
+    # min_count=1 keeps a period without any return (a ticker that listed later or a gap in its history) NaN; the plain product of an empty group is 1, which would report a return of exactly 0 for it.  # noqa: E501
+    period_returns = (1 + returns).groupby(dates).prod(min_count=1) - 1
 
     if cumulative:
         return (1 + period_returns).cumprod()

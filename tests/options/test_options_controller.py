@@ -675,3 +675,35 @@ def test_a_stale_spot_next_to_live_chains_is_reported(options_module, monkeypatc
 
     assert len(warnings) == 1
     assert "option chains" in warnings[0][0]
+
+
+def test_trailing_dividend_yield_falls_back_to_the_dividends_column():
+    from financetoolkit.options import options_model
+
+    index = pd.period_range("2020-01-01", "2022-12-31", freq="D")
+    close = pd.DataFrame({"ABC": 100.0}, index=index)
+    dividends = pd.DataFrame({"ABC": 0.0}, index=index)
+    for date in ["2021-03-01", "2021-06-01", "2021-09-01", "2021-12-01"]:
+        dividends.loc[pd.Period(date, "D"), "ABC"] = 0.5
+
+    # A history that lists dividends without adjusting the close for them.
+    unadjusted = options_model.get_trailing_dividend_yield(close, close.copy())
+    filled = options_model.get_trailing_dividend_yield(
+        close, close.copy(), dividends=dividends
+    )
+
+    assert unadjusted.loc[pd.Period("2021-12-31", "D"), "ABC"] == 0
+    assert filled.loc[pd.Period("2021-12-31", "D"), "ABC"] == pytest.approx(0.02)
+    assert filled.loc[pd.Period("2021-04-01", "D"), "ABC"] == pytest.approx(0.005)
+
+
+def test_the_dividend_yield_is_converted_to_continuous_compounding(options_module):
+    import numpy as np
+
+    ticker = options_module._tickers[0]
+    date = options_module._daily_dividend_yield.index[-1]
+    simple_yield = options_module._daily_dividend_yield.loc[date, ticker]
+
+    assert options_module._dividend_yield_on(ticker, date) == pytest.approx(
+        np.log1p(simple_yield)
+    )

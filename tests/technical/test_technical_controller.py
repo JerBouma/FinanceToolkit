@@ -491,3 +491,16 @@ def test_relative_vigor_index_returns_index_and_signal_line(technical_module):
     assert {"Relative Vigor Index", "Signal Line"} <= set(
         result.columns.get_level_values(0)
     )
+
+
+def test_get_trix_defaults_to_a_window_of_15(technical_module):
+    import inspect
+
+    import pandas as pd
+
+    assert (
+        inspect.signature(technical_module.get_trix).parameters["window"].default == 15
+    )
+    pd.testing.assert_frame_equal(
+        technical_module.get_trix(), technical_module.get_trix(window=15)
+    )

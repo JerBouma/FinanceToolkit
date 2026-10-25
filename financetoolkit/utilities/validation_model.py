@@ -142,6 +142,13 @@ def validate_toolkit_parameters(
         )
         ticker_list = deduplicated_tickers
 
+    # Dropping a benchmark that is the only ticker would leave nothing to analyse.
+    if ticker_list == [benchmark_ticker]:
+        raise ValueError(
+            f"{benchmark_ticker} is both the only ticker and the benchmark. Please set "
+            "benchmark_ticker to another ticker, or to None when no benchmark is needed."
+        )
+
     if benchmark_ticker in ticker_list:
         logger.warning(
             "Please note that the benchmark ticker (%s) is also "

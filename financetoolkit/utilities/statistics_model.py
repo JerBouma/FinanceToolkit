@@ -462,7 +462,22 @@ def apply_rounding(
     Returns:
         pd.Series | pd.DataFrame: the rounded dataset, or the dataset as-is when rounding is None.
     """
-    return dataset if rounding is None else dataset.round(rounding)
+    if rounding is None:
+        return dataset
+
+    rounded = dataset.round(rounding)
+
+    # A small negative number rounds to -0.0, which prints as "-0"; adding 0.0 turns it
+    # into 0.0 and leaves every other number as it is.
+    if isinstance(rounded, pd.Series):
+        return rounded + 0.0 if pd.api.types.is_float_dtype(rounded) else rounded
+
+    float_columns = rounded.dtypes.map(pd.api.types.is_float_dtype).to_numpy(dtype=bool)
+
+    if float_columns.any():
+        rounded.iloc[:, float_columns] = rounded.iloc[:, float_columns] + 0.0
+
+    return rounded
 
 
 def bounded_ffill(

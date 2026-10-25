@@ -247,7 +247,8 @@ def get_return_on_invested_capital(
     taxed at the effective tax rate (Damodaran). Because EBIT is before interest, the
     return does not depend on how the capital is financed. The effective tax rate is
     Income Tax Expense / Income Before Tax, bounded to [0, 1]; with a pre-tax loss it is
-    undefined and set to 0, so an operating loss is not offset by a tax credit.
+    undefined and set to 0, so an operating loss is not offset by a tax credit. A missing
+    tax expense or income before tax gives NaN.
 
     The formula is as follows:
 
@@ -268,11 +269,12 @@ def get_return_on_invested_capital(
     Returns:
         float | pd.Series: The return on invested capital value.
     """
+    # Only a pre-tax loss (or zero) sets the rate to 0; a missing tax expense or income before
+    # tax stays NaN, so an unreported figure is not read as a tax-free year.
     effective_tax_rate = (
-        (income_tax_expense / income_before_tax.where(income_before_tax > 0))
-        .clip(lower=0, upper=1)
-        .fillna(0)
-    )
+        income_tax_expense / income_before_tax.where(income_before_tax > 0)
+    ).clip(lower=0, upper=1)
+    effective_tax_rate = effective_tax_rate.mask(income_before_tax <= 0, 0)
 
     net_operating_profit_after_taxes = operating_income * (1 - effective_tax_rate)
 

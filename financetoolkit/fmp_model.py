@@ -404,6 +404,12 @@ def get_financial_statement(
 
         period_end_dates = pd.to_datetime(financial_statement["date"])
 
+        # The label below is a calendar period, so the actual last day of each fiscal period is
+        # kept as a statistic (Period End Date): daily ratios apply a period's figures from that
+        # day on and currency translation takes its closing and average rates from the fiscal
+        # period it ends.
+        financial_statement["periodEndDate"] = period_end_dates.dt.strftime("%Y-%m-%d")
+
         # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
         financial_statement["date"] = pd.to_datetime(
             financial_statement["date"]
@@ -1317,12 +1323,13 @@ def get_profile(
             profile_dataframe = profile_dataframe.rename(index=naming)
 
             # The source quotes the daily change in percent; returned as a decimal like every
-            # other change in the package (0.0125 is +1.25%).
+            # other change in the package (0.0125 is +1.25%), rounded to remove the float
+            # residue of the division as in get_quote.
             if "Change %" in profile_dataframe.index:
                 profile_dataframe.loc["Change %"] = (
                     pd.to_numeric(profile_dataframe.loc["Change %"], errors="coerce")
                     / 100
-                )
+                ).round(10)
             profile_dataframe = profile_dataframe.drop(
                 [
                     "image",
@@ -1429,11 +1436,13 @@ def get_quote(
         quote_dataframe = quote_dataframe.rename(index=naming)
 
         # The source quotes the daily change in percent; returned as a decimal like every
-        # other change in the package (0.0125 is +1.25%).
+        # other change in the package (0.0125 is +1.25%). Rounded to 10 decimals, beyond
+        # the precision the source quotes, which removes the float residue of the division
+        # (-0.75391 / 100 gives -0.007539100000000001).
         if "Change %" in quote_dataframe.index:
             quote_dataframe.loc["Change %"] = (
                 pd.to_numeric(quote_dataframe.loc["Change %"], errors="coerce") / 100
-            )
+            ).round(10)
 
     return quote_dataframe, no_data
 
@@ -1510,10 +1519,9 @@ def get_rating(
 
     if ratings_dict:
         # A date is kept when a single score is missing, which still has its rating.
+        # The ticker level is kept for a single ticker too: the cache splits the result
+        # per ticker on it, and without it the ratings were cached as missing.
         ratings_dataframe = pd.concat(ratings_dict, axis=0).dropna(how="all")
-
-        if len(ticker_list) == 1:
-            ratings_dataframe = to_dataframe(ratings_dataframe.loc[ticker_list[0]])
 
         return ratings_dataframe, no_data
 

@@ -297,7 +297,7 @@ def get_kaufman_adaptive_moving_average(
 
     - Change = |Close(t) — Close(t - window)|
     - Volatility = Sum(|Close(i) — Close(i - 1)|, window)
-    - Efficiency Ratio (ER) = Change / Volatility
+    - Efficiency Ratio (ER) = Change / Volatility, and 1 when Volatility ≤ Change (flat prices)
     - Fastest SC = 2 / (fast_window + 1), Slowest SC = 2 / (slow_window + 1)
     - Smoothing Constant (SC) = [ER * (Fastest SC — Slowest SC) + Slowest SC]^2
     - KAMA(t) = KAMA(t-1) + SC * (Close(t) — KAMA(t-1))
@@ -334,7 +334,12 @@ def get_kaufman_adaptive_moving_average(
 
     change = (prices - prices.shift(window)).abs()
     volatility = prices.diff().abs().rolling(window=window).sum()
-    efficiency_ratio = change / volatility
+    # When the path is no longer than the net move (only possible with equal values, as on
+    # flat prices where both are 0) the move is fully efficient and the ratio is 1, as in
+    # TA-Lib's ta_KAMA.c (sumROC1 <= change). Dividing would give 0 / 0 on flat prices and
+    # stall the average; the ratio stays NaN only where prices are missing.  # noqa: E501
+    efficiency_ratio = (change / volatility).where(volatility > change, 1.0)
+    efficiency_ratio = efficiency_ratio.where(change.notna() & volatility.notna())
 
     fastest_smoothing_constant = 2 / (fast_window + 1)
     slowest_smoothing_constant = 2 / (slow_window + 1)

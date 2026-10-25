@@ -367,3 +367,15 @@ def test_get_hurst_exponent_includes_max_lag():
 def test_get_ui_invalid_method():
     with pytest.raises(ValueError, match="method"):
         risk_model.get_ui(pd.Series([0.01, -0.02]), method="bad")
+
+
+def test_get_hill_estimator_without_data_uses_no_order_statistics():
+    for returns in (pd.Series(dtype=float), pd.Series([np.nan, np.nan, 0.01])):
+        result = risk_model.get_hill_estimator(returns, tail="left")
+
+        assert pd.isna(result["Hill Tail Index"])
+        assert result["Observations Used (k)"] == 0
+
+    # With data, a fraction that rounds down to zero still uses one order statistic.
+    result = risk_model.get_hill_estimator(pd.Series([-0.01, -0.02, -0.03]), k=0.1)
+    assert result["Observations Used (k)"] == 1

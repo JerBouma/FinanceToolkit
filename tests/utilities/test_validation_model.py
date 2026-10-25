@@ -41,6 +41,13 @@ def test_benchmark_ticker_is_removed_from_tickers():
     assert validate(tickers=["AAPL", "SPY"], benchmark_ticker="SPY") == ["AAPL"]
 
 
+def test_the_benchmark_as_the_only_ticker_raises():
+    with pytest.raises(ValueError, match="only ticker and the benchmark"):
+        validate(tickers=["spy"], benchmark_ticker="SPY")
+
+    assert validate(tickers=["SPY"], benchmark_ticker=None) == ["SPY"]
+
+
 def test_no_tickers_raises():
     with pytest.raises(ValueError, match="ticker or a list"):
         validate(tickers=None)

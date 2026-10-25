@@ -776,3 +776,17 @@ def test_get_event_study_default_ticker(recorder, econometrics_module):
             event_date="2021-03-11", dependent_ticker="MSFT"
         )
     )
+
+
+def test_pair_tables_are_rounded(econometrics_module):
+    # Each pair's row mixes numbers and a boolean, which left object columns that the
+    # rounding skipped.
+    for result in (
+        econometrics_module.get_engle_granger_cointegration(period="quarterly"),
+        econometrics_module.get_granger_causality(period="weekly", max_lag=3),
+        econometrics_module.get_two_sample_t_test(period="weekly"),
+    ):
+        numeric = result.select_dtypes("number")
+
+        assert not numeric.empty
+        assert (numeric.round(4) == numeric).all().all()

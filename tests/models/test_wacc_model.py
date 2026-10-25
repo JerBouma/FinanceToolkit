@@ -81,3 +81,15 @@ def test_weighted_average_cost_of_capital_keeps_the_tax_rate_within_zero_and_one
     assert wacc.loc["Weighted Average Cost of Capital"].tolist() == pytest.approx(
         [0.065, 0.065, 0.5 * 0.08 + 0.5 * 0.05 * 0.79]
     )
+
+
+def test_corporate_tax_rate_is_clipped_and_zero_without_a_pre_tax_profit():
+    tax_rate = wacc_model.get_corporate_tax_rate(
+        income_tax_expense=pd.Series([-20.0, 30.0, 21.0, 150.0, -5.0]),
+        income_before_tax=pd.Series([100.0, -10.0, 100.0, 100.0, -50.0]),
+    )
+
+    # A tax benefit on a profit, a loss, an ordinary rate, tax above the profit and two losses.
+    assert tax_rate.tolist() == [0.0, 0.0, 0.21, 1.0, 0.0]
+    assert wacc_model.get_corporate_tax_rate(-5.0, -50.0) == 0.0
+    assert wacc_model.get_corporate_tax_rate(21.0, 100.0) == pytest.approx(0.21)

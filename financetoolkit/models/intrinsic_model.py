@@ -19,6 +19,7 @@ def get_intrinsic_value(
     total_debt: float,
     shares_outstanding: float,
     periods: int = 5,
+    short_term_investments: float = 0.0,
 ) -> pd.DataFrame:
     """
     Intrinsic value is a fundamental concept in finance and investing that represents the true
@@ -34,7 +35,8 @@ def get_intrinsic_value(
         - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
         (Weighted Average Cost of Capital — Perpetual Growth Rate)
         - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
-        - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents
+        - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents + Short Term
+        Investments
         - Intrinsic Value = Equity Value / Total Shares Outstanding
 
     Args:
@@ -49,6 +51,8 @@ def get_intrinsic_value(
         total_debt (float): The total debt of the company.
         shares_outstanding (float): The total shares outstanding of the company.
         periods (int, optional): The number of periods to project the cash flow for. Defaults to 5.
+        short_term_investments (float, optional): The marketable securities that are not cash
+        equivalents, added back with the cash. Defaults to 0.0.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection, Enterprise
@@ -64,6 +68,9 @@ def get_intrinsic_value(
     providers, so the base cash flow should be the Free Cash Flow to the Firm. Debt is subtracted
     from the Enterprise Value afterwards, which counts interest twice when the base cash flow is
     already after interest (such as the reported Free Cash Flow).
+    - The cash and the short term investments are added back together, the mirror image of the
+    Enterprise Value that deducts cash and marketable securities together (Damodaran). The
+    operating cash flows do not include the income on these assets, so they are valued separately.
     """
     if weighted_average_cost_of_capital <= perpetual_growth_rate:
         raise ValueError(
@@ -103,8 +110,13 @@ def get_intrinsic_value(
     # Calculate the Enterprise Value, using fsum so the total is correctly rounded rather than accumulation-order dependent (builtin sum only compensates on 3.12+)  # noqa: E501
     enterprise_value = fsum(cash_flow_present_value)
 
-    # Calculate the Equity Value
-    equity_value = enterprise_value + cash_and_cash_equivalents - total_debt
+    # Calculate the Equity Value: the cash and the marketable securities belong to the shareholders on top of the operating Enterprise Value.  # noqa: E501
+    equity_value = (
+        enterprise_value
+        + cash_and_cash_equivalents
+        + short_term_investments
+        - total_debt
+    )
 
     # Calculate the Intrinsic Value
     intrinsic_value = equity_value / shares_outstanding

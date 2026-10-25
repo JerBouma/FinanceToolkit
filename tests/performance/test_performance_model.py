@@ -758,3 +758,25 @@ def test_capture_ratios_use_geometric_averages():
     assert performance_model.get_upside_capture_ratio(
         returns["A"], benchmark
     ) == pytest.approx(up["A"])
+
+
+def test_get_returns_keeps_periods_without_data_missing():
+    dates = pd.period_range("2023-01-02", "2023-12-29", freq="D")
+    rng = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        {"A": rng.normal(0, 0.01, len(dates)), "B": rng.normal(0, 0.01, len(dates))},
+        index=dates,
+    )
+    # B lists in the second quarter.
+    returns.loc[:"2023-03-31", "B"] = np.nan
+
+    quarterly = performance_model.get_returns(returns, "quarterly")
+    cumulative = performance_model.get_returns(returns, "quarterly", cumulative=True)
+
+    # A quarter without any return is missing, not a return of exactly 0.
+    assert np.isnan(quarterly.loc[pd.Period("2023Q1", "Q"), "B"])
+    expected = np.prod(1 + returns.loc["2023-04-01":"2023-06-30", "B"]) - 1
+    assert quarterly.loc[pd.Period("2023Q2", "Q"), "B"] == pytest.approx(expected)
+    assert np.isnan(cumulative.loc[pd.Period("2023Q1", "Q"), "B"])
+    assert cumulative.loc[pd.Period("2023Q2", "Q"), "B"] == pytest.approx(1 + expected)
+    assert quarterly["A"].notna().all()

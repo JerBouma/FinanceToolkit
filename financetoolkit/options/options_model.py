@@ -240,6 +240,12 @@ def get_continuously_compounded_rate(
     compounded semi-annually equals a continuously compounded rate of 3.96%. Using the quoted
     yield directly in e^(-r * t) would overstate the discounting and the forward drift.
 
+    The 13-week Treasury bill rate (^IRX) is quoted as a bank discount rate d instead, whose
+    bond-equivalent yield is 365 * d / (360 — d * days). The Toolkit's rate series do not carry
+    their maturity, so every series is treated as a semi-annual bond-equivalent yield; for the
+    13-week rate this understates the yield slightly (a 5.00% discount rate is a 5.13%
+    bond-equivalent yield), making it an approximation.
+
     Args:
         bond_equivalent_yield (pd.Series | pd.DataFrame | float): The quoted yield as a decimal.
         compounding_per_year (int, optional): The number of compounding periods per year.
@@ -255,10 +261,15 @@ def get_continuously_compounded_rate(
 # The trailing window of the dividend yield, and the history a ticker needs before a full window is available.  # noqa: E501
 DIVIDEND_YIELD_WINDOW = "365D"
 DIVIDEND_YIELD_DAYS = 365
+# The recovered yield below which a window counts as showing no dividends: cent rounding of
+# the adjusted close leaves a few millionths where no dividend was adjusted for.
+MINIMUM_RECOVERED_DIVIDEND_YIELD = 1e-6
 
 
 def get_trailing_dividend_yield(
-    close: pd.DataFrame, adjusted_close: pd.DataFrame
+    close: pd.DataFrame,
+    adjusted_close: pd.DataFrame,
+    dividends: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Calculates the trailing dividend yield on every date: the dividends per share that went
@@ -286,11 +297,23 @@ def get_trailing_dividend_yield(
     takes the yield of the first date that has one. That yield includes dividends paid after
     the date, so within the first year the yield is not limited to what was known at the time.
 
+    Some price histories carry dividends without adjusting the close for them (an Adj Close
+    equal to the Close). The recovered dividends of such a window are zero, and when a
+    dividends per share column is given, the dividends it lists over the same 365 days are
+    used instead. These are as paid at the time, so a split within the window mixes share
+    units, which is why they only fill windows the adjustment leaves empty.
+
+    The result is a simple annual yield; the option formulas carry the yield continuously
+    and take ln(1 + q), see options_controller.
+
     Args:
         close (pd.DataFrame): The daily (split-adjusted) close per ticker, with a
             DatetimeIndex or a daily PeriodIndex.
         adjusted_close (pd.DataFrame): The daily close adjusted for dividends and splits,
             shaped like `close`.
+        dividends (pd.DataFrame | None, optional): The dividends per share on their ex-dates,
+            shaped like `close`, used where the adjustment shows no dividends over the window.
+            Defaults to None (only the recovered dividends).
 
     Returns:
         pd.DataFrame: The trailing dividend yield as a decimal, shaped like `close`. Dates
@@ -304,12 +327,31 @@ def get_trailing_dividend_yield(
     filled_close = close.ffill()
     adjustment = (adjusted_close / close).ffill()
 
-    dividends = (1 - adjustment.shift(1) / adjustment) * filled_close.shift(1)
+    recovered_dividends = (1 - adjustment.shift(1) / adjustment) * filled_close.shift(1)
     trailing_dividends = (
-        dividends.set_axis(dates).rolling(DIVIDEND_YIELD_WINDOW).sum().set_axis(index)
+        recovered_dividends.set_axis(dates)
+        .rolling(DIVIDEND_YIELD_WINDOW)
+        .sum()
+        .set_axis(index)
     )
 
     dividend_yield = trailing_dividends / close
+
+    if dividends is not None:
+        listed_dividends = (
+            dividends.reindex(index=index, columns=close.columns)
+            .fillna(0)
+            .set_axis(dates)
+            .rolling(DIVIDEND_YIELD_WINDOW)
+            .sum()
+            .set_axis(index)
+        )
+
+        dividend_yield = dividend_yield.mask(
+            (dividend_yield.fillna(0) < MINIMUM_RECOVERED_DIVIDEND_YIELD)
+            & (listed_dividends > 0),
+            listed_dividends / close,
+        )
 
     # A window of a full year only exists from a year after a ticker's first close.
     first_dates = pd.Series(

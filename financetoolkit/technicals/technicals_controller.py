@@ -535,28 +535,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["EWJ", "EWG", "EWU", "EWQ", "EWZ", "INDA", "FXI", "EWC", "EWA", "EWY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_mcclellan_oscillator()
+        toolkit.technicals.get_mcclellan_oscillator().loc[:, ["EWJ", "EWG", "EWZ", "INDA", "FXI", "Benchmark"]].tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | -0.0981 | -0.0175 |     -0.1682 |
-        | 2025-12-18 | -0.0378 |  0.0326 |     -0.1047 |
-        | 2025-12-19 |  0.0139 |  0.0753 |     -0.0499 |
-        | 2025-12-22 | -0.0419 |  0.0115 |     -0.0027 |
-        | 2025-12-23 |  0.0106 |  0.0568 |      0.0376 |
-        | 2025-12-24 |  0.0554 |  0.0953 |      0.0718 |
-        | 2025-12-26 | -0.0066 |  0.0277 |      0.0008 |
-        | 2025-12-29 |  0.0405 | -0.0302 |     -0.06   |
-        | 2025-12-30 | -0.0195 |  0.0204 |     -0.1116 |
-        | 2025-12-31 | -0.0707 | -0.0364 |     -0.1552 |
+        | Date       |     EWJ |    EWG |     EWZ |    INDA |    FXI |   Benchmark |
+        |:-----------|--------:|-------:|--------:|--------:|-------:|------------:|
+        | 2025-12-24 | -0.0357 | 0.1365 | -0.0693 |  0.0631 | 0.0419 |      0.0718 |
+        | 2025-12-26 | -0.0875 | 0.1604 | -0.0203 | -0.002  | 0.0863 |      0.0008 |
+        | 2025-12-29 | -0.0314 | 0.0801 | -0.0783 | -0.0576 | 0.0239 |     -0.06   |
+        | 2025-12-30 | -0.0832 | 0.1111 | -0.0275 | -0.0049 | 0.0703 |     -0.1116 |
+        | 2025-12-31 | -0.1272 | 0.037  | -0.0839 |  0.0402 | 0.0097 |     -0.1552 |
         """
         if period not in [
             "intraday",
@@ -655,28 +651,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["EWJ", "EWG", "EWU", "EWQ", "EWZ", "INDA", "FXI", "EWC", "EWA", "EWY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_advancers_decliners()
+        toolkit.technicals.get_advancers_decliners().loc[:, ["EWJ", "EWG", "EWZ", "INDA", "FXI", "Benchmark"]].tail(5)
         ```
 
         Which returns:
 
-        | Date       |   AAPL |   MSFT |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-17 |     -1 |     -1 |          -1 |
-        | 2025-12-18 |      1 |      1 |           1 |
-        | 2025-12-19 |      1 |      1 |           1 |
-        | 2025-12-22 |     -1 |     -1 |           1 |
-        | 2025-12-23 |      1 |      1 |           1 |
-        | 2025-12-24 |      1 |      1 |           1 |
-        | 2025-12-26 |     -1 |     -1 |          -1 |
-        | 2025-12-29 |      1 |     -1 |          -1 |
-        | 2025-12-30 |     -1 |      1 |          -1 |
-        | 2025-12-31 |     -1 |     -1 |          -1 |
+        | Date       |   EWJ |   EWG |   EWZ |   INDA |   FXI |   Benchmark |
+        |:-----------|------:|------:|------:|-------:|------:|------------:|
+        | 2025-12-24 |    -1 |     1 |    -1 |     -1 |     1 |           1 |
+        | 2025-12-26 |    -1 |     1 |     1 |     -1 |     1 |          -1 |
+        | 2025-12-29 |     1 |    -1 |    -1 |     -1 |    -1 |          -1 |
+        | 2025-12-30 |    -1 |     1 |     1 |      1 |     1 |          -1 |
+        | 2025-12-31 |    -1 |    -1 |    -1 |      1 |    -1 |          -1 |
         """
         if period not in [
             "intraday",
@@ -774,28 +766,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["BTCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_on_balance_volume()
+        toolkit.technicals.get_on_balance_volume().tail(5)
         ```
 
         Which returns:
 
-        | Date       |        AAPL |        MSFT |   Benchmark |
-        |:-----------|------------:|------------:|------------:|
-        | 2025-12-17 | 2.26688e+09 | 8.29319e+08 | 1.14122e+09 |
-        | 2025-12-18 | 2.31851e+09 | 8.57893e+08 | 1.24987e+09 |
-        | 2025-12-19 | 2.46314e+09 | 9.28729e+08 | 1.35347e+09 |
-        | 2025-12-22 | 2.42657e+09 | 9.11766e+08 | 1.42302e+09 |
-        | 2025-12-23 | 2.45621e+09 | 9.26449e+08 | 1.48786e+09 |
-        | 2025-12-24 | 2.47412e+09 | 9.32305e+08 | 1.52731e+09 |
-        | 2025-12-26 | 2.4526e+09  | 9.23463e+08 | 1.48569e+09 |
-        | 2025-12-29 | 2.47632e+09 | 9.1257e+08  | 1.42314e+09 |
-        | 2025-12-30 | 2.45418e+09 | 9.26514e+08 | 1.37597e+09 |
-        | 2025-12-31 | 2.42688e+09 | 9.10912e+08 | 1.30183e+09 |
+        | Date       |       BTCUSD |   Benchmark |
+        |:-----------|-------------:|------------:|
+        | 2025-12-27 | -1.15162e+12 | 1.49356e+09 |
+        | 2025-12-28 | -1.13646e+12 | 1.49356e+09 |
+        | 2025-12-29 | -1.18487e+12 | 1.431e+09   |
+        | 2025-12-30 | -1.14929e+12 | 1.38384e+09 |
+        | 2025-12-31 | -1.18312e+12 | 1.30969e+09 |
         """
         if period not in [
             "intraday",
@@ -892,28 +880,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["GLD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_accumulation_distribution_line()
+        toolkit.technicals.get_accumulation_distribution_line().tail(5)
         ```
 
         Which returns:
 
-        | Date       |        AAPL |        MSFT |   Benchmark |
-        |:-----------|------------:|------------:|------------:|
-        | 2025-12-17 | 3.99772e+09 | 1.60643e+09 | 7.84069e+09 |
-        | 2025-12-18 | 4.02709e+09 | 1.60757e+09 | 7.79046e+09 |
-        | 2025-12-19 | 4.11449e+09 | 1.6274e+09  | 7.87163e+09 |
-        | 2025-12-22 | 4.0879e+09  | 1.62296e+09 | 7.92573e+09 |
-        | 2025-12-23 | 4.11472e+09 | 1.62833e+09 | 7.98338e+09 |
-        | 2025-12-24 | 4.11466e+09 | 1.6311e+09  | 8.01111e+09 |
-        | 2025-12-26 | 4.1024e+09  | 1.63659e+09 | 8.00572e+09 |
-        | 2025-12-29 | 4.11196e+09 | 1.64095e+09 | 8.01431e+09 |
-        | 2025-12-30 | 4.1095e+09  | 1.64021e+09 | 7.98763e+09 |
-        | 2025-12-31 | 4.08532e+09 | 1.62668e+09 | 7.919e+09   |
+        | Date       |         GLD |   Benchmark |
+        |:-----------|------------:|------------:|
+        | 2025-12-24 | 7.95203e+08 | 8.01751e+09 |
+        | 2025-12-26 | 7.95996e+08 | 8.01211e+09 |
+        | 2025-12-29 | 7.9136e+08  | 8.02071e+09 |
+        | 2025-12-30 | 7.82463e+08 | 7.99403e+09 |
+        | 2025-12-31 | 7.75502e+08 | 7.9254e+09  |
         """
         if period not in [
             "intraday",
@@ -1022,28 +1006,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["QQQ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_chaikin_oscillator()
+        toolkit.technicals.get_chaikin_oscillator().tail(5)
         ```
 
         Which returns:
 
-        | Date       |         AAPL |        MSFT |    Benchmark |
-        |:-----------|-------------:|------------:|-------------:|
-        | 2025-12-17 | -1.74845e+07 | 7.01681e+06 | -2.28053e+07 |
-        | 2025-12-18 | -1.16785e+07 | 4.50813e+06 | -5.08337e+07 |
-        | 2025-12-19 |  1.95658e+07 | 9.37952e+06 | -3.185e+07   |
-        | 2025-12-22 |  2.21091e+07 | 9.10779e+06 | -3.97501e+06 |
-        | 2025-12-23 |  2.96729e+07 | 9.8772e+06  |  2.61336e+07 |
-        | 2025-12-24 |  3.0052e+07  | 1.01762e+07 |  4.48979e+07 |
-        | 2025-12-26 |  2.35738e+07 | 1.11187e+07 |  4.67752e+07 |
-        | 2025-12-29 |  2.18213e+07 | 1.18816e+07 |  4.60255e+07 |
-        | 2025-12-30 |  1.83379e+07 | 1.08801e+07 |  3.30466e+07 |
-        | 2025-12-31 |  7.55142e+06 | 5.17349e+06 |  2.89497e+06 |
+        | Date       |          QQQ |   Benchmark |
+        |:-----------|-------------:|------------:|
+        | 2025-12-24 |  1.33735e+07 | 4.4898e+07  |
+        | 2025-12-26 |  1.24876e+07 | 4.67752e+07 |
+        | 2025-12-29 |  1.15765e+07 | 4.60255e+07 |
+        | 2025-12-30 |  1.62538e+06 | 3.30466e+07 |
+        | 2025-12-31 | -1.44174e+07 | 2.89499e+06 |
         """
         if period not in [
             "intraday",
@@ -1152,10 +1132,25 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["ETHUSD", "SOLUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.technicals.get_chaikin_money_flow()
+        toolkit.technicals.get_chaikin_money_flow().tail(5)
         ```
+
+        Which returns:
+
+        | Date       |   ETHUSD |   SOLUSD |   Benchmark |
+        |:-----------|---------:|---------:|------------:|
+        | 2025-12-27 |  -0.0938 |  -0.143  |      0.0688 |
+        | 2025-12-28 |  -0.1006 |  -0.0945 |      0.0818 |
+        | 2025-12-29 |  -0.1815 |  -0.1419 |      0.1253 |
+        | 2025-12-30 |  -0.1279 |  -0.0749 |      0.0534 |
+        | 2025-12-31 |  -0.1646 |  -0.1521 |     -0.0918 |
         """
         if period not in [
             "intraday",
@@ -1271,10 +1266,25 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.technicals.get_ease_of_movement()
+        toolkit.technicals.get_ease_of_movement().tail(5)
         ```
+
+        Which returns:
+
+        | Date       |   ^GSPC |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 |  1.404  |      2.8161 |
+        | 2025-12-26 |  0.6053 |      2.227  |
+        | 2025-12-29 |  0.6173 |      2.7602 |
+        | 2025-12-30 |  0.6371 |      2.7794 |
+        | 2025-12-31 | -4.2755 |      0.4354 |
         """
         if period not in [
             "intraday",
@@ -1384,10 +1394,26 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["SPY", "IWM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+            benchmark_ticker=None,
+        )
 
-        toolkit.technicals.get_negative_volume_index()
+        toolkit.technicals.get_negative_volume_index().tail(5)
         ```
+
+        Which returns:
+
+        | Date       |     SPY |     IWM |
+        |:-----------|--------:|--------:|
+        | 2025-12-24 | 5440.89 | 4501.78 |
+        | 2025-12-26 | 5440.89 | 4501.78 |
+        | 2025-12-29 | 5440.89 | 4501.78 |
+        | 2025-12-30 | 5434.27 | 4468.59 |
+        | 2025-12-31 | 5434.27 | 4468.59 |
         """
         if period not in [
             "intraday",
@@ -1495,10 +1521,26 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["SPY", "IWM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+            benchmark_ticker=None,
+        )
 
-        toolkit.technicals.get_positive_volume_index()
+        toolkit.technicals.get_positive_volume_index().tail(5)
         ```
+
+        Which returns:
+
+        | Date       |     SPY |     IWM |
+        |:-----------|--------:|--------:|
+        | 2025-12-24 | 368.577 | 308.515 |
+        | 2025-12-26 | 368.539 | 306.942 |
+        | 2025-12-29 | 367.226 | 305.061 |
+        | 2025-12-30 | 367.226 | 305.061 |
+        | 2025-12-31 | 364.506 | 302.758 |
         """
         if period not in [
             "intraday",
@@ -1858,28 +1900,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^IXIC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_money_flow_index()
+        toolkit.technicals.get_money_flow_index().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 39.7393 | 50.9835 |     44.2618 |
-        | 2025-12-18 | 34.4002 | 53.0158 |     47.0982 |
-        | 2025-12-19 | 43.3299 | 65.0307 |     54.0865 |
-        | 2025-12-22 | 36.4312 | 64.775  |     54.3543 |
-        | 2025-12-23 | 37.2984 | 72.3431 |     54.6624 |
-        | 2025-12-24 | 41.6581 | 71.0458 |     53.8185 |
-        | 2025-12-26 | 46.9441 | 67.1794 |     52.3144 |
-        | 2025-12-29 | 48.1203 | 62.6155 |     51.9586 |
-        | 2025-12-30 | 43.4593 | 62.5153 |     52.4466 |
-        | 2025-12-31 | 38.2003 | 66.6327 |     45.3997 |
+        | Date       |   ^IXIC |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 | 49.2154 |     53.8187 |
+        | 2025-12-26 | 47.7867 |     52.3146 |
+        | 2025-12-29 | 48.6922 |     51.9588 |
+        | 2025-12-30 | 48.8975 |     52.4467 |
+        | 2025-12-31 | 42.2704 |     45.3999 |
         """
         if period not in [
             "intraday",
@@ -1979,28 +2017,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["EURUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_williams_percent_r()
+        toolkit.technicals.get_williams_percent_r().tail(5)
         ```
 
         Which returns:
 
-        | Date       |     AAPL |     MSFT |   Benchmark |
-        |:-----------|---------:|---------:|------------:|
-        | 2025-12-17 | -98.8221 | -76.8347 |    -98.892  |
-        | 2025-12-18 | -75.8191 | -42.0864 |    -70.8032 |
-        | 2025-12-19 | -68.9888 | -33.5098 |    -36.8356 |
-        | 2025-12-22 | -81.449  | -34.4535 |    -13.2761 |
-        | 2025-12-23 | -69.5722 | -25.4434 |     -1.2647 |
-        | 2025-12-24 | -51.6561 | -19.9814 |     -2.0826 |
-        | 2025-12-26 | -51.1365 | -21.4284 |     -6.0167 |
-        | 2025-12-29 | -48.4087 | -23.6347 |    -16.9808 |
-        | 2025-12-30 | -53.5605 | -11.7021 |    -20.7246 |
-        | 2025-12-31 | -62.803  | -32.234  |    -43.4096 |
+        | Date       |   EURUSD |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-26 | -16.5329 |     -6.0156 |
+        | 2025-12-28 | -18.4956 |    -11.4945 |
+        | 2025-12-29 | -18.4956 |    -16.9733 |
+        | 2025-12-30 | -78.0427 |    -20.7008 |
+        | 2025-12-31 | -78.0427 |    -43.3797 |
         """
         if period not in [
             "intraday",
@@ -2099,28 +2133,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["GCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_aroon_indicator().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_aroon_indicator().xs("GCUSD", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Aroon Down |   Aroon Up |
         |:-----------|-------------:|-----------:|
-        | 2025-12-17 |     100      |    28.5714 |
-        | 2025-12-18 |     100      |    21.4286 |
-        | 2025-12-19 |      92.8571 |    14.2857 |
-        | 2025-12-22 |      85.7143 |     7.1429 |
-        | 2025-12-23 |      78.5714 |     0      |
-        | 2025-12-24 |      71.4286 |     0      |
-        | 2025-12-26 |      64.2857 |     0      |
-        | 2025-12-29 |      57.1429 |    35.7143 |
-        | 2025-12-30 |      50      |    28.5714 |
-        | 2025-12-31 |      42.8571 |    21.4286 |
+        | 2025-12-26 |       0      |   100      |
+        | 2025-12-28 |       0      |    92.8571 |
+        | 2025-12-29 |       0      |    85.7143 |
+        | 2025-12-30 |      14.2857 |    78.5714 |
+        | 2025-12-31 |     100      |    71.4286 |
         """
         if period not in [
             "intraday",
@@ -2228,28 +2258,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["CLUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_commodity_channel_index()
+        toolkit.technicals.get_commodity_channel_index().tail(5)
         ```
 
         Which returns:
 
-        | Date       |      AAPL |     MSFT |   Benchmark |
-        |:-----------|----------:|---------:|------------:|
-        | 2025-12-17 | -139.905  | -74.8721 |   -239.211  |
-        | 2025-12-18 | -162.429  |  26.1797 |   -118.59   |
-        | 2025-12-19 | -103.239  |  54.4683 |    -21.3412 |
-        | 2025-12-22 | -104.734  |  65.9749 |     74.5493 |
-        | 2025-12-23 |  -97.9336 |  71.0128 |    125.5    |
-        | 2025-12-24 |  -34.6713 |  72.9192 |    155.834  |
-        | 2025-12-26 |  -25.6937 |  62.5804 |    144.031  |
-        | 2025-12-29 |  -30.5655 |  56.6706 |     82.3319 |
-        | 2025-12-30 |  -35.5276 |  80.307  |     67.171  |
-        | 2025-12-31 |  -56.9152 |  32.9915 |     13.312  |
+        | Date       |   CLUSD |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-26 | 15.2689 |    120.245  |
+        | 2025-12-28 | -1.512  |     88.9846 |
+        | 2025-12-29 | 51.2665 |     60.685  |
+        | 2025-12-30 | 69.184  |     49.5715 |
+        | 2025-12-31 | 38.1997 |     -1.7385 |
         """
         if period not in [
             "intraday",
@@ -2366,28 +2392,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^HSI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_relative_vigor_index().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_relative_vigor_index().xs("^HSI", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Relative Vigor Index |   Signal Line |
         |:-----------|-----------------------:|--------------:|
-        | 2025-12-17 |                -0.2262 |       -0.0758 |
-        | 2025-12-18 |                -0.2832 |       -0.1659 |
-        | 2025-12-19 |                -0.2694 |       -0.2349 |
-        | 2025-12-22 |                -0.2367 |       -0.2614 |
-        | 2025-12-23 |                -0.205  |       -0.2501 |
-        | 2025-12-24 |                -0.1841 |       -0.2228 |
-        | 2025-12-26 |                -0.1697 |       -0.1974 |
-        | 2025-12-29 |                -0.1563 |       -0.1782 |
-        | 2025-12-30 |                -0.1288 |       -0.1608 |
-        | 2025-12-31 |                -0.0887 |       -0.1381 |
+        | 2025-12-24 |                -0.0322 |       -0.0822 |
+        | 2025-12-26 |                 0.0098 |       -0.0505 |
+        | 2025-12-29 |                -0.0084 |       -0.0215 |
+        | 2025-12-30 |                -0.0505 |       -0.0133 |
+        | 2025-12-31 |                -0.0627 |       -0.0285 |
         """
         if period not in [
             "intraday",
@@ -2496,28 +2518,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["TLT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_force_index()
+        toolkit.technicals.get_force_index().tail(5)
         ```
 
         Which returns:
 
-        | Date       |              AAPL |         MSFT |    Benchmark |
-        |:-----------|------------------:|-------------:|-------------:|
-        | 2025-12-17 |      -3.59981e+07 | -3.95103e+07 | -1.83097e+08 |
-        | 2025-12-18 |      -2.82814e+07 | -1.98405e+06 | -7.90865e+07 |
-        | 2025-12-19 |       6.2576e+06  |  1.78077e+07 |  2.19835e+07 |
-        | 2025-12-22 |      -8.70499e+06 |  1.28557e+07 |  6.06476e+07 |
-        | 2025-12-23 |      -1.59104e+06 |  1.5042e+07  |  8.07513e+07 |
-        | 2025-12-24 |       2.33607e+06 |  1.38658e+07 |  8.27469e+07 |
-        | 2025-12-26 |  745167           |  1.14959e+07 |  7.05128e+07 |
-        | 2025-12-29 |       1.8553e+06  |  8.91024e+06 |  3.86241e+07 |
-        | 2025-12-30 | -554750           |  8.38976e+06 |  2.74909e+07 |
-        | 2025-12-31 |      -5.21952e+06 | -1.35779e+06 | -2.99318e+07 |
+        | Date       |               TLT |    Benchmark |
+        |:-----------|------------------:|-------------:|
+        | 2025-12-24 |  946514           |  8.27837e+07 |
+        | 2025-12-26 | -287501           |  7.05413e+07 |
+        | 2025-12-29 |       1.09756e+06 |  3.86575e+07 |
+        | 2025-12-30 |  223430           |  2.75431e+07 |
+        | 2025-12-31 |      -3.35421e+06 | -2.98818e+07 |
         """
         if period not in [
             "intraday",
@@ -2624,28 +2642,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^GDAXI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_ultimate_oscillator()
+        toolkit.technicals.get_ultimate_oscillator().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 44.5333 | 47.4263 |     46.921  |
-        | 2025-12-18 | 50.981  | 46.9751 |     47.9861 |
-        | 2025-12-19 | 51.5415 | 52.5231 |     49.415  |
-        | 2025-12-22 | 45.7605 | 48.6534 |     48.2421 |
-        | 2025-12-23 | 49.1968 | 52.0442 |     53.3907 |
-        | 2025-12-24 | 54.4449 | 55.7706 |     57.7082 |
-        | 2025-12-26 | 51.216  | 53.7379 |     56.8785 |
-        | 2025-12-29 | 57.3149 | 56.5047 |     64.5078 |
-        | 2025-12-30 | 54.1042 | 55.7349 |     66.0175 |
-        | 2025-12-31 | 46.408  | 51.1112 |     52.8914 |
+        | Date       |   ^GDAXI |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-24 |  56.3876 |     57.6018 |
+        | 2025-12-26 |  60.8708 |     57.097  |
+        | 2025-12-29 |  69.7344 |     64.6179 |
+        | 2025-12-30 |  67.8468 |     66.1075 |
+        | 2025-12-31 | nan      |     53.9197 |
         """
         if period not in [
             "intraday",
@@ -2757,28 +2771,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^STOXX50E", "^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_percentage_price_oscillator()
+        toolkit.technicals.get_percentage_price_oscillator().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 |  0.6309 | -1.3088 |      0.2828 |
-        | 2025-12-18 |  0.4656 | -1.1665 |      0.2205 |
-        | 2025-12-19 |  0.3736 | -1.0096 |      0.2412 |
-        | 2025-12-22 |  0.2188 | -0.8916 |      0.3044 |
-        | 2025-12-23 |  0.1353 | -0.7572 |      0.3871 |
-        | 2025-12-24 |  0.1105 | -0.624  |      0.4756 |
-        | 2025-12-26 |  0.0779 | -0.5176 |      0.5384 |
-        | 2025-12-29 |  0.0619 | -0.4384 |      0.5526 |
-        | 2025-12-30 |  0.0289 | -0.3651 |      0.5475 |
-        | 2025-12-31 | -0.0329 | -0.3669 |      0.4779 |
+        | Date       |   ^STOXX50E |   ^GSPC |   Benchmark |
+        |:-----------|------------:|--------:|------------:|
+        | 2025-12-24 |      0.4778 |  0.4289 |      0.4587 |
+        | 2025-12-26 |      0.4709 |  0.4902 |      0.5219 |
+        | 2025-12-29 |      0.4612 |  0.5044 |      0.5366 |
+        | 2025-12-30 |      0.5102 |  0.4986 |      0.5321 |
+        | 2025-12-31 |      0.5102 |  0.4295 |      0.4632 |
         """
         if period not in [
             "intraday",
@@ -2878,28 +2888,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["NGUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_detrended_price_oscillator()
+        toolkit.technicals.get_detrended_price_oscillator().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 |  0.0306 |  0.2008 |      3.1326 |
-        | 2025-12-18 | -0.3825 |  8.5813 |      1.5837 |
-        | 2025-12-19 | -0.4188 |  9.6332 |      0.8352 |
-        | 2025-12-22 |  2.261  | -3.3814 |      4.9407 |
-        | 2025-12-23 |  2.3529 |  0.8503 |      6.0923 |
-        | 2025-12-24 |  3.093  | -4.5681 |     -1.8061 |
-        | 2025-12-26 | -0.6824 | -8.5777 |     -3.2957 |
-        | 2025-12-29 |  0.1104 | -6.7394 |     -5.5777 |
-        | 2025-12-30 | -2.36   | -6.6855 |    -13.392  |
-        | 2025-12-31 | -1.518  |  0.7659 |     -8.1192 |
+        | Date       |   NGUSD |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-26 | -0.0693 |    -12.8207 |
+        | 2025-12-28 | -0.155  |     -7.9386 |
+        | 2025-12-29 | -0.0764 |     -2.4429 |
+        | 2025-12-30 | -0.0021 |     -0.8893 |
+        | 2025-12-31 | -0.0493 |      0.9886 |
         """
         if period not in [
             "intraday",
@@ -3002,28 +3008,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["USDJPY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_average_directional_index()
+        toolkit.technicals.get_average_directional_index().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 24.6712 | 25.787  |     14.9613 |
-        | 2025-12-18 | 24.4323 | 24.4769 |     14.3719 |
-        | 2025-12-19 | 23.9077 | 23.2604 |     13.3525 |
-        | 2025-12-22 | 23.4205 | 22.0112 |     13.1626 |
-        | 2025-12-23 | 23.1942 | 20.8512 |     13.4436 |
-        | 2025-12-24 | 22.0178 | 19.5733 |     14.0997 |
-        | 2025-12-26 | 20.9255 | 18.3867 |     14.8316 |
-        | 2025-12-29 | 20.0591 | 17.5595 |     14.7622 |
-        | 2025-12-30 | 19.2759 | 16.5556 |     14.6978 |
-        | 2025-12-31 | 18.7173 | 15.983  |     13.7115 |
+        | Date       |   USDJPY |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-26 |  12.9299 |     17.7945 |
+        | 2025-12-28 |  12.0721 |     18.0251 |
+        | 2025-12-29 |  11.4398 |     17.7259 |
+        | 2025-12-30 |  11.0738 |     17.448  |
+        | 2025-12-31 |  10.4431 |     16.6228 |
         """
         if period not in [
             "intraday",
@@ -3128,28 +3130,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["SIUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_chande_momentum_oscillator()
+        toolkit.technicals.get_chande_momentum_oscillator().tail(5)
         ```
 
         Which returns:
 
-        | Date       |     AAPL |     MSFT |   Benchmark |
-        |:-----------|---------:|---------:|------------:|
-        | 2025-12-17 | -20.6214 | -13.3126 |    -21.3403 |
-        | 2025-12-18 | -24.9067 | -11.1824 |    -17.2311 |
-        | 2025-12-19 | -39.3408 |  -1.1974 |      5.3996 |
-        | 2025-12-22 | -64.5465 |  -7.6713 |     11.5321 |
-        | 2025-12-23 | -51.4171 |  16.3207 |     13.0006 |
-        | 2025-12-24 | -32.9194 |  13.3111 |     16.4316 |
-        | 2025-12-26 | -27.7035 |   8.762  |     13.9793 |
-        | 2025-12-29 | -21.8634 |  -8.7736 |     13.013  |
-        | 2025-12-30 | -21.7392 | -10.304  |     12.4222 |
-        | 2025-12-31 | -37.4455 |  14.6837 |     -7.4375 |
+        | Date       |   SIUSD |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-26 | 59.7782 |     11.8161 |
+        | 2025-12-28 | 57.6324 |      4.8651 |
+        | 2025-12-29 | 26.3815 |     23.9571 |
+        | 2025-12-30 | 38.9752 |     22.7863 |
+        | 2025-12-31 | 15.4986 |      8.2769 |
         """
         if period not in [
             "intraday",
@@ -3269,28 +3267,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^N225"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_ichimoku_cloud().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_ichimoku_cloud().xs("^N225", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Base Line |   Conversion Line |   Leading Span A |   Leading Span B |
         |:-----------|------------:|------------------:|-----------------:|-----------------:|
-        | 2025-12-17 |     276.218 |           275.64  |          265.243 |          250.709 |
-        | 2025-12-18 |     276.218 |           272.807 |          265.243 |          250.709 |
-        | 2025-12-19 |     276.218 |           272.807 |          265.243 |          250.709 |
-        | 2025-12-22 |     276.218 |           272.807 |          265.155 |          250.709 |
-        | 2025-12-23 |     276.218 |           272.807 |          265.285 |          250.709 |
-        | 2025-12-24 |     276.218 |           272.807 |          265.264 |          250.709 |
-        | 2025-12-26 |     276.308 |           272.807 |          265.162 |          250.709 |
-        | 2025-12-29 |     276.393 |           270.818 |          265.269 |          250.709 |
-        | 2025-12-30 |     276.393 |           270.818 |          265.269 |          250.709 |
-        | 2025-12-31 |     277.031 |           270.454 |          265.802 |          251.058 |
+        | 2025-12-25 |     49808.9 |           49640.4 |          49824   |          48044.8 |
+        | 2025-12-26 |     49808.9 |           49792.8 |          49969.9 |          48072.9 |
+        | 2025-12-29 |     49814.3 |           49792.8 |          49969.9 |          48253.7 |
+        | 2025-12-30 |     49819.8 |           49792.8 |          50111.6 |          48497.3 |
+        | 2025-12-31 |       nan   |             nan   |          50111.6 |          48497.3 |
         """
         if period not in [
             "intraday",
@@ -3412,28 +3406,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["GBPUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_stochastic_oscillator().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_stochastic_oscillator().xs("GBPUSD", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Stochastic %D |   Stochastic %K |
         |:-----------|----------------:|----------------:|
-        | 2025-12-17 |          8.6606 |          1.1779 |
-        | 2025-12-18 |         14.0382 |         24.1809 |
-        | 2025-12-19 |         18.79   |         31.0112 |
-        | 2025-12-22 |         24.581  |         18.551  |
-        | 2025-12-23 |         26.6633 |         30.4278 |
-        | 2025-12-24 |         32.4409 |         48.3439 |
-        | 2025-12-26 |         42.5451 |         48.8635 |
-        | 2025-12-29 |         49.5996 |         51.5913 |
-        | 2025-12-30 |         48.9648 |         46.4395 |
-        | 2025-12-31 |         45.0759 |         37.197  |
+        | 2025-12-26 |         85.0072 |         83.2421 |
+        | 2025-12-28 |         83.9852 |         83.2421 |
+        | 2025-12-29 |         83.2421 |         83.2421 |
+        | 2025-12-30 |         79.3458 |         71.5532 |
+        | 2025-12-31 |         75.4495 |         71.5532 |
         """
         if smooth_widow is not None:
             warnings.warn(
@@ -3572,28 +3562,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            start_date="2021-01-01",
+            tickers=["MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-10-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_moving_average_convergence_divergence().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_moving_average_convergence_divergence().xs("MSFT", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   MACD Line |   Signal Line |
         |:-----------|------------:|--------------:|
-        | 2025-12-17 |      1.7276 |        3.162  |
-        | 2025-12-18 |      1.2741 |        2.7844 |
-        | 2025-12-19 |      1.022  |        2.4319 |
-        | 2025-12-22 |      0.5981 |        2.0652 |
-        | 2025-12-23 |      0.3697 |        1.7261 |
-        | 2025-12-24 |      0.3019 |        1.4413 |
-        | 2025-12-26 |      0.2128 |        1.1956 |
-        | 2025-12-29 |      0.1691 |        0.9903 |
-        | 2025-12-30 |      0.0789 |        0.808  |
-        | 2025-12-31 |     -0.0897 |        0.6284 |
+        | 2025-12-24 |     -3.02   |       -4.8167 |
+        | 2025-12-26 |     -2.5054 |       -4.3544 |
+        | 2025-12-29 |     -2.122  |       -3.908  |
+        | 2025-12-30 |     -1.7673 |       -3.4798 |
+        | 2025-12-31 |     -1.7752 |       -3.1389 |
         """
         if period not in [
             "intraday",
@@ -3705,28 +3691,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["BTCUSD", "ETHUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_relative_strength_index()
+        toolkit.technicals.get_relative_strength_index().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 45.1866 | 40.7933 |     43.3897 |
-        | 2025-12-18 | 45.9182 | 47.2376 |     48.6798 |
-        | 2025-12-19 | 49.0175 | 48.7212 |     54.2478 |
-        | 2025-12-22 | 44.0572 | 47.9724 |     57.6776 |
-        | 2025-12-23 | 47.0291 | 49.5829 |     60.058  |
-        | 2025-12-24 | 50.012  | 50.5816 |     61.8449 |
-        | 2025-12-26 | 49.1688 | 50.2973 |     61.7588 |
-        | 2025-12-29 | 49.9667 | 49.7053 |     58.6688 |
-        | 2025-12-30 | 48.4209 | 50.0994 |     57.6088 |
-        | 2025-12-31 | 45.6902 | 46.1447 |     51.5335 |
+        | Date       |   BTCUSD |   ETHUSD |   Benchmark |
+        |:-----------|---------:|---------:|------------:|
+        | 2025-12-27 |  44.6846 |  45.0659 |     62.972  |
+        | 2025-12-28 |  44.9649 |  45.241  |     61.2128 |
+        | 2025-12-29 |  42.4043 |  44.276  |     59.4252 |
+        | 2025-12-30 |  47.7803 |  47.2561 |     57.5773 |
+        | 2025-12-31 |  44.643  |  46.9887 |     47.8313 |
         """
         if period not in [
             "intraday",
@@ -3820,28 +3802,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^FTSE"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_balance_of_power()
+        toolkit.technicals.get_balance_of_power().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | -0.7013 | -0.158  |     -0.9188 |
-        | 2025-12-18 | -0.2126 |  0.4944 |     -0.1935 |
-        | 2025-12-19 |  0.3234 | -0.2687 |      0.8658 |
-        | 2025-12-22 | -0.5608 | -0.1987 |      0.1866 |
-        | 2025-12-23 |  0.517  |  0.6052 |      0.933  |
-        | 2025-12-24 |  0.4551 |  0.5404 |      0.802  |
-        | 2025-12-26 | -0.3028 |  0.463  |     -0.1381 |
-        | 2025-12-29 |  0.5323 |  0.5372 |      0.099  |
-        | 2025-12-30 |  0.15   |  0.3708 |     -0.2222 |
-        | 2025-12-31 | -0.6218 | -0.8719 |     -0.9239 |
+        | Date       |   ^FTSE |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 | -0.5953 |      0.802  |
+        | 2025-12-26 | -0.3466 |     -0.1381 |
+        | 2025-12-29 | -0.1212 |      0.099  |
+        | 2025-12-30 |  0.7846 |     -0.2222 |
+        | 2025-12-31 | -0.279  |     -0.9239 |
         """
         if period not in [
             "intraday",
@@ -3951,28 +3929,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["SOLUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_awesome_oscillator()
+        toolkit.technicals.get_awesome_oscillator().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |     MSFT |   Benchmark |
-        |:-----------|--------:|---------:|------------:|
-        | 2025-12-17 |  1.2663 | -14.3575 |      4.2885 |
-        | 2025-12-18 |  0.01   | -12.5205 |      2.8747 |
-        | 2025-12-19 | -1.1196 | -10.3187 |      2.2738 |
-        | 2025-12-22 | -2.0918 |  -7.545  |      2.7043 |
-        | 2025-12-23 | -2.6643 |  -4.4653 |      4.3753 |
-        | 2025-12-24 | -2.8209 |  -1.9132 |      7.0459 |
-        | 2025-12-26 | -2.1675 |  -0.8848 |      9.3855 |
-        | 2025-12-29 | -2.0669 |  -0.4006 |     10.4583 |
-        | 2025-12-30 | -1.9463 |   0.3908 |     11.0502 |
-        | 2025-12-31 | -1.6061 |   0.8429 |     10.5952 |
+        | Date       |   SOLUSD |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-27 |  -8.9048 |      8.1464 |
+        | 2025-12-28 |  -8.6621 |      7.9295 |
+        | 2025-12-29 |  -7.5992 |      7.0338 |
+        | 2025-12-30 |  -6.6618 |      6.2715 |
+        | 2025-12-31 |  -5.546  |      4.9234 |
         """
         if period not in [
             "intraday",
@@ -4084,28 +4058,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["AUDUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_vortex_indicator().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_vortex_indicator().xs("AUDUSD", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |    VI+ |    VI- |
         |:-----------|-------:|-------:|
-        | 2025-12-17 | 0.9211 | 1.0533 |
-        | 2025-12-18 | 0.865  | 1.0802 |
-        | 2025-12-19 | 0.903  | 1.137  |
-        | 2025-12-22 | 0.8075 | 1.2147 |
-        | 2025-12-23 | 0.7732 | 1.2661 |
-        | 2025-12-24 | 0.8892 | 1.1613 |
-        | 2025-12-26 | 0.9091 | 1.1011 |
-        | 2025-12-29 | 0.9316 | 1.0955 |
-        | 2025-12-30 | 0.9145 | 1.1096 |
-        | 2025-12-31 | 0.9113 | 1.1148 |
+        | 2025-12-26 | 1.1414 | 0.9189 |
+        | 2025-12-28 | 1.1667 | 0.8882 |
+        | 2025-12-29 | 1.1118 | 0.8882 |
+        | 2025-12-30 | 1.1094 | 0.8691 |
+        | 2025-12-31 | 1.058  | 0.9068 |
         """
         if period not in [
             "intraday",
@@ -4221,28 +4191,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["HGUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_elder_ray_index().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_elder_ray_index().xs("HGUSD", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Bear Power |   Bull Power |
         |:-----------|-------------:|-------------:|
-        | 2025-12-17 |      -4.6407 |      -0.1329 |
-        | 2025-12-18 |      -8.7334 |      -2.0715 |
-        | 2025-12-19 |      -5.5011 |      -0.8138 |
-        | 2025-12-22 |      -4.2594 |      -0.8985 |
-        | 2025-12-23 |      -4.8618 |      -1.9298 |
-        | 2025-12-24 |      -2.14   |       1.0812 |
-        | 2025-12-26 |      -1.3471 |       1.1561 |
-        | 2025-12-29 |      -1.7914 |       0.2132 |
-        | 2025-12-30 |      -1.7093 |       0.0858 |
-        | 2025-12-31 |      -1.9339 |      -0.0091 |
+        | 2025-12-26 |       0.1172 |       0.3357 |
+        | 2025-12-28 |       0.1601 |       0.3185 |
+        | 2025-12-29 |      -0.0356 |       0.3307 |
+        | 2025-12-30 |      -0.0892 |       0.1712 |
+        | 2025-12-31 |       0.0046 |       0.1455 |
         """
         if period not in [
             "intraday",
@@ -4353,10 +4319,25 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["GCUSD", "SIUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.technicals.get_rate_of_change()
+        toolkit.technicals.get_rate_of_change().tail(5)
         ```
+
+        Which returns:
+
+        | Date       |   GCUSD |   SIUSD |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2025-12-26 |  5.1845 | 24.496  |      1.5538 |
+        | 2025-12-28 |  4.1063 | 26.2965 |      1.4496 |
+        | 2025-12-29 |  0.1938 | 10.8036 |      1.3453 |
+        | 2025-12-30 |  1.2465 | 23.0575 |      1.4994 |
+        | 2025-12-31 | -0.7499 |  5.5306 |      1.8684 |
         """
         if period not in [
             "intraday",
@@ -4463,10 +4444,25 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["EURUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.technicals.get_choppiness_index()
+        toolkit.technicals.get_choppiness_index().tail(5)
         ```
+
+        Which returns:
+
+        | Date       |   EURUSD |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-26 |  52.4784 |     50.3552 |
+        | 2025-12-28 |  53.5899 |     48.3828 |
+        | 2025-12-29 |  54.145  |     45.0165 |
+        | 2025-12-30 |  58.6754 |     41.7357 |
+        | 2025-12-31 |  54.8842 |     41.2609 |
         """
         if period not in [
             "intraday",
@@ -4589,10 +4585,25 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.technicals.get_know_sure_thing().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_know_sure_thing().xs("^GSPC", level=1, axis="columns").tail(5)
         ```
+
+        Which returns:
+
+        | Date       |     KST |   Signal Line |
+        |:-----------|--------:|--------------:|
+        | 2025-12-24 | 12.1661 |       12.9719 |
+        | 2025-12-26 | 11.4885 |       12.7129 |
+        | 2025-12-29 | 10.8463 |       12.3296 |
+        | 2025-12-30 | 10.884  |       11.9188 |
+        | 2025-12-31 | 11.0461 |       11.6636 |
         """
         if period not in [
             "intraday",
@@ -4899,28 +4910,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_moving_average()
+        toolkit.technicals.get_moving_average(window=50).tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 277.993 | 479.913 |     675.239 |
-        | 2025-12-18 | 277.518 | 479.343 |     674.75  |
-        | 2025-12-19 | 276.846 | 479.285 |     674.914 |
-        | 2025-12-22 | 275.762 | 478.925 |     675.291 |
-        | 2025-12-23 | 274.922 | 479.572 |     675.722 |
-        | 2025-12-24 | 274.432 | 480.081 |     676.289 |
-        | 2025-12-26 | 274.048 | 480.404 |     676.76  |
-        | 2025-12-29 | 273.754 | 480.126 |     677.202 |
-        | 2025-12-30 | 273.462 | 479.804 |     677.626 |
-        | 2025-12-31 | 272.969 | 480.163 |     677.369 |
+        | Date       |   ^GSPC |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 | 6784.99 |     669.712 |
+        | 2025-12-26 | 6790.16 |     670.25  |
+        | 2025-12-29 | 6795.7  |     670.828 |
+        | 2025-12-30 | 6800.34 |     671.316 |
+        | 2025-12-31 | 6802.55 |     671.566 |
         """
         if period not in [
             "intraday",
@@ -5022,28 +5029,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["ETHUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_exponential_moving_average()
+        toolkit.technicals.get_exponential_moving_average(window=20).tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 275.523 | 479.029 |     672.561 |
-        | 2025-12-18 | 274.98  | 479.282 |     672.12  |
-        | 2025-12-19 | 274.706 | 479.759 |     672.546 |
-        | 2025-12-22 | 274.11  | 480.039 |     673.476 |
-        | 2025-12-23 | 273.778 | 480.538 |     674.696 |
-        | 2025-12-24 | 273.683 | 481.126 |     676.074 |
-        | 2025-12-26 | 273.547 | 481.594 |     677.259 |
-        | 2025-12-29 | 273.476 | 481.918 |     677.96  |
-        | 2025-12-30 | 273.324 | 482.25  |     678.457 |
-        | 2025-12-31 | 273.031 | 482.026 |     678.214 |
+        | Date       |   ETHUSD |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-27 |  2990.19 |     678.205 |
+        | 2025-12-28 |  2986.26 |     678.692 |
+        | 2025-12-29 |  2981.3  |     679.056 |
+        | 2025-12-30 |  2980.26 |     679.306 |
+        | 2025-12-31 |  2978.98 |     679.051 |
         """
         if period not in [
             "intraday",
@@ -5141,28 +5144,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["QQQ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_double_exponential_moving_average()
+        toolkit.technicals.get_double_exponential_moving_average().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 275.977 | 473.137 |     673.922 |
-        | 2025-12-18 | 274.903 | 474.395 |     672.916 |
-        | 2025-12-19 | 274.402 | 475.937 |     673.605 |
-        | 2025-12-22 | 273.33  | 476.97  |     675.2   |
-        | 2025-12-23 | 272.814 | 478.31  |     677.248 |
-        | 2025-12-24 | 272.766 | 479.704 |     679.48  |
-        | 2025-12-26 | 272.633 | 480.767 |     681.237 |
-        | 2025-12-29 | 272.623 | 481.483 |     682.016 |
-        | 2025-12-30 | 272.454 | 482.161 |     682.403 |
-        | 2025-12-31 | 272.022 | 481.755 |     681.423 |
+        | Date       |     QQQ |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 | 616.194 |     679.471 |
+        | 2025-12-26 | 617.773 |     681.229 |
+        | 2025-12-29 | 618.281 |     682.008 |
+        | 2025-12-30 | 618.315 |     682.395 |
+        | 2025-12-31 | 617.052 |     681.416 |
         """
         if period not in [
             "intraday",
@@ -5209,7 +5208,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        window: int = 14,
+        window: int = 15,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -5231,13 +5230,16 @@ class Technicals:
 
         Also known as: triple smoothed EMA, rate of change oscillator.
 
+        Reference: Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator."
+        Technical Analysis of Stocks & Commodities, 1(5).
+
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
-            window (int, optional): Number of periods for moving average calculation.
-                The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
+            window (int, optional): The number of periods of each of the three exponential moving
+                averages. Defaults to 15, the window of Hutson (1983) and StockCharts.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to 4.
             growth (bool, optional): Whether to calculate the growth of the Trix.
@@ -5264,28 +5266,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^IXIC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_trix()
+        toolkit.technicals.get_trix().tail(5)
         ```
 
         Which returns:
 
-        | Date       |   AAPL |    MSFT |   Benchmark |
-        |:-----------|-------:|--------:|------------:|
-        | 2025-12-17 | 0.1587 | -0.2001 |      0.0628 |
-        | 2025-12-18 | 0.1367 | -0.1941 |      0.0568 |
-        | 2025-12-19 | 0.116  | -0.1846 |      0.0524 |
-        | 2025-12-22 | 0.0946 | -0.1731 |      0.0507 |
-        | 2025-12-23 | 0.0747 | -0.1596 |      0.0518 |
-        | 2025-12-24 | 0.0578 | -0.1446 |      0.0553 |
-        | 2025-12-26 | 0.0432 | -0.1289 |      0.06   |
-        | 2025-12-29 | 0.031  | -0.1137 |      0.0644 |
-        | 2025-12-30 | 0.0204 | -0.0991 |      0.0678 |
-        | 2025-12-31 | 0.0101 | -0.0871 |      0.0686 |
+        | Date       |   ^IXIC |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 |  0.0367 |      0.0541 |
+        | 2025-12-26 |  0.0402 |      0.0582 |
+        | 2025-12-29 |  0.0432 |      0.062  |
+        | 2025-12-30 |  0.0454 |      0.0651 |
+        | 2025-12-31 |  0.0452 |      0.0661 |
         """
         if period not in [
             "intraday",
@@ -5398,28 +5396,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["USDJPY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_bollinger_bands().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_bollinger_bands().xs("USDJPY", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Close |   Lower Band |   Middle Band |   Upper Band |
         |:-----------|--------:|-------------:|--------------:|-------------:|
-        | 2025-12-17 | 271.102 |      270.499 |       277.993 |      285.486 |
-        | 2025-12-18 | 271.451 |      269.304 |       277.518 |      285.733 |
-        | 2025-12-19 | 272.927 |      268.78  |       276.846 |      284.913 |
-        | 2025-12-22 | 270.234 |      268.558 |       275.762 |      282.966 |
-        | 2025-12-23 | 271.621 |      268.807 |       274.922 |      281.038 |
-        | 2025-12-24 | 273.067 |      268.933 |       274.432 |      279.93  |
-        | 2025-12-26 | 272.658 |      268.866 |       274.048 |      279.231 |
-        | 2025-12-29 | 273.017 |      268.846 |       273.754 |      278.663 |
-        | 2025-12-30 | 272.339 |      268.742 |       273.462 |      278.183 |
-        | 2025-12-31 | 271.122 |      268.854 |       272.969 |      277.084 |
+        | 2025-12-26 |  156.5  |      154.489 |       156.076 |      157.664 |
+        | 2025-12-28 |  156.32 |      154.562 |       156.129 |      157.697 |
+        | 2025-12-29 |  156.03 |      154.588 |       156.146 |      157.704 |
+        | 2025-12-30 |  156.33 |      154.627 |       156.179 |      157.732 |
+        | 2025-12-31 |  156.85 |      154.808 |       156.296 |      157.785 |
         """
         if period not in [
             "intraday",
@@ -5526,28 +5520,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["GLD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_triangular_moving_average()
+        toolkit.technicals.get_triangular_moving_average().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 278.193 | 480.648 |     676.567 |
-        | 2025-12-18 | 277.449 | 479.767 |     676.27  |
-        | 2025-12-19 | 276.642 | 479.017 |     675.891 |
-        | 2025-12-22 | 275.788 | 478.438 |     675.342 |
-        | 2025-12-23 | 274.973 | 478.122 |     674.804 |
-        | 2025-12-24 | 274.257 | 478.026 |     674.51  |
-        | 2025-12-26 | 273.637 | 478.238 |     674.519 |
-        | 2025-12-29 | 273.126 | 478.765 |     674.975 |
-        | 2025-12-30 | 272.738 | 479.618 |     675.869 |
-        | 2025-12-31 | 272.407 | 480.573 |     676.902 |
+        | Date       |     GLD |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 | 396.516 |     674.499 |
+        | 2025-12-26 | 398.563 |     674.508 |
+        | 2025-12-29 | 400.429 |     674.964 |
+        | 2025-12-30 | 402.053 |     675.859 |
+        | 2025-12-31 | 403.429 |     676.893 |
         """
         if period not in [
             "intraday",
@@ -5644,28 +5634,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["TLT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_weighted_moving_average()
+        toolkit.technicals.get_weighted_moving_average().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 276.338 | 477.779 |     674.464 |
-        | 2025-12-18 | 275.466 | 477.914 |     673.665 |
-        | 2025-12-19 | 274.854 | 478.383 |     673.741 |
-        | 2025-12-22 | 273.972 | 478.726 |     674.355 |
-        | 2025-12-23 | 273.42  | 479.374 |     675.334 |
-        | 2025-12-24 | 273.173 | 480.09  |     676.575 |
-        | 2025-12-26 | 272.936 | 480.697 |     677.731 |
-        | 2025-12-29 | 272.798 | 481.18  |     678.499 |
-        | 2025-12-30 | 272.61  | 481.751 |     679.096 |
-        | 2025-12-31 | 272.298 | 481.854 |     678.964 |
+        | Date       |     TLT |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-24 | 84.95   |     676.565 |
+        | 2025-12-26 | 84.9693 |     677.721 |
+        | 2025-12-29 | 85.0322 |     678.489 |
+        | 2025-12-30 | 85.0635 |     679.088 |
+        | 2025-12-31 | 85.0021 |     678.956 |
         """
         if period not in [
             "intraday",
@@ -5764,28 +5750,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["BTCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_hull_moving_average()
+        toolkit.technicals.get_hull_moving_average().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 273.323 | 473.222 |     672.879 |
-        | 2025-12-18 | 272.107 | 473.091 |     670.097 |
-        | 2025-12-19 | 271.353 | 474.901 |     669.138 |
-        | 2025-12-22 | 270.604 | 477.304 |     670.447 |
-        | 2025-12-23 | 270.19  | 479.884 |     673.51  |
-        | 2025-12-24 | 270.366 | 482.461 |     677.52  |
-        | 2025-12-26 | 270.87  | 484.613 |     681.486 |
-        | 2025-12-29 | 271.532 | 485.933 |     684.361 |
-        | 2025-12-30 | 272.005 | 486.423 |     685.736 |
-        | 2025-12-31 | 272.09  | 485.674 |     684.953 |
+        | Date       |   BTCUSD |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-27 |  87664.2 |     687.165 |
+        | 2025-12-28 |  87603.8 |     687.17  |
+        | 2025-12-29 |  87477.7 |     686.493 |
+        | 2025-12-30 |  87572.5 |     685.285 |
+        | 2025-12-31 |  87626   |     682.993 |
         """
         if period not in [
             "intraday",
@@ -5899,10 +5881,25 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["^STOXX50E"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.technicals.get_kaufman_adaptive_moving_average()
+        toolkit.technicals.get_kaufman_adaptive_moving_average().tail(5)
         ```
+
+        Which returns:
+
+        | Date       |   ^STOXX50E |   Benchmark |
+        |:-----------|------------:|------------:|
+        | 2025-12-24 |     5725.01 |     674.232 |
+        | 2025-12-26 |     5725.15 |     674.371 |
+        | 2025-12-29 |     5725.79 |     674.726 |
+        | 2025-12-30 |     5728.19 |     675.041 |
+        | 2025-12-31 |     5728.19 |     675.076 |
         """
         if period not in [
             "intraday",
@@ -6016,28 +6013,25 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["SPY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
+            benchmark_ticker=None,
         )
 
-        toolkit.technicals.get_volume_weighted_average_price()
+        toolkit.technicals.get_volume_weighted_average_price().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 278.186 | 478.827 |     674.906 |
-        | 2025-12-18 | 277.532 | 478.63  |     674.443 |
-        | 2025-12-19 | 276.211 | 478.981 |     674.468 |
-        | 2025-12-22 | 275.272 | 478.73  |     674.699 |
-        | 2025-12-23 | 274.464 | 479.175 |     675.016 |
-        | 2025-12-24 | 274.006 | 479.432 |     675.253 |
-        | 2025-12-26 | 273.626 | 479.603 |     675.357 |
-        | 2025-12-29 | 273.368 | 479.287 |     675.675 |
-        | 2025-12-30 | 273.119 | 479.124 |     675.902 |
-        | 2025-12-31 | 272.801 | 479.609 |     675.857 |
+        | Date       |     SPY |
+        |:-----------|--------:|
+        | 2025-12-24 | 675.242 |
+        | 2025-12-26 | 675.346 |
+        | 2025-12-29 | 675.664 |
+        | 2025-12-30 | 675.891 |
+        | 2025-12-31 | 675.847 |
         """
         if period not in [
             "intraday",
@@ -6151,28 +6145,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["CLUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_parabolic_sar()
+        toolkit.technicals.get_parabolic_sar().tail(5)
         ```
 
         Which returns:
 
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-17 | 285.71  | 487.285 |     681.611 |
-        | 2025-12-18 | 284.525 | 467.911 |     680.908 |
-        | 2025-12-19 | 282.695 | 468.284 |     680.233 |
-        | 2025-12-22 | 281.048 | 468.648 |     664.036 |
-        | 2025-12-23 | 279.566 | 469.005 |     664.356 |
-        | 2025-12-24 | 278.232 | 469.356 |     665.097 |
-        | 2025-12-26 | 277.031 | 469.699 |     666.319 |
-        | 2025-12-29 | 275.951 | 470.035 |     667.918 |
-        | 2025-12-30 | 274.978 | 470.365 |     669.388 |
-        | 2025-12-31 | 274.103 | 471.014 |     670.741 |
+        | Date       |   CLUSD |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-26 | 55.5988 |     667.872 |
+        | 2025-12-28 | 55.8613 |     669.714 |
+        | 2025-12-29 | 56.1028 |     671.371 |
+        | 2025-12-30 | 56.325  |     672.863 |
+        | 2025-12-31 | 56.5294 |     674.206 |
         """
         if period not in [
             "intraday",
@@ -6281,28 +6271,26 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["EURUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_pivot_points().xs("AAPL", level=1, axis="columns")
+        pivot_points = toolkit.technicals.get_pivot_points().xs("EURUSD", level=1, axis="columns")
+
+        pivot_points.loc[:, ["Pivot Point", "Resistance 1", "Resistance 2", "Support 1", "Support 2"]].tail(5)
         ```
 
         Which returns:
 
-        | Date       |   Pivot Point |   Resistance 1 |   Resistance 2 |   Resistance 3 |   Support 1 |   Support 2 |   Support 3 |
-        |:-----------|--------------:|---------------:|---------------:|---------------:|------------:|------------:|------------:|
-        | 2025-12-17 |       273.223 |        275.394 |        276.923 |        279.094 |     271.694 |     269.523 |     267.994 |
-        | 2025-12-18 |       272.472 |        274.041 |        276.979 |        278.548 |     269.533 |     267.964 |     265.025 |
-        | 2025-12-19 |       270.188 |        274.15  |        276.85  |        280.812 |     267.489 |     263.526 |     260.827 |
-        | 2025-12-22 |       271.983 |        274.799 |        276.67  |        279.486 |     270.111 |     267.296 |     265.424 |
-        | 2025-12-23 |       271.049 |        272.322 |        274.41  |        275.683 |     268.961 |     267.688 |     265.6   |
-        | 2025-12-24 |       270.736 |        272.645 |        273.668 |        275.577 |     269.713 |     267.804 |     266.781 |
-        | 2025-12-26 |       273.07  |        274.679 |        276.291 |        277.9   |     271.458 |     269.849 |     268.236 |
-        | 2025-12-29 |       273.133 |        274.147 |        275.636 |        276.65  |     271.644 |     270.63  |     269.141 |
-        | 2025-12-30 |       272.748 |        273.885 |        274.752 |        275.889 |     271.88  |     270.743 |     269.875 |
-        | 2025-12-31 |       272.405 |        273.269 |        274.2   |        275.065 |     271.474 |     270.61  |     269.679 |
+        | Date       |   Pivot Point |   Resistance 1 |   Resistance 2 |   Support 1 |   Support 2 |
+        |:-----------|--------------:|---------------:|---------------:|------------:|------------:|
+        | 2025-12-26 |        1.18   |         1.1809 |         1.1817 |      1.1792 |      1.1783 |
+        | 2025-12-28 |        1.1806 |         1.182  |         1.1841 |      1.1785 |      1.1771 |
+        | 2025-12-29 |        1.1806 |         1.1814 |         1.1827 |      1.1793 |      1.1785 |
+        | 2025-12-30 |        1.1797 |         1.1819 |         1.1837 |      1.1779 |      1.1757 |
+        | 2025-12-31 |        1.1709 |         1.1723 |         1.1746 |      1.1686 |      1.1672 |
         """
         if period not in [
             "intraday",
@@ -6431,27 +6419,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["GCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        support_resistance_levels = toolkit.technicals.get_support_resistance_levels()
-
-        support_resistance_levels.xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_support_resistance_levels().xs("GCUSD", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Resistance |   Support |
         |:-----------|-------------:|----------:|
-        | 2025-12-22 |      285.413 |   265.527 |
-        | 2025-12-23 |      285.413 |   265.527 |
-        | 2025-12-24 |      285.413 |   265.527 |
-        | 2025-12-26 |      285.413 |   265.527 |
-        | 2025-12-29 |      285.413 |   265.527 |
-        | 2025-12-30 |      285.413 |   265.527 |
-        | 2025-12-31 |      285.413 |   265.527 |
+        | 2025-12-26 |       4359.4 |    3960.5 |
+        | 2025-12-28 |       4359.4 |    3960.5 |
+        | 2025-12-29 |       4359.4 |    3960.5 |
+        | 2025-12-30 |       4359.4 |    3960.5 |
+        | 2025-12-31 |       4359.4 |    3960.5 |
         """
         if period not in [
             "intraday",
@@ -6574,6 +6559,9 @@ class Technicals:
           about half of a prior move.
         - The 78.6% level is the square root of 0.618, not a ratio drawn directly from the
           Fibonacci sequence itself (unlike 23.6%, 38.2% and 61.8%, which are).
+        - The columns sort lexicographically by their label (so "100.0%" sorts right after
+          "0.0%", ahead of "23.6%"), matching the sorting convention used by every other
+          multi-column indicator in this module (e.g. Pivot Points' Resistance/Support levels).
         - There is no single canonical academic paper behind Fibonacci Retracement Levels — the
           indicator is a practitioner tool derived from the Fibonacci sequence's ratios rather
           than a published financial model. The standard textbook treatment is Murphy, J.J.
@@ -6587,44 +6575,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["BTCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_fibonacci_retracement_levels().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_fibonacci_retracement_levels().xs("BTCUSD", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |    0.0% |   100.0% |   23.6% |   38.2% |   50.0% |   61.8% |   78.6% |
         |:-----------|--------:|---------:|--------:|--------:|--------:|--------:|--------:|
-        | 2025-12-17 | 287.837 |  270.903 | 283.84  | 281.368 | 279.37  | 277.371 | 274.526 |
-        | 2025-12-18 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
-        | 2025-12-19 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
-        | 2025-12-22 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
-        | 2025-12-23 | 283.957 |  266.225 | 279.772 | 277.183 | 275.091 | 272.999 | 270.02  |
-        | 2025-12-24 | 280.377 |  266.225 | 277.037 | 274.971 | 273.301 | 271.631 | 269.254 |
-        | 2025-12-26 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
-        | 2025-12-29 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
-        | 2025-12-30 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
-        | 2025-12-31 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
-        Note that the columns sort lexicographically by their label (so "100.0%" sorts right
-        after "0.0%", ahead of "23.6%"), matching the sorting convention used by every other
-        multi-column indicator in this module (e.g. Pivot Points' Resistance/Support levels).
-
-        | Date       |    0.0% |   100.0% |   23.6% |   38.2% |   50.0% |   61.8% |   78.6% |
-        |:-----------|--------:|---------:|--------:|--------:|--------:|--------:|--------:|
-        | 2025-12-17 | 287.837 |  270.903 | 283.84  | 281.368 | 279.37  | 277.371 | 274.526 |
-        | 2025-12-18 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
-        | 2025-12-19 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
-        | 2025-12-22 | 287.837 |  266.225 | 282.736 | 279.581 | 277.031 | 274.481 | 270.85  |
-        | 2025-12-23 | 283.957 |  266.225 | 279.772 | 277.183 | 275.091 | 272.999 | 270.02  |
-        | 2025-12-24 | 280.377 |  266.225 | 277.037 | 274.971 | 273.301 | 271.631 | 269.254 |
-        | 2025-12-26 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
-        | 2025-12-29 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
-        | 2025-12-30 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
-        | 2025-12-31 | 279.389 |  266.225 | 276.283 | 274.361 | 272.807 | 271.254 | 269.043 |
+        | 2025-12-27 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
+        | 2025-12-28 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
+        | 2025-12-29 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
+        | 2025-12-30 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
+        | 2025-12-31 | 90541.8 |    84400 | 89092.3 | 88195.6 | 87470.9 | 86746.2 | 85714.3 |
         """
         if period not in [
             "intraday",
@@ -6912,28 +6880,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["NGUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_true_range()
+        toolkit.technicals.get_true_range().tail(5)
         ```
 
         Which returns:
 
-        | Date       |   AAPL |    MSFT |   Benchmark |
-        |:-----------|-------:|--------:|------------:|
-        | 2025-12-17 | 4.5077 |  4.9685 |      9.1414 |
-        | 2025-12-18 | 6.6619 | 13.3951 |      9.2403 |
-        | 2025-12-19 | 4.6872 |  5.3262 |      6.5618 |
-        | 2025-12-22 | 3.3609 |  6.0019 |      4.733  |
-        | 2025-12-23 | 2.932  |  3.0705 |      4.2964 |
-        | 2025-12-24 | 3.2212 |  4.3027 |      3.0065 |
-        | 2025-12-26 | 2.5032 |  2.1464 |      2.3715 |
-        | 2025-12-29 | 2.0045 |  4.1437 |      4.2072 |
-        | 2025-12-30 | 1.7951 |  4.1536 |      1.9647 |
-        | 2025-12-31 | 1.9248 |  4.8095 |      5.6062 |
+        | Date       |   NGUSD |   Benchmark |
+        |:-----------|--------:|------------:|
+        | 2025-12-26 |  0.5251 |      2.3714 |
+        | 2025-12-28 |  0.482  |      2.7386 |
+        | 2025-12-29 |  0.2422 |      3.1057 |
+        | 2025-12-30 |  0.2599 |      1.9646 |
+        | 2025-12-31 |  0.3043 |      5.6062 |
         """
         if period not in [
             "intraday",
@@ -7050,28 +7014,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["CLUSD", "NGUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_average_true_range()
+        toolkit.technicals.get_average_true_range().tail(5)
         ```
 
         Which returns:
 
-        | Date       |   AAPL |   MSFT |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-17 | 4.8747 | 9.116  |      7.3629 |
-        | 2025-12-18 | 5.0024 | 9.4216 |      7.497  |
-        | 2025-12-19 | 4.9799 | 9.1291 |      7.4302 |
-        | 2025-12-22 | 4.8642 | 8.9057 |      7.2376 |
-        | 2025-12-23 | 4.7262 | 8.4889 |      7.0275 |
-        | 2025-12-24 | 4.6187 | 8.1899 |      6.7403 |
-        | 2025-12-26 | 4.4676 | 7.7582 |      6.4282 |
-        | 2025-12-29 | 4.2917 | 7.5    |      6.2696 |
-        | 2025-12-30 | 4.1134 | 7.261  |      5.9621 |
-        | 2025-12-31 | 3.957  | 7.0859 |      5.9367 |
+        | Date       |   CLUSD |   NGUSD |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2025-12-26 |  1.2031 |  0.3041 |      5.8269 |
+        | 2025-12-28 |  1.1614 |  0.3168 |      5.6063 |
+        | 2025-12-29 |  1.1778 |  0.3115 |      5.4277 |
+        | 2025-12-30 |  1.1558 |  0.3078 |      5.1803 |
+        | 2025-12-31 |  1.1697 |  0.3076 |      5.2107 |
         """
         if period not in [
             "intraday",
@@ -7197,10 +7157,25 @@ class Technicals:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(tickers=["AAPL", "MSFT"])
+        toolkit = Toolkit(
+            tickers=["SHOP"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.technicals.get_supertrend().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_supertrend().xs("SHOP", level=1, axis="columns").tail(5)
         ```
+
+        Which returns:
+
+        | Date       |   Supertrend |   Trend Direction |
+        |:-----------|-------------:|------------------:|
+        | 2025-12-24 |      150.646 |                 1 |
+        | 2025-12-26 |      151.942 |                 1 |
+        | 2025-12-29 |      152.113 |                 1 |
+        | 2025-12-30 |      152.113 |                 1 |
+        | 2025-12-31 |      152.113 |                 1 |
         """
         if period not in [
             "intraday",
@@ -7317,28 +7292,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["^GDAXI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_keltner_channels().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_keltner_channels().xs("^GDAXI", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Lower Line |   Middle Line |   Upper Line |
         |:-----------|-------------:|--------------:|-------------:|
-        | 2025-12-17 |      265.433 |       274.92  |      284.408 |
-        | 2025-12-18 |      264.719 |       274.59  |      284.461 |
-        | 2025-12-19 |      264.61  |       274.432 |      284.253 |
-        | 2025-12-22 |      264.52  |       274.032 |      283.544 |
-        | 2025-12-23 |      264.655 |       273.802 |      282.949 |
-        | 2025-12-24 |      264.856 |       273.732 |      282.609 |
-        | 2025-12-26 |      265.14  |       273.63  |      282.119 |
-        | 2025-12-29 |      265.53  |       273.572 |      281.613 |
-        | 2025-12-30 |      265.858 |       273.454 |      281.05  |
-        | 2025-12-31 |      266.01  |       273.232 |      280.454 |
+        | 2025-12-24 |      23674   |       24088.6 |      24503.2 |
+        | 2025-12-26 |      23715.1 |       24113.2 |      24511.4 |
+        | 2025-12-29 |      23750.5 |       24135.9 |      24521.3 |
+        | 2025-12-30 |      23782.9 |       24169.6 |      24556.4 |
+        | 2025-12-31 |      23782.9 |       24169.6 |      24556.4 |
         """
         if period not in [
             "intraday",
@@ -7453,28 +7424,24 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["HGUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_donchian_channels().xs("AAPL", level=1, axis="columns")
+        toolkit.technicals.get_donchian_channels().xs("HGUSD", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
         | Date       |   Lower Channel |   Middle Channel |   Upper Channel |
         |:-----------|----------------:|-----------------:|----------------:|
-        | 2025-12-17 |         264.6   |          276.218 |         287.837 |
-        | 2025-12-18 |         264.779 |          276.308 |         287.837 |
-        | 2025-12-19 |         264.949 |          276.393 |         287.837 |
-        | 2025-12-22 |         264.949 |          276.393 |         287.837 |
-        | 2025-12-23 |         266.225 |          277.031 |         287.837 |
-        | 2025-12-24 |         266.225 |          277.031 |         287.837 |
-        | 2025-12-26 |         266.225 |          277.031 |         287.837 |
-        | 2025-12-29 |         266.225 |          277.031 |         287.837 |
-        | 2025-12-30 |         266.225 |          277.031 |         287.837 |
-        | 2025-12-31 |         266.225 |          277.031 |         287.837 |
+        | 2025-12-26 |          5.2425 |           5.4982 |          5.754  |
+        | 2025-12-28 |          5.281  |           5.5847 |          5.8885 |
+        | 2025-12-29 |          5.281  |           5.6002 |          5.9195 |
+        | 2025-12-30 |          5.281  |           5.6041 |          5.9272 |
+        | 2025-12-31 |          5.281  |           5.6041 |          5.9272 |
         """
         if period not in [
             "intraday",
@@ -7584,26 +7551,27 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
+            tickers=["BTCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        volatility_cone = toolkit.technicals.get_volatility_cone()
+        volatility_cone = toolkit.technicals.get_volatility_cone().xs("BTCUSD", level=1, axis="columns")
 
-        volatility_cone.xs("AAPL", level=1, axis="columns")
+        volatility_cone.loc[:, ["Min", "10th Percentile", "Median", "90th Percentile", "Max", "Current"]]
         ```
 
         Which returns:
 
-        |   Window |   10th Percentile |   25th Percentile |   75th Percentile |   90th Percentile |   Current |    Max |   Median |    Min |
-        |---------:|------------------:|------------------:|------------------:|------------------:|----------:|-------:|---------:|-------:|
-        |       10 |            0.1347 |            0.1716 |            0.3027 |            0.3905 |    0.0927 | 1.0972 |   0.2269 | 0.0579 |
-        |       20 |            0.1503 |            0.1903 |            0.3014 |            0.3693 |    0.0978 | 0.8034 |   0.2406 | 0.0941 |
-        |       30 |            0.1654 |            0.196  |            0.2976 |            0.3682 |    0.1307 | 0.6883 |   0.2424 | 0.1253 |
-        |       60 |            0.1801 |            0.2038 |            0.3005 |            0.4023 |    0.1784 | 0.5229 |   0.2371 | 0.1384 |
-        |       90 |            0.1905 |            0.2039 |            0.3279 |            0.3805 |    0.2012 | 0.459  |   0.241  | 0.1688 |
-        |      120 |            0.1951 |            0.2068 |            0.3528 |            0.3783 |    0.2142 | 0.4089 |   0.2483 | 0.1732 |
+        |   Window |    Min |   10th Percentile |   Median |   90th Percentile |    Max |   Current |
+        |---------:|-------:|------------------:|---------:|------------------:|-------:|----------:|
+        |       10 | 0.0727 |            0.2073 |   0.3975 |            0.7323 | 1.3284 |    0.1308 |
+        |       20 | 0.0952 |            0.2474 |   0.4151 |            0.713  | 1.0995 |    0.2209 |
+        |       30 | 0.1416 |            0.2634 |   0.4278 |            0.6834 | 1.0096 |    0.2865 |
+        |       60 | 0.2175 |            0.2859 |   0.4537 |            0.6445 | 0.903  |    0.3453 |
+        |       90 | 0.2306 |            0.2962 |   0.445  |            0.6358 | 0.8003 |    0.3433 |
+        |      120 | 0.2412 |            0.3038 |   0.4334 |            0.6228 | 0.7615 |    0.3208 |
         """
         if period not in [
             "intraday",
@@ -7722,28 +7690,25 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            start_date="2021-01-01",
+            tickers=["XLK", "XLF", "XLE", "XLV", "XLY", "XLP", "XLI", "XLB", "XLU", "XLRE", "XLC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_trin()
+        # TRIN is one market-wide reading, repeated in every ticker column
+        toolkit.technicals.get_trin().loc[:, ["XLK"]].tail(5)
         ```
 
         Which returns:
 
-        | Date       |     AAPL |     MSFT |   Benchmark |
-        |:-----------|---------:|---------:|------------:|
-        | 2025-12-17 | nan      | nan      |    nan      |
-        | 2025-12-18 | nan      | nan      |    nan      |
-        | 2025-12-19 | nan      | nan      |    nan      |
-        | 2025-12-22 | nan      | nan      |    nan      |
-        | 2025-12-23 | nan      | nan      |    nan      |
-        | 2025-12-24 | nan      | nan      |    nan      |
-        | 2025-12-26 | nan      | nan      |    nan      |
-        | 2025-12-29 |   0.4593 |   0.4593 |      0.4593 |
-        | 2025-12-30 |   1.5877 |   1.5877 |      1.5877 |
-        | 2025-12-31 | nan      | nan      |    nan      |
+        | Date       |      XLK |
+        |:-----------|---------:|
+        | 2025-12-24 |   2.485  |
+        | 2025-12-26 |   1.6498 |
+        | 2025-12-29 |   0.6578 |
+        | 2025-12-30 |   0.6376 |
+        | 2025-12-31 | nan      |
         """
         if period not in [
             "intraday",
@@ -7860,28 +7825,25 @@ class Technicals:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            start_date="2021-01-01",
+            tickers=["XLK", "XLF", "XLE", "XLV", "XLY", "XLP", "XLI", "XLB", "XLU", "XLRE", "XLC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-10-01",
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_new_highs_new_lows()
+        # New Highs - New Lows is one market-wide reading, repeated in every ticker column
+        toolkit.technicals.get_new_highs_new_lows(window=20).loc[:, ["XLK"]].tail(5)
         ```
 
         Which returns:
 
-        | Date       |   AAPL |   MSFT |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-17 |      0 |      0 |           0 |
-        | 2025-12-18 |      0 |      0 |           0 |
-        | 2025-12-19 |      0 |      0 |           0 |
-        | 2025-12-22 |      0 |      0 |           0 |
-        | 2025-12-23 |      0 |      0 |           0 |
-        | 2025-12-24 |      0 |      0 |           0 |
-        | 2025-12-26 |      0 |      0 |           0 |
-        | 2025-12-29 |      0 |      0 |           0 |
-        | 2025-12-30 |      0 |      0 |           0 |
-        | 2025-12-31 |      0 |      0 |           0 |
+        | Date       |   XLK |
+        |:-----------|------:|
+        | 2025-12-24 |     5 |
+        | 2025-12-26 |     1 |
+        | 2025-12-29 |     0 |
+        | 2025-12-30 |     2 |
+        | 2025-12-31 |     0 |
         """
         if period not in [
             "intraday",

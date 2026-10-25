@@ -491,3 +491,20 @@ def test_calculate_growth_equals_the_percentage_change_for_positive_values():
     pd.testing.assert_series_equal(
         statistics_model.calculate_growth(data, rounding=None), data.pct_change()
     )
+
+
+def test_apply_rounding_prints_no_negative_zero():
+    # -0.00001 rounds to -0.0, which a table prints as "-0".
+    frame = pd.DataFrame(
+        {"Statistic": [-0.00001, -1.23456], "Significant": [True, False]},
+        index=["A", "B"],
+    )
+
+    rounded = statistics_model.apply_rounding(frame, 4)
+
+    assert str(rounded.loc["A", "Statistic"]) == "0.0"
+    assert rounded.loc["B", "Statistic"] == -1.2346
+    assert rounded["Significant"].tolist() == [True, False]
+    assert (
+        str(statistics_model.apply_rounding(pd.Series([-0.00001]), 4).iloc[0]) == "0.0"
+    )

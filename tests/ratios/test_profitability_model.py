@@ -1,5 +1,6 @@
 """Profitability Model Tests""" ""
 import pandas as pd
+import pytest
 
 from financetoolkit.ratios import profitability_model
 
@@ -177,3 +178,18 @@ def test_get_return_on_capital_employed_uses_ebit():
     )
 
     assert result.iloc[0] == 0.2
+
+
+def test_return_on_invested_capital_keeps_a_missing_tax_expense_missing():
+    result = profitability_model.get_return_on_invested_capital(
+        operating_income=pd.Series([100.0, 100.0, 100.0]),
+        income_tax_expense=pd.Series([float("nan"), 20.0, 5.0]),
+        income_before_tax=pd.Series([80.0, -10.0, 80.0]),
+        average_total_equity=pd.Series([500.0, 500.0, 500.0]),
+        average_total_debt=pd.Series([500.0, 500.0, 500.0]),
+    )
+
+    # A missing tax expense is no tax-free year, while a pre-tax loss sets the rate to 0.
+    assert pd.isna(result.iloc[0])
+    assert result.iloc[1] == 0.1
+    assert result.iloc[2] == pytest.approx(100 * (1 - 5 / 80) / 1000)

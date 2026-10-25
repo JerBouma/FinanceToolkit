@@ -12,6 +12,8 @@ general:
   # you wish to change the format.
   date_columns:
     - Date
+    - Trade Date
+    - Transaction Date
 
   # The format to use for the dates, needs to be specific to your transaction data and is
   # highly relevant for grouping data together. See https://strftime.org/ for more information.
@@ -25,13 +27,15 @@ general:
   # to collect historical data
   ticker_columns:
     - Identifier
+    - Ticker
+    - Symbol
     - ISIN
   
   # The columns that include the name of the transaction. This is an optional column and will use
   # the ticker column instead if nothing can be found.
   name_columns:
     - Name
-    - Product
+    - Description
 
   # This can be either a string (e.g. currency: EUR) or a list of strings which
   # represents columns and is used to determine the currency of a transaction.
@@ -43,19 +47,22 @@ general:
   # the value of the transaction and the performance of the transaction.
   price_columns:
     - Price
+    - Price per Share
+    - Unit Price
 
   # The volume column is used to determine the volume of the transaction. This is used to calculate
   # the value of the transaction and the performance of the transaction.
   volume_columns:
     - Volume
     - Quantity
+    - Shares
+    - Units
 
   # The costs column is used to deduct any costs from the transaction. This is used to calculate
   # the value of the transaction and the performance of the transaction. This is an optional column
   # and is set to 0 if nothing can be found.
   costs_columns:
     - Costs
-    - Transaction and/or third
 
   # This is the value column that is used to determine the value of the transaction. This is used
   # to calculate the performance of the transaction. This is an optional column and is only used

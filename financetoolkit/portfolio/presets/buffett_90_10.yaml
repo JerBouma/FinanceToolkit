@@ -1,0 +1,19 @@
+# JUDGEMENT: BIL (1-3 month Treasury bills) stands in for "short-term government bonds".
+name: Buffett's 90/10
+aliases: ["90/10", "Buffett", "90-10"]
+description: "Warren Buffett's advice for his estate: 90% in an S&P 500 index fund and 10% in short-term government bonds."
+source:
+  text: "Buffett (2014, p. 20), the 2013 Berkshire Hathaway shareholder letter, where the trustee is told to hold 10% in short-term government bonds and 90% in a very low-cost S&P 500 index fund."
+  link: "https://www.berkshirehathaway.com/letters/2013ltr.pdf"
+rebalancing: yearly
+holdings:
+  - ticker: VOO
+    name: Vanguard S&P 500 ETF
+    weight: 0.9
+    asset_class: Equity
+    currency: USD
+  - ticker: BIL
+    name: SPDR Bloomberg 1-3 Month T-Bill ETF
+    weight: 0.1
+    asset_class: Cash
+    currency: USD

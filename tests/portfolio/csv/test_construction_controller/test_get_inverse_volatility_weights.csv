@@ -1,0 +1,4 @@
+,Weight,Expected Return,Volatility,Sharpe Ratio,Risk Contribution
+AAPL,0.4848,0.2651,0.3691,0.6708,0.5
+MSFT,0.5152,0.2088,0.3473,0.5507,0.5
+Portfolio,1.0,0.2361,0.3406,0.6417,1.0

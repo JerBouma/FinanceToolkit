@@ -12,6 +12,7 @@ _CLASSES = {
     "FixedIncome": "financetoolkit.fixedincome.fixedincome_controller",
     "Discovery": "financetoolkit.discovery.discovery_controller",
     "Portfolio": "financetoolkit.portfolio.portfolio_controller",
+    "PortfolioDefinition": "financetoolkit.portfolio.definition_model",
     "get_normalization_files": "financetoolkit.normalization_model",
 }
 
@@ -21,6 +22,7 @@ __all__ = [
     "Economics",
     "FixedIncome",
     "Portfolio",
+    "PortfolioDefinition",
     "Toolkit",
     "get_normalization_files",
 ]
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from .economics.economics_controller import Economics
     from .fixedincome.fixedincome_controller import FixedIncome
     from .normalization_model import get_normalization_files
+    from .portfolio.definition_model import PortfolioDefinition
     from .portfolio.portfolio_controller import Portfolio
     from .toolkit_controller import Toolkit
 

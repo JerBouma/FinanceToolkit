@@ -1,0 +1,31 @@
+# Duration, iShares TLT 14.63y (2026-10-06) https://www.ishares.com/us/products/239454/ishares-20-year-treasury-bond-etf
+# JUDGEMENT: TLT's 20+ year bonds stand in for his 30-year bond; BIL (1-3 month Treasury bills) for the cash.
+name: Permanent Portfolio
+aliases: ["Permanent", "Harry Browne", "Browne"]
+description: "Harry Browne's four quarters for every economic season: US stocks, long US Treasuries, Treasury bills and gold."
+source:
+  text: "Browne (1999), Fail-Safe Investing, as summarised in Derek Sivers' book notes (page not verified): 25% in each of the four categories, the bonds in the longest-dated Treasury issue, the cash in a money market fund holding only short-term Treasuries."
+  link: "https://sive.rs/book/FailSafeInvesting"
+rebalancing: yearly
+holdings:
+  - ticker: VTI
+    name: Vanguard Total Stock Market ETF
+    weight: 0.25
+    asset_class: Equity
+    currency: USD
+  - ticker: TLT
+    name: iShares 20+ Year Treasury Bond ETF
+    weight: 0.25
+    asset_class: Fixed Income
+    currency: USD
+    duration: 14.63
+  - ticker: BIL
+    name: SPDR Bloomberg 1-3 Month T-Bill ETF
+    weight: 0.25
+    asset_class: Cash
+    currency: USD
+  - ticker: GLD
+    name: SPDR Gold Shares
+    weight: 0.25
+    asset_class: Commodity
+    currency: USD

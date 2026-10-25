@@ -32,6 +32,7 @@ FinancingCashFlow,Cash Flow from Financing
 CashFlowFromContinuingFinancingActivities,Cash Flow from Continuing Financing Activities
 NetIssuancePaymentsOfDebt,Net Issuance Payments of Debt
 NetLongTermDebtIssuance,Long Term Debt Issued
+LongTermDebtIssuance,Gross Long Term Debt Issued
 NetShortTermDebtIssuance,Short Term Debt Issued
 NetCommonStockIssuance,Net Common Stock Issuance
 CommonStockIssuance,Common Stock Issued
@@ -41,6 +42,7 @@ CommonStockDividendPaid,Common Dividends Paid
 NetOtherFinancingCharges,Net Other Financing Charges
 EndCashPosition,Cash End of Period
 ChangesInCash,Net Change in Cash
+EffectOfExchangeRateChanges,Forex Changes on Cash
 BeginningCashPosition,Cash Beginning of Period
 IncomeTaxPaidSupplementalData,Income Taxes Paid
 InterestPaidSupplementalData,Interest Paid

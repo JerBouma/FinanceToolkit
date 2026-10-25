@@ -641,6 +641,9 @@ class ToolkitProvider:
                 benchmark_ticker=benchmark_ticker,
                 # The same database the provider opened, or False when running uncached.
                 use_cached_data=self._use_cached_data,
+                # Unrounded, as the answer is rounded to significant digits when formatted,
+                # so small values (a daily variance) keep their precision.
+                rounding=None,
             )
             self._toolkit_cache[cache_key] = toolkit_instance
             while len(self._toolkit_cache) > MAXIMUM_TOOLKIT_INSTANCES:
@@ -841,6 +844,7 @@ class ToolkitProvider:
                         fred_api_key=effective_fred_key,
                         cache=self._cache,
                         api_key=effective_key,
+                        rounding=None,
                     )
                 elif module_name == "fixedincome":
                     # get_treasury_rates is served by FMP, so without the key it silently returns no data.
@@ -851,6 +855,7 @@ class ToolkitProvider:
                         quarterly=quarterly,
                         fred_api_key=effective_fred_key,
                         cache=self._cache,
+                        rounding=None,
                     )
                 elif module_name == "discovery":
                     instance = Discovery(
@@ -871,6 +876,17 @@ class ToolkitProvider:
             sig = inspect.signature(method)
             if "countries" in sig.parameters:
                 kwargs["countries"] = countries
+                countries_handled = True
+            elif "country" in sig.parameters and module_name != "discovery":
+                # An analysis of one country's data, such as the principal components of
+                # its yield curve, takes the country on its own. (The stock screener's
+                # country is an exchange country code, so Discovery is left out.)
+                if len(countries) > 1:
+                    raise ValueError(
+                        f"{method_name} analyzes one country at a time, not "
+                        f"{', '.join(countries)}. Please call it once per country."
+                    )
+                kwargs["country"] = countries[0]
                 countries_handled = True
 
         result = method(**kwargs)

@@ -3,6 +3,8 @@
 import numpy as np
 import pandas as pd
 
+from financetoolkit.fixedincome import bond_model
+
 # pylint: disable=unsubscriptable-object
 
 
@@ -100,14 +102,20 @@ def get_par_yield(
 
     The formula is as follows:
 
-        Par Yield = frequency * (1 - DF(n)) / SUM_(k=1)^(n) [ DF(k) ]
+        Par Yield = m * (1 - DF(t_n)) / (SUM_(i=1)^(n) [ DF(t_i) ] - a)
 
-    where DF(k) = 1 / (1 + spot_rate(k / frequency) / frequency)^k is the discount
-    factor for a cash flow received at period k, spot_rate(t) is obtained by linearly
-    interpolating the provided spot curve at time t (in years), n = years_to_maturity
-    * frequency is the number of coupon periods. Spot rates are treated as nominal
-    annual rates compounded at `frequency`, consistent with the convention used by
-    `bond_model._get_bond_price_from_curve`.
+    where m = frequency, DF(t) = 1 / (1 + spot_rate(t / m) / m)^t is the discount factor
+    for a cash flow received after t periods, spot_rate(τ) is obtained by linearly
+    interpolating the provided spot curve at time τ (in years), n is the number of
+    remaining coupons, t_i is the time of the i-th coupon in periods and a is the elapsed
+    fraction of the current coupon period (see `bond_model.get_cash_flow_periods`), so
+    t_n = years_to_maturity * m. Spot rates are treated as nominal annual rates
+    compounded at `frequency`, consistent with `bond_model._get_bond_price_from_curve`.
+
+    For a maturity that is a whole number of periods a = 0 and t_i = i, the textbook
+    formula. Otherwise the coupon is the one at which the clean (quoted) price, the
+    dirty price minus the accrued coupon, equals par, the same price `bond_model.get_z_spread`
+    compares against.
 
     For more information, see: https://en.wikipedia.org/wiki/Par_yield
 
@@ -151,23 +159,25 @@ def get_par_yield(
         raise ValueError("frequency must be greater than 0.")
 
     spot_rates_sorted = spot_rates.sort_index()
-    total_periods = int(round(years_to_maturity * frequency))
 
-    # Nominal annual rates compounded at `frequency`, so discount per period.
-    discount_factor_sum = 0.0
-    for period in range(1, total_periods + 1):
-        period_time = period / frequency
-        period_rate = np.interp(
-            period_time, spot_rates_sorted.index, spot_rates_sorted.to_numpy()
-        )
-        discount_factor_sum += 1 / (1 + period_rate / frequency) ** period
+    # The same cash flow times as the bond pricing, so a bond with this coupon prices at par on the same curve.  # noqa: E501
+    periods = bond_model.get_cash_flow_periods(years_to_maturity, frequency)
+    accrued_fraction = bond_model.get_accrued_fraction(years_to_maturity, frequency)
 
-    maturity_rate = np.interp(
-        years_to_maturity, spot_rates_sorted.index, spot_rates_sorted.to_numpy()
+    # Nominal annual rates compounded at `frequency`, so discount per (fractional) period.
+    period_rates = np.interp(
+        periods / frequency,
+        spot_rates_sorted.index.to_numpy(dtype=float),
+        spot_rates_sorted.to_numpy(dtype=float),
     )
-    maturity_discount_factor = 1 / (1 + maturity_rate / frequency) ** total_periods
+    discount_factors = (1 + period_rates / frequency) ** -periods
 
-    par_yield = frequency * (1 - maturity_discount_factor) / discount_factor_sum
+    # The accrued part of the next coupon is paid by the buyer on top of par, so it is taken off the coupon annuity.  # noqa: E501
+    par_yield = (
+        frequency
+        * (1 - discount_factors[-1])
+        / (discount_factors.sum() - accrued_fraction)
+    )
 
     return float(par_yield)
 

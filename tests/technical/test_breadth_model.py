@@ -1,6 +1,7 @@
 """Breadth Model Tests"""
 
 import pandas as pd
+import pytest
 
 from financetoolkit.technicals import breadth_model
 
@@ -95,3 +96,19 @@ def test_get_positive_volume_index(recorder):
             pd.Series([1000, 1200, 900, 1100, 1500, 800, 1300, 1600]),
         ).round(3)
     )
+
+
+def test_mcclellan_oscillator_seeds_on_actual_advances_and_declines():
+    prices = pd.Series([10.0, 11, 10, 12, 13, 12, 14, 15, 14, 16])
+
+    oscillator = breadth_model.get_mcclellan_oscillator(prices, 2, 4)
+
+    # The first signal is on the second price, so the 4-period EMA is seeded on periods
+    # 1 to 4 and the 2-period EMA on periods 1 to 2 (then updated up to period 4).
+    signals = [1, -1, 1, 1]
+    short = sum(signals[:2]) / 2
+    for signal in signals[2:]:
+        short = short + 2 / 3 * (signal - short)
+
+    assert oscillator.first_valid_index() == 4
+    assert oscillator.iloc[4] == pytest.approx(short - sum(signals) / 4)

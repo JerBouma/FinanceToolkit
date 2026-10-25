@@ -986,10 +986,8 @@ def test_volatility_forecast():
         )
         .dropna()
         .to_numpy(),
-        (risk_model.get_ewma_volatility(returns, 0.94) ** 2)
-        .shift(1)
-        .dropna()
-        .to_numpy(),
+        # The RiskMetrics recursion already builds σₜ² from rₜ₋₁, so no extra lag.
+        (risk_model.get_ewma_volatility(returns, 0.94) ** 2).dropna().to_numpy(),
         rtol=1e-12,
     )
     np.testing.assert_allclose(

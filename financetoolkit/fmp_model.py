@@ -3123,6 +3123,38 @@ def get_earnings_call_transcripts(
     )
 
 
+def get_upcoming_earnings_date(
+    ticker: str, api_key: str, user_subscription: str = "Free"
+) -> str:
+    """
+    Retrieves the date of a company's next earnings announcement.
+
+    Args:
+        ticker (str): The company.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        str: The date (YYYY-MM-DD) of the first announcement from today on, or "" when none
+        is scheduled.
+    """
+    _require_fmp_api_key(api_key)
+    today = pd.Timestamp.today().normalize()
+    url = (
+        f"https://financialmodelingprep.com/stable/earnings?symbol={ticker}&limit=10"
+        f"&from={today:%Y-%m-%d}&to={today + pd.Timedelta(days=400):%Y-%m-%d}&apikey={api_key}"
+    )
+    records = _get_records(url=url, user_subscription=user_subscription)
+
+    if "date" not in records.columns:
+        return ""
+
+    dates = pd.to_datetime(records["date"], errors="coerce")
+    upcoming = dates[dates >= today]
+
+    return upcoming.min().strftime("%Y-%m-%d") if not upcoming.empty else ""
+
+
 def get_stock_peers(
     ticker: str, api_key: str, user_subscription: str = "Free"
 ) -> list[str]:

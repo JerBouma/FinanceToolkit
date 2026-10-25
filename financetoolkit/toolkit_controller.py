@@ -785,6 +785,26 @@ class Toolkit:
         from financetoolkit.options.options_controller import Options  # noqa: PLC0415
 
         # The prices and the risk free rate are retrieved when a calculation first needs them.
+
+        def next_earnings_dates() -> dict[str, str]:
+            # The first announcement from today on, per ticker, for the implied earnings
+            # move. The earnings calendar stops at the end date, so the dates are read
+            # from the announcements Financial Modeling Prep lists, estimates included.
+            from financetoolkit.fmp_model import (  # noqa: PLC0415
+                get_upcoming_earnings_date,
+            )
+
+            if not self._api_key:
+                return {}
+            dates = {}
+            for ticker in self._tickers:
+                upcoming = get_upcoming_earnings_date(
+                    ticker, self._api_key, self._fmp_plan
+                )
+                if upcoming:
+                    dates[ticker] = upcoming
+            return dates
+
         return Options(
             tickers=self._tickers,
             daily_historical=lambda: self._get_module_historical_data("daily"),
@@ -794,6 +814,7 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            earnings_function=next_earnings_dates,
         )
 
     @property

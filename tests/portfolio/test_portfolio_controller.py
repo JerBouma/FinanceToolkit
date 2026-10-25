@@ -547,3 +547,57 @@ def test_an_overview_with_a_benchmark_without_data_is_empty(monkeypatch):
     assert held.get_portfolio_overview().empty
     assert held.get_portfolio_performance().empty
     assert held.get_transactions_performance().empty
+
+
+def test_the_portfolio_benchmark_replicates_sales_as_well_as_buys(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": [
+                "2020-01-10",
+                "2020-06-01",
+                "2021-03-01",
+                "2021-09-01",
+                "2022-06-01",
+            ],
+            "Ticker": ["AAPL"] * 5,
+            "Volume": [20, 10, -15, 5, -8],
+            "Costs": [-1.0] * 5,
+        }
+    )
+    traded, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    overview = traded.get_portfolio_overview(rounding=12)
+
+    # A portfolio of the benchmark alone matches it on every buy and sale, so it has no alpha.
+    assert overview.loc["Portfolio", "Benchmark Return"] == pytest.approx(
+        overview.loc["Portfolio", "Return"], abs=1e-9
+    )
+    assert overview.loc["Portfolio", "Alpha"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_a_rebalancing_does_not_buy_the_benchmark_again(monkeypatch):
+    first, rebalance = pd.Timestamp("2020-01-10"), pd.Timestamp("2021-06-01")
+    prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    close = prices["Close"].copy()
+    close.index = close.index.to_timestamp()
+    # The AAPL bought on the rebalancing date costs exactly what the MSFT sold on it raises.
+    aapl_bought = 5 * close.loc[rebalance, "MSFT"] / close.loc[rebalance, "AAPL"]
+    trades = pd.DataFrame(
+        {
+            "Date": [first, first, rebalance, rebalance],
+            "Ticker": ["AAPL", "MSFT", "MSFT", "AAPL"],
+            "Volume": [10.0, 10.0, -5.0, aapl_bought],
+            "Costs": [0.0] * 4,
+        }
+    )
+    rebalanced, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    portfolio_row = rebalanced.get_portfolio_overview(rounding=12).loc["Portfolio"]
+
+    # The rebalancing sells as much benchmark as it buys, so the benchmark is held from the first day alone, with its dividends paid as cash.  # noqa: E501
+    dividends = prices[("Dividends", "AAPL")].fillna(0)
+    dividends.index = dividends.index.to_timestamp()
+    held = (close["AAPL"].iloc[-1] + dividends.loc[first:].iloc[1:].sum()) / close.loc[
+        first, "AAPL"
+    ] - 1
+    assert portfolio_row["Benchmark Return"] == pytest.approx(held, rel=1e-6)

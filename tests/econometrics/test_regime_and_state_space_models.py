@@ -209,3 +209,20 @@ def test_structural_breaks_trim_with_the_integer_part():
 def test_the_exit_threshold_lies_below_the_entry_threshold():
     with pytest.raises(ValueError, match="below the entry threshold"):
         pairs_trading_model.get_signals(pd.Series([0.0, 2.5]), entry=1.0, exit_=1.5)
+
+
+def test_markov_regime_switching_is_reproducible_and_keeps_the_random_state():
+    rng = np.random.default_rng(7)
+    returns = pd.Series(
+        np.concatenate([rng.normal(0.001, 0.005, 150), rng.normal(-0.002, 0.02, 150)])
+    )
+
+    np.random.seed(123)
+    expected_next = np.random.random()
+    np.random.seed(123)
+    first, _ = regime_model.get_markov_regime_switching(returns)
+    # The caller's random numbers are unaffected by the fit's search.
+    assert np.random.random() == expected_next
+
+    second, _ = regime_model.get_markov_regime_switching(returns)
+    assert first == second

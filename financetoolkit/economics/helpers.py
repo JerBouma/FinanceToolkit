@@ -145,6 +145,7 @@ def collect_cached_data(
     fetch: Callable[[], pd.DataFrame],
     description: str,
     expect_empty: bool = False,
+    fallback: str | None = None,
 ) -> pd.DataFrame:
     """
     Retrieves a dataset through the cache, serving the last stored copy when the source
@@ -166,6 +167,10 @@ def collect_cached_data(
         description (str): What is retrieved, used in the log messages.
         expect_empty (bool): Whether an empty answer is expected, such as for a period
             before a source starts, so it is not warned about. Defaults to False.
+        fallback (str | None): What is used instead when the source cannot be reached and
+            nothing is cached, for data that only adds to another source's series. The
+            failure is then logged as information with this note rather than as an error.
+            Defaults to None.
 
     Returns:
         pd.DataFrame: The data, or an empty DataFrame when the source cannot be reached
@@ -199,6 +204,16 @@ def collect_cached_data(
                 error,
             )
             return stale_data
+
+        if fallback:
+            logger.info(
+                "Could not reach %s for the %s (%s), so %s.",
+                source,
+                description,
+                error,
+                fallback,
+            )
+            return pd.DataFrame()
 
         logger.error(
             "Could not reach %s for the %s (%s). No data is returned for it.",

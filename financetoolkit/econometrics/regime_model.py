@@ -11,6 +11,8 @@ from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
 # Returns are scaled up before the Markov model is fitted, as the optimizer handles a
 # daily variance of 1e-4 poorly, and scaled back afterwards.
 SCALE = 100.0
+# The seed of the random search for starting values, so a fit is reproducible.
+SEARCH_SEED = 0
 
 
 def get_markov_regime_switching(
@@ -24,9 +26,8 @@ def get_markov_regime_switching(
     The regimes are ordered from the lowest to the highest volatility (or mean, without a
     switching variance).
 
-    The random search for starting values draws from NumPy's global random state (the
-    statsmodels search takes no seed), so when competing optima are close, repeated fits
-    can differ slightly; np.random.seed beforehand makes them reproducible.
+    The random search for starting values runs from a fixed seed, so the same series always
+    gives the same fit; the caller's random state is restored afterwards.
 
     For more information, see the following paper:
 
@@ -57,19 +58,25 @@ def get_markov_regime_switching(
         trend="c",
         switching_variance=switching_variance,
     )
-    # Several starting points, as the likelihood of a mixture has local optima. The global
-    # random state is deliberately left alone: reseeding it here would change the random
-    # numbers of everything else the caller runs.
+    # Several starting points, as the likelihood of a mixture has local optima. The
+    # statsmodels search draws from NumPy's global random state and takes no seed, so it
+    # runs from a fixed seed (the same series gives the same fit) and the caller's state
+    # is restored afterwards.
     fits = []
-    for search in (0, 20):
-        # A starting point that does not converge is one of several, so its warning is
-        # not passed on; the best fit of all of them is used.
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            try:
-                fits.append(model.fit(search_reps=search, disp=False))
-            except (ValueError, np.linalg.LinAlgError):
-                continue
+    random_state = np.random.get_state()
+    np.random.seed(SEARCH_SEED)
+    try:
+        for search in (0, 20):
+            # A starting point that does not converge is one of several, so its warning
+            # is not passed on; the best fit of all of them is used.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    fits.append(model.fit(search_reps=search, disp=False))
+                except (ValueError, RuntimeError, np.linalg.LinAlgError):
+                    continue
+    finally:
+        np.random.set_state(random_state)
     if not fits:
         raise ValueError("The Markov regime switching model did not converge.")
     fit = max(fits, key=lambda result: result.llf)

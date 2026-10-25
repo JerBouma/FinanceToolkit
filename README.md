@@ -292,39 +292,26 @@ Together the two modules cover 70+ metrics, such as [Value at Risk](https://www.
 The past shows how much risk came with the returns; the option market puts a price on the risk ahead. The [options](https://www.jeroenbouma.com/projects/financetoolkit/docs/options) module prices options with Black-Scholes, the Binomial Model and others, calculates the Greeks up to the third order and reads the live option chains: the put-call ratio, max pain, dealer gamma exposure, the volatility skew and term structure and the implied move. As the chains are those of today, the Toolkit below runs up to today, and the numbers are those of the day this README was last updated:
 
 ```python
-import pandas as pd
-
 # Initialize the Toolkit up to today, as the option chains are live
 companies_today = Toolkit(["NVDA", "AMD", "INTC"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-# The model-free implied volatility, the method behind the VIX, at fixed horizons
-implied_volatility = pd.concat(
-    {
-        days: companies_today.options.get_model_free_implied_volatility(days=days)
-        for days in [7, 30, 60, 90, 180]
-    },
-    names=["Days"],
-)
-
-# Show the results for Nvidia
-implied_volatility.xs("NVDA", level=1)
+# The volatility the options imply for the next 30 days against that of the past 30 days
+companies_today.options.get_volatility_risk_premium(days=30)
 ```
 
-As the companies list different expirations, the model-free implied volatility reads the expected variance from all out-of-the-money options of the two expirations around each horizon and interpolates between them, so all three are compared over exactly the same number of days. For example, Nvidia's implied volatility for each horizon is shown below.
+The implied volatility is model-free, read with the method behind the VIX from all out-of-the-money options around the horizon, and the realized volatility is that of the daily returns over the same number of days. For example, both are shown below for each company.
 
-|   Days | Near-Term Expiration   | Next-Term Expiration   |   Near-Term Volatility |   Next-Term Volatility |   Forward Price |   Model-Free Implied Volatility |
-|-------:|:-----------------------|:-----------------------|-----------------------:|-----------------------:|----------------:|--------------------------------:|
-|      7 | 2026-11-02             | 2026-11-04             |                 0.4282 |                 0.4372 |         211.274 |                          0.4216 |
-|     30 | 2026-11-20             | 2026-11-27             |                 0.5007 |                 0.4746 |         211.697 |                          0.4845 |
-|     60 | 2026-12-18             | 2027-01-15             |                 0.4471 |                 0.4356 |         212.126 |                          0.4437 |
-|     90 | 2027-01-15             | 2027-02-19             |                 0.4356 |                 0.4316 |         212.877 |                          0.4345 |
-|    180 | 2027-04-16             | 2027-05-21             |                 0.4349 |                 0.4253 |         215.128 |                          0.4327 |
+|      |   Implied Volatility |   Realized Volatility |   Volatility Risk Premium |   Variance Risk Premium |   Implied to Realized Ratio |
+|:-----|---------------------:|----------------------:|--------------------------:|------------------------:|----------------------------:|
+| NVDA |               0.4845 |                0.2795 |                    0.2049 |                  0.1566 |                      1.7331 |
+| AMD  |               0.657  |                0.498  |                    0.159  |                  0.1836 |                      1.3192 |
+| INTC |               0.6991 |                0.5196 |                    0.1795 |                  0.2188 |                      1.3456 |
 
-And below the implied volatility of each company is plotted for every horizon.
+Options usually price more risk than follows, as their sellers want to be paid for taking it on, and here they priced far more turbulence for the coming month than the past month delivered: Nvidia's options implied 1.7 times the volatility its shares showed. And below the implied and realized volatility of each company are plotted next to each other.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-dark.png">
-  <img alt="Model-Free Implied Volatility" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-light.png">
+  <img alt="Implied and Realized Volatility" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/options-market-light.png">
 </picture>
 
 ## The Economic Environment

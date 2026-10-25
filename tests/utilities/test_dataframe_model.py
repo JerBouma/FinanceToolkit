@@ -120,6 +120,18 @@ def test_filter_columns_multiindex_columns():
     assert set(result.columns.get_level_values(0)) == {"Open"}
 
 
+def test_filter_columns_multiindex_numeric_year():
+    """A displayed year should match an integer MultiIndex level value."""
+    columns = pd.MultiIndex.from_tuples(
+        [("Revenue", 2024), ("Revenue", 2025), ("Profit", 2024)]
+    )
+    df = pd.DataFrame([[100, 110, 20]], columns=columns)
+
+    result = dataframe_model.filter_columns(df, ["2024"])
+
+    pd.testing.assert_frame_equal(result, df.iloc[:, [0, 2]])
+
+
 def test_filter_columns_row_index_fallback():
     """Test filter_columns falls back to filtering by flat row index."""
     df = pd.DataFrame({"2020": [1, 2, 3]}, index=["Revenue", "Expenses", "Profit"])

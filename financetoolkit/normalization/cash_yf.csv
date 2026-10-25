@@ -42,6 +42,7 @@ CommonStockDividendPaid,Common Dividends Paid
 NetOtherFinancingCharges,Net Other Financing Charges
 EndCashPosition,Cash End of Period
 ChangesInCash,Net Change in Cash
+EffectOfExchangeRateChanges,Forex Changes on Cash
 BeginningCashPosition,Cash Beginning of Period
 IncomeTaxPaidSupplementalData,Income Taxes Paid
 InterestPaidSupplementalData,Interest Paid

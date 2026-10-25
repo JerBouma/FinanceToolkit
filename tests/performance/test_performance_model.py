@@ -642,3 +642,167 @@ def test_a_factor_file_is_downloaded_once_per_session(monkeypatch):
     assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
     assert performance_model.download_factor_file("https://example.com/f.zip") == b"zip"
     assert downloads == ["https://example.com/f.zip"]
+
+
+def test_get_compound_annual_growth_rate_uses_calendar_time():
+    # A price that doubles over two calendar years grows by sqrt(2) - 1 a year, whether it
+    # is observed every day (a cryptocurrency) or on weekdays only (a stock).
+    every_day = pd.date_range("2020-01-01", "2022-01-01", freq="D")
+    weekdays = every_day[every_day.dayofweek < 5]  # noqa: PLR2004
+    years = (every_day[-1] - every_day[0]).days / 365.25
+
+    crypto = pd.Series(np.linspace(100, 200, len(every_day)), index=every_day)
+    stock = pd.Series(np.linspace(50, 100, len(weekdays)), index=weekdays)
+
+    # The union calendar leaves the stock without a price on the weekends, the last day
+    # (a Saturday) included, so it is measured from its own first to its own last close.
+    prices = pd.concat({"Crypto": crypto, "Stock": stock}, axis=1)
+    prices.index = prices.index.to_period("D")
+
+    cagr = performance_model.get_compound_annual_growth_rate(prices)
+
+    assert cagr["Crypto"] == pytest.approx(2 ** (1 / years) - 1)
+    stock_years = (weekdays[-1] - weekdays[0]).days / 365.25
+    assert cagr["Stock"] == pytest.approx(2 ** (1 / stock_years) - 1)
+    assert cagr["Stock"] == pytest.approx(0.4142, abs=1e-3)
+
+    # A single price spans no time, so it has no growth rate.
+    assert np.isnan(performance_model.get_compound_annual_growth_rate(crypto.iloc[:1]))
+
+
+def test_get_rolling_beta_masks_the_benchmark_per_asset():
+    # Asset B has no returns for the first three dates, so its benchmark variance must
+    # cover only the dates on which B has a return, as the covariance does.
+    benchmark = pd.Series([0.01, -0.02, 0.03, 0.015, -0.01, 0.02, -0.005])
+    returns = pd.DataFrame(
+        {
+            "A": [0.02, -0.01, 0.025, 0.01, -0.02, 0.03, 0.0],
+            "B": [np.nan, np.nan, np.nan, 0.02, -0.015, 0.01, -0.01],
+        }
+    )
+
+    rolling_beta = performance_model.get_rolling_beta(returns, benchmark, 4)
+
+    # The first full window of B (dates 3-6) has four returns.
+    assert np.isnan(rolling_beta["B"].iloc[5])
+    window = slice(3, 7)
+    expected = (
+        returns["B"].iloc[window].cov(benchmark.iloc[window])
+        / benchmark.iloc[window].var()
+    )
+    assert rolling_beta["B"].iloc[6] == pytest.approx(expected)
+    expected_a = (
+        returns["A"].iloc[window].cov(benchmark.iloc[window])
+        / benchmark.iloc[window].var()
+    )
+    assert rolling_beta["A"].iloc[6] == pytest.approx(expected_a)
+
+
+def test_get_sortino_ratio_needs_two_observations():
+    index = pd.MultiIndex.from_arrays(
+        [
+            pd.PeriodIndex(["2019", "2020", "2020", "2020"], freq="Y"),
+            pd.PeriodIndex(
+                ["2019-12-31", "2020-01-02", "2020-01-03", "2020-01-06"], freq="D"
+            ),
+        ]
+    )
+    excess_returns = pd.DataFrame({"A": [0.01, 0.02, -0.01, 0.005]}, index=index)
+
+    sortino_ratio = performance_model.get_sortino_ratio(excess_returns)
+
+    # A single observation would report only its sign (+1 or -1).
+    assert np.isnan(sortino_ratio.loc[pd.Period("2019", "Y"), "A"])
+    assert sortino_ratio.loc[pd.Period("2020", "Y"), "A"] == pytest.approx(
+        np.mean([0.02, -0.01, 0.005]) / np.sqrt(0.01**2 / 3)
+    )
+    assert np.isnan(performance_model.get_sortino_ratio(pd.Series([-0.01])))
+    assert (
+        performance_model.get_rolling_sortino_ratio(excess_returns["A"], 1).isna().all()
+    )
+
+
+def test_get_tracking_error_and_information_ratio_per_column():
+    returns = pd.DataFrame(
+        {"A": [0.01, 0.02, -0.01, 0.03], "B": [0.0, -0.01, 0.02, 0.01]}
+    )
+    benchmark = pd.Series([0.005, 0.01, -0.005, 0.02])
+    active = returns.sub(benchmark, axis=0)
+
+    tracking_error = performance_model.get_tracking_error(returns, benchmark)
+    information_ratio = performance_model.get_information_ratio(returns, benchmark)
+
+    assert isinstance(tracking_error, pd.Series)
+    assert isinstance(information_ratio, pd.Series)
+    pd.testing.assert_series_equal(tracking_error, active.std())
+    pd.testing.assert_series_equal(information_ratio, active.mean() / active.std())
+
+
+def test_capture_ratios_use_geometric_averages():
+    benchmark = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01], name="Benchmark")
+    returns = pd.DataFrame({"A": [0.03, -0.02, 0.01, -0.01, 0.02]})
+
+    def geometric(values):
+        values = np.asarray(values)
+        return np.prod(1 + values) ** (1 / len(values)) - 1
+
+    up = performance_model.get_upside_capture_ratio(returns, benchmark)
+    down = performance_model.get_downside_capture_ratio(returns, benchmark)
+
+    assert up["A"] == pytest.approx(
+        geometric([0.03, 0.01, 0.02]) / geometric([0.02, 0.03, 0.01])
+    )
+    assert down["A"] == pytest.approx(
+        geometric([-0.02, -0.01]) / geometric([-0.01, -0.02])
+    )
+    assert performance_model.get_upside_capture_ratio(
+        returns["A"], benchmark
+    ) == pytest.approx(up["A"])
+
+
+def test_get_returns_keeps_periods_without_data_missing():
+    dates = pd.period_range("2023-01-02", "2023-12-29", freq="D")
+    rng = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        {"A": rng.normal(0, 0.01, len(dates)), "B": rng.normal(0, 0.01, len(dates))},
+        index=dates,
+    )
+    # B lists in the second quarter.
+    returns.loc[:"2023-03-31", "B"] = np.nan
+
+    quarterly = performance_model.get_returns(returns, "quarterly")
+    cumulative = performance_model.get_returns(returns, "quarterly", cumulative=True)
+
+    # A quarter without any return is missing, not a return of exactly 0.
+    assert np.isnan(quarterly.loc[pd.Period("2023Q1", "Q"), "B"])
+    expected = np.prod(1 + returns.loc["2023-04-01":"2023-06-30", "B"]) - 1
+    assert quarterly.loc[pd.Period("2023Q2", "Q"), "B"] == pytest.approx(expected)
+    assert np.isnan(cumulative.loc[pd.Period("2023Q1", "Q"), "B"])
+    assert cumulative.loc[pd.Period("2023Q2", "Q"), "B"] == pytest.approx(1 + expected)
+    assert quarterly["A"].notna().all()
+
+
+def test_get_win_rate_leaves_out_days_without_both_returns():
+    asset = pd.DataFrame(
+        {
+            "A": [0.02, np.nan, 0.01, -0.01, 0.03],
+            "B": [np.nan, np.nan, np.nan, np.nan, np.nan],
+        }
+    )
+    benchmark = pd.Series([0.01, 0.01, 0.02, np.nan, 0.01], name="Benchmark")
+
+    win_rate = performance_model.get_win_rate(asset, benchmark)
+
+    # Days 2 (no asset return) and 4 (no benchmark return) count neither as win nor loss.
+    assert win_rate["A"] == pytest.approx(2 / 3)
+    # Without a single comparable day there is no win rate, not a win rate of 0.
+    assert np.isnan(win_rate["B"])
+    assert performance_model.get_win_rate(asset["A"], benchmark) == pytest.approx(2 / 3)
+
+    # Within periods, each period counts only its own comparable days.
+    index = pd.MultiIndex.from_product([["2023", "2024"], range(5)])
+    stacked = pd.concat([asset, asset]).set_index(index)
+    stacked_benchmark = pd.concat([benchmark, benchmark]).set_axis(index)
+    per_period = performance_model.get_win_rate(stacked, stacked_benchmark)
+    assert per_period["A"].tolist() == pytest.approx([2 / 3, 2 / 3])
+    assert per_period["B"].isna().all()

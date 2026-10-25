@@ -2,10 +2,10 @@
 AAPL,Interest Coverage Ratio,23.0727,41.1905,40.7496,29.062
 AAPL,Rating,AAA,AAA,AAA,AAA
 AAPL,Default Spread,0.004,0.004,0.004,0.004
-AAPL,Risk Free Rate,0.0092,0.0151,0.0388,
-AAPL,Pre-tax Cost of Debt,0.0132,0.0191,0.0428,
+AAPL,Risk Free Rate,0.0088,0.0144,0.0296,
+AAPL,Pre-tax Cost of Debt,0.0128,0.0184,0.0336,
 MSFT,Interest Coverage Ratio,20.4396,29.8022,40.4183,44.9812
 MSFT,Rating,AAA,AAA,AAA,AAA
 MSFT,Default Spread,0.004,0.004,0.004,0.004
-MSFT,Risk Free Rate,0.0092,0.0151,0.0388,
-MSFT,Pre-tax Cost of Debt,0.0132,0.0191,0.0428,
+MSFT,Risk Free Rate,0.0088,0.0144,0.0296,
+MSFT,Pre-tax Cost of Debt,0.0128,0.0184,0.0336,

@@ -167,6 +167,527 @@ def test_get_fulmer_h_score(recorder, models_module):
     recorder.capture(models_module.get_fulmer_h_score(growth=True))
 
 
+def test_capital_asset_pricing_inputs_cover_the_trailing_span():
+    from types import SimpleNamespace
+
+    import pandas as pd
+    import pytest
+
+    from financetoolkit.models import intrinsic_model, wacc_model
+    from financetoolkit.models.models_controller import Models
+
+    quarters = pd.period_range("2023Q1", "2024Q4", freq="Q")
+    risk_free_rate = pd.Series(0.04, index=quarters)
+    benchmark_returns = pd.Series(0.0225, index=quarters)
+
+    # Quarterly data with a trailing 4 quarters: the flows are trailing twelve months, so
+    # the rates are annual (4% and 4% + 5%), not the quarterly 1% and 2.25%.
+    risk_free, market_return = Models._capital_asset_pricing_inputs(
+        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, 0.05, 4
+    )
+    assert risk_free.iloc[-1] == pytest.approx(0.04)
+    assert market_return.iloc[-1] == pytest.approx(0.09)
+
+    # Net Income of 100 over the year on a Book Value of 1000, with a Beta of 1.2, earns
+    # exactly the annual Cost of Equity of 4% + 1.2 * 5% = 10%.
+    beta = pd.DataFrame({"AAPL": 1.2}, index=quarters)
+    cost_of_equity = wacc_model.get_cost_of_equity(risk_free, beta, market_return)
+    assert cost_of_equity["AAPL"].iloc[-1] == pytest.approx(0.10)
+    residual_income = intrinsic_model.get_residual_income(
+        net_income=100,
+        cost_of_equity=cost_of_equity["AAPL"].iloc[-1],
+        book_value_of_equity=1000,
+    )
+    assert residual_income == pytest.approx(0)
+
+    # Without trailing the rates stay per quarter, and the default premium (the average
+    # benchmark return above the per-quarter rate, 1.25%) scales the same way.
+    risk_free, market_return = Models._capital_asset_pricing_inputs(
+        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, None
+    )
+    assert risk_free.iloc[-1] == pytest.approx(0.01)
+    assert market_return.iloc[-1] == pytest.approx(0.0225)
+    risk_free, market_return = Models._capital_asset_pricing_inputs(
+        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, None, 4
+    )
+    assert market_return.iloc[-1] == pytest.approx(0.09)
+
+
+def test_cost_of_equity_follows_trailing(models_module):
+    import pandas as pd
+
+    # A trailing sum of two years of Net Income or Interest Expense is charged the Cost of
+    # Equity of two years, in residual income and in the WACC (and so EVA and PVGO).
+    single = models_module.get_residual_income(rounding=10).xs(
+        "Cost of Equity", level=1
+    )
+    double = models_module.get_residual_income(rounding=10, trailing=2).xs(
+        "Cost of Equity", level=1
+    )
+    pd.testing.assert_frame_equal(double, 2 * single, rtol=1e-6)
+
+    wacc_single = models_module.get_weighted_average_cost_of_capital(rounding=10).xs(
+        "Cost of Equity", level=1
+    )
+    wacc_double = models_module.get_weighted_average_cost_of_capital(
+        rounding=10, trailing=2
+    ).xs("Cost of Equity", level=1)
+    pd.testing.assert_frame_equal(wacc_double, 2 * wacc_single, rtol=1e-6)
+
+
+def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module):
+    import pandas as pd
+
+    from financetoolkit.models import intrinsic_model
+
+    valuation = models_module.get_intrinsic_valuation(
+        growth_rate=0.05,
+        perpetual_growth_rate=0.02,
+        weighted_average_cost_of_capital=0.10,
+        rounding=10,
+    )
+    fcff = models_module.get_free_cash_flow_to_firm(rounding=15).xs(
+        "Free Cash Flow to Firm", level=1
+    )
+
+    for ticker in models_module._tickers:
+        expected = intrinsic_model.get_intrinsic_value(
+            cash_flow=fcff.loc[ticker].dropna().iloc[-1],
+            growth_rate=0.05,
+            perpetual_growth_rate=0.02,
+            weighted_average_cost_of_capital=0.10,
+            cash_and_cash_equivalents=models_module._balance_sheet_statement.loc[
+                ticker, "Cash and Cash Equivalents"
+            ]
+            .dropna()
+            .iloc[-1],
+            total_debt=models_module._balance_sheet_statement.loc[ticker, "Total Debt"]
+            .dropna()
+            .iloc[-1],
+            shares_outstanding=models_module._income_statement.loc[
+                ticker, "Weighted Average Shares Diluted"
+            ]
+            .dropna()
+            .iloc[-1],
+            # The marketable securities are added back with the cash, as the EV breakdown deducts both.
+            short_term_investments=models_module._balance_sheet_statement.loc[
+                ticker, "Short Term Investments"
+            ]
+            .dropna()
+            .iloc[-1],
+        ).round(10)
+        pd.testing.assert_frame_equal(valuation.loc[ticker], expected)
+
+    # The capital expenditure and working capital are not cash flows to value a company on.
+    assert models_module.get_intrinsic_valuation(
+        0.05, 0.02, 0.10, cash_flow_type="Capital Expenditure"
+    ).empty
+    # Without a discount rate above the perpetual growth rate there is no valuation.
+    assert models_module.get_intrinsic_valuation(0.05, 0.10, 0.10).empty
+
+
+def test_quarterly_valuations_use_the_trailing_twelve_months(
+    models_module, monkeypatch
+):
+    import pandas as pd
+
+    monkeypatch.setattr(models_module, "_quarterly", True)
+
+    pd.testing.assert_frame_equal(
+        models_module.get_intrinsic_valuation(0.05, 0.02, 0.10),
+        models_module.get_intrinsic_valuation(0.05, 0.02, 0.10, trailing=4),
+    )
+    pd.testing.assert_frame_equal(
+        models_module.get_graham_number(),
+        models_module.get_graham_number(trailing=4),
+    )
+
+
+def test_present_value_of_growth_opportunities_uses_the_cost_of_equity(models_module):
+    import pandas as pd
+
+    pvgo = models_module.get_present_value_of_growth_opportunities(rounding=10)
+    cost_of_equity = models_module.get_weighted_average_cost_of_capital(rounding=15).xs(
+        "Cost of Equity", level=1
+    )
+    income = models_module._income_statement
+    earnings_per_share = (
+        income.loc[:, "Net Income", :]
+        / income.loc[:, "Weighted Average Shares Diluted", :]
+    )
+    close = models_module._historical_data["yearly"]["Close"]
+
+    expected = close[models_module._tickers] - (earnings_per_share / cost_of_equity).T
+    expected = expected.loc[pvgo.index].round(10)
+    pd.testing.assert_frame_equal(pvgo, expected, check_names=False, rtol=1e-8)
+
+
+def test_residual_income_charges_the_beginning_book_value(models_module):
+    import pandas as pd
+
+    residual_income = models_module.get_residual_income(rounding=10)
+    balance = models_module._balance_sheet_statement
+    beginning_book_value = (
+        balance.loc[:, "Total Shareholder Equity", :]
+        - balance.loc[:, "Preferred Stock", :]
+    ).shift(1, axis=1)
+
+    book_value = residual_income.xs("Book Value of Equity", level=1)
+    pd.testing.assert_frame_equal(
+        book_value,
+        beginning_book_value.loc[book_value.index, book_value.columns],
+        check_names=False,
+    )
+    expected = (
+        residual_income.xs("Net Income", level=1)
+        - residual_income.xs("Cost of Equity", level=1) * book_value
+    )
+    pd.testing.assert_frame_equal(
+        residual_income.xs("Residual Income", level=1), expected, rtol=1e-6
+    )
+
+
+def test_economic_value_added_uses_the_unrounded_wacc(models_module):
+    import pandas as pd
+
+    eva = models_module.get_economic_value_added(rounding=15)
+    wacc = models_module.get_weighted_average_cost_of_capital(
+        show_full_results=False, rounding=15
+    )
+
+    eva_wacc = eva.xs("Weighted Average Cost of Capital", level=1).dropna(
+        axis=1, how="all"
+    )
+    pd.testing.assert_frame_equal(
+        eva_wacc, wacc.loc[eva_wacc.index, eva_wacc.columns], check_names=False
+    )
+
+
+def test_models_take_operating_income_as_ebit(models_module):
+    import pandas as pd
+
+    altman = models_module.get_altman_z_score(rounding=10)
+    income = models_module._income_statement
+    balance = models_module._balance_sheet_statement
+    expected = (
+        income.loc[:, "Operating Income", :] / balance.loc[:, "Total Assets", :]
+    ).round(10)
+
+    ebit_to_assets = altman.xs("EBIT to Total Assets", level=1)
+    pd.testing.assert_frame_equal(
+        ebit_to_assets,
+        expected.loc[ebit_to_assets.index, ebit_to_assets.columns],
+        check_names=False,
+    )
+
+
+def test_growth_rates_use_beginning_equity_and_ending_assets(models_module):
+    import pandas as pd
+
+    income = models_module._income_statement
+    balance = models_module._balance_sheet_statement
+    cash = models_module._cash_flow_statement
+    net_income = income.loc[:, "Net Income", :]
+    retention = 1 - cash.loc[:, "Dividends Paid", :].abs() / net_income
+
+    sustainable = models_module.get_sustainable_growth_rate(rounding=10)
+    expected = (
+        net_income / balance.loc[:, "Total Equity", :].shift(1, axis=1) * retention
+    ).round(10)
+    pd.testing.assert_frame_equal(
+        sustainable,
+        expected.loc[sustainable.index, sustainable.columns],
+        check_names=False,
+    )
+
+    internal = models_module.get_internal_growth_rate(rounding=10)
+    retained_return = net_income / balance.loc[:, "Total Assets", :] * retention
+    expected = (retained_return / (1 - retained_return)).round(10)
+    pd.testing.assert_frame_equal(
+        internal, expected.loc[internal.index, internal.columns], check_names=False
+    )
+
+
+def test_dividend_discount_models_drop_an_unfinished_period():
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from financetoolkit.models.models_controller import Models
+
+    years = pd.period_range("2022", "2024", freq="Y")
+    dividends = pd.DataFrame({"AAPL": [0.9, 0.95, 0.5]}, index=years)
+
+    def complete(last_day: str) -> pd.DataFrame:
+        days = pd.period_range("2022-01-03", last_day, freq="D")
+        historical = {
+            "yearly": pd.concat({"Dividends": dividends}, axis=1),
+            "daily": pd.DataFrame(index=days),
+        }
+        return Models._complete_period_dividends(
+            SimpleNamespace(_quarterly=False, _historical_data=historical)
+        )
+
+    # Data up to the last trading day of the year covers the whole year.
+    assert complete("2024-12-31").index[-1] == years[-1]
+    # Data ending in June leaves 2024 unfinished, so 2023 is the last complete year.
+    assert complete("2024-06-28").index[-1] == years[-2]
+
+
+def test_operating_profit_after_taxes_uses_the_wacc_tax_rate(models_module):
+    import pandas as pd
+
+    from financetoolkit.models import wacc_model
+
+    income = models_module._income_statement
+    tax_rate = wacc_model.get_corporate_tax_rate(
+        income.loc[:, "Income Tax Expense", :], income.loc[:, "Income Before Tax", :]
+    )
+    expected = (income.loc[:, "Operating Income", :] * (1 - tax_rate)).round(6)
+
+    for result in (
+        models_module.get_economic_value_added(rounding=6),
+        models_module.get_free_cash_flow_to_firm(rounding=6),
+    ):
+        nopat = result.xs("Net Operating Profit After Taxes", level=1)
+        pd.testing.assert_frame_equal(
+            nopat,
+            expected.loc[nopat.index, nopat.columns],
+            check_names=False,
+            check_freq=False,
+        )
+
+
+def test_quarterly_dividend_discount_models_use_an_annual_dividend(
+    models_module, monkeypatch
+):
+    import pandas as pd
+    import pytest
+
+    from financetoolkit.models import intrinsic_model
+
+    monkeypatch.setattr(models_module, "_quarterly", True)
+
+    quarterly_dividends = models_module._complete_period_dividends()
+    annual_dividend = quarterly_dividends.rolling(4).sum().iloc[-1]
+    last_quarter = quarterly_dividends.index[-1]
+
+    gordon = models_module.get_gorden_growth_model(
+        rate_of_return=0.08, growth_rate=0.03, project_periods=2, rounding=10
+    )
+    # The last complete quarter is valued off the trailing four quarters of dividends.
+    assert gordon.loc[last_quarter, "AAPL"] == pytest.approx(
+        annual_dividend["AAPL"] * 1.03 / 0.05
+    )
+    # The projection steps are years, four quarters apart.
+    assert list(gordon.index[-2:]) == [last_quarter + 4, last_quarter + 8]
+    assert gordon.loc[last_quarter + 8, "AAPL"] == pytest.approx(
+        annual_dividend["AAPL"] * 1.03**2 * 1.03 / 0.05
+    )
+
+    two_stage = models_module.get_two_stage_dividend_discount_model(
+        0.08, 0.1, 0.03, rounding=10
+    )
+    expected = intrinsic_model.get_two_stage_dividend_discount_model(
+        dividends_per_share=annual_dividend["MSFT"],
+        rate_of_return=0.08,
+        high_growth_rate=0.1,
+        stable_growth_rate=0.03,
+    ).round(10)
+    pd.testing.assert_frame_equal(two_stage.loc["MSFT"], expected)
+
+
+def test_graham_number_trails_only_the_earnings(models_module):
+    import numpy as np
+    import pandas as pd
+
+    income = models_module._income_statement
+    balance = models_module._balance_sheet_statement
+    shares = income.loc[:, "Weighted Average Shares Diluted", :]
+
+    earnings_per_share = (
+        income.loc[:, "Net Income", :].T.rolling(2).sum() / shares.T.rolling(2).mean()
+    ).T
+    # Book value is point in time: the closing equity over the shares of that period.
+    book_value_per_share = (
+        balance.loc[:, "Total Shareholder Equity", :]
+        - balance.loc[:, "Preferred Stock", :]
+    ) / shares
+    expected = np.sqrt(22.5 * earnings_per_share * book_value_per_share).round(6)
+
+    graham = models_module.get_graham_number(trailing=2, rounding=6)
+    pd.testing.assert_frame_equal(
+        graham,
+        expected.loc[graham.index, graham.columns],
+        check_names=False,
+        check_freq=False,
+    )
+
+
+def test_wacc_with_a_period_missing_from_the_balance_sheet():
+    """A year the balance sheet lacks leaves the WACC of that year missing, not an error."""
+    import pandas as pd  # noqa: PLC0415
+
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    balance = pd.read_pickle("tests/datasets/balance_dataset.pickle")
+    balance = balance.drop(columns=[c for c in balance.columns if str(c) == "2022"])
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=balance,
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+        use_cached_data=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    wacc = toolkit.models.get_weighted_average_cost_of_capital()
+
+    assert not wacc.empty
+    assert wacc.loc[("AAPL", "Weighted Average Cost of Capital"), "2020"] > 0
+
+
+def _use_quarterly_statements(models_module, monkeypatch, quarters=10):
+    """Swap in ten quarters of statements built from the yearly ones, with a different
+    scale per quarter so consecutive quarters and quarters a year apart differ."""
+    import numpy as np
+    import pandas as pd
+
+    columns = pd.period_range("2020Q1", periods=quarters, freq="Q")
+    factors = 1 + 0.1 * np.sin(np.arange(quarters) * 1.3) + 0.02 * np.arange(quarters)
+
+    def to_quarterly(statement):
+        values = np.column_stack(
+            [
+                statement.iloc[:, quarter % statement.shape[1]].to_numpy(dtype=float)
+                * factor
+                for quarter, factor in enumerate(factors)
+            ]
+        )
+        # Scale the rows differently as well, so ratios of two items change over time.
+        row_scale = 1 + 0.03 * np.cos(
+            np.outer(np.arange(len(statement)), np.arange(quarters))
+        )
+        return pd.DataFrame(values * row_scale, index=statement.index, columns=columns)
+
+    for name in [
+        "_balance_sheet_statement",
+        "_income_statement",
+        "_cash_flow_statement",
+    ]:
+        monkeypatch.setattr(
+            models_module, name, to_quarterly(getattr(models_module, name))
+        )
+    monkeypatch.setattr(models_module, "_quarterly", True)
+
+
+def test_piotroski_score_compares_quarters_year_over_year(models_module, monkeypatch):
+    yearly = models_module.get_piotroski_score()
+    # On yearly data the change-based criteria compare with the previous column.
+    balance = models_module._balance_sheet_statement
+    current_ratio = (
+        balance.loc[:, "Total Current Assets", :]
+        / balance.loc[:, "Total Current Liabilities", :]
+    )
+    for ticker in models_module._tickers:
+        for period in yearly.columns:
+            assert yearly.loc[
+                (ticker, "Change in Current Ratio Criteria"), period
+            ] == int(
+                current_ratio.loc[ticker, period]
+                > current_ratio.loc[ticker, period - 1]
+            )
+
+    _use_quarterly_statements(models_module, monkeypatch)
+    quarterly = models_module.get_piotroski_score()
+    balance = models_module._balance_sheet_statement
+    income = models_module._income_statement
+    current_ratio = (
+        balance.loc[:, "Total Current Assets", :]
+        / balance.loc[:, "Total Current Liabilities", :]
+    )
+    gross_margin = (
+        income.loc[:, "Revenue", :] - income.loc[:, "Cost of Goods Sold", :]
+    ) / income.loc[:, "Revenue", :]
+
+    # One quarter for the beginning total assets plus four for the year-over-year comparison.
+    assert list(quarterly.columns) == list(balance.columns[5:])
+    for ticker in models_module._tickers:
+        for period in quarterly.columns:
+            scores = quarterly.loc[ticker, period]
+            assert scores["Change in Current Ratio Criteria"] == int(
+                current_ratio.loc[ticker, period]
+                > current_ratio.loc[ticker, period - 4]
+            )
+            assert scores["Gross Margin Criteria"] == int(
+                gross_margin.loc[ticker, period] > gross_margin.loc[ticker, period - 4]
+            )
+
+
+def test_piotroski_score_trailing_uses_the_balances_a_year_apart(
+    models_module, monkeypatch
+):
+    _use_quarterly_statements(models_module, monkeypatch)
+    piotroski = models_module.get_piotroski_score(trailing=4)
+    balance = models_module._balance_sheet_statement
+    income = models_module._income_statement
+
+    total_assets = balance.loc[:, "Total Assets", :]
+    beginning_assets = total_assets.shift(4, axis=1)
+    leverage = balance.loc[:, "Long Term Debt", :] / (
+        (beginning_assets + total_assets) / 2
+    )
+    return_on_assets = (
+        income.loc[:, "Net Income", :].T.rolling(4).sum().T / beginning_assets
+    )
+
+    assert not piotroski.empty
+    for ticker in models_module._tickers:
+        for period in piotroski.columns:
+            scores = piotroski.loc[ticker, period]
+            assert scores["Return on Assets Criteria"] == int(
+                return_on_assets.loc[ticker, period] > 0
+            )
+            assert scores["Change in Leverage Criteria"] == int(
+                leverage.loc[ticker, period] < leverage.loc[ticker, period - 4]
+            )
+
+
+def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeypatch):
+    import pandas as pd
+
+    yearly = models_module.get_beneish_m_score(rounding=10)
+    revenue = models_module._income_statement.loc[:, "Revenue", :]
+    pd.testing.assert_frame_equal(
+        yearly.xs("Sales Growth Index", level=1).dropna(axis=1, how="all"),
+        (revenue / revenue.shift(1, axis=1)).round(10).dropna(axis=1, how="all"),
+        check_names=False,
+    )
+
+    _use_quarterly_statements(models_module, monkeypatch)
+    quarterly = models_module.get_beneish_m_score(rounding=10)
+    revenue = models_module._income_statement.loc[:, "Revenue", :]
+    expected = (revenue / revenue.shift(4, axis=1)).round(10)
+
+    pd.testing.assert_frame_equal(
+        quarterly.xs("Sales Growth Index", level=1),
+        expected.loc[:, quarterly.columns],
+        check_names=False,
+    )
+    # The first year has nothing to compare with.
+    m_score = quarterly.xs("Beneish M-Score", level=1)
+    assert m_score.loc[:, : revenue.columns[3]].isna().all().all()
+    assert m_score.loc[:, revenue.columns[4] :].notna().all().all()
+
+
 def test_get_reverse_discounted_cash_flow(recorder, models_module):
     recorder.capture(
         models_module.get_reverse_discounted_cash_flow(

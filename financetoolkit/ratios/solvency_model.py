@@ -44,54 +44,83 @@ def get_debt_to_equity_ratio(
 
 def get_interest_coverage_ratio(
     operating_income: pd.Series | pd.DataFrame,
-    depreciation_and_amortization: pd.Series | pd.DataFrame,
     interest_expense: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the interest coverage ratio, a solvency ratio that measures a company's
-    ability to pay its interest expenses on outstanding debt.
+    ability to pay its interest expenses on outstanding debt out of its operating profit.
+
+    The formula is as follows (CFA Institute):
+
+        Interest Coverage Ratio = EBIT / Interest Expense
+
+    A zero interest expense gives no meaningful coverage (an infinite ratio), so those
+    periods are returned as NaN.
+
+    Also known as: times interest earned, TIE.
 
     Args:
-        operating_income (float or pd.Series): Operating income of the company.
-        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
+        operating_income (float or pd.Series): Operating income (EBIT) of the company.
         interest_expense (float or pd.Series): Total interest expense of the company.
 
     Returns:
-        float | pd.Series: The interest coverage ratio value.
+        float | pd.Series: The interest coverage ratio value, NaN where the interest expense
+            is zero.
     """
-    return (operating_income + depreciation_and_amortization) / interest_expense
+    return operating_income / interest_expense.where(interest_expense != 0)
 
 
 def get_debt_service_coverage_ratio(
     operating_income: pd.Series | pd.DataFrame,
-    current_liabilities: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    interest_expense: pd.Series | pd.DataFrame,
+    short_term_debt: pd.Series | pd.DataFrame,
+    window_years: float = 1.0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the debt service coverage ratio, a solvency ratio that measures a company's
-    ability to service its debt with its net operating income.
+    ability to service its debt (pay interest and repay the principal falling due) out
+    of its operating earnings.
 
-    The textbook formula divides operating income by "total debt service" (the sum of
-    the current portion of long-term debt due plus interest expense for the period).
-    Since that figure is not separately reported on the financial statements, this
-    implementation uses total current liabilities as a readily available proxy for
-    near-term debt obligations, which is a common simplification when the precise debt
-    service schedule is unavailable but tends to understate the ratio somewhat, since
-    current liabilities also include non-debt items (e.g. accounts payable, accrued
-    expenses).
+    Total debt service is the interest expense of the period plus the principal due
+    within a year, which is the short-term debt (including the current portion of
+    long-term debt) on the balance sheet. The numerator is EBITDA, operating income
+    plus depreciation and amortization, as a proxy for the cash operating earnings
+    available to service the debt.
+
+    The short-term debt is the principal due over the next year, while the earnings and the
+    interest cover the window of the figures: a quarter, a year or a trailing multiple of
+    either. The principal is therefore scaled to the length of that window in years, so
+    earnings, interest and principal all cover the same span: a quarter of earnings is
+    compared with a quarter of the principal due within a year.
 
     The formula is as follows:
 
-        Debt Service Coverage Ratio = Operating Income / Total Current Liabilities
+        Debt Service Coverage Ratio = (Operating Income + Depreciation and Amortization) /
+            (Interest Expense + Short Term Debt x Window Years)
+
+    A zero debt service gives no meaningful coverage, so those periods are returned as NaN.
 
     Args:
         operating_income (float or pd.Series): Operating income of the company.
-        current_liabilities (float or pd.Series): Total current liabilities of the company,
-            used here as a proxy for total debt service.
+        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of
+            the company.
+        interest_expense (float or pd.Series): Interest expense of the company.
+        short_term_debt (float or pd.Series): Short-term debt of the company, the principal
+            due within a year.
+        window_years (float, optional): The length in years of the window the operating
+            income, depreciation and interest cover, e.g. 0.25 for a quarter and 1 for a
+            trailing twelve months. Defaults to 1.0.
 
     Returns:
         float | pd.Series: The debt service coverage ratio value.
     """
-    return operating_income / current_liabilities
+    # The principal due within a year, spread evenly over the year, for the window's length.
+    debt_service = interest_expense + short_term_debt * window_years
+
+    return (operating_income + depreciation_and_amortization) / debt_service.where(
+        debt_service != 0
+    )
 
 
 def get_equity_multiplier(
@@ -324,9 +353,12 @@ def get_preferred_dividend_coverage_ratio(
             as reported in the Cash Flow Statement.
 
     Returns:
-        float | pd.Series: The preferred dividend coverage ratio value.
+        float | pd.Series: The preferred dividend coverage ratio value, NaN where no
+            preferred dividends were paid (there is nothing to cover).
     """
-    return net_income / abs(preferred_dividends)
+    preferred_dividends = abs(preferred_dividends)
+
+    return net_income / preferred_dividends.where(preferred_dividends != 0)
 
 
 def get_interest_paid_to_expense_ratio(

@@ -20,6 +20,7 @@ def get_intrinsic_value(
     total_debt: float,
     shares_outstanding: float,
     periods: int = 5,
+    short_term_investments: float = 0.0,
 ) -> pd.DataFrame:
     """
     Intrinsic value is a fundamental concept in finance and investing that represents the true
@@ -35,7 +36,8 @@ def get_intrinsic_value(
         - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
         (Weighted Average Cost of Capital — Perpetual Growth Rate)
         - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
-        - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents
+        - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents + Short Term
+        Investments
         - Intrinsic Value = Equity Value / Total Shares Outstanding
 
     Args:
@@ -50,6 +52,8 @@ def get_intrinsic_value(
         total_debt (float): The total debt of the company.
         shares_outstanding (float): The total shares outstanding of the company.
         periods (int, optional): The number of periods to project the cash flow for. Defaults to 5.
+        short_term_investments (float, optional): The marketable securities that are not cash
+        equivalents, added back with the cash. Defaults to 0.0.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection, Enterprise
@@ -59,8 +63,23 @@ def get_intrinsic_value(
     - The results are highly dependent on the input. Therefore, think carefully about each input
     parameter to ensure the results are accurate (given your beliefs).
     - The Weighted Average Cost of Capital must be greater than the Perpetual Growth Rate,
-    otherwise the Terminal Value formula divides by a non-positive number.
+    otherwise the Terminal Value formula divides by a non-positive number. A ValueError is
+    raised when it is not.
+    - The Weighted Average Cost of Capital is the discount rate of the cash flow to all capital
+    providers, so the base cash flow should be the Free Cash Flow to the Firm. Debt is subtracted
+    from the Enterprise Value afterwards, which counts interest twice when the base cash flow is
+    already after interest (such as the reported Free Cash Flow).
+    - The cash and the short term investments are added back together, the mirror image of the
+    Enterprise Value that deducts cash and marketable securities together (Damodaran). The
+    operating cash flows do not include the income on these assets, so they are valued separately.
     """
+    if weighted_average_cost_of_capital <= perpetual_growth_rate:
+        raise ValueError(
+            f"The Weighted Average Cost of Capital ({weighted_average_cost_of_capital}) must be greater "
+            f"than the Perpetual Growth Rate ({perpetual_growth_rate}): the Terminal Value of a cash flow "
+            "growing at or above the discount rate forever is infinite."
+        )
+
     components = {}
 
     # Project the cash flow forward. The given cash flow is the latest realized one and is therefore not itself discounted, the projection starts one period after it.  # noqa: E501
@@ -92,8 +111,13 @@ def get_intrinsic_value(
     # Calculate the Enterprise Value, using fsum so the total is correctly rounded rather than accumulation-order dependent (builtin sum only compensates on 3.12+)  # noqa: E501
     enterprise_value = fsum(cash_flow_present_value)
 
-    # Calculate the Equity Value
-    equity_value = enterprise_value + cash_and_cash_equivalents - total_debt
+    # Calculate the Equity Value: the cash and the marketable securities belong to the shareholders on top of the operating Enterprise Value.  # noqa: E501
+    equity_value = (
+        enterprise_value
+        + cash_and_cash_equivalents
+        + short_term_investments
+        - total_debt
+    )
 
     # Calculate the Intrinsic Value
     intrinsic_value = equity_value / shares_outstanding
@@ -120,8 +144,8 @@ def get_gorden_growth_model(
     """
     Calculates the intrinsic value of a stock using the Gorden Growth Model.
 
-    The Gordon Growth Model (note: this function's name retains the "Gorden" spelling for
-    backward-compatibility with earlier releases) is a method for calculating the intrinsic
+    The Gordon Growth Model (this function is spelled "Gorden" to match the controller method
+    `get_gorden_growth_model`) is a method for calculating the intrinsic
     value of a stock, based on a future series of dividends that grow at a constant rate. It
     is a popular and straightforward variant of the dividend discount model (DDM). The Gordon
     Growth Model assumes that dividends increase at a constant rate indefinitely. The model is
@@ -146,12 +170,18 @@ def get_gorden_growth_model(
 
     Notes:
     - The Rate of Return must be greater than the Growth Rate, otherwise the formula divides by a
-    non-positive number.
+    non-positive number. A ValueError is raised when it is not.
 
     References:
     - Gordon, Myron J. "Dividends, Earnings, and Stock Prices." The Review of Economics and
     Statistics, Vol. 41, No. 2, 1959, pp. 99-105.
     """
+    if rate_of_return <= growth_rate:
+        raise ValueError(
+            f"The Rate of Return ({rate_of_return}) must be greater than the Growth Rate ({growth_rate}): "
+            "dividends growing at or above the discount rate forever have an infinite value."
+        )
+
     return (dividends_per_share * (1 + growth_rate)) / (rate_of_return - growth_rate)
 
 
@@ -365,7 +395,7 @@ def get_two_stage_dividend_discount_model(
 
     Notes:
     - The Rate of Return must be greater than the Stable Growth Rate, otherwise the Terminal
-    Value formula divides by a non-positive number.
+    Value formula divides by a non-positive number. A ValueError is raised when it is not.
     - The results are highly dependent on the input assumptions, in particular the length of
     the high-growth phase and the two growth rates. A high-growth rate that is maintained for
     too long, or a stable growth rate too close to the discount rate, will produce unrealistic
@@ -378,6 +408,13 @@ def get_two_stage_dividend_discount_model(
         raise TypeError(
             "dividends_per_share must be a float or int, "
             f"not {type(dividends_per_share)}."
+        )
+
+    if rate_of_return <= stable_growth_rate:
+        raise ValueError(
+            f"The Rate of Return ({rate_of_return}) must be greater than the Stable Growth Rate "
+            f"({stable_growth_rate}): dividends growing at or above the discount rate forever have an "
+            "infinite Terminal Value."
         )
 
     dividend_projection = [dividends_per_share]
@@ -434,7 +471,7 @@ def get_residual_income(
 
     The formula is as follows:
 
-        - Residual Income = Net Income - (Cost of Equity * Book Value of Equity)
+        - Residual Income_t = Net Income_t - (Cost of Equity * Book Value of Equity_t-1)
 
     Also known as: RI, economic profit (equity variant), abnormal earnings.
 
@@ -445,7 +482,9 @@ def get_residual_income(
         return required by the company's shareholders. See `get_cost_of_equity` in the WACC
         module.
         book_value_of_equity (float | pd.Series | pd.DataFrame): The book value of common
-        equity of the company (Total Shareholder Equity, excluding preferred equity).
+        equity of the company (Total Shareholder Equity, excluding preferred equity) at the
+        beginning of the period, i.e. the capital the shareholders had invested while the Net
+        Income was earned (Ohlson, 1995).
 
     Returns:
         float | pd.Series | pd.DataFrame: The Residual Income.

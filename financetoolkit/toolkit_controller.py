@@ -47,7 +47,9 @@ from financetoolkit.fmp_model import (
     get_stock_splits as _get_stock_splits,
 )
 from financetoolkit.fundamentals_model import collect_financial_statements
+from financetoolkit.helpers import LazyDict, determine_period_end_dates
 from financetoolkit.historical_model import (
+    calculate_period_average as _calculate_period_average,
     convert_daily_to_other_period as _convert_daily_to_other_period,
     get_historical_data as _get_historical_data,
     get_historical_statistics as _get_historical_statistics,
@@ -218,6 +220,13 @@ class Toolkit:
             neither are fiscal years ending in June through December. Which tickers were relabelled is
             reported in the log and available on the Toolkit as _fiscal_year_adjustments.
 
+            The last day of each fiscal period is kept as well: daily ratios apply a period's figures
+            from that day on (not from the end of its calendar label), and currency translation uses
+            the closing rate on that day and the average rate over the fiscal period. The dates come
+            from the Period End Date in the statistics statement; when a source does not report it,
+            the latest day the period can end on given its label is used, so that figures are never
+            applied before the period ended.
+
             This convention is what makes financial statements line up with price history, since prices
             are always in calendar time. It also means the labels are not the company's own fiscal year
             numbering: what NVIDIA calls fiscal 2024 appears here as 2023.
@@ -271,7 +280,7 @@ class Toolkit:
         api_key = validation_model.resolve_api_key(api_key)
 
         self._api_key = api_key
-        self._fred_api_key = fred_api_key
+        self._fred_api_key = validation_model.resolve_fred_api_key(fred_api_key)
         self._risk_free_rate = risk_free_rate
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
@@ -520,15 +529,15 @@ class Toolkit:
         | Net Profit Margin                           |  0.2588 |  0.2531 |  0.2531 |   0.2397 |   0.2692 |
         | EBITDA Margin                               |  0.3287 |  0.331  |  0.3283 |   0.3444 |   0.3478 |
         | Free Cash Flow Margin                       |  0.2541 |  0.2826 |  0.2598 |   0.2783 |   0.2373 |
-        | Interest Coverage Ratio                     | 45.4567 | 44.538  | 31.9908 | inf      | inf      |
+        | Interest Coverage Ratio                     | 41.1905 | 40.7496 | 29.062  | nan      | nan      |
         | Income Before Tax Profit Margin             |  0.2985 |  0.302  |  0.2967 |   0.3158 |   0.3189 |
         | Effective Tax Rate                          |  0.133  |  0.162  |  0.1472 |   0.2409 |   0.1561 |
         | Return on Assets                            |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Cash Return on Assets                       |  0.3083 |  0.3471 |  0.3134 |   0.3296 |   0.3079 |
         | Return on Equity                            |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
-        | Return on Invested Capital                  |  0.4143 |  0.4439 |  0.444  |   0.4336 |   0.5335 |
-        | Return on Capital Employed                  |  0.496  |  0.6139 |  0.5677 |   0.6548 |   0.6855 |
-        | Return on Tangible Assets                   |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
+        | Return on Invested Capital                  |  0.4879 |  0.5229 |  0.528  |   0.5166 |   0.6201 |
+        | Return on Capital Employed                  |  0.4831 |  0.6009 |  0.5514 |   0.6534 |   0.6872 |
+        | Return on Tangible Assets                   |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
         | Net Income per EBT                          |  0.867  |  0.838  |  0.8528 |   0.7591 |   0.8439 |
         | Free Cash Flow to Operating Cash Flow Ratio |  0.8935 |  0.9123 |  0.9009 |   0.9201 |   0.8859 |
@@ -541,85 +550,23 @@ class Toolkit:
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
 
-        empty_data: list = []
-
-        if (
-            not self._api_key
-            and (
-                self._balance_sheet_statement.empty
-                or self._income_statement.empty
-                or self._cash_flow_statement.empty
-            )
-            and self._enforce_source == "FinancialModelingPrep"
-        ):
-            raise ValueError(
-                "The ratios class requires an API key from FinancialModelPrep if you wish to enforce the usage. "
-                "of Financial Modeling Prep. Get an API key here: https://www.jeroenbouma.com/fmp"
-            )
-
-        if self._balance_sheet_statement.empty:
-            empty_data.append("Balance Sheet Statement")
-        if self._income_statement.empty:
-            empty_data.append("Income Statement")
-        if self._cash_flow_statement.empty:
-            empty_data.append("Cash Flow Statement")
-
-        if empty_data:
-            logger.info("Obtaining financial statements")
-            for statement in empty_data:
-                if statement == "Balance Sheet Statement":
-                    self.get_balance_sheet_statement()
-                if statement == "Income Statement":
-                    self.get_income_statement()
-                if statement == "Cash Flow Statement":
-                    self.get_cash_flow_statement()
-
-        if (
-            self._balance_sheet_statement.empty
-            and self._income_statement.empty
-            and self._cash_flow_statement.empty
-        ):
-            raise ValueError(
-                "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because no tickers are equities, you have reached the API limit or "
-                "entered an invalid API key."
-            )
-
-        if not self._start_date:
-            self._start_date = (
-                f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
-            )
-        if not self._end_date:
-            self._end_date = (
-                f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
-            )
-
-        if self._quarterly:
-            self.get_historical_data(period="quarterly")
-        else:
-            self.get_historical_data(period="yearly")
-
-        historical = {
-            "period": (
-                self._quarterly_historical_data
-                if self._quarterly
-                else self._yearly_historical_data
-            ),
-            "daily": self._daily_historical_data,
-        }
-
-        tickers = (
-            self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
-        )
+        # Every dataset is retrieved when a ratio first needs it, so a ratio downloads only
+        # what it uses (the gross margin only the income statement).
+        period = "quarterly" if self._quarterly else "yearly"
 
         ratios = Ratios(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            tickers=lambda: self._get_statement_tickers("Ratios")
+            + (["Portfolio"] if "Portfolio" in self._tickers else []),
+            historical=LazyDict(
+                lambda key: self._get_module_historical_data(
+                    period if key == "period" else key
+                )
             ),
-            historical=historical,
-            balance=self._balance_sheet_statement,
-            income=self._income_statement,
-            cash=self._cash_flow_statement,
+            balance=lambda: self._get_module_statement(
+                "balance_sheet_statement", "Ratios"
+            ),
+            income=lambda: self._get_module_statement("income_statement", "Ratios"),
+            cash=lambda: self._get_module_statement("cash_flow_statement", "Ratios"),
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -628,6 +575,9 @@ class Toolkit:
             sleep_timer=self._sleep_timer,
             user_subscription=self._fmp_plan,
             analyst_estimates_cache=self._analyst_estimates_cache,
+            period_end_dates=lambda: self._get_period_end_dates(
+                self._get_module_statement("balance_sheet_statement", "Ratios")
+            ),
         )
 
         if self._portfolio_weights:
@@ -664,94 +614,26 @@ class Toolkit:
 
         Which returns:
 
-        |                         |   2022Q4 |   2023Q1 |   2023Q2 |
-        |:------------------------|---------:|---------:|---------:|
-        | Interest Burden Ratio   |  -0.3467 |   0.863  |   0.9835 |
-        | Tax Burden Ratio        |  -0.2929 |   0.7699 |   0.8936 |
-        | Operating Profit Margin |   0.0183 |   0.0375 |   0.0572 |
-        | Asset Turnover          |   0.3349 |   0.2748 |   0.2853 |
-        | Equity Multiplier       |   3.1426 |   3.0843 |   2.9152 |
-        | Return on Equity        |   0.002  |   0.0211 |   0.0418 |
+        |                         |   2022Q4 |   2023Q1 |   2023Q2 |   2023Q3 |   2023Q4 |   2024Q1 |   2024Q2 |   2024Q3 |   2024Q4 |   2025Q1 |   2025Q2 |   2025Q3 |   2025Q4 |
+        |:------------------------|---------:|---------:|---------:|---------:|---------:|---------:|---------:|---------:|---------:|---------:|---------:|---------:|---------:|
+        | Interest Burden Ratio   |  -0.3467 |   0.863  |   0.9835 |   1.0891 |   1.0361 |   0.8426 |   1.0395 |   1.0358 |   1.0531 |   1.1779 |   1.0872 |   1.6127 |   1.0465 |
+        | Tax Burden Ratio        |  -0.2929 |   0.7699 |   0.8936 |   0.8108 |   0.7763 |   0.8087 |   0.8841 |   0.85   |   0.8959 |   0.79   |   0.8715 |   0.7541 |   0.8108 |
+        | Operating Profit Margin |   0.0183 |   0.0375 |   0.0572 |   0.0782 |   0.0777 |   0.1068 |   0.0992 |   0.1096 |   0.1129 |   0.1182 |   0.1143 |   0.0967 |   0.1171 |
+        | Asset Turnover          | nan      |   0.2748 |   0.2853 |   0.2967 |   0.335  |   0.2707 |   0.2726 |   0.2789 |   0.3105 |   0.2455 |   0.2531 |   0.2555 |   0.2761 |
+        | Equity Multiplier       | nan      |   3.0843 |   2.9152 |   2.7433 |   2.6367 |   2.5298 |   2.3963 |   2.2991 |   2.2188 |   2.1427 |   2.0721 |   2.0047 |   1.9802 |
+        | Return on Equity        | nan      |   0.0211 |   0.0418 |   0.0562 |   0.0552 |   0.0498 |   0.0595 |   0.0619 |   0.0734 |   0.0579 |   0.0568 |   0.0602 |   0.0543 |
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.models.models_controller import Models  # noqa: PLC0415
 
-        empty_data: list = []
-
-        if not self._api_key and (
-            self._balance_sheet_statement.empty
-            or self._income_statement.empty
-            or self._cash_flow_statement.empty
-        ):
-            raise ValueError(
-                "The models class requires an API key from FinancialModelPrep. "
-                "Get an API key here: https://www.jeroenbouma.com/fmp"
-            )
-
-        if self._balance_sheet_statement.empty:
-            empty_data.append("Balance Sheet Statement")
-        if self._income_statement.empty:
-            empty_data.append("Income Statement")
-        if self._cash_flow_statement.empty:
-            empty_data.append("Cash Flow Statement")
-
-        if empty_data:
-            logger.info("Obtaining financial statements")
-            for statement in empty_data:
-                if statement == "Balance Sheet Statement":
-                    self.get_balance_sheet_statement()
-                if statement == "Income Statement":
-                    self.get_income_statement()
-                if statement == "Cash Flow Statement":
-                    self.get_cash_flow_statement()
-
-        if (
-            self._balance_sheet_statement.empty
-            and self._income_statement.empty
-            and self._cash_flow_statement.empty
-        ):
-            raise ValueError(
-                "The datasets could not be populated and therefore the Ratios class cannot be initialized. "
-                "This is usually because no tickers are equities, you have reached the API limit or "
-                "entered an invalid API key."
-            )
-
-        if not self._start_date:
-            self._start_date = (
-                f"{self._balance_sheet_statement.columns[0].year - 5}-01-01"
-            )
-        if not self._end_date:
-            self._end_date = (
-                f"{self._balance_sheet_statement.columns[-1].year + 5}-01-01"
-            )
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        historical_data = {
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
-        risk_free_rate_data = {
-            "daily": self._daily_risk_free_rate,
-            "weekly": self._weekly_risk_free_rate,
-            "monthly": self._monthly_risk_free_rate,
-            "quarterly": self._quarterly_risk_free_rate,
-            "yearly": self._yearly_risk_free_rate,
-        }
-
-        tickers = (
-            self._balance_sheet_statement.index.get_level_values(0).unique().tolist()
-        )
+        # Every dataset is retrieved when a model first needs it.
 
         def compare_with_peers(peers: dict[str, list[str]] | None) -> pd.DataFrame:
             # Imported when first used, as only the peer comparison needs them.
             from financetoolkit.fmp_model import get_stock_peers  # noqa: PLC0415
             from financetoolkit.models import peers_model  # noqa: PLC0415
+
+            tickers = self._get_statement_tickers("Models")
 
             peer_map = {
                 ticker: list((peers or {}).get(ticker) or [])
@@ -825,12 +707,14 @@ class Toolkit:
             )
 
         return Models(
-            tickers=tickers,
-            historical_data=historical_data,
-            risk_free_rate_data=risk_free_rate_data,
-            balance=self._balance_sheet_statement,
-            income=self._income_statement,
-            cash=self._cash_flow_statement,
+            tickers=lambda: self._get_statement_tickers("Models"),
+            historical_data=LazyDict(self._get_module_historical_data),
+            risk_free_rate_data=LazyDict(self._get_module_risk_free_rate),
+            balance=lambda: self._get_module_statement(
+                "balance_sheet_statement", "Models"
+            ),
+            income=lambda: self._get_module_statement("income_statement", "Models"),
+            cash=lambda: self._get_module_statement("cash_flow_statement", "Models"),
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -872,49 +756,40 @@ class Toolkit:
 
         |   Strike Price |   Delta |   Dual Delta |   Vega |   Theta |    Rho |   Epsilon |   Lambda |   Gamma |   Dual Gamma |   Vanna |    Charm |   Vomma |    Vera |    Veta |     PD |   Speed |   Zomma |   Color |   Ultima |
         |---------------:|--------:|-------------:|-------:|--------:|-------:|----------:|---------:|--------:|-------------:|--------:|---------:|--------:|--------:|--------:|-------:|--------:|--------:|--------:|---------:|
-        |            180 |  1      |      -0.9999 | 0      | -0.0193 | 0.4931 |   -0.6533 |   4.0782 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
-        |            185 |  1      |      -0.9999 | 0      | -0.0198 | 0.5068 |   -0.6533 |   4.4595 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
-        |            190 |  1      |      -0.9999 | 0      | -0.0204 | 0.5205 |   -0.6533 |   4.9195 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
-        |            195 |  1      |      -0.9999 | 0      | -0.0209 | 0.5342 |   -0.6533 |   5.4853 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0.0002 |
-        |            200 |  1      |      -0.9999 | 0      | -0.0214 | 0.5479 |   -0.6533 |   6.1981 |  0      |       0      | -0      |   0.0003 |  0.0002 | -0      | -0      | 0      | -0      |  0      | -0.0002 |   0.0065 |
-        |            205 |  1      |      -0.9999 | 0      | -0.022  | 0.5616 |   -0.6533 |   7.1239 |  0      |       0      | -0.0001 |   0.0097 |  0.0048 | -0.0001 | -0      | 0      | -0      |  0      | -0.0053 |   0.1335 |
-        |            210 |  0.9999 |      -0.9998 | 0      | -0.0235 | 0.5752 |   -0.6532 |   8.3742 |  0      |       0      | -0.0015 |   0.1722 |  0.0714 | -0.001  | -0.0002 | 0      | -0      |  0.0007 | -0.0778 |   1.3082 |
-        |            215 |  0.9991 |      -0.9989 | 0.0004 | -0.0346 | 0.5884 |   -0.6527 |  10.1489 |  0.0004 |       0.0005 | -0.0143 |   1.6563 |  0.5604 | -0.0095 | -0.002  | 0.0005 | -0.0001 |  0.0051 | -0.5876 |   5.9321 |
-        |            220 |  0.9927 |      -0.9919 | 0.0025 | -0.1034 | 0.5979 |   -0.6485 |  12.8004 |  0.0025 |       0.003  | -0.0766 |   8.8524 |  2.3355 | -0.0507 | -0.0087 | 0.003  | -0.0008 |  0.0196 | -2.264  |  10.617  |
-        |            225 |  0.9614 |      -0.9584 | 0.0105 | -0.355  | 0.5908 |   -0.628  |  16.8575 |  0.0106 |       0.0119 | -0.2287 |  26.4045 |  5.0433 | -0.1523 | -0.0212 | 0.0119 | -0.0024 |  0.0343 | -3.9573 |   0.4951 |
-        |            230 |  0.8655 |      -0.8581 | 0.027  | -0.8792 | 0.5407 |   -0.5654 |  22.8791 |  0.0273 |       0.0294 | -0.3657 |  42.119  |  5.0451 | -0.2463 | -0.0294 | 0.0294 | -0.0039 |  0.008  | -0.8883 | -14.4266 |
-        |            235 |  0.6767 |      -0.6646 | 0.0448 | -1.4399 | 0.4279 |   -0.442  |  31.1644 |  0.0453 |       0.0467 | -0.2405 |  27.4427 |  1.3756 | -0.1694 | -0.0267 | 0.0467 | -0.0028 | -0.0575 |  6.6838 |  -6.0896 |
-        |            240 |  0.4305 |      -0.4174 | 0.049  | -1.5675 | 0.2745 |   -0.2812 |  41.601  |  0.0496 |       0.0489 |  0.1289 | -15.4004 |  0.2817 |  0.0708 | -0.0254 | 0.0489 |  0.0009 | -0.0752 |  8.707  |  -1.3284 |
-        |            245 |  0.2132 |      -0.2036 | 0.0363 | -1.1574 | 0.1367 |   -0.1393 |  53.7837 |  0.0367 |       0.0348 |  0.3795 | -44.314  |  3.7676 |  0.238  | -0.0302 | 0.0348 |  0.0035 | -0.0197 |  2.2468 | -13.8988 |
-        |            250 |  0.0803 |      -0.0754 | 0.0186 | -0.5925 | 0.0516 |   -0.0524 |  67.2285 |  0.0188 |       0.0171 |  0.3372 | -39.2457 |  5.9056 |  0.2152 | -0.0281 | 0.0171 |  0.0033 |  0.0301 | -3.518  |  -9.1559 |
-        |            255 |  0.0228 |      -0.0211 | 0.0067 | -0.2149 | 0.0147 |   -0.0149 |  81.5108 |  0.0068 |       0.006  |  0.1731 | -20.1217 |  4.3191 |  0.1112 | -0.0171 | 0.006  |  0.0017 |  0.0329 | -3.8307 |   7.2307 |
-        |            260 |  0.0049 |      -0.0044 | 0.0018 | -0.0563 | 0.0032 |   -0.0032 |  96.308  |  0.0018 |       0.0015 |  0.0584 |  -6.7872 |  1.8839 |  0.0377 | -0.0069 | 0.0015 |  0.0006 |  0.0162 | -1.8861 |  11.1559 |
-        |            265 |  0.0008 |      -0.0007 | 0.0003 | -0.0109 | 0.0005 |   -0.0005 | 111.391  |  0.0003 |       0.0003 |  0.0137 |  -1.5964 |  0.5417 |  0.0089 | -0.0019 | 0.0003 |  0.0001 |  0.0049 | -0.5728 |   6.0301 |
-        |            270 |  0.0001 |      -0.0001 | 0      | -0.0016 | 0.0001 |   -0.0001 | 126.604  |  0      |       0      |  0.0023 |  -0.2715 |  0.1086 |  0.0015 | -0.0004 | 0      |  0      |  0.001  | -0.1183 |   1.8733 |
-        |            275 |  0      |      -0      | 0      | -0.0002 | 0      |   -0      | 141.839  |  0      |       0      |  0.0003 |  -0.0343 |  0.0158 |  0.0002 | -0.0001 | 0      |  0      |  0.0002 | -0.0175 |   0.3819 |
-        |            280 |  0      |      -0      | 0      | -0      | 0      |   -0      | 157.025  |  0      |       0      |  0      |  -0.0033 |  0.0017 |  0      | -0      | 0      |  0      |  0      | -0.0019 |   0.0546 |
-        |            285 |  0      |      -0      | 0      | -0      | 0      |   -0      | 172.114  |  0      |       0      |  0      |  -0.0002 |  0.0001 |  0      | -0      | 0      |  0      |  0      | -0.0002 |   0.0057 |
-        |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      | 187.072  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0.0004 |
-        |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      | 201.877  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0      |
+        |            180 |  1      |      -0.9999 | 0      | -0.0191 | 0.4931 |   -0.6533 |   4.0782 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            185 |  1      |      -0.9999 | 0      | -0.0196 | 0.5068 |   -0.6533 |   4.4595 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            190 |  1      |      -0.9999 | 0      | -0.0202 | 0.5205 |   -0.6533 |   4.9195 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            195 |  1      |      -0.9999 | 0      | -0.0207 | 0.5342 |   -0.6533 |   5.4853 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0      |
+        |            200 |  1      |      -0.9999 | 0      | -0.0212 | 0.5479 |   -0.6533 |   6.1981 |  0      |       0      | -0      |   0      |  0      | -0      | -0      | 0      | -0      |  0      | -0      |   0.0001 |
+        |            205 |  1      |      -0.9999 | 0      | -0.0217 | 0.5616 |   -0.6533 |   7.1239 |  0      |       0      | -0      |   0.0002 |  0.0001 | -0      | -0      | 0      | -0      |  0      | -0.0002 |   0.0071 |
+        |            210 |  1      |      -0.9999 | 0      | -0.0223 | 0.5753 |   -0.6533 |   8.3748 |  0      |       0      | -0.0001 |   0.0124 |  0.0071 | -0.0001 | -0      | 0      | -0      |  0.0001 | -0.0079 |   0.2261 |
+        |            215 |  0.9999 |      -0.9998 | 0.0001 | -0.0243 | 0.5889 |   -0.6532 |  10.1573 |  0.0001 |       0.0001 | -0.0031 |   0.3048 |  0.1423 | -0.002  | -0.0004 | 0.0001 | -0      |  0.0016 | -0.1539 |   2.7483 |
+        |            220 |  0.9979 |      -0.9976 | 0.0008 | -0.0454 | 0.6013 |   -0.6519 |  12.8781 |  0.001  |       0.0011 | -0.0345 |   3.3891 |  1.2332 | -0.0227 | -0.0037 | 0.0011 | -0.0004 |  0.0129 | -1.2633 |  11.7212 |
+        |            225 |  0.9808 |      -0.9794 | 0.0058 | -0.1808 | 0.6037 |   -0.6408 |  17.297  |  0.0069 |       0.0078 | -0.1766 |  17.3444 |  4.5655 | -0.117  | -0.0152 | 0.0078 | -0.0022 |  0.0414 | -4.0652 |  10.4124 |
+        |            230 |  0.9022 |      -0.8971 | 0.0216 | -0.604  | 0.5653 |   -0.5894 |  24.4765 |  0.0256 |       0.0275 | -0.4047 |  39.6576 |  6.5361 | -0.2703 | -0.0283 | 0.0275 | -0.005  |  0.0303 | -2.9369 | -16.4877 |
+        |            235 |  0.7031 |      -0.6932 | 0.0432 | -1.1838 | 0.4463 |   -0.4593 |  35.2268 |  0.0513 |       0.0528 | -0.3236 |  31.4245 |  2.1541 | -0.2232 | -0.0273 | 0.0528 | -0.0043 | -0.0694 |  6.8815 | -10.901  |
+        |            240 |  0.4163 |      -0.4053 | 0.0487 | -1.3254 | 0.2665 |   -0.272  |  49.5371 |  0.0579 |       0.0571 |  0.173  | -17.5904 |  0.4562 |  0.0997 | -0.0256 | 0.0571 |  0.0016 | -0.1017 | 10.0098 |  -2.5045 |
+        |            245 |  0.1735 |      -0.1663 | 0.032  | -0.8684 | 0.1116 |   -0.1133 |  66.7011 |  0.038  |       0.036  |  0.4598 | -45.6744 |  5.3973 |  0.2916 | -0.0307 | 0.036  |  0.0051 | -0.0062 |  0.5668 | -20.8797 |
+        |            250 |  0.049  |      -0.0461 | 0.0127 | -0.343  | 0.0316 |   -0.032  |  85.8277 |  0.015  |       0.0137 |  0.316  | -31.292  |  6.5283 |  0.203  | -0.024  | 0.0137 |  0.0036 |  0.0497 | -4.9373 |  -2.5872 |
+        |            255 |  0.0092 |      -0.0086 | 0.0031 | -0.0841 | 0.006  |   -0.006  | 106.169  |  0.0037 |       0.0032 |  0.1099 | -10.8635 |  3.2297 |  0.0709 | -0.0103 | 0.0032 |  0.0013 |  0.0315 | -3.1218 |  15.635  |
+        |            260 |  0.0012 |      -0.0011 | 0.0005 | -0.0132 | 0.0008 |   -0.0008 | 127.197  |  0.0006 |       0.0005 |  0.0222 |  -2.1908 |  0.8418 |  0.0143 | -0.0025 | 0.0005 |  0.0003 |  0.0089 | -0.8831 |   9.8831 |
+        |            265 |  0.0001 |      -0.0001 | 0      | -0.0014 | 0.0001 |   -0.0001 | 148.561  |  0.0001 |       0      |  0.0028 |  -0.2741 |  0.1287 |  0.0018 | -0.0004 | 0      |  0      |  0.0014 | -0.1402 |   2.6    |
+        |            270 |  0      |      -0      | 0      | -0.0001 | 0      |   -0      | 170.037  |  0      |       0      |  0.0002 |  -0.0222 |  0.0123 |  0.0001 | -0      | 0      |  0      |  0.0001 | -0.0137 |   0.3703 |
+        |            275 |  0      |      -0      | 0      | -0      | 0      |   -0      | 191.483  |  0      |       0      |  0      |  -0.0012 |  0.0008 |  0      | -0      | 0      |  0      |  0      | -0.0009 |   0.0317 |
+        |            280 |  0      |      -0      | 0      | -0      | 0      |   -0      | 212.807  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0.0017 |
+        |            285 |  0      |      -0      | 0      | -0      | 0      |   -0      | 233.949  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0.0001 |
+        |            290 |  0      |      -0      | 0      | -0      | 0      |   -0      | 254.872  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0      |
+        |            295 |  0      |      -0      | 0      | -0      | 0      |   -0      | 275.552  |  0      |       0      |  0      |  -0      |  0      |  0      | -0      | 0      |  0      |  0      | -0      |   0      |
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.options.options_controller import Options  # noqa: PLC0415
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        self.get_historical_data(period="daily")
-        self.get_historical_data(period="yearly")
-
+        # The prices and the risk free rate are retrieved when a calculation first needs them.
         return Options(
             tickers=self._tickers,
-            daily_historical=self._daily_historical_data,
-            annual_historical=self._yearly_historical_data,
-            risk_free_rate=self._daily_risk_free_rate,
+            daily_historical=lambda: self._get_module_historical_data("daily"),
+            annual_historical=lambda: self._get_module_historical_data("yearly"),
+            risk_free_rate=lambda: self._get_module_risk_free_rate("daily"),
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -956,11 +831,11 @@ class Toolkit:
 
         | Date       |    AAPL |    TSLA |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-24 | 21.9724 | 24.0777 |     13.6364 |
-        | 2025-12-26 | 20.8908 | 24.3229 |     14.1712 |
-        | 2025-12-29 | 20.0343 | 23.2159 |     13.912  |
-        | 2025-12-30 | 19.2603 | 21.7824 |     13.6713 |
-        | 2025-12-31 | 18.7103 | 20.3475 |     12.9966 |
+        | 2025-12-24 | 22.018  | 24.0777 |     14.0995 |
+        | 2025-12-26 | 20.9256 | 24.3229 |     14.8314 |
+        | 2025-12-29 | 20.0592 | 23.2159 |     14.7624 |
+        | 2025-12-30 | 19.276  | 21.7824 |     14.6983 |
+        | 2025-12-31 | 18.7175 | 20.3475 |     13.7116 |
 
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
@@ -968,42 +843,10 @@ class Toolkit:
             Technicals,
         )
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
+        # The prices of a period are retrieved when an indicator first asks for that period.
         technicals = Technicals(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
-            ),
-            historical_data=historical_data,
+            tickers=lambda: self._get_historical_tickers(include_benchmark=True),
+            historical_data=LazyDict(self._get_module_historical_data),
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
@@ -1046,79 +889,39 @@ class Toolkit:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021Q2 |  0.1157 |  0.1366 |
-        | 2021Q3 |  0.0064 |  0.0053 |
+        | 2021Q2 |  0.1154 |  0.1364 |
+        | 2021Q3 |  0.0066 |  0.0052 |
         | 2021Q4 |  0.1214 |  0.1869 |
-        | 2022Q1 | -0.0577 | -0.1017 |
-        | 2022Q2 | -0.2135 | -0.3321 |
-        | 2022Q3 | -0.0597 | -0.0828 |
-        | 2022Q4 |  0.1059 |  0.0998 |
-        | 2023Q1 |  0.0831 |  0.152  |
-        | 2023Q2 |  0.1032 |  0.1756 |
-        | 2023Q3 | -0.0416 | -0.1029 |
-        | 2023Q4 |  0.102  |  0.2474 |
-        | 2024Q1 |  0.1038 |  0.1406 |
-        | 2024Q2 |  0.0525 |  0.0589 |
-        | 2024Q3 |  0.0571 |  0.1525 |
-        | 2024Q4 |  0.0217 |  0.0516 |
-        | 2025Q1 | -0.0386 | -0.1499 |
-        | 2025Q2 |  0.1473 |  0.2038 |
-        | 2025Q3 |  0.1031 |  0.1768 |
-        | 2025Q4 |  0.0236 |  0.0495 |
+        | 2022Q1 | -0.0575 | -0.1007 |
+        | 2022Q2 | -0.2134 | -0.332  |
+        | 2022Q3 | -0.0594 | -0.0818 |
+        | 2022Q4 |  0.106  |  0.0998 |
+        | 2023Q1 |  0.083  |  0.1515 |
+        | 2023Q2 |  0.1032 |  0.1762 |
+        | 2023Q3 | -0.0414 | -0.1013 |
+        | 2023Q4 |  0.1021 |  0.2457 |
+        | 2024Q1 |  0.1038 |  0.1407 |
+        | 2024Q2 |  0.0524 |  0.0588 |
+        | 2024Q3 |  0.0571 |  0.1518 |
+        | 2024Q4 |  0.0215 |  0.0531 |
+        | 2025Q1 | -0.0386 | -0.1508 |
+        | 2025Q2 |  0.1473 |  0.2035 |
+        | 2025Q3 |  0.1029 |  0.1764 |
+        | 2025Q4 |  0.0236 |  0.0498 |
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.performance.performance_controller import (  # noqa: PLC0415
             Performance,
         )
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
-        risk_free_rate_data = {
-            "daily": self._daily_risk_free_rate["Adj Close"],
-            "weekly": self._weekly_risk_free_rate["Adj Close"],
-            "monthly": self._monthly_risk_free_rate["Adj Close"],
-            "quarterly": self._quarterly_risk_free_rate["Adj Close"],
-            "yearly": self._yearly_risk_free_rate["Adj Close"],
-        }
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        if "Benchmark" in tickers:
-            tickers.remove("Benchmark")
-
+        # The prices and risk free rate of a period are retrieved when a metric first asks
+        # for that period.
         performance = Performance(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            tickers=lambda: self._get_historical_tickers(include_benchmark=False),
+            historical_data=LazyDict(self._get_module_historical_data),
+            risk_free_rate_data=LazyDict(
+                lambda period: self._get_module_risk_free_rate(period)["Adj Close"]
             ),
-            historical_data=historical_data,
-            risk_free_rate_data=risk_free_rate_data,
             quarterly=self._quarterly,
             rounding=self._rounding,
             start_date=self._start_date,
@@ -1166,60 +969,23 @@ class Toolkit:
 
         Which returns:
 
-        |           |       0 |
+        |           |   Value |
         |:----------|--------:|
-        | AAPL      | -0.2109 |
+        | AAPL      | -0.2108 |
         | TSLA      | -0.5357 |
         | Benchmark | -0.1279 |
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
         from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
-        risk_free_rate_data = {
-            "daily": self._daily_risk_free_rate["Adj Close"],
-            "weekly": self._weekly_risk_free_rate["Adj Close"],
-            "monthly": self._monthly_risk_free_rate["Adj Close"],
-            "quarterly": self._quarterly_risk_free_rate["Adj Close"],
-            "yearly": self._yearly_risk_free_rate["Adj Close"],
-        }
-
+        # The prices and risk free rate of a period are retrieved when a metric first asks
+        # for that period.
         risk = Risk(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+            tickers=lambda: self._get_historical_tickers(include_benchmark=True),
+            historical_data=LazyDict(self._get_module_historical_data),
+            risk_free_rate_data=LazyDict(
+                lambda period: self._get_module_risk_free_rate(period)["Adj Close"]
             ),
-            historical_data=historical_data,
-            risk_free_rate_data=risk_free_rate_data,
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
@@ -1275,42 +1041,10 @@ class Toolkit:
                 "pip install financetoolkit[econometrics]"
             ) from error
 
-        if not self._start_date:
-            self._start_date = (datetime.today() - timedelta(days=365 * 10)).strftime(
-                "%Y-%m-%d"
-            )
-        if not self._end_date:
-            self._end_date = datetime.today().strftime("%Y-%m-%d")
-
-        for period in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            self.get_historical_data(period=period)
-
-        if self._intraday_period:
-            if self._intraday_period in ["1min", "5min", "15min", "30min", "1hour"]:
-                self.get_intraday_data(period=self._intraday_period)
-            else:
-                raise ValueError(
-                    "The intraday period must be one of '1min', '5min', '15min', '30min' or '1hour'."
-                )
-
-        tickers = (
-            self._daily_historical_data.columns.get_level_values(1).unique().tolist()
-        )
-
-        historical_data = {
-            "intraday": self._intraday_historical_data,
-            "daily": self._daily_historical_data,
-            "weekly": self._weekly_historical_data,
-            "monthly": self._monthly_historical_data,
-            "quarterly": self._quarterly_historical_data,
-            "yearly": self._yearly_historical_data,
-        }
-
+        # The prices of a period are retrieved when a method first asks for that period.
         econometrics = Econometrics(
-            tickers=(
-                tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
-            ),
-            historical_data=historical_data,
+            tickers=lambda: self._get_historical_tickers(include_benchmark=True),
+            historical_data=LazyDict(self._get_module_historical_data),
             intraday_period=self._intraday_period,
             quarterly=self._quarterly,
             rounding=self._rounding,
@@ -1453,49 +1187,24 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["MSFT", "AAPL"],
+            ["ASML.AS", "SAP.DE", "MC.PA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_profile()
+        toolkit.get_profile().loc[["Industry", "Exchange", "Currency", "ISIN", "Beta"]]
         ```
 
         Which returns:
 
-        |                       | MSFT                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | AAPL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-        |:----------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-        | Symbol                | MSFT                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | AAPL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-        | Price                 | 529.76                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 336.67                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-        | Market Capitalization | 3933759368000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 4944792144520                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-        | Beta                  | 1.099                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | 1.069                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-        | Last Dividend         | 3.64                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 1.06                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-        | Range                 | 349.2-553.72                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 243.42-345.34                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-        | Change                | 0.46                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 3.04                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-        | Change %              | 0.08690724                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 0.91119                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-        | Volume                | 16040951                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 33380854                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-        | Average Volume        | 33816200                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 51183728                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-        | Company Name          | Microsoft Corporation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Apple Inc.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-        | Currency              | USD                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | USD                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-        | CIK                   | 789019                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 320193                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-        | ISIN                  | US5949181045                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | US0378331005                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-        | CUSIP                 | 594918104                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | 37833100                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-        | Exchange Full Name    | NASDAQ Global Select                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | NASDAQ Global Select                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-        | Exchange              | NASDAQ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | NASDAQ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-        | Industry              | Software - Infrastructure                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Consumer Electronics                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-        | Website               | https://www.microsoft.com                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | https://www.apple.com                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-        | Description           | Microsoft Corporation is a prominent global technology firm that invents, markets, and provides ongoing assistance for a diverse range of software, digital services, computing devices, and comprehensive solutions. Its operations are organized into three primary divisions: Productivity and Business Processes, Intelligent Cloud, and More Personal Computing. The Productivity and Business Processes segment delivers crucial tools for both enterprises and individual users. This includes the extensive Office suite (comprising Exchange, SharePoint, Microsoft Teams, Office 365 Security and Compliance, Microsoft Viva, and Skype for Business), along with popular consumer offerings like Skype, Outlook.com, OneDrive, and LinkedIn. It also features Dynamics 365, a suite of integrated cloud and on-premises business applications tailored for organizations. The Intelligent Cloud division focuses on sophisticated infrastructure and platform services. Here, Microsoft licenses key products such as SQL Server, Windows Servers, Visual Studio, System Center, and associated Client Access Licenses. It also includes GitHub, a leading platform for developer collaboration and code hosting; Nuance, offering advanced AI solutions for healthcare and businesses; and Azure, its expansive cloud computing platform. This segment further encompasses enterprise support, Microsoft consulting services, and Nuance professional services, assisting clients with the development, deployment, and management of Microsoft's server and desktop technologies, alongside offering product training and certification. Finally, the More Personal Computing segment covers a broad spectrum of consumer and commercial computing experiences. It generates revenue through Windows operating system licensing, including agreements with original equipment manufacturers (OEMs), non-volume licensing, and various Windows Commercial offerings (such as volume licensing and cloud services), as well as patent licensing and Windows Internet of Things (IoT). This division also supplies its own hardware, including Surface devices, PC accessories, and gaming/entertainment consoles. Its Gaming portfolio features Xbox hardware, content, and subscription services, in addition to video games and royalties from third-party titles. Furthermore, it manages search services like Bing and Microsoft's advertising platforms. Microsoft distributes its extensive product line via numerous channels, including original equipment manufacturers, wholesale distributors, and various resellers, complementing direct sales through digital marketplaces, its own online storefronts, and physical retail outlets. The company, established in 1975, maintains its headquarters in Redmond, Washington. | Apple Inc. is a global technology corporation that specializes in the conceptualization, production, and sale of a diverse suite of electronic devices. Its comprehensive hardware lineup features the well-known iPhone smartphones, Mac personal computers, and versatile iPad tablets. The company also supplies a range of wearables, smart home products, and accessories, including AirPods, Apple TV, Apple Watch, items from the Beats brand, and HomePod speakers. Beyond its device offerings, Apple delivers essential support services like AppleCare and robust cloud solutions. It oversees key digital platforms, prominently the App Store, which acts as a central hub for customers to discover and download countless applications and digital content, from e-books and music to videos, games, and podcasts. The company also generates revenue via advertising, leveraging both its proprietary ad platforms and third-party licensing deals. Apple's ecosystem is further bolstered by a wide array of subscription-based services: Apple Arcade for gaming, Apple Fitness+ for personalized wellness, Apple Music for curated audio experiences and on-demand radio, Apple News+ for access to news and magazines, and Apple TV+ for exclusive original video programming. Its financial services portfolio includes the co-branded Apple Card and the mobile payment system, Apple Pay. Additionally, Apple strategically licenses its intellectual property. The company serves a broad clientele that spans individual consumers, small and medium-sized enterprises, as well as institutional clients in the education, corporate, and governmental sectors. Products are distributed through a multi-channel strategy, utilizing Apple's own physical retail locations and online storefronts, a dedicated direct sales team, and collaborations with external partners such as mobile network providers, wholesalers, general retailers, and authorized resellers. The App Store additionally functions as the primary conduit for third-party applications designed for its devices. Founded in 1976, Apple Inc. is headquartered in Cupertino, California. |
-        | CEO                   | Satya Nadella                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | John Ternus                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-        | Sector                | Technology                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Technology                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-        | Country               | US                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | US                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-        | Full Time Employees   | 223000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 166000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-        | Phone                 | 425 882 8080                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | (408) 996-1010                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-        | Address               | One Microsoft Way                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | One Apple Park Way                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-        | City                  | Redmond                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Cupertino                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-        | State                 | WA                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | CA                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-        | ZIP Code              | 98052-6399                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 95014                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-        | IPO Date              | 1986-03-13                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 1980-12-12                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+        |          | ASML.AS        | SAP.DE                 | MC.PA        |
+        |:---------|:---------------|:-----------------------|:-------------|
+        | Industry | Semiconductors | Software - Application | Luxury Goods |
+        | Exchange | AMS            | XETRA                  | PAR          |
+        | Currency | EUR            | EUR                    | EUR          |
+        | ISIN     | NL0010273215   | DE0007164600           | FR0000121014 |
+        | Beta     | 1.302          | 0.775                  | 0.879        |
         """
         if not self._api_key:
             logger.error(
@@ -1531,12 +1240,10 @@ class Toolkit:
 
     def get_quote(self):
         """
-        Get the quote of the specified tickers. These include important metrics
-        such as the price, changes, day low, day high, year low, year high, market
-        capitalization, volume, average volume, open, previous close, earnings per
-        share (EPS), price to earnings ratio (PE), earnings announcement, shares
-        outstanding and timestamp that give an overall understanding about the
-        company.
+        Get the quote of the specified tickers: the price and its change, the day's
+        open, low and high, the previous close, the year low and high, the 50 and 200
+        day average prices, the volume, the market capitalization, the exchange and the
+        time of the quote.
 
         Also known as: real-time price, current stock price, live quote.
 
@@ -1548,36 +1255,22 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["TSLA", "AAPL"],
+            ["V", "MA", "AXP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_quote()
+        toolkit.get_quote().loc[["Price", "Year High", "Year Low"]]
         ```
 
         Which returns:
 
-        |                        | TSLA                | AAPL                |
-        |:-----------------------|:--------------------|:--------------------|
-        | Symbol                 | TSLA                | AAPL                |
-        | Name                   | Tesla, Inc.         | Apple Inc.          |
-        | Price                  | 377.81              | 336.67              |
-        | Change %               | -0.7539100000000001 | 0.91119             |
-        | Change                 | -2.87               | 3.04                |
-        | Volume                 | 25496215            | 33380854            |
-        | Day Low                | 374.43              | 332.79              |
-        | Day High               | 382.3499            | 338.67              |
-        | Year High              | 498.83              | 345.34              |
-        | Year Low               | 297.38              | 243.42              |
-        | Market Capitalization  | 1492178500927       | 4944792144520       |
-        | Price Average 50 Days  | 350.327             | 322.348             |
-        | Price Average 200 Days | 392.1935            | 289.75894           |
-        | Exchange               | NASDAQ              | NASDAQ              |
-        | Open                   | 378.35              | 337.015             |
-        | Previous Close         | 380.68              | 333.63              |
-        | Timestamp              | 2026-10-07 20:00:00 | 2026-10-07 20:00:01 |
+        |           |      V |     MA |    AXP |
+        |:----------|-------:|-------:|-------:|
+        | Price     | 407.92 | 623.6  | 313.03 |
+        | Year High | 414.6  | 633.29 | 387.49 |
+        | Year Low  | 293.89 | 464.52 | 290.97 |
         """
         if not self._api_key:
             logger.error(
@@ -1613,10 +1306,10 @@ class Toolkit:
 
     def get_rating(self):
         """
-        Get the rating of the specified tickers. These scores and recommendations are categorized
-        as follows:
+        Get the rating of the specified tickers: a letter rating and an overall score based on
+        six scores from 1 (weak) to 5 (strong). These scores are categorized as follows:
 
-        - An overall rating
+        - An overall rating (the letter rating and the Rating Score)
         - Discounted Cash Flow (DCF)
         - Return on Equity (ROE)
         - Return on Assets (ROA)
@@ -1624,12 +1317,9 @@ class Toolkit:
         - Price Earnings (PE)
         - Price to Book (PB)
 
-        Also known as: analyst consensus, buy sell hold recommendation.
+        Also known as: stock rating, fundamental score, quantitative rating.
 
         Args:
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The stock rating information for the specified tickers.
@@ -1640,7 +1330,7 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AMZN", "TSLA"],
+            ["V"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -1648,18 +1338,14 @@ class Toolkit:
 
         rating = toolkit.get_rating()
 
-        rating.loc['AMZN'].tail()
+        rating[["DCF Score", "ROE Score", "ROA Score", "DE Score", "PE Score", "PB Score"]].tail(1)
         ```
 
         Which returns:
 
-        | date                | Rating   |   Rating Score |   DCF Score |   ROE Score |   ROA Score |   DE Score |   PE Score |   PB Score |
-        |:--------------------|:---------|---------------:|------------:|------------:|------------:|-----------:|-----------:|-----------:|
-        | 2026-10-01 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-02 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-05 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-06 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
-        | 2026-10-07 00:00:00 | B+       |              3 |           2 |           5 |           5 |          2 |          3 |          2 |
+        | date                |   DCF Score |   ROE Score |   ROA Score |   DE Score |   PE Score |   PB Score |
+        |:--------------------|------------:|------------:|------------:|-----------:|-----------:|-----------:|
+        | 2025-12-31 00:00:00 |           4 |           5 |           5 |          2 |          1 |          1 |
         """
         if not self._api_key:
             logger.error(
@@ -1692,7 +1378,17 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        return self._rating
+        # The full history is kept, and the ratings between the start and end date returned.
+        rating = self._rating
+        if isinstance(rating, pd.DataFrame) and not rating.empty:
+            dates = pd.Series(rating.index.get_level_values(-1).astype(str).str[:10])
+            keep = dates.ge(self._start_date or "") & dates.le(self._end_date or "9999")
+            rating = rating[keep.to_numpy()]
+
+            if len(self._tickers) == 1 and self._tickers[0] in rating.index:
+                rating = rating.loc[self._tickers[0]]
+
+        return rating
 
     def get_analyst_estimates(
         self,
@@ -1727,38 +1423,22 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2024-05-01", quarterly=False,
-                                                                                                               end_date="2025-12-31",
+            ["NVDA", "AMD", "AVGO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2026-01-01",
+            end_date="2028-12-31",
         )
 
-        analyst_estimates = toolkit.get_analyst_estimates()
-
-        analyst_estimates.loc['AAPL'].iloc[:, :5]
+        toolkit.get_analyst_estimates(show_columns=["Estimated Revenue Average"])
         ```
 
         Which returns:
 
-        |                               |         2024 |         2025 |         2026 |         2027 |         2028 |
-        |:------------------------------|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | Estimated Revenue Low         |  3.98249e+11 |  4.08477e+11 |  4.7267e+11  |  5.02764e+11 |  5.27129e+11 |
-        | Estimated Revenue High        |  4.02483e+11 |  4.17924e+11 |  4.83194e+11 |  5.57752e+11 |  6.30138e+11 |
-        | Estimated Revenue Average     |  4.00366e+11 |  4.15407e+11 |  4.77612e+11 |  5.24595e+11 |  5.64184e+11 |
-        | Estimated EBITDA Low          |  1.2031e+11  |  1.41913e+11 |  1.72316e+11 |  1.77525e+11 |  1.85526e+11 |
-        | Estimated EBITDA High         |  1.40742e+11 |  1.45705e+11 |  1.73035e+11 |  2.03857e+11 |  2.25144e+11 |
-        | Estimated EBITDA Average      |  1.28364e+11 |  1.43809e+11 |  1.72675e+11 |  1.79218e+11 |  1.98406e+11 |
-        | Estimated EBIT Low            |  1.08865e+11 |  1.30215e+11 |  1.60268e+11 |  1.64933e+11 |  1.72276e+11 |
-        | Estimated EBIT High           |  1.29297e+11 |  1.34007e+11 |  1.60987e+11 |  1.91265e+11 |  2.11894e+11 |
-        | Estimated EBIT Average        |  1.16919e+11 |  1.32111e+11 |  1.60628e+11 |  1.66626e+11 |  1.85156e+11 |
-        | Estimated Net Income Low      |  9.05919e+10 |  1.08357e+11 |  1.32276e+11 |  1.36158e+11 |  1.42267e+11 |
-        | Estimated Net Income High     |  1.07594e+11 |  1.11514e+11 |  1.32874e+11 |  1.5807e+11  |  1.75236e+11 |
-        | Estimated Net Income Average  |  9.7294e+10  |  1.09936e+11 |  1.32575e+11 |  1.37566e+11 |  1.52986e+11 |
-        | Estimated SGA Expense Low     |  2.56323e+10 |  2.62906e+10 |  3.04222e+10 |  3.23591e+10 |  3.39273e+10 |
-        | Estimated SGA Expense High    |  2.59048e+10 |  2.68986e+10 |  3.10995e+10 |  3.58983e+10 |  4.05572e+10 |
-        | Estimated SGA Expense Average |  2.57685e+10 |  2.67366e+10 |  3.07403e+10 |  3.37642e+10 |  3.63123e+10 |
-        | Estimated EPS Average         |  6.4289      |  7.3818      |  8.8356      |  9.6081      | 10.6865      |
-        | Estimated EPS High            |  7.1707      |  7.4319      |  8.8555      | 10.5347      | 11.6787      |
-        | Estimated EPS Low             |  6.0376      |  7.2216      |  8.8156      |  9.0743      |  9.4815      |
-        | Number of Analysts            | 18           | 26           | 29           | 30           | 22           |
+        |      |        2026 |        2027 |        2028 |        2029 |        2030 |          2031 |
+        |:-----|------------:|------------:|------------:|------------:|------------:|--------------:|
+        | NVDA | 2.13656e+11 | 4.09929e+11 | 6.95178e+11 | 9.25214e+11 | 1.10649e+12 |   1.21149e+12 |
+        | AMD  | 5.13395e+10 | 9.04101e+10 | 1.25666e+11 | 1.6376e+11  | 2.32364e+11 | nan           |
+        | AVGO | 1.06009e+11 | 1.74279e+11 | 2.81861e+11 | 4.16476e+11 | 5.52387e+11 | nan           |
         """
         if not self._api_key:
             logger.error(
@@ -1830,6 +1510,11 @@ class Toolkit:
 
         Note that this information requires a Premium FMP subscription.
 
+        The surprise is the reported EPS against the estimate, usually as a percentage of the
+        estimate. Most companies report above the consensus, so a small beat is the norm, and
+        the share price tends to react to the size of the surprise, to revenue against its
+        estimate and to the guidance given on the call rather than to a beat as such.
+
         Also known as: earnings dates, earnings schedule, reporting date.
 
         Args:
@@ -1849,32 +1534,27 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2022-08-01", quarterly=False,
-                                                                                                               end_date="2025-12-31",
+            ["COST"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-01-01",
+            end_date="2025-12-31",
         )
 
-        earning_calendar = toolkit.get_earnings_calendar()
-
-        earning_calendar.loc['AMZN']
+        toolkit.get_earnings_calendar(show_columns=["EPS", "Estimated EPS"])
         ```
 
         Which returns:
 
-        | date                |   EPS |   Estimated EPS |     Revenue |   Estimated Revenue | Last Updated   |
-        |:--------------------|------:|----------------:|------------:|--------------------:|:---------------|
-        | 2022-10-27 00:00:00 |  0.28 |            0.22 | 1.27101e+11 |         1.27308e+11 | 2026-08-17     |
-        | 2023-02-02 00:00:00 |  0.25 |            0.18 | 1.49204e+11 |         1.45713e+11 | 2026-08-17     |
-        | 2023-04-27 00:00:00 |  0.31 |            0.21 | 1.27358e+11 |         1.24551e+11 | 2025-04-25     |
-        | 2023-08-03 00:00:00 |  0.65 |            0.35 | 1.34383e+11 |         1.19573e+11 | 2025-04-25     |
-        | 2023-10-26 00:00:00 |  0.94 |            0.58 | 1.43083e+11 |         1.33393e+11 | 2025-04-25     |
-        | 2024-02-01 00:00:00 |  1    |            0.8  | 1.69961e+11 |         1.66172e+11 | 2025-04-25     |
-        | 2024-04-30 00:00:00 |  0.98 |            0.83 | 1.43313e+11 |         1.42654e+11 | 2025-04-25     |
-        | 2024-08-01 00:00:00 |  1.26 |            1.03 | 1.47977e+11 |         1.48665e+11 | 2025-04-25     |
-        | 2024-10-31 00:00:00 |  1.43 |            1.14 | 1.58877e+11 |         1.57275e+11 | 2025-04-25     |
-        | 2025-02-06 00:00:00 |  1.86 |            1.49 | 1.87792e+11 |         1.87337e+11 | 2025-05-06     |
-        | 2025-05-01 00:00:00 |  1.59 |            1.37 | 1.55667e+11 |         1.55148e+11 | 2025-08-01     |
-        | 2025-07-31 00:00:00 |  1.68 |            1.31 | 1.67702e+11 |         1.61776e+11 | 2025-10-31     |
-        | 2025-10-30 00:00:00 |  1.95 |            1.57 | 1.80169e+11 |         1.77913e+11 | 2026-01-25     |
+        | date                |   EPS |   Estimated EPS |
+        |:--------------------|------:|----------------:|
+        | 2024-03-07 00:00:00 |  3.92 |            3.62 |
+        | 2024-05-30 00:00:00 |  3.78 |            3.7  |
+        | 2024-09-26 00:00:00 |  5.29 |            5.08 |
+        | 2024-12-12 00:00:00 |  4.04 |            3.79 |
+        | 2025-03-06 00:00:00 |  4.02 |            4.09 |
+        | 2025-05-29 00:00:00 |  4.28 |            4.24 |
+        | 2025-09-25 00:00:00 |  5.87 |            5.8  |
+        | 2025-12-11 00:00:00 |  4.5  |            4.27 |
         """
         if not self._api_key:
             logger.error(
@@ -2130,13 +1810,13 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2021-05-01", quarterly=False,
-                                                                                                               end_date="2025-12-31",
+            ["AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        geographic_segmentation = toolkit.get_revenue_geographic_segmentation()
-
-        geographic_segmentation.loc['AAPL']
+        toolkit.get_revenue_geographic_segmentation()
         ```
 
         Which returns:
@@ -2148,7 +1828,6 @@ class Toolkit:
         | China        | 6.8366e+10  | 7.42e+10    | 7.2559e+10 | 6.6952e+10  | 6.4377e+10  |
         | Europe       | 8.9307e+10  | 9.5118e+10  | 9.4294e+10 | 1.01328e+11 | 1.11032e+11 |
         | Japan        | 2.8482e+10  | 2.5977e+10  | 2.4257e+10 | 2.5052e+10  | 2.8703e+10  |
-
         """
         if not self._api_key:
             logger.error(
@@ -2227,33 +1906,24 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2021-05-01", quarterly=False,
-                                                                                                               end_date="2025-12-31",
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        product_segmentation = toolkit.get_revenue_product_segmentation()
-
-        product_segmentation.loc['MSFT']
+        toolkit.get_revenue_product_segmentation()
         ```
 
         Which returns:
 
-        |                                                                 |       2021 |       2022 |       2023 |       2024 |       2025 |
-        |:----------------------------------------------------------------|-----------:|-----------:|-----------:|-----------:|-----------:|
-        | Devices                                                         | 6.791e+09  | 6.991e+09  | 5.521e+09  | 4.706e+09  | 0          |
-        | Dynamics                                                        | 0          | 0          | 5.437e+09  | 0          | 0          |
-        | Dynamics Products And Cloud Services                            | 0          | 0          | 0          | 6.481e+09  | 7.827e+09  |
-        | Enterprise Services                                             | 6.943e+09  | 7.407e+09  | 7.722e+09  | 7.594e+09  | 7.76e+09   |
-        | Gaming                                                          | 1.537e+10  | 1.623e+10  | 1.5466e+10 | 2.1503e+10 | 2.3455e+10 |
-        | Linked In Corporation                                           | 1.0289e+10 | 1.3816e+10 | 1.5145e+10 | 1.6372e+10 | 1.7812e+10 |
-        | Microsoft Three Six Five Commercial Products And Cloud Services | 0          | 0          | 0          | 0          | 8.7767e+10 |
-        | Microsoft Three Six Five Consumer Products And Cloud Services   | 0          | 0          | 0          | 0          | 7.404e+09  |
-        | Office Products And Cloud Services                              | 3.9872e+10 | 4.4862e+10 | 4.8728e+10 | 5.4875e+10 | 0          |
-        | Other Products And Services                                     | 4.479e+09  | 5.291e+09  | 2.11e+08   | 4.5e+07    | 7.2e+07    |
-        | Search Advertising                                              | 8.528e+09  | 1.1591e+10 | 1.2208e+10 | 1.2576e+10 | 1.3878e+10 |
-        | Server Products And Cloud Services                              | 5.2589e+10 | 6.7321e+10 | 7.997e+10  | 9.7726e+10 | 9.8435e+10 |
-        | Windows                                                         | 2.3227e+10 | 2.4761e+10 | 2.1507e+10 | 2.3244e+10 | 1.7314e+10 |
-
+        |                            |      2021 |       2022 |       2023 |       2024 |        2025 |
+        |:---------------------------|----------:|-----------:|-----------:|-----------:|------------:|
+        | Automotive                 | 5.36e+08  | 5.66e+08   | 9.03e+08   | 1.091e+09  | 1.694e+09   |
+        | Data Center                | 6.696e+09 | 1.0613e+10 | 1.5005e+10 | 4.7525e+10 | 1.15186e+11 |
+        | Gaming                     | 7.759e+09 | 1.2462e+10 | 9.067e+09  | 1.0447e+10 | 1.135e+10   |
+        | Oem And Other              | 6.31e+08  | 1.162e+09  | 4.55e+08   | 3.06e+08   | 3.89e+08    |
+        | Professional Visualization | 1.053e+09 | 2.111e+09  | 1.544e+09  | 1.553e+09  | 1.878e+09   |
         """
         if not self._api_key:
             logger.error(
@@ -2379,24 +2049,24 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            "AAPL",
+            ["CAT", "DE", "URI"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_historical_data(period="yearly")
+        toolkit.get_historical_data(show_columns=["Close"]).tail()
         ```
 
         Which returns:
 
-        | Date   |   ('Open', 'AAPL') |   ('Open', 'Benchmark') |   ('High', 'AAPL') |   ('High', 'Benchmark') |   ('Low', 'AAPL') |   ('Low', 'Benchmark') |
-        |:-------|-------------------:|------------------------:|-------------------:|------------------------:|------------------:|-----------------------:|
-        | 2021   |             133.52 |                  375.31 |             182.13 |                  479    |            116.21 |                 364.82 |
-        | 2022   |             177.83 |                  476.3  |             182.94 |                  479.98 |            125.87 |                 348.11 |
-        | 2023   |             130.28 |                  384.37 |             199.62 |                  477.55 |            124.17 |                 377.83 |
-        | 2024   |             187.15 |                  472.16 |             260.1  |                  609.07 |            164.08 |                 466.43 |
-        | 2025   |             248.93 |                  589.39 |             288.62 |                  691.66 |            169.21 |                 481.8  |
+        | Date       |    CAT |     DE |    URI |   Benchmark |
+        |:-----------|-------:|-------:|-------:|------------:|
+        | 2025-12-24 | 583.76 | 467.44 | 824.77 |      690.38 |
+        | 2025-12-26 | 583    | 468.93 | 827.94 |      690.31 |
+        | 2025-12-29 | 578.71 | 470.24 | 819.51 |      687.85 |
+        | 2025-12-30 | 577.39 | 469.94 | 817.25 |      687.01 |
+        | 2025-12-31 | 572.87 | 465.57 | 809.32 |      681.92 |
         """
         if enforce_source is not None and enforce_source not in [
             "FinancialModelingPrep",
@@ -2488,9 +2158,9 @@ class Toolkit:
                     period=period, risk_free_rate=self._risk_free_rate
                 )
 
-            # Every module (risk, performance, models, ...) asks for every period when it
-            # is created, so the conversion is kept until the daily data it was made from
-            # or one of its settings changes. The daily data is compared by identity, as
+            # Every module (risk, performance, models, ...) asks for a period again each
+            # time it is accessed, so the conversion is kept until the daily data it was made
+            # from or one of its settings changes. The daily data is compared by identity, as
             # it is replaced rather than changed when it is retrieved again.
             settings = (
                 self._start_date,
@@ -2613,29 +2283,24 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            "MSFT",
+            ["NVDA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-12-29",
             end_date="2025-12-31",
         )
 
-        toolkit.get_intraday_data(period="1min")
+        toolkit.get_intraday_data(period="1hour", show_columns=["Close"]).tail()
         ```
 
         Which returns:
 
-        | date             |   ('Open', 'MSFT') |   ('Open', 'Benchmark') |   ('High', 'MSFT') |   ('High', 'Benchmark') |   ('Low', 'MSFT') |   ('Low', 'Benchmark') |
-        |:-----------------|-------------------:|------------------------:|-------------------:|------------------------:|------------------:|-----------------------:|
-        | 2025-12-31 15:50 |             483.72 |                  682.77 |             483.83 |                  682.98 |            483.51 |                 682.63 |
-        | 2025-12-31 15:51 |             483.59 |                  682.71 |             483.63 |                  682.76 |            483.43 |                 682.52 |
-        | 2025-12-31 15:52 |             483.51 |                  682.6  |             483.86 |                  682.73 |            483.5  |                 682.57 |
-        | 2025-12-31 15:53 |             483.82 |                  682.59 |             484.19 |                  682.81 |            483.78 |                 682.52 |
-        | 2025-12-31 15:54 |             484.06 |                  682.68 |             484.3  |                  682.79 |            483.72 |                 682.49 |
-        | 2025-12-31 15:55 |             483.61 |                  682.5  |             484.44 |                  683.02 |            483.32 |                 682.34 |
-        | 2025-12-31 15:56 |             484.4  |                  682.97 |             484.4  |                  682.98 |            483.9  |                 682.38 |
-        | 2025-12-31 15:57 |             484.11 |                  682.59 |             484.18 |                  682.68 |            483.82 |                 682.36 |
-        | 2025-12-31 15:58 |             483.93 |                  682.41 |             483.95 |                  682.43 |            483.72 |                 682.18 |
-        | 2025-12-31 15:59 |             483.8  |                  682.19 |             483.85 |                  682.19 |            483.4  |                 681.75 |
+        | date             |   ('Close', 'NVDA') |   ('Close', 'Benchmark') |
+        |:-----------------|--------------------:|-------------------------:|
+        | 2025-12-31 11:00 |              188.92 |                   685    |
+        | 2025-12-31 12:00 |              188.97 |                   685.35 |
+        | 2025-12-31 13:00 |              188.05 |                   685.04 |
+        | 2025-12-31 14:00 |              187.13 |                   682.69 |
+        | 2025-12-31 15:00 |              186.53 |                   681.87 |
         """
         if not self._api_key:
             logger.error(
@@ -2720,6 +2385,8 @@ class Toolkit:
             - Date: The date of the dividend.
             - Adj Dividend: The adjusted dividend amount.
             - Dividend: The dividend amount.
+            - Yield: The annualized dividend yield at the time of the dividend, as a decimal
+            (0.0054 is 0.54%).
             - Record Date: The record date of the dividend.
             - Payment Date: The payment date of the dividend.
             - Declaration Date: The declaration date of the dividend.
@@ -2736,7 +2403,7 @@ class Toolkit:
             names are reported and ignored. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The earnings calendar for the specified tickers.
+            pd.DataFrame: The dividend calendar for the specified tickers.
 
         As an example:
 
@@ -2744,33 +2411,39 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2022-08-01", quarterly=False,
-                                                                                                               end_date="2025-12-31",
+            ["JNJ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        dividend_calendar = toolkit.get_dividend_calendar()
-
-        dividend_calendar.loc['AAPL']
+        toolkit.get_dividend_calendar(show_columns=["Dividend"])
         ```
 
         Which returns:
 
-        | date       |   Adj Dividend |   Dividend |   Yield | Record Date   | Payment Date   | Declaration Date   |
-        |:-----------|---------------:|-----------:|--------:|:--------------|:---------------|:-------------------|
-        | 2022-08-05 |           0.23 |       0.23 |  0.5443 | 2022-08-08    | 2022-08-11     | 2022-07-28         |
-        | 2022-11-04 |           0.23 |       0.23 |  0.6576 | 2022-11-07    | 2022-11-10     | 2022-10-27         |
-        | 2023-02-10 |           0.23 |       0.23 |  0.6092 | 2023-02-13    | 2023-02-16     | 2023-02-02         |
-        | 2023-05-12 |           0.24 |       0.24 |  0.5389 | 2023-05-15    | 2023-05-18     | 2023-05-04         |
-        | 2023-08-11 |           0.24 |       0.24 |  0.5287 | 2023-08-14    | 2023-08-17     | 2023-08-03         |
-        | 2023-11-10 |           0.24 |       0.24 |  0.5097 | 2023-11-13    | 2023-11-16     | 2023-11-02         |
-        | 2024-02-09 |           0.24 |       0.24 |  0.5083 | 2024-02-12    | 2024-02-15     | 2024-02-01         |
-        | 2024-05-10 |           0.25 |       0.25 |  0.5299 | 2024-05-13    | 2024-05-16     | 2024-05-02         |
-        | 2024-08-12 |           0.25 |       0.25 |  0.4505 | 2024-08-12    | 2024-08-15     | 2024-08-01         |
-        | 2024-11-08 |           0.25 |       0.25 |  0.4362 | 2024-11-11    | 2024-11-14     | 2024-10-31         |
-        | 2025-02-10 |           0.25 |       0.25 |  0.4393 | 2025-02-10    | 2025-02-13     | 2025-01-30         |
-        | 2025-05-12 |           0.26 |       0.26 |  0.4791 | 2025-05-12    | 2025-05-15     | 2025-05-01         |
-        | 2025-08-11 |           0.26 |       0.26 |  0.449  | 2025-08-11    | 2025-08-14     | 2025-07-31         |
-        | 2025-11-10 |           0.26 |       0.26 |  0.3823 | 2025-11-10    | 2025-11-13     | 2025-10-30         |
+        | date       |   Dividend |
+        |:-----------|-----------:|
+        | 2021-02-22 |       1.01 |
+        | 2021-05-24 |       1.06 |
+        | 2021-08-23 |       1.06 |
+        | 2021-11-22 |       1.06 |
+        | 2022-02-18 |       1.06 |
+        | 2022-05-23 |       1.13 |
+        | 2022-08-22 |       1.13 |
+        | 2022-11-21 |       1.13 |
+        | 2023-02-17 |       1.13 |
+        | 2023-05-22 |       1.19 |
+        | 2023-08-25 |       1.19 |
+        | 2023-11-20 |       1.19 |
+        | 2024-02-16 |       1.19 |
+        | 2024-05-20 |       1.24 |
+        | 2024-08-27 |       1.24 |
+        | 2024-11-26 |       1.24 |
+        | 2025-02-18 |       1.24 |
+        | 2025-05-27 |       1.3  |
+        | 2025-08-26 |       1.3  |
+        | 2025-11-25 |       1.3  |
         """
         if not self._api_key:
             logger.error(
@@ -2882,23 +2555,24 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["MSFT", "TSLA", "AMZN"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2022-08-01", quarterly=False,
-                                                                                                      end_date="2025-12-31",
+            ["XOM", "SHEL", "BP"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
         )
 
-        esg_scores = toolkit.get_esg_scores()
-
-        esg_scores.xs("MSFT", level=1, axis=1)
+        toolkit.get_esg_scores(show_columns=["ESG Score"])
         ```
 
         Which returns:
 
-        | date   |   Environmental Score |   Social Score |   Governance Score |   ESG Score |
-        |:-------|----------------------:|---------------:|-------------------:|------------:|
-        | 2022   |                 72.22 |          58.05 |              61.27 |       63.85 |
-        | 2023   |                 72.89 |          58.16 |              60.65 |       63.9  |
-        | 2024   |                 71.75 |          58.7  |              60.1  |       63.52 |
-        | 2025   |                 72.04 |          57.36 |              60.64 |       63.35 |
+        | date   |   ('ESG Score', 'XOM') |   ('ESG Score', 'SHEL') |   ('ESG Score', 'BP') |
+        |:-------|-----------------------:|------------------------:|----------------------:|
+        | 2021   |                  66.43 |                  nan    |                 66.14 |
+        | 2022   |                  68.75 |                   65.39 |                 67.54 |
+        | 2023   |                  69.98 |                   60.49 |                 70.49 |
+        | 2024   |                  68    |                   64.17 |                 62.26 |
+        | 2025   |                  68.75 |                   61.74 |                 64.47 |
         """
         if not self._api_key:
             logger.error(
@@ -2954,18 +2628,21 @@ class Toolkit:
 
     def get_market_risk_premium(self, overwrite: bool = False):
         """
-        Obtains the equity market risk premium by country -- the country default spread plus the
-        equity risk premium, following the approach popularized by Aswath Damodaran -- which is
-        widely used to calibrate country-specific costs of equity and discount rates in a
+        Obtains the equity risk premium by country -- the equity risk premium of a mature market
+        plus a country risk premium, the country's default spread scaled by the volatility of its
+        equities relative to its bonds, following the approach popularized by Aswath Damodaran --
+        which is widely used to calibrate country-specific costs of equity and discount rates in a
         multi-country setting.
+
+        In a cost of equity the premium is applied in one of two common ways: beta times the Total
+        Equity Risk Premium, or beta times the mature market premium with the Country Risk Premium
+        added on top. For a company that earns its revenue in several countries the premium is
+        often weighted by where the revenue comes from rather than by where the company is listed.
 
         Also known as: country risk premium, Damodaran equity risk premium.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The market risk premium by country, including the continent, Country
@@ -2987,16 +2664,22 @@ class Toolkit:
 
         market_risk_premium = toolkit.get_market_risk_premium()
 
-        market_risk_premium.loc[['United States', 'Germany', 'Brazil']]
+        market_risk_premium.loc[
+            ["United States", "Germany", "Japan", "Brazil", "India", "South Africa"],
+            ["Country Risk Premium", "Total Equity Risk Premium"],
+        ]
         ```
 
         Which returns:
 
-        | Country       | Continent     |   Country Risk Premium |   Total Equity Risk Premium |
-        |:--------------|:--------------|-----------------------:|----------------------------:|
-        | United States | North America |                 0.0023 |                      0.0446 |
-        | Germany       | Europe        |                 0      |                      0.0423 |
-        | Brazil        | South America |                 0.0324 |                      0.0747 |
+        | Country       |   Country Risk Premium |   Total Equity Risk Premium |
+        |:--------------|-----------------------:|----------------------------:|
+        | United States |                 0.0023 |                      0.0446 |
+        | Germany       |                 0      |                      0.0423 |
+        | Japan         |                 0.0091 |                      0.0514 |
+        | Brazil        |                 0.0324 |                      0.0747 |
+        | India         |                 0.0285 |                      0.0708 |
+        | South Africa  |                 0.039  |                      0.0813 |
         """
         if not self._api_key:
             logger.error(
@@ -3047,13 +2730,16 @@ class Toolkit:
         Note that this data is only available for CFTC-tracked futures markets. Tickers without a
         corresponding futures contract (e.g. most individual equities) return no data.
 
+        Positioning is usually read from the net position of the non-commercial traders (long
+        minus short), often as a share of open interest and against its own history: an extreme
+        reading means a crowded trade. Commercial traders are mostly hedgers whose positions mirror
+        their physical business, so a large commercial net short in a commodity is normal rather
+        than a bearish view. The report shows the positions of Tuesday and is published on Friday.
+
         Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data.
-
-        Raises:
-            ValueError: If an API key is not defined for FinancialModelingPrep.
 
         Returns:
             pd.DataFrame: The Commitment of Traders report for the specified tickers.
@@ -3064,28 +2750,24 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["NG", "GC"],
+            ["GC"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        commitment_of_traders = toolkit.get_commitment_of_traders()
-
-        commitment_of_traders.xs("NG", level=1, axis=1)[
-            ["Open Interest", "Non-Commercial Long", "Non-Commercial Short", "Commercial Long", "Commercial Short"]
-        ].tail()
+        toolkit.get_commitment_of_traders()[["Non-Commercial Long", "Non-Commercial Short"]].tail()
         ```
 
         Which returns:
 
-        | date                |   Open Interest |   Non-Commercial Long |   Non-Commercial Short |   Commercial Long |   Commercial Short |
-        |:--------------------|----------------:|----------------------:|-----------------------:|------------------:|-------------------:|
-        | 2024-01-30 00:00:00 |         1471807 |                279539 |                 382722 |            526952 |             450698 |
-        | 2024-02-06 00:00:00 |         1533041 |                301020 |                 415251 |            539246 |             456560 |
-        | 2024-02-13 00:00:00 |         1554063 |                334504 |                 471061 |            552780 |             453300 |
-        | 2024-02-20 00:00:00 |         1592460 |                356334 |                 510206 |            567791 |             452247 |
-        | 2024-02-27 00:00:00 |         1500882 |                326328 |                 467881 |            545380 |             433185 |
+        | date                |   Non-Commercial Long |   Non-Commercial Short |
+        |:--------------------|----------------------:|-----------------------:|
+        | 2025-12-02 00:00:00 |                261331 |                  43771 |
+        | 2025-12-09 00:00:00 |                268485 |                  44599 |
+        | 2025-12-16 00:00:00 |                280920 |                  46942 |
+        | 2025-12-23 00:00:00 |                290161 |                  49461 |
+        | 2025-12-30 00:00:00 |                275592 |                  44419 |
         """
         if not self._api_key:
             logger.error(
@@ -3172,24 +2854,29 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["JPM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_executives().loc["AAPL"].head()
+        toolkit.get_executives(show_columns=["Title", "Year Born"])
         ```
 
         Which returns:
 
-        | Name               | Title                                    |      Pay | Currency   | Gender   |   Year Born |   Title Since | Active   |
-        |:-------------------|:-----------------------------------------|---------:|:-----------|:---------|------------:|--------------:|:---------|
-        | John Ternus        | Chief Executive Officer & Director       | 16759518 | USD        | male     |        1976 |           nan | True     |
-        | Timothy D. Cook    | Executive Chairman of the Board          | 16759518 | USD        | male     |        1961 |           nan | True     |
-        | Deirdre O'Brien    | Senior Vice President of Retail & People |  5037867 | USD        | female   |        1967 |           nan | True     |
-        | Katherine L. Adams | Secretary                                |  5022482 | USD        | female   |        1964 |           nan | True     |
-        | Sabih Khan         | Senior VP & Chief Operating Officer      |  5021905 | USD        | male     |        1967 |           nan | True     |
+        | Name                 | Title                                                                             |   Year Born |
+        |:---------------------|:----------------------------------------------------------------------------------|------------:|
+        | Mary Callahan Erdoes | Chief Executive Officer of Asset & Wealth Management and Executive Vice President |        1967 |
+        | Douglas Petno        | CEO of the Commercial & Investment Bank and Co-President                          |        1966 |
+        | Troy Larry Rohrbaugh | CEO of Consumer & Community Banking and Co-President                              |        1970 |
+        | Jeremy Barnum        | Executive Vice President & Chief Financial Officer                                |        1973 |
+        | James Dimon          | Chairman & Chief Executive Officer                                                |        1956 |
+        | Jennifer A. Piepszak | Chief Operating Officer                                                           |        1971 |
+        | Daniel Eduardo Pinto | Vice Chairman                                                                     |        1963 |
+        | Todd Anthony Combs   | Head Strategic Investment Group of Security & Resiliency Initiative               |        1971 |
+        | Lori Ann Beer        | Global Chief Information Officer                                                  |        1968 |
+        | Elena A. Korablina   | MD, Firmwide Controller & Principal Accounting Officer                            |        1974 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3243,24 +2930,24 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["JPM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_executive_compensation().loc["AAPL"].head()
+        toolkit.get_executive_compensation(show_columns=["Salary", "Incentive Plan Compensation"])
         ```
 
         Which returns:
 
-        |                                                                              | Filing Date   | Accepted Date       |   Salary |   Bonus |   Stock Award |   Option Award |   Incentive Plan Compensation |   All Other Compensation |    Total | Link                                                                                             |
-        |:-----------------------------------------------------------------------------|:--------------|:--------------------|---------:|--------:|--------------:|---------------:|------------------------------:|-------------------------:|---------:|:-------------------------------------------------------------------------------------------------|
-        | (2025, 'Deirdre O’Brien Senior Vice President, Retail + People')             | 2026-01-08    | 2026-01-08 16:31:36 |  1000000 |       0 |      22009766 |              0 |                       4000000 |                    37867 | 27047633 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
-        | (2025, 'Kate Adams Senior Vice President, General Counsel and Secretary')    | 2026-01-08    | 2026-01-08 16:31:36 |  1000000 |       0 |      22009766 |              0 |                       4000000 |                    22482 | 27032248 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
-        | (2025, 'Kevan Parekh Senior Vice President, Chief Financial Officer')        | 2026-01-08    | 2026-01-08 16:31:36 |   891519 |       0 |      18433135 |              0 |                       3120317 |                    22338 | 22467309 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
-        | (2025, 'Luca Maestri Former Senior Vice President, Chief Financial Officer') | 2026-01-08    | 2026-01-08 16:31:36 |   819231 |       0 |      13003031 |              0 |                       1638462 |                    22204 | 15482928 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
-        | (2025, 'Sabih Khan Senior Vice President, Chief Operating Officer')          | 2026-01-08    | 2026-01-08 16:31:36 |  1000000 |       0 |      22009766 |              0 |                       4000000 |                    21905 | 27031671 | https://www.sec.gov/Archives/edgar/data/320193/000130817926000008/0001308179-26-000008-index.htm |
+        |                                                               |   Salary |   Incentive Plan Compensation |
+        |:--------------------------------------------------------------|---------:|------------------------------:|
+        | (2025, 'Douglas Petno Co-CEO, Commercial & Investment Bank')  |  1000000 |                      26500000 |
+        | (2025, 'James Dimon Chairman and CEO')                        |  1500000 |                      41500000 |
+        | (2025, 'Jeremy Barnum CFO')                                   |  1000000 |                      18500000 |
+        | (2025, 'Mary Callahan Erdoes CEO, Asset & Wealth Management') |  1000000 |                      30000000 |
+        | (2025, 'Troy Rohrbaugh Co-CEO, Commercial & Investment Bank') |  1000000 |                      26500000 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3299,10 +2986,12 @@ class Toolkit:
         self, overwrite: bool = False, show_columns: list[str] | None = None
     ):
         """
-        Obtain the notes each company has listed: the debt securities it issued, with
-        their coupon and maturity in the title (e.g. "1.625% Notes due 2026") and the
-        exchange they are listed on. This gives a quick view of a company's listed debt
-        and when it matures.
+        Obtain the securities other than common stock that each company has registered
+        for listing, mostly notes with their coupon and maturity in the title (e.g.
+        "1.625% Notes due 2026") and the exchange they are listed on. The list can
+        include notes that have since matured or been redeemed and other securities such
+        as depositary shares of preferred stock, so it shows which debt a company has
+        listed rather than what is outstanding today.
 
         Also known as: listed debt, bonds issued, debt securities.
 
@@ -3320,26 +3009,28 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["KO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_company_notes().loc["AAPL"]
+        toolkit.get_company_notes(show_columns=["Exchange"])
         ```
 
         Which returns:
 
-        | Title                 | Exchange   |    CIK |
-        |:----------------------|:-----------|-------:|
-        | 0.000% Notes due 2025 | NASDAQ     | 320193 |
-        | 1.625% Notes due 2026 | NASDAQ     | 320193 |
-        | 2.000% Notes due 2027 | NASDAQ     | 320193 |
-        | 1.375% Notes due 2029 | NASDAQ     | 320193 |
-        | 3.050% Notes due 2029 | NASDAQ     | 320193 |
-        | 0.500% Notes due 2031 | NASDAQ     | 320193 |
-        | 3.600% Notes due 2042 | NASDAQ     | 320193 |
+        | Title                        | Exchange   |
+        |:-----------------------------|:-----------|
+        | Floating Rate Notes Due 2019 | NYSE       |
+        | 0.000% Notes Due 2021        | NYSE       |
+        | 1.125% Notes Due 2022        | NYSE       |
+        | 0.75% Notes Due 2023         | NYSE       |
+        | 0.500% Notes Due 2024        | NYSE       |
+        | 1.875% Notes Due 2026        | NYSE       |
+        | 1.125% Notes Due 2027        | NYSE       |
+        | 1.625% Notes Due 2035        | NYSE       |
+        | 1.100% Notes Due 2036        | NYSE       |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3389,9 +3080,9 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["WMT", "AMZN"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2018-01-01",
+            start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
@@ -3400,16 +3091,13 @@ class Toolkit:
 
         Which returns:
 
-        | Period   |   AAPL |   MSFT |
-        |:---------|-------:|-------:|
-        | 2018     | 132000 | 131000 |
-        | 2019     | 137000 | 144000 |
-        | 2020     | 147000 | 163000 |
-        | 2021     | 154000 | 181000 |
-        | 2022     | 164000 | 221000 |
-        | 2023     | 161000 | 221000 |
-        | 2024     | 164000 | 228000 |
-        | 2025     | 166000 | 228000 |
+        | Period   |     WMT |    AMZN |
+        |:---------|--------:|--------:|
+        | 2021     | 2300000 | 1608000 |
+        | 2022     | 2300000 | 1541000 |
+        | 2023     | 2100000 | 1525000 |
+        | 2024     | 2100000 | 1556000 |
+        | 2025     | 2100000 | 1576000 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3460,24 +3148,20 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["META", "GOOGL", "BRK-B"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_shares_float()
+        toolkit.get_shares_float().loc[["Free Float"]]
         ```
 
         Which returns:
 
-        |                    | AAPL                                                                                | MSFT                                                                                |
-        |:-------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------|
-        | Date               | 2026-10-07 22:03:55                                                                 | 2026-10-08 00:12:55                                                                 |
-        | Free Float         | 0.9987879921341868                                                                  | 0.9985093936476086                                                                  |
-        | Float Shares       | 14576491739                                                                         | 7414481428                                                                          |
-        | Outstanding Shares | 14594180000                                                                         | 7425550000                                                                          |
-        | Source             | https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/aapl-20260627.htm | https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm |
+        |            |     META |    GOOGL |    BRK-B |
+        |:-----------|---------:|---------:|---------:|
+        | Free Float | 0.863739 | 0.893911 | 0.656007 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3529,23 +3213,23 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["CVX", "XOM"],
+            ["CVX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2020-01-01",
+            start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_mergers_acquisitions().loc["CVX"]
+        toolkit.get_mergers_acquisitions(show_columns=["Role", "Acquirer Name", "Target Name"])
         ```
 
         Which returns:
 
-        | Transaction Date   | Role     | Acquirer Symbol   | Acquirer Name   | Target Symbol   | Target Name      | Accepted Date       | Link                                                                            |
-        |:-------------------|:---------|:------------------|:----------------|:----------------|:-----------------|:--------------------|:--------------------------------------------------------------------------------|
-        | 2021-03-22         | Acquirer | CVX               | CHEVRON CORP    | NBLX            | NBLX             | 2021-03-22 14:02:22 | https://www.sec.gov/Archives/edgar/data/93410/000119312521089220/d153017ds4.htm |
-        | 2023-06-20         | Acquirer | CVX               | CHEVRON CORP    | PDCE            | PDC Energy, Inc. | 2023-06-20 16:12:40 | https://www.sec.gov/Archives/edgar/data/93410/000119312523170147/d512919ds4.htm |
-        | 2023-08-03         | Acquirer | CVX               | CHEVRON CORP    | nan             | PDC              | 2023-08-03 16:06:24 | https://www.sec.gov/Archives/edgar/data/93410/000119312523202848/d528944ds4.htm |
-        | 2024-02-26         | Acquirer | CVX               | CHEVRON CORP    | nan             | Hess             | 2024-02-26 16:25:29 | https://www.sec.gov/Archives/edgar/data/93410/000119312524046223/d576159ds4.htm |
+        | Transaction Date    | Role     | Acquirer Name   | Target Name      |
+        |:--------------------|:---------|:----------------|:-----------------|
+        | 2021-03-22 00:00:00 | Acquirer | CHEVRON CORP    | NBLX             |
+        | 2023-06-20 00:00:00 | Acquirer | CHEVRON CORP    | PDC Energy, Inc. |
+        | 2023-08-03 00:00:00 | Acquirer | CHEVRON CORP    | PDC              |
+        | 2024-02-26 00:00:00 | Acquirer | CHEVRON CORP    | Hess             |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3612,29 +3296,26 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "NVDA"],
+            ["NVDA", "AAPL", "TSLA", "GOOGL", "AMZN"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2000-01-01",
+            start_date="2020-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_stock_splits()
+        toolkit.get_stock_splits()[["Numerator", "Denominator"]]
         ```
 
         Which returns:
 
-        |                                            |   Numerator |   Denominator | Split Type   |
-        |:-------------------------------------------|------------:|--------------:|:-------------|
-        | ('AAPL', Timestamp('2000-06-21 00:00:00')) |           2 |             1 | stock-split  |
-        | ('AAPL', Timestamp('2005-02-28 00:00:00')) |           2 |             1 | stock-split  |
-        | ('AAPL', Timestamp('2014-06-09 00:00:00')) |           7 |             1 | stock-split  |
-        | ('AAPL', Timestamp('2020-08-31 00:00:00')) |           4 |             1 | stock-split  |
-        | ('NVDA', Timestamp('2000-06-27 00:00:00')) |           2 |             1 | stock-split  |
-        | ('NVDA', Timestamp('2001-09-12 00:00:00')) |           2 |             1 | stock-split  |
-        | ('NVDA', Timestamp('2006-04-07 00:00:00')) |           2 |             1 | stock-split  |
-        | ('NVDA', Timestamp('2007-09-11 00:00:00')) |           3 |             2 | stock-split  |
-        | ('NVDA', Timestamp('2021-07-20 00:00:00')) |           4 |             1 | stock-split  |
-        | ('NVDA', Timestamp('2024-06-10 00:00:00')) |          10 |             1 | stock-split  |
+        |                         |   Numerator |   Denominator |
+        |:------------------------|------------:|--------------:|
+        | ('NVDA', '2021-07-20')  |           4 |             1 |
+        | ('NVDA', '2024-06-10')  |          10 |             1 |
+        | ('AAPL', '2020-08-31')  |           4 |             1 |
+        | ('TSLA', '2020-08-31')  |           5 |             1 |
+        | ('TSLA', '2022-08-25')  |           3 |             1 |
+        | ('GOOGL', '2022-07-18') |          20 |             1 |
+        | ('AMZN', '2022-06-06')  |          20 |             1 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3701,23 +3382,27 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["META"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
+            start_date="2024-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_insider_trade_statistics().loc["AAPL"]
+        toolkit.get_insider_trade_statistics(show_columns=["Acquired Transactions", "Disposed Transactions"])
         ```
 
         Which returns:
 
-        | Period   |   Acquired Transactions |   Disposed Transactions |   Acquired/Disposed Ratio |   Total Acquired |   Total Disposed |   Average Acquired |   Average Disposed |   Total Purchases |   Total Sales |
-        |:---------|------------------------:|------------------------:|--------------------------:|-----------------:|-----------------:|-------------------:|-------------------:|------------------:|--------------:|
-        | 2025Q1   |                      14 |                       8 |                    1.75   |            19255 |  12128           |            1375.36 |             1516   |                 0 |             1 |
-        | 2025Q2   |                       6 |                      38 |                    0.1579 |           466004 | 892618           |           77667.3  |            23489.9 |                 0 |            13 |
-        | 2025Q3   |                       6 |                       3 |                    2      |           391455 | 125256           |           65242.5  |            41752   |                 0 |             2 |
-        | 2025Q4   |                       6 |                      33 |                    0.1818 |           578243 |      1.11303e+06 |           96373.8  |            33728.1 |                 0 |            15 |
+        | Period   |   Acquired Transactions |   Disposed Transactions |
+        |:---------|------------------------:|------------------------:|
+        | 2024Q1   |                     206 |                    1965 |
+        | 2024Q2   |                      59 |                     322 |
+        | 2024Q3   |                      38 |                     664 |
+        | 2024Q4   |                      56 |                     487 |
+        | 2025Q1   |                      77 |                     992 |
+        | 2025Q2   |                      67 |                     194 |
+        | 2025Q3   |                      50 |                     271 |
+        | 2025Q4   |                      41 |                      82 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3784,20 +3469,46 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2026-09-01")
+        toolkit = Toolkit(
+            ["NKE"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-10-01",
+            end_date="2025-12-31",
+        )
 
-        toolkit.get_stock_grades().loc["AAPL"].tail()
+        toolkit.get_stock_grades()
         ```
 
         Which returns:
 
-        |                                                          | Previous Grade   | New Grade   | Action   |
-        |:---------------------------------------------------------|:-----------------|:------------|:---------|
-        | (Timestamp('2026-09-18 00:00:00'), 'Evercore ISI Group') | Outperform       | Outperform  | Maintain |
-        | (Timestamp('2026-09-23 00:00:00'), 'B of A Securities')  | Buy              | Buy         | Maintain |
-        | (Timestamp('2026-09-29 00:00:00'), 'Morgan Stanley')     | Overweight       | Overweight  | Maintain |
-        | (Timestamp('2026-10-01 00:00:00'), 'Morgan Stanley')     | Overweight       | Overweight  | Maintain |
-        | (Timestamp('2026-10-01 00:00:00'), 'Needham')            | Hold             | Hold        | Maintain |
+        |                                         | Previous Grade   | New Grade      | Action   |
+        |:----------------------------------------|:-----------------|:---------------|:---------|
+        | ('2025-10-01', 'Barclays')              | Equal Weight     | Equal Weight   | Maintain |
+        | ('2025-10-01', 'JP Morgan')             | Overweight       | Overweight     | Maintain |
+        | ('2025-10-01', 'Morgan Stanley')        | Equal Weight     | Equal Weight   | Maintain |
+        | ('2025-10-01', 'Needham')               | Buy              | Buy            | Maintain |
+        | ('2025-10-01', 'Piper Sandler')         | Overweight       | Overweight     | Maintain |
+        | ('2025-10-01', 'Stifel')                | Hold             | Hold           | Maintain |
+        | ('2025-10-01', 'Telsey Advisory Group') | Market Perform   | Market Perform | Maintain |
+        | ('2025-10-01', 'Truist Securities')     | Buy              | Buy            | Maintain |
+        | ('2025-10-02', 'Keybanc')               | Sector Weight    | Overweight     | Upgrade  |
+        | ('2025-11-13', 'Wells Fargo')           | Equal Weight     | Overweight     | Upgrade  |
+        | ('2025-12-09', 'Citigroup')             | Neutral          | Neutral        | Maintain |
+        | ('2025-12-10', 'Telsey Advisory Group') | Market Perform   | Market Perform | Maintain |
+        | ('2025-12-12', 'BTIG')                  | Buy              | Buy            | Maintain |
+        | ('2025-12-19', 'B of A Securities')     | Buy              | Buy            | Maintain |
+        | ('2025-12-19', 'Barclays')              | Equal Weight     | Equal Weight   | Maintain |
+        | ('2025-12-19', 'Bernstein')             | Outperform       | Outperform     | Maintain |
+        | ('2025-12-19', 'Citigroup')             | Neutral          | Neutral        | Maintain |
+        | ('2025-12-19', 'Goldman Sachs')         | Buy              | Buy            | Maintain |
+        | ('2025-12-19', 'Guggenheim')            | Buy              | Buy            | Maintain |
+        | ('2025-12-19', 'Needham')               | Buy              | Buy            | Maintain |
+        | ('2025-12-19', 'Piper Sandler')         | Overweight       | Overweight     | Maintain |
+        | ('2025-12-19', 'Stifel')                | Hold             | Hold           | Maintain |
+        | ('2025-12-19', 'Telsey Advisory Group') | Market Perform   | Market Perform | Maintain |
+        | ('2025-12-19', 'Truist Securities')     | Buy              | Buy            | Maintain |
+        | ('2025-12-19', 'UBS')                   | Neutral          | Neutral        | Maintain |
+        | ('2025-12-19', 'Wells Fargo')           | Overweight       | Overweight     | Maintain |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3862,24 +3573,29 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["QQQ", "VTI"],
+            ["QQQ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_etf_holdings().loc["QQQ"].head()
+        toolkit.get_etf_holdings(show_columns=["Name", "Weight"], limit=10)
         ```
 
         Which returns:
 
-        | Asset   | Name                       | ISIN         | CUSIP     |      Shares |    Weight |   Market Value | Updated At          |
-        |:--------|:---------------------------|:-------------|:----------|------------:|----------:|---------------:|:--------------------|
-        | NVDA    | NVIDIA Corp                | US67066G1040 | 67066G104 | 1.80964e+08 | 0.0850518 |    4.32937e+10 | 2026-10-07 14:14:58 |
-        | AAPL    | Apple Inc                  | US0378331005 | 037833100 | 1.09586e+08 | 0.0718253 |    3.65611e+10 | 2026-10-07 14:14:58 |
-        | MSFT    | Microsoft Corp             | US5949181045 | 594918104 | 5.57574e+07 | 0.057978  |    2.95124e+10 | 2026-10-07 14:14:58 |
-        | MU      | Micron Technology Inc      | US5951121038 | 595112103 | 2.34119e+07 | 0.0480888 |    2.44785e+10 | 2026-10-07 14:14:58 |
-        | AMD     | Advanced Micro Devices Inc | US0079031078 | 007903107 | 3.38406e+07 | 0.043174  |    2.19767e+10 | 2026-10-07 14:14:58 |
+        | Asset   | Name                       |    Weight |
+        |:--------|:---------------------------|----------:|
+        | NVDA    | NVIDIA Corp                | 0.0814367 |
+        | AAPL    | Apple Inc                  | 0.0809227 |
+        | MSFT    | Microsoft Corp             | 0.061611  |
+        | AMZN    | Amazon.com Inc             | 0.043001  |
+        | MU      | Micron Technology Inc      | 0.0425198 |
+        | AMD     | Advanced Micro Devices Inc | 0.0364481 |
+        | TSLA    | Tesla Inc                  | 0.0313315 |
+        | META    | Meta Platforms Inc         | 0.0307205 |
+        | GOOGL   | Alphabet Inc               | 0.0302926 |
+        | GOOG    | Alphabet Inc               | 0.0282277 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -3943,34 +3659,23 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["QQQ", "VTI"],
+            ["VOO", "QQQ", "VTI"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_etf_information().drop(["Description", "Website"])
+        toolkit.get_etf_information().loc[["ETF Company", "Inception Date", "Expense Ratio", "Holdings Count"]]
         ```
 
         Which returns:
 
-        |                         | QQQ                         | VTI                                         |
-        |:------------------------|:----------------------------|:--------------------------------------------|
-        | Name                    | Invesco QQQ Trust, Series 1 | Vanguard Morningstar Total Stock Market ETF |
-        | ISIN                    | US46090E1038                | US9229087690                                |
-        | CUSIP                   | 46090E103                   | 922908769                                   |
-        | Asset Class             | Equity                      | Large Cap Equity                            |
-        | Domicile                | US                          | US                                          |
-        | ETF Company             | Invesco                     | Vanguard                                    |
-        | Inception Date          | 1999-03-10                  | 2001-05-24                                  |
-        | Expense Ratio           | 0.0018                      | 0.0003                                      |
-        | Assets Under Management | 508484484641                | 2300000000000                               |
-        | Average Volume          | 39278732                    | 3259438                                     |
-        | NAV                     | 759.5                       | 381.13                                      |
-        | NAV Currency            | USD                         | USD                                         |
-        | Holdings Count          | 102                         | 3598                                        |
-        | Actively Trading        | True                        | True                                        |
-        | Updated At              | 2026-10-08T01:48:10.006Z    | 2026-10-08T02:22:30.046Z                    |
+        |                | VOO        | QQQ        | VTI        |
+        |:---------------|:-----------|:-----------|:-----------|
+        | ETF Company    | Vanguard   | Invesco    | Vanguard   |
+        | Inception Date | 2010-09-07 | 1999-03-10 | 2001-05-24 |
+        | Expense Ratio  | 0.0003     | 0.0018     | 0.0003     |
+        | Holdings Count | 505        | 102        | 3598       |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4014,24 +3719,29 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["QQQ", "VTI"],
+            ["VEA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_etf_country_weightings().head()
+        toolkit.get_etf_country_weightings().head(10)
         ```
 
         Which returns:
 
-        | Country        |    QQQ |    VTI |
-        |:---------------|-------:|-------:|
-        | United States  | 0.9445 | 0.9733 |
-        | United Kingdom | 0.0164 | 0.0048 |
-        | Netherlands    | 0.0135 | 0.0003 |
-        | Canada         | 0.0096 | 0.0007 |
-        | Singapore      | 0.0074 | 0.0025 |
+        | Country        |    VEA |
+        |:---------------|-------:|
+        | Japan          | 0.2191 |
+        | United Kingdom | 0.1108 |
+        | Canada         | 0.1077 |
+        | Korea          | 0.0919 |
+        | Switzerland    | 0.0659 |
+        | France         | 0.0657 |
+        | Germany        | 0.0622 |
+        | Australia      | 0.0562 |
+        | Netherlands    | 0.04   |
+        | Spain          | 0.0291 |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4083,7 +3793,7 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["QQQ", "VTI"],
+            ["VTI", "QQQ"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
@@ -4094,20 +3804,20 @@ class Toolkit:
 
         Which returns:
 
-        | Sector                 |      QQQ |      VTI |
-        |:-----------------------|---------:|---------:|
-        | Technology             | 0.603104 | 0.365041 |
-        | Communication Services | 0.117791 | 0.086689 |
-        | Consumer Cyclical      | 0.098732 | 0.089865 |
-        | Consumer Defensive     | 0.057355 | 0.042514 |
-        | Industrials            | 0.055378 | 0.088185 |
-        | Healthcare             | 0.036579 | 0.099808 |
-        | Utilities              | 0.010639 | 0.019731 |
-        | Basic Materials        | 0.009198 | 0.022242 |
-        | Cash & Others          | 0.004737 | 0.001929 |
-        | Energy                 | 0.004538 | 0.037377 |
-        | Financial Services     | 0.001949 | 0.123878 |
-        | Real Estate            | 0        | 0.022741 |
+        | Sector                 |    VTI |      QQQ |
+        |:-----------------------|-------:|---------:|
+        | Technology             | 0.381  | 0.585807 |
+        | Financial Services     | 0.1154 | 0.002088 |
+        | Healthcare             | 0.1002 | 0.04381  |
+        | Communication Services | 0.0923 | 0.115931 |
+        | Industrials            | 0.0881 | 0.057552 |
+        | Consumer Cyclical      | 0.0871 | 0.105199 |
+        | Consumer Defensive     | 0.0418 | 0.062559 |
+        | Energy                 | 0.0356 | 0.004774 |
+        | Real Estate            | 0.0216 | 0        |
+        | Utilities              | 0.0189 | 0.010998 |
+        | Basic Materials        | 0.018  | 0.00985  |
+        | Cash & Others          | 0      | 0.00143  |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4177,23 +3887,22 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["AAPL", "MSFT"],
+            ["NVDA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        transcripts = toolkit.get_earnings_call_transcripts()
+        transcripts = toolkit.get_earnings_call_transcripts(fiscal_period="2025Q4")
 
-        transcripts["Transcript"].str[:100]
+        transcripts["Transcript"].str[:80]
         ```
 
         Which returns:
 
-        |                    | Transcript                                                                                           |
-        |:-------------------|:-----------------------------------------------------------------------------------------------------|
-        | ('AAPL', '2026Q3') | Suhasini Chandramouli: Good afternoon, welcome to the Apple Q3 fiscal year 2026 earnings conference  |
-        | ('MSFT', '2026Q4') | Operator: Greetings, and welcome to the Microsoft Fiscal Year 2026 Fourth Quarter Earnings Conferenc |
+        | Fiscal Period   | Transcript                                                                       |
+        |:----------------|:---------------------------------------------------------------------------------|
+        | 2025Q4          | Christa: Good afternoon. My name is Christa, and I will be your conference opera |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4251,7 +3960,7 @@ class Toolkit:
             - Timezone: The timezone the instrument is traded in.
             - Exchange Timezone Name: The name of the timezone the instrument is traded in.
 
-        Also known as: key statistics over time, historical key metrics.
+        Also known as: listing details, instrument information, exchange and currency.
 
         Returns:
             pd.DataFrame: A DataFrame containing the statistics for each ticker.
@@ -4261,28 +3970,26 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        companies = Toolkit(
-            ["AMZN", "^HSI", "IWDA.AS", "0P0000Z8RO.T"],
+        toolkit = Toolkit(
+            ["ASML.AS", "ASML"],
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        companies.get_historical_statistics()
+        toolkit.get_historical_statistics().loc[
+            ["Currency", "Exchange Name", "Instrument Type", "First Trade Date", "Exchange Timezone Name"]
+        ]
         ```
 
         Which returns:
 
-        |                        | AMZN             | ^HSI           | IWDA.AS          | 0P0000Z8RO.T   |
-        |:-----------------------|:-----------------|:---------------|:-----------------|:---------------|
-        | Currency               | USD              | HKD            | EUR              | JPY            |
-        | Symbol                 | AMZN             | ^HSI           | IWDA.AS          | 0P0000Z8RO.T   |
-        | Exchange Name          | NMS              | HKG            | AMS              | JPX            |
-        | Instrument Type        | EQUITY           | INDEX          | ETF              | MUTUALFUND     |
-        | First Trade Date       | 1997-05-15       | 1986-12-31     | 2009-09-25       | 2018-01-04     |
-        | Regular Market Time    | 2026-10-07       | 2026-10-08     | 2026-10-08       | 2026-10-07     |
-        | GMT Offset             | -14400           | 28800          | 7200             | 32400          |
-        | Timezone               | EDT              | HKT            | CEST             | JST            |
-        | Exchange Timezone Name | America/New_York | Asia/Hong_Kong | Europe/Amsterdam | Asia/Tokyo     |
+        |                        | ASML.AS          | ASML             |
+        |:-----------------------|:-----------------|:-----------------|
+        | Currency               | EUR              | USD              |
+        | Exchange Name          | AMS              | NMS              |
+        | Instrument Type        | EQUITY           | EQUITY           |
+        | First Trade Date       | 1998-07-20       | 1995-03-15       |
+        | Exchange Timezone Name | Europe/Amsterdam | America/New_York |
         """
 
         if self._historical_statistics.empty:
@@ -4307,9 +4014,14 @@ class Toolkit:
         show_errors: bool = False,
     ):
         """
-        Retrieve daily, weekly, monthly, quarterly or yearly treasury data. This can be from FinancialModelingPrep
-        or from YahooFinance. FinancialModelingPrep is by far a more extensive dataset containing daily data from
-        1 month to 30 years. YahooFinance only contains daily data for 5, 10 and 30 years but is a free alternative.
+        Retrieve daily, weekly, monthly, quarterly or yearly US Treasury yields for four maturities, 13 weeks,
+        5 years, 10 years and 30 years, from FinancialModelingPrep or, as a free alternative, YahooFinance. With
+        the default divide_ohlc_by of 100 the yields are returned as decimals (0.042 is 4.2%).
+
+        A week, month, quarter or year holds the first (Open), highest, lowest and last (Close) yield of
+        the period. The risk free rate the Performance, Risk and Models modules use for such a period is
+        instead the average of the daily yields within it, which approximates what a holder earned over
+        the period rather than where the yield happened to close at its end.
 
         Also known as: US Treasury yields, yield curve, treasury rates.
 
@@ -4318,9 +4030,9 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            risk_free_rate (str | None, optional): The maturity to return as the risk free rate
-                ('13w', '5y', '10y' or '30y'). Defaults to None, which uses the maturity set on
-                the Toolkit.
+            risk_free_rate (str | None, optional): One maturity to return ('13w', '5y', '10y' or
+                '30y'). Defaults to None, which returns all four. The Toolkit's own risk free rate
+                stays the maturity set on the Toolkit either way.
             divide_ohlc_by (int | float | None, optional): A value to divide the yields by. Treasury
                 yields are published in percent, so this defaults to 100 to return decimals.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -4339,26 +4051,32 @@ class Toolkit:
         ```python
         from financetoolkit import Toolkit
 
-        companies = Toolkit(
+        toolkit = Toolkit(
             ["AAPL", "MSFT"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2023-08-10",
+            start_date="2025-01-01",
             end_date="2025-12-31",
         )
 
-        companies.get_treasury_data()
+        toolkit.get_treasury_data(period="monthly")["Close"]
         ```
 
         Which returns:
 
-        | date       |   ('Open', '13 Week') |   ('Open', '5 Year') |   ('Open', '10 Year') |   ('Open', '30 Year') |   ('High', '13 Week') |   ('High', '5 Year') |
-        |:-----------|----------------------:|---------------------:|----------------------:|----------------------:|----------------------:|---------------------:|
-        | 2025-12-24 |                0.0355 |               0.0374 |                0.0417 |                0.0483 |                0.0356 |               0.0374 |
-        | 2025-12-26 |                0.0355 |               0.0369 |                0.0412 |                0.0479 |                0.0355 |               0.0371 |
-        | 2025-12-29 |                0.0354 |               0.0368 |                0.0412 |                0.048  |                0.0354 |               0.0369 |
-        | 2025-12-30 |                0.0356 |               0.037  |                0.0414 |                0.0483 |                0.0356 |               0.037  |
-        | 2025-12-31 |                0.0354 |               0.0368 |                0.0413 |                0.0481 |                0.0355 |               0.0373 |
-
+        | Date    |   13 Week |   5 Year |   10 Year |   30 Year |
+        |:--------|----------:|---------:|----------:|----------:|
+        | 2025-01 |    0.0419 |   0.0436 |    0.0457 |    0.0481 |
+        | 2025-02 |    0.0419 |   0.0403 |    0.0423 |    0.0452 |
+        | 2025-03 |    0.0419 |   0.0398 |    0.0425 |    0.0461 |
+        | 2025-04 |    0.0419 |   0.0375 |    0.0418 |    0.0468 |
+        | 2025-05 |    0.0423 |   0.0398 |    0.0442 |    0.0493 |
+        | 2025-06 |    0.0419 |   0.038  |    0.0423 |    0.0478 |
+        | 2025-07 |    0.0424 |   0.0396 |    0.0436 |    0.0489 |
+        | 2025-08 |    0.0404 |   0.037  |    0.0423 |    0.0492 |
+        | 2025-09 |    0.0385 |   0.0373 |    0.0415 |    0.0473 |
+        | 2025-10 |    0.0372 |   0.0372 |    0.041  |    0.0467 |
+        | 2025-11 |    0.037  |   0.036  |    0.0402 |    0.0466 |
+        | 2025-12 |    0.0355 |   0.0372 |    0.0416 |    0.0484 |
         """
         risk_free_names = {
             "13w": "13 Week",
@@ -4373,27 +4091,25 @@ class Toolkit:
             "^TYX": "30 Year",
         }
 
-        if risk_free_rate:
-            if risk_free_rate not in ["13w", "5y", "10y", "30y"]:
-                raise ValueError(
-                    "Please choose from 13w, 5y, 10y or 30y as risk_free_rate."
-                )
-
-            risk_free_rate = (
-                "^IRX"
-                if risk_free_rate == "13w"
-                else (
-                    "^FVX"
-                    if risk_free_rate == "5y"
-                    else ("^TNX" if risk_free_rate == "10y" else "^TYX")
-                )
+        if risk_free_rate and risk_free_rate not in risk_free_names:
+            raise ValueError(
+                "Please choose from 13w, 5y, 10y or 30y as risk_free_rate."
             )
 
-        risk_free_rate_tickers = (
-            ["^IRX", "^FVX", "^TNX", "^TYX"] if not risk_free_rate else [risk_free_rate]
-        )
-
+        # Every maturity is retrieved and kept, so the Toolkit's own risk free rate stays
+        # available; risk_free_rate only narrows what is returned.
+        requested_maturity = risk_free_names[risk_free_rate] if risk_free_rate else None
+        risk_free_rate_tickers = list(treasury_names)
         risk_free_rate = risk_free_names[self._risk_free_rate]
+
+        def select(treasury_data: pd.DataFrame) -> pd.DataFrame:
+            treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
+            if requested_maturity is None:
+                return treasury_data
+            return treasury_data.loc[
+                :,
+                treasury_data.columns.get_level_values(1) == requested_maturity,
+            ]
 
         specific_rates = (
             [
@@ -4459,7 +4175,7 @@ class Toolkit:
                 return pd.DataFrame()
 
         if period == "daily":
-            return self._daily_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._daily_treasury_data)
         if period == "weekly":
             self._weekly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4469,11 +4185,14 @@ class Toolkit:
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
-            self._weekly_risk_free_rate = self._weekly_treasury_data.xs(
-                risk_free_rate, level=1, axis=1
+            self._weekly_risk_free_rate = self._average_risk_free_rate(
+                period=period,
+                treasury_data=self._weekly_treasury_data,
+                risk_free_rate=risk_free_rate,
+                rounding=rounding,
             )
 
-            return self._weekly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._weekly_treasury_data)
         if period == "monthly":
             self._monthly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4483,11 +4202,14 @@ class Toolkit:
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
-            self._monthly_risk_free_rate = self._monthly_treasury_data.xs(
-                risk_free_rate, level=1, axis=1
+            self._monthly_risk_free_rate = self._average_risk_free_rate(
+                period=period,
+                treasury_data=self._monthly_treasury_data,
+                risk_free_rate=risk_free_rate,
+                rounding=rounding,
             )
 
-            return self._monthly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._monthly_treasury_data)
         if period == "quarterly":
             self._quarterly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4497,13 +4219,14 @@ class Toolkit:
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
-            self._quarterly_risk_free_rate = self._quarterly_treasury_data.xs(
-                risk_free_rate, level=1, axis=1
+            self._quarterly_risk_free_rate = self._average_risk_free_rate(
+                period=period,
+                treasury_data=self._quarterly_treasury_data,
+                risk_free_rate=risk_free_rate,
+                rounding=rounding,
             )
 
-            return self._quarterly_treasury_data.loc[
-                self._start_date : self._end_date, :
-            ]
+            return select(self._quarterly_treasury_data)
         if period == "yearly":
             self._yearly_treasury_data = _convert_daily_to_other_period(
                 period=period,
@@ -4513,11 +4236,14 @@ class Toolkit:
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
-            self._yearly_risk_free_rate = self._yearly_treasury_data.xs(
-                risk_free_rate, level=1, axis=1
+            self._yearly_risk_free_rate = self._average_risk_free_rate(
+                period=period,
+                treasury_data=self._yearly_treasury_data,
+                risk_free_rate=risk_free_rate,
+                rounding=rounding,
             )
 
-            return self._yearly_treasury_data.loc[self._start_date : self._end_date, :]
+            return select(self._yearly_treasury_data)
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
@@ -4561,7 +4287,9 @@ class Toolkit:
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
             overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            rounding (int): Defines the number of decimal places to round the returned data to. Defaults
+            to None, which uses the rounding of the Toolkit. The rates the financial statements are
+            translated with are never rounded.
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
 
@@ -4588,18 +4316,18 @@ class Toolkit:
 
         Which returns:
 
-        | Date    |   Open |   High |    Low |   Close |   Adj Close |   Volume |   Dividends |   Return |   Cumulative Return |
-        |:--------|-------:|-------:|-------:|--------:|------------:|---------:|------------:|---------:|--------------------:|
-        | 2025-03 | 1.0414 | 1.0954 | 1.039  |  1.0824 |      1.0824 |        0 |           0 |   0.0413 |              0.8931 |
-        | 2025-04 | 1.0819 | 1.1547 | 1.078  |  1.1389 |      1.1389 |        0 |           0 |   0.0522 |              0.9397 |
-        | 2025-05 | 1.1325 | 1.1419 | 1.1075 |  1.1378 |      1.1378 |        0 |           0 |  -0.001  |              0.9388 |
-        | 2025-06 | 1.1353 | 1.1772 | 1.1356 |  1.1727 |      1.1727 |        0 |           0 |   0.0307 |              0.9676 |
-        | 2025-07 | 1.1787 | 1.183  | 1.1407 |  1.1429 |      1.1429 |        0 |           0 |  -0.0254 |              0.943  |
-        | 2025-08 | 1.1424 | 1.1731 | 1.1395 |  1.1682 |      1.1682 |        0 |           0 |   0.0221 |              0.9639 |
-        | 2025-09 | 1.1692 | 1.1873 | 1.161  |  1.1731 |      1.1731 |        0 |           0 |   0.0042 |              0.9679 |
-        | 2025-10 | 1.1736 | 1.1779 | 1.1524 |  1.1572 |      1.1572 |        0 |           0 |  -0.0136 |              0.9548 |
-        | 2025-11 | 1.1528 | 1.1654 | 1.147  |  1.16   |      1.16   |        0 |           0 |   0.0024 |              0.9571 |
-        | 2025-12 | 1.1602 | 1.1809 | 1.159  |  1.1747 |      1.1747 |        0 |           0 |   0.0127 |              0.9692 |
+        | Date    |   Open |   High |    Low |   Close |   Adj Close |      Volume |   Return |   Cumulative Return |
+        |:--------|-------:|-------:|-------:|--------:|------------:|------------:|---------:|--------------------:|
+        | 2025-03 | 1.0402 | 1.0954 | 1.0388 |  1.0815 |        1.08 | 1.1265e+07  |   0.0385 |              0.8926 |
+        | 2025-04 | 1.0815 | 1.1573 | 1.0778 |  1.1328 |        1.13 | 1.3243e+07  |   0.0463 |              0.9339 |
+        | 2025-05 | 1.1328 | 1.1422 | 1.1065 |  1.1346 |        1.13 | 9.02118e+06 |   0      |              0.9339 |
+        | 2025-06 | 1.1346 | 1.1788 | 1.1345 |  1.1787 |        1.18 | 8.07454e+06 |   0.0442 |              0.9752 |
+        | 2025-07 | 1.1787 | 1.183  | 1.1401 |  1.1415 |        1.14 | 7.03696e+06 |  -0.0339 |              0.9421 |
+        | 2025-08 | 1.1417 | 1.1743 | 1.1392 |  1.1707 |        1.17 | 3.44184e+06 |   0.0263 |              0.9669 |
+        | 2025-09 | 1.1696 | 1.1919 | 1.1608 |  1.1734 |        1.17 | 3.49176e+06 |   0      |              0.9669 |
+        | 2025-10 | 1.1736 | 1.1779 | 1.1522 |  1.1536 |        1.15 | 4.08101e+06 |  -0.0171 |              0.9504 |
+        | 2025-11 | 1.153  | 1.1656 | 1.1469 |  1.1601 |        1.16 | 3.2838e+06  |   0.0087 |              0.9587 |
+        | 2025-12 | 1.1594 | 1.1808 | 1.1589 |  1.1746 |        1.17 | 2.67505e+06 |   0.0086 |              0.9669 |
         """
         if not self._currencies or overwrite:
             if self._historical_statistics.empty:
@@ -4652,7 +4380,10 @@ class Toolkit:
                     return_column=return_column,
                     include_dividends=False,
                     fill_nan=fill_nan,
-                    rounding=rounding if rounding is not None else self._rounding,
+                    # Kept unrounded: the statements are translated from these rates and a rate
+                    # such as KRWUSD or VNDUSD loses most (or all) of its value at four decimals.
+                    # Only what this method returns is rounded.
+                    rounding=None,
                     sleep_timer=self._sleep_timer,
                     show_ticker_seperation=show_ticker_seperation,
                     log_message="Obtaining currency exchange data",
@@ -4733,9 +4464,12 @@ class Toolkit:
                 )
 
         if period == "daily":
-            historical_data = self._daily_exchange_rate_data.loc[
-                self._start_date : self._end_date, :
-            ]
+            historical_data = apply_rounding(
+                self._daily_exchange_rate_data.loc[
+                    self._start_date : self._end_date, :
+                ],
+                rounding if rounding is not None else self._rounding,
+            )
             # The first row of the window has no preceding observation, so its Return stays NaN; Cumulative Return is already anchored at 1 there by its own calculation, so nothing depends on fabricating a zero.
 
             if len(self._currencies) == 1:
@@ -4846,6 +4580,9 @@ class Toolkit:
         company's financial position at a specific point in time. Therefore, trailing results are not
         available for this statement.
 
+        With convert_currency, the statement is converted to the currency of the historical data at the
+        closing rate, the exchange rate at the end of each period (IAS 21.39).
+
         Also known as: assets, liabilities, shareholders equity, financial position.
 
         Args:
@@ -4859,7 +4596,7 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the data to.
             growth (bool): Defines whether to return the growth of the data.
             lag (int | list[int]): Defines the number of periods to lag the growth data by.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            E.g. 4 with quarterly data gives the growth against the same quarter a year earlier.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -4872,75 +4609,22 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["MSFT", "MU"],
+            ["NEE", "DUK", "SO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            quarterly=True,
-            start_date='2022-05-01',
+            start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        balance_sheet_statements = toolkit.get_balance_sheet_statement()
-
-        balance_sheet_statements.loc['MU']
+        toolkit.get_balance_sheet_statement(show_columns=["Total Debt"])
         ```
 
         Which returns:
 
-        |                                           |      2022Q2 |      2022Q3 |      2022Q4 |      2023Q1 |      2023Q2 |
-        |:------------------------------------------|------------:|------------:|------------:|------------:|------------:|
-        | Cash and Cash Equivalents                 |  9.157e+09  |  8.262e+09  |  9.574e+09  |  9.798e+09  |  9.298e+09  |
-        | Short Term Investments                    |  1.07e+09   |  1.069e+09  |  1.007e+09  |  1.02e+09   |  1.054e+09  |
-        | Cash and Short Term Investments           |  1.0227e+10 |  9.331e+09  |  1.0581e+10 |  1.0818e+10 |  1.0352e+10 |
-        | Accounts Receivable                       |  5.896e+09  |  4.765e+09  |  2.875e+09  |  1.891e+09  |  2.042e+09  |
-        | Other Receivables                         |  3.33e+08   |  3.65e+08   |  4.43e+08   |  3.87e+08   |  3.87e+08   |
-        | Net Receivables                           |  6.229e+09  |  5.13e+09   |  3.318e+09  |  2.278e+09  |  2.429e+09  |
-        | Inventory                                 |  5.629e+09  |  6.663e+09  |  8.359e+09  |  8.129e+09  |  8.238e+09  |
-        | Prepaids                                  |  0          |  0          |  0          |  0          |  0          |
-        | Other Current Assets                      |  6.23e+08   |  6.57e+08   |  6.63e+08   |  6.73e+08   |  7.15e+08   |
-        | Total Current Assets                      |  2.2708e+10 |  2.1781e+10 |  2.2921e+10 |  2.1898e+10 |  2.1734e+10 |
-        | Property, Plant and Equipment             |  3.7355e+10 |  3.9227e+10 |  4.0028e+10 |  3.9758e+10 |  3.9382e+10 |
-        | Goodwill                                  |  1.228e+09  |  1.228e+09  |  1.228e+09  |  1.228e+09  |  1.252e+09  |
-        | Intangible Assets                         |  4.15e+08   |  4.21e+08   |  4.28e+08   |  4.1e+08    |  4.1e+08    |
-        | Goodwill and Intangible Assets            |  1.643e+09  |  1.649e+09  |  1.656e+09  |  1.638e+09  |  1.662e+09  |
-        | Long Term Investments                     |  1.75e+09   |  1.647e+09  |  1.426e+09  |  1.212e+09  |  9.73e+08   |
-        | Tax Assets                                |  6.82e+08   |  7.02e+08   |  6.72e+08   |  6.97e+08   |  7.08e+08   |
-        | Other Fixed Assets                        |  1.158e+09  |  1.277e+09  |  1.171e+09  |  1.317e+09  |  1.221e+09  |
-        | Fixed Assets                              |  4.2588e+10 |  4.4502e+10 |  4.4953e+10 |  4.4622e+10 |  4.3946e+10 |
-        | Other Assets                              |  0          |  0          |  0          |  0          |  0          |
-        | Total Assets                              |  6.5296e+10 |  6.6283e+10 |  6.7874e+10 |  6.652e+10  |  6.568e+10  |
-        | Accounts Payable                          |  2.019e+09  |  2.142e+09  |  1.789e+09  |  1.689e+09  |  1.64e+09   |
-        | Other Payables                            |  3.82e+08   |  2.59e+09   |  2.713e+09  |  1.953e+09  |  1.671e+09  |
-        | Total Payables                            |  2.401e+09  |  4.732e+09  |  4.502e+09  |  3.642e+09  |  3.311e+09  |
-        | Accrued Expenses                          |  8.75e+08   |  1.358e+09  |  9.36e+08   |  6.68e+08   |  8.66e+08   |
-        | Short Term Debt                           |  1.65e+08   |  0          |  6.2e+07    |  1.06e+08   |  1.06e+08   |
-        | Current Capital Lease Obligations Current |  0          |  1.03e+08   |  1.09e+08   |  1.31e+08   |  1.53e+08   |
-        | Tax Payables                              |  3.82e+08   |  4.2e+08    |  4.19e+08   |  2.41e+08   |  1.48e+08   |
-        | Deferred Revenue                          |  5.7e+07    |  0          |  0          |  0          |  0          |
-        | Other Current Liabilities                 |  3.511e+09  |  1.346e+09  |  9.16e+08   |  7.08e+08   |  6.68e+08   |
-        | Total Current Liabilities                 |  7.009e+09  |  7.539e+09  |  6.525e+09  |  5.255e+09  |  5.104e+09  |
-        | Capital Lease Obligations Non Current     |  1.451e+09  |  1.393e+09  |  1.43e+09   |  1.55e+09   |  1.621e+09  |
-        | Long Term Debt                            |  6.034e+09  |  6.02e+09   |  9.289e+09  |  1.1097e+10 |  1.1968e+10 |
-        | Deferred Revenue Non Current              |  6.63e+08   |  5.89e+08   |  5.16e+08   |  5.29e+08   |  6.32e+08   |
-        | Deferred Tax Liabilities                  |  0          |  0          |  0          |  0          |  0          |
-        | Other Non Current Liabilities             |  8.58e+08   |  8.35e+08   |  8.08e+08   |  8.32e+08   |  9.5e+08    |
-        | Total Non Current Liabilities             |  9.006e+09  |  8.837e+09  |  1.2043e+10 |  1.4008e+10 |  1.5171e+10 |
-        | Other Liabilities                         |  0          |  0          |  0          |  0          |  0          |
-        | Capital Lease Obligations                 |  1.451e+09  |  1.496e+09  |  1.539e+09  |  1.681e+09  |  1.774e+09  |
-        | Total Debt                                |  7.65e+09   |  7.516e+09  |  1.089e+10  |  1.2884e+10 |  1.3848e+10 |
-        | Net Debt                                  | -1.507e+09  | -7.46e+08   |  1.316e+09  |  3.086e+09  |  4.55e+09   |
-        | Total Investments                         |  2.82e+09   |  2.716e+09  |  2.433e+09  |  2.232e+09  |  2.027e+09  |
-        | Total Liabilities                         |  1.6015e+10 |  1.6376e+10 |  1.8568e+10 |  1.9263e+10 |  2.0275e+10 |
-        | Treasury Stock                            | -6.343e+09  | -7.127e+09  | -7.552e+09  | -7.552e+09  | -7.552e+09  |
-        | Preferred Stock                           |  0          |  0          |  0          |  0          |  0          |
-        | Common Stock                              |  1.22e+08   |  1.23e+08   |  1.23e+08   |  1.23e+08   |  1.24e+08   |
-        | Retained Earnings                         |  4.5916e+10 |  4.7274e+10 |  4.6873e+10 |  4.4426e+10 |  4.2391e+10 |
-        | Additional Paid In Capital                |  9.95e+09   |  1.0197e+10 |  1.0335e+10 |  1.0633e+10 |  1.0782e+10 |
-        | Accumulated Other Comprehensive Income    | -3.64e+08   | -5.6e+08    | -4.73e+08   | -3.73e+08   | -3.4e+08    |
-        | Other Total Shareholder Equity            |  0          |  0          |  0          |  0          |  0          |
-        | Total Shareholder Equity                  |  4.9281e+10 |  4.9907e+10 |  4.9306e+10 |  4.7257e+10 |  4.5405e+10 |
-        | Total Equity                              |  4.9281e+10 |  4.9907e+10 |  4.9306e+10 |  4.7257e+10 |  4.5405e+10 |
-        | Minority Interest                         |  0          |  0          |  0          |  0          |  0          |
-        | Total Liabilities and Equity              |  6.5296e+10 |  6.6283e+10 |  6.7874e+10 |  6.652e+10  |  6.568e+10  |
+        |     |       2021 |       2022 |       2023 |       2024 |       2025 |
+        |:----|-----------:|-----------:|-----------:|-----------:|-----------:|
+        | DUK | 6.8263e+10 | 7.4911e+10 | 8.0457e+10 | 8.523e+10  | 9.0869e+10 |
+        | NEE | 5.4827e+10 | 6.4966e+10 | 7.3211e+10 | 8.2333e+10 | 9.5619e+10 |
+        | SO  | 5.547e+10  | 5.9135e+10 | 6.349e+10  | 6.6277e+10 | 7.4075e+10 |
         """
         convert_currency = bool(
             self._convert_currency
@@ -5007,13 +4691,13 @@ class Toolkit:
                 )
 
                 if not self._statement_currencies.empty:
+                    # A balance sheet is a position at the end of the period, so it is converted at
+                    # the closing rate (IAS 21.39): the rate on the last day of the fiscal period.
                     self._balance_sheet_statement = currencies_model.convert_currencies(
                         financial_statement_data=self._balance_sheet_statement,
                         financial_statement_currencies=self._statement_currencies,
-                        exchange_rate_data=(
-                            self._quarterly_exchange_rate_data["Adj Close"]
-                            if self._quarterly
-                            else self._yearly_exchange_rate_data["Adj Close"]
+                        exchange_rate_data=self._get_statement_exchange_rates(
+                            self._balance_sheet_statement, rate="closing"
                         ),
                         financial_statement_name="balance sheet statement",
                     )
@@ -5073,7 +4757,13 @@ class Toolkit:
         a company's net income.
 
         The income statement is a financial statement that shows a company's revenues and expenses over a specific
-        period. Therefore, trailing results are available for this statement.
+        period. Therefore, trailing results are available for this statement. A trailing result sums each
+        item over the window, except the Weighted Average Shares, Weighted Average Shares Diluted and Tax
+        Rate for Calcs rows, which keep the value of the latest period.
+
+        With convert_currency, the statement is converted to the currency of the historical data at the
+        average exchange rate of each period, as IAS 21.39-40 does for income and expenses. EPS and EPS
+        Diluted are converted as well; share counts and ratios are not.
 
         Also known as: profit and loss, revenue, net income, earnings, P&L statement.
 
@@ -5102,53 +4792,21 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["TSLA", "MU"],
+            ["NKE"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            quarterly=True,
-            start_date='2022-05-01',
+            start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        income_sheet_statements = toolkit.get_income_statement()
-
-        income_sheet_statements.loc['TSLA']
+        toolkit.get_income_statement(show_columns=["Revenue", "Net Income"])
         ```
 
         Which returns:
 
-        |                                              |      2022Q2 |      2022Q3 |      2022Q4 |      2023Q1 |      2023Q2 |
-        |:---------------------------------------------|------------:|------------:|------------:|------------:|------------:|
-        | Revenue                                      |  1.6934e+10 |  2.1454e+10 |  2.4318e+10 |  2.3329e+10 |  2.4927e+10 |
-        | Cost of Goods Sold                           |  1.27e+10   |  1.6072e+10 |  1.8541e+10 |  1.8818e+10 |  2.0394e+10 |
-        | Gross Profit                                 |  4.234e+09  |  5.382e+09  |  5.777e+09  |  4.511e+09  |  4.533e+09  |
-        | Research and Development Expenses            |  6.67e+08   |  7.33e+08   |  8.1e+08    |  7.71e+08   |  9.43e+08   |
-        | General and Administrative Expenses          |  9.61e+08   |  9.61e+08   |  1.032e+09  |  1.076e+09  |  1.191e+09  |
-        | Selling and Marketing Expenses               |  0          |  0          |  0          |  0          |  0          |
-        | Selling, General and Administrative Expenses |  9.61e+08   |  9.61e+08   |  1.032e+09  |  1.076e+09  |  1.191e+09  |
-        | Other Expenses                               |  1.42e+08   |  0          |  3.4e+07    |  0          |  0          |
-        | Operating Expenses                           |  1.77e+09   |  1.694e+09  |  1.876e+09  |  1.847e+09  |  2.134e+09  |
-        | Cost and Expenses                            |  1.447e+10  |  1.7766e+10 |  2.0417e+10 |  2.0665e+10 |  2.2528e+10 |
-        | Interest Income                              |  2.6e+07    |  8.6e+07    |  1.57e+08   |  2.13e+08   |  2.38e+08   |
-        | Interest Expense                             |  4.4e+07    |  5.3e+07    |  3.3e+07    |  2.9e+07    |  2.8e+07    |
-        | Net Interest Income                          | -1.8e+07    |  3.3e+07    |  1.24e+08   |  1.84e+08   |  2.1e+08    |
-        | Depreciation and Amortization                |  9.22e+08   |  9.56e+08   |  9.89e+08   |  1.046e+09  |  1.154e+09  |
-        | EBITDA                                       |  3.44e+09   |  4.645e+09  |  5.005e+09  |  3.875e+09  |  4.119e+09  |
-        | EBIT                                         |  2.518e+09  |  3.689e+09  |  4.016e+09  |  2.829e+09  |  2.965e+09  |
-        | Non Operating Income Excluding Interest      | -5.4e+07    | -1e+06      | -1.15e+08   | -1.65e+08   | -5.66e+08   |
-        | Operating Income                             |  2.464e+09  |  3.688e+09  |  3.901e+09  |  2.664e+09  |  2.399e+09  |
-        | Total Other Income Expenses                  |  1e+07      | -5.2e+07    |  8.2e+07    |  1.36e+08   |  5.38e+08   |
-        | Income Before Tax                            |  2.474e+09  |  3.636e+09  |  3.983e+09  |  2.8e+09    |  2.937e+09  |
-        | Income Tax Expense                           |  2.05e+08   |  3.05e+08   |  2.76e+08   |  2.61e+08   |  3.23e+08   |
-        | Net Income from Continuing Operations        |  2.269e+09  |  3.331e+09  |  3.707e+09  |  2.539e+09  |  2.614e+09  |
-        | Net Income from Discontinued Operations      |  0          |  0          |  0          |  0          |  0          |
-        | Other Adjustments to Net Income              |  0          |  0          |  0          |  0          |  0          |
-        | Net Income before Deductions                 |  2.259e+09  |  3.292e+09  |  3.714e+09  |  2.513e+09  |  2.703e+09  |
-        | Net Income Deductions                        |  0          |  0          | -8e+06      |  0          |  0          |
-        | Net Income                                   |  2.256e+09  |  3.292e+09  |  3.722e+09  |  2.518e+09  |  2.703e+09  |
-        | EPS                                          |  0.73       |  1.05       |  1.18       |  0.8        |  0.85       |
-        | EPS Diluted                                  |  0.65       |  0.95       |  1.07       |  0.73       |  0.78       |
-        | Weighted Average Shares                      |  3.111e+09  |  3.146e+09  |  3.16e+09   |  3.166e+09  |  3.171e+09  |
-        | Weighted Average Shares Diluted              |  3.464e+09  |  3.468e+09  |  3.475e+09  |  3.468e+09  |  3.478e+09  |
+        |            |      2021 |       2022 |       2023 |       2024 |       2025 |
+        |:-----------|----------:|-----------:|-----------:|-----------:|-----------:|
+        | Revenue    | 4.671e+10 | 5.1217e+10 | 5.1362e+10 | 4.6309e+10 | 4.6398e+10 |
+        | Net Income | 6.046e+09 | 5.07e+09   | 5.7e+09    | 3.219e+09  | 3.108e+09  |
         """
         convert_currency = bool(
             self._convert_currency and (self._income_statement.empty or overwrite)
@@ -5216,10 +4874,9 @@ class Toolkit:
                     self._income_statement = currencies_model.convert_currencies(
                         financial_statement_data=self._income_statement,
                         financial_statement_currencies=self._statement_currencies,
-                        exchange_rate_data=(
-                            self._quarterly_exchange_rate_data["Adj Close"]
-                            if self._quarterly
-                            else self._yearly_exchange_rate_data["Adj Close"]
+                        # Income and expenses at the average rate of the fiscal period (IAS 21.39-40), EPS included.  # noqa: E501
+                        exchange_rate_data=self._get_statement_exchange_rates(
+                            self._income_statement, rate="average"
                         ),
                         items_not_to_adjust=[
                             "Gross Profit Ratio",
@@ -5227,8 +4884,7 @@ class Toolkit:
                             "Operating Income Ratio",
                             "Income Before Tax Ratio",
                             "Net Income Ratio",
-                            "EPS",
-                            "EPS Diluted",
+                            "Tax Rate for Calcs",
                             "Weighted Average Shares",
                             "Weighted Average Shares Diluted",
                         ],
@@ -5245,18 +4901,22 @@ class Toolkit:
         income_statement = self._income_statement
 
         if trailing:
-            # The trailing period does not apply to the Weighted Average Shares rows.
-            weighted_average_shares = income_statement.loc[
-                :, ["Weighted Average Shares", "Weighted Average Shares Diluted"], :
+            # Share counts and the tax rate are no amounts earned over the period, so a sum over
+            # the window means nothing for them: they are kept at the value of the latest period.
+            not_summed = income_statement.loc[
+                income_statement.index.get_level_values(1).isin(
+                    [
+                        "Weighted Average Shares",
+                        "Weighted Average Shares Diluted",
+                        "Tax Rate for Calcs",
+                    ]
+                )
             ]
 
             # The rolling window is calculated for the rest of the income statement.
             income_statement = self._income_statement.T.rolling(trailing).sum().T
 
-            # Weighted Average Shares are kept at the current value rather than summed.
-            income_statement.loc[weighted_average_shares.index] = (
-                weighted_average_shares
-            )
+            income_statement.loc[not_summed.index] = not_summed
 
         if growth:
             self._income_statement_growth = calculate_growth(
@@ -5299,7 +4959,16 @@ class Toolkit:
         It breaks the analysis down to operating, investing and financing activities.
 
         The cash flow statement is a financial statement that shows how changes in balance sheet accounts and income
-        affect cash and cash equivalents. Therefore, trailing results are available for this statement.
+        affect cash and cash equivalents. Therefore, trailing results are available for this statement. A
+        trailing result sums each cash flow over the window, while Cash Beginning of Period is the cash at
+        the beginning of the first period of the window and Cash End of Period the cash at the end of the
+        last one.
+
+        With convert_currency, the cash flows are converted to the currency of the historical data at the
+        average exchange rate of each period (IAS 7.25), Cash End of Period at the closing rate of the
+        period and Cash Beginning of Period at the closing rate of the period before, so it equals the
+        Cash End of Period before it. Net Change in Cash is the change in the converted cash and Forex
+        Changes on Cash holds the effect of the exchange rate changes on the cash held (IAS 7.28).
 
         Also known as: operating cash flow, investing activities, financing activities.
 
@@ -5328,61 +4997,25 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["MU", "AMZN"],
+            ["CVX"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            quarterly=True,
-            start_date='2022-09-01',
+            start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        cash_flow_statements = toolkit.get_cash_flow_statement()
-
-        cash_flow_statements.loc['AMZN']
+        toolkit.get_cash_flow_statement(
+            show_columns=["Operating Cash Flow", "Capital Expenditure", "Free Cash Flow", "Dividends Paid"]
+        )
         ```
 
         Which returns:
 
-        |                                 |      2022Q3 |      2022Q4 |      2023Q1 |      2023Q2 |
-        |:--------------------------------|------------:|------------:|------------:|------------:|
-        | Net Income                      |  2.872e+09  |  2.78e+08   |  3.172e+09  |  6.75e+09   |
-        | Depreciation and Amortization   |  1.0327e+10 |  1.3145e+10 |  1.1123e+10 |  1.1589e+10 |
-        | Deferred Income Tax             | -8.25e+08   | -3.367e+09  | -4.72e+08   | -2.744e+09  |
-        | Stock Based Compensation        |  5.556e+09  |  5.606e+09  |  4.748e+09  |  7.127e+09  |
-        | Change in Working Capital       | -5.254e+09  |  1.0526e+10 | -1.4317e+10 | -6.293e+09  |
-        | Change in Accounts Receivables  | -4.794e+09  | -8.788e+09  |  4.724e+09  | -2.041e+09  |
-        | Change in Inventory             |  7.32e+08   |  3.18e+09   |  3.71e+08   | -2.373e+09  |
-        | Change in Accounts Payables     | -1.226e+09  |  9.852e+09  | -1.1264e+10 |  3.029e+09  |
-        | Change in Other Working Capital |  3.4e+07    |  6.282e+09  | -8.148e+09  | -4.908e+09  |
-        | Other Non Cash Items            | -1.272e+09  |  2.985e+09  |  5.34e+08   |  4.7e+07    |
-        | Cash Flow from Operations       |  1.1404e+10 |  2.9173e+10 |  4.788e+09  |  1.6476e+10 |
-        | Property, Plant and Equipment   | -1.6378e+10 | -1.6592e+10 | -1.4207e+10 | -1.1455e+10 |
-        | Acquisitions                    | -8.85e+08   | -8.31e+08   | -3.513e+09  | -3.16e+08   |
-        | Purchases of Investments        | -2.39e+08   | -2.33e+08   | -3.38e+08   | -4.96e+08   |
-        | Sales of Investments            |  5.57e+08   |  5.683e+09  |  1.115e+09  |  1.551e+09  |
-        | Other Investing Activities      |  1.337e+09  |  1.152e+09  |  1.137e+09  |  1.043e+09  |
-        | Cash Flow from Investing        | -1.5608e+10 | -1.0821e+10 | -1.5806e+10 | -9.673e+09  |
-        | Net Debt Issued                 |  3.016e+09  |  8.6e+07    |  6.354e+09  | -6.539e+09  |
-        | Long Term Debt Issued           | -1.406e+09  |  5.276e+09  | -2.823e+09  | -3.297e+09  |
-        | Short Term Debt Issued          |  4.422e+09  | -5.19e+09   |  9.177e+09  | -3.242e+09  |
-        | Net Stock Issued                |  0          |  0          |  0          |  0          |
-        | Net Common Stock Issued         |  0          |  0          |  0          |  0          |
-        | Common Stock Issued             |  0          |  0          |  0          |  0          |
-        | Common Stock Purchased          |  0          |  0          |  0          |  0          |
-        | Net Preferred Stock Issued      |  0          |  0          |  0          |  0          |
-        | Common Dividends Paid           |  0          |  0          |  0          |  0          |
-        | Preferred Dividends Paid        |  0          |  0          |  0          |  0          |
-        | Dividends Paid                  |  0          |  0          |  0          |  0          |
-        | Other Financing Activities      |  0          |  0          |  0          |  0          |
-        | Cash Flow from Financing        |  3.016e+09  |  8.6e+07    |  6.354e+09  | -6.539e+09  |
-        | Forex Changes on Cash           | -1.334e+09  |  6.37e+08   |  1.45e+08   |  6.9e+07    |
-        | Net Change in Cash              | -2.522e+09  |  1.9075e+10 | -4.519e+09  |  3.33e+08   |
-        | Cash End of Period              |  3.5178e+10 |  5.4253e+10 |  4.9734e+10 |  5.0067e+10 |
-        | Cash Beginning of Period        |  3.77e+10   |  3.5178e+10 |  5.4253e+10 |  4.9734e+10 |
-        | Operating Cash Flow             |  1.1404e+10 |  2.9173e+10 |  4.788e+09  |  1.6476e+10 |
-        | Capital Expenditure             | -1.6378e+10 | -1.6592e+10 | -1.4207e+10 | -1.1455e+10 |
-        | Free Cash Flow                  | -4.974e+09  |  1.2581e+10 | -9.419e+09  |  5.021e+09  |
-        | Income Taxes Paid               |  7.42e+08   |  1.695e+09  |  6.19e+08   |  3.735e+09  |
-        | Interest Paid                   |  4.31e+08   |  7.68e+08   |  5.42e+08   |  1.072e+09  |
+        |                     |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:--------------------|------------:|------------:|------------:|------------:|------------:|
+        | Operating Cash Flow |  2.9187e+10 |  4.9602e+10 |  3.5609e+10 |  3.1492e+10 |  3.3939e+10 |
+        | Capital Expenditure | -8.1e+09    | -1.1974e+10 | -1.5829e+10 | -1.6448e+10 | -1.7347e+10 |
+        | Free Cash Flow      |  2.1087e+10 |  3.7628e+10 |  1.978e+10  |  1.5044e+10 |  1.6592e+10 |
+        | Dividends Paid      | -1.0179e+10 | -1.0968e+10 | -1.1336e+10 | -1.18e+10   | -1.2751e+10 |
         """
         convert_currency = bool(
             self._convert_currency and (self._cash_flow_statement.empty or overwrite)
@@ -5448,15 +5081,28 @@ class Toolkit:
                 )
 
                 if not self._statement_currencies.empty:
+                    # Cash flows at the average rate of the fiscal period (IAS 7.25), the cash held
+                    # at the closing rates: the cash at the end at the rate on the period end, the
+                    # cash at the beginning at the rate on the previous period end, so Cash
+                    # Beginning of Period equals the Cash End of Period of the period before it.
+                    # The difference is reported in Forex Changes on Cash (IAS 7.28). The first
+                    # period's opening rate lies before the exchange rate data when the data starts
+                    # at that period, which leaves its Cash Beginning of Period NaN.
                     self._cash_flow_statement = currencies_model.convert_currencies(
                         financial_statement_data=self._cash_flow_statement,
                         financial_statement_currencies=self._statement_currencies,
-                        exchange_rate_data=(
-                            self._quarterly_exchange_rate_data["Adj Close"]
-                            if self._quarterly
-                            else self._yearly_exchange_rate_data["Adj Close"]
+                        exchange_rate_data=self._get_statement_exchange_rates(
+                            self._cash_flow_statement, rate="average"
                         ),
                         financial_statement_name="cash flow statement",
+                        item_exchange_rate_data={
+                            "Cash End of Period": self._get_statement_exchange_rates(
+                                self._cash_flow_statement, rate="closing"
+                            ),
+                            "Cash Beginning of Period": self._get_statement_exchange_rates(
+                                self._cash_flow_statement, rate="opening"
+                            ),
+                        },
                     )
 
         if self._remove_invalid_tickers:
@@ -5470,6 +5116,20 @@ class Toolkit:
 
         if trailing:
             cash_flow_statement = self._cash_flow_statement.T.rolling(trailing).sum().T
+
+            # Cash held is a balance, not a flow: the window starts with the cash at the
+            # beginning of its first period and ends with the cash at the end of its last one.
+            items = cash_flow_statement.index.get_level_values(1)
+            cash_end = items == "Cash End of Period"
+            cash_beginning = items == "Cash Beginning of Period"
+            cash_flow_statement.loc[cash_end] = self._cash_flow_statement.loc[
+                cash_end
+            ].where(cash_flow_statement.loc[cash_end].notna())
+            cash_flow_statement.loc[cash_beginning] = (
+                self._cash_flow_statement.loc[cash_beginning]
+                .shift(trailing - 1, axis=1)
+                .where(cash_flow_statement.loc[cash_beginning].notna())
+            )
 
         if growth:
             self._cash_flow_statement_growth = calculate_growth(
@@ -5506,12 +5166,15 @@ class Toolkit:
         show_columns: list[str] | None = None,
     ):
         """
-        Retrieves the balance, cash and income statistics for the company(s) from the specified source.
+        Retrieves the filing details of each financial statement period: the reported currency, the CIK,
+        the filing and acceptance dates, the fiscal period and the links to the filing. With convert_currency,
+        the Toolkit uses the reported currency to convert the financial statements to the currency of the
+        historical data.
 
         Note that this also obtains the balance sheet statement at the same time given that it's the same
         API call. This is done to reduce the number of API calls to FinancialModelingPrep.
 
-        Also known as: key stats, shares outstanding, float data.
+        Also known as: filing details, reporting metadata, reported currency.
 
         Args:
             enforce_source (str | None, optional): Forces this specific call to use a given
@@ -5534,29 +5197,25 @@ class Toolkit:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            "TSLA",
+            ["KO", "PEP"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            quarterly=True,
-            start_date='2023-05-01',
+            start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.get_statistics_statement()
+        toolkit.get_statistics_statement(show_columns=["Accepted Date"]).T
         ```
 
         Which returns:
 
-        |                   | 2023Q2              |
-        |:------------------|:--------------------|
-        | Reported Currency | USD                 |
-        | CIK ID            | 1318605             |
-        | Filling Date      | nan                 |
-        | Accepted Date     | 2023-07-21 18:08:29 |
-        | Calendar Year     | nan                 |
-        | Period            | Q2                  |
-        | SEC Link          | nan                 |
-        | Document Link     | nan                 |
-
+        | date   | KO                  | PEP                 |
+        |:-------|:--------------------|:--------------------|
+        | 2020   | 2021-02-25 13:47:17 | 2021-02-10 17:41:49 |
+        | 2021   | 2022-02-22 15:45:48 | 2022-02-09 18:03:39 |
+        | 2022   | 2023-02-21 16:03:20 | 2023-02-08 18:06:37 |
+        | 2023   | 2024-02-20 13:21:24 | 2024-02-08 17:58:51 |
+        | 2024   | 2025-02-20 15:17:12 | 2025-02-03 18:22:47 |
+        | 2025   | 2026-02-20 09:46:32 | 2026-02-02 18:07:04 |
         """
         if not self._api_key and self._statistics_statement.empty:
             logger.error(
@@ -5642,6 +5301,275 @@ class Toolkit:
             the chosen folder.
         """
         _get_normalization_files(path)
+
+    def _get_module_statement(self, statement: str, module: str) -> pd.DataFrame:
+        """
+        Returns a financial statement for the Ratios or Models module, retrieving it when a
+        calculation first needs it. When the statement cannot be retrieved, the other
+        statements are retrieved as well to tell whether any data is available at all.
+
+        Args:
+            statement (str): "balance_sheet_statement", "income_statement" or
+                "cash_flow_statement".
+            module (str): "Ratios" or "Models", the module the statement is for.
+
+        Returns:
+            pd.DataFrame: The statement, which is empty when only it could not be retrieved.
+
+        Raises:
+            ValueError: When an API key is required but missing, or when none of the
+                statements can be retrieved.
+        """
+        if getattr(self, f"_{statement}").empty:
+            if not self._api_key and module == "Models":
+                raise ValueError(
+                    "The models class requires an API key from FinancialModelPrep. "
+                    "Get an API key here: https://www.jeroenbouma.com/fmp"
+                )
+            if not self._api_key and self._enforce_source == "FinancialModelingPrep":
+                raise ValueError(
+                    "The ratios class requires an API key from FinancialModelPrep if you wish to enforce the usage. "
+                    "of Financial Modeling Prep. Get an API key here: https://www.jeroenbouma.com/fmp"
+                )
+
+            logger.info("Obtaining financial statements")
+            getattr(self, f"get_{statement}")()
+
+        if getattr(self, f"_{statement}").empty:
+            statements = [
+                "balance_sheet_statement",
+                "income_statement",
+                "cash_flow_statement",
+            ]
+            for other in statements:
+                if other != statement and getattr(self, f"_{other}").empty:
+                    getattr(self, f"get_{other}")()
+
+            if all(getattr(self, f"_{other}").empty for other in statements):
+                raise ValueError(
+                    f"The datasets could not be populated and therefore the {module} class cannot "
+                    "calculate this. This is usually because no tickers are equities, you have "
+                    "reached the API limit or entered an invalid API key."
+                )
+
+        return getattr(self, f"_{statement}")
+
+    def _get_statement_tickers(self, module: str) -> list[str]:
+        """
+        Returns the tickers with financial statements, which leaves out those without (such as
+        ETFs). The statements hold the same tickers, so the first one already retrieved names
+        them; otherwise the balance sheet statement is retrieved.
+
+        Args:
+            module (str): "Ratios" or "Models", the module the tickers are for.
+
+        Returns:
+            list[str]: The tickers of the financial statements.
+        """
+        retrieved = [
+            statement
+            for statement in (
+                self._balance_sheet_statement,
+                self._income_statement,
+                self._cash_flow_statement,
+            )
+            if not statement.empty
+        ]
+        statement = (
+            retrieved[0]
+            if retrieved
+            else self._get_module_statement("balance_sheet_statement", module)
+        )
+
+        return statement.index.get_level_values(0).unique().tolist()
+
+    def _get_module_historical_data(self, period: str) -> pd.DataFrame:
+        """
+        Returns the historical data of a period for the modules, retrieved when a calculation
+        first asks for that period. The daily data is downloaded once and the weekly, monthly,
+        quarterly and yearly data is converted from it; the intraday data is only downloaded
+        when the Toolkit has an intraday_period.
+
+        Args:
+            period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
+
+        Returns:
+            pd.DataFrame: The historical data of the period, empty for intraday data without an
+            intraday_period.
+
+        Raises:
+            KeyError: For any other period, as a dictionary of the periods would.
+        """
+        if period == "intraday":
+            if self._intraday_period:
+                self.get_intraday_data(period=self._intraday_period)
+            return self._intraday_historical_data
+
+        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+            raise KeyError(period)
+
+        self.get_historical_data(period=period)
+
+        return getattr(self, f"_{period}_historical_data")
+
+    def _get_module_risk_free_rate(self, period: str) -> pd.DataFrame:
+        """
+        Returns the risk free rate of a period for the modules, retrieved with the historical
+        data of that period when a calculation first asks for it.
+
+        Args:
+            period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
+
+        Returns:
+            pd.DataFrame: The risk free rate of the period.
+
+        Raises:
+            KeyError: For any other period, as a dictionary of the periods would.
+        """
+        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+            raise KeyError(period)
+
+        self.get_historical_data(period=period)
+
+        return getattr(self, f"_{period}_risk_free_rate")
+
+    def _get_historical_tickers(self, include_benchmark: bool) -> list[str]:
+        """
+        Returns the tickers of the daily historical data, retrieving it when needed, followed
+        by the Portfolio when the Toolkit holds one.
+
+        Args:
+            include_benchmark (bool): Whether to keep the Benchmark.
+
+        Returns:
+            list[str]: The tickers of the historical data.
+        """
+        tickers = (
+            self._get_module_historical_data("daily")
+            .columns.get_level_values(1)
+            .unique()
+            .tolist()
+        )
+
+        if not include_benchmark and "Benchmark" in tickers:
+            tickers.remove("Benchmark")
+
+        return tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+
+    def _get_period_end_dates(
+        self, statement: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the last day of the fiscal period behind every statement column per ticker.
+
+        Statement columns are calendar periods (see "Fiscal periods and calendar periods" on
+        the Toolkit), while the fiscal period they hold ends on its own date, e.g. 30 June for
+        Microsoft's yearly statements and the end of January for NVIDIA's. These dates are
+        what the daily ratios apply the figures from and what the closing and average exchange
+        rates of the statements are taken over. They come from the Period End Date statistic
+        (FinancialModelingPrep) and otherwise from the latest date the period can end on given
+        its label and _fiscal_year_adjustments (see helpers.determine_period_end_dates).
+
+        Args:
+            statement (pd.DataFrame | None, optional): The statement whose periods and tickers
+                to use. Defaults to None, which uses the balance sheet statement.
+
+        Returns:
+            pd.DataFrame: The period end dates with the tickers as index and the periods as
+            columns.
+        """
+        statement = self._balance_sheet_statement if statement is None else statement
+
+        if statement.empty:
+            return pd.DataFrame()
+
+        return determine_period_end_dates(
+            periods=pd.PeriodIndex(statement.columns),
+            tickers=statement.index.get_level_values(0).unique().tolist(),
+            quarter=self._quarterly,
+            statistics_statement=self._statistics_statement,
+            fiscal_year_adjustments=self._fiscal_year_adjustments,
+        )
+
+    def _get_statement_exchange_rates(
+        self, statement: pd.DataFrame, rate: str
+    ) -> pd.DataFrame:
+        """
+        Returns the exchange rate of each statement period per ticker, taken from the
+        unrounded daily exchange rates over the ticker's fiscal periods.
+
+        IAS 21.39-40 translates the balance sheet at the closing rate, the rate on the last
+        day of the fiscal period, and income and expenses at the rates on the dates of the
+        transactions, for which the average rate of the fiscal period is the usual
+        approximation; IAS 7.25 does the same for cash flows. The opening rate, the closing
+        rate of the previous period, translates the cash at the beginning of the period.
+
+        Args:
+            statement (pd.DataFrame): The statement to translate, which sets the periods and
+                tickers.
+            rate (str): "closing", "average" or "opening".
+
+        Returns:
+            pd.DataFrame: The rate per period (index) and ticker (columns).
+        """
+        # Not rounded: a rate such as JPYUSD needs more decimals than the Toolkit's rounding.
+        return currencies_model.get_statement_exchange_rates(
+            daily_exchange_rates=self._daily_exchange_rate_data["Adj Close"],
+            period_end_dates=self._get_period_end_dates(statement),
+            statement_currencies=self._statement_currencies,
+            quarter=self._quarterly,
+            rate=rate,
+        )
+
+    def _average_risk_free_rate(
+        self,
+        period: str,
+        treasury_data: pd.DataFrame,
+        risk_free_rate: str,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Builds the risk free rate of each week, month, quarter or year from the average of
+        the daily Treasury yields within it.
+
+        The yield is kept annualized (the Performance, Risk and Models modules convert it to
+        the period frequency), but the yield of a period is the average of its daily yields
+        rather than the yield on its last day. The converted rate then approximates the
+        return a holder of the Treasury earned over the period, and does not depend on where
+        the yield happened to close at the end of the period, which a return measured over
+        that period could not have known at its start either. The Return, Cumulative Return
+        and Volume columns are kept from the period treasury data.
+
+        Args:
+            period (str): The period (weekly, monthly, quarterly or yearly).
+            treasury_data (pd.DataFrame): The treasury data converted to the period, with the
+                metric as the first column level and the maturity as the second.
+            risk_free_rate (str): The maturity used as the risk free rate, e.g. "10 Year".
+            rounding (int | None, optional): The number of decimals to round to, or None to
+                use the Toolkit's rounding. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The risk free rate per period, with the metric as the columns.
+        """
+        period_rate = treasury_data.xs(risk_free_rate, level=1, axis=1).copy()
+        yield_columns = [
+            column
+            for column in ["Open", "High", "Low", "Close", "Adj Close"]
+            if column in period_rate.columns
+        ]
+
+        average_yield = _calculate_period_average(
+            period=period,
+            daily_data=self._daily_treasury_data.xs(risk_free_rate, level=1, axis=1),
+            columns=yield_columns,
+            rounding=rounding if rounding is not None else self._rounding,
+        )
+
+        period_rate[yield_columns] = average_yield.reindex(period_rate.index)[
+            yield_columns
+        ]
+
+        return period_rate
 
     def _align_treasury_data_to_trading_days(
         self, treasury_data: pd.DataFrame
@@ -5766,13 +5694,13 @@ class Toolkit:
 
         Which returns:
 
-        |    | source       | dataset                   |   entities |   entries | oldest_write        | newest_write        |
-        |---:|:-------------|:--------------------------|-----------:|----------:|:--------------------|:--------------------|
-        | 25 | USTreasury   | par_yield_curve_real      |          1 |         1 | 2026-10-06 19:31:44 | 2026-10-06 19:31:44 |
-        | 26 | USTreasury   | par_yield_curve_real_year |          2 |         2 | 2026-10-06 19:31:44 | 2026-10-06 19:31:44 |
-        | 27 | USTreasury   | par_yield_curve_year      |          2 |         2 | 2026-10-06 19:31:44 | 2026-10-06 19:31:44 |
-        | 28 | YahooFinance | historical                |          1 |         1 | 2026-10-06 22:09:08 | 2026-10-06 22:09:08 |
-        | 29 | YahooFinance | historical_statistics     |          3 |         3 | 2026-09-29 20:46:10 | 2026-09-29 20:46:10 |
+        |    | source                | dataset                             |   entities |   entries | oldest_write        | newest_write        |
+        |---:|:----------------------|:------------------------------------|-----------:|----------:|:--------------------|:--------------------|
+        | 25 | FinancialModelingPrep | earnings_calendar                   |          4 |         4 | 2026-10-24 18:40:06 | 2026-10-24 18:40:06 |
+        | 26 | FinancialModelingPrep | earnings_call_transcripts           |          2 |         2 | 2026-10-24 18:41:46 | 2026-10-24 18:41:46 |
+        | 27 | FinancialModelingPrep | earnings_call_transcripts_selection |          2 |         2 | 2026-10-24 18:41:46 | 2026-10-24 18:41:46 |
+        | 28 | FinancialModelingPrep | employee_count                      |          2 |         2 | 2026-10-24 18:41:06 | 2026-10-24 18:41:06 |
+        | 29 | FinancialModelingPrep | esg_scores                          |          3 |         3 | 2026-10-24 18:40:40 | 2026-10-24 18:40:40 |
         """
         contents = cache_controller.get_cache(
             location=self._cache_location, enabled=True
@@ -5850,7 +5778,7 @@ class Toolkit:
         toolkit.clear_cache(source="YahooFinance", ticker="AAPL")
 
         # Remove everything retrieved from the OECD
-        toolkit.clear_cache(source=policy_model.OECD)
+        toolkit.clear_cache(source="OECD")
 
         # Remove the entire cache
         toolkit.clear_cache(confirm=True)

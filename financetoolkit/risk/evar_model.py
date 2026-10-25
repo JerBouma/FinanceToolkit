@@ -15,11 +15,23 @@ def get_evar_gaussian(
     """
     Calculate the Entropic Value at Risk (EVaR) of returns based on the gaussian distribution.
 
-    For more information see: https://en.wikipedia.org/wiki/Entropic_value_at_risk
+    The EVaR is the tightest upper bound on the loss that follows from the Chernoff
+    inequality; for gaussian returns it has the closed form:
+
+    - EVaR = mean - std * SQRT(-2 * ln(alpha))
+
+    Where `std` is the sample standard deviation (ddof=1). It bounds the gaussian VaR and
+    CVaR at the same `alpha`.
+
+    For more information see:
+
+    - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure."
+    Journal of Optimization Theory and Applications, 155(3), 1105-1123.
+    - https://en.wikipedia.org/wiki/Entropic_value_at_risk
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        alpha (float): The confidence level (e.g., 0.05 for 95% confidence).
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
 
     Returns:
         pd.Series | pd.DataFrame: EVaR values as float if returns is a pd.Series,
@@ -44,4 +56,4 @@ def get_evar_gaussian(
         return value_at_risk.T
 
     # The entropic bound is expressed on losses; subtracting it keeps the result a negative return, consistent with the VaR and CVaR functions in this module.  # noqa: E501
-    return returns.mean() - returns.std(ddof=0) * np.sqrt(-2 * np.log(alpha))
+    return returns.mean() - returns.std(ddof=1) * np.sqrt(-2 * np.log(alpha))

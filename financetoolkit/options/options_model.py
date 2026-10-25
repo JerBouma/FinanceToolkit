@@ -218,6 +218,156 @@ def _get_cboe_option_chain(
     )
 
 
+# Treasury yields are quoted on a bond-equivalent basis: an annual rate compounded twice a year.
+TREASURY_COMPOUNDING_PER_YEAR = 2
+
+
+def get_continuously_compounded_rate(
+    bond_equivalent_yield: pd.Series | pd.DataFrame | float,
+    compounding_per_year: int = TREASURY_COMPOUNDING_PER_YEAR,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Converts a yield quoted with periodic compounding, such as the bond-equivalent yield of a
+    US Treasury, into the continuously compounded rate that the option pricing formulas
+    (Black-Scholes, binomial trees, Bjerksund-Stensland, barrier, Asian and binary options and
+    the Greeks) discount with through e^(-r * t). Both rates grow an investment by the same
+    amount over a year:
+
+        - (1 + y / m)^m = e^r, so r = m * ln(1 + y / m)
+
+    Where y is the quoted yield, m the number of compounding periods per year (2 for a
+    semi-annual bond-equivalent yield) and r the continuously compounded rate. A yield of 4.00%
+    compounded semi-annually equals a continuously compounded rate of 3.96%. Using the quoted
+    yield directly in e^(-r * t) would overstate the discounting and the forward drift.
+
+    The 13-week Treasury bill rate (^IRX) is quoted as a bank discount rate d instead, whose
+    bond-equivalent yield is 365 * d / (360 — d * days). The Toolkit's rate series do not carry
+    their maturity, so every series is treated as a semi-annual bond-equivalent yield; for the
+    13-week rate this understates the yield slightly (a 5.00% discount rate is a 5.13%
+    bond-equivalent yield), making it an approximation.
+
+    Args:
+        bond_equivalent_yield (pd.Series | pd.DataFrame | float): The quoted yield as a decimal.
+        compounding_per_year (int, optional): The number of compounding periods per year.
+            Defaults to 2, the semi-annual compounding of a bond-equivalent Treasury yield.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The continuously compounded rate as a decimal, in the
+        same shape as the input.
+    """
+    return compounding_per_year * np.log1p(bond_equivalent_yield / compounding_per_year)
+
+
+# The trailing window of the dividend yield, and the history a ticker needs before a full window is available.  # noqa: E501
+DIVIDEND_YIELD_WINDOW = "365D"
+DIVIDEND_YIELD_DAYS = 365
+# The recovered yield below which a window counts as showing no dividends: cent rounding of
+# the adjusted close leaves a few millionths where no dividend was adjusted for.
+MINIMUM_RECOVERED_DIVIDEND_YIELD = 1e-6
+
+
+def get_trailing_dividend_yield(
+    close: pd.DataFrame,
+    adjusted_close: pd.DataFrame,
+    dividends: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """
+    Calculates the trailing dividend yield on every date: the dividends per share that went
+    ex-dividend in the 365 days up to and including that date, divided by the close of that
+    date. This is the dividend yield q of the Black-Scholes model on a pricing date, built
+    only from what was known on that date.
+
+    The dividends are recovered from the dividend adjustment of the prices rather than taken
+    from a list of dividends per share. The adjusted close is the close multiplied by a factor
+    f = Adj Close / Close that rises by each dividend on its ex-date: the close before the
+    ex-date is scaled down by (1 - Dividend / Close before the ex-date). The dividend of a date
+    therefore follows as:
+
+        - Dividend_t = (1 - f_(t-1) / f_t) * Close_(t-1)
+        - Dividend Yield_t = SUM(Dividend over the 365 days up to t) / Close_t
+
+    Because the close and the adjusted close are split-adjusted alike, the factor and so the
+    recovered dividends are in the units of today's shares, which a list of dividends per
+    share as paid at the time is not. The daily changes are summed with their sign: prices
+    rounded to the cent move the factor by a few hundredths of a percent from day to day,
+    which cancels in a sum over a year but would add up to a yield of several tenths of a
+    percent if only the increases were kept.
+
+    A date without a full year of history before it (the first year of a ticker's prices)
+    takes the yield of the first date that has one. That yield includes dividends paid after
+    the date, so within the first year the yield is not limited to what was known at the time.
+
+    Some price histories carry dividends without adjusting the close for them (an Adj Close
+    equal to the Close). The recovered dividends of such a window are zero, and when a
+    dividends per share column is given, the dividends it lists over the same 365 days are
+    used instead. These are as paid at the time, so a split within the window mixes share
+    units, which is why they only fill windows the adjustment leaves empty.
+
+    The result is a simple annual yield; the option formulas carry the yield continuously
+    and take ln(1 + q), see options_controller.
+
+    Args:
+        close (pd.DataFrame): The daily (split-adjusted) close per ticker, with a
+            DatetimeIndex or a daily PeriodIndex.
+        adjusted_close (pd.DataFrame): The daily close adjusted for dividends and splits,
+            shaped like `close`.
+        dividends (pd.DataFrame | None, optional): The dividends per share on their ex-dates,
+            shaped like `close`, used where the adjustment shows no dividends over the window.
+            Defaults to None (only the recovered dividends).
+
+    Returns:
+        pd.DataFrame: The trailing dividend yield as a decimal, shaped like `close`. Dates
+        after a ticker's last close are NaN.
+    """
+    index = close.index
+    dates = index.to_timestamp() if isinstance(index, pd.PeriodIndex) else index
+
+    # Carried forward so a date without a price (between two trading days) moves the
+    # dividend to the next trading day instead of losing it.
+    filled_close = close.ffill()
+    adjustment = (adjusted_close / close).ffill()
+
+    recovered_dividends = (1 - adjustment.shift(1) / adjustment) * filled_close.shift(1)
+    trailing_dividends = (
+        recovered_dividends.set_axis(dates)
+        .rolling(DIVIDEND_YIELD_WINDOW)
+        .sum()
+        .set_axis(index)
+    )
+
+    dividend_yield = trailing_dividends / close
+
+    if dividends is not None:
+        listed_dividends = (
+            dividends.reindex(index=index, columns=close.columns)
+            .fillna(0)
+            .set_axis(dates)
+            .rolling(DIVIDEND_YIELD_WINDOW)
+            .sum()
+            .set_axis(index)
+        )
+
+        dividend_yield = dividend_yield.mask(
+            (dividend_yield.fillna(0) < MINIMUM_RECOVERED_DIVIDEND_YIELD)
+            & (listed_dividends > 0),
+            listed_dividends / close,
+        )
+
+    # A window of a full year only exists from a year after a ticker's first close.
+    first_dates = pd.Series(
+        [dates[close[column].notna().to_numpy()].min() for column in close.columns],
+        index=close.columns,
+    )
+    full_year = pd.DataFrame(
+        dates.to_numpy()[:, None]
+        >= (first_dates + pd.Timedelta(days=DIVIDEND_YIELD_DAYS)).to_numpy()[None, :],
+        index=index,
+        columns=close.columns,
+    )
+
+    return dividend_yield.where(full_year).clip(lower=0).bfill().where(close.notna())
+
+
 def get_monte_carlo_option_price(
     stock_price: float,
     strike_price: float,

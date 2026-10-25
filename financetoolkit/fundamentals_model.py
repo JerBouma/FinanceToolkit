@@ -375,7 +375,9 @@ def collect_financial_statements(
             # Built before the statements are normalized, since the statistics are keyed by the same periods the raw statement is keyed by.  # noqa: E501
             yf_statistics_per_ticker = {
                 ticker: yfinance_model.get_statistics_statement(
-                    ticker=ticker, periods=statement.columns
+                    ticker=ticker,
+                    periods=statement.columns,
+                    financial_statement=statement,
                 )
                 for ticker, statement in financial_statement_dict[source].items()
                 if not statement.empty

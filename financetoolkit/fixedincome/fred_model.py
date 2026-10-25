@@ -164,7 +164,7 @@ def get_maturity_option_adjusted_spread(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves the maturity option-adjusted spread (OAS) data from FRED and converts it to basis points.
+    Retrieves the maturity option-adjusted spread (OAS) data from FRED as decimal fractions.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
@@ -172,7 +172,8 @@ def get_maturity_option_adjusted_spread(
 
     Returns:
         pandas.DataFrame: A DataFrame containing the OAS data for different maturity ranges.
-            The columns represent the maturity ranges in years, and the values are in basis points.
+            The columns represent the maturity ranges in years, and the values are decimal
+            fractions (0.0085 for 85 basis points).
     """
     year_indices = [
         "BAMLC1A0C13Y",
@@ -194,8 +195,8 @@ def get_maturity_option_adjusted_spread(
         "15+ Years",
     ]
 
-    # OAS is a percentage, so multiply by 100 to get basis points.
-    oas_data = oas_data * 100
+    # FRED quotes the OAS in percent, so divide by 100 for the decimal every other rate uses.
+    oas_data = oas_data / 100
 
     return oas_data
 
@@ -332,7 +333,7 @@ def get_rating_option_adjusted_spread(
     Returns:
         pandas.DataFrame: A DataFrame containing the OAS data for different credit ratings.
             The columns represent the credit ratings: "AAA", "AA", "A", "BBB", "BB", "B", "CCC".
-            The values are in basis points.
+            The values are decimal fractions (0.0085 for 85 basis points).
     """
     rating_indices = [
         "BAMLC0A1CAAA",
@@ -348,8 +349,8 @@ def get_rating_option_adjusted_spread(
 
     oas_data.columns = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 
-    # OAS is a percentage, so multiply by 100 to get basis points.
-    oas_data = oas_data * 100
+    # FRED quotes the OAS in percent, so divide by 100 for the decimal every other rate uses.
+    oas_data = oas_data / 100
 
     return oas_data
 

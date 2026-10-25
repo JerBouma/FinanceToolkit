@@ -11,8 +11,8 @@ AAPL,Operating Cycle,Lag 3,,,,
 AAPL,Days of Accounts Payable Outstanding,Lag 1,,,0.1669,0.1129
 AAPL,Days of Accounts Payable Outstanding,Lag 2,,,,0.2986
 AAPL,Days of Accounts Payable Outstanding,Lag 3,,,,
-AAPL,Cash Conversion Cycle,Lag 1,,,0.1803,0.1359
-AAPL,Cash Conversion Cycle,Lag 2,,,,0.3407
+AAPL,Cash Conversion Cycle,Lag 1,,,-0.1803,-0.1359
+AAPL,Cash Conversion Cycle,Lag 2,,,,-0.3407
 AAPL,Cash Conversion Cycle,Lag 3,,,,
 AAPL,Cash Conversion Efficiency,Lag 1,,-0.0323,0.0893,-0.0691
 AAPL,Cash Conversion Efficiency,Lag 2,,,0.0541,0.0141
@@ -29,8 +29,8 @@ AAPL,Accounts Payable Turnover Ratio,Lag 3,,,,
 AAPL,SGA-to-Revenue Ratio,Lag 1,,-0.171,0.0582,0.022
 AAPL,SGA-to-Revenue Ratio,Lag 2,,,-0.1228,0.0815
 AAPL,SGA-to-Revenue Ratio,Lag 3,,,,-0.1034
-AAPL,Fixed Asset Turnover,Lag 1,,,-0.0145,-0.0117
-AAPL,Fixed Asset Turnover,Lag 2,,,,-0.0261
+AAPL,Fixed Asset Turnover,Lag 1,,,0.0019,-0.0721
+AAPL,Fixed Asset Turnover,Lag 2,,,,-0.0703
 AAPL,Fixed Asset Turnover,Lag 3,,,,
 AAPL,Asset Turnover Ratio,Lag 1,,,0.0337,-0.0302
 AAPL,Asset Turnover Ratio,Lag 2,,,,0.0025
@@ -53,7 +53,7 @@ AAPL,SBC to Revenue Ratio,Lag 3,,,,0.1365
 AAPL,Deferred Revenue Ratio,Lag 1,,-0.1405,-0.0337,0.0448
 AAPL,Deferred Revenue Ratio,Lag 2,,,-0.1694,0.0096
 AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1322
-AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,-0.5588
+AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,0.5588
 AAPL,Working Capital Turnover Ratio,Lag 2,,,,-3.4584
 AAPL,Working Capital Turnover Ratio,Lag 3,,,,
 MSFT,Days of Inventory Outstanding,Lag 1,,,0.1736,-0.0691
@@ -68,8 +68,8 @@ MSFT,Operating Cycle,Lag 3,,,,
 MSFT,Days of Accounts Payable Outstanding,Lag 1,,,0.0285,0.0329
 MSFT,Days of Accounts Payable Outstanding,Lag 2,,,,0.0623
 MSFT,Days of Accounts Payable Outstanding,Lag 3,,,,
-MSFT,Cash Conversion Cycle,Lag 1,,,0.0641,0.0508
-MSFT,Cash Conversion Cycle,Lag 2,,,,0.1182
+MSFT,Cash Conversion Cycle,Lag 1,,,-0.0641,-0.0508
+MSFT,Cash Conversion Cycle,Lag 2,,,,-0.1182
 MSFT,Cash Conversion Cycle,Lag 3,,,,
 MSFT,Cash Conversion Efficiency,Lag 1,,0.0759,-0.0162,-0.0797
 MSFT,Cash Conversion Efficiency,Lag 2,,,0.0584,-0.0946
@@ -86,8 +86,8 @@ MSFT,Accounts Payable Turnover Ratio,Lag 3,,,,
 MSFT,SGA-to-Revenue Ratio,Lag 1,,-0.1314,-0.0686,0.0236
 MSFT,SGA-to-Revenue Ratio,Lag 2,,,-0.191,-0.0466
 MSFT,SGA-to-Revenue Ratio,Lag 3,,,,-0.1719
-MSFT,Fixed Asset Turnover,Lag 1,,,-0.0798,-0.1292
-MSFT,Fixed Asset Turnover,Lag 2,,,,-0.1987
+MSFT,Fixed Asset Turnover,Lag 1,,,-0.0785,-0.1432
+MSFT,Fixed Asset Turnover,Lag 2,,,,-0.2105
 MSFT,Fixed Asset Turnover,Lag 3,,,,
 MSFT,Asset Turnover Ratio,Lag 1,,,0.0724,-0.0388
 MSFT,Asset Turnover Ratio,Lag 2,,,,0.0308
@@ -122,7 +122,7 @@ AAPL,Quick Ratio,Lag 3,,,,-0.3831
 AAPL,Cash Ratio,Lag 1,,-0.4215,-0.3716,0.3503
 AAPL,Cash Ratio,Lag 2,,,-0.6365,-0.1514
 AAPL,Cash Ratio,Lag 3,,,,-0.5091
-AAPL,Working Capital,Lag 1,,-0.7559,-2.9858,-0.9062
+AAPL,Working Capital,Lag 1,,-0.7559,-2.9858,0.9062
 AAPL,Working Capital,Lag 2,,,-1.4848,-1.1862
 AAPL,Working Capital,Lag 3,,,,-1.0455
 AAPL,Operating Cash Flow Ratio,Lag 1,,0.0831,-0.0432,-0.0411
@@ -134,9 +134,9 @@ AAPL,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0187
 AAPL,Short Term Coverage Ratio,Lag 1,,0.1373,-0.1316,0.2086
 AAPL,Short Term Coverage Ratio,Lag 2,,,-0.0124,0.0495
 AAPL,Short Term Coverage Ratio,Lag 3,,,,0.1936
-AAPL,Defensive Interval Ratio,Lag 1,,-0.2931,-0.3083,0.112
-AAPL,Defensive Interval Ratio,Lag 2,,,-0.511,-0.2308
-AAPL,Defensive Interval Ratio,Lag 3,,,,-0.4563
+AAPL,Defensive Interval Ratio,Lag 1,,-0.3328,-0.2,0.2208
+AAPL,Defensive Interval Ratio,Lag 2,,,-0.4662,-0.0234
+AAPL,Defensive Interval Ratio,Lag 3,,,,-0.3483
 MSFT,Current Ratio,Lag 1,,-0.1732,-0.142,-0.0086
 MSFT,Current Ratio,Lag 2,,,-0.2906,-0.1494
 MSFT,Current Ratio,Lag 3,,,,-0.2968
@@ -158,9 +158,9 @@ MSFT,Operating Cash Flow to Sales Ratio,Lag 3,,,,-0.0259
 MSFT,Short Term Coverage Ratio,Lag 1,,-0.4126,2.4068,-0.4846
 MSFT,Short Term Coverage Ratio,Lag 2,,,1.0012,0.7558
 MSFT,Short Term Coverage Ratio,Lag 3,,,,0.0314
-MSFT,Defensive Interval Ratio,Lag 1,,-0.091,-0.1972,-0.0714
-MSFT,Defensive Interval Ratio,Lag 2,,,-0.2702,-0.2545
-MSFT,Defensive Interval Ratio,Lag 3,,,,-0.3223
+MSFT,Defensive Interval Ratio,Lag 1,,-0.1079,-0.2375,-0.0158
+MSFT,Defensive Interval Ratio,Lag 2,,,-0.3198,-0.2496
+MSFT,Defensive Interval Ratio,Lag 3,,,,-0.3306
 AAPL,Gross Margin,Lag 1,,0.0929,0.0366,0.0189
 AAPL,Gross Margin,Lag 2,,,0.1329,0.0562
 AAPL,Gross Margin,Lag 3,,,,0.1543
@@ -176,9 +176,9 @@ AAPL,EBITDA Margin,Lag 3,,,,0.1654
 AAPL,Free Cash Flow Margin,Lag 1,,-0.0494,0.1122,-0.0807
 AAPL,Free Cash Flow Margin,Lag 2,,,0.0572,0.0224
 AAPL,Free Cash Flow Margin,Lag 3,,,,-0.0281
-AAPL,Interest Coverage Ratio,Lag 1,,0.6885,-0.0202,-0.2817
-AAPL,Interest Coverage Ratio,Lag 2,,,0.6544,-0.2962
-AAPL,Interest Coverage Ratio,Lag 3,,,,0.1883
+AAPL,Interest Coverage Ratio,Lag 1,,0.7852,-0.0107,-0.2868
+AAPL,Interest Coverage Ratio,Lag 2,,,0.7661,-0.2944
+AAPL,Interest Coverage Ratio,Lag 3,,,,0.2596
 AAPL,Income Before Tax Profit Margin,Lag 1,,0.2214,0.0117,-0.0175
 AAPL,Income Before Tax Profit Margin,Lag 2,,,0.2357,-0.006
 AAPL,Income Before Tax Profit Margin,Lag 3,,,,0.214
@@ -194,14 +194,14 @@ AAPL,Cash Return on Assets,Lag 3,,,,
 AAPL,Return on Equity,Lag 1,,,0.19,-0.02
 AAPL,Return on Equity,Lag 2,,,,0.1662
 AAPL,Return on Equity,Lag 3,,,,
-AAPL,Return on Invested Capital,Lag 1,,,0.0714,0.0363
-AAPL,Return on Invested Capital,Lag 2,,,,0.1103
+AAPL,Return on Invested Capital,Lag 1,,,0.0717,0.0461
+AAPL,Return on Invested Capital,Lag 2,,,,0.1211
 AAPL,Return on Invested Capital,Lag 3,,,,
-AAPL,Return on Capital Employed,Lag 1,,0.549,0.2377,-0.0753
-AAPL,Return on Capital Employed,Lag 2,,,0.9172,0.1446
-AAPL,Return on Capital Employed,Lag 3,,,,0.773
-AAPL,Return on Tangible Assets,Lag 1,,,0.19,-0.02
-AAPL,Return on Tangible Assets,Lag 2,,,,0.1662
+AAPL,Return on Capital Employed,Lag 1,,0.5923,0.2438,-0.0824
+AAPL,Return on Capital Employed,Lag 2,,,0.9806,0.1414
+AAPL,Return on Capital Employed,Lag 3,,,,0.8174
+AAPL,Return on Tangible Assets,Lag 1,,,0.0107,-0.0303
+AAPL,Return on Tangible Assets,Lag 2,,,,-0.02
 AAPL,Return on Tangible Assets,Lag 3,,,,
 AAPL,Income Quality Ratio,Lag 1,,-0.218,0.1139,-0.0688
 AAPL,Income Quality Ratio,Lag 2,,,-0.129,0.0372
@@ -221,9 +221,9 @@ AAPL,EBIT to Revenue,Lag 3,,,,0.2044
 AAPL,Cash Tax Rate,Lag 1,,0.6412,-0.293,-0.0006
 AAPL,Cash Tax Rate,Lag 2,,,0.1603,-0.2935
 AAPL,Cash Tax Rate,Lag 3,,,,0.1596
-AAPL,Tax Rate Divergence,Lag 1,,-37.8148,-0.9769,6.3913
-AAPL,Tax Rate Divergence,Lag 2,,,-1.8519,-0.829
-AAPL,Tax Rate Divergence,Lag 3,,,,-7.2963
+AAPL,Tax Rate Divergence,Lag 1,,37.8148,-0.9769,6.3913
+AAPL,Tax Rate Divergence,Lag 2,,,1.8519,-0.829
+AAPL,Tax Rate Divergence,Lag 3,,,,7.2963
 MSFT,Gross Margin,Lag 1,,0.017,-0.0077,0.0076
 MSFT,Gross Margin,Lag 2,,,0.0091,-0.0001
 MSFT,Gross Margin,Lag 3,,,,0.0168
@@ -239,9 +239,9 @@ MSFT,EBITDA Margin,Lag 3,,,,0.0507
 MSFT,Free Cash Flow Margin,Lag 1,,0.0556,-0.0159,-0.1458
 MSFT,Free Cash Flow Margin,Lag 2,,,0.0389,-0.1593
 MSFT,Free Cash Flow Margin,Lag 3,,,,-0.1126
-MSFT,Interest Coverage Ratio,Lag 1,,0.3706,0.3635,0.0969
-MSFT,Interest Coverage Ratio,Lag 2,,,0.8688,0.4957
-MSFT,Interest Coverage Ratio,Lag 3,,,,1.05
+MSFT,Interest Coverage Ratio,Lag 1,,0.4581,0.3562,0.1129
+MSFT,Interest Coverage Ratio,Lag 2,,,0.9775,0.5093
+MSFT,Interest Coverage Ratio,Lag 3,,,,1.2007
 MSFT,Income Before Tax Profit Margin,Lag 1,,0.1408,-0.0019,-0.0019
 MSFT,Income Before Tax Profit Margin,Lag 2,,,0.1386,-0.0038
 MSFT,Income Before Tax Profit Margin,Lag 3,,,,0.1365
@@ -257,14 +257,14 @@ MSFT,Cash Return on Assets,Lag 3,,,,
 MSFT,Return on Equity,Lag 1,,,0.0015,-0.1767
 MSFT,Return on Equity,Lag 2,,,,-0.1754
 MSFT,Return on Equity,Lag 3,,,,
-MSFT,Return on Invested Capital,Lag 1,,,0.1128,-0.1474
-MSFT,Return on Invested Capital,Lag 2,,,,-0.0513
+MSFT,Return on Invested Capital,Lag 1,,,0.0964,-0.1229
+MSFT,Return on Invested Capital,Lag 2,,,,-0.0384
 MSFT,Return on Invested Capital,Lag 3,,,,
-MSFT,Return on Capital Employed,Lag 1,,0.2334,0.0614,-0.0676
-MSFT,Return on Capital Employed,Lag 2,,,0.3092,-0.0103
-MSFT,Return on Capital Employed,Lag 3,,,,0.2207
-MSFT,Return on Tangible Assets,Lag 1,,,0.0068,-0.1823
-MSFT,Return on Tangible Assets,Lag 2,,,,-0.1767
+MSFT,Return on Capital Employed,Lag 1,,0.233,0.0838,-0.0696
+MSFT,Return on Capital Employed,Lag 2,,,0.3364,0.0084
+MSFT,Return on Capital Employed,Lag 3,,,,0.2434
+MSFT,Return on Tangible Assets,Lag 1,,,0.1132,-0.099
+MSFT,Return on Tangible Assets,Lag 2,,,,0.003
 MSFT,Return on Tangible Assets,Lag 3,,,,
 MSFT,Income Quality Ratio,Lag 1,,-0.0859,-0.0227,-0.0113
 MSFT,Income Quality Ratio,Lag 2,,,-0.1066,-0.0337
@@ -284,9 +284,9 @@ MSFT,EBIT to Revenue,Lag 3,,,,0.1072
 MSFT,Cash Tax Rate,Lag 1,,,,
 MSFT,Cash Tax Rate,Lag 2,,,,
 MSFT,Cash Tax Rate,Lag 3,,,,
-MSFT,Tax Rate Divergence,Lag 1,,-0.1623,-0.0521,0.4477
-MSFT,Tax Rate Divergence,Lag 2,,,-0.2059,0.3724
-MSFT,Tax Rate Divergence,Lag 3,,,,0.1496
+MSFT,Tax Rate Divergence,Lag 1,,0.1623,0.0521,-0.4477
+MSFT,Tax Rate Divergence,Lag 2,,,0.2059,-0.3724
+MSFT,Tax Rate Divergence,Lag 3,,,,-0.1496
 AAPL,Debt-to-Assets Ratio,Lag 1,,0.0302,-0.0342,-0.1611
 AAPL,Debt-to-Assets Ratio,Lag 2,,,-0.005,-0.1898
 AAPL,Debt-to-Assets Ratio,Lag 3,,,,-0.1653
@@ -296,14 +296,14 @@ AAPL,Asset Coverage Ratio,Lag 3,,,,0.0572
 AAPL,Debt-to-Equity Ratio,Lag 1,,0.1563,0.2082,-0.3163
 AAPL,Debt-to-Equity Ratio,Lag 2,,,0.3971,-0.1739
 AAPL,Debt-to-Equity Ratio,Lag 3,,,,-0.0448
-AAPL,Debt Service Coverage Ratio,Lag 1,,0.3804,-0.1066,0.0141
-AAPL,Debt Service Coverage Ratio,Lag 2,,,0.2332,-0.0941
-AAPL,Debt Service Coverage Ratio,Lag 3,,,,0.2506
+AAPL,Debt Service Coverage Ratio,Lag 1,,0.4169,-0.1754,0.1739
+AAPL,Debt Service Coverage Ratio,Lag 2,,,0.1683,-0.0321
+AAPL,Debt Service Coverage Ratio,Lag 3,,,,0.3715
 AAPL,Equity Multiplier,Lag 1,,,0.1772,0.0106
 AAPL,Equity Multiplier,Lag 2,,,,0.1897
 AAPL,Equity Multiplier,Lag 3,,,,
-AAPL,Free Cash Flow Yield,Lag 1,,-0.0217,0.6804,
-AAPL,Free Cash Flow Yield,Lag 2,,,0.644,
+AAPL,Free Cash Flow Yield,Lag 1,,-0.0159,0.6935,
+AAPL,Free Cash Flow Yield,Lag 2,,,0.6667,
 AAPL,Free Cash Flow Yield,Lag 3,,,,
 AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2244,-0.0133,-0.2266
 AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2368
@@ -338,14 +338,14 @@ MSFT,Asset Coverage Ratio,Lag 3,,,,0.5932
 MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2292,-0.2096
 MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.3869,-0.3907
 MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5154
-MSFT,Debt Service Coverage Ratio,Lag 1,,0.0767,0.1121,-0.0308
-MSFT,Debt Service Coverage Ratio,Lag 2,,,0.1974,0.0779
-MSFT,Debt Service Coverage Ratio,Lag 3,,,,0.1606
+MSFT,Debt Service Coverage Ratio,Lag 1,,-0.2448,1.5959,-0.3021
+MSFT,Debt Service Coverage Ratio,Lag 2,,,0.9605,0.8117
+MSFT,Debt Service Coverage Ratio,Lag 3,,,,0.3682
 MSFT,Equity Multiplier,Lag 1,,,-0.072,-0.0797
 MSFT,Equity Multiplier,Lag 2,,,,-0.1459
 MSFT,Equity Multiplier,Lag 3,,,,
-MSFT,Free Cash Flow Yield,Lag 1,,-0.1788,0.6311,
-MSFT,Free Cash Flow Yield,Lag 2,,,0.3394,
+MSFT,Free Cash Flow Yield,Lag 1,,-0.1736,0.6438,
+MSFT,Free Cash Flow Yield,Lag 2,,,0.3585,
 MSFT,Free Cash Flow Yield,Lag 3,,,,
 MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2486,-0.2627,-0.4901
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624
@@ -377,77 +377,77 @@ AAPL,Earnings per Share,Lag 3,,,,0.8728
 AAPL,Revenue per Share,Lag 1,,0.385,0.1135,0.0035
 AAPL,Revenue per Share,Lag 2,,,0.5422,0.1175
 AAPL,Revenue per Share,Lag 3,,,,0.5477
-AAPL,Price-to-Earnings,Lag 1,,-0.2144,-0.3241,
-AAPL,Price-to-Earnings,Lag 2,,,-0.4691,
+AAPL,Price-to-Earnings,Lag 1,,-0.2193,-0.328,
+AAPL,Price-to-Earnings,Lag 2,,,-0.4754,
 AAPL,Price-to-Earnings,Lag 3,,,,
-AAPL,Price-to-Earnings-Growth,Lag 1,,,4.4281,
+AAPL,Price-to-Earnings-Growth,Lag 1,,,4.3968,
 AAPL,Price-to-Earnings-Growth,Lag 2,,,,
 AAPL,Price-to-Earnings-Growth,Lag 3,,,,
 AAPL,Book Value per Share,Lag 1,,0.0036,-0.1703,0.2663
 AAPL,Book Value per Share,Lag 2,,,-0.1673,0.0506
 AAPL,Book Value per Share,Lag 3,,,,0.0544
-AAPL,Price-to-Book,Lag 1,,0.3417,-0.113,
-AAPL,Price-to-Book,Lag 2,,,0.1901,
+AAPL,Price-to-Book,Lag 1,,0.3335,-0.1181,
+AAPL,Price-to-Book,Lag 2,,,0.176,
 AAPL,Price-to-Book,Lag 3,,,,
 AAPL,Interest Debt per Share,Lag 1,,0.1557,0.0051,-0.123
 AAPL,Interest Debt per Share,Lag 2,,,0.1617,-0.1185
 AAPL,Interest Debt per Share,Lag 3,,,,0.0188
-AAPL,CAPEX per Share,Lag 1,,0.5763,-0.0021,0.0567
-AAPL,CAPEX per Share,Lag 2,,,0.5729,0.0545
-AAPL,CAPEX per Share,Lag 3,,,,0.6621
-AAPL,Earnings Yield,Lag 1,,0.2727,0.4783,
-AAPL,Earnings Yield,Lag 2,,,0.8814,
+AAPL,CAPEX per Share,Lag 1,,-0.5763,0.0021,-0.0567
+AAPL,CAPEX per Share,Lag 2,,,-0.5729,-0.0545
+AAPL,CAPEX per Share,Lag 3,,,,-0.6621
+AAPL,Earnings Yield,Lag 1,,0.2794,0.4873,
+AAPL,Earnings Yield,Lag 2,,,0.9028,
 AAPL,Earnings Yield,Lag 3,,,,
 AAPL,Dividend Payout Ratio,Lag 1,,-0.3771,-0.0268,0.0417
 AAPL,Dividend Payout Ratio,Lag 2,,,-0.3938,0.0137
 AAPL,Dividend Payout Ratio,Lag 3,,,,-0.3685
-AAPL,Dividend Yield,Lag 1,,-0.7525,0.42,
-AAPL,Dividend Yield,Lag 2,,,-0.6485,
+AAPL,Dividend Yield,Lag 1,,-0.7513,0.4286,
+AAPL,Dividend Yield,Lag 2,,,-0.6447,
 AAPL,Dividend Yield,Lag 3,,,,
-AAPL,Weighted Dividend Yield,Lag 1,,-0.2097,0.449,
-AAPL,Weighted Dividend Yield,Lag 2,,,0.1452,
+AAPL,Weighted Dividend Yield,Lag 1,,-0.2131,0.4583,
+AAPL,Weighted Dividend Yield,Lag 2,,,0.1475,
 AAPL,Weighted Dividend Yield,Lag 3,,,,
-AAPL,Price-to-Cash-Flow,Lag 1,,0.0046,-0.3932,
-AAPL,Price-to-Cash-Flow,Lag 2,,,-0.3904,
+AAPL,Price-to-Cash-Flow,Lag 1,,-0.0016,-0.3967,
+AAPL,Price-to-Cash-Flow,Lag 2,,,-0.3977,
 AAPL,Price-to-Cash-Flow,Lag 3,,,,
-AAPL,Price-to-Free-Cash-Flow,Lag 1,,0.0225,-0.4058,
-AAPL,Price-to-Free-Cash-Flow,Lag 2,,,-0.3924,
+AAPL,Price-to-Free-Cash-Flow,Lag 1,,0.0163,-0.4092,
+AAPL,Price-to-Free-Cash-Flow,Lag 2,,,-0.3996,
 AAPL,Price-to-Free-Cash-Flow,Lag 3,,,,
-AAPL,Price-to-Sales,Lag 1,,-0.0278,-0.3391,
-AAPL,Price-to-Sales,Lag 2,,,-0.3575,
+AAPL,Price-to-Sales,Lag 1,,-0.0338,-0.3429,
+AAPL,Price-to-Sales,Lag 2,,,-0.3651,
 AAPL,Price-to-Sales,Lag 3,,,,
-AAPL,Market Cap,Lag 1,,0.2955,-0.2876,
-AAPL,Market Cap,Lag 2,,,-0.077,
+AAPL,Market Cap,Lag 1,,0.2876,-0.2917,
+AAPL,Market Cap,Lag 2,,,-0.088,
 AAPL,Market Cap,Lag 3,,,,
-AAPL,Enterprise Value,Lag 1,,0.2923,-0.2756,
-AAPL,Enterprise Value,Lag 2,,,-0.0638,
+AAPL,Enterprise Value,Lag 1,,0.3018,-0.2813,
+AAPL,Enterprise Value,Lag 2,,,-0.0644,
 AAPL,Enterprise Value,Lag 3,,,,
-AAPL,EV-to-Sales,Lag 1,,-0.0302,-0.328,
-AAPL,EV-to-Sales,Lag 2,,,-0.3483,
+AAPL,EV-to-Sales,Lag 1,,-0.0231,-0.3333,
+AAPL,EV-to-Sales,Lag 2,,,-0.3487,
 AAPL,EV-to-Sales,Lag 3,,,,
-AAPL,EV-to-EBIT,Lag 1,,-0.1916,-0.336,
-AAPL,EV-to-EBIT,Lag 2,,,-0.4633,
+AAPL,EV-to-EBIT,Lag 1,,-0.2079,-0.3444,
+AAPL,EV-to-EBIT,Lag 2,,,-0.4807,
 AAPL,EV-to-EBIT,Lag 3,,,,
-AAPL,EV-to-EBITDA,Lag 1,,-0.1687,-0.3328,
-AAPL,EV-to-EBITDA,Lag 2,,,-0.4453,
+AAPL,EV-to-EBITDA,Lag 1,,-0.1626,-0.3381,
+AAPL,EV-to-EBITDA,Lag 2,,,-0.4457,
 AAPL,EV-to-EBITDA,Lag 3,,,,
-AAPL,EV-to-Operating-Cash-Flow,Lag 1,,0.0021,-0.383,
-AAPL,EV-to-Operating-Cash-Flow,Lag 2,,,-0.3817,
+AAPL,EV-to-Operating-Cash-Flow,Lag 1,,0.0095,-0.3879,
+AAPL,EV-to-Operating-Cash-Flow,Lag 2,,,-0.3821,
 AAPL,EV-to-Operating-Cash-Flow,Lag 3,,,,
 AAPL,Tangible Asset Value,Lag 1,,-0.0344,-0.1968,0.2264
 AAPL,Tangible Asset Value,Lag 2,,,-0.2245,-0.015
 AAPL,Tangible Asset Value,Lag 3,,,,-0.0489
-AAPL,Net Current Asset Value,Lag 1,,0.333,0.0889,-0.1188
-AAPL,Net Current Asset Value,Lag 2,,,0.4514,-0.0405
-AAPL,Net Current Asset Value,Lag 3,,,,0.279
-AAPL,EV-to-Free-Cash-Flow,Lag 1,,0.02,-0.3958,
-AAPL,EV-to-Free-Cash-Flow,Lag 2,,,-0.3837,
+AAPL,Net Current Asset Value,Lag 1,,-0.333,-0.0889,0.1188
+AAPL,Net Current Asset Value,Lag 2,,,-0.4514,0.0405
+AAPL,Net Current Asset Value,Lag 3,,,,-0.279
+AAPL,EV-to-Free-Cash-Flow,Lag 1,,0.0275,-0.4005,
+AAPL,EV-to-Free-Cash-Flow,Lag 2,,,-0.3841,
 AAPL,EV-to-Free-Cash-Flow,Lag 3,,,,
-AAPL,Buyback Yield,Lag 1,,-0.0857,0.4792,
-AAPL,Buyback Yield,Lag 2,,,0.3524,
+AAPL,Buyback Yield,Lag 1,,-0.0782,0.4876,
+AAPL,Buyback Yield,Lag 2,,,0.3713,
 AAPL,Buyback Yield,Lag 3,,,,
-AAPL,Shareholder Yield,Lag 1,,-0.3462,0.4704,
-AAPL,Shareholder Yield,Lag 2,,,-0.0387,
+AAPL,Shareholder Yield,Lag 1,,-0.3413,0.4789,
+AAPL,Shareholder Yield,Lag 2,,,-0.0258,
 AAPL,Shareholder Yield,Lag 3,,,,
 AAPL,SBC-Adjusted Free Cash Flow,Lag 1,,0.2782,0.2041,-0.1333
 AAPL,SBC-Adjusted Free Cash Flow,Lag 2,,,0.5391,0.0436
@@ -458,77 +458,77 @@ MSFT,Earnings per Share,Lag 3,,,,0.6803
 MSFT,Revenue per Share,Lag 1,,0.1869,0.1902,0.0785
 MSFT,Revenue per Share,Lag 2,,,0.4127,0.2837
 MSFT,Revenue per Share,Lag 3,,,,0.5236
-MSFT,Price-to-Earnings,Lag 1,,0.0912,-0.3991,
-MSFT,Price-to-Earnings,Lag 2,,,-0.3443,
+MSFT,Price-to-Earnings,Lag 1,,0.0821,-0.4047,
+MSFT,Price-to-Earnings,Lag 2,,,-0.3558,
 MSFT,Price-to-Earnings,Lag 3,,,,
-MSFT,Price-to-Earnings-Growth,Lag 1,,,0.2063,
+MSFT,Price-to-Earnings-Growth,Lag 1,,,0.1951,
 MSFT,Price-to-Earnings-Growth,Lag 2,,,,
 MSFT,Price-to-Earnings-Growth,Lag 3,,,,
 MSFT,Book Value per Share,Lag 1,,0.212,0.1835,0.2495
 MSFT,Book Value per Share,Lag 2,,,0.4344,0.4788
 MSFT,Book Value per Share,Lag 3,,,,0.7924
-MSFT,Price-to-Book,Lag 1,,0.2581,-0.3918,
-MSFT,Price-to-Book,Lag 2,,,-0.2349,
+MSFT,Price-to-Book,Lag 1,,0.2476,-0.3975,
+MSFT,Price-to-Book,Lag 2,,,-0.2483,
 MSFT,Price-to-Book,Lag 3,,,,
 MSFT,Interest Debt per Share,Lag 1,,-0.0377,-0.0887,-0.0132
 MSFT,Interest Debt per Share,Lag 2,,,-0.1231,-0.1007
 MSFT,Interest Debt per Share,Lag 3,,,,-0.1346
-MSFT,CAPEX per Share,Lag 1,,0.3487,0.1687,0.1874
-MSFT,CAPEX per Share,Lag 2,,,0.5762,0.3877
-MSFT,CAPEX per Share,Lag 3,,,,0.8716
-MSFT,Earnings Yield,Lag 1,,-0.0855,0.6667,
-MSFT,Earnings Yield,Lag 2,,,0.5242,
+MSFT,CAPEX per Share,Lag 1,,-0.3487,-0.1687,-0.1874
+MSFT,CAPEX per Share,Lag 2,,,-0.5762,-0.3877
+MSFT,CAPEX per Share,Lag 3,,,,-0.8716
+MSFT,Earnings Yield,Lag 1,,-0.0772,0.682,
+MSFT,Earnings Yield,Lag 2,,,0.5521,
 MSFT,Earnings Yield,Lag 3,,,,
 MSFT,Dividend Payout Ratio,Lag 1,,-0.2112,-0.0753,0.0975
 MSFT,Dividend Payout Ratio,Lag 2,,,-0.2706,0.0148
 MSFT,Dividend Payout Ratio,Lag 3,,,,-0.1995
-MSFT,Dividend Yield,Lag 1,,-0.2784,0.5429,
-MSFT,Dividend Yield,Lag 2,,,0.1134,
+MSFT,Dividend Yield,Lag 1,,-0.2766,0.5588,
+MSFT,Dividend Yield,Lag 2,,,0.1277,
 MSFT,Dividend Yield,Lag 3,,,,
-MSFT,Weighted Dividend Yield,Lag 1,,-0.2826,0.5455,
-MSFT,Weighted Dividend Yield,Lag 2,,,0.1087,
+MSFT,Weighted Dividend Yield,Lag 1,,-0.2697,0.5385,
+MSFT,Weighted Dividend Yield,Lag 2,,,0.1236,
 MSFT,Weighted Dividend Yield,Lag 3,,,,
-MSFT,Price-to-Cash-Flow,Lag 1,,0.1938,-0.3852,
-MSFT,Price-to-Cash-Flow,Lag 2,,,-0.266,
+MSFT,Price-to-Cash-Flow,Lag 1,,0.1839,-0.3909,
+MSFT,Price-to-Cash-Flow,Lag 2,,,-0.2789,
 MSFT,Price-to-Cash-Flow,Lag 3,,,,
-MSFT,Price-to-Free-Cash-Flow,Lag 1,,0.2171,-0.3855,
-MSFT,Price-to-Free-Cash-Flow,Lag 2,,,-0.2522,
+MSFT,Price-to-Free-Cash-Flow,Lag 1,,0.2069,-0.3913,
+MSFT,Price-to-Free-Cash-Flow,Lag 2,,,-0.2653,
 MSFT,Price-to-Free-Cash-Flow,Lag 3,,,,
-MSFT,Price-to-Sales,Lag 1,,0.2847,-0.3952,
-MSFT,Price-to-Sales,Lag 2,,,-0.2231,
+MSFT,Price-to-Sales,Lag 1,,0.274,-0.4009,
+MSFT,Price-to-Sales,Lag 2,,,-0.2367,
 MSFT,Price-to-Sales,Lag 3,,,,
-MSFT,Market Cap,Lag 1,,0.5099,-0.2867,
-MSFT,Market Cap,Lag 2,,,0.0771,
+MSFT,Market Cap,Lag 1,,0.4973,-0.2933,
+MSFT,Market Cap,Lag 2,,,0.0582,
 MSFT,Market Cap,Lag 3,,,,
-MSFT,Enterprise Value,Lag 1,,0.4905,-0.2831,
-MSFT,Enterprise Value,Lag 2,,,0.0686,
+MSFT,Enterprise Value,Lag 1,,0.519,-0.293,
+MSFT,Enterprise Value,Lag 2,,,0.0739,
 MSFT,Enterprise Value,Lag 3,,,,
-MSFT,EV-to-Sales,Lag 1,,0.2682,-0.3922,
-MSFT,EV-to-Sales,Lag 2,,,-0.2292,
+MSFT,EV-to-Sales,Lag 1,,0.2924,-0.4007,
+MSFT,EV-to-Sales,Lag 2,,,-0.2254,
 MSFT,EV-to-Sales,Lag 3,,,,
-MSFT,EV-to-EBIT,Lag 1,,0.1288,-0.3861,
-MSFT,EV-to-EBIT,Lag 2,,,-0.307,
+MSFT,EV-to-EBIT,Lag 1,,0.1506,-0.4072,
+MSFT,EV-to-EBIT,Lag 2,,,-0.3179,
 MSFT,EV-to-EBIT,Lag 3,,,,
-MSFT,EV-to-EBITDA,Lag 1,,0.201,-0.4021,
-MSFT,EV-to-EBITDA,Lag 2,,,-0.2819,
+MSFT,EV-to-EBITDA,Lag 1,,0.224,-0.4104,
+MSFT,EV-to-EBITDA,Lag 2,,,-0.2783,
 MSFT,EV-to-EBITDA,Lag 3,,,,
-MSFT,EV-to-Operating-Cash-Flow,Lag 1,,0.1785,-0.3821,
-MSFT,EV-to-Operating-Cash-Flow,Lag 2,,,-0.2718,
+MSFT,EV-to-Operating-Cash-Flow,Lag 1,,0.201,-0.3907,
+MSFT,EV-to-Operating-Cash-Flow,Lag 2,,,-0.2682,
 MSFT,EV-to-Operating-Cash-Flow,Lag 3,,,,
-MSFT,Tangible Asset Value,Lag 1,,0.2311,0.0731,0.3971
-MSFT,Tangible Asset Value,Lag 2,,,0.3211,0.4991
-MSFT,Tangible Asset Value,Lag 3,,,,0.8456
-MSFT,Net Current Asset Value,Lag 1,,5.7628,2.8746,-0.2488
-MSFT,Net Current Asset Value,Lag 2,,,25.2033,1.9108
-MSFT,Net Current Asset Value,Lag 3,,,,18.685
-MSFT,EV-to-Free-Cash-Flow,Lag 1,,0.2014,-0.3825,
-MSFT,EV-to-Free-Cash-Flow,Lag 2,,,-0.2581,
+MSFT,Tangible Asset Value,Lag 1,,0.2439,0.0384,0.4703
+MSFT,Tangible Asset Value,Lag 2,,,0.2916,0.5267
+MSFT,Tangible Asset Value,Lag 3,,,,0.899
+MSFT,Net Current Asset Value,Lag 1,,-5.7628,-2.8746,0.2488
+MSFT,Net Current Asset Value,Lag 2,,,-25.2033,-1.9108
+MSFT,Net Current Asset Value,Lag 3,,,,-18.685
+MSFT,EV-to-Free-Cash-Flow,Lag 1,,0.2244,-0.391,
+MSFT,EV-to-Free-Cash-Flow,Lag 2,,,-0.2544,
 MSFT,EV-to-Free-Cash-Flow,Lag 3,,,,
-MSFT,Buyback Yield,Lag 1,,-0.2137,0.6893,
-MSFT,Buyback Yield,Lag 2,,,0.3282,
+MSFT,Buyback Yield,Lag 1,,-0.2126,0.71,
+MSFT,Buyback Yield,Lag 2,,,0.3465,
 MSFT,Buyback Yield,Lag 3,,,,
-MSFT,Shareholder Yield,Lag 1,,-0.2412,0.6301,
-MSFT,Shareholder Yield,Lag 2,,,0.2368,
+MSFT,Shareholder Yield,Lag 1,,-0.2398,0.6488,
+MSFT,Shareholder Yield,Lag 2,,,0.2534,
 MSFT,Shareholder Yield,Lag 3,,,,
 MSFT,SBC-Adjusted Free Cash Flow,Lag 1,,0.2517,0.1529,-0.135
 MSFT,SBC-Adjusted Free Cash Flow,Lag 2,,,0.4432,-0.0027

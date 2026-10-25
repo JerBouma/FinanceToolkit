@@ -390,7 +390,7 @@ def test_etf_methods_do_not_remove_tickers_that_are_not_funds(
         sleep_timer=False,
         use_cached_data=cache_location,
     )
-    holdings = toolkit.get_etf_holdings()
+    holdings = toolkit.etf.get_holdings()
 
     assert holdings.empty
     assert toolkit._tickers == ["AAPL", "MSFT"]
@@ -426,7 +426,7 @@ def test_a_sector_a_fund_does_not_hold_weighs_zero(cache_location, monkeypatch):
         sleep_timer=False,
         use_cached_data=cache_location,
     )
-    sectors = toolkit.get_etf_sector_weightings()
+    sectors = toolkit.etf.get_sector_weightings()
 
     assert sectors.loc["Real Estate", "QQQ"] == 0
     assert list(sectors.index) == ["Technology", "Real Estate"]

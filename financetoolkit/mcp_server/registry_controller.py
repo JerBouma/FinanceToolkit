@@ -90,7 +90,7 @@ def _curve_maturity(maturity: Any) -> float | str:
 # period, so a blocked period (e.g. daily performance) does not apply to them.
 PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis"})
 # The indicators whose own limit also takes a negative number, for the last rows.
-NEGATIVE_LIMIT_METHODS = frozenset({"get_etf_holdings"})
+NEGATIVE_LIMIT_METHODS = frozenset({"get_holdings"})
 
 
 # Injected into each tool's Args docstring so FastMCP can surface them.

@@ -27,7 +27,6 @@ US_TREASURY = "USTreasury"
 BUREAU_OF_LABOR_STATISTICS = "BLS"
 FREDDIE_MAC = "FreddieMac"
 FEDERAL_RESERVE_BOARD = "FederalReserveBoard"
-SEC = "SEC"
 NATIONAL_BUREAU_OF_ECONOMIC_RESEARCH = "NBER"
 IBGE = "IBGE"
 BUNDESBANK = "Bundesbank"
@@ -250,10 +249,6 @@ POLICIES: dict[str, CachePolicy] = {
     ),
     # The Ken French factor files are published monthly as a single zip archive; named "factors_decimal" because the loaders were corrected to divide the published percentages by 100, and the rename is what stops a cache warmed by an older release from serving percent-scaled factors against decimal returns, so the policy has to follow that rename or the archive falls back to the one day default and is re-downloaded every day.  # noqa: E501
     f"{KEN_FRENCH}.factors_decimal": CachePolicy(ttl_seconds=7 * DAY),
-    # The SEC's list of fund tickers changes slowly, and a quarter's prospectus data is final
-    # once published.
-    f"{SEC}.fund_tickers": CachePolicy(ttl_seconds=30 * DAY),
-    f"{SEC}.risk_return_fees": CachePolicy(ttl_seconds=90 * DAY),
     # Computed MCP tool responses layered on top of the source caches.
     f"{MCP}.tool": CachePolicy(ttl_seconds=DAY),
     f"{MCP}.tool_messages": CachePolicy(ttl_seconds=DAY),

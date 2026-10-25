@@ -6344,12 +6344,12 @@ class Econometrics:
         | Regime 1 Mean                   |  0.009  |  0.0065 |
         | Regime 1 Volatility             |  0.0236 |  0.0217 |
         | Regime 1 Probability of Staying |  0.917  |  0.9528 |
-        | Regime 1 Expected Duration      | 12.0486 | 21.191  |
+        | Regime 1 Expected Duration      | 12.0479 | 21.194  |
         | Regime 1 Share                  |  0.5436 |  0.6411 |
         | Regime 2 Mean                   |  0.0006 |  0.0021 |
         | Regime 2 Volatility             |  0.0488 |  0.0455 |
-        | Regime 2 Probability of Staying |  0.91   |  0.9208 |
-        | Regime 2 Expected Duration      | 11.1109 | 12.6319 |
+        | Regime 2 Probability of Staying |  0.91   |  0.9209 |
+        | Regime 2 Expected Duration      | 11.1105 | 12.6346 |
         | Regime 2 Share                  |  0.4564 |  0.3589 |
         | Current Regime                  |  1      |  1      |
         | Current Regime Probability      |  0.8877 |  0.8087 |

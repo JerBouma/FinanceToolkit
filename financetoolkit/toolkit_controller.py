@@ -1252,7 +1252,7 @@ class Toolkit:
     def etf(self) -> "ETF":
         """
         The ETF module analyzes the Toolkit's exchange traded funds (and other funds): their
-        holdings, sector and country weightings, profile and premium or discount to NAV, the fee table of their prospectus, how closely
+        holdings, sector and country weightings, profile and premium or discount to NAV, how closely
         they track the Benchmark, how concentrated and how much alike they are, what their
         holdings are valued at and how liquid they are.
 

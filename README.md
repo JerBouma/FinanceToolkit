@@ -410,7 +410,7 @@ For example, the coefficients for Nvidia are shown below.
 | Real Yield             |      -22.8132 |       5.6358 |       -4.0479 |    0.0001 |
 | Inflation Expectations |       18.1329 |       9.1029 |        1.992  |    0.0493 |
 
-And below each coefficient is shown with its 95% confidence interval. The yields are decimals, so a change of 0.001 is 0.1 percentage point, and a coefficient of -20 means a monthly return 2% lower for every 0.1 percentage point the yield rose. All three are valued on earnings that lie far ahead, which a higher real yield discounts more heavily: a 0.1 percentage point rise in the real yield went with a monthly return about 2.3% lower for Nvidia, 3.4% lower for AMD and 1.9% lower for Intel, each significant at the 1% level. Rising inflation expectations, often a sign of a growing economy, went with a higher return for Nvidia, significant at the 5% level, but made no significant difference for AMD and Intel. Short-term rates matter less than they might seem: the 3-month yield shows no significant relation with these returns, as the Federal Reserve's policy rate reaches growth companies mainly through the long-term real yields it moves.
+And below each coefficient is shown with its 95% confidence interval. A rise of 0.1 percentage point in the real yield went with a monthly return about 2.3% lower for Nvidia, 3.4% for AMD and 1.9% for Intel, as a higher real yield discounts their distant earnings more heavily. Rising inflation expectations helped only Nvidia, and short-term rates show no significant relation at all.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-dark.png">

@@ -700,7 +700,8 @@ def _simplify_annotation(ann: Any) -> Any:
         )
         for a in args
     ):
-        combined = scalar | list[scalar]
+        # Built at runtime for the tool schema; ty cannot follow a type held in a variable.
+        combined = scalar | list[scalar]  # ty: ignore[invalid-type-form]
         return combined | None if has_none else combined
 
     return scalar | None if has_none else scalar
@@ -1889,7 +1890,7 @@ class ToolRegistry:
                 default = None
                 annotation = _annotate_with_description(
                     p.name,
-                    typing.Optional[ann],  # noqa: UP045
+                    typing.Optional[ann],  # noqa: UP045  # ty: ignore[invalid-type-form]  # fmt: skip
                     suffix=_describe_disputed_default(parameter_defaults[p.name]),
                     documented=documented.get(p.name, ""),
                 )

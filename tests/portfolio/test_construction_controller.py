@@ -192,3 +192,39 @@ def test_get_brinson_attribution(recorder, test_toolkit):
     assert total["Total Effect"] == pytest.approx(
         total["Portfolio Return"] - total["Benchmark Return"], abs=1e-3
     )
+
+
+def test_get_brinson_attribution_looks_through_funds(test_toolkit):
+    # MSFT stands in for a fund: its profile names the issuer's sector, while its sector
+    # weightings split it over Technology and Healthcare.
+    construction = _offline_construction(test_toolkit)
+    construction._profile_function = lambda: pd.DataFrame(
+        {"AAPL": {"Sector": "Technology"}, "MSFT": {"Sector": "Financial Services"}}
+    )
+    spy_and_fund = {
+        "SPY": {"Technology": 0.4, "Healthcare": 0.6},
+        "MSFT": {"Technology": 0.5, "Healthcare": 0.5},
+    }
+    construction._fund_function = lambda kind, tickers: pd.DataFrame(
+        {ticker: spy_and_fund[ticker] for ticker in tickers if ticker in spy_and_fund}
+    )
+    attribution = construction.get_brinson_attribution(
+        weights={"AAPL": 0.5, "MSFT": 0.5}
+    )
+
+    assert "Financial Services" not in attribution.index
+    assert attribution.loc["Technology", "Portfolio Weight"] == pytest.approx(0.75)
+    assert attribution.loc["Healthcare", "Portfolio Weight"] == pytest.approx(0.25)
+
+
+def test_get_stress_test_notes_a_scenario_before_any_listing(test_toolkit, caplog):
+    construction = _offline_construction(test_toolkit)
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        stress = construction.get_stress_test(
+            weights={"AAPL": 0.6, "MSFT": 0.4},
+            scenarios={"Early": ("2019-01-02", "2019-02-01")},
+        )
+
+    assert stress.loc["Early", "Coverage"] == 0
+    assert np.isnan(stress.loc["Early", "Portfolio Return"])
+    assert "No price data is available for the Early" in caplog.text

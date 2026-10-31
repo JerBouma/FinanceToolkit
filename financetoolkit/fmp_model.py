@@ -21,6 +21,7 @@ from urllib3.exceptions import MaxRetryError
 from financetoolkit import currencies_model, helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
@@ -198,9 +199,10 @@ def get_financial_data(
                 continue
 
             # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
+            # An HTTP error without a body reads as its URL, which carries the API key.
             logger.error(
                 "The request to Financial Modeling Prep failed with an unrecognised error: %s",
-                error_message or e,
+                redact_credentials(str(error_message or e)),
             )
 
             error_model.report_request_failure()
@@ -220,13 +222,19 @@ def get_financial_data(
             time.sleep(determine_retry_delay(error_retry_counter))
             error_retry_counter += 1
 
+        except requests.exceptions.SSLError:
+            # A certificate error fails the same way on every attempt (get_request does not
+            # retry unverified when the URL carries a key), so it is reported at once.
+            error_model.report_request_failure()
+            return pd.DataFrame(columns=["NO ERRORS"])
+
         except (
             MaxRetryError,
-            requests.exceptions.SSLError,
             requests.exceptions.ConnectionError,
         ):
-            # Retry a refused connection up to RETRY_LIMIT times, then return empty.
-            if error_retry_counter >= RETRY_LIMIT:
+            # A refused connection or a failed DNS lookup is retried a few times, then
+            # reported, so being offline does not block for minutes per request.
+            if error_retry_counter >= TRANSIENT_RETRY_LIMIT:
                 error_model.report_request_failure()
                 return pd.DataFrame(columns=["NO ERRORS"])
 

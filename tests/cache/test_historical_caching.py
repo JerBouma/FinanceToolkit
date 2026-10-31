@@ -473,3 +473,46 @@ def test_a_longer_yahoo_finance_history_is_remembered(cache, monkeypatch):
         assert str(data.index.min()) == "2005-01-01"
 
     assert requests_made == {"fmp": 1, "yahoo": 1}
+
+
+def test_a_new_dividend_adjustment_retrieves_the_whole_range_again(cache, monkeypatch):
+    """Cached adjusted prices from before a dividend are not joined to rescaled ones."""
+    fmp_requests: list[tuple[str, str]] = []
+    adjustment = {"factor": 1.0}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        # FinancialModelingPrep answers with a year before the start as well, so a gap
+        # overlaps the cached part.
+        data = bars(str(pd.Timestamp(start) - pd.Timedelta(days=365))[:10], end)
+        # A dividend that went ex after the first run scales every earlier Adj Close.
+        data["Adj Close"] = adjustment["factor"]
+        return data
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    adjustment["factor"] = 0.98
+
+    data = collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert fmp_requests[-1] == ("2018-01-01", "2021-12-31")
+    assert (data["Adj Close"] == 0.98).all().all()
+
+
+def test_prices_without_their_adjusted_close_are_not_cached(cache, monkeypatch):
+    """A failed adjusted close or dividends request is returned but not stored."""
+    fmp_requests: list[tuple[str, str]] = []
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        # The prices came back, the adjusted close request hit a rate limit.
+        historical_model.error_model.report_request_failure()
+        return bars(start, end)
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+
+    assert len(fmp_requests) == 2

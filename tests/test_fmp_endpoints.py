@@ -910,3 +910,52 @@ def test_statements_keep_the_fiscal_period_end_date(responses):
     # actual last day of the fiscal year is kept as a statistic.
     assert [str(period) for period in statement.columns] == ["2023", "2022"]
     assert statement.loc["periodEndDate"].tolist() == ["2024-01-28", "2023-01-29"]
+
+
+def test_a_certificate_error_is_reported_without_retrying(monkeypatch):
+    attempts = []
+
+    def certificate_error(*_, **__):
+        attempts.append(1)
+        raise requests.exceptions.SSLError("certificate verify failed")
+
+    monkeypatch.setattr(fmp_model, "get_request", certificate_error)
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    assert fmp_model.get_financial_data("https://example.com").empty
+    assert len(attempts) == 1
+
+
+def test_a_refused_connection_is_retried_a_few_times(monkeypatch):
+    attempts = []
+
+    def refused(*_, **__):
+        attempts.append(1)
+        raise requests.exceptions.ConnectionError("Name or service not known")
+
+    monkeypatch.setattr(fmp_model, "get_request", refused)
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    assert fmp_model.get_financial_data("https://example.com").empty
+    assert len(attempts) == fmp_model.TRANSIENT_RETRY_LIMIT + 1
+
+
+def test_an_unrecognised_error_is_logged_without_the_api_key(monkeypatch, caplog):
+    url = (
+        "https://financialmodelingprep.com/stable/profile?symbol=X&apikey=SECRETKEY123"
+    )
+
+    def not_found(*_, **__):
+        response = requests.models.Response()
+        response.status_code = 404
+        response.url = url
+        response.raise_for_status()
+
+    monkeypatch.setattr(fmp_model, "get_request", not_found)
+
+    with caplog.at_level("ERROR"):
+        result = fmp_model.get_financial_data(url)
+
+    assert list(result.columns) == ["REQUEST FAILED"]
+    assert "unrecognised error" in caplog.text
+    assert "SECRETKEY123" not in caplog.text

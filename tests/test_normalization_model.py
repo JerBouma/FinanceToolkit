@@ -167,3 +167,23 @@ def test_statement_exchange_rates_past_the_last_rate_are_missing():
 
     assert closing.loc[pd.Period("2022", "Y"), "X"] == len(dates) - 1
     assert pd.isna(closing.loc[pd.Period("2023", "Y"), "X"])
+
+
+def test_statement_exchange_rates_bridge_a_gap_of_a_few_weeks():
+    from financetoolkit.currencies_model import get_statement_exchange_rates
+
+    # A sparse pair quoted for the last time three weeks before the period end.
+    daily = pd.DataFrame(
+        {"EURUSD=X": [1.1, 1.2]},
+        index=pd.to_datetime(["2022-11-01", "2022-12-10"]),
+    )
+    period_ends = pd.DataFrame(
+        [[pd.Timestamp("2022-12-31")]],
+        index=["X"],
+        columns=pd.PeriodIndex(["2022"], freq="Y"),
+    )
+    closing = get_statement_exchange_rates(
+        daily, period_ends, pd.Series({"X": "EURUSD=X"}), False, "closing"
+    )
+
+    assert closing.loc[pd.Period("2022", "Y"), "X"] == 1.2

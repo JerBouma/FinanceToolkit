@@ -191,7 +191,9 @@ CURRENCY_CODES: frozenset[str] = frozenset(
 
 
 # How old the last published rate may be on a period end before the period has no rate.
-STALE_RATE_DAYS = pd.Timedelta(days=7)
+# Sparse or exotic pairs can go a few weeks without a quote, so only a rate older than a
+# month marks a series that ended before the period did.
+STALE_RATE_DAYS = pd.Timedelta(days=31)
 
 
 def is_currency_pair(ticker: str) -> bool:
@@ -479,7 +481,7 @@ def get_statement_exchange_rates(
         else:
             dates = end_dates if rate == "closing" else start_dates
             # The last published rate on or before each date, unless that rate is more than
-            # a week old: a period ending after the rates do has no rate yet.
+            # a month old: a period ending after the rates do has no rate yet.
             positions = currency_rates.index.searchsorted(dates, side="right") - 1
             values = [
                 (

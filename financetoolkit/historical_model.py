@@ -179,6 +179,9 @@ def _covers_requested_range(
 # published to a cent, so the typical difference from rounding alone is far below it,
 # while a dividend or split moves every earlier adjusted price by at least about this much.
 ADJUSTMENT_TOLERANCE = 1e-4
+# The fewest dates both parts must share, besides the latest cached one, before their
+# adjustment is compared: a median of one or two prices is too easily a single correction.
+MIN_SHARED_DATES = 5
 
 
 def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bool:
@@ -187,8 +190,10 @@ def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bo
     the dates they share, which happens when a dividend went ex or a split took effect
     after the cached part was retrieved: the provider then rescales its whole history.
 
-    The median relative difference is used, so a single corrected price does not count
-    as a new adjustment and the rounding of individual prices averages out.
+    The median relative difference over at least MIN_SHARED_DATES dates is used, so a
+    single corrected price does not count as a new adjustment and the rounding of
+    individual prices averages out. The latest cached date is left out, as it may have
+    been retrieved during that day's trading and so hold an intraday price.
 
     Args:
         cached_data (pd.DataFrame): The cached prices.
@@ -201,7 +206,11 @@ def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bo
         if column not in cached_data.columns or column not in new_data.columns:
             continue
 
-        shared = cached_data.index.intersection(new_data.index)
+        shared = cached_data.index.sort_values()[:-1].intersection(new_data.index)
+
+        if len(shared) < MIN_SHARED_DATES:
+            continue
+
         cached = pd.to_numeric(cached_data.loc[shared, column], errors="coerce")
         new = pd.to_numeric(new_data.loc[shared, column], errors="coerce")
         relative_change = (new / cached - 1).replace([np.inf, -np.inf], np.nan).dropna()
@@ -472,7 +481,6 @@ def get_historical_data(
                 )
             else:
                 if api_key and enforce_source in [None, "FinancialModelingPrep"]:
-                    failures_before = error_model.get_request_failures()
                     historical_data = fmp_model.get_historical_data(
                         ticker=ticker,
                         api_key=api_key,
@@ -489,11 +497,10 @@ def get_historical_data(
                     # The prices came back but the adjusted close or the dividends did not
                     # (a rate limit, for instance), so Adj Close is the unadjusted close or
                     # the dividends are 0. That is returned for now but never cached, as the
-                    # cached range would not be asked for again.
-                    if (
-                        not historical_data.empty
-                        and error_model.get_request_failures() != failures_before
-                    ):
+                    # cached range would not be asked for again. A plan restriction is not
+                    # flagged: it answers the same every time, so asking again only spends
+                    # requests.
+                    if historical_data.attrs.pop("incomplete", False):
                         incomplete.append(ticker)
 
                     # Only worth setting aside when there is somewhere to fall back to. With the source forced to FinancialModelingPrep, a truncated response is the best answer available and discarding it would return nothing at all.  # noqa: E501

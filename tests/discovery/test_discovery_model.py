@@ -318,8 +318,10 @@ def test_free_float_of_all_stocks_collects_every_page(monkeypatch):
     def fake(url, user_subscription="Free"):  # noqa: ARG001
         requested.append(url)
         page = int(url.split("page=")[1].split("&")[0])
-        # Two full pages and a short last one.
-        size = discovery_model.SHARES_FLOAT_PAGE_SIZE if page < 2 else 1
+        # Two full pages, a short one and then an empty one.
+        size = {0: 5000, 1: 5000, 2: 1}.get(page, 0)
+        if size == 0:
+            return pd.DataFrame()
         return pd.DataFrame(
             {
                 "symbol": [f"T{page}_{number}" for number in range(size)],
@@ -331,9 +333,39 @@ def test_free_float_of_all_stocks_collects_every_page(monkeypatch):
 
     shares_float = discovery_model.get_stock_shares_float(api_key="KEY")
 
-    assert len(requested) == 3
+    assert len(requested) == 4
     assert all("/stable/shares-float-all" in url for url in requested)
-    assert len(shares_float) == 2 * discovery_model.SHARES_FLOAT_PAGE_SIZE + 1
+    assert len(shares_float) == 2 * 5000 + 1
+
+
+def test_free_float_of_all_stocks_stops_when_the_page_is_ignored(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        # The same page whatever page is asked for.
+        return pd.DataFrame({"symbol": ["AAA", "BBB"], "freeFloat": 50.0})
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    shares_float = discovery_model.get_stock_shares_float(api_key="KEY")
+
+    assert len(requested) == 2
+    assert list(shares_float.index) == ["AAA", "BBB"]
+
+
+def test_free_float_of_all_stocks_requests_at_most_the_page_cap(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame({"symbol": [f"T{len(requested)}"], "freeFloat": 50.0})
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    discovery_model.get_stock_shares_float(api_key="KEY")
+
+    assert len(requested) == discovery_model.SHARES_FLOAT_MAX_PAGES
 
 
 def test_names_with_ampersands_are_sent_whole(monkeypatch):

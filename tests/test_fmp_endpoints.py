@@ -959,3 +959,31 @@ def test_an_unrecognised_error_is_logged_without_the_api_key(monkeypatch, caplog
     assert list(result.columns) == ["REQUEST FAILED"]
     assert "unrecognised error" in caplog.text
     assert "SECRETKEY123" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("adjusted_error", "incomplete"),
+    [("LIMIT REACH", True), ("PREMIUM QUERY PARAMETER", False)],
+)
+def test_prices_are_incomplete_only_after_a_temporary_failure(
+    monkeypatch, adjusted_error, incomplete
+):
+    prices = [
+        {"date": "2024-01-02", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
+    ]
+
+    def fake(url, **kwargs):  # noqa: ARG001
+        if "dividend-adjusted" in url:
+            return pd.DataFrame(columns=[adjusted_error])
+        if "/dividends" in url:
+            return []
+        return prices
+
+    monkeypatch.setattr(fmp_model, "get_financial_data", fake)
+
+    data = fmp_model.get_historical_data(
+        "AAPL", api_key="KEY", start="2024-01-01", end="2024-01-05"
+    )
+
+    assert data.attrs.get("incomplete", False) is incomplete
+    assert data["Adj Close"].tolist() == data["Close"].tolist()

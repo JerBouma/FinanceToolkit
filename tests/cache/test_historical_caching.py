@@ -1,5 +1,8 @@
 """Historical Caching Tests"""
 
+import threading
+import time
+
 import pandas as pd
 import pytest
 
@@ -507,8 +510,9 @@ def test_prices_without_their_adjusted_close_are_not_cached(cache, monkeypatch):
     def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
         fmp_requests.append((start, end))
         # The prices came back, the adjusted close request hit a rate limit.
-        historical_model.error_model.report_request_failure()
-        return bars(start, end)
+        data = bars(start, end)
+        data.attrs["incomplete"] = True
+        return data
 
     monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
 
@@ -516,3 +520,69 @@ def test_prices_without_their_adjusted_close_are_not_cached(cache, monkeypatch):
     collect_from_any_provider("2018-01-01", "2020-12-31", cache)
 
     assert len(fmp_requests) == 2
+
+
+def test_a_failure_of_another_ticker_does_not_stop_caching(cache, monkeypatch):
+    """A ticker fetched while another one fails concurrently is still cached."""
+    requests: list[str] = []
+    aapl_started = threading.Event()
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        requests.append(ticker)
+        if ticker == "AAPL":
+            aapl_started.set()
+            time.sleep(0.3)
+            return bars(start, end)
+        # BADX fails while the request of AAPL is in flight.
+        aapl_started.wait()
+        historical_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+    monkeypatch.setattr(historical_model, "ENABLE_YFINANCE", False)
+
+    for _ in range(2):
+        historical_model.get_historical_data(
+            tickers=["AAPL", "BADX"],
+            api_key="test-key",
+            enforce_source=None,
+            start="2018-01-01",
+            end="2020-12-31",
+            interval="1d",
+            show_errors=False,
+            cache=cache,
+        )
+
+    assert requests.count("AAPL") == 1
+
+
+def test_a_corrected_latest_price_does_not_retrieve_the_whole_range(cache, monkeypatch):
+    """Only the latest cached date differing, as an intraday close does, is no new basis."""
+    fmp_requests: list[tuple[str, str]] = []
+    run = {"number": 0}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        data = bars(str(pd.Timestamp(start) - pd.Timedelta(days=365))[:10], end)
+        if run["number"] == 0:
+            # The first run ended during the trading day of its last date.
+            data.loc[data.index[-1], ["Close", "Adj Close"]] = 1.05
+        return data
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    run["number"] = 1
+    collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert fmp_requests[-1] != ("2018-01-01", "2021-12-31")
+
+
+def test_too_few_shared_dates_are_not_compared():
+    """A median of a few prices is not taken as a new adjustment."""
+    cached = bars("2020-01-01", "2020-01-04")
+    new = bars("2020-01-02", "2020-01-10")
+    new["Adj Close"] = 0.9
+
+    assert not historical_model._adjustment_changed(cached, new)
+    assert historical_model._adjustment_changed(bars("2020-01-01", "2020-01-20"), new)

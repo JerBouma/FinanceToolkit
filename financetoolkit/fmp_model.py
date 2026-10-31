@@ -242,6 +242,31 @@ def get_financial_data(
             error_retry_counter += 1
 
 
+# The error frames of get_financial_data that a later request may not get: a rate limit
+# or a failed connection, as opposed to a plan restriction, which answers the same each time.
+TEMPORARY_FAILURES = (
+    "LIMIT REACH",
+    "BANDWIDTH LIMIT REACH",
+    "REQUEST FAILED",
+    "NO ERRORS",
+)
+
+
+def _failed_temporarily(response) -> bool:
+    """
+    Whether a response of get_financial_data is an error frame for a temporary failure.
+
+    Args:
+        response: The response, a DataFrame for an error and JSON data otherwise.
+
+    Returns:
+        bool: True for a rate limit or a failed request, False for data or a plan restriction.
+    """
+    return isinstance(response, pd.DataFrame) and any(
+        column in TEMPORARY_FAILURES for column in response.columns
+    )
+
+
 PLAN_RESTRICTION_MESSAGES = (
     "PREMIUM QUERY PARAMETER",
     "EXCLUSIVE ENDPOINT",
@@ -510,6 +535,8 @@ def get_historical_data(
                       The index of the DataFrame is the date of the data and the columns include OHLC, Volume,
                       Dividends (if requested), Return, and Cumulative Return.
                       Returns an empty DataFrame if data retrieval fails or no data is found for the given parameters.
+                      When the adjusted close or the dividends could not be retrieved because of a rate limit
+                      or a failed request, the frame's attrs hold "incomplete": True.
     """
     # Additional data is collected to ensure return calculations are correct
     end_date_value = (
@@ -600,6 +627,11 @@ def get_historical_data(
         }
     )
 
+    # Set when the adjusted close or the dividends could not be retrieved for a reason that
+    # passes (see _failed_temporarily), so the caller can return the prices without caching.
+    incomplete = False
+    adjusted_data = None
+
     try:
         adjusted_data = get_financial_data(
             url=adjusted_data_url,
@@ -613,7 +645,10 @@ def get_historical_data(
         adjusted_data = adjusted_data[~adjusted_data.index.duplicated(keep="first")]
 
         historical_data["Adj Close"] = adjusted_data["adjClose"]
-    except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
+    except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected) as error:
+        incomplete = not isinstance(
+            error, (KeyError, ValueError)
+        ) or _failed_temporarily(adjusted_data)
         # Without the adjusted close, returns would be based on raw prices and would therefore exclude dividends, so this is reported rather than silently accepted.  # noqa: E501
         logger.warning(
             "No adjusted close data found for %s, falling back to the unadjusted close. "
@@ -633,6 +668,8 @@ def get_historical_data(
             historical_data = historical_data.div(divide_ohlc_by)
 
     if include_dividends:
+        dividends = None
+
         try:
             dividends = get_financial_data(
                 url=dividend_url,
@@ -662,8 +699,10 @@ def get_historical_data(
                 else:
                     historical_data["Dividends"] = 0
             except KeyError:
+                incomplete = incomplete or _failed_temporarily(dividends)
                 historical_data["Dividends"] = 0
         except (HTTPError, URLError, RemoteDisconnected):
+            incomplete = True
             historical_data["Dividends"] = 0
 
     historical_data = historical_data.loc[
@@ -676,6 +715,9 @@ def get_historical_data(
         end=end,
         return_column=return_column,
     )
+
+    if incomplete:
+        historical_data.attrs["incomplete"] = True
 
     return historical_data
 

@@ -33,8 +33,10 @@ FMP_SECTORS = [
     "Utilities",
 ]
 
-# The most companies the shares float endpoint returns per page.
+# The most companies the shares float endpoint returns per page, and the most pages
+# requested (about 90,000 companies take 18).
 SHARES_FLOAT_PAGE_SIZE = 5000
+SHARES_FLOAT_MAX_PAGES = 50
 
 
 def get_cached_financial_data(
@@ -653,12 +655,13 @@ def get_stock_shares_float(
     Returns:
         pd.DataFrame: DataFrame of shares float.
     """
-    # The endpoint returns at most SHARES_FLOAT_PAGE_SIZE companies per page, so pages are
-    # requested until one comes back short (or empty, or with an error).
-    page_frames = []
-    page = 0
+    # The endpoint returns at most SHARES_FLOAT_PAGE_SIZE companies per page. A page can
+    # come back shorter without being the last, so pages are requested until an empty one
+    # (or an error). A page that starts like the previous one means the page parameter was
+    # not applied, and SHARES_FLOAT_MAX_PAGES bounds the number of requests either way.
+    page_frames: list[pd.DataFrame] = []
 
-    while True:
+    for page in range(SHARES_FLOAT_MAX_PAGES):
         page_data = get_cached_financial_data(
             url="https://financialmodelingprep.com/stable/shares-float-all"
             f"?page={page}&limit={SHARES_FLOAT_PAGE_SIZE}&apikey={api_key}",
@@ -668,12 +671,12 @@ def get_stock_shares_float(
         if page_data.empty or "symbol" not in page_data.columns:
             break
 
-        page_frames.append(page_data)
-
-        if len(page_data) < SHARES_FLOAT_PAGE_SIZE:
+        if page_frames and (
+            page_data["symbol"].iloc[0] == page_frames[-1]["symbol"].iloc[0]
+        ):
             break
 
-        page += 1
+        page_frames.append(page_data)
 
     if not page_frames:
         return pd.DataFrame()

@@ -24,6 +24,10 @@ ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
 # Errors that say the data is missing or unusable, reported as an empty result.
 REPORTED_ERRORS = (KeyError, IndexError, ZeroDivisionError, ValueError)
 
+# The modules that calculate from financial statements, where a missing key is a statement
+# row; elsewhere it is a ticker, column or date missing from the data.
+STATEMENT_MODULES = ("financetoolkit.ratios", "financetoolkit.models")
+
 
 # Counts the requests that failed (a rate limit, a plan restriction, a timeout) rather than
 # returned an answer. A caller compares it before and after retrieving something: when it
@@ -231,10 +235,17 @@ def _report_failure(func, args: tuple, error: Exception) -> pd.Series:
     if use_strict_errors() or not isinstance(error, REPORTED_ERRORS):
         raise error
 
-    if isinstance(error, KeyError):
+    if isinstance(error, KeyError) and func.__module__.startswith(STATEMENT_MODULES):
         logger.error(
             "%s could not be calculated%s because the item %s is missing from "
             "the provided financial statements. Fill this row to obtain the metric.",
+            func.__name__,
+            tickers,
+            error,
+        )
+    elif isinstance(error, KeyError):
+        logger.error(
+            "%s could not be calculated%s because %s is missing from the data.",
             func.__name__,
             tickers,
             error,

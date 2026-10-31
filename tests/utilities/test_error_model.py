@@ -487,3 +487,33 @@ def test_check_for_error_messages_error_priority():
 
         assert "AAPL" not in result
         assert "MSFT" in result
+
+
+def test_a_missing_key_names_the_statements_only_for_statement_modules():
+    def failing():
+        raise KeyError("Revenue")
+
+    messages = {}
+
+    for module in ("financetoolkit.ratios.ratios_controller", "financetoolkit.risk"):
+        failing.__module__ = module
+        with patch("financetoolkit.utilities.error_model.logger") as mock_logger:
+            assert error_model.handle_errors(failing)().empty
+        messages[module] = mock_logger.error.call_args[0][0]
+
+    assert "financial statements" in messages["financetoolkit.ratios.ratios_controller"]
+    assert "financial statements" not in messages["financetoolkit.risk"]
+    assert "is missing from the data" in messages["financetoolkit.risk"]
+
+
+def test_unavailable_inflation_expectations_are_reported_as_missing_data():
+    from financetoolkit.economics.economics_controller import Economics
+    from financetoolkit.mcp_server.diagnostics_model import MISSING_DATA_PATTERN
+
+    # No source is asked for a country without one, so this needs no network.
+    with patch("financetoolkit.economics.economics_controller.logger") as mock_logger:
+        assert Economics().get_inflation_expectations("United States").empty
+
+    message = mock_logger.warning.call_args[0][0] % mock_logger.warning.call_args[0][1:]
+
+    assert MISSING_DATA_PATTERN.match(message)

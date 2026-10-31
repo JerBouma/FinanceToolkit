@@ -8403,8 +8403,9 @@ class Economics:
         )
 
         if unavailable := [country for country in requested if country not in sources]:
+            # Worded as missing data, so the MCP server reports it as a note.
             logger.warning(
-                "Inflation expectations are not available for %s. They cover %s.",
+                "No inflation expectations data is available for %s. They cover %s.",
                 ", ".join(unavailable),
                 ", ".join(sources),
             )

@@ -1392,21 +1392,25 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
         Exponent for.
         max_lag (int, optional): The maximum lag, included, to use when estimating the
         exponent; the regression runs over the lags 2 up to and including `max_lag`.
-        Defaults to 20.
+        Capped so that each lag has at least two differences. Defaults to 20.
 
     Returns:
-        float: The estimated Hurst Exponent.
+        float: The estimated Hurst Exponent, or NaN when fewer than two lags
+        have a positive, finite dispersion.
     """
     if not isinstance(data, pd.Series):
         raise TypeError("Expects pd.Series, no other value.")
 
     values = data.dropna().to_numpy()
-    lags = range(2, max_lag + 1)
+    # Each lag needs at least two differences to estimate their dispersion.
+    lags = np.arange(2, min(max_lag, len(values) - 2) + 1)
+    standard_deviations = np.array(
+        [np.std(np.subtract(values[lag:], values[:-lag])) for lag in lags]
+    )
+    usable = np.isfinite(standard_deviations) & (standard_deviations > 0)
+    if usable.sum() < 2:  # noqa: PLR2004
+        return np.nan
 
-    standard_deviations = [
-        np.std(np.subtract(values[lag:], values[:-lag])) for lag in lags
-    ]
-
-    poly = np.polyfit(np.log(list(lags)), np.log(standard_deviations), 1)
+    poly = np.polyfit(np.log(lags[usable]), np.log(standard_deviations[usable]), 1)
 
     return poly[0]

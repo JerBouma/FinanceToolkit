@@ -379,3 +379,20 @@ def test_get_hill_estimator_without_data_uses_no_order_statistics():
     # With data, a fraction that rounds down to zero still uses one order statistic.
     result = risk_model.get_hill_estimator(pd.Series([-0.01, -0.02, -0.03]), k=0.1)
     assert result["Observations Used (k)"] == 1
+
+
+@pytest.mark.filterwarnings("error::RuntimeWarning")
+def test_hurst_exponent_bounds_lags_to_available_differences():
+    data = pd.Series([0.0, 1.0, 0.5, 2.0, 1.0, 3.0, 2.5, 4.0])
+    values = data.to_numpy()
+    lags = np.arange(2, len(values) - 1)
+    deviations = [np.std(values[lag:] - values[:-lag]) for lag in lags]
+    expected = np.polyfit(np.log(lags), np.log(deviations), 1)[0]
+
+    assert risk_model.get_hurst_exponent(data) == pytest.approx(expected)
+
+
+@pytest.mark.filterwarnings("error::RuntimeWarning")
+@pytest.mark.parametrize("values", [[], [1.0], [1.0, 2.0, 3.0, 4.0], [2.0] * 30])
+def test_hurst_exponent_without_two_usable_lags(values):
+    assert np.isnan(risk_model.get_hurst_exponent(pd.Series(values, dtype=float)))

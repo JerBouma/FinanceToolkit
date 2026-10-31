@@ -14,6 +14,9 @@ from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_ro
 
 logger = get_logger()
 
+# The trading days an asset's first price may come after the first day of an attribution.
+START_PRICE_TOLERANCE_DAYS = 5
+
 BENCHMARK_TICKER = "Benchmark"
 PORTFOLIO_TICKER = "Portfolio"
 PERIODS = ["daily", "weekly", "monthly", "quarterly", "yearly"]
@@ -1451,12 +1454,20 @@ class PortfolioConstruction:
         assets = self._get_assets()
         resolved = self._resolve_weights(weights, assets)
 
-        prices = self._historical_data["daily"]["Adj Close"][assets].dropna(how="all")
+        # Historical data supplied to the Toolkit can reach beyond its date range.
+        prices = (
+            self._historical_data["daily"]["Adj Close"][assets]
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all")
+        )
 
-        # An asset without a price on the first day would be measured over a shorter span
-        # than the benchmark sectors, or not at all (a NaN return that the sector sums would
-        # count as 0%), so it is left out and the other weights are scaled back up to one.
-        unpriced = [asset for asset in assets if pd.isna(prices[asset].iloc[0])]
+        # Each asset starts at its first price within a few trading days, so a holding
+        # whose exchange is closed on the first day (a local holiday) still counts. An
+        # asset without a price by then would be measured over a shorter span than the
+        # benchmark sectors, or not at all (a NaN return that the sector sums would count
+        # as 0%), so it is left out and the other weights are scaled back up to one.
+        start_prices = prices.bfill(limit=START_PRICE_TOLERANCE_DAYS).iloc[0]
+        unpriced = [asset for asset in assets if pd.isna(start_prices[asset])]
         if unpriced:
             if len(unpriced) == len(assets):
                 raise ValueError(
@@ -1472,8 +1483,9 @@ class PortfolioConstruction:
                 raise ValueError("The assets with a price at the start have no weight.")
             resolved = resolved[assets] / resolved[assets].sum()
             prices = prices[assets]
+            start_prices = start_prices[assets]
 
-        asset_returns = prices.ffill().iloc[-1] / prices.iloc[0] - 1
+        asset_returns = prices.ffill().iloc[-1] / start_prices - 1
 
         # Every asset as one or more sector slices: a stock in its own sector, a fund spread
         # over its sector weightings, each slice earning the asset's return.

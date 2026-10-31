@@ -283,3 +283,22 @@ def test_egarch_weights_are_fitted_once_per_series(monkeypatch):
 
     np.testing.assert_array_equal(first, second)
     assert len(calls) == 1
+
+
+def test_egarch_weights_cache_is_safe_across_threads(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(
+        garch_model, "_fit_multi_start", lambda *args, **kwargs: np.ones(4)
+    )
+    garch_model.EGARCH_WEIGHTS_CACHE.clear()
+    series = [np.full(50, value / 1000) for value in range(200)]
+
+    # Many threads storing and reading at once, past the size of the cache.
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(garch_model.get_egarch_weights, series * 3))
+
+    assert all(np.array_equal(result, np.ones(4)) for result in results)
+    assert (
+        len(garch_model.EGARCH_WEIGHTS_CACHE) <= garch_model.EGARCH_WEIGHTS_CACHE_SIZE
+    )

@@ -2,6 +2,7 @@
 
 import hashlib
 import math
+import threading
 from collections import OrderedDict
 
 import numpy as np
@@ -899,6 +900,9 @@ def egarch_log_maximization(
 # get_egarch_parameters each fit the same returns, so a repeated fit is taken from here.
 EGARCH_WEIGHTS_CACHE: OrderedDict[tuple, np.ndarray] = OrderedDict()
 EGARCH_WEIGHTS_CACHE_SIZE = 64
+# The cache is shared by threads (the MCP server runs tools in threads), and an OrderedDict
+# is not safe to reorder and read concurrently.
+EGARCH_WEIGHTS_CACHE_LOCK = threading.Lock()
 
 
 def get_egarch_weights(
@@ -930,9 +934,11 @@ def get_egarch_weights(
 
     values = np.ascontiguousarray(returns, dtype=float)
     key = (hashlib.sha256(values.tobytes()).hexdigest(), values.shape, t, p, q)
-    if key in EGARCH_WEIGHTS_CACHE:
-        EGARCH_WEIGHTS_CACHE.move_to_end(key)
-        return EGARCH_WEIGHTS_CACHE[key].copy()
+    with EGARCH_WEIGHTS_CACHE_LOCK:
+        cached = EGARCH_WEIGHTS_CACHE.get(key)
+        if cached is not None:
+            EGARCH_WEIGHTS_CACHE.move_to_end(key)
+            return cached.copy()
 
     # Omega sits well below -1 on a log scale; the rest stay near empirical EGARCH.
     bounds = [(-15, 5), (-1, 1), (-1, 1), (-0.999, 0.999)]
@@ -946,9 +952,10 @@ def get_egarch_weights(
 
     weights = _fit_multi_start(wrapper_func, bounds, initial_guess, "EGARCH")
 
-    EGARCH_WEIGHTS_CACHE[key] = weights.copy()
-    if len(EGARCH_WEIGHTS_CACHE) > EGARCH_WEIGHTS_CACHE_SIZE:
-        EGARCH_WEIGHTS_CACHE.popitem(last=False)
+    with EGARCH_WEIGHTS_CACHE_LOCK:
+        EGARCH_WEIGHTS_CACHE[key] = weights.copy()
+        if len(EGARCH_WEIGHTS_CACHE) > EGARCH_WEIGHTS_CACHE_SIZE:
+            EGARCH_WEIGHTS_CACHE.popitem(last=False)
 
     return weights
 

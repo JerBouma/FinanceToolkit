@@ -7,8 +7,6 @@ authors = [
     { name = "Jeroen Bouma" }
 ]
 readme = "README.md"
-homepage = "https://www.jeroenbouma.com/projects/financetoolkit"
-repository = "https://github.com/JerBouma/FinanceToolkit"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Financial and Insurance Industry",
@@ -66,6 +64,12 @@ mcp = [
     "python-dotenv>=1.0",
     "rich>=13.0",
 ]
+
+[project.urls]
+Homepage = "https://www.jeroenbouma.com/projects/financetoolkit"
+Documentation = "https://www.jeroenbouma.com/projects/financetoolkit/docs"
+Repository = "https://github.com/JerBouma/FinanceToolkit"
+Issues = "https://github.com/JerBouma/FinanceToolkit/issues"
 
 [project.scripts]
 financetoolkit-mcp = "financetoolkit.mcp_server.mcp_controller:main"

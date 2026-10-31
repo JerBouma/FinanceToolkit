@@ -287,7 +287,8 @@ class UsageAnalytics:
             stored = json.loads(self.location.read_text(encoding="utf-8"))
 
             def first(*names: str, default: Any) -> Any:
-                # Earlier versions of the counter named some totals differently.
+                # A stats file can hold a total under another name ("total"), so each
+                # total is read from the first of its names that is present.
                 return next((stored[name] for name in names if name in stored), default)
 
             with self._lock:

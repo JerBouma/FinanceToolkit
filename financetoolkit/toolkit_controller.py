@@ -725,6 +725,7 @@ class Toolkit:
             start_date=self._start_date,
             end_date=self._end_date,
             peer_function=compare_with_peers,
+            country_risk_premiums=self._get_country_risk_premiums,
         )
 
     @property
@@ -2918,6 +2919,52 @@ class Toolkit:
                     )
 
         return self._market_risk_premium
+
+    def _get_country_risk_premiums(self) -> pd.Series:
+        """
+        Returns the annual equity risk premium of each company's country: Damodaran's Total
+        Equity Risk Premium (get_market_risk_premium) of the country in the company profile.
+        The Cost of Equity of the Models uses it as the market risk premium. Tickers without
+        a profile country, a country the table does not cover or no API key are NaN.
+
+        Returns:
+            pd.Series: The premiums as decimals, indexed by ticker.
+        """
+        # Imported when first used, as only the Cost of Equity needs the country names.
+        from financetoolkit.economics.helpers import COUNTRY_CODES  # noqa: PLC0415
+
+        tickers = self._get_statement_tickers("Models")
+        premiums = pd.Series(index=tickers, dtype=float)
+
+        if not self._api_key or self._enforce_source == "YahooFinance":
+            return premiums
+
+        try:
+            market_risk_premium = self.get_market_risk_premium()
+            profile = self.get_profile()
+        except (KeyError, ValueError, TypeError) as error:
+            logger.info("The country equity risk premiums are not available: %s", error)
+            return premiums
+
+        if (
+            market_risk_premium is None
+            or market_risk_premium.empty
+            or "Total Equity Risk Premium" not in market_risk_premium.columns
+            or profile is None
+            or profile.empty
+            or "Country" not in profile.index
+        ):
+            return premiums
+
+        countries = (
+            profile.loc["Country"]
+            .reindex(tickers)
+            .map(lambda code: COUNTRY_CODES.get(str(code).upper()))
+        )
+
+        return countries.map(market_risk_premium["Total Equity Risk Premium"]).astype(
+            float
+        )
 
     def get_commitment_of_traders(self, overwrite: bool = False):
         """

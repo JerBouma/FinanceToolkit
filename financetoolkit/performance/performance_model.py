@@ -186,7 +186,7 @@ def get_rolling_beta(
 def get_capital_asset_pricing_model(
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
-    benchmark_returns: pd.Series | float,
+    benchmark_returns: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
     CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment,
@@ -218,7 +218,8 @@ def get_capital_asset_pricing_model(
     Args:
         risk_free_rate (pd.Series | float): the risk free rate.
         beta (pd.Series | pd.DataFrame | float): the beta.
-        benchmark_returns (pd.Series | float): the benchmark returns.
+        benchmark_returns (pd.Series | pd.DataFrame | float): the benchmark returns, or with a
+            DataFrame beta, a column of market returns per column of beta.
 
     Returns:
         pd.Series | pd.DataFrame | float: the capital asset pricing model.
@@ -228,9 +229,15 @@ def get_capital_asset_pricing_model(
             index=beta.index, columns=beta.columns, dtype=np.float64
         )
         for column in capital_asset_pricing_model.columns:
+            # A market return per column (e.g. a country risk premium per company) or one for all.
+            market_returns = (
+                benchmark_returns[column]
+                if isinstance(benchmark_returns, pd.DataFrame)
+                else benchmark_returns
+            )
             capital_asset_pricing_model.loc[:, column] = risk_free_rate + beta[
                 column
-            ] * (benchmark_returns - risk_free_rate)
+            ] * (market_returns - risk_free_rate)
     elif isinstance(beta, (pd.Series | float)):
         capital_asset_pricing_model = risk_free_rate + beta * (
             benchmark_returns - risk_free_rate

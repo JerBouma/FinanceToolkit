@@ -219,6 +219,13 @@ def get_dcc_garch(returns: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, float]
         ),
         key=lambda result: result.fun,
     )
+    # Perfectly correlated series give a singular correlation matrix at every parameter, so
+    # the likelihood is infinite everywhere and the optimizer stays at its starting point.
+    if not np.isfinite(best.fun):
+        raise ValueError(
+            "The DCC likelihood cannot be evaluated, which happens when two series are "
+            "perfectly correlated (e.g. the same ticker twice)."
+        )
     a, b = (float(value) for value in best.x)
     parameters = {"DCC Alpha": a, "DCC Beta": b, **parameters}
 

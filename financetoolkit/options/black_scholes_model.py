@@ -72,11 +72,28 @@ def get_d1(
     Returns:
         float | pd.Series: The d1 value.
     """
-
-    return (
+    log_forward_moneyness = (
         np.log(stock_price / strike_price)
-        + (risk_free_rate - dividend_yield + (volatility**2) / 2) * time_to_expiration
-    ) / (volatility * np.sqrt(time_to_expiration))
+        + (risk_free_rate - dividend_yield) * time_to_expiration
+    )
+    spread = volatility * np.sqrt(time_to_expiration)
+    d1 = (log_forward_moneyness + spread**2 / 2) / spread
+
+    # Without any uncertainty left (no volatility or no time) the price ends up exactly at
+    # the forward, so d1 is the limit +inf or -inf on either side of the strike and 0 at it,
+    # which prices every option at its discounted intrinsic value instead of 0 / 0 = NaN.
+    riskless = np.asarray(spread) == 0
+    if np.any(riskless):
+        moneyness = np.asarray(log_forward_moneyness, dtype=float)
+        limit = np.where(moneyness > 0, np.inf, np.where(moneyness < 0, -np.inf, 0.0))
+        values = np.where(riskless, limit, np.asarray(d1, dtype=float))
+        if isinstance(d1, pd.Series):
+            return pd.Series(values, index=d1.index, name=d1.name)
+        if isinstance(d1, pd.DataFrame):
+            return pd.DataFrame(values, index=d1.index, columns=d1.columns)
+        return float(values) if np.ndim(values) == 0 else values
+
+    return d1
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -1140,6 +1157,7 @@ def get_bjerksund_stensland(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
+        ValueError: if volatility is not positive.
 
     Notes:
         Reference: Bjerksund, P., & Stensland, G. (2002). "Closed Form Valuation of
@@ -1161,6 +1179,10 @@ def get_bjerksund_stensland(
             raise TypeError(
                 f"{name} must be a float or int, received {type(value).__name__}."
             )
+
+    # The exercise boundary divides by the variance, which a constant price does not have.
+    if volatility <= 0:
+        raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
     cost_of_carry = risk_free_rate - dividend_yield
 

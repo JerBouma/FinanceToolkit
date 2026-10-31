@@ -30,6 +30,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import anyio.to_thread
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -240,23 +241,7 @@ class UsageAnalytics:
 
             wrapper = counting_function
 
-        # The annotations are resolved here, against the tool's own module: FastMCP would
-        # otherwise look string annotations up in this module and fail.
-        signature = inspect.signature(function, eval_str=True)
-        wrapper.__signature__ = signature
-        wrapper.__annotations__ = {
-            name: parameter.annotation
-            for name, parameter in signature.parameters.items()
-            if parameter.annotation is not inspect.Parameter.empty
-        }
-
-        if signature.return_annotation is not inspect.Signature.empty:
-            wrapper.__annotations__["return"] = signature.return_annotation
-
-        # The wrapper is described by __signature__, so FastMCP must not unwrap it.
-        del wrapper.__wrapped__
-
-        return wrapper
+        return keep_signature(wrapper, function)
 
     # ── Storage ───────────────────────────────────────────────────────────────
     def to_dict(self) -> dict[str, Any]:
@@ -449,6 +434,62 @@ class UsageAnalytics:
             if "text/html" in accept and "application/json" not in accept:
                 return HTMLResponse(stats_page_model.render(self.summary()))
             return JSONResponse(self.summary())
+
+
+def keep_signature(wrapper: Any, function: Callable) -> Any:
+    """
+    Give a wrapper the signature and annotations of the function it wraps, which FastMCP
+    builds the tool's input schema from.
+
+    Args:
+        wrapper (Any): The wrapper, made with functools.wraps.
+        function (Callable): The wrapped tool.
+
+    Returns:
+        Any: The wrapper.
+    """
+    # The annotations are resolved here, against the tool's own module: FastMCP would
+    # otherwise look string annotations up in the wrapper's module and fail.
+    signature = inspect.signature(function, eval_str=True)
+    wrapper.__signature__ = signature
+    wrapper.__annotations__ = {
+        name: parameter.annotation
+        for name, parameter in signature.parameters.items()
+        if parameter.annotation is not inspect.Parameter.empty
+    }
+
+    if signature.return_annotation is not inspect.Signature.empty:
+        wrapper.__annotations__["return"] = signature.return_annotation
+
+    # The wrapper is described by __signature__, so FastMCP must not unwrap it.
+    del wrapper.__wrapped__
+
+    return wrapper
+
+
+def run_in_thread(function: Callable) -> Any:
+    """
+    Turn a synchronous tool into one that runs in a worker thread.
+
+    FastMCP calls a synchronous tool on the event loop itself, so one slow data collection
+    would hold up every other request (other users, /health, the OAuth pages) until it
+    finishes. The worker thread starts with a copy of the request's context, so the API key
+    and the notes collected for the answer stay with the call.
+
+    Args:
+        function (Callable): The synchronous tool.
+
+    Returns:
+        Any: An asynchronous tool with the same signature.
+    """
+
+    @functools.wraps(function)
+    async def threaded(*args, **kwargs):
+        return await anyio.to_thread.run_sync(
+            functools.partial(function, *args, **kwargs)
+        )
+
+    return keep_signature(threaded, function)
 
 
 def create_from_environment(

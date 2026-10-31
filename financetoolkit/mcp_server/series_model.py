@@ -13,6 +13,8 @@ from financetoolkit.econometrics.data_model import looks_like_dates
 PARTS = 3
 PARTS_WITH_COLUMN = 4
 PARTS_WITHOUT_TOOL = 2
+# Each reference collects its own indicator, so a call names a handful, not hundreds.
+MAX_REFERENCES = 20
 
 
 class SeriesReference(NamedTuple):
@@ -61,13 +63,18 @@ def parse_series_references(text: str) -> list[SeriesReference]:
                 "'macroeconomics:get_inflation_rate:United States'."
             )
         indicator = parts[1] if parts[1].startswith("get_") else f"get_{parts[1]}"
+        entities = [entity.strip() for entity in parts[2].split(",") if entity.strip()]
+        # Without entities the indicator would be asked for every country or none.
+        if not entities:
+            raise ValueError(
+                f"The series '{reference}' names no tickers or countries, e.g. "
+                "'macroeconomics:get_inflation_rate:United States'."
+            )
         references.append(
             SeriesReference(
                 tool=parts[0] or None,
                 indicator=indicator,
-                entities=[
-                    entity.strip() for entity in parts[2].split(",") if entity.strip()
-                ],
+                entities=entities,
                 column=(
                     parts[3] if len(parts) == PARTS_WITH_COLUMN and parts[3] else None
                 ),
@@ -76,6 +83,11 @@ def parse_series_references(text: str) -> list[SeriesReference]:
         )
     if not references:
         raise ValueError("The series parameter names no indicator.")
+    if len(references) > MAX_REFERENCES:
+        raise ValueError(
+            f"The series parameter names {len(references)} indicators; at most "
+            f"{MAX_REFERENCES} can be analyzed in one call."
+        )
     return references
 
 

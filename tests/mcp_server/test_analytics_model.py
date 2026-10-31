@@ -159,3 +159,27 @@ def test_the_dashboard_renders_without_any_calls(tmp_path):
     page = stats_page_model.render(make_analytics(tmp_path).summary())
 
     assert "No calls yet." in page
+
+
+def test_a_threaded_tool_runs_off_the_event_loop_and_keeps_its_signature():
+    import inspect
+    import threading
+
+    from financetoolkit.mcp_server import mcp_controller
+    from financetoolkit.mcp_server.analytics_model import run_in_thread
+
+    def tool(query: str, limit: int = 5) -> str:
+        return (
+            f"{query}:{limit}:{threading.current_thread() is threading.main_thread()}"
+        )
+
+    threaded = run_in_thread(tool)
+
+    assert inspect.iscoroutinefunction(threaded)
+    assert list(inspect.signature(threaded).parameters) == ["query", "limit"]
+    assert asyncio.run(threaded("debt", limit=2)) == "debt:2:False"
+    assert all(
+        tool.is_async
+        for tool in mcp_controller.mcp._tool_manager.list_tools()
+        if tool.name in ("valuation", "search_metrics")
+    )

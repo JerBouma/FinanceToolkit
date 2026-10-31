@@ -571,3 +571,60 @@ def test_daily_style_analysis_is_not_blocked(captured):
     )
 
     assert captured[-1]["period"] == "daily"
+
+
+def test_default_dates_follow_the_day_of_the_call(captured, monkeypatch):
+    from financetoolkit.mcp_server import inspection_controller
+
+    tool = asyncio.run(mcp_controller.mcp.list_tools())
+    schema = next(t for t in tool if t.name == "valuation").inputSchema["properties"]
+    assert schema["start_date"]["default"] == ""
+    assert schema["end_date"]["default"] == ""
+
+    class Tomorrow(datetime):
+        @classmethod
+        def today(cls):
+            return datetime(2031, 3, 15)
+
+    monkeypatch.setattr(inspection_controller, "datetime", Tomorrow)
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "valuation",
+            {"indicator": "get_price_to_earnings_ratio", "tickers": "AAPL"},
+        )
+    )
+    assert captured[-1]["end_date"] == "2031-03-15"
+    assert captured[-1]["start_date"] == "2026-03-16"
+
+
+def test_limit_zero_returns_every_row(monkeypatch):
+    import json
+
+    def prices(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"Close": [1.0, 2.0, 3.0]},
+            index=pd.period_range("2026-01-01", periods=3, freq="D"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", prices)
+    result = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {"indicator": "get_sharpe_ratio", "tickers": "AAPL", "limit": 0},
+        )
+    )
+    assert [row["Close"] for row in json.loads(result[0][0].text)] == [1.0, 2.0, 3.0]
+
+
+def test_too_many_tickers_or_countries_are_refused(captured):
+    tickers = ",".join(f"T{number}" for number in range(51))
+    answer = str(
+        asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "valuation",
+                {"indicator": "get_price_to_earnings_ratio", "tickers": tickers},
+            )
+        )
+    )
+    assert "received 51 tickers; at most 50" in answer
+    assert not captured

@@ -48,7 +48,11 @@ from financetoolkit.fmp_model import (
     get_stock_splits as _get_stock_splits,
 )
 from financetoolkit.fundamentals_model import collect_financial_statements
-from financetoolkit.helpers import LazyDict, determine_period_end_dates
+from financetoolkit.helpers import (
+    LazyDict,
+    determine_availability_dates,
+    determine_period_end_dates,
+)
 from financetoolkit.historical_model import (
     calculate_period_average as _calculate_period_average,
     convert_daily_to_other_period as _convert_daily_to_other_period,
@@ -134,6 +138,7 @@ class Toolkit:
         progress_bar: bool = True,
         fred_api_key: str = FRED_API_KEY,
         allow_stale_oecd_cache: bool = True,
+        point_in_time: bool = False,
     ):
         """
         Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -206,6 +211,10 @@ class Toolkit:
             successful response for that query instead of empty data -- opt-in, since served data may be
             stale. Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
             different mechanism). Defaults to True.
+            point_in_time (bool): Use each period's figures only from the day they were filed, as a backtest
+            would have seen them: the statements leave out the periods filed after end_date and daily ratios
+            apply a period's figures from its filing day instead of from its period end. See "Point in time"
+            below. Defaults to False.
 
         Fiscal periods and calendar periods:
 
@@ -235,6 +244,43 @@ class Toolkit:
             This convention is what makes financial statements line up with price history, since prices
             are always in calendar time. It also means the labels are not the company's own fiscal year
             numbering: what NVIDIA calls fiscal 2024 appears here as 2023.
+
+        Point in time:
+
+            A company files its figures weeks after a period ends, so a backtest that uses them from the
+            period end knows them before the market did. With point_in_time=True, a period counts from the
+            first day its figures were public:
+
+                - The Accepted Date of the SEC filing: that day, or the next day when the filing was
+                  accepted at or after the 16:00 New York close.
+                - Otherwise the day after the Filing Date.
+                - Otherwise, for companies that do not file with the SEC (FinancialModelingPrep then
+                  reports about the period end as the filing date, so a filing date within a week of
+                  the period end is not used) and for sources without filing dates such as
+                  Yahoo Finance, the period end plus 120 days for a fiscal year and 90 days for a quarter,
+                  the longest common reporting deadlines (the EU Transparency Directive and Form 20-F).
+
+            The statements, and every ratio and model calculated from them, then hold only the periods
+            that were public on end_date, so end_date acts as the "as of" date. Daily ratios (show_daily)
+            apply each period's figures from that first day, so every day only sees what was public on
+            it. The figures themselves are the ones the source reports today: a later restatement
+            replaces the originally filed figures, as no source in the Toolkit keeps earlier versions.
+
+            ```python
+            from financetoolkit import Toolkit
+
+            # The statements as they were public on 15 June 2022
+            toolkit = Toolkit(
+                ["AAPL", "MSFT"],
+                api_key="FINANCIAL_MODELING_PREP_KEY",
+                start_date="2018-01-01",
+                end_date="2022-06-15",
+                quarterly=True,
+                point_in_time=True,
+            )
+
+            toolkit.get_income_statement()
+            ```
 
         As an example:
 
@@ -323,6 +369,7 @@ class Toolkit:
         )
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
+        self._point_in_time = point_in_time
 
         # One extra period so two-period metrics have a prior value for the first year.
         if quarterly:
@@ -456,6 +503,16 @@ class Toolkit:
         self._currencies: list = []
         self._statement_currencies: pd.Series = pd.Series()
         self._fiscal_year_adjustments: dict[str, list[dict]] = {}
+
+        # Supplied statements carry no filing dates, so point_in_time uses the reporting deadlines.
+        self._balance_sheet_statement = self._remove_unfiled_periods(
+            self._balance_sheet_statement
+        )
+        self._income_statement = self._remove_unfiled_periods(self._income_statement)
+        self._cash_flow_statement = self._remove_unfiled_periods(
+            self._cash_flow_statement
+        )
+
         self._convert_currency = (
             convert_currency
             if convert_currency is not None
@@ -580,7 +637,7 @@ class Toolkit:
             sleep_timer=self._sleep_timer,
             user_subscription=self._fmp_plan,
             analyst_estimates_cache=self._analyst_estimates_cache,
-            period_end_dates=lambda: self._get_period_end_dates(
+            period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Ratios")
             ),
         )
@@ -4647,6 +4704,10 @@ class Toolkit:
                         financial_statement_name="balance sheet statement",
                     )
 
+            self._balance_sheet_statement = self._remove_unfiled_periods(
+                self._balance_sheet_statement
+            )
+
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -4835,6 +4896,10 @@ class Toolkit:
                         ],
                         financial_statement_name="income statement",
                     )
+
+            self._income_statement = self._remove_unfiled_periods(
+                self._income_statement
+            )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -5050,6 +5115,10 @@ class Toolkit:
                         },
                     )
 
+            self._cash_flow_statement = self._remove_unfiled_periods(
+                self._cash_flow_statement
+            )
+
         if self._remove_invalid_tickers:
             self._tickers = [
                 ticker
@@ -5219,12 +5288,14 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(self._tickers) == 1 and not self._statistics_statement.empty:
+        statistics_statement = self._remove_unfiled_periods(self._statistics_statement)
+
+        if len(self._tickers) == 1 and not statistics_statement.empty:
             return filter_columns(
-                self._statistics_statement.loc[self._tickers[0]], show_columns
+                statistics_statement.loc[self._tickers[0]], show_columns
             )
 
-        return filter_columns(self._statistics_statement, show_columns)
+        return filter_columns(statistics_statement, show_columns)
 
     def get_normalization_files(self, path: str = ""):
         """
@@ -5435,6 +5506,78 @@ class Toolkit:
             statistics_statement=self._statistics_statement,
             fiscal_year_adjustments=self._fiscal_year_adjustments,
         )
+
+    def _get_availability_dates(
+        self, statement: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the first day the figures of every statement column were public per ticker:
+        the filing day, or the period end plus the reporting deadline when no filing date is
+        known (see helpers.determine_availability_dates and "Point in time" on the Toolkit).
+
+        Args:
+            statement (pd.DataFrame | None, optional): The statement whose periods and tickers
+                to use. Defaults to None, which uses the balance sheet statement.
+
+        Returns:
+            pd.DataFrame: The availability dates with the tickers as index and the periods as
+            columns.
+        """
+        period_end_dates = self._get_period_end_dates(statement)
+
+        if period_end_dates.empty:
+            return period_end_dates
+
+        return determine_availability_dates(
+            period_end_dates=period_end_dates,
+            statistics_statement=self._statistics_statement,
+            quarter=self._quarterly,
+        )
+
+    def _get_daily_start_dates(
+        self, statement: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the day from which daily ratios apply each period's figures: the filing day
+        with point_in_time and otherwise the period end.
+
+        Args:
+            statement (pd.DataFrame | None, optional): The statement whose periods and tickers
+                to use. Defaults to None, which uses the balance sheet statement.
+
+        Returns:
+            pd.DataFrame: The dates with the tickers as index and the periods as columns.
+        """
+        if self._point_in_time:
+            return self._get_availability_dates(statement)
+
+        return self._get_period_end_dates(statement)
+
+    def _remove_unfiled_periods(self, statement: pd.DataFrame) -> pd.DataFrame:
+        """
+        Removes the figures that were not yet public on the end date when point_in_time is set:
+        each ticker's periods filed after the end date become NaN, and periods no ticker had
+        filed are left out.
+
+        Args:
+            statement (pd.DataFrame): A statement with a (ticker, item) index and the periods
+                as columns.
+
+        Returns:
+            pd.DataFrame: The statement as it was public on the end date.
+        """
+        if not self._point_in_time or statement.empty:
+            return statement
+
+        availability = self._get_availability_dates(statement)
+        end_date = pd.Timestamp(self._end_date)
+        filed = (availability <= end_date).reindex(
+            index=statement.index.get_level_values(0), columns=statement.columns
+        )
+        filed = filed.fillna(False).astype(bool)
+        filed.index = statement.index
+
+        return statement.where(filed).loc[:, filed.any(axis=0)]
 
     def _get_statement_exchange_rates(
         self, statement: pd.DataFrame, rate: str

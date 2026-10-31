@@ -359,3 +359,57 @@ def test_enriching_a_response_without_prices_adds_no_row():
     enriched = helpers.enrich_historical_data(empty, "1980-01-01", "1984-12-31")
 
     assert enriched.empty
+
+
+def test_availability_dates_use_real_filings_and_otherwise_the_deadline():
+    periods = pd.PeriodIndex(["2023Q1", "2023Q2", "2023Q3"], freq="Q")
+    period_end_dates = pd.DataFrame(
+        [pd.to_datetime(["2023-03-31", "2023-06-30", "2023-09-30"])] * 2,
+        index=["SEC", "NONSEC"],
+        columns=periods,
+    )
+    statistics = pd.DataFrame(
+        [
+            ["2023-04-28 06:01:00", "2023-08-04 16:30:00", None],
+            [None, None, "2023-10-25"],
+            ["2023-03-30 19:00:00", "2023-07-02 19:00:00", "2023-09-29 20:00:00"],
+            ["2023-03-31", "2023-07-02", "2023-09-30"],
+        ],
+        index=pd.MultiIndex.from_tuples(
+            [
+                ("SEC", "Accepted Date"),
+                ("SEC", "Filing Date"),
+                ("NONSEC", "Accepted Date"),
+                ("NONSEC", "Filing Date"),
+            ]
+        ),
+        columns=periods.astype(str),
+    )
+
+    availability = helpers.determine_availability_dates(
+        period_end_dates, statistics, quarter=True
+    )
+
+    # Accepted before the close counts that day, after the close the next day, and a
+    # filing date without a time from the day after it.
+    assert availability.loc["SEC"].tolist() == list(
+        pd.to_datetime(["2023-04-28", "2023-08-05", "2023-10-26"])
+    )
+    # Dates around the period end are not filings, so the quarterly deadline is used.
+    assert availability.loc["NONSEC"].tolist() == list(
+        pd.to_datetime(["2023-06-29", "2023-09-28", "2023-12-29"])
+    )
+
+
+def test_availability_dates_without_statistics_use_the_annual_deadline():
+    period_end_dates = pd.DataFrame(
+        [pd.to_datetime(["2022-12-31"])],
+        index=["AAPL"],
+        columns=pd.PeriodIndex(["2022"], freq="Y"),
+    )
+
+    availability = helpers.determine_availability_dates(
+        period_end_dates, None, quarter=False
+    )
+
+    assert availability.loc["AAPL"].tolist() == [pd.Timestamp("2023-04-30")]

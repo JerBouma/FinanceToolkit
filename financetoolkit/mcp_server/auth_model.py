@@ -10,6 +10,7 @@ import ipaddress
 import json
 import os
 import pathlib
+import re
 import secrets
 import threading
 import time
@@ -32,15 +33,29 @@ _JWT_PART_COUNT = 3
 
 # Authorization codes are random strings that point to the submitted keys held here, so the
 # keys never travel through the browser's address bar, history or the redirect target's logs.
-# Each code is exchanged once and expires after five minutes. The hosted server runs a single
-# process, so a dictionary in memory is shared by the authorize and token requests.
+# Each code is exchanged once and expires after five minutes. The codes live in this process
+# only, so the server must run as a single process (as main() starts it): with several
+# workers, a token request could reach a worker that never saw the code.
 AUTH_CODE_LIFETIME = 300
 _MAX_PENDING_CODES = 10_000
+
+# The longest value each authorization field may have; a form field may otherwise be up to
+# a megabyte, and every pending code keeps its fields in memory.
+FIELD_LIMITS = {
+    "fmp_api_key": 128,
+    "fred_api_key": 128,
+    "client_id": 256,
+    "redirect_uri": 2048,
+    "state": 1024,
+}
+# A S256 code challenge is the base64url SHA-256 of the verifier, without padding.
+CODE_CHALLENGE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _auth_codes: dict[str, tuple[float, dict[str, Any]]] = {}
 _auth_codes_lock = threading.Lock()
 
 # The secret signing the access tokens, read once per process.
 _secret_key: bytes | None = None
+MINIMUM_SECRET_BYTES = 32
 
 # Headers that keep the pages (one of which asks for API keys) from being framed by another
 # site, so a visitor can't be tricked into typing a key into an invisible overlay.
@@ -660,14 +675,19 @@ def get_secret_key() -> bytes:
         config_dir = get_global_env_path().parent
         config_dir.mkdir(parents=True, exist_ok=True)
         secret_file = config_dir / ".mcp_secret"
-        if secret_file.exists():
-            _secret_key = secret_file.read_bytes()
+        stored = secret_file.read_bytes() if secret_file.exists() else b""
+        # An empty or truncated file (an interrupted first write) counts as missing.
+        if len(stored) >= MINIMUM_SECRET_BYTES:
+            _secret_key = stored
         else:
             key = secrets.token_bytes(32)
-            secret_file.touch(mode=0o600)
-            secret_file.write_bytes(key)
+            # Created private, so the key is never readable by others, not even briefly.
+            descriptor = os.open(
+                secret_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(key)
             _secret_key = key
-        secret_file.chmod(0o600)
     except OSError as error:
         logger.warning(
             "The MCP secret could not be stored (%s), so a key for this process is used and "
@@ -914,7 +934,15 @@ def validate_redirect_uri(redirect_uri: str) -> str:
         return "redirect_uri is required."
 
     parts = urlsplit(redirect_uri)
-    if not parts.hostname or parts.fragment:
+    if not parts.scheme or parts.fragment:
+        return "redirect_uri must be an absolute URL without a fragment."
+    # Native apps register a private-use scheme (cursor://..., or com.example.app:/callback
+    # without a host as in RFC 8252), which the operating system hands to the app itself.
+    if parts.scheme not in {"http", "https"}:
+        if parts.scheme in {"javascript", "data", "file", "vbscript"}:
+            return "redirect_uri must use https (http is only allowed for localhost)."
+        return ""
+    if not parts.hostname:
         return "redirect_uri must be an absolute URL without a fragment."
     if parts.scheme == "https":
         return ""
@@ -925,12 +953,6 @@ def validate_redirect_uri(redirect_uri: str) -> str:
                 return ""
         except ValueError:
             pass
-        return "redirect_uri must use https (http is only allowed for localhost)."
-
-    # Native apps register a private scheme (such as cursor://), which the operating
-    # system hands to the app itself rather than to a website.
-    if parts.scheme and parts.scheme not in {"javascript", "data", "file", "vbscript"}:
-        return ""
     return "redirect_uri must use https (http is only allowed for localhost)."
 
 
@@ -949,14 +971,14 @@ def build_redirect_url(redirect_uri: str, **params: str) -> str:
     return f"{redirect_uri}{separator}{query}"
 
 
-def issue_authorization_code(payload: dict[str, Any]) -> str:
+def issue_authorization_code(payload: dict[str, Any]) -> str | None:
     """Store the submitted keys and return a random code that refers to them.
 
     Args:
         payload (dict[str, Any]): The keys and the client binding of the authorization.
 
     Returns:
-        str: The single-use authorization code.
+        str | None: The single-use authorization code, or None when the store is full.
     """
     code = secrets.token_urlsafe(32)
     now = time.time()
@@ -965,9 +987,10 @@ def issue_authorization_code(payload: dict[str, Any]) -> str:
             key for key, (expires, _) in _auth_codes.items() if expires < now
         ]:
             del _auth_codes[expired]
-        # A flood of abandoned authorizations can't grow the store without bound.
-        while len(_auth_codes) >= _MAX_PENDING_CODES:
-            del _auth_codes[next(iter(_auth_codes))]
+        # A flood of authorizations is refused rather than pushing out the codes of people
+        # who are signing in; the store empties as codes are used or expire.
+        if len(_auth_codes) >= _MAX_PENDING_CODES:
+            return None
         _auth_codes[code] = (now + AUTH_CODE_LIFETIME, payload)
     return code
 
@@ -1066,15 +1089,21 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
 
 
 def _authorization_problem(
-    redirect_uri: str, code_challenge: str, code_challenge_method: str
+    redirect_uri: str, code_challenge: str, code_challenge_method: str, **fields: str
 ) -> str:
     """Explain what makes an authorization request unacceptable, or return ""."""
+    for name, value in {"redirect_uri": redirect_uri, **fields}.items():
+        if len(value) > FIELD_LIMITS[name]:
+            return f"{name} is longer than {FIELD_LIMITS[name]} characters."
     problem = validate_redirect_uri(redirect_uri)
     if problem:
         return problem
-    if not code_challenge or code_challenge_method != "S256":
+    if code_challenge_method != "S256" or not CODE_CHALLENGE_PATTERN.match(
+        code_challenge
+    ):
         return (
-            "PKCE is required: send a code_challenge with code_challenge_method=S256."
+            "PKCE is required: send a S256 code_challenge (43 base64url characters) with "
+            "code_challenge_method=S256."
         )
     return ""
 
@@ -1192,7 +1221,11 @@ def register_auth_routes(mcp: Any) -> None:
         state = request.query_params.get("state", "")
 
         problem = _authorization_problem(
-            redirect_uri, code_challenge, code_challenge_method
+            redirect_uri,
+            code_challenge,
+            code_challenge_method,
+            client_id=client_id,
+            state=state,
         )
         if problem:
             return HTMLResponse(
@@ -1228,7 +1261,13 @@ def register_auth_routes(mcp: Any) -> None:
             return HTMLResponse("FMP API Key is required", status_code=400)
 
         problem = _authorization_problem(
-            redirect_uri, code_challenge, code_challenge_method
+            redirect_uri,
+            code_challenge,
+            code_challenge_method,
+            client_id=client_id,
+            state=state,
+            fmp_api_key=fmp_api_key,
+            fred_api_key=fred_api_key,
         )
         if problem:
             return HTMLResponse(html.escape(problem), status_code=400)
@@ -1243,6 +1282,11 @@ def register_auth_routes(mcp: Any) -> None:
             "code_challenge_method": code_challenge_method,
         }
         auth_code = issue_authorization_code(payload)
+        if auth_code is None:
+            return HTMLResponse(
+                "Too many authorizations are pending. Please try again in a few minutes.",
+                status_code=503,
+            )
 
         return RedirectResponse(
             url=build_redirect_url(redirect_uri, code=auth_code, state=state),

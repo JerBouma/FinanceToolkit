@@ -428,7 +428,7 @@ def test_the_authorization_page_escapes_its_parameters() -> None:
 
     page = client.get(
         '/oauth/authorize?client_id="><script>alert(1)</script>'
-        "&redirect_uri=http://localhost/callback&code_challenge=abc"
+        f"&redirect_uri=http://localhost/callback&code_challenge={CHALLENGE}"
         '&code_challenge_method=S256&state="><img src=x onerror=alert(1)>'
     )
 
@@ -602,3 +602,73 @@ def test_the_secret_file_is_private_and_read_once(monkeypatch, tmp_path):
     assert secret_file.stat().st_mode & 0o777 == 0o600
     secret_file.write_bytes(b"changed")
     assert auth_model.get_secret_key() == key
+
+
+def test_authorization_fields_are_bounded_and_the_challenge_is_s256_shaped() -> None:
+    client = _oauth_client()
+
+    assert (
+        _authorize(client, "http://localhost/cb", state="s" * 1025).status_code == 400
+    )  # noqa
+    assert (
+        _authorize(client, "http://localhost/cb", fmp_api_key="k" * 129).status_code
+        == 400  # noqa
+    )
+    assert (
+        _authorize(client, "https://a.example/" + "p" * 2048).status_code == 400  # noqa
+    )
+    assert (
+        _authorize(client, "http://localhost/cb", code_challenge="abc").status_code
+        == 400  # noqa
+    )
+    assert _authorize(client, "http://localhost/cb").status_code == 303  # noqa
+
+
+def test_a_full_code_store_refuses_new_codes_instead_of_evicting(monkeypatch) -> None:
+    from financetoolkit.mcp_server import auth_model
+
+    monkeypatch.setattr(auth_model, "_MAX_PENDING_CODES", 1)
+    monkeypatch.setattr(auth_model, "_auth_codes", {})
+    client = _oauth_client()
+
+    first = _authorize(client, "http://localhost/callback")
+    assert first.status_code == 303  # noqa
+    assert _authorize(client, "http://localhost/callback").status_code == 503  # noqa
+
+    code = parse_qs(urlsplit(first.headers["location"]).query)["code"][0]
+    exchange = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": "http://localhost/callback",
+        "code_verifier": VERIFIER,
+    }
+    assert client.post("/oauth/token", data=exchange).status_code == 200  # noqa
+
+
+def test_private_use_schemes_without_a_host_are_accepted() -> None:
+    from financetoolkit.mcp_server.auth_model import validate_redirect_uri
+
+    assert validate_redirect_uri("com.example.app:/oauth2redirect") == ""
+    assert validate_redirect_uri("cursor://anysphere.cursor/cb") == ""
+    for refused in ("javascript:alert(1)", "data:text/html,x", "file:///etc/passwd"):
+        assert validate_redirect_uri(refused)
+
+
+def test_an_existing_secret_is_kept_and_a_short_one_is_replaced(monkeypatch, tmp_path):
+    from financetoolkit.mcp_server import auth_model
+
+    monkeypatch.delenv("FT_MCP_SECRET_KEY", raising=False)
+    monkeypatch.setattr(auth_model, "get_global_env_path", lambda: tmp_path / ".env")
+    secret_file = tmp_path / ".mcp_secret"
+
+    # A file this process did not create is read as it is, never chmodded.
+    secret_file.write_bytes(b"x" * 40)
+    secret_file.chmod(0o640)
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    assert auth_model.get_secret_key() == b"x" * 40
+    assert secret_file.stat().st_mode & 0o777 == 0o640
+
+    secret_file.write_bytes(b"")
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    key = auth_model.get_secret_key()
+    assert len(key) == 32 and secret_file.read_bytes() == key  # noqa: PLR2004

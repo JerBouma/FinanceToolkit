@@ -183,3 +183,35 @@ def test_a_threaded_tool_runs_off_the_event_loop_and_keeps_its_signature():
         for tool in mcp_controller.mcp._tool_manager.list_tools()
         if tool.name in ("valuation", "search_metrics")
     )
+
+
+def test_threaded_tools_run_a_limited_number_at_a_time():
+    import threading
+    import time
+
+    import anyio
+
+    from financetoolkit.mcp_server.analytics_model import (
+        MAXIMUM_TOOL_THREADS,
+        run_in_thread,
+    )
+
+    running, peak, lock = [0], [0], threading.Lock()
+
+    def tool() -> None:
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.05)
+        with lock:
+            running[0] -= 1
+
+    threaded = run_in_thread(tool)
+
+    async def burst():
+        async with anyio.create_task_group() as group:
+            for _ in range(MAXIMUM_TOOL_THREADS * 3):
+                group.start_soon(threaded)
+
+    anyio.run(burst)
+    assert peak[0] == MAXIMUM_TOOL_THREADS

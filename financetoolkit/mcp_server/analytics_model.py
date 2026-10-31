@@ -30,7 +30,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import anyio
 import anyio.to_thread
+from anyio.lowlevel import RunVar
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -47,6 +49,12 @@ ANONYMOUS = "anonymous"
 SAVE_EVERY_CALLS = 5
 DAILY_SERIES_DAYS = 30
 TOP_TOOLS = 15
+
+# The most tool calls that run at the same time; the others wait their turn. A data
+# collection can take hundreds of megabytes, and the hosted server has 1.5 GB.
+MAXIMUM_TOOL_THREADS = 6
+# One limiter per event loop (a limiter belongs to the loop it was first used in).
+_TOOL_LIMITER: RunVar[anyio.CapacityLimiter] = RunVar("financetoolkit_tool_limiter")
 
 
 def is_enabled() -> bool:
@@ -474,7 +482,9 @@ def run_in_thread(function: Callable) -> Any:
     FastMCP calls a synchronous tool on the event loop itself, so one slow data collection
     would hold up every other request (other users, /health, the OAuth pages) until it
     finishes. The worker thread starts with a copy of the request's context, so the API key
-    and the notes collected for the answer stay with the call.
+    and the notes collected for the answer stay with the call. At most
+    MAXIMUM_TOOL_THREADS calls run at once, so a burst of heavy calls queues instead of
+    running the server out of memory.
 
     Args:
         function (Callable): The synchronous tool.
@@ -485,8 +495,13 @@ def run_in_thread(function: Callable) -> Any:
 
     @functools.wraps(function)
     async def threaded(*args, **kwargs):
+        try:
+            limiter = _TOOL_LIMITER.get()
+        except LookupError:
+            limiter = anyio.CapacityLimiter(MAXIMUM_TOOL_THREADS)
+            _TOOL_LIMITER.set(limiter)
         return await anyio.to_thread.run_sync(
-            functools.partial(function, *args, **kwargs)
+            functools.partial(function, *args, **kwargs), limiter=limiter
         )
 
     return keep_signature(threaded, function)

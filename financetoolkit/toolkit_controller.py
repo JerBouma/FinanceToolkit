@@ -324,10 +324,14 @@ class Toolkit:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
 
-        # One extra period so two-period metrics have a prior value for the first year.
+        # Data before the start date, so the first periods have what they build on: a prior
+        # year for annual growth, and for quarterly data the three quarters before the first
+        # one of a trailing twelve months (the default of the valuation ratios) plus the four
+        # before those for its growth over a year (lag=4). Only the periods from the start date on
+        # are returned.
         if quarterly:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(
-                days=92
+                days=92 * 8
             )
         else:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(

@@ -752,7 +752,8 @@ def test_the_rating_of_a_single_ticker_is_cached_and_filtered_by_date(
         use_cached_data=cache_location,
     ).get_rating()
 
-    assert len(requested) == calls
+    # Only the probe of the key's plan may go out, which the canned answers leave undecided.
+    assert [url for url in requested[calls:] if "ratings-historical" in url] == []
     assert again["Rating"].tolist() == ["B+", "A-"]
 
 

@@ -152,7 +152,6 @@ def test_the_yahoo_period_end_dates_are_the_fiscal_period_ends(monkeypatch, quar
         financial_statements=pd.concat({"AAPL": statistics}, axis=0),
         statement_format=statistics_format,
         adjust_financial_statements=False,
-        reverse_dates=True,
     )
 
     period_end_dates = determine_period_end_dates(

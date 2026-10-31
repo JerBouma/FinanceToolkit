@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.utilities import statistics_model
 
@@ -508,3 +509,11 @@ def test_apply_rounding_prints_no_negative_zero():
     assert (
         str(statistics_model.apply_rounding(pd.Series([-0.00001]), 4).iloc[0]) == "0.0"
     )
+
+
+@pytest.mark.parametrize("lag", [0, -1, 1.5, True, [], [1, 0]])
+def test_calculate_growth_refuses_lags_that_are_not_positive(lag):
+    data = pd.DataFrame([[1.0, 2.0, 3.0]], columns=["2020", "2021", "2022"])
+
+    with pytest.raises(ValueError):
+        statistics_model.calculate_growth(data, lag=lag)

@@ -190,6 +190,10 @@ CURRENCY_CODES: frozenset[str] = frozenset(
 )  # codespell:ignore zar
 
 
+# How old the last published rate may be on a period end before the period has no rate.
+STALE_RATE_DAYS = pd.Timedelta(days=7)
+
+
 def is_currency_pair(ticker: str) -> bool:
     """
     Returns whether a ticker is a forex pair: six letters, optionally followed by "=X" as
@@ -474,11 +478,17 @@ def get_statement_exchange_rates(
             ]
         else:
             dates = end_dates if rate == "closing" else start_dates
-            # The last published rate on or before each date.
+            # The last published rate on or before each date, unless that rate is more than
+            # a week old: a period ending after the rates do has no rate yet.
             positions = currency_rates.index.searchsorted(dates, side="right") - 1
             values = [
-                currency_rates.iloc[position] if position >= 0 else float("nan")
-                for position in positions
+                (
+                    currency_rates.iloc[position]
+                    if position >= 0
+                    and date - currency_rates.index[position] <= STALE_RATE_DAYS
+                    else float("nan")
+                )
+                for position, date in zip(positions, dates, strict=True)
             ]
 
         rates[ticker] = pd.Series(values, index=end_dates.index, dtype="float64")

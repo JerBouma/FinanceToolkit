@@ -126,7 +126,6 @@ class Toolkit:
         cash: pd.DataFrame = pd.DataFrame(),
         format_location: str = "",
         convert_currency: bool | None = None,
-        reverse_dates: bool = True,
         intraday_period: str | None = None,
         rounding: int | None = 4,
         remove_invalid_tickers: bool = False,
@@ -162,7 +161,7 @@ class Toolkit:
             empty to use Yahoo Finance where possible. Defaults to the value of the FINANCIAL_MODELING_PREP_API_KEY
             environment variable if set, otherwise an empty string.
             start_date (str | None): A string containing the start date of the data. Needs to be formatted as YYYY-MM-DD.
-            Defaults to 5 years/quarters back from today depending on the 'quarterly' flag.
+            Defaults to 5 years/quarters back from the end date depending on the 'quarterly' flag.
             end_date (str | None): A string containing the end date of the data. Needs to be formatted as YYYY-MM-DD.
             Defaults to today.
             quarterly (bool): A boolean indicating whether to collect quarterly data. Defaults to False (yearly).
@@ -187,15 +186,15 @@ class Toolkit:
             format_location (str): Path to custom normalization files. Defaults to "".
             convert_currency (bool | None): Convert financial statements currency to match historical data currency.
             Important for cross-ticker comparison and calculations involving both data types.
-            Defaults to None (True if FMP plan is Premium, False if Free). Can be overridden.
-            reverse_dates (bool): Reverse the order of dates in financial statements (oldest first). Defaults to True.
+            Defaults to None (True if FMP plan is Premium, False if Free or without an API key). Can be overridden.
             intraday_period (str | None): Intraday data interval ('1min', '5min', '15min', '30min', '1hour').
             Enables short-term analysis using Risk, Performance, and Technicals modules. Requires FMP Premium.
             Defaults to None (no intraday data).
             rounding (int | None): Number of decimal places for results. Defaults to 4.
             remove_invalid_tickers (bool): Remove tickers that fail data retrieval. Defaults to False.
             sleep_timer (bool | None): Enable sleep timer on FMP rate limit (requires Premium).
-            Defaults to None (determined by FMP plan: True for Premium, False for Free).
+            Defaults to None (determined by FMP plan: True for Premium, False for Free). It only controls
+            sleeping: the plan is always determined from the API key.
             progress_bar (bool): Show progress bar for operations involving multiple tickers. Defaults to True.
             fred_api_key (str): A FRED API key used to retrieve ICE BofA bond index data via the fixedincome module
             (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
@@ -298,6 +297,9 @@ class Toolkit:
         # Published so the OECD/FRED/ECB/Fed free functions pick up this cache too.
         cache_controller.set_active_cache(self._cache)
         self._allow_stale_oecd_cache = allow_stale_oecd_cache
+        # Tickers are upper-cased, so the benchmark is too, to be found among them.
+        if isinstance(benchmark_ticker, str):
+            benchmark_ticker = benchmark_ticker.strip().upper() or None
         self._benchmark_ticker = benchmark_ticker
 
         # Everything the user can get wrong is checked in one place; this raises on
@@ -314,14 +316,16 @@ class Toolkit:
             benchmark_ticker=benchmark_ticker,
         )
 
+        self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
+        # The default start lies before the end date, also when only an early end is given.
         self._start_date = (
             start_date
             if start_date
             else (
-                datetime.now() - timedelta(days=90 * 5 if quarterly else 365 * 5)
+                datetime.strptime(self._end_date, "%Y-%m-%d")
+                - timedelta(days=90 * 5 if quarterly else 365 * 5)
             ).strftime("%Y-%m-%d")
         )
-        self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
 
         # One extra period so two-period metrics have a prior value for the first year.
@@ -340,13 +344,14 @@ class Toolkit:
         self._tickers: list[str] = validated_tickers
         self._enforce_source: str | None = enforce_source
 
-        if sleep_timer is None:
-            # Determines the plan, which drives the sleep timer and other components.
+        if api_key:
+            # Determines the plan, which drives the sleep timer, what is requested per call
+            # and the currency conversion default. sleep_timer only decides on sleeping.
             self._fmp_plan, invalid_api_key = _determine_subscription_plan(
                 api_key=api_key
             )
 
-            if invalid_api_key and api_key:
+            if invalid_api_key:
                 self._enforce_source = "YahooFinance"
                 logger.error(
                     "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
@@ -354,7 +359,8 @@ class Toolkit:
                     "the project: https://www.jeroenbouma.com/fmp\nUsing Yahoo Finance as data source instead."
                 )
         else:
-            self._fmp_plan = "Premium"
+            # Without a key there is no plan to probe, and nothing paid is requested.
+            self._fmp_plan = "Free"
 
         self._sleep_timer = (
             sleep_timer if sleep_timer is not None else self._fmp_plan != "Free"
@@ -423,8 +429,14 @@ class Toolkit:
         self._yearly_historical_data: pd.DataFrame = pd.DataFrame()
         self._historical_statistics: pd.DataFrame = pd.DataFrame()
 
-        # Initialization of the Financial Statements and Normalization
-        self._reverse_dates = reverse_dates
+        # Initialization of the Financial Statements and Normalization. Supplied statements
+        # are used as given and never replaced by downloaded ones, also when the window
+        # holds none of their periods.
+        self._custom_statements = {
+            "balance_sheet_statement": not balance.empty,
+            "income_statement": not income.empty,
+            "cash_flow_statement": not cash.empty,
+        }
 
         (
             self._balance_sheet_statement,
@@ -444,10 +456,10 @@ class Toolkit:
             income=income,
             cash=cash,
             format_location=format_location,
-            reverse_dates=self._reverse_dates,
             start_date=self._start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
+            tickers=self._tickers,
         )
 
         self._balance_sheet_statement_growth: pd.DataFrame = pd.DataFrame()
@@ -4574,6 +4586,7 @@ class Toolkit:
         convert_currency = bool(
             self._convert_currency
             and (self._balance_sheet_statement.empty or overwrite)
+            and not self._custom_statements["balance_sheet_statement"]
         )
 
         if enforce_source is not None and enforce_source not in [
@@ -4590,6 +4603,7 @@ class Toolkit:
         if (
             not self._api_key
             and self._balance_sheet_statement.empty
+            and not self._custom_statements["balance_sheet_statement"]
             and source == "FinancialModelingPrep"
         ):
             logger.error(
@@ -4605,7 +4619,9 @@ class Toolkit:
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
-        if self._balance_sheet_statement.empty or overwrite:
+        if (
+            self._balance_sheet_statement.empty or overwrite
+        ) and not self._custom_statements["balance_sheet_statement"]:
             (
                 self._balance_sheet_statement,
                 self._statistics_statement,
@@ -4754,7 +4770,9 @@ class Toolkit:
         | Net Income | 6.046e+09 | 5.07e+09   | 5.7e+09    | 3.219e+09  | 3.108e+09  |
         """
         convert_currency = bool(
-            self._convert_currency and (self._income_statement.empty or overwrite)
+            self._convert_currency
+            and (self._income_statement.empty or overwrite)
+            and not self._custom_statements["income_statement"]
         )
 
         if enforce_source is not None and enforce_source not in [
@@ -4771,6 +4789,7 @@ class Toolkit:
         if (
             not self._api_key
             and self._income_statement.empty
+            and not self._custom_statements["income_statement"]
             and source == "FinancialModelingPrep"
         ):
             logger.error(
@@ -4786,7 +4805,9 @@ class Toolkit:
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
-        if self._income_statement.empty or overwrite:
+        if (self._income_statement.empty or overwrite) and not self._custom_statements[
+            "income_statement"
+        ]:
             (
                 self._income_statement,
                 self._statistics_statement,
@@ -4963,7 +4984,9 @@ class Toolkit:
         | Dividends Paid      | -1.0179e+10 | -1.0968e+10 | -1.1336e+10 | -1.18e+10   | -1.2751e+10 |
         """
         convert_currency = bool(
-            self._convert_currency and (self._cash_flow_statement.empty or overwrite)
+            self._convert_currency
+            and (self._cash_flow_statement.empty or overwrite)
+            and not self._custom_statements["cash_flow_statement"]
         )
 
         if enforce_source is not None and enforce_source not in [
@@ -4980,6 +5003,7 @@ class Toolkit:
         if (
             not self._api_key
             and self._cash_flow_statement.empty
+            and not self._custom_statements["cash_flow_statement"]
             and source == "FinancialModelingPrep"
         ):
             logger.error(
@@ -4995,7 +5019,9 @@ class Toolkit:
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
-        if self._cash_flow_statement.empty or overwrite:
+        if (
+            self._cash_flow_statement.empty or overwrite
+        ) and not self._custom_statements["cash_flow_statement"]:
             (
                 self._cash_flow_statement,
                 self._statistics_statement,
@@ -5162,6 +5188,17 @@ class Toolkit:
         | 2024   | 2025-02-20 15:17:12 | 2025-02-03 18:22:47 |
         | 2025   | 2026-02-20 09:46:32 | 2026-02-02 18:07:04 |
         """
+        # With a supplied balance sheet, the statistics are those of the supplied statements
+        # (the Period End Date of date labelled columns), never a download that would
+        # replace the balance sheet with it.
+        if self._custom_statements["balance_sheet_statement"]:
+            if len(self._tickers) == 1 and not self._statistics_statement.empty:
+                return filter_columns(
+                    self._statistics_statement.loc[self._tickers[0]], show_columns
+                )
+
+            return filter_columns(self._statistics_statement, show_columns)
+
         if not self._api_key and self._statistics_statement.empty:
             logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
@@ -5291,6 +5328,12 @@ class Toolkit:
                     getattr(self, f"get_{other}")()
 
             if all(getattr(self, f"_{other}").empty for other in statements):
+                if any(self._custom_statements.values()):
+                    raise ValueError(
+                        f"The supplied financial statements hold no data for {', '.join(self._tickers)} "
+                        f"between {self._start_date} and {self._end_date}, so the {module} class "
+                        "cannot calculate this."
+                    )
                 raise ValueError(
                     f"The datasets could not be populated and therefore the {module} class cannot "
                     "calculate this. This is usually because no tickers are equities, you have "

@@ -826,3 +826,51 @@ def test_ratios_call_only_the_loaders_a_ratio_needs(ratios_module):
 
     ratios.get_price_to_earnings_ratio()
     assert sorted(loaded) == ["income", "period", "tickers"]
+
+
+def test_daily_growth_and_standardization_run_over_time(ratios_module):
+    daily = ratios_module.get_price_to_earnings_ratio(show_daily=True, rounding=None)
+    growth = ratios_module.get_price_to_earnings_ratio(
+        show_daily=True, growth=True, rounding=None
+    )
+
+    expected = daily.pct_change(fill_method=None)
+    pd.testing.assert_frame_equal(
+        growth.dropna(how="all"),
+        expected.loc[growth.dropna(how="all").index],
+        atol=1e-3,
+        check_freq=False,
+    )
+
+    standardized = ratios_module.get_price_to_earnings_ratio(
+        show_daily=True, standardize=True
+    )
+    # A Z-Score over time, not across two tickers (which would be +/-0.7071 every day).
+    assert standardized.abs().round(4).ne(0.7071).any().all()
+
+
+def test_collect_ratios_growth_with_one_ticker():
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+
+    assert not toolkit.ratios.collect_profitability_ratios(growth=True).empty
+    assert not toolkit.ratios.collect_profitability_ratios(
+        growth=True, lag=[1, 2]
+    ).empty
+
+
+def test_collect_all_ratios_groups_the_rows_per_ticker(ratios_module):
+    tickers = ratios_module.collect_all_ratios().index.get_level_values(0)
+
+    assert (tickers[1:] != tickers[:-1]).sum() == 1

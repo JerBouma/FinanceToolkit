@@ -250,22 +250,29 @@ class Discovery:
 
         Args:
             market_cap_higher (int): The minimum market capitalization of the stock in US dollars
-                (not in millions), e.g. 1_000_000_000 for $1 billion.
-            market_cap_lower (int): The maximum market capitalization of the stock in US dollars.
-            price_higher (float | None): The minimum price of the stock.
-            price_lower (float | None): The maximum price of the stock.
-            beta_higher (float | None): The minimum beta of the stock.
-            beta_lower (float | None): The maximum beta of the stock.
-            volume_higher (int): The minimum volume of the stock, in shares traded.
-            volume_lower (int): The maximum volume of the stock.
+                (not in millions), e.g. 1_000_000_000 for $1 billion. Defaults to None, which applies no filter.
+            market_cap_lower (int): The maximum market capitalization of the stock in US dollars. Defaults to None, which
+                applies no filter.
+            price_higher (float | None): The minimum price of the stock. Defaults to None, which applies no filter.
+            price_lower (float | None): The maximum price of the stock. Defaults to None, which applies no filter.
+            beta_higher (float | None): The minimum beta of the stock. Defaults to None, which applies no filter.
+            beta_lower (float | None): The maximum beta of the stock. Defaults to None, which applies no filter.
+            volume_higher (int): The minimum volume of the stock, in shares traded. Defaults to None, which applies no
+                filter.
+            volume_lower (int): The maximum volume of the stock. Defaults to None, which applies no filter.
             dividend_higher (float | None): The minimum dividend of the stock, as an amount per share
-                over the last annual period rather than as a yield.
-            dividend_lower (float | None): The maximum dividend of the stock.
-            sector (str | None): The sector to restrict the screen to, e.g. "Energy".
-            industry (str | None): The industry to restrict the screen to, e.g. "Biotechnology".
-            country (str | None): The two-letter country code to restrict the screen to, e.g. "US".
-            exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ".
-            is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them.
+                over the last annual period rather than as a yield. Defaults to None, which applies no filter.
+            dividend_lower (float | None): The maximum dividend of the stock. Defaults to None, which applies no filter.
+            sector (str | None): The sector to restrict the screen to, e.g. "Energy". Defaults to None, which applies no
+                filter.
+            industry (str | None): The industry to restrict the screen to, e.g. "Biotechnology". Defaults to None, which
+                applies no filter.
+            country (str | None): The two-letter country code to restrict the screen to, e.g. "US". Defaults to None,
+                which applies no filter.
+            exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ". Defaults to None, which
+                applies no filter.
+            is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them. Defaults to None, which
+                applies no filter.
             limit (int): The maximum number of companies to return. Defaults to 1000.
             primary_only (bool): Whether to keep only the home listing of each company (on an
                 exchange in its own country, the most traded one among several) rather than
@@ -1666,8 +1673,8 @@ class Discovery:
         Also known as: sector performance snapshot, sector performance history, sector trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
-            sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
             start_date (str, optional): The start of the history of one sector. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one sector. Defaults to today.
@@ -1735,8 +1742,8 @@ class Discovery:
         Also known as: industry performance snapshot, industry performance history, industry trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
-            industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one industry. Defaults to today.
@@ -1803,8 +1810,8 @@ class Discovery:
         Also known as: sector P/E snapshot, sector P/E history, sector valuation trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
-            sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
             start_date (str, optional): The start of the history of one sector. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one sector. Defaults to today.
@@ -1872,8 +1879,8 @@ class Discovery:
         Also known as: industry P/E snapshot, industry P/E history, industry valuation trend.
 
         Args:
-            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
-            industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
+            date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
+            industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
             start_date (str, optional): The start of the history of one industry. Defaults to a year
                 ago.
             end_date (str, optional): The end of the history of one industry. Defaults to today.

@@ -12,7 +12,7 @@ ___
 The Finance Toolkit follows the Model, View and Controller (MVC) pattern. This is a pattern in software design commonly used to implement user interfaces, data, and controlling logic. It emphasizes a separation between the software’s business logic and display. This “separation of concerns” provides for a better division of labor and improved maintenance. The Finance Toolkit utilizes only the Controller and Model logic.
 
 - **_controller** modules (such as toolkit_controller and ratios_controller) orchestrate the data flow. Through the controller, the user can set parameters (such as tickers, start and end date) that define the data that needs to be obtained. E.g. in the controller classes you will be able to find the function `get_income_statement` which collects income statements via a **_model** that takes in the parameters set by the user.
-- **_model** modules (such as fundamentals_model and historical_model) are the modules that actually obtain the data. E.g in the fundamentals_model exists a function called `get_financial_statements` which would be executed by `get_income_statement` from the controller class to obtain the financial statement, in this case the income statement, for the selected parameters. These functions will also work separately, they do not need the controller to work but the controller needs them to work.
+- **_model** modules (such as fundamentals_model and historical_model) are the modules that actually obtain the data. E.g in the fundamentals_model exists a function called `collect_financial_statements` which would be executed by `get_income_statement` from the controller class to obtain the financial statement, in this case the income statement, for the selected parameters. These functions will also work separately, they do not need the controller to work but the controller needs them to work.
 
 Each model function is categorized in a specific module. For example, the Gross Margin calculation is categorized under the `profitability_model.py` module which contains all of the other profitability ratios. The same applies to the other ratio categories such as liquidity, solvency, efficiency and valuation which can be found in `liquidity_model.py`, `solvency_model.py`, `efficiency_model.py` and `valuation_model.py` respectively.
 
@@ -87,7 +87,7 @@ After setting up Git, you can fork and pull the project in.
 6. Install pre-commit, this checks the code for any errors before committing (`pre-commit install`)
 7. Commit your Changes (`git commit -m 'Improve the Toolkit'`)
 8. Check whether the tests still pass (`pytest tests`) and if not, correct then.
-    - When no formulas have changed or new tests have been added, you can use `pytest tests --record-mode=rewrite` (please do provide reasoning in this case).
+    - When no formulas have changed or new tests have been added, you can use `pytest tests --rewrite-expected` (please do provide reasoning in this case).
     - If formulas or calculations have changed, adjusts the tests inside the `tests` directory.
 9. Push to your Branch (`git push origin feature/contribution`)
 10. Open a Pull Request

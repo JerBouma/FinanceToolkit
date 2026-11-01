@@ -353,7 +353,8 @@ class Options:
                 Defaults to False.
             show_expiration_dates (bool, optional): Whether to return the available expiration dates instead of
                 the option chains. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             strike_price_range (float | None, optional): Only the strikes within this fraction of the
                 current stock price, e.g. 0.05 for strikes within 5% of it. Defaults to None, which
                 keeps every strike.
@@ -531,7 +532,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -722,7 +724,8 @@ class Options:
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_expiration_dates (bool, optional): Whether to show the expiration dates. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -1527,7 +1530,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -1729,7 +1733,8 @@ class Options:
             show_unique_combinations (bool, optional): Whether to show the unique combinations of the stock prices.
             Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -1899,7 +1904,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -2094,7 +2100,8 @@ class Options:
             foreign_risk_free_rate (float, optional): The foreign risk free rate to use for the calculation, which
             plays the role of the dividend yield in the standard Black-Scholes model. Defaults to 0.0.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -2277,7 +2284,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -2479,7 +2487,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -2681,7 +2690,8 @@ class Options:
             show_standard_error (bool, optional): Whether to also return the standard error of each Monte Carlo
             estimate as a second DataFrame. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -2936,7 +2946,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -3149,7 +3160,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -3329,7 +3341,8 @@ class Options:
             to 0.5 which equals 50% and thus results in stock prices from 50 to 150 if the current stock price is
             100.
             stock_price_step_size (int): The step size to use for the stock prices at expiration. Defaults to 1.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: The strategy's net P&L with the range of stock prices at expiration as the index and the
@@ -3530,7 +3543,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -3690,7 +3704,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -3900,7 +3915,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -4084,7 +4100,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option dual delta. Defaults to False which means
             it will calculate the call option dual delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -4281,7 +4298,8 @@ class Options:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -4476,7 +4494,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option theta. Defaults to False which means
             it will calculate the call option theta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -4663,7 +4682,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option rho. Defaults to False which means
             it will calculate the call option rho.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -4844,7 +4864,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option epsilon. Defaults to False which means
             it will calculate the call option epsilon.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -5028,7 +5049,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option lambda. Defaults to False which means
             it will calculate the call option lambda.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -5214,7 +5236,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option delta. Defaults to False which means
             it will calculate the call option delta.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -5423,7 +5446,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
                 means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -5596,7 +5620,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -5773,7 +5798,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -5963,7 +5989,8 @@ class Options:
             put_option (bool, optional): Whether to calculate the put option charm. Defaults to False which means
             it will calculate the call option charm.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -6151,7 +6178,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -6340,7 +6368,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -6529,7 +6558,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -6706,7 +6736,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -6885,7 +6916,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -7056,7 +7088,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -7230,7 +7263,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -7414,7 +7448,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 
@@ -7591,7 +7626,8 @@ class Options:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None which
             means it will use the current dividend yield.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
 

@@ -487,6 +487,58 @@ def get_financial_statement(
     return financial_statement
 
 
+# A Free plan receives only the latest dividend payments.
+FREE_DIVIDEND_LIMIT = 5
+
+
+def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
+    """
+    Adds the dividends paid before the latest payments a Free plan receives, from Yahoo
+    Finance, which reports them split-adjusted as FinancialModelingPrep's adjDividend is.
+    Without them every earlier payment would count as no dividend at all in the dividend
+    yield, total returns and dividend income.
+
+    Args:
+        ticker (str): The ticker the dividends belong to.
+        dividends (pd.Series): The payments FinancialModelingPrep returned, indexed by a
+            daily PeriodIndex.
+
+    Returns:
+        pd.Series: The earlier Yahoo Finance payments followed by the given ones, or the
+        given ones with a warning when Yahoo Finance has none.
+    """
+    # Imported when first used, as only a Free plan with a long dividend history needs it.
+    import yfinance as yf  # noqa: PLC0415
+    import yfinance.exceptions  # noqa: PLC0415
+
+    from financetoolkit.currencies_model import (  # noqa: PLC0415
+        to_yahoo_finance_symbol,
+    )
+
+    first_payment = dividends.index.min()
+
+    try:
+        older = yf.Ticker(to_yahoo_finance_symbol(ticker)).dividends
+    except (OSError, ValueError, KeyError, yf.exceptions.YFException):
+        older = pd.Series(dtype=float)
+
+    if not older.empty:
+        older.index = pd.DatetimeIndex(older.index).tz_localize(None).to_period("D")
+        older = older[older.index < first_payment]
+
+    if older.empty:
+        logger.warning(
+            "No dividend data is available for %s before %s: the Free plan returns only the "
+            "latest %s payments, so earlier dividends count as none.",
+            ticker,
+            first_payment,
+            FREE_DIVIDEND_LIMIT,
+        )
+        return dividends
+
+    return pd.concat([older, dividends]).sort_index()
+
+
 def get_historical_data(
     ticker: str,
     api_key: str,
@@ -580,7 +632,7 @@ def get_historical_data(
 
     dividend_url = (
         f"https://financialmodelingprep.com/stable/dividends"
-        f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
+        f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else FREE_DIVIDEND_LIMIT}"
     )
 
     try:
@@ -693,9 +745,18 @@ def get_historical_data(
                     # The prices are split-adjusted, so the dividends are too: "dividend"
                     # is the amount as paid, which before a 4-for-1 split is four times
                     # the dividend per share of today.
-                    historical_data["Dividends"] = dividends_df[
+                    paid = dividends_df[
                         ("adjDividend" if "adjDividend" in dividends_df else "dividend")
                     ]
+
+                    if (
+                        user_subscription == "Free"
+                        and len(paid) >= FREE_DIVIDEND_LIMIT
+                        and paid.index.min() > historical_data.index.min()
+                    ):
+                        paid = _complete_older_dividends(ticker, paid)
+
+                    historical_data["Dividends"] = paid
                 else:
                     historical_data["Dividends"] = 0
             except KeyError:
@@ -1609,7 +1670,7 @@ def get_earnings_calendar(
     def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/earnings"
-            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
+            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else FREE_DIVIDEND_LIMIT}"
         )
         earnings_calendar = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
@@ -1711,7 +1772,7 @@ def get_dividend_calendar(
     def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/dividends"
-            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
+            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else FREE_DIVIDEND_LIMIT}"
         )
         dividend_calendar = get_financial_data(
             url=url,

@@ -987,3 +987,51 @@ def test_prices_are_incomplete_only_after_a_temporary_failure(
 
     assert data.attrs.get("incomplete", False) is incomplete
     assert data["Adj Close"].tolist() == data["Close"].tolist()
+
+
+def test_free_plan_dividends_are_completed_with_older_yahoo_payments(monkeypatch):
+    import yfinance as yf
+
+    from financetoolkit import fmp_model
+
+    latest = pd.Series(
+        [0.25] * 5,
+        index=pd.period_range("2024-02-01", periods=5, freq="Q").asfreq("D", "start"),
+    )
+    yahoo = pd.Series(
+        [0.2, 0.2, 0.25],
+        index=pd.DatetimeIndex(
+            ["2023-05-01", "2023-08-01", "2024-02-01"], tz="America/New_York"
+        ),
+    )
+    monkeypatch.setattr(
+        yf, "Ticker", lambda symbol: type("T", (), {"dividends": yahoo})()
+    )
+
+    completed = fmp_model._complete_older_dividends("AAPL", latest)
+
+    # The two earlier payments come first; the overlapping one is kept from FMP.
+    assert completed.index[:2].astype(str).tolist() == ["2023-05-01", "2023-08-01"]
+    assert completed.iloc[2:].equals(latest)
+
+
+def test_free_plan_dividends_without_yahoo_history_warn(monkeypatch):
+    import yfinance as yf
+
+    from financetoolkit import fmp_model
+
+    latest = pd.Series(
+        [0.25] * 5, index=pd.period_range("2024-01-01", periods=5, freq="D")
+    )
+    monkeypatch.setattr(
+        yf,
+        "Ticker",
+        lambda symbol: type("T", (), {"dividends": pd.Series(dtype=float)})(),
+    )
+
+    from unittest.mock import patch
+
+    with patch.object(fmp_model.logger, "warning") as warning:
+        assert fmp_model._complete_older_dividends("XYZ", latest).equals(latest)
+
+    assert warning.call_args[0][0].startswith("No dividend data is available for")

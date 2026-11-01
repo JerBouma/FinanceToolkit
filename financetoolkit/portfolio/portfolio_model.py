@@ -312,8 +312,8 @@ def format_portfolio_dataset(
             "No price columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {price_columns}"
         )
-    dataset[price_column_first] = dataset[price_column_first].apply(
-        helpers.convert_to_float
+    dataset[price_column_first] = helpers.convert_column_to_float(
+        dataset[price_column_first]
     )
 
     volume_columns = [column.lower() for column in volume_columns]
@@ -324,8 +324,8 @@ def format_portfolio_dataset(
             "No volume columns found in the portfolio dataset. Please ensure in your dataset "
             f"there is a column named one of the following: {volume_columns}"
         )
-    dataset[volume_column_first] = dataset[volume_column_first].apply(
-        helpers.convert_to_float
+    dataset[volume_column_first] = helpers.convert_column_to_float(
+        dataset[volume_column_first]
     )
 
     # An empty price or volume cell converts to NaN without raising, which would travel all the way into the invested amount and the weights as a missing number, so the transaction is reported instead of being carried along silently.  # noqa: E501
@@ -372,8 +372,8 @@ def format_portfolio_dataset(
             costs_column_first = "TEMP Costs"
             dataset[costs_column_first] = 0.0
         else:
-            dataset[costs_column_first] = dataset[costs_column_first].apply(
-                helpers.convert_to_float
+            dataset[costs_column_first] = helpers.convert_column_to_float(
+                dataset[costs_column_first]
             )
             dataset[costs_column_first] = dataset[costs_column_first].fillna(0)
     else:

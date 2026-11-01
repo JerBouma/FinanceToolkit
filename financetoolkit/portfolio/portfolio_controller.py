@@ -1442,6 +1442,21 @@ class Portfolio:
         ):
             return
         majors = {major for major, _ in price_units}
+        if currencies.isna().any():
+            logger.warning(
+                "The currency of %s is unknown, so their transactions are taken to be in the "
+                "reporting currency. Please add a currency column to convert them.",
+                ", ".join(
+                    sorted(
+                        map(
+                            str,
+                            self._portfolio_dataset.index.get_level_values(1)[
+                                currencies.isna().to_numpy()
+                            ].unique(),
+                        )
+                    )
+                ),
+            )
         dates = pd.PeriodIndex(
             self._portfolio_dataset.index.get_level_values(0), freq="D"
         )
@@ -1458,7 +1473,8 @@ class Portfolio:
             exchange_rates = self._get_exchange_rates(
                 list(rate_tickers.values()), self._start_date
             )
-            factors = pd.Series(np.nan, index=self._portfolio_dataset.index)
+            # A transaction without a known currency is taken to be in the reporting currency (see the warning below).  # noqa: E501
+            factors = pd.Series(1.0, index=self._portfolio_dataset.index)
             for currency, rate_ticker in rate_tickers.items():
                 rows = (currencies == currency).to_numpy()
                 _, units = portfolio_model.get_price_unit(currency)

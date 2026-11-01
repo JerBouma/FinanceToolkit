@@ -787,3 +787,40 @@ def test_pence_are_expressed_in_pounds_when_the_currency_is_pounds(monkeypatch):
 
     assert set(dataset["Currency"]) == {"GBP"}
     assert dataset.loc["VOD.L", "Price"] == pytest.approx(1.2)
+
+
+def test_a_transaction_without_a_currency_keeps_its_price(monkeypatch, caplog):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-05", "2021-01-05", "2021-01-05"],
+            "Ticker": ["AAPL", "MSFT", "NOVO"],
+            "Price": [100.0, 100.0, 5.0],
+            "Volume": [20, 10, 1],
+            "Costs": [-1.0, -1.0, -1.0],
+            "Currency": ["USD", "EUR", "USD"],
+        }
+    )
+    dates = pd.period_range("2021-01-01", "2021-01-10", freq="D")
+    rates = pd.DataFrame({"USDEUR=X": 0.8}, index=dates)
+    monkeypatch.setattr(
+        Portfolio,
+        "_get_exchange_rates",
+        lambda self, rate_tickers, start_date: rates.reindex(
+            columns=sorted(rate_ticker for rate_ticker in rate_tickers if rate_ticker)
+        ),
+    )
+    portfolio = Portfolio(transactions=trades)
+    # A ticker whose currency the data source doesn't report either.
+    portfolio._portfolio_dataset.loc[
+        portfolio._portfolio_dataset.index.get_level_values(1) == "NOVO", "Currency"
+    ] = None
+
+    with caplog.at_level("WARNING"):
+        portfolio._convert_transactions_to_reporting_currency()
+    dataset = portfolio._portfolio_dataset.droplevel(0)
+
+    # Taken to be in the reporting currency, and named in a warning, instead of becoming NaN.
+    assert dataset.loc["NOVO", "Price"] == pytest.approx(5.0)
+    assert dataset.loc["NOVO", "Costs"] == pytest.approx(-1.0)
+    assert dataset.loc["MSFT", "Price"] == pytest.approx(125.0)
+    assert "NOVO" in caplog.text

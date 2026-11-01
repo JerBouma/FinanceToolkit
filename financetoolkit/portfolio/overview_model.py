@@ -1237,8 +1237,8 @@ def create_profit_and_loss_overview(
                         total_volume = 0
 
                 pnl.append(realized_pnl)
-                # Units sold beyond those held have no purchase to realize a PnL against. A remainder from floating point residue (0.1 + 0.2 - 0.3) is not a sale.  # noqa: E501
-                if sell_volume > OVERSOLD_TOLERANCE:
+                # Units sold beyond those held have no purchase to realize a PnL against. A remainder from floating point residue (0.1 + 0.2 - 0.3), which grows with the size of the sale, is not a sale.  # noqa: E501
+                if sell_volume > OVERSOLD_TOLERANCE * max(1.0, -volume):
                     oversold.add(str(ticker))
 
             else:

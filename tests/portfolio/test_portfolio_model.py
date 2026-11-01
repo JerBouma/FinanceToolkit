@@ -503,3 +503,23 @@ def test_duplicates_in_another_case_are_merged(tmp_path):
     assert len(dataset) == 1
     assert dataset["Identifier"].iloc[0] == "AAPL"
     assert dataset["Volume"].iloc[0] == 20
+
+
+@pytest.mark.parametrize(
+    ("column", "numbers"),
+    [
+        (["1,500", "2,500", "1,234.50"], [1500.0, 2500.0, 1234.5]),
+        (["1,500", "1,234,567"], [1500.0, 1234567.0]),
+        (["1,500", "2,5"], [1.5, 2.5]),
+        (["1.234,56", "2,500"], [1234.56, 2.5]),
+        (["2,500", float("nan"), 3.0], [2.5, float("nan"), 3.0]),
+    ],
+)
+def test_a_column_reads_its_separators_once(column, numbers):
+    from financetoolkit.portfolio.helpers import (
+        convert_column_to_float,
+    )  # noqa: PLC0415
+
+    converted = convert_column_to_float(pd.Series(column, dtype=object))
+
+    assert converted.tolist() == pytest.approx(numbers, nan_ok=True)

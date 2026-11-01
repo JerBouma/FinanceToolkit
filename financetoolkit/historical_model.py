@@ -190,6 +190,9 @@ def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bo
     the dates they share, which happens when a dividend went ex or a split took effect
     after the cached part was retrieved: the provider then rescales its whole history.
 
+    Adj Close and Close are each compared on their own, not as a ratio: a dividend moves
+    Adj Close only, while a split rescales both alike and so moves Close as well.
+
     The median relative difference over at least MIN_SHARED_DATES dates is used, so a
     single corrected price does not count as a new adjustment and the rounding of
     individual prices averages out. The latest cached date is left out, as it may have

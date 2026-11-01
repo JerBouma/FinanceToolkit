@@ -586,3 +586,32 @@ def test_too_few_shared_dates_are_not_compared():
 
     assert not historical_model._adjustment_changed(cached, new)
     assert historical_model._adjustment_changed(bars("2020-01-01", "2020-01-20"), new)
+
+
+def test_a_split_retrieves_the_whole_range_again(cache, monkeypatch):
+    """A split rescales Close and Adj Close alike, which is a new basis as well."""
+    fmp_requests: list[tuple[str, str]] = []
+    price = {"value": 400.0}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        data = bars(str(pd.Timestamp(start) - pd.Timedelta(days=365))[:10], end)
+        data[["Open", "High", "Low", "Close", "Adj Close"]] = price["value"]
+        return data
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    # A 4-for-1 split after the first run divides the whole history by four.
+    price["value"] = 100.0
+
+    data = collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert fmp_requests[-1] == ("2018-01-01", "2021-12-31")
+    assert (data["Close"] == 100.0).all().all()
+    assert not historical_model._adjustment_changed(
+        bars("2020-01-01", "2020-01-20"), bars("2020-01-01", "2020-01-20")
+    )
+    split = bars("2020-01-01", "2020-01-20")
+    split[["Close", "Adj Close"]] = 0.25
+    assert historical_model._adjustment_changed(bars("2020-01-01", "2020-01-20"), split)

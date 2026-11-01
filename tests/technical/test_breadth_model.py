@@ -174,3 +174,46 @@ def test_new_highs_new_lows_use_full_windows_and_strict_comparisons():
     assert result.iloc[3] == 1
     # A makes a new low and B, with its first full window, makes a new high.
     assert result.iloc[4] == 0
+
+
+def test_volume_indicators_skip_gaps_per_ticker_in_a_dataframe():
+    index = pd.date_range("2024-01-01", periods=8)
+    close = pd.DataFrame(
+        {
+            "A": [10.0, 11, float("nan"), 12, 11, 13, 14, 15],
+            "B": [float("nan"), 20.0, 21, 20, 22, 23, 22, 24],
+        },
+        index=index,
+    )
+    volume = pd.DataFrame(
+        {
+            "A": [100.0, 200, float("nan"), 150, 50, 80, 90, 70],
+            "B": [float("nan"), 300.0, 100, 200, 400, 250, 150, 350],
+        },
+        index=index,
+    )
+
+    obv = breadth_model.get_on_balance_volume(close, volume)
+
+    # Each column equals the Series result, so the day after A's gap compares 12 with 11.
+    for ticker in close.columns:
+        pd.testing.assert_series_equal(
+            obv[ticker],
+            breadth_model.get_on_balance_volume(close[ticker], volume[ticker]),
+            check_names=False,
+        )
+    assert obv.loc[index[3], "A"] == 200 + 150
+
+
+def test_mcclellan_oscillator_continues_after_a_gap():
+    prices = pd.Series([10.0, 11, 10, float("nan"), 12, 13, 12, 14, 15, 14, 16])
+
+    oscillator = breadth_model.get_mcclellan_oscillator(prices, 2, 4)
+    without_gap = breadth_model.get_mcclellan_oscillator(prices.dropna(), 2, 4)
+
+    # The close after the gap is an advance against the last close before it, so the
+    # oscillator matches the one computed without the missing day.
+    pd.testing.assert_series_equal(
+        oscillator.dropna().reset_index(drop=True),
+        without_gap.dropna().reset_index(drop=True),
+    )

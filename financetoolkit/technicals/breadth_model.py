@@ -51,15 +51,16 @@ def get_mcclellan_oscillator(
     Returns:
         pd.Series: McClellan Oscillator values.
     """
-    # The first price has no previous close and therefore no advance or decline; leaving
-    # it missing keeps a zero that never happened out of the seed of both EMAs.
-    advancers_decliners = get_advancers_decliners(prices_close).where(
-        prices_close.shift(1).notna()
-    )
+    # Over the observed closes, so a close after a gap compares with the last close before
+    # it and the EMAs carry on over the gap; days without a close stay NaN. The first close
+    # has no previous one and therefore no advance or decline; leaving it missing keeps a
+    # zero that never happened out of the seed of both EMAs.
+    observed = prices_close.dropna()
+    advancers_decliners = get_advancers_decliners(observed).iloc[1:]
     short_ema = get_exponential_moving_average(advancers_decliners, short_ema_window)
     long_ema = get_exponential_moving_average(advancers_decliners, long_ema_window)
 
-    return short_ema - long_ema
+    return (short_ema - long_ema).reindex(prices_close.index)
 
 
 def get_advancers_decliners(
@@ -109,7 +110,9 @@ def get_advancers_decliners(
     return signal(prices_close)
 
 
-def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
+def get_on_balance_volume(
+    prices_close: pd.Series | pd.DataFrame, volumes: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the On-Balance Volume (OBV) of a given price series.
 
@@ -131,12 +134,22 @@ def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
     Prentice-Hall.
 
     Args:
-        prices_close (pd.Series): Series of closing prices.
-        volumes (pd.Series): Series of trading volumes.
+        prices_close (pd.Series | pd.DataFrame): Closing prices, one column per ticker when
+            a DataFrame is given.
+        volumes (pd.Series | pd.DataFrame): Trading volumes, in the shape of `prices_close`.
 
     Returns:
-        pd.Series: OBV values.
+        pd.Series | pd.DataFrame: OBV values, in the shape of the input.
     """
+    if isinstance(prices_close, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_on_balance_volume(prices_close[column], volumes[column])
+                for column in prices_close.columns
+            },
+            index=prices_close.index,
+        )
+
     # Over the days with both a close and a volume, so the day after a missing one compares
     # with the last close before it; days without data stay NaN.
     observed = prices_close.notna() & volumes.notna()

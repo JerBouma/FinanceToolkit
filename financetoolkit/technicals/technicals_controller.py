@@ -5278,6 +5278,8 @@ class Technicals:
           Trix for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Trix
           using the specified `lag`.
+        - Daily TRIX values are small (a few hundredths of a percent), so four decimals keep
+          about one significant digit. Pass a higher `rounding` (or None) for more precision.
 
         As an example:
 
@@ -5291,18 +5293,18 @@ class Technicals:
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_trix().tail(5)
+        toolkit.technicals.get_trix(rounding=6).tail(5)
         ```
 
         Which returns:
 
-        | Date       |   ^IXIC |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 |  0.0004 |      0.0005 |
-        | 2025-12-26 |  0.0004 |      0.0006 |
-        | 2025-12-29 |  0.0004 |      0.0006 |
-        | 2025-12-30 |  0.0005 |      0.0007 |
-        | 2025-12-31 |  0.0005 |      0.0007 |
+        | Date       |    ^IXIC |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-24 | 0.000367 |    0.000541 |
+        | 2025-12-26 | 0.000402 |    0.000582 |
+        | 2025-12-29 | 0.000432 |    0.00062  |
+        | 2025-12-30 | 0.000454 |    0.000651 |
+        | 2025-12-31 | 0.000452 |    0.00066  |
         """
         if period not in [
             "intraday",

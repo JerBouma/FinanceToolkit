@@ -20,6 +20,10 @@ SCHEMA_VERSION = 1
 # How long a writer waits for another process to release the write lock.
 BUSY_TIMEOUT_SECONDS = 30
 
+# A database up to this size is compacted after an eviction freed most of it; a larger one
+# would hold every other process off the cache for too long while it is rewritten.
+VACUUM_MAXIMUM_BYTES = 256 * 1024 * 1024
+
 # Three tables; source and dataset stay plain columns so clearing can be scoped.
 SCHEMA_STATEMENTS = (
     """
@@ -130,10 +134,15 @@ class SQLiteBackend:
                 the block, so that every statement inside it commits or rolls back
                 as one unit. False opens a plain read connection.
 
+        Only writers take the instance lock, so the threads of one process queue for the
+        write lock here instead of each waiting out SQLite's busy timeout. Readers never
+        take it: under write-ahead logging they read alongside a writer, also while that
+        writer waits for another process to release the database.
+
         Yields:
-            sqlite3.Connection: An open connection guarded by the instance lock.
+            sqlite3.Connection: An open connection, guarded by the instance lock when writing.
         """
-        with self._lock:
+        with self._lock if write else contextlib.nullcontext():
             connection = sqlite3.connect(
                 self._database_location,
                 timeout=BUSY_TIMEOUT_SECONDS,
@@ -668,6 +677,75 @@ class SQLiteBackend:
                     f"DELETE FROM {table} WHERE {timestamp_column} < ?{clause}",  # noqa: S608
                     [cutoff, *scope_values],
                 ).rowcount
+
+        return deleted
+
+    def remove_stale_blobs(
+        self,
+        maximum_age: Callable[[str, str], float],
+        interval: float,
+        excluded_sources: frozenset[str] = frozenset(),
+    ) -> int:
+        """
+        Delete the point-in-time entries of every source that have not been refreshed for
+        longer than their dataset allows, at most once per interval.
+
+        An entry that is read again is refreshed by its next fetch, so only entries nobody
+        asks for any more pile up. The time of the last run is kept in the database, so
+        every process sharing it runs this once per interval in total. When the deletes
+        free more than half of a small database, it is compacted as well.
+
+        Args:
+            maximum_age (Callable[[str, str], float]): The age in seconds after which an
+                entry of a source and dataset is removed.
+            interval (float): The minimum number of seconds between two runs.
+            excluded_sources (frozenset[str]): Sources that evict their own entries.
+
+        Returns:
+            int: The number of entries deleted, 0 when the interval has not passed.
+        """
+        now = time.time()
+        deleted = 0
+
+        with self._connect(write=True) as connection:
+            row = connection.execute(
+                "SELECT value FROM meta WHERE name = ?", ("last_blob_eviction",)
+            ).fetchone()
+
+            if row is not None and now - float(row[0]) < interval:
+                return 0
+
+            connection.execute(
+                "INSERT OR REPLACE INTO meta (name, value) VALUES (?, ?)",
+                ("last_blob_eviction", str(now)),
+            )
+
+            scopes = connection.execute(
+                "SELECT DISTINCT source, dataset FROM blobs"
+            ).fetchall()
+
+            for source, dataset in scopes:
+                if source in excluded_sources:
+                    continue
+
+                deleted += connection.execute(
+                    "DELETE FROM blobs WHERE source = ? AND dataset = ? AND updated_at < ?",
+                    (source, dataset, now - maximum_age(source, dataset)),
+                ).rowcount
+
+            page_count = connection.execute("PRAGMA page_count").fetchone()[0]
+            free_pages = connection.execute("PRAGMA freelist_count").fetchone()[0]
+
+        database_path = Path(self._database_location)
+        if (
+            deleted
+            and free_pages * 2 > page_count
+            and database_path.exists()
+            and database_path.stat().st_size <= VACUUM_MAXIMUM_BYTES
+        ):
+            # VACUUM cannot run inside a transaction, so it takes a plain connection.
+            with self._lock, self._connect() as connection:
+                connection.execute("VACUUM")
 
         return deleted
 

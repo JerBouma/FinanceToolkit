@@ -601,3 +601,75 @@ def test_a_rebalancing_does_not_buy_the_benchmark_again(monkeypatch):
         first, "AAPL"
     ] - 1
     assert portfolio_row["Benchmark Return"] == pytest.approx(held, rel=1e-6)
+
+
+def test_tickers_are_matched_to_their_own_data_whatever_their_case(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-05", "2021-01-06", "2021-01-07"],
+            "Symbol": ["msft", "AAPL", "MSFT"],
+            "Shares": [1, 1, 1],
+            "Costs": [0.0, 0.0, 0.0],
+        }
+    )
+    lowercase, prices = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    assert sorted(lowercase._tickers) == ["AAPL", "MSFT"]
+
+    historical = lowercase.collect_historical_data(rounding=None)
+
+    assert lowercase._ticker_combinations == {"AAPL": "AAPL", "MSFT": "MSFT"}
+    for ticker in ["AAPL", "MSFT"]:
+        assert historical[("Close", ticker)].iloc[-1] == pytest.approx(
+            float(prices[("Close", ticker)].iloc[-1])
+        )
+
+
+def test_transactions_in_two_currencies_are_expressed_in_one(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-05", "2021-01-05"],
+            "Ticker": ["AAPL", "MSFT"],
+            "Price": [100.0, 100.0],
+            "Volume": [20, 10],
+            "Costs": [-1.0, -1.0],
+            "Currency": ["USD", "EUR"],
+        }
+    )
+    dates = pd.period_range("2021-01-01", "2021-01-10", freq="D")
+    euros_per_dollar = pd.DataFrame({"USDEUR=X": 0.8}, index=dates)
+    monkeypatch.setattr(
+        Portfolio,
+        "_get_exchange_rates",
+        lambda self, rate_tickers, start_date: euros_per_dollar[
+            sorted(rate_ticker for rate_ticker in rate_tickers if rate_ticker)
+        ],
+    )
+    mixed = Portfolio(transactions=trades)
+
+    mixed._convert_transactions_to_reporting_currency()
+
+    # Most is invested in dollars, so the euro transaction is converted at 0.8 euro per dollar.
+    dataset = mixed._portfolio_dataset.droplevel(0)
+    assert set(dataset["Currency"]) == {"USD"}
+    assert dataset.loc["MSFT", "Price"] == pytest.approx(125.0)
+    assert dataset.loc["MSFT", "Costs"] == pytest.approx(-1.25)
+    assert dataset.loc["AAPL", "Price"] == pytest.approx(100.0)
+
+
+def test_a_period_with_purchases_and_larger_sales_keeps_its_performance(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-05", "2021-03-02", "2021-03-03"],
+            "Symbol": ["AAPL", "AAPL", "AAPL"],
+            "Shares": [10, 5, -10],
+            "Costs": [0.0, 0.0, 0.0],
+        }
+    )
+    traded, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    performance = traded.get_transactions_performance(period="monthly")
+
+    march = performance.loc[(pd.Period("2021-03", freq="M"), "AAPL")]
+    assert march["Volume"] == -5.0
+    assert march["Invested Amount"] > 0

@@ -14,7 +14,7 @@ from financetoolkit.portfolio import (
 )
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.toolkit_controller import Toolkit
-from financetoolkit.utilities import logger_model, validation_model
+from financetoolkit.utilities import logger_model, requests_model, validation_model
 from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
 
 logger = logger_model.get_logger()
@@ -231,6 +231,7 @@ class Portfolio:
 
         # Tickers
         self._ticker_combinations: dict[str, str] = {}
+        self._data_tickers: dict[str, str] = {}
 
         # Historical Data
         self._daily_historical_data: pd.DataFrame = pd.DataFrame()
@@ -685,8 +686,11 @@ class Portfolio:
             return dataset
 
         frame = frame.copy()
-        dates = pd.to_datetime(frame[date], errors="coerce")
-        tickers = list(frame[ticker].astype(str).unique())
+        # Parsed and written as the dataset is read later, so each price belongs to the day
+        # and the ticker its transaction is booked on.
+        dates = portfolio_model.parse_dates(frame[date], general["date_format"])
+        symbols = frame[ticker].astype(str).str.strip().str.upper()
+        tickers = list(symbols.unique())
         toolkit = self._price_toolkit(
             tickers, (dates.min() - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
         )
@@ -718,15 +722,13 @@ class Portfolio:
 
         frame["Price"] = [
             first_close(str(symbol), day)
-            for symbol, day in zip(frame[ticker], dates, strict=True)
+            for symbol, day in zip(symbols, dates, strict=True)
         ]
 
         # The prices are in the currency each ticker trades in, so the transactions are too.
         if find(general["currency_columns"]) is None:
             currencies = self._ticker_currencies(toolkit)
-            frame["Currency"] = [
-                currencies.get(str(symbol), "USD") for symbol in frame[ticker]
-            ]
+            frame["Currency"] = [currencies.get(symbol, "USD") for symbol in symbols]
 
         return frame
 
@@ -1102,7 +1104,7 @@ class Portfolio:
 
             adjust_duplicates = (
                 adjust_duplicates
-                if adjust_duplicates
+                if adjust_duplicates is not None
                 else self._cfg["general"]["adjust_duplicates"]
             )
             (
@@ -1127,6 +1129,31 @@ class Portfolio:
                 costs_columns=costs_columns,
                 column_mapping=column_mapping,
             )
+
+        # Written the way the Toolkit writes them, so "aapl" and "AAPL" are one holding and
+        # each ticker matches its own data. An ISIN is converted once here; when it resolves
+        # to a ticker that is also in the dataset, both are the same holding.
+        tickers = (
+            self._portfolio_dataset[self._ticker_column]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+        converted_tickers = {
+            ticker: requests_model.convert_isin_to_ticker(ticker)
+            for ticker in tickers.unique()
+        }
+        tickers = tickers.map(
+            lambda ticker: (
+                converted_tickers[ticker]
+                if converted_tickers[ticker] in converted_tickers
+                else ticker
+            )
+        )
+        self._portfolio_dataset[self._ticker_column] = tickers
+        self._data_tickers = {
+            ticker: converted_tickers[ticker] for ticker in tickers.unique()
+        }
 
         self._original_tickers = list(
             self._portfolio_dataset[self._ticker_column].unique()
@@ -1385,6 +1412,79 @@ class Portfolio:
 
         return self._daily_benchmark_data
 
+    def _convert_transactions_to_reporting_currency(self) -> None:
+        """
+        Express every transaction in one reporting currency when they are made in more than
+        one, so the invested amounts, values and weights of different holdings add up. The
+        reporting currency is the `currency` of the Portfolio or else the currency most is
+        invested in. Prices and costs are converted at the exchange rate of each transaction's
+        day; the historical data then follows the currency of the transactions.
+        """
+        currencies = self._portfolio_dataset[self._currency_column]
+        known = currencies.dropna().astype(str)
+        majors = {portfolio_model.get_price_unit(currency)[0] for currency in known}
+        if not majors or (len(majors) == 1 and self._currency in (None, *majors)):
+            return
+
+        invested = (
+            self._portfolio_dataset[self._price_column]
+            * self._portfolio_dataset[self._volume_column]
+        ).abs()
+        totals: dict[str, float] = {}
+        for currency, amount in zip(currencies, invested, strict=True):
+            if isinstance(currency, str) and not pd.isna(amount):
+                major = portfolio_model.get_price_unit(currency)[0]
+                totals[major] = totals.get(major, 0.0) + float(amount)
+        reporting_currency = self._currency or max(totals, key=totals.__getitem__)
+        _, reporting_units = portfolio_model.get_price_unit(reporting_currency)
+
+        rate_tickers = {
+            currency: portfolio_model.get_exchange_rate_ticker(
+                reporting_currency, currency
+            )
+            for currency in set(known)
+        }
+        exchange_rates = self._get_exchange_rates(
+            list(rate_tickers.values()), self._start_date
+        )
+        dates = pd.PeriodIndex(
+            self._portfolio_dataset.index.get_level_values(0), freq="D"
+        )
+
+        factors = pd.Series(1.0, index=self._portfolio_dataset.index)
+        for currency, rate_ticker in rate_tickers.items():
+            rows = (currencies == currency).to_numpy()
+            _, units = portfolio_model.get_price_unit(currency)
+            rate: pd.Series | float = 1.0
+            if rate_ticker is not None:
+                if (
+                    exchange_rates.empty
+                    or rate_ticker not in exchange_rates.columns
+                    or exchange_rates[rate_ticker].isna().all()
+                ):
+                    raise ValueError(
+                        f"Transactions in {currency} cannot be converted to the reporting "
+                        f"currency {reporting_currency} without the exchange rate {rate_ticker}."
+                    )
+                # The rate of each transaction's day, or the last one before it.
+                rate = portfolio_model.align_exchange_rate(
+                    exchange_rates[rate_ticker], dates[rows]
+                ).to_numpy()
+            factors[rows] = reporting_units / units / rate
+
+        for column in (self._price_column, self._costs_column):
+            if column in self._portfolio_dataset.columns:
+                self._portfolio_dataset[column] = (
+                    self._portfolio_dataset[column] * factors
+                )
+        self._portfolio_dataset[self._currency_column] = reporting_currency
+
+        logger.info(
+            "The transactions are made in %s and are all expressed in %s.",
+            ", ".join(sorted(majors)),
+            reporting_currency,
+        )
+
     def collect_historical_data(
         self,
         rounding: int | None = None,
@@ -1467,15 +1567,19 @@ class Portfolio:
         if not self._toolkit:
             self._toolkit = Toolkit(
                 api_key=self._api_key,
-                tickers=self._tickers,
+                tickers=[
+                    self._data_tickers.get(ticker, ticker) for ticker in self._tickers
+                ],
                 benchmark_ticker=None,
                 start_date=self._start_date,
                 use_cached_data=self._use_cached_data,
                 historical=self._daily_historical_data,
             )
 
-        # Used when ISIN codes are provided and must be matched to tickers.
-        self._ticker_combinations = dict(zip(self._toolkit._tickers, self._tickers))
+        # Matches the data of each ticker (an ISIN's converted ticker) to its holding.
+        self._ticker_combinations = {
+            self._data_tickers.get(ticker, ticker): ticker for ticker in self._tickers
+        }
 
         self._daily_historical_data = self._ticker_historical_data("daily")
 
@@ -1492,17 +1596,18 @@ class Portfolio:
         # Per ticker the currency its historical data is quoted in and the currency of its
         # transactions, when the two differ.
         currency_conversions: dict[str, tuple[str, str]] = {}
+        # Tickers traded in another currency than their data is quoted in.
+        mismatched_tickers: set[str] = set()
         if self._currency_column:
             self._historical_statistics = self._toolkit.get_historical_statistics()
             self._historical_statistics = self._historical_statistics.rename(
                 columns=self._ticker_combinations, level=0
             )
 
-            for (_, ticker), currency in self._portfolio_dataset[
-                self._currency_column
-            ].items():
-                # A built portfolio converted its prices with these currencies, so its
-                # historical data is converted with the same ones.
+            # A built portfolio converted its prices with these currencies, so its historical
+            # data is converted with the same ones.
+            data_currencies: dict[str, str] = {}
+            for ticker in self._tickers:
                 data_currency = self._price_currencies.get(ticker) or (
                     self._historical_statistics.loc["Currency", ticker]
                     if not self._historical_statistics.empty
@@ -1510,22 +1615,49 @@ class Portfolio:
                     and ticker in self._historical_statistics.columns
                     else None
                 )
-
                 # A missing or NaN currency code would send a bogus 'NAN=X' and 404.
-                if (
-                    not currency
-                    or not data_currency
-                    or pd.isna(currency)
-                    or pd.isna(data_currency)
-                ):
+                if data_currency and not pd.isna(data_currency):
+                    data_currencies[ticker] = str(data_currency)
+
+            # A transaction without a currency (a dataset without a currency column) was made
+            # in the currency its ticker is quoted in.
+            transaction_currencies = self._portfolio_dataset[self._currency_column]
+            missing = transaction_currencies.isna() | (
+                transaction_currencies.astype(str).str.strip() == ""
+            )
+            self._portfolio_dataset.loc[missing, self._currency_column] = [
+                data_currencies.get(ticker)
+                for ticker in self._portfolio_dataset.index[missing].get_level_values(1)
+            ]
+
+            # The currency each ticker was traded in, before a reporting currency replaces it.
+            traded_currencies = (
+                self._portfolio_dataset[self._currency_column]
+                .groupby(level=1, observed=True)
+                .last()
+                .to_dict()
+            )
+            self._convert_transactions_to_reporting_currency()
+
+            for (_, ticker), currency in self._portfolio_dataset[
+                self._currency_column
+            ].items():
+                data_currency = data_currencies.get(ticker)
+                if not data_currency or not currency or pd.isna(currency):
                     continue
+
+                traded_currency = traded_currencies.get(ticker)
+                if isinstance(traded_currency, str) and portfolio_model.get_price_unit(
+                    data_currency
+                ) != portfolio_model.get_price_unit(traded_currency):
+                    mismatched_tickers.add(ticker)
 
                 # GBp and GBP are one currency in different units, so they are compared
                 # by unit as well: a price in pence is a hundred times one in pounds.
                 if portfolio_model.get_price_unit(
-                    str(data_currency)
+                    data_currency
                 ) != portfolio_model.get_price_unit(str(currency)):
-                    currency_conversions[ticker] = (str(data_currency), str(currency))
+                    currency_conversions[ticker] = (data_currency, str(currency))
 
         exchange_rates = self._get_exchange_rates(
             [
@@ -1548,11 +1680,6 @@ class Portfolio:
             )
 
         self._daily_historical_data = convert(self._daily_historical_data)
-
-        self._daily_historical_data = apply_rounding(
-            self._daily_historical_data,
-            rounding if rounding is not None else self._rounding,
-        )
 
         self._weekly_historical_data = convert(self._ticker_historical_data("weekly"))
 
@@ -1578,7 +1705,7 @@ class Portfolio:
                     ) in currency_conversions.items()
                 ),
             )
-        elif currency_conversions:
+        elif mismatched_tickers:
             logger.warning(
                 "Found a mismatch between the currency of the transaction and the currency of the historical data. "
                 "This is usually due to working with ISIN codes.\nCorrect this by finding the correct ticker "
@@ -1586,7 +1713,12 @@ class Portfolio:
                 "automatically converted but this can lead to some inaccuracies."
             )
 
-        return self._daily_historical_data
+        # Only the returned copy is rounded: the positions, returns and weights are calculated
+        # from the stored prices, which rounding them would bias.
+        return apply_rounding(
+            self._daily_historical_data,
+            rounding if rounding is not None else self._rounding,
+        )
 
     def get_positions_overview(self, rounding: int | None = None):
         """
@@ -2184,7 +2316,8 @@ class Portfolio:
                 should be calculated. This can be one of the following: 'yearly', 'quarterly',
                 'monthly', 'weekly', or 'daily'. If None, the default is 'quarterly' if
                 the 'quarterly' attribute is set to True, otherwise 'yearly'.
-            exclude_sold_positions (bool): A flag indicating whether to exclude sold positions
+            exclude_sold_positions (bool): Whether to leave out the periods without purchases,
+                in which only units bought earlier were sold. Defaults to True.
             rounding (int | None): The number of decimal places to round the output to.
                 If None, it defaults to the rounding specified in the configuration.
 
@@ -2280,9 +2413,11 @@ class Portfolio:
                 f"Failed to create transaction performance metrics: {error}"
             ) from error
 
+        # The periods with purchases are kept: their return is measured on those units, also
+        # when more was sold than bought in the same period.
         if exclude_sold_positions:
             self._transactions_performance = self._transactions_performance[
-                self._transactions_performance["Volume"] > 0
+                self._transactions_performance["Invested Amount"] > 0
             ]
 
         self._transactions_performance = self._transactions_performance.pipe(

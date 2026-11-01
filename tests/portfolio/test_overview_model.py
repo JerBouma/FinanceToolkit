@@ -467,3 +467,102 @@ def test_the_contributed_capital_of_buys_is_lowered_by_a_dividend_between_them()
 
     # The dividend of 10 received before the second buy pays for part of it: 101 + 131 - 10.
     assert calculate_contributed_capital(positions) == pytest.approx(222.0)
+
+
+def test_a_sale_listed_before_a_purchase_on_the_same_day_realizes_its_pnl():
+    day = pd.Period("2024-02-01", freq="D")
+    transactions = pd.DataFrame(
+        {"Identifier": ["A", "A"], "Volume": [-10.0, 10.0], "Price": [110.0, 105.0]},
+        index=pd.Index([day, day], name="Date"),
+    ).set_index("Identifier", append=True)
+
+    pnl = create_profit_and_loss_overview(transactions, "Identifier", "Volume", "Price")
+
+    # The rows come back in their own order: the sale first, matched against the purchase.
+    assert pnl["PnL"].tolist() == [50.0, 0.0]
+
+
+def test_selling_more_than_held_warns(caplog):
+    dates = pd.period_range("2024-01-02", periods=2, freq="D")
+    transactions = pd.DataFrame(
+        {"Identifier": ["A", "A"], "Volume": [10.0, -15.0], "Price": [100.0, 110.0]},
+        index=pd.Index(dates, name="Date"),
+    ).set_index("Identifier", append=True)
+
+    with caplog.at_level("WARNING"):
+        pnl = create_profit_and_loss_overview(
+            transactions, "Identifier", "Volume", "Price", method="AVERAGE"
+        )
+
+    assert pnl["PnL"].tolist() == [0.0, 100.0]
+    assert "More units are sold than held for A" in caplog.text
+
+
+def test_units_without_a_price_have_no_value_and_no_return():
+    dates = pd.period_range("2024-01-02", periods=4, freq="D")
+    # B is bought before its first price.
+    prices = pd.DataFrame(
+        {"A": [10.0, 10, 10, 10], "B": [np.nan, np.nan, 20.0, 22.0]}, index=dates
+    )
+    dataset = pd.DataFrame(
+        {"Volume": [1.0, 1.0], "Price": [10.0, 20.0], "Costs": [0.0, 0.0]},
+        index=pd.MultiIndex.from_tuples(
+            [(dates[0], "A"), (dates[1], "B")], names=["Date", "Identifier"]
+        ),
+    )
+
+    positions = create_positions_overview(
+        ["A", "B"], dates, dataset, pd.concat({"Close": prices}, axis=1)
+    )
+
+    # Before it is bought B is worth nothing; once held without a price its value is unknown.
+    assert positions[("Current Value", "B")].iloc[0] == 0.0
+    assert np.isnan(positions[("Current Value", "B")].iloc[1])
+    assert np.isnan(positions[("Cumulative Return", "B")].iloc[1])
+    assert positions[("Cumulative Return", "B")].iloc[3] == pytest.approx(0.1)
+
+
+def test_the_return_of_a_period_without_investment_stays_missing():
+    from financetoolkit.portfolio.overview_model import (  # noqa: PLC0415
+        create_portfolio_performance,
+    )
+
+    dates = pd.period_range("2024-01-01", "2024-03-31", freq="D")
+    prices = pd.DataFrame({"A": 10.0}, index=dates)
+    dataset = pd.DataFrame(
+        {"Volume": [1.0], "Price": [10.0], "Costs": [0.0]},
+        index=pd.MultiIndex.from_tuples(
+            [(pd.Period("2024-03-01", freq="D"), "A")], names=["Date", "Identifier"]
+        ),
+    )
+    positions = create_positions_overview(
+        ["A"], dates, dataset, pd.concat({"Close": prices}, axis=1)
+    )
+
+    performance = create_portfolio_performance(positions, "Date", "Identifier", "M")
+
+    assert np.isnan(performance.loc[(pd.Period("2024-01", freq="M"), "A"), "Return"])
+    assert performance.loc[(pd.Period("2024-03", freq="M"), "A"), "Return"] == 0.0
+
+
+def test_the_portfolio_beta_ignores_a_sold_position_without_a_beta():
+    dates = pd.period_range("2023-01-02", periods=3, freq="D")
+    index = pd.MultiIndex.from_tuples(
+        [(dates[0], "A"), (dates[0], "OLD"), (dates[1], "OLD")],
+        names=["Date", "Identifier"],
+    )
+
+    overview = create_portfolio_overview(
+        portfolio_name=pd.Series(["A", "OLD", "OLD"], index=index),
+        portfolio_volume=pd.Series([10.0, 10.0, -10.0], index=index),
+        portfolio_price=pd.Series([100.0, 50.0, 50.0], index=index),
+        portfolio_costs=pd.Series([0.0, 0.0, 0.0], index=index),
+        latest_returns=pd.Series({"A": 100.0, "OLD": 50.0}),
+        benchmark_prices=pd.Series([100.0, 100.0, 100.0], index=index),
+        benchmark_latest_prices=pd.Series({"A": 100.0, "OLD": 100.0}),
+        volatilities=pd.Series({"A": 0.2, "OLD": np.nan, "Benchmark": 0.1}),
+        betas=pd.Series({"A": 1.2, "OLD": np.nan}),
+        include_portfolio=True,
+    )
+
+    assert overview.loc["Portfolio", "Beta"] == pytest.approx(1.2)

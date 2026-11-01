@@ -95,6 +95,11 @@ def convert_to_float(value: str):
     - Using a dot as the thousands separator and a comma as the decimal separator (e.g., "-4.587,24").
     - Using a comma as the thousands separator and a dot as the decimal separator (e.g., "-4,587.24").
 
+    Whole numbers with more than one thousands separator ("1,234,567" or "1.234.567") lose their
+    separators, and spaces or apostrophes between the thousands are removed. A single comma
+    followed by exactly three digits separates thousands ("1,000" is 1000, "0,125" is 0.125),
+    and a single dot is a decimal point ("1.234" is 1.234).
+
     The function works as follows:
     1. If the input is a string, it checks its format using regular expressions.
     2. Depending on the detected format, it replaces the appropriate characters:
@@ -115,12 +120,20 @@ def convert_to_float(value: str):
     """
     try:
         if isinstance(value, str):
-            # Match numbers like "-4.587,24"
-            if re.match(r"^-?\d{1,3}(\.\d{3})*,\d+$", value):
-                value = value.replace(".", "").replace(",", ".")
-            # Match numbers like "-4,587.24"
-            elif re.match(r"^-?\d{1,3}(,\d{3})*\.\d+$", value):
+            # Spaces, non-breaking spaces and apostrophes only separate thousands ("1 234,56", "1'234.56").  # noqa: E501
+            value = re.sub(r"[\s\u00a0\u202f']", "", value)
+            # Match numbers like "1,000": a comma before exactly three digits after a non-zero lead separates thousands.  # noqa: E501
+            if re.match(r"^-?[1-9]\d{0,2},\d{3}$", value):
                 value = value.replace(",", "")
+            # Match numbers like "-4.587,24" and "1234,56"
+            elif re.match(r"^-?(\d{1,3}(\.\d{3})*|\d+),\d+$", value):
+                value = value.replace(".", "").replace(",", ".")
+            # Match numbers like "-4,587.24" and "1,234,567"
+            elif re.match(r"^-?\d{1,3}((,\d{3})*\.\d+|(,\d{3}){2,})$", value):
+                value = value.replace(",", "")
+            # Match numbers like "1.234.567"
+            elif re.match(r"^-?\d{1,3}(\.\d{3}){2,}$", value):
+                value = value.replace(".", "")
         return float(value)
     except Exception as e:
         raise ValueError(f"Cannot convert {value} to float: {e}") from e

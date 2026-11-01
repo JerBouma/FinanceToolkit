@@ -364,3 +364,92 @@ def test_benchmark_data_is_aligned_with_carried_forward_prices():
     assert aligned["Close"].tolist() == [10.0, 12.0, 12.0, 13.0]
     assert aligned["Dividends"].tolist() == [0.0, 0.5, 0.0, 0.0]
     assert aligned["Return"].tolist() == pytest.approx([0.0, 0.2, 0.0, 13 / 12 - 1])
+
+
+def _format(data: pd.DataFrame) -> pd.DataFrame:
+    """The transactions formatted with the column names of the template."""
+    return format_portfolio_dataset(
+        dataset=data,
+        date_columns=["Date"],
+        date_format_options=["%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S"],
+        name_columns=["Name"],
+        tickers_columns=["Ticker"],
+        price_columns=["Price"],
+        volume_columns=["Volume"],
+        currency_columns=["Currency"],
+        costs_columns=["Costs"],
+        column_mapping={
+            "date": "Date",
+            "name": "Name",
+            "identifier": "Ticker",
+            "price": "Price",
+            "volume": "Volume",
+            "currency": "Currency",
+            "costs": "Costs",
+        },
+    )[0]
+
+
+@pytest.mark.parametrize(
+    "dates",
+    [
+        ["05-06-2024", "07-06-2024"],
+        ["2024/06/05", "2024/06/07"],
+        ["2024-06-05 00:00:00", "2024-06-07 00:00:00"],
+    ],
+)
+def test_transaction_dates_are_parsed_with_one_format(dates):
+    data = pd.DataFrame(
+        {
+            "Date": dates,
+            "Ticker": ["AAPL", "AAPL"],
+            "Price": [100.0, 101.0],
+            "Volume": [1, 1],
+            "Currency": ["USD", "USD"],
+            "Costs": [0.0, 0.0],
+        }
+    )
+
+    formatted = _format(data)
+
+    assert [str(date) for date in formatted["Date"]] == ["2024-06-05", "2024-06-07"]
+
+
+@pytest.mark.parametrize("price", [0.0, -100.0])
+def test_a_price_of_zero_or_below_is_refused(price):
+    data = pd.DataFrame(
+        {
+            "Date": ["2024-06-05"],
+            "Ticker": ["AAPL"],
+            "Price": [price],
+            "Volume": [-1],
+            "Currency": ["USD"],
+            "Costs": [0.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="price of zero or below"):
+        _format(data)
+
+
+@pytest.mark.parametrize(
+    ("text", "number"),
+    [
+        ("-4.587,24", -4587.24),
+        ("-4,587.24", -4587.24),
+        ("1,000", 1000.0),
+        ("1,234,567", 1234567.0),
+        ("1.234.567", 1234567.0),
+        ("1,234,567.89", 1234567.89),
+        ("1 234,56", 1234.56),
+        ("1'234.56", 1234.56),
+        ("1234,56", 1234.56),
+        ("0,125", 0.125),
+        ("4,5", 4.5),
+        ("1.234", 1.234),
+    ],
+)
+def test_numbers_with_thousands_separators_are_read(text, number):
+    from financetoolkit.portfolio.helpers import convert_to_float  # noqa: PLC0415
+
+    assert convert_to_float(text) == pytest.approx(number)

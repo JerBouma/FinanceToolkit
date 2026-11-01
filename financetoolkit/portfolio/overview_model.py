@@ -3,7 +3,10 @@
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import to_period_index
+
+logger = logger_model.get_logger()
 
 # pylint: disable=too-many-locals
 
@@ -500,8 +503,15 @@ def create_portfolio_overview(
             fallback_volatilities=portfolio_overview_grouped["Volatility"],
             asset_returns=asset_returns,
         )
-        portfolio_beta = sum(
-            portfolio_overview_grouped["Beta"] * portfolio_overview_grouped["Weight"]
+        # Only the positions still held count: a sold position has no beta over the window, but with a weight of zero it does not change the portfolio's beta either.  # noqa: E501
+        held = portfolio_overview_grouped["Weight"] != 0
+        portfolio_beta = (
+            (
+                portfolio_overview_grouped.loc[held, "Beta"]
+                * portfolio_overview_grouped.loc[held, "Weight"]
+            ).sum(skipna=False)
+            if held.any()
+            else np.nan
         )
 
         return_value = latest_value + proceeds + dividends_received - invested
@@ -980,7 +990,10 @@ def create_positions_overview(
         .fillna(0.0)
         .cumsum()
     )
-    positions["Current Value"] = positions["Volume"] * closing_prices
+    # Units held before their ticker has a price are worth an unknown amount, not nothing; without units the position is worth nothing, priced or not.  # noqa: E501
+    positions["Current Value"] = (positions["Volume"] * closing_prices).where(
+        positions["Volume"] != 0, 0.0
+    )
     positions["Cumulative Return"] = _safe_divide(
         positions["Current Value"]
         + positions["Realized Proceeds"]
@@ -997,8 +1010,10 @@ def create_positions_overview(
 
     positions_df = pd.concat(positions, axis=1).replace([np.inf, -np.inf], np.nan)
 
-    # The return stays NaN before the first purchase, since there is no capital to measure it against.
-    other_columns = positions_df.columns.get_level_values(0) != "Cumulative Return"
+    # The return stays NaN before the first purchase, since there is no capital to measure it against, and so do the value and return of units without a price yet.  # noqa: E501
+    other_columns = ~positions_df.columns.get_level_values(0).isin(
+        ["Cumulative Return", "Current Value"]
+    )
     positions_df.loc[:, other_columns] = positions_df.loc[:, other_columns].fillna(0.0)
 
     return positions_df
@@ -1048,7 +1063,9 @@ def create_portfolio_performance(
           because `positions_dataset` is itself cumulative and the aggregation takes the last
           observation of each period.
         - The function aggregates data at the specified frequency using the `.asfreq()` method.
-        - Missing values in the resulting dataset are filled with zeros.
+        - The Return is NaN in a period without capital invested, and the Current Value and
+          Return are NaN for units held before their ticker has a price. Other missing values
+          are zero.
     """
     positions_dataset_stacked = positions_dataset.stack()
     positions_dataset_stacked.index.names = [date_column, ticker_column]
@@ -1091,7 +1108,13 @@ def create_portfolio_performance(
         positions_dataset_grouped["Invested Amount"],
     )
 
-    return positions_dataset_grouped.fillna(0.0)
+    # The return is NaN without capital invested or without a price for the units held, and so is the value of those units.  # noqa: E501
+    other_columns = ~positions_dataset_grouped.columns.isin(["Return", "Current Value"])
+    positions_dataset_grouped.loc[:, other_columns] = positions_dataset_grouped.loc[
+        :, other_columns
+    ].fillna(0.0)
+
+    return positions_dataset_grouped
 
 
 def create_profit_and_loss_overview(
@@ -1127,23 +1150,26 @@ def create_profit_and_loss_overview(
         - FIFO (First-In, First-Out): Sells the earliest purchased assets first.
         - LIFO (Last-In, First-Out): Sells the most recently purchased assets first.
         - AVERAGE: Uses the average cost of all assets in inventory for PnL calculation.
-        - The transactions must be supplied in chronological order, since the inventory is built up
-          in the order the rows appear.
+        - The inventory is built up in date order. Within a day the purchases come before the
+          sales, so a position bought and sold on the same day realizes its PnL whatever the
+          order of the rows; otherwise the rows keep their order.
         - Transaction costs are deliberately excluded from the realized PnL. They are carried by the
           invested amount instead, so that a cost is counted once rather than in both places.
         - Selling more units than the inventory holds realizes the PnL of the units that were held
-          and ignores the excess; short positions are not modelled.
+          and ignores the excess, with a warning; short positions are not modelled.
         - 'Cumulative PnL' restarts at zero for every ticker rather than running across the whole
           portfolio.
     """
 
-    def process_group(group: pd.DataFrame) -> list[float]:
+    def process_group(ticker: str, group: pd.DataFrame) -> list[float]:
         inventory: list[tuple[float, float]] = []  # For FIFO or LIFO methods
         avg_cost = 0.0  # For Average method
         total_volume = 0.0  # For Average method
         pnl: list[float] = []  # Store PnL for each row in the group
 
-        for volume, price in zip(group[volume_column], group[price_column]):
+        for volume, price in zip(
+            group[volume_column], group[price_column], strict=True
+        ):
             if volume > 0:  # Buy order
                 if method == "AVERAGE":
                     # Update average cost
@@ -1190,11 +1216,16 @@ def create_profit_and_loss_overview(
                     if total_volume >= sell_volume:
                         realized_pnl = sell_volume * (price - avg_cost)
                         total_volume -= sell_volume
+                        sell_volume = 0
                     else:
                         realized_pnl = total_volume * (price - avg_cost)
+                        sell_volume -= total_volume
                         total_volume = 0
 
                 pnl.append(realized_pnl)
+                # Units sold beyond those held have no purchase to realize a PnL against.
+                if sell_volume > 0:
+                    oversold.add(str(ticker))
 
             else:
                 pnl.append(0.0)  # No action for zero volume
@@ -1204,20 +1235,41 @@ def create_profit_and_loss_overview(
     # The rows are addressed by position rather than by label, since a groupby-apply returns the groups concatenated in group order whenever the index is not unique, which would attach every PnL figure to the wrong transaction once two trades share a date.  # noqa: E501
     ordered_transactions = transactions_overview.reset_index()
 
+    # Within a day the purchases come first, so a sale is matched against the units bought that day whatever the order of the rows in the file.  # noqa: E501
+    ordered_transactions = ordered_transactions.loc[
+        pd.DataFrame(
+            {
+                "date": transactions_overview.index.get_level_values(0),
+                "sell": (ordered_transactions[volume_column] < 0).to_numpy(),
+            }
+        )
+        .sort_values(["date", "sell"], kind="stable")
+        .index
+    ]
+
     profit_and_loss = pd.DataFrame(
         0.0, index=ordered_transactions.index, columns=["PnL", "Cumulative PnL"]
     )
+    oversold: set[str] = set()
 
     # Process each ticker group independently
-    for _, group in ordered_transactions.groupby(
+    for ticker, group in ordered_transactions.groupby(
         ticker_column, observed=True, sort=False
     ):
-        group_pnl = process_group(group)
+        group_pnl = process_group(str(ticker), group)
 
         profit_and_loss.loc[group.index, "PnL"] = group_pnl
         # Accumulated within the group so the running total restarts per ticker.
         profit_and_loss.loc[group.index, "Cumulative PnL"] = np.cumsum(group_pnl)
 
+    if oversold:
+        logger.warning(
+            "More units are sold than held for %s. The excess has no purchase to realize a "
+            "profit or loss against and is left out; short positions are not modelled.",
+            ", ".join(sorted(oversold)),
+        )
+
+    profit_and_loss = profit_and_loss.sort_index()
     profit_and_loss.index = transactions_overview.index
 
     return profit_and_loss

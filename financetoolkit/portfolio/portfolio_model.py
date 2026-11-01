@@ -173,6 +173,35 @@ def _first_column(dataset: pd.DataFrame, names: list[str]) -> str | None:
     return next((name for name in names if name in dataset.columns), None)
 
 
+def parse_dates(dates: pd.Series, date_format_options: list[str]) -> pd.DatetimeIndex:
+    """
+    Parse a column of transaction dates with the first format that fits all of them.
+
+    The whole column is parsed with one format, so a date such as 05-06-2024 means the
+    same day in every row and in every part of the Portfolio that reads it.
+
+    Args:
+        dates (pd.Series): The dates, as text or as dates.
+        date_format_options (list[str]): The formats to try, in order (see strftime.org).
+
+    Returns:
+        pd.DatetimeIndex: The parsed dates.
+
+    Raises:
+        ValueError: If none of the formats parses every date.
+    """
+    for date_format in date_format_options:
+        try:
+            return pd.DatetimeIndex(pd.to_datetime(dates, format=date_format))
+        except ValueError:
+            continue
+
+    raise ValueError(
+        "The date column could not be formatted to a datetime object. Please check the format of the "
+        f"date column and whether it is correct. The options are: {date_format_options}"
+    )
+
+
 def format_portfolio_dataset(
     dataset: pd.DataFrame,
     date_columns: list[str],
@@ -228,6 +257,7 @@ def format_portfolio_dataset(
         ValueError: If no price columns are found in the portfolio dataset.
         ValueError: If no volume columns are found in the portfolio dataset.
         ValueError: If cost or income columns are specified, but none are found in the dataset.
+        ValueError: If a price is missing, zero or negative, or a volume is missing.
         ValueError: If the currency column contains values other than 3-letter currency codes.
         ValueError: If the provided currency code is not a 3-letter code.
     """
@@ -244,25 +274,9 @@ def format_portfolio_dataset(
             f"there is a column named one of the following: {date_columns}"
         )
 
-    dataset = dataset.set_index(date_column_first)
-
-    for date_format in date_format_options:
-        # Each date format is tried in turn until one parses the column.
-        try:
-            dataset.index = pd.to_datetime(dataset.index, format=date_format).to_period(
-                freq="D"
-            )
-            break
-        except ValueError:
-            continue
-
-    if dataset.index.dtype != pd.PeriodDtype("D"):
-        raise ValueError(
-            "The date column could not be formatted to a datetime object. Please check the format of the "
-            f"date column and whether it is correct. The options are: {date_format_options}"
-        )
-
-    dataset = dataset.reset_index()
+    dataset[date_column_first] = parse_dates(
+        dataset[date_column_first], date_format_options
+    ).to_period(freq="D")
 
     tickers_columns = [column.lower() for column in tickers_columns]
     tickers_column_first = _first_column(dataset, tickers_columns)
@@ -326,6 +340,17 @@ def format_portfolio_dataset(
             f"{incomplete_rows[reported_columns].to_string()}"
         )
 
+    # A price is what one unit cost, also for a sale (which has a negative volume); a price of zero or below would make every return of the position meaningless.  # noqa: E501
+    non_positive_rows = dataset[dataset[price_column_first] <= 0]
+
+    if not non_positive_rows.empty:
+        raise ValueError(
+            "The portfolio dataset contains transactions with a price of zero or below. A price is "
+            "the positive amount paid or received per unit; a sale is a negative volume. Please "
+            "correct the following row(s):\n"
+            f"{non_positive_rows[[date_column_first, tickers_column_first, price_column_first, volume_column_first]].to_string()}"  # noqa: E501
+        )
+
     if costs_columns:
         costs_columns = [column.lower() for column in costs_columns]
         costs_column_first = _first_column(dataset, costs_columns)
@@ -355,11 +380,13 @@ def format_portfolio_dataset(
             logger.warning(
                 "No currency columns found in the portfolio dataset. Please ensure in your dataset "
                 "there is a column named one of the following: %s. "
-                "Setting the currency to EUR for now.",
+                "Taking the currency each ticker is quoted in for now.",
                 currency_columns,
             )
+            # Filled with the currency of each ticker's prices once those are known, so the
+            # transactions are never converted into a currency they were not made in.
             currency_column_first = "TEMP Currency"
-            dataset[currency_column_first] = "EUR"
+            dataset[currency_column_first] = None
         else:
             if (dataset[currency_column_first].str.len() != CURRENCY_CODE_LENGTH).any():
                 raise ValueError(
@@ -525,7 +552,7 @@ def get_base_currency(currencies: dict[str, str], weights: dict[str, float]) -> 
     return max(totals, key=lambda currency: totals[currency]) if totals else "USD"
 
 
-def _align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
+def align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
     """
     A daily exchange rate on the dates of a price series: the rate of the same day, or the
     last one before it when the rate has no quote that day (exchanges and the currency
@@ -590,7 +617,7 @@ def convert_prices(
                     f"{ticker} is quoted in {currency} and cannot be converted to "
                     f"{base_currency} without the exchange rate {rate_ticker}."
                 )
-            rate = _align_exchange_rate(exchange_rates[rate_ticker], prices.index)
+            rate = align_exchange_rate(exchange_rates[rate_ticker], prices.index)
 
         if units != base_units or rate_ticker is not None:
             converted[ticker] = converted[ticker] / units * base_units / rate

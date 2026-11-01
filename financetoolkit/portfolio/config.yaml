@@ -22,6 +22,10 @@ general:
     - "%Y-%d-%m"
     - "%d-%m-%Y"
     - "%m-%d-%Y"
+    - "%Y/%m/%d"
+    - "%d/%m/%Y"
+    - "%m/%d/%Y"
+    - "%Y-%m-%d %H:%M:%S"
 
   # The columns that include the ticker of the transaction. This is an important column to be able
   # to collect historical data

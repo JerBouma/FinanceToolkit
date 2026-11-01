@@ -29,6 +29,13 @@ DATABASE_FILE_NAME = "financetoolkit_cache.db"
 # Compacted into merged intervals past this many rows, to bound table growth.
 COVERAGE_COMPACTION_THRESHOLD = 16
 
+# Point-in-time entries are kept at least this long after they were written, also past their
+# time-to-live, since an expired entry still answers when its source cannot be reached.
+STALE_ENTRY_RETENTION_SECONDS = 90 * policy_model.DAY
+
+# How often the entries nobody asks for any more are removed.
+EVICTION_INTERVAL_SECONDS = policy_model.DAY
+
 _CACHE_REGISTRY: dict[str, "Cache"] = {}
 _REGISTRY_LOCK = Lock()
 
@@ -103,7 +110,7 @@ def get_default_cache_location() -> Path:
     override = os.environ.get("FINANCE_TOOLKIT_CACHE_DB")
 
     if override:
-        return Path(override).expanduser()
+        return Path(override).expanduser().absolute()
 
     if platform.system() == "Windows":
         base = Path(
@@ -113,7 +120,7 @@ def get_default_cache_location() -> Path:
         xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
         base = Path(xdg_config_home) if xdg_config_home else Path.home() / ".config"
 
-    return base / "financetoolkit" / DATABASE_FILE_NAME
+    return (base / "financetoolkit" / DATABASE_FILE_NAME).absolute()
 
 
 def resolve_cache_location(location: str | Path | None) -> Path:
@@ -133,7 +140,9 @@ def resolve_cache_location(location: str | Path | None) -> Path:
     if location is None:
         return get_default_cache_location()
 
-    path = Path(location).expanduser()
+    # Absolute, so a relative folder keeps pointing at the same database after a change of
+    # working directory and caches opened from different directories are told apart.
+    path = Path(location).expanduser().absolute()
 
     if path.suffix in (".db", ".sqlite", ".sqlite3"):
         return path
@@ -283,6 +292,38 @@ class Cache:
                 )
 
         self._warn_on_schema_mismatch()
+        self._remove_stale_entries()
+
+    def _remove_stale_entries(self) -> None:
+        """
+        Remove the point-in-time entries of every source that have not been refreshed for
+        longer than their time-to-live and the retention for unreachable sources, at most
+        once a day. The MCP server's responses are left to the server, which evicts them
+        on its own time-to-live.
+        """
+        try:
+            # A database of another schema version is left exactly as it is.
+            if (
+                self._backend is None
+                or self._backend.get_schema_version() != SCHEMA_VERSION
+            ):
+                return
+
+            evicted = self._backend.remove_stale_blobs(
+                lambda source, dataset: max(
+                    policy_model.get_policy(source, dataset).ttl_seconds,
+                    STALE_ENTRY_RETENTION_SECONDS,
+                ),
+                EVICTION_INTERVAL_SECONDS,
+                excluded_sources=frozenset({policy_model.MCP}),
+            )
+        except Exception as error:  # pylint: disable=broad-except
+            # Eviction is housekeeping, so a failure here is not surfaced.
+            logger.debug("Could not evict stale cache entries: %s", error)
+            return
+
+        if evicted:
+            logger.debug("Removed %s stale cache entries.", evicted)
 
     def _warn_on_schema_mismatch(self) -> None:
         """
@@ -390,7 +431,7 @@ class Cache:
             parameters (dict[str, Any] | None): Parameters that change the data.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do.
             reference_date (date | None): The date the revision window is measured
-                back from when the requested range has no end. Defaults to today;
+                back from when the requested range has no end or ends after it. Defaults to today;
                 mainly useful for testing.
 
         Returns:
@@ -405,6 +446,10 @@ class Cache:
             coverage_model.normalize_date(start) if start else date(1900, 1, 1)
         )
         requested_end = coverage_model.normalize_date(end) if end else reference
+        # Nothing after today has been published yet, so a range that runs into the future is
+        # covered up to today and its revision window ends today, as an open range's does.
+        if requested_start <= reference < requested_end:
+            requested_end = reference
 
         if not self.serves(source):
             plan.missing = {
@@ -520,8 +565,10 @@ class Cache:
             if start
             else (bounds[0] if bounds else None)
         )
+        # A request that runs into the future holds what was published up to today; claiming the
+        # future as well would never ask for those days once they have passed.
         coverage_end = (
-            coverage_model.normalize_date(end)
+            min(coverage_model.normalize_date(end), date.today())  # noqa: DTZ011
             if end
             else (bounds[1] if bounds else None)
         )
@@ -534,7 +581,8 @@ class Cache:
                 coverage_start = min(coverage_start, bounds[0])
                 coverage_end = max(coverage_end, bounds[1])
 
-            coverage = (coverage_start, coverage_end)
+            if coverage_start <= coverage_end:
+                coverage = (coverage_start, coverage_end)
 
         def merge_payload(existing_payload: bytes | None) -> bytes:
             """

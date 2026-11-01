@@ -203,9 +203,10 @@ def finalize_dataset(
     requested), rounding, date range slicing, optional dropping of all-NaN rows and
     optional country filtering.
 
-    Growth and standardization are always computed on the full dataset before the date
-    range is applied, since growth needs history from before the display window to
-    calculate the correct value for the first rows within it.
+    Growth is computed on the full dataset before the date range is applied, since it
+    needs history from before the display window to calculate the correct value for the
+    first rows within it. Standardization is applied after, so the Z-Scores are measured
+    against the mean and standard deviation of the window shown.
 
     Args:
         dataset (pd.Series | pd.DataFrame): The raw metric values.
@@ -262,13 +263,6 @@ def finalize_dataset(
             dataset=dataset, lag=lag, rounding=rounding, axis=axis
         )
 
-    if standardize:
-        dataset = calculate_standardization(
-            dataset=dataset, rounding=rounding, axis=axis
-        )
-    elif not growth:
-        dataset = apply_rounding(dataset, rounding)
-
     unsliced = dataset
 
     if apply_slice:
@@ -295,6 +289,15 @@ def finalize_dataset(
                 end_date,
                 available,
             )
+
+    # The Z-Score describes the values shown: their mean and standard deviation are those
+    # of the window, not of the history before it.
+    if standardize:
+        dataset = calculate_standardization(
+            dataset=dataset, rounding=rounding, axis=axis
+        )
+    elif not growth:
+        dataset = apply_rounding(dataset, rounding)
 
     if countries is not None and not isinstance(countries, str | list | tuple):
         raise TypeError(
@@ -465,17 +468,37 @@ def apply_rounding(
     if rounding is None:
         return dataset
 
-    rounded = dataset.round(rounding)
-
     # A small negative number rounds to -0.0, which prints as "-0"; adding 0.0 turns it
-    # into 0.0 and leaves every other number as it is.
-    if isinstance(rounded, pd.Series):
-        return rounded + 0.0 if pd.api.types.is_float_dtype(rounded) else rounded
+    # into 0.0 and leaves every other number as it is. Numbers in a column of mixed values
+    # are rounded one by one; text, dates, integers and booleans are left as they are.
+    def round_value(value: object) -> object:
+        if isinstance(value, float | np.floating):
+            return round(float(value), rounding) + 0.0
+        return value
 
-    float_columns = rounded.dtypes.map(pd.api.types.is_float_dtype).to_numpy(dtype=bool)
+    if isinstance(dataset, pd.Series):
+        if pd.api.types.is_float_dtype(dataset):
+            return dataset.round(rounding) + 0.0
+        if pd.api.types.is_object_dtype(dataset):
+            return dataset.map(round_value)
+        return dataset
 
+    float_columns = dataset.dtypes.map(pd.api.types.is_float_dtype).to_numpy(dtype=bool)
+    object_columns = dataset.dtypes.map(pd.api.types.is_object_dtype).to_numpy(
+        dtype=bool
+    )
+    if not float_columns.any() and not object_columns.any():
+        return dataset
+
+    rounded = dataset.copy()
+    if float_columns.all():
+        return rounded.round(rounding) + 0.0
     if float_columns.any():
-        rounded.iloc[:, float_columns] = rounded.iloc[:, float_columns] + 0.0
+        rounded.iloc[:, float_columns] = (
+            rounded.iloc[:, float_columns].round(rounding) + 0.0
+        )
+    for position in np.flatnonzero(object_columns):
+        rounded.iloc[:, position] = rounded.iloc[:, position].map(round_value)
 
     return rounded
 
@@ -521,6 +544,10 @@ def calculate_growth(
     as a decline. For a positive previous value it equals the percentage change. Growth from a
     previous value of 0 is undefined and reported as missing.
 
+    A missing period has no growth, and neither has the period after it: its previous value
+    is missing, and comparing with an older value would report a change over several periods
+    as the change of one.
+
     Args:
         dataset (pd.Series | pd.DataFrame): the dataset to calculate the growth values for.
         lag (int | list[int]): the lag or lags to use for the calculation. A list returns one row or
@@ -546,10 +573,9 @@ def calculate_growth(
             ]
         )
 
-        filled = bounded_ffill(dataset, axis=axis)
         growth_per_lag = pd.concat(
             {
-                lag_key: calculate_change_over_absolute_base(filled, lag_value, axis)
+                lag_key: calculate_change_over_absolute_base(dataset, lag_value, axis)
                 for lag_key, lag_value in lag_dict.items()
             },
             axis=0 if axis == "columns" else 1,
@@ -576,9 +602,6 @@ def calculate_growth(
         return apply_rounding(
             drop_infinite_growth(dataset_lag.astype(np.float64)), rounding
         )
-
-    # The forward fill has to run along the same axis as the pct_change, since a statement or ratio DataFrame is indexed by ticker with the periods as columns, so filling along the default axis would carry the previous ticker's value into the gap.  # noqa: E501
-    dataset = bounded_ffill(dataset, axis=axis)
 
     return apply_rounding(
         drop_infinite_growth(calculate_change_over_absolute_base(dataset, lag, axis)),

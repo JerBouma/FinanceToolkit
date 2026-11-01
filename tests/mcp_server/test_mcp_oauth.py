@@ -673,6 +673,12 @@ def test_an_existing_secret_is_kept_and_a_short_one_is_replaced(monkeypatch, tmp
     assert auth_model.get_secret_key() == b"x" * 40
     assert secret_file.stat().st_mode & 0o777 == 0o400
 
+    # A read-only file others can read loses only their bits; it never gains a write bit.
+    secret_file.chmod(0o444)
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    assert auth_model.get_secret_key() == b"x" * 40
+    assert secret_file.stat().st_mode & 0o777 == 0o400
+
     # A short file is replaced, and made private before the new key goes in.
     secret_file.chmod(0o644)
     secret_file.write_bytes(b"")

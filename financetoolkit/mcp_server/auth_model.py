@@ -668,10 +668,13 @@ def _restrict_to_owner(secret_file: pathlib.Path) -> None:
         secret_file (pathlib.Path): The stored secret.
     """
     try:
+        # Windows has no owner and group bits to clear: its files are guarded by access lists.
+        if not hasattr(os, "getuid"):
+            return
         status = secret_file.stat()
-        owned = not hasattr(os, "getuid") or status.st_uid == os.getuid()
-        if owned and status.st_mode & 0o077:
-            secret_file.chmod(0o600)
+        if status.st_uid == os.getuid() and status.st_mode & 0o077:
+            # Clear the group and other bits only, so a read-only file stays read-only.
+            secret_file.chmod(status.st_mode & 0o700)
             logger.warning(
                 "The MCP secret file %s was readable by others and is now private.",
                 secret_file,

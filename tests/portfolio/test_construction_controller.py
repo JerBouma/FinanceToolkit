@@ -228,3 +228,50 @@ def test_get_stress_test_notes_a_scenario_before_any_listing(test_toolkit, caplo
     assert stress.loc["Early", "Coverage"] == 0
     assert np.isnan(stress.loc["Early", "Portfolio Return"])
     assert "No price data is available for the Early" in caplog.text
+
+
+def test_brinson_attribution_leaves_out_an_asset_without_a_start_price(
+    test_toolkit, caplog
+):
+    construction = _offline_construction(test_toolkit)
+    daily = construction._historical_data["daily"].copy()
+    daily.loc[daily.index[:10], ("Adj Close", "MSFT")] = np.nan
+    construction._historical_data = {"daily": daily}
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        attribution = construction.get_brinson_attribution(
+            weights={"AAPL": 0.5, "MSFT": 0.5}
+        )
+
+    # MSFT would otherwise count with half the weight and a return over a shorter span.
+    assert attribution.loc["Technology", "Portfolio Weight"] == pytest.approx(1)
+    assert "No price data is available for MSFT" in caplog.text
+
+
+def test_weights_with_a_negative_sum_are_refused(test_toolkit):
+    construction = _offline_construction(test_toolkit)
+
+    with pytest.raises(ValueError, match="positive net weight"):
+        construction._resolve_weights({"AAPL": -0.5, "MSFT": -0.5}, ["AAPL", "MSFT"])
+
+
+def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit):
+    construction = _offline_construction(test_toolkit)
+    daily = construction._historical_data["daily"].copy()
+    # A holiday on MSFT's exchange: no price on the first two days of the range.
+    daily.loc[daily.index[:2], ("Adj Close", "MSFT")] = np.nan
+    construction._historical_data = {"daily": daily}
+
+    attribution = construction.get_brinson_attribution(
+        weights={"AAPL": 0.5, "MSFT": 0.5}
+    )
+
+    # Both assets keep their weight; MSFT starts at its first price.
+    assert attribution.loc["Technology", "Portfolio Weight"] == pytest.approx(1)
+    prices = daily["Adj Close"]
+    expected = 0.5 * (prices["AAPL"].iloc[-1] / prices["AAPL"].iloc[0] - 1) + 0.5 * (
+        prices["MSFT"].iloc[-1] / prices["MSFT"].iloc[2] - 1
+    )
+    assert attribution.loc["Technology", "Portfolio Return"] == pytest.approx(
+        expected, abs=1e-4
+    )

@@ -157,6 +157,15 @@ def _get_annuity_factor(
     return accrual * np.sum(np.exp(-risk_free_rate * payment_times))
 
 
+def _intrinsic_payoff(
+    forward_rate: float, strike_rate: float, is_receiver: bool
+) -> float:
+    """The payoff of a swaption on a known forward rate: the rate gap in its favour, or 0."""
+    return max(
+        strike_rate - forward_rate if is_receiver else forward_rate - strike_rate, 0.0
+    )
+
+
 def get_black_price(
     forward_rate: float,
     strike_rate: float,
@@ -241,15 +250,19 @@ def get_black_price(
 
     tenor = years_to_maturity if tenor is None else tenor
 
-    d1 = (
-        np.log(forward_rate / strike_rate) + 0.5 * volatility**2 * years_to_maturity
-    ) / (volatility * np.sqrt(years_to_maturity))
-    d2 = d1 - volatility * np.sqrt(years_to_maturity)
-
-    if is_receiver:
-        payoff = -forward_rate * _normal_cdf(-d1) + strike_rate * _normal_cdf(-d2)
+    if volatility * np.sqrt(years_to_maturity) == 0:
+        # Without volatility or time left the forward rate is the rate the swaption pays on.
+        payoff = _intrinsic_payoff(forward_rate, strike_rate, is_receiver)
     else:
-        payoff = forward_rate * _normal_cdf(d1) - strike_rate * _normal_cdf(d2)
+        d1 = (
+            np.log(forward_rate / strike_rate) + 0.5 * volatility**2 * years_to_maturity
+        ) / (volatility * np.sqrt(years_to_maturity))
+        d2 = d1 - volatility * np.sqrt(years_to_maturity)
+
+        if is_receiver:
+            payoff = -forward_rate * _normal_cdf(-d1) + strike_rate * _normal_cdf(-d2)
+        else:
+            payoff = forward_rate * _normal_cdf(d1) - strike_rate * _normal_cdf(d2)
 
     annuity = _get_annuity_factor(
         risk_free_rate=risk_free_rate,
@@ -337,16 +350,20 @@ def get_bachelier_price(
 
     tenor = years_to_maturity if tenor is None else tenor
 
-    d = (forward_rate - strike_rate) / (volatility * np.sqrt(years_to_maturity))
-
-    if is_receiver:
-        payoff = (strike_rate - forward_rate) * _normal_cdf(-d) + volatility * np.sqrt(
-            years_to_maturity
-        ) * _normal_pdf(-d)
+    if volatility * np.sqrt(years_to_maturity) == 0:
+        # Without volatility or time left the forward rate is the rate the swaption pays on.
+        payoff = _intrinsic_payoff(forward_rate, strike_rate, is_receiver)
     else:
-        payoff = (forward_rate - strike_rate) * _normal_cdf(d) + volatility * np.sqrt(
-            years_to_maturity
-        ) * _normal_pdf(d)
+        d = (forward_rate - strike_rate) / (volatility * np.sqrt(years_to_maturity))
+
+        if is_receiver:
+            payoff = (strike_rate - forward_rate) * _normal_cdf(
+                -d
+            ) + volatility * np.sqrt(years_to_maturity) * _normal_pdf(-d)
+        else:
+            payoff = (forward_rate - strike_rate) * _normal_cdf(
+                d
+            ) + volatility * np.sqrt(years_to_maturity) * _normal_pdf(d)
 
     annuity = _get_annuity_factor(
         risk_free_rate=risk_free_rate,

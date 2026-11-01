@@ -2443,7 +2443,12 @@ class Portfolio:
             )
             try:
                 money_weighted = attribution_model.get_money_weighted_return(all_flows)
-            except ValueError:
+            except ValueError as error:
+                logger.warning(
+                    "No money-weighted return is available for %s: %s",
+                    identifier,
+                    error,
+                )
                 money_weighted = float("nan")
 
             rows[identifier] = {

@@ -509,7 +509,6 @@ def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
     """
     # Imported when first used, as only a Free plan with a long dividend history needs it.
     import yfinance as yf  # noqa: PLC0415
-    import yfinance.exceptions  # noqa: PLC0415
 
     from financetoolkit.currencies_model import (  # noqa: PLC0415
         to_yahoo_finance_symbol,
@@ -517,9 +516,18 @@ def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
 
     first_payment = dividends.index.min()
 
+    # The older payments are an optional addition, so any failure counts as no history. When
+    # Yahoo Finance answers with an error (a rate limit, for example), yfinance logs it and
+    # returns None instead of raising.
     try:
         older = yf.Ticker(to_yahoo_finance_symbol(ticker)).dividends
-    except (OSError, ValueError, KeyError, yf.exceptions.YFException):
+    except Exception as error:  # noqa: BLE001
+        logger.info(
+            "Yahoo Finance dividends of %s could not be retrieved: %s", ticker, error
+        )
+        older = None
+
+    if not isinstance(older, pd.Series):
         older = pd.Series(dtype=float)
 
     if not older.empty:

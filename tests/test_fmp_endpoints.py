@@ -1035,3 +1035,32 @@ def test_free_plan_dividends_without_yahoo_history_warn(monkeypatch):
         assert fmp_model._complete_older_dividends("XYZ", latest).equals(latest)
 
     assert warning.call_args[0][0].startswith("No dividend data is available for")
+
+
+def _raising_ticker(symbol):
+    raise RuntimeError("Too Many Requests")
+
+
+@pytest.mark.parametrize(
+    "ticker",
+    [lambda symbol: type("T", (), {"dividends": None})(), _raising_ticker],
+    ids=["none", "raises"],
+)
+def test_free_plan_dividends_when_yahoo_fails(monkeypatch, ticker):
+    import yfinance as yf
+
+    from financetoolkit import fmp_model
+
+    latest = pd.Series(
+        [0.25] * 5, index=pd.period_range("2025-01-01", periods=5, freq="D")
+    )
+    # yfinance returns None for the dividends when Yahoo answers with an error, and the
+    # request itself can raise; both count as no older payments.
+    monkeypatch.setattr(yf, "Ticker", ticker)
+
+    from unittest.mock import patch
+
+    with patch.object(fmp_model.logger, "warning") as warning:
+        assert fmp_model._complete_older_dividends("AAPL", latest).equals(latest)
+
+    assert warning.call_args[0][0].startswith("No dividend data is available for")

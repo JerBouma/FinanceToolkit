@@ -215,3 +215,53 @@ def test_threaded_tools_run_a_limited_number_at_a_time():
 
     anyio.run(burst)
     assert peak[0] == MAXIMUM_TOOL_THREADS
+
+
+def test_calls_waiting_for_a_busy_instance_leave_the_work_slots_to_others():
+    import threading
+    import time
+
+    import anyio
+
+    from financetoolkit.mcp_server.analytics_model import (
+        MAXIMUM_TOOL_THREADS,
+        hold_lock,
+        run_in_thread,
+    )
+
+    instance_lock = threading.RLock()
+    release = threading.Event()
+    other_done = threading.Event()
+
+    def busy_instance() -> None:
+        # Every call on the same instance queues on its lock; the first holds it until the
+        # other user's call has finished.
+        with hold_lock(instance_lock):
+            release.wait(5)
+
+    def other_user() -> None:
+        other_done.set()
+        release.set()
+
+    async def burst():
+        async with anyio.create_task_group() as group:
+            for _ in range(MAXIMUM_TOOL_THREADS * 2):
+                group.start_soon(run_in_thread(busy_instance))
+            await anyio.sleep(0.2)
+            started = time.monotonic()
+            await run_in_thread(other_user)()
+            assert time.monotonic() - started < 2  # noqa: PLR2004
+
+    anyio.run(burst)
+    assert other_done.is_set()
+
+
+def test_a_reentrant_hold_does_not_give_up_the_slot():
+    import threading
+
+    from financetoolkit.mcp_server.analytics_model import hold_lock
+
+    lock = threading.RLock()
+    with hold_lock(lock), hold_lock(lock):
+        assert lock._is_owned()  # noqa: SLF001
+    assert not lock._is_owned()  # noqa: SLF001

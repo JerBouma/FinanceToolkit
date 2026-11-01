@@ -25,7 +25,8 @@ import json
 import os
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,13 @@ TOP_TOOLS = 15
 # The most tool calls that run at the same time; the others wait their turn. A data
 # collection can take hundreds of megabytes, and the hosted server has 1.5 GB.
 MAXIMUM_TOOL_THREADS = 6
+# A call that waits for an instance another call is using gives up its work slot meanwhile
+# (see hold_lock), so the worker threads get a wider cap than the work slots. That way calls
+# queued on one Toolkit can't take every slot and hold up the other users.
+MAXIMUM_WAITING_THREADS = 4 * MAXIMUM_TOOL_THREADS
+_WORK_SLOTS = threading.BoundedSemaphore(MAXIMUM_TOOL_THREADS)
+# Whether the current worker thread holds a work slot.
+_SLOT = threading.local()
 # One limiter per event loop (a limiter belongs to the loop it was first used in).
 _TOOL_LIMITER: RunVar[anyio.CapacityLimiter] = RunVar("financetoolkit_tool_limiter")
 
@@ -483,8 +491,8 @@ def run_in_thread(function: Callable) -> Any:
     would hold up every other request (other users, /health, the OAuth pages) until it
     finishes. The worker thread starts with a copy of the request's context, so the API key
     and the notes collected for the answer stay with the call. At most
-    MAXIMUM_TOOL_THREADS calls run at once, so a burst of heavy calls queues instead of
-    running the server out of memory.
+    MAXIMUM_TOOL_THREADS calls run at once (each holds a work slot), so a burst of heavy
+    calls queues instead of running the server out of memory.
 
     Args:
         function (Callable): The synchronous tool.
@@ -493,18 +501,56 @@ def run_in_thread(function: Callable) -> Any:
         Any: An asynchronous tool with the same signature.
     """
 
+    def work(*args, **kwargs):
+        with _WORK_SLOTS:
+            _SLOT.held = True
+            try:
+                return function(*args, **kwargs)
+            finally:
+                _SLOT.held = False
+
     @functools.wraps(function)
     async def threaded(*args, **kwargs):
         try:
             limiter = _TOOL_LIMITER.get()
         except LookupError:
-            limiter = anyio.CapacityLimiter(MAXIMUM_TOOL_THREADS)
+            limiter = anyio.CapacityLimiter(MAXIMUM_WAITING_THREADS)
             _TOOL_LIMITER.set(limiter)
         return await anyio.to_thread.run_sync(
-            functools.partial(function, *args, **kwargs), limiter=limiter
+            functools.partial(work, *args, **kwargs), limiter=limiter
         )
 
     return keep_signature(threaded, function)
+
+
+@contextmanager
+def hold_lock(lock: threading.RLock) -> Generator[None]:
+    """
+    Hold a lock, giving up the thread's work slot while waiting for it.
+
+    A slot is only held by a call that runs, never by one waiting for a lock, so the calls
+    queued on one busy instance leave the slots to everyone else. This can't deadlock: a
+    slot holder never waits for a lock, so it always finishes and frees its slot for the
+    call that took the lock and waits for a slot again.
+
+    Args:
+        lock (threading.RLock): The lock to hold.
+    """
+    if not lock.acquire(blocking=False):
+        if getattr(_SLOT, "held", False):
+            _WORK_SLOTS.release()
+            _SLOT.held = False
+            try:
+                lock.acquire()
+            finally:
+                _WORK_SLOTS.acquire()
+                _SLOT.held = True
+        else:
+            lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def create_from_environment(

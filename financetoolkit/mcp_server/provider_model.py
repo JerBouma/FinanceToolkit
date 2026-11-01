@@ -22,6 +22,7 @@ from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
+from financetoolkit.mcp_server.analytics_model import hold_lock
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
 from financetoolkit.mcp_server.diagnostics_model import (
     FMP_KEY_HINT,
@@ -216,7 +217,8 @@ class ToolkitProvider:
         # One lock per cached Toolkit or module instance, held for the whole call. Tools run
         # in worker threads, and an instance fills its statements, prices and conversions
         # lazily without locks of its own, so two calls on one instance at once would read
-        # half-converted statements or download the same data twice.
+        # half-converted statements or download the same data twice. It is taken through
+        # analytics_model.hold_lock, so a call waiting for it leaves its work slot to others.
         self._instance_locks: weakref.WeakKeyDictionary[Any, RLock] = (
             weakref.WeakKeyDictionary()
         )
@@ -518,7 +520,7 @@ class ToolkitProvider:
         except Exception:
             return notes
 
-        with self.instance_lock(toolkit):
+        with hold_lock(self.instance_lock(toolkit)):
             fy_adj: dict = dict(getattr(toolkit, "_fiscal_year_adjustments", {}))
         fy_tickers = []
 
@@ -725,7 +727,7 @@ class ToolkitProvider:
             api_key=api_key,
             fred_api_key=fred_api_key,
         )
-        with self.instance_lock(toolkit_instance):
+        with hold_lock(self.instance_lock(toolkit_instance)):
             module = getattr(toolkit_instance, module_name)
             return getattr(module, method_name)(**kwargs)
 
@@ -772,7 +774,7 @@ class ToolkitProvider:
             api_key=api_key,
             fred_api_key=fred_api_key,
         )
-        with self.instance_lock(toolkit_instance):
+        with hold_lock(self.instance_lock(toolkit_instance)):
             return getattr(toolkit_instance, method_name)(**kwargs)
 
     @staticmethod
@@ -918,7 +920,7 @@ class ToolkitProvider:
                 kwargs["country"] = countries[0]
                 countries_handled = True
 
-        with self.instance_lock(instance):
+        with hold_lock(self.instance_lock(instance)):
             result = method(**kwargs)
 
         # Countries requested but not accepted by the method, so filter post-call.

@@ -661,14 +661,22 @@ def test_an_existing_secret_is_kept_and_a_short_one_is_replaced(monkeypatch, tmp
     monkeypatch.setattr(auth_model, "get_global_env_path", lambda: tmp_path / ".env")
     secret_file = tmp_path / ".mcp_secret"
 
-    # A file this process did not create is read as it is, never chmodded.
+    # An existing key is kept; a file others can read is made private, never wider.
     secret_file.write_bytes(b"x" * 40)
-    secret_file.chmod(0o640)
+    secret_file.chmod(0o644)
     monkeypatch.setattr(auth_model, "_secret_key", None)
     assert auth_model.get_secret_key() == b"x" * 40
-    assert secret_file.stat().st_mode & 0o777 == 0o640
+    assert secret_file.stat().st_mode & 0o777 == 0o600
 
+    secret_file.chmod(0o400)
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    assert auth_model.get_secret_key() == b"x" * 40
+    assert secret_file.stat().st_mode & 0o777 == 0o400
+
+    # A short file is replaced, and made private before the new key goes in.
+    secret_file.chmod(0o644)
     secret_file.write_bytes(b"")
     monkeypatch.setattr(auth_model, "_secret_key", None)
     key = auth_model.get_secret_key()
     assert len(key) == 32 and secret_file.read_bytes() == key  # noqa: PLR2004
+    assert secret_file.stat().st_mode & 0o777 == 0o600

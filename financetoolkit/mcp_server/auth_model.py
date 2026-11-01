@@ -657,6 +657,31 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
 """
 
 
+def _restrict_to_owner(secret_file: pathlib.Path) -> None:
+    """
+    Make an existing secret file readable by its owner only, when others can read it.
+
+    Only ever tightens: a file that is already private (or owned by someone else, such as a
+    mounted secret) is left as it is, and a failure is logged rather than raised.
+
+    Args:
+        secret_file (pathlib.Path): The stored secret.
+    """
+    try:
+        status = secret_file.stat()
+        owned = not hasattr(os, "getuid") or status.st_uid == os.getuid()
+        if owned and status.st_mode & 0o077:
+            secret_file.chmod(0o600)
+            logger.warning(
+                "The MCP secret file %s was readable by others and is now private.",
+                secret_file,
+            )
+    except OSError as error:
+        logger.warning(
+            "The MCP secret file could not be made private (%s).", type(error).__name__
+        )
+
+
 def get_secret_key() -> bytes:
     """Load or generate a stable secret key stored in the global configuration directory."""
     global _secret_key  # noqa: PLW0603
@@ -678,14 +703,19 @@ def get_secret_key() -> bytes:
         stored = secret_file.read_bytes() if secret_file.exists() else b""
         # An empty or truncated file (an interrupted first write) counts as missing.
         if len(stored) >= MINIMUM_SECRET_BYTES:
+            _restrict_to_owner(secret_file)
             _secret_key = stored
         else:
             key = secrets.token_bytes(32)
             # Created private, so the key is never readable by others, not even briefly.
+            # The mode only applies to a new file, so a short file that already existed is
+            # made private before the key goes in.
             descriptor = os.open(
                 secret_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
             )
             with os.fdopen(descriptor, "wb") as handle:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(handle.fileno(), 0o600)
                 handle.write(key)
             _secret_key = key
     except OSError as error:

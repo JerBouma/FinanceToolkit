@@ -112,3 +112,65 @@ def test_mcclellan_oscillator_seeds_on_actual_advances_and_declines():
 
     assert oscillator.first_valid_index() == 4
     assert oscillator.iloc[4] == pytest.approx(short - sum(signals) / 4)
+
+
+def test_volume_indicators_are_nan_before_listing_and_on_missing_days():
+    index = pd.date_range("2024-01-01", periods=6)
+    close = pd.Series([float("nan"), 10.0, 11.0, float("nan"), 12.0, 11.0], index=index)
+    volume = pd.Series(
+        [float("nan"), 100.0, 200.0, float("nan"), 150.0, 120.0], index=index
+    )
+
+    for result in [
+        breadth_model.get_on_balance_volume(close, volume),
+        breadth_model.get_negative_volume_index(close, volume),
+        breadth_model.get_positive_volume_index(close, volume),
+        breadth_model.get_advancers_decliners(close),
+    ]:
+        assert result.iloc[[0, 3]].isna().all()
+        assert result.iloc[[1, 2, 4, 5]].notna().all()
+
+    # The day after the gap compares with the last close before it (12 against 11).
+    assert (
+        breadth_model.get_on_balance_volume(close, volume).tolist()[4] == 0 + 200 + 150
+    )
+    assert breadth_model.get_advancers_decliners(close).iloc[4] == 1
+    # The negative volume index moves only on lower volume: 150 < 200 on 12 against 11.
+    assert breadth_model.get_negative_volume_index(close, volume).iloc[
+        4
+    ] == pytest.approx(1000 * 12 / 11)
+
+
+def test_accumulation_distribution_line_adds_nothing_when_high_equals_low():
+    index = pd.date_range("2024-01-01", periods=3)
+    high = pd.Series([11.0, 10.0, 12.0], index=index)
+    low = pd.Series([9.0, 10.0, 10.0], index=index)
+    close = pd.Series([11.0, 10.0, 10.0], index=index)
+    volume = pd.Series([100.0, 500.0, 50.0], index=index)
+
+    adl = breadth_model.get_accumulation_distribution_line(high, low, close, volume)
+
+    # As in TA-Lib: a bar without range has a multiplier of 0 and the line runs on.
+    assert adl.tolist() == [100.0, 100.0, 50.0]
+
+
+def test_new_highs_new_lows_use_full_windows_and_strict_comparisons():
+    index = pd.date_range("2024-01-01", periods=5)
+    closes = pd.DataFrame(
+        {
+            "A": [10.0, 11.0, 11.0, 12.0, 9.0],
+            "B": [float("nan"), float("nan"), 5.0, 5.0, 6.0],
+        },
+        index=index,
+    )
+
+    result = breadth_model.get_new_highs_new_lows(closes, window=3)
+
+    # No ticker has three closes until the third day; A's 11 equals its previous high, so it
+    # is no new high.
+    assert result.index.equals(index)
+    assert result.iloc[:2].isna().all()
+    assert result.iloc[2] == 0
+    assert result.iloc[3] == 1
+    # A makes a new low and B, with its first full window, makes a new high.
+    assert result.iloc[4] == 0

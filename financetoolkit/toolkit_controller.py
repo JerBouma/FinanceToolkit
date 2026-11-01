@@ -2970,9 +2970,10 @@ class Toolkit:
         if not self._api_key or self._enforce_source == "YahooFinance":
             return premiums
 
-        # The profile also records invalid tickers and, with remove_invalid_tickers, drops
-        # them from the Toolkit. Reading the countries must not change the Toolkit.
-        toolkit_tickers, invalid_tickers = self._tickers, self._invalid_tickers
+        # With remove_invalid_tickers, the profile drops invalid tickers from the Toolkit.
+        # Reading the countries must not change the Toolkit's tickers; the invalid tickers it
+        # records stay, so a later get_profile (which reuses the profile) still drops them.
+        toolkit_tickers = self._tickers
 
         try:
             market_risk_premium = self.get_market_risk_premium()
@@ -3001,7 +3002,7 @@ class Toolkit:
             logger.info("The country equity risk premiums are not available: %s", error)
             return premiums
         finally:
-            self._tickers, self._invalid_tickers = toolkit_tickers, invalid_tickers
+            self._tickers = toolkit_tickers
 
         if unmatched:
             logger.warning(

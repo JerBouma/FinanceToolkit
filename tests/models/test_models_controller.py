@@ -1358,7 +1358,7 @@ def test_country_premiums_follow_the_premium_table_names(
         test_toolkit._tickers = ["AAPL"]
         return profile
 
-    tickers, invalid = list(test_toolkit._tickers), list(test_toolkit._invalid_tickers)
+    tickers = list(test_toolkit._tickers)
     monkeypatch.setattr(test_toolkit, "_api_key", "key")
     monkeypatch.setattr(test_toolkit, "get_market_risk_premium", lambda: table)
     monkeypatch.setattr(test_toolkit, "get_profile", get_profile)
@@ -1366,8 +1366,9 @@ def test_country_premiums_follow_the_premium_table_names(
     premiums = test_toolkit._get_country_risk_premiums()
 
     assert premiums.to_dict() == {"AAPL": 0.0433, "MSFT": 0.0584}
+    # The tickers stay; the invalid tickers the profile found stay recorded for get_profile.
     assert test_toolkit._tickers == tickers
-    assert test_toolkit._invalid_tickers == invalid
+    assert test_toolkit._invalid_tickers == ["MSFT"]
 
     # A country the table does not cover is named in a warning.
     profile.loc["Country", "MSFT"] = "VG"

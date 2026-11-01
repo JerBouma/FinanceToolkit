@@ -634,7 +634,7 @@ class FixedIncome:
         Also known as: PV, bond pricing, discounted cash flows.
 
         Args:
-            par_value (float): The par value (face value) of the bond.
+            par_value (float): The par value (face value) of the bond. Defaults to 100.
             coupon_rate (float, optional): The coupon rate of the bond. If not provided, a range of coupon rates will be used.
             years_to_maturity (float, optional): The years to maturity of the bond in years. If not provided, a range of years to maturity will be used.
             yield_to_maturity (float, optional): The yield to maturity of the bond. Defaults to 0.08.
@@ -1545,7 +1545,7 @@ class FixedIncome:
         Also known as: zero-volatility spread, static spread.
 
         Args:
-            par_value (float): The par value (face value) of the bond.
+            par_value (float): The par value (face value) of the bond. Defaults to 100.
             coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
             years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
             bond_price (float, optional): The clean (quoted) price of the bond. Defaults to None, a range of
@@ -2663,8 +2663,8 @@ class FixedIncome:
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2850,8 +2850,8 @@ class FixedIncome:
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.

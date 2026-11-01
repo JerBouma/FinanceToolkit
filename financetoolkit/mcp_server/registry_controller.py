@@ -14,6 +14,7 @@ import importlib
 import inspect
 import re
 import time
+import traceback
 import types
 import typing
 from datetime import datetime, timedelta
@@ -29,7 +30,7 @@ from pydantic import (
 
 from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.mcp_server import series_model
-from financetoolkit.mcp_server.analytics_model import UsageAnalytics
+from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
 from financetoolkit.mcp_server.coercion_model import (
     accepts_text_only,
     coerce_value,
@@ -108,8 +109,14 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "countries": (
         "Country names, comma-separated or as a list, e.g. 'United States,Germany,Japan'."
     ),
-    "start_date": "Start of the date range in YYYY-MM-DD format.",
-    "end_date": "End of the date range in YYYY-MM-DD format.",
+    "start_date": (
+        "Start of the date range in YYYY-MM-DD format; left empty, five years before today "
+        "(or the indicator's own window)."
+    ),
+    "end_date": (
+        "End of the date range in YYYY-MM-DD format; left empty, today (or the indicator's "
+        "own window)."
+    ),
     "quarterly": "Return quarterly data instead of annual when True.",
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'.",
     "growth": "Return period-over-period growth rates instead of absolute values.",
@@ -188,7 +195,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "(the most recent of a time series). A table with its periods as columns (financial "
         "statements, ratios) keeps its first or last periods instead. For ETF holdings the "
         "largest (or, negative, the smallest) by weight, and for a list (e.g. news or a "
-        "screener) its length."
+        "screener) its length. 0 returns every row."
     ),
     "gmdb_forecasts": (
         "Set to true to include the years the Global Macro Database projects (IMF World "
@@ -305,6 +312,10 @@ MARKET_CURVE_METHODS = ("get_option_adjusted_spread",)
 
 # A window of at most this many days can be empty for lack of trading days alone.
 SHORT_WINDOW_DAYS = 3
+
+# The most tickers or countries in one call: each is collected separately, and a request for
+# hundreds would hold a worker for minutes on a server many people share.
+MAX_ENTITIES = 50
 
 # How alike an unknown indicator name must be to a known one to be read as it.
 NEAR_CERTAIN_MATCH = 0.9
@@ -1179,6 +1190,13 @@ class ToolRegistry:
                 if raw_countries
                 else None
             )
+            for name, entities in (("tickers", tickers), ("countries", countries)):
+                if entities and len(entities) > MAX_ENTITIES:
+                    return (
+                        f"`{tool_name}` received {len(entities)} {name}; at most "
+                        f"{MAX_ENTITIES} can be analyzed in one call. Split them over "
+                        "several calls."
+                    )
 
             # A market-wide snapshot (config.yaml tickers_optional) does not depend on the
             # tickers, but the Toolkit it is reached through needs one to be built.
@@ -1291,7 +1309,10 @@ class ToolRegistry:
             # the length of a list) receives it instead, when it supports the value.
             raw_limit = kwargs.pop("limit", None)
             try:
-                rows_limit = int(raw_limit) if raw_limit not in (None, "") else None
+                # 0 asks for no selection, the same as leaving limit out.
+                rows_limit = (
+                    int(raw_limit) or None if raw_limit not in (None, "") else None
+                )
             except (TypeError, ValueError):
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): limit must be a "
@@ -1804,12 +1825,14 @@ class ToolRegistry:
             except ConnectionError as exc:
                 return f"API connection failed: {redact(exc)}"
             except Exception as exc:
+                # The traceback repeats the exception text, which can hold a request URL
+                # with the caller's API key, so both are redacted.
                 logger.warning(
-                    "Tool %s (%s) failed: %s",
+                    "Tool %s (%s) failed: %s\n%s",
                     tool_name,
                     method_name,
-                    exc,
-                    exc_info=True,
+                    redact(exc),
+                    redact(traceback.format_exc()),
                 )
                 return (
                     f"`{tool_name}` (`{method_name}`) failed with error: "
@@ -2048,6 +2071,7 @@ class ToolRegistry:
             )
             fn.__name__ = spec.tool_name
             fn.__doc__ = description
+            fn = run_in_thread(fn)
 
             if self._analytics is not None:
                 fn = self._analytics.counted(spec.tool_name, fn)

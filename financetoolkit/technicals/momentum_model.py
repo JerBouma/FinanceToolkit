@@ -19,6 +19,10 @@ from financetoolkit.technicals.volatility_model import (
 # The Know Sure Thing combines exactly four smoothed Rate of Change components.
 KST_COMPONENT_COUNT = 4
 
+# The shortest window that has a deviation from its own mean (CCI) and a log10(window) above
+# zero (Choppiness Index).
+MINIMUM_WINDOW = 2
+
 
 def get_money_flow_index(
     prices_high: pd.Series,
@@ -228,7 +232,14 @@ def get_commodity_channel_index(
 
     Returns:
         pd.Series: CCI values.
+
+    Raises:
+        ValueError: If `window` is smaller than 2.
     """
+    # A single-period window has no deviation from its own mean, so every value would be 0 / 0.
+    if window < MINIMUM_WINDOW:
+        raise ValueError("window must be at least 2 for the Commodity Channel Index.")
+
     typical_prices = (prices_high + prices_low + prices_close) / 3
     sma_typical_prices = typical_prices.rolling(window=window).mean()
 
@@ -442,7 +453,7 @@ def get_percentage_price_oscillator(
 
     The formula is as follows:
 
-    - PPO = ((EMA(Close, short_window) - EMA(Close, long_window)) / EMA(Close, long_window)) * 100
+    - PPO = (EMA(Close, short_window) - EMA(Close, long_window)) / EMA(Close, long_window)
 
     The conventional parameters are 12 and 26 periods, as for MACD. A signal line, if
     wanted, is the 9-period EMA of the PPO (`get_exponential_moving_average(ppo, 9)`), and
@@ -461,12 +472,12 @@ def get_percentage_price_oscillator(
         long_window (int): Number of periods for the long-term EMA.
 
     Returns:
-        pd.Series: PPO values, expressed as a percentage.
+        pd.Series: PPO values as a decimal (0.02 is 2%).
     """
     short_ema = get_exponential_moving_average(prices_close, short_window)
     long_ema = get_exponential_moving_average(prices_close, long_window)
 
-    ppo = ((short_ema - long_ema) / long_ema) * 100
+    ppo = (short_ema - long_ema) / long_ema
     return ppo
 
 
@@ -1088,7 +1099,7 @@ def get_rate_of_change(
 
     The formula is as follows:
 
-    - ROC = (Close(t) / Close(t - window) - 1) * 100
+    - ROC = Close(t) / Close(t - window) - 1
 
     Also known as: ROC, Price Rate of Change, momentum (in its unscaled form Close(t) -
     Close(t - window)).
@@ -1102,7 +1113,7 @@ def get_rate_of_change(
         window (int): Number of periods to look back for the rate of change calculation.
 
     Returns:
-        pd.Series | pd.DataFrame: Rate of Change values, expressed as a percentage.
+        pd.Series | pd.DataFrame: Rate of Change values as a decimal (0.05 is 5%).
 
     Raises:
         TypeError: If `prices_close` is not a pandas Series or DataFrame.
@@ -1110,7 +1121,7 @@ def get_rate_of_change(
     if not isinstance(prices_close, pd.Series | pd.DataFrame):
         raise TypeError("prices_close must be a pandas Series or DataFrame.")
 
-    return (prices_close / prices_close.shift(window) - 1) * 100
+    return prices_close / prices_close.shift(window) - 1
 
 
 def get_choppiness_index(
@@ -1153,6 +1164,7 @@ def get_choppiness_index(
 
     Raises:
         TypeError: If `prices_high`, `prices_low` or `prices_close` is not a pandas Series.
+        ValueError: If `window` is smaller than 2.
     """
     if not (
         isinstance(prices_high, pd.Series)
@@ -1162,6 +1174,9 @@ def get_choppiness_index(
         raise TypeError(
             "prices_high, prices_low and prices_close must be pandas Series."
         )
+    # The index divides by log10(window), which is 0 for a single period.
+    if window < MINIMUM_WINDOW:
+        raise ValueError("window must be at least 2 for the Choppiness Index.")
 
     true_range = get_true_range(prices_high, prices_low, prices_close)
 
@@ -1219,7 +1234,8 @@ def get_know_sure_thing(
             as the signal line. Defaults to 9.
 
     Returns:
-        pd.DataFrame: Know Sure Thing (KST and Signal Line) values.
+        pd.DataFrame: Know Sure Thing (KST and Signal Line) values, weighted sums of
+            decimal Rates of Change.
 
     Raises:
         TypeError: If `prices_close` is not a pandas Series.

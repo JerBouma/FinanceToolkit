@@ -1729,7 +1729,12 @@ def get_burke_drawdown_measure(
         wealth, peak = get_wealth_and_peak(returns)
         drawdowns = wealth / peak - 1
 
-    return np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
+    burke_drawdown_measure = np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
+
+    # A series without a single return has no drawdowns to measure, rather than none.
+    if isinstance(returns, pd.DataFrame):
+        return burke_drawdown_measure.where(returns.notna().any())
+    return burke_drawdown_measure if returns.notna().any() else np.nan
 
 
 def get_burke_ratio(
@@ -1999,7 +2004,9 @@ def get_omega_ratio(
 
     Returns:
         pd.Series | pd.DataFrame: Omega Ratio values as float if returns is a pd.Series,
-        otherwise as pd.Series or pd.DataFrame with time as index.
+        otherwise as pd.Series or pd.DataFrame with time as index. Without any return below
+        the minimum acceptable return the ratio is infinite, and without any return away
+        from it NaN.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -2028,9 +2035,21 @@ def get_omega_ratio(
         gains = excess_returns[excess_returns > 0].sum()
         losses = -excess_returns[excess_returns < 0].sum()
 
-        return gains / losses
+        return _divide_gains_by_losses(gains, losses)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def _divide_gains_by_losses(gains: float, losses: float) -> float:
+    """
+    The Omega ratio from the summed gains and losses: infinite when there are gains and no
+    losses (the sum of no losses is -0.0, which would give minus infinity) and NaN when
+    there are neither.
+    """
+    if losses > 0:
+        return gains / losses
+
+    return np.inf if gains > 0 else np.nan
 
 
 def get_rolling_omega_ratio(
@@ -2056,7 +2075,7 @@ def get_rolling_omega_ratio(
         gains = excess_returns[excess_returns > 0].sum()
         losses = -excess_returns[excess_returns < 0].sum()
 
-        return gains / losses if losses else np.nan
+        return _divide_gains_by_losses(gains, losses)
 
     return returns.rolling(window=window_size).apply(_omega, raw=True)
 

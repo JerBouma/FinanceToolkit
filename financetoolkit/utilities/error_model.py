@@ -147,10 +147,12 @@ def handle_errors(func):
     a financial library can produce, so the behaviour is deliberately split by what the
     exception actually says about the data:
 
-        - KeyError and IndexError mean a line item the calculation needs is not in the
-          statements, which is a genuine and common gap between data providers rather
-          than a defect. These are logged as an error naming the metric, the tickers and
-          the missing item, and an empty Series is returned.
+        - KeyError and IndexError mean something the calculation needs is not in the
+          data, which is a genuine and common gap between data providers rather than a
+          defect. In the Ratios and Models (STATEMENT_MODULES) a missing key is a
+          statement line item, and the error asks to fill that row; elsewhere it is a
+          ticker, column or date, and the error names it as missing from the data. Both
+          name the metric and the tickers, and an empty Series is returned.
         - ValueError and ZeroDivisionError mean the data is present but could not be
           computed with. These are logged as an error, with the traceback attached so
           the failing line is identifiable, and an empty Series is returned.

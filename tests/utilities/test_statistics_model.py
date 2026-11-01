@@ -508,3 +508,17 @@ def test_apply_rounding_prints_no_negative_zero():
     assert (
         str(statistics_model.apply_rounding(pd.Series([-0.00001]), 4).iloc[0]) == "0.0"
     )
+
+
+def test_official_country_names_resolve_to_the_global_macro_database_names():
+    from financetoolkit.utilities.statistics_model import normalize_country_name
+
+    known = ["Macedonia", "Macau", "Cape Verde", "Sao Tome and Principe"]
+
+    assert normalize_country_name("North Macedonia", known) == "Macedonia"
+    assert normalize_country_name("Macao", known) == "Macau"
+    assert normalize_country_name("Cabo Verde", known) == "Cape Verde"
+    assert (
+        normalize_country_name("São Tomé and Príncipe", known)
+        == "Sao Tome and Principe"
+    )

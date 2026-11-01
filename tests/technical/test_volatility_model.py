@@ -77,3 +77,14 @@ def test_volatility_cone_annualizes_with_the_periods_per_year():
     # Both annualize to the same volatility of about 1% a day times the square root of 252.
     assert daily.loc[20, "Median"] == pytest.approx(0.01 * np.sqrt(252), rel=0.1)
     assert weekly.loc[20, "Median"] == pytest.approx(daily.loc[20, "Median"], rel=0.1)
+
+
+def test_supertrend_direction_is_nan_until_the_bands_start():
+    index = pd.date_range("2024-01-01", periods=30)
+    close = pd.Series([100 + i for i in range(30)], index=index, dtype="float64")
+
+    supertrend = volatility_model.get_supertrend(close + 1, close - 1, close, window=10)
+
+    direction = supertrend["Trend Direction"]
+    assert direction.iloc[:9].isna().all()
+    assert direction.iloc[9:].notna().all()

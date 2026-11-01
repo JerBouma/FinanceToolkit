@@ -533,3 +533,33 @@ def test_bands_and_channels_take_a_fractional_width(technical_module):
             (standard[middle] - standard[lower]) * width / 2,
             atol=1e-6,
         )
+
+
+def test_on_balance_volume_skips_gaps_per_ticker():
+    import pandas as pd
+
+    from financetoolkit.technicals.technicals_controller import Technicals
+
+    index = pd.period_range("2024-01-01", periods=6, freq="D")
+    columns = pd.MultiIndex.from_product([["Close", "Adj Close", "Volume"], ["A", "B"]])
+    nan = float("nan")
+    data = pd.DataFrame(
+        [
+            [10.0, 20, 10.0, 20, 100.0, 300],
+            [11, 21, 11, 21, 200, 100],
+            [nan, 20, nan, 20, nan, 200],
+            [12, 22, 12, 22, 150, 400],
+            [11, 23, 11, 23, 50, 250],
+            [13, 22, 13, 22, 80, 150],
+        ],
+        index=index,
+        columns=columns,
+    )
+    technicals = Technicals(["A", "B"], {"daily": data}, rounding=None)
+
+    obv = technicals.get_on_balance_volume()
+
+    # The day after A's gap compares 12 with 11 instead of being reset.
+    assert obv.loc[index[3], "A"] == 200 + 150
+    assert obv.loc[index[2], "A"] != obv.loc[index[2], "A"]
+    assert obv.loc[index[3], "B"] == 100 - 200 + 400

@@ -125,3 +125,18 @@ def test_fred_header_beats_query(monkeypatch):
         deps, "get_http_request", lambda: _make_request("fred_api_key=FQKEY")
     )
     assert auth_model.resolve_fred_api_key() == "FHKEY"
+
+
+def test_an_expired_access_token_is_never_used_as_a_key(monkeypatch):
+    """An access token that no longer verifies is not passed on as a raw key."""
+    expired = auth_model.sign_jwt({"fmp_api_key": "OLD", "fred_api_key": "F"}, -10)
+    monkeypatch.setattr(
+        deps,
+        "get_http_headers",
+        lambda include=None: {"x-fmp-api-key": expired, "x-fred-api-key": expired},
+    )
+    monkeypatch.setattr(
+        deps, "get_http_request", lambda: _make_request(f"fmp_api_key={expired}")
+    )
+    assert auth_model.resolve_api_key() == ""
+    assert auth_model.resolve_fred_api_key() == ""

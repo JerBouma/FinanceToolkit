@@ -154,3 +154,12 @@ def test_changes_none_reaches_econometrics_as_none(indicator_answers, monkeypatc
 
     # A tool argument is text: 'none' is changes=None, and no argument is the default.
     assert received == [None, "percentage"]
+
+
+def test_a_reference_needs_tickers_or_countries_and_a_call_a_few_references():
+    with pytest.raises(ValueError, match="names no tickers or countries"):
+        series_model.parse_series_references("get_inflation_rate: , ")
+
+    many = ";".join(["get_inflation_rate:Germany"] * 21)
+    with pytest.raises(ValueError, match="at most 20"):
+        series_model.parse_series_references(many)

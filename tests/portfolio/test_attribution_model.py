@@ -72,3 +72,28 @@ def test_look_through_exposure():
     )
     assert holdings["AAPL"] == pytest.approx(0.55)
     assert holdings["Other"] == pytest.approx(0.4)
+
+
+def test_money_weighted_return_of_a_short_holding_and_without_a_root():
+    # Ten times the money in two weeks annualizes far beyond the old upper bound of 100.
+    short = attribution_model.get_money_weighted_return(
+        pd.Series([-100.0, 1000.0], index=["2024-01-01", "2024-01-15"])
+    )
+    assert short > 1e20
+
+    with pytest.raises(ValueError, match="No annual rate"):
+        attribution_model.get_money_weighted_return(
+            pd.Series(
+                [-100.0, 100.0, -100.0, 1.0],
+                index=["2024-01-01", "2024-01-15", "2024-02-01", "2024-03-01"],
+            )
+        )
+
+
+def test_look_through_exposure_skips_assets_without_weight():
+    exposure = attribution_model.get_look_through_exposure(
+        pd.Series({"AAPL": 1.0, "MSFT": 0.0}),
+        {"AAPL": pd.Series({"Technology": 1.0})},
+    )
+
+    assert exposure.to_dict() == {"Technology": 1.0}

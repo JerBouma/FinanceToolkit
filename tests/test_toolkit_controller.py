@@ -640,3 +640,20 @@ def test_statistics_come_from_the_balance_sheet_getter(monkeypatch):
     toolkit.get_statistics_statement()
 
     assert calls == [{"enforce_source": None, "overwrite": False, "rounding": None}]
+
+
+def test_quarterly_lookback_covers_a_trailing_year_and_its_growth():
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        api_key="",
+        start_date="2025-01-01",
+        end_date="2026-01-01",
+        quarterly=True,
+        sleep_timer=False,
+    )
+
+    # A trailing twelve months for the first quarter needs the three quarters before it,
+    # and its growth over a year the four before those, all ending before the start.
+    lookback = pd.Timestamp(toolkit._lookback_start_date)
+    assert lookback <= pd.Timestamp("2023-03-31")
+    assert lookback > pd.Timestamp("2022-09-30")

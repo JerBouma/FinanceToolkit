@@ -370,7 +370,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
                 None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
                 `trailing` when set (e.g. 365 for quarterly data with trailing=4).
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -513,8 +514,9 @@ class Ratios:
         Args:
             custom_ratios_dict (dict | None, optional): A dictionary containing the custom ratios to
                 calculate. Defaults to None.
-            options (bool): Whether to return the available names to use in the custom ratios.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            options (bool): Whether to return the available names to use in the custom ratios. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -767,7 +769,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
                 None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
                 `trailing` when set (e.g. 365 for quarterly data with trailing=4).
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -976,7 +979,8 @@ class Ratios:
         Also known as: asset efficiency, revenue per asset.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1083,7 +1087,8 @@ class Ratios:
         Also known as: stock turnover ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1189,7 +1194,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
                 None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
                 `trailing` when set (e.g. 365 for quarterly data with trailing=4).
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1312,7 +1318,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
                 None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
                 `trailing` when set (e.g. 365 for quarterly data with trailing=4).
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1418,7 +1425,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
                 None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
                 `trailing` when set (e.g. 365 for quarterly data with trailing=4).
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1546,7 +1554,8 @@ class Ratios:
         Also known as: payables efficiency, AP turnover.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1656,7 +1665,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
                 None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
                 `trailing` when set (e.g. 365 for quarterly data with trailing=4).
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1777,7 +1787,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the flows cover. Defaults to
                 None, which uses 365 for annual data and 365 / 4 for quarterly data, multiplied by
                 `trailing` when set (e.g. 365 for quarterly data with trailing=4).
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1927,7 +1938,8 @@ class Ratios:
         Also known as: CCE, cash efficiency ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2032,7 +2044,8 @@ class Ratios:
         Also known as: receivables efficiency, accounts receivable turnover.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2128,7 +2141,8 @@ class Ratios:
         Also known as: SG&A ratio, selling general administrative ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2231,7 +2245,8 @@ class Ratios:
         Also known as: PP&E turnover, fixed asset utilization.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2337,7 +2352,8 @@ class Ratios:
         weak efficiency.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2449,7 +2465,8 @@ class Ratios:
         Also known as: operating efficiency ratio, operating expense ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2556,7 +2573,8 @@ class Ratios:
         Also known as: R&D intensity, R&D to sales ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2651,7 +2669,8 @@ class Ratios:
         Also known as: S&M ratio, sales and marketing intensity.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2750,7 +2769,8 @@ class Ratios:
         Also known as: G&A ratio, overhead ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2850,7 +2870,8 @@ class Ratios:
         Also known as: SBC intensity, equity compensation ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -2949,7 +2970,8 @@ class Ratios:
         Also known as: deferred revenue intensity, unearned revenue ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3033,7 +3055,8 @@ class Ratios:
         Calculates and collects all Liquidity Ratios based on the provided data.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3200,7 +3223,8 @@ class Ratios:
         Also known as: short-term liquidity, working capital ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3302,7 +3326,8 @@ class Ratios:
         Also known as: acid-test ratio, liquid ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3410,7 +3435,8 @@ class Ratios:
         Also known as: most conservative liquidity ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3512,7 +3538,8 @@ class Ratios:
         Also known as: net current assets, operating liquidity.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3609,7 +3636,8 @@ class Ratios:
         Also known as: OCF ratio, cash liquidity.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3706,7 +3734,8 @@ class Ratios:
         Also known as: cash flow to sales ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3806,7 +3835,8 @@ class Ratios:
         Also known as: short-term debt coverage.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -3912,7 +3942,8 @@ class Ratios:
             days (int | float, optional): The number of days in the window the expenses cover, used
                 to turn them into daily expenditures. Defaults to None, which uses 365 for annual data
                 and 365 / 4 for quarterly data, multiplied by `trailing` when set.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4039,7 +4070,8 @@ class Ratios:
         Calculates and collects all Profitability Ratios based on the provided data.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4261,7 +4293,8 @@ class Ratios:
         Also known as: gross profit margin, gross profit percentage.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4375,7 +4408,8 @@ class Ratios:
         Also known as: EBIT margin, operating income margin.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4469,7 +4503,8 @@ class Ratios:
         Also known as: net margin, bottom line margin, net income margin.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4567,7 +4602,8 @@ class Ratios:
         Also known as: EBITDA-to-revenue ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4676,7 +4712,8 @@ class Ratios:
         Also known as: EBT to EBIT ratio, interest burden.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4772,7 +4809,8 @@ class Ratios:
         Also known as: pretax margin, EBT margin.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4881,7 +4919,8 @@ class Ratios:
         Also known as: ETR, actual tax rate.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4981,7 +5020,8 @@ class Ratios:
         Also known as: ROA, asset profitability.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5086,7 +5126,8 @@ class Ratios:
         Also known as: cash ROA.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5198,7 +5239,8 @@ class Ratios:
         Also known as: ROE, shareholders equity return, equity profitability.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5307,7 +5349,8 @@ class Ratios:
         Also known as: ROIC, return on capital (ROC).
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5434,7 +5477,8 @@ class Ratios:
         Also known as: earnings quality ratio, cash flow to net income ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5534,7 +5578,8 @@ class Ratios:
         Also known as: ROTA, tangible asset return.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5658,7 +5703,8 @@ class Ratios:
         Also known as: ROCE.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5770,7 +5816,8 @@ class Ratios:
         Also known as: net income to pre-tax income.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5868,7 +5915,8 @@ class Ratios:
         Also known as: FCF to OCF ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5969,7 +6017,8 @@ class Ratios:
         - Free Cash Flow Margin = Free Cash Flow / Revenue
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6067,7 +6116,8 @@ class Ratios:
         Also known as: tax efficiency ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6164,7 +6214,8 @@ class Ratios:
         Also known as: EBT to EBIT, interest burden.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6282,7 +6333,8 @@ class Ratios:
         Also known as: EBIT margin.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6390,7 +6442,8 @@ class Ratios:
         Also known as: cash effective tax rate.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6492,7 +6545,8 @@ class Ratios:
         Also known as: cash-accrual tax gap.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6567,7 +6621,8 @@ class Ratios:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6754,7 +6809,8 @@ class Ratios:
         Also known as: asset leverage, debt ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6853,7 +6909,8 @@ class Ratios:
           (Total Current Liabilities - Short Term Debt)] / Total Debt
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -6974,7 +7031,8 @@ class Ratios:
         Also known as: D/E ratio, leverage ratio, gearing ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7078,7 +7136,8 @@ class Ratios:
         Also known as: times interest earned (TIE), EBIT interest coverage.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7181,7 +7240,8 @@ class Ratios:
         Also known as: financial leverage multiplier.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7292,7 +7352,8 @@ class Ratios:
         Also known as: DSCR, debt service ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7422,7 +7483,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for market capitalization. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7549,7 +7611,8 @@ class Ratios:
         EBITDA is close to zero or negative.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7652,7 +7715,8 @@ class Ratios:
         - Gross Debt to EBITDA Ratio = Total Debt / EBITDA
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7750,7 +7814,8 @@ class Ratios:
         - Cash Flow Coverage Ratio = Cash Flow from Operations / Total Debt
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7847,7 +7912,8 @@ class Ratios:
         Also known as: capital expenditure coverage.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -7946,7 +8012,8 @@ class Ratios:
         Also known as: capex dividend coverage.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8052,7 +8119,8 @@ class Ratios:
         Also known as: capitalization ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8144,7 +8212,8 @@ class Ratios:
         Also known as: preferred dividend cover.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8255,7 +8324,8 @@ class Ratios:
         Also known as: cash interest coverage, interest cash conversion.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8347,7 +8417,8 @@ class Ratios:
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income in the
                 earnings-based ratios. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8587,7 +8658,8 @@ class Ratios:
             include_dividends (bool, optional): Whether to deduct the preferred dividends paid from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted earnings per share. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8706,7 +8778,8 @@ class Ratios:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8819,7 +8892,8 @@ class Ratios:
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -8944,7 +9018,8 @@ class Ratios:
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income, in both
                 the P/E and the EPS growth (not in the EBITDA growth). Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9139,7 +9214,8 @@ class Ratios:
         Also known as: forward P/E, projected P/E.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9255,7 +9331,8 @@ class Ratios:
         Also known as: forward PEG, PEG on forward growth.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9418,7 +9495,8 @@ class Ratios:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9537,7 +9615,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9646,7 +9725,8 @@ class Ratios:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9759,7 +9839,8 @@ class Ratios:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9868,7 +9949,8 @@ class Ratios:
                 against the dividends paid in the 365 calendar days up to that day (or the
                 `trailing` periods in days). Days less than one window after the first price are
                 NaN. Defaults to False.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -9998,7 +10080,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10128,7 +10211,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10238,7 +10322,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10355,7 +10440,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10475,7 +10561,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10582,7 +10669,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10703,7 +10791,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10817,7 +10906,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -10934,7 +11024,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11048,7 +11139,8 @@ class Ratios:
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11155,7 +11247,8 @@ class Ratios:
         Also known as: payout ratio.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11248,7 +11341,8 @@ class Ratios:
         Also known as: plowback ratio, retention rate.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11331,7 +11425,8 @@ class Ratios:
         Also known as: net tangible assets.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11424,7 +11519,8 @@ class Ratios:
         while the Graham Number is a fair-value price estimate based on earnings and book value.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11522,7 +11618,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11628,7 +11725,8 @@ class Ratios:
                 against the statement figures of the latest period that has ended on or before
                 that day, so no figures are used before their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11739,7 +11837,8 @@ class Ratios:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11835,7 +11934,8 @@ class Ratios:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -11935,7 +12035,8 @@ class Ratios:
         Also known as: SBC-adjusted FCF.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When

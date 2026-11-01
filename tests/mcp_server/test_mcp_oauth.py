@@ -1,9 +1,11 @@
 """Tests for OAuth 2.1 authentication flow and middleware on the MCP server."""
 
 import base64
+import contextlib
 import hashlib
 import os
 from collections.abc import Generator
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -19,6 +21,14 @@ from financetoolkit.mcp_server.auth_model import (
 )
 
 _JWT_PART_COUNT = 3
+
+# PKCE S256 pair used by the flows below.
+VERIFIER = "challenge123-verifier-that-is-long-enough-for-pkce-0123456789"
+CHALLENGE = (
+    base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest())
+    .rstrip(b"=")
+    .decode("ascii")
+)
 
 
 @pytest.fixture(autouse=True)
@@ -134,21 +144,21 @@ def test_oauth_routes_and_flow() -> None:
     # 4. Test GET Authorize Page
     auth_get_resp = client.get(
         f"/oauth/authorize?client_id={client_id}&redirect_uri=http://localhost/callback"
-        "&code_challenge=challenge123&code_challenge_method=plain&state=xyz"
+        f"&code_challenge={CHALLENGE}&code_challenge_method=S256&state=xyz"
     )
     assert auth_get_resp.status_code == 200  # noqa
     assert "Authorize Access" in auth_get_resp.text
     assert "fmp_api_key" in auth_get_resp.text
 
-    # 5. Test POST Authorize (Plain Code Flow)
+    # 5. Test POST Authorize
     auth_post_resp = client.post(
         "/oauth/authorize",
         data={
             "fmp_api_key": "my_fmp_api_key",
             "client_id": client_id,
             "redirect_uri": "http://localhost/callback",
-            "code_challenge": "challenge123",
-            "code_challenge_method": "plain",
+            "code_challenge": CHALLENGE,
+            "code_challenge_method": "S256",
             "state": "xyz",
         },
         follow_redirects=False,
@@ -162,7 +172,7 @@ def test_oauth_routes_and_flow() -> None:
     query_parts = loc.split("?")[1].split("&")
     auth_code = next(p.split("=")[1] for p in query_parts if p.startswith("code="))
 
-    # 6. Test Token Endpoint (Plain Exchange)
+    # 6. Test Token Endpoint
     token_resp = client.post(
         "/oauth/token",
         data={
@@ -170,7 +180,7 @@ def test_oauth_routes_and_flow() -> None:
             "code": auth_code,
             "client_id": client_id,
             "redirect_uri": "http://localhost/callback",
-            "code_verifier": "challenge123",
+            "code_verifier": VERIFIER,
         },
     )
     assert token_resp.status_code == 200  # noqa
@@ -237,7 +247,7 @@ def test_oauth_flow_with_fred_key() -> None:
 
     auth_get_resp = client.get(
         "/oauth/authorize?client_id=client_fred&redirect_uri=http://localhost/callback"
-        "&code_challenge=challenge123&code_challenge_method=plain&state=xyz"
+        f"&code_challenge={CHALLENGE}&code_challenge_method=S256&state=xyz"
     )
     assert auth_get_resp.status_code == 200  # noqa
     assert "fred_api_key" in auth_get_resp.text
@@ -250,8 +260,8 @@ def test_oauth_flow_with_fred_key() -> None:
             "fred_api_key": "my_fred_api_key",
             "client_id": "client_fred",
             "redirect_uri": "http://localhost/callback",
-            "code_challenge": "challenge123",
-            "code_challenge_method": "plain",
+            "code_challenge": CHALLENGE,
+            "code_challenge_method": "S256",
             "state": "xyz",
         },
         follow_redirects=False,
@@ -269,7 +279,7 @@ def test_oauth_flow_with_fred_key() -> None:
             "code": auth_code,
             "client_id": "client_fred",
             "redirect_uri": "http://localhost/callback",
-            "code_verifier": "challenge123",
+            "code_verifier": VERIFIER,
         },
     )
     assert token_resp.status_code == 200  # noqa
@@ -296,8 +306,8 @@ def test_oauth_flow_without_fred_key_defaults_empty() -> None:
             "fmp_api_key": "my_fmp_api_key",
             "client_id": "client_no_fred",
             "redirect_uri": "http://localhost/callback",
-            "code_challenge": "challenge123",
-            "code_challenge_method": "plain",
+            "code_challenge": CHALLENGE,
+            "code_challenge_method": "S256",
             "state": "xyz",
         },
         follow_redirects=False,
@@ -315,7 +325,7 @@ def test_oauth_flow_without_fred_key_defaults_empty() -> None:
             "code": auth_code,
             "client_id": "client_no_fred",
             "redirect_uri": "http://localhost/callback",
-            "code_verifier": "challenge123",
+            "code_verifier": VERIFIER,
         },
     )
     assert token_resp.status_code == 200  # noqa
@@ -418,7 +428,7 @@ def test_the_authorization_page_escapes_its_parameters() -> None:
 
     page = client.get(
         '/oauth/authorize?client_id="><script>alert(1)</script>'
-        "&redirect_uri=http://localhost/callback&code_challenge=abc"
+        f"&redirect_uri=http://localhost/callback&code_challenge={CHALLENGE}"
         '&code_challenge_method=S256&state="><img src=x onerror=alert(1)>'
     )
 
@@ -426,3 +436,253 @@ def test_the_authorization_page_escapes_its_parameters() -> None:
     assert "<script>alert(1)</script>" not in page.text
     assert "<img src=x" not in page.text
     assert "&lt;script&gt;" in page.text
+
+
+def _oauth_client() -> TestClient:
+    mcp = FastMCP("TestHardeningServer")
+    register_auth_routes(mcp)
+    app = mcp.sse_app()
+    app.add_middleware(MCPAuthMiddleware)
+    return TestClient(app, base_url="http://127.0.0.1:8000")
+
+
+def _authorize(client: TestClient, redirect_uri: str, **extra: str):
+    data = {
+        "fmp_api_key": "SECRETFMPKEY123",
+        "fred_api_key": "SECRETFRED",
+        "client_id": "client_x",
+        "redirect_uri": redirect_uri,
+        "code_challenge": CHALLENGE,
+        "code_challenge_method": "S256",
+        "state": "xyz",
+    }
+    data.update(extra)
+    return client.post("/oauth/authorize", data=data, follow_redirects=False)
+
+
+def test_the_authorization_code_does_not_carry_the_keys() -> None:
+    client = _oauth_client()
+    response = _authorize(client, "https://claude.ai/api/mcp/auth_callback")
+
+    assert response.status_code == 303  # noqa
+    location = response.headers["location"]
+    code = parse_qs(urlsplit(location).query)["code"][0]
+    assert "SECRET" not in location
+    assert "." not in code
+    for part in code.split("_") + code.split("-"):
+        with contextlib.suppress(Exception):
+            assert b"SECRET" not in base64.urlsafe_b64decode(part + "==")
+
+
+def test_an_authorization_code_is_exchanged_once() -> None:
+    client = _oauth_client()
+    location = _authorize(client, "http://localhost/callback").headers["location"]
+    code = parse_qs(urlsplit(location).query)["code"][0]
+    exchange = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": "client_x",
+        "redirect_uri": "http://localhost/callback",
+        "code_verifier": VERIFIER,
+    }
+
+    first = client.post("/oauth/token", data=exchange)
+    second = client.post("/oauth/token", data=exchange)
+
+    assert first.status_code == 200  # noqa
+    assert verify_jwt(first.json()["access_token"])["fred_api_key"] == "SECRETFRED"
+    assert second.status_code == 400  # noqa
+    assert second.json()["error"] == "invalid_grant"
+
+
+def test_the_token_request_must_repeat_the_redirect_uri_and_verifier() -> None:
+    client = _oauth_client()
+
+    for missing in ("redirect_uri", "code_verifier"):
+        location = _authorize(client, "http://localhost/callback").headers["location"]
+        exchange = {
+            "grant_type": "authorization_code",
+            "code": parse_qs(urlsplit(location).query)["code"][0],
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": VERIFIER,
+        }
+        del exchange[missing]
+        assert client.post("/oauth/token", data=exchange).status_code == 400  # noqa
+
+
+def test_authorization_requires_a_safe_redirect_and_s256() -> None:
+    client = _oauth_client()
+
+    for redirect_uri in ("http://evil.example/cb", "javascript:alert(1)", ""):
+        assert _authorize(client, redirect_uri).status_code == 400  # noqa
+        page = client.get(
+            "/oauth/authorize",
+            params={
+                "redirect_uri": redirect_uri,
+                "code_challenge": CHALLENGE,
+                "code_challenge_method": "S256",
+            },
+        )
+        assert page.status_code == 400  # noqa
+
+    assert (
+        _authorize(client, "http://localhost/cb", code_challenge="").status_code
+        == 400  # noqa
+    )
+    assert (
+        _authorize(
+            client, "http://localhost/cb", code_challenge_method="plain"
+        ).status_code
+        == 400  # noqa
+    )
+    assert _authorize(client, "http://127.0.0.1:3000/cb").status_code == 303  # noqa
+    assert _authorize(client, "cursor://anysphere.cursor/cb").status_code == 303  # noqa
+
+
+def test_the_consent_page_names_the_redirect_host_and_cannot_be_framed() -> None:
+    client = _oauth_client()
+    page = client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": "client_x",
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": CHALLENGE,
+            "code_challenge_method": "S256",
+        },
+    )
+
+    assert page.status_code == 200  # noqa
+    assert "claude.ai" in page.text.split("<h1>")[0]
+    assert page.headers["X-Frame-Options"] == "DENY"
+    assert "frame-ancestors 'none'" in page.headers["Content-Security-Policy"]
+    assert client.get("/").headers["X-Frame-Options"] == "DENY"
+
+
+def test_state_and_an_existing_query_are_encoded_into_the_redirect() -> None:
+    client = _oauth_client()
+    location = _authorize(
+        client, "https://app.example/cb?x=1", state="s&code=INJECTED"
+    ).headers["location"]
+
+    query = parse_qs(urlsplit(location).query)
+    assert location.startswith("https://app.example/cb?x=1&")
+    assert query["x"] == ["1"]
+    assert query["state"] == ["s&code=INJECTED"]
+    assert len(query["code"]) == 1
+    assert query["code"] != ["INJECTED"]
+
+
+def test_an_expired_or_foreign_access_token_gets_invalid_token() -> None:
+    client = _oauth_client()
+    expired = sign_jwt({"fmp_api_key": "OLDKEY"}, expires_in=-10)
+
+    for token in (expired, "a.b.c"):
+        response = client.post(
+            "/messages/", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 401  # noqa
+        assert 'error="invalid_token"' in response.headers["WWW-Authenticate"]
+
+    # A raw API key as bearer token is still accepted.
+    response = client.post("/messages/", headers={"Authorization": "Bearer rawkey"})
+    assert response.status_code != 401  # noqa
+
+
+def test_the_secret_file_is_private_and_read_once(monkeypatch, tmp_path):
+    from financetoolkit.mcp_server import auth_model
+
+    monkeypatch.delenv("FT_MCP_SECRET_KEY", raising=False)
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    monkeypatch.setattr(auth_model, "get_global_env_path", lambda: tmp_path / ".env")
+
+    key = auth_model.get_secret_key()
+    secret_file = tmp_path / ".mcp_secret"
+
+    assert secret_file.read_bytes() == key
+    assert secret_file.stat().st_mode & 0o777 == 0o600
+    secret_file.write_bytes(b"changed")
+    assert auth_model.get_secret_key() == key
+
+
+def test_authorization_fields_are_bounded_and_the_challenge_is_s256_shaped() -> None:
+    client = _oauth_client()
+
+    assert (
+        _authorize(client, "http://localhost/cb", state="s" * 1025).status_code == 400
+    )  # noqa
+    assert (
+        _authorize(client, "http://localhost/cb", fmp_api_key="k" * 129).status_code
+        == 400  # noqa
+    )
+    assert (
+        _authorize(client, "https://a.example/" + "p" * 2048).status_code == 400  # noqa
+    )
+    assert (
+        _authorize(client, "http://localhost/cb", code_challenge="abc").status_code
+        == 400  # noqa
+    )
+    assert _authorize(client, "http://localhost/cb").status_code == 303  # noqa
+
+
+def test_a_full_code_store_refuses_new_codes_instead_of_evicting(monkeypatch) -> None:
+    from financetoolkit.mcp_server import auth_model
+
+    monkeypatch.setattr(auth_model, "_MAX_PENDING_CODES", 1)
+    monkeypatch.setattr(auth_model, "_auth_codes", {})
+    client = _oauth_client()
+
+    first = _authorize(client, "http://localhost/callback")
+    assert first.status_code == 303  # noqa
+    assert _authorize(client, "http://localhost/callback").status_code == 503  # noqa
+
+    code = parse_qs(urlsplit(first.headers["location"]).query)["code"][0]
+    exchange = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": "http://localhost/callback",
+        "code_verifier": VERIFIER,
+    }
+    assert client.post("/oauth/token", data=exchange).status_code == 200  # noqa
+
+
+def test_private_use_schemes_without_a_host_are_accepted() -> None:
+    from financetoolkit.mcp_server.auth_model import validate_redirect_uri
+
+    assert validate_redirect_uri("com.example.app:/oauth2redirect") == ""
+    assert validate_redirect_uri("cursor://anysphere.cursor/cb") == ""
+    for refused in ("javascript:alert(1)", "data:text/html,x", "file:///etc/passwd"):
+        assert validate_redirect_uri(refused)
+
+
+def test_an_existing_secret_is_kept_and_a_short_one_is_replaced(monkeypatch, tmp_path):
+    from financetoolkit.mcp_server import auth_model
+
+    monkeypatch.delenv("FT_MCP_SECRET_KEY", raising=False)
+    monkeypatch.setattr(auth_model, "get_global_env_path", lambda: tmp_path / ".env")
+    secret_file = tmp_path / ".mcp_secret"
+
+    # An existing key is kept; a file others can read is made private, never wider.
+    secret_file.write_bytes(b"x" * 40)
+    secret_file.chmod(0o644)
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    assert auth_model.get_secret_key() == b"x" * 40
+    assert secret_file.stat().st_mode & 0o777 == 0o600
+
+    secret_file.chmod(0o400)
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    assert auth_model.get_secret_key() == b"x" * 40
+    assert secret_file.stat().st_mode & 0o777 == 0o400
+
+    # A read-only file others can read loses only their bits; it never gains a write bit.
+    secret_file.chmod(0o444)
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    assert auth_model.get_secret_key() == b"x" * 40
+    assert secret_file.stat().st_mode & 0o777 == 0o400
+
+    # A short file is replaced, and made private before the new key goes in.
+    secret_file.chmod(0o644)
+    secret_file.write_bytes(b"")
+    monkeypatch.setattr(auth_model, "_secret_key", None)
+    key = auth_model.get_secret_key()
+    assert len(key) == 32 and secret_file.read_bytes() == key  # noqa: PLR2004
+    assert secret_file.stat().st_mode & 0o777 == 0o600

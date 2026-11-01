@@ -1,7 +1,10 @@
 """Risk Model"""
 
+from collections.abc import Callable
+
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
@@ -69,6 +72,48 @@ def get_wealth_and_peak(
     wealth = (1 + returns.fillna(0)).cumprod()
 
     return wealth, wealth.cummax().clip(lower=1)
+
+
+def apply_to_stacked_windows(
+    returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    function: Callable[[np.ndarray], np.ndarray],
+) -> pd.Series | pd.DataFrame:
+    """
+    Apply a calculation to every full rolling window of returns at once.
+
+    The same result as `returns.rolling(window_size).apply(function, raw=True)`, but the
+    function receives all windows of a column as the rows of one array (a view, see
+    numpy's sliding_window_view) and returns one value per row, instead of being called
+    once per window. As in a rolling apply, a window with a missing return gives NaN and
+    so do the first window_size - 1 observations.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        window_size (int): The size of the rolling window.
+        function (Callable[[np.ndarray], np.ndarray]): Takes an array with one window per
+            row and returns one value per row.
+
+    Returns:
+        pd.Series | pd.DataFrame: The rolling values with time as index.
+    """
+    values = returns.to_numpy(dtype=float).reshape(len(returns), -1)
+    rolling_values = np.full(values.shape, np.nan)
+
+    # Column by column, so only one column's windows are held in memory at a time.
+    for column in range(values.shape[1] if len(returns) >= window_size else 0):
+        windows = sliding_window_view(values[:, column], window_size)
+        complete = ~np.isnan(windows).any(axis=1)
+
+        if complete.any():
+            rolling_values[window_size - 1 :, column][complete] = function(
+                windows[complete]
+            )
+
+    if isinstance(returns, pd.Series):
+        return pd.Series(rolling_values[:, 0], index=returns.index, name=returns.name)
+
+    return pd.DataFrame(rolling_values, index=returns.index, columns=returns.columns)
 
 
 def mask_without_observations(
@@ -212,21 +257,51 @@ def get_ui(
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
     ):
-        periods = returns.index.get_level_values(0).unique()
-        period_data_list = []
+        # The same calculation as below, restarted in every sub-period by grouping on it
+        # instead of a call per sub-period and column.
+        def per_period(data):
+            return data.groupby(level=0, sort=False)
 
-        for sub_period in periods:
-            period_data = returns.loc[sub_period].aggregate(
-                get_ui, rolling=rolling, method=method
+        if method == "level":
+            reference_max = (
+                per_period(returns).cummax()
+                if rolling is None
+                else per_period(returns)
+                .rolling(window=rolling, min_periods=1)
+                .max()
+                .droplevel(0)
+                .reindex(returns.index)
             )
-            period_data.name = sub_period
+            drawdowns = returns - reference_max
+        else:
+            cumulative_returns = per_period(1 + returns.fillna(0)).cumprod()
 
-            if not period_data.empty:
-                period_data_list.append(period_data)
+            if rolling is None:
+                reference_max = per_period(cumulative_returns).cummax().clip(lower=1)
+            else:
+                reference_max = (
+                    per_period(cumulative_returns)
+                    .rolling(window=rolling, min_periods=1)
+                    .max()
+                    .droplevel(0)
+                    # A grouped rolling window lists the rows per sub-period; back in the
+                    # original order, the positional start mask below lines up with them.
+                    .reindex(returns.index)
+                )
+                # The windows that reach back to the start of each sub-period also hold
+                # the starting wealth of 1, see get_wealth_and_peak.
+                at_start = (per_period(returns).cumcount() < rolling - 1).to_numpy()
+                reference_max.iloc[at_start] = reference_max.iloc[at_start].clip(
+                    lower=1
+                )
 
-        ulcer_index = pd.concat(period_data_list, axis=1)
+            drawdowns = (cumulative_returns - reference_max) / reference_max
 
-        return ulcer_index.T
+        ulcer_index = np.sqrt(per_period(drawdowns**2).mean())
+        ulcer_index = ulcer_index.where(per_period(returns).count() > 0)
+        ulcer_index.index.name = None
+
+        return ulcer_index
 
     if isinstance(returns, pd.DataFrame | pd.Series):
         # expanding/rolling/cumprod/mean are column-vectorized on a DataFrame already, no per-column loop needed.
@@ -635,22 +710,25 @@ def get_rolling_conditional_drawdown_at_risk(
     if method not in ("return", "level"):
         raise ValueError("method must be 'return' or 'level'.")
 
-    def _cdar(window):
+    def _cdar(windows):
         if method == "level":
-            drawdowns = window - np.maximum.accumulate(window)
+            drawdowns = windows - np.maximum.accumulate(windows, axis=1)
         else:
-            cum_returns = np.cumprod(1 + np.nan_to_num(window))
+            cum_returns = np.cumprod(1 + windows, axis=1)
             # Each window starts from a wealth of 1, see get_wealth_and_peak.
             drawdowns = (
-                cum_returns / np.maximum(np.maximum.accumulate(cum_returns), 1) - 1
+                cum_returns / np.maximum(np.maximum.accumulate(cum_returns, axis=1), 1)
+                - 1
             )
 
-        drawdown_at_risk = np.percentile(drawdowns, alpha * 100)
-        tail_drawdowns = drawdowns[drawdowns <= drawdown_at_risk]
+        drawdown_at_risk = np.percentile(drawdowns, alpha * 100, axis=1, keepdims=True)
 
-        return tail_drawdowns.mean() if len(tail_drawdowns) else np.nan
+        # The value at the percentile is always in the tail, so no window has an empty one.
+        return np.nanmean(
+            np.where(drawdowns <= drawdown_at_risk, drawdowns, np.nan), axis=1
+        )
 
-    return returns.rolling(window=window_size).apply(_cdar, raw=True)
+    return apply_to_stacked_windows(returns, window_size, _cdar)
 
 
 def _drawdown_trough(
@@ -1326,7 +1404,14 @@ def get_hill_estimator(
         # At least one order statistic when there is data, and none when there is not (a period before a ticker listed, or without a single loss or gain), so the count reports what was actually used.  # noqa: E501
         number_of_order_statistics = max(number_of_order_statistics, 1) if n else 0
 
-        if number_of_order_statistics >= n:
+        if number_of_order_statistics < n:
+            order_statistics = tail_values.to_numpy()[:number_of_order_statistics]
+            threshold = tail_values.to_numpy()[number_of_order_statistics]
+            xi_hill = np.mean(np.log(order_statistics) - np.log(threshold))
+
+        # Without more observations than order statistics, or with a tail of equal values
+        # (a constant series, whose shape is 0 and index infinite), there is no estimate.
+        if number_of_order_statistics >= n or xi_hill <= 0:
             return pd.Series(
                 {
                     "Hill Tail Index": np.nan,
@@ -1336,10 +1421,6 @@ def get_hill_estimator(
                 }
             )
 
-        order_statistics = tail_values.to_numpy()[:number_of_order_statistics]
-        threshold = tail_values.to_numpy()[number_of_order_statistics]
-
-        xi_hill = np.mean(np.log(order_statistics) - np.log(threshold))
         alpha_hill = 1 / xi_hill
         standard_error = alpha_hill / np.sqrt(number_of_order_statistics)
 

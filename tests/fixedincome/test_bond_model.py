@@ -317,3 +317,17 @@ def test_curve_price_uses_fractional_times_on_a_flat_curve():
         1,
         tolerance=1e-10,
     ) == pytest.approx(0, abs=1e-8)
+
+
+def test_yield_to_maturity_is_nan_when_no_yield_gives_the_price():
+    # A price of ten times par has no realistic yield; the steps settled at 5.5% before,
+    # where the bond is worth 96.
+    assert np.isnan(bond_model.get_yield_to_maturity(100, 0.05, 10, 1000, 2))
+
+    ytm = bond_model.get_yield_to_maturity(100, 0.05, 10, 95, 2)
+    assert bond_model.get_bond_price(100, 0.05, 10, ytm, 2) == pytest.approx(
+        95, abs=0.01
+    )
+
+    with pytest.raises(ValueError, match="frequency"):
+        bond_model.get_bond_price(100, 0.05, 10, 0.05, 0)

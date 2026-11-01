@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.utilities import statistics_model
 
@@ -507,4 +508,95 @@ def test_apply_rounding_prints_no_negative_zero():
     assert rounded["Significant"].tolist() == [True, False]
     assert (
         str(statistics_model.apply_rounding(pd.Series([-0.00001]), 4).iloc[0]) == "0.0"
+    )
+
+
+def test_growth_is_missing_for_a_missing_period_and_the_period_after_it():
+    periods = pd.period_range("2019", periods=5, freq="Y")
+    data = pd.DataFrame([[100, 110, np.nan, 130, 143.0]], index=["A"], columns=periods)
+
+    growth = statistics_model.calculate_growth(data)
+    lagged = statistics_model.calculate_growth(data, lag=[1, 2])
+
+    assert np.isnan(growth.iloc[0, 2]) and np.isnan(growth.iloc[0, 3])
+    assert growth.iloc[0, 1] == 0.1
+    assert growth.iloc[0, 4] == 0.1
+    # Over two periods, 2022 compares with 2020, both of which are known.
+    assert lagged.loc[("A", "Lag 2")].iloc[3] == round(130 / 110 - 1, 4)
+
+
+def test_standardization_describes_the_window_shown():
+    periods = pd.period_range("2015", periods=10, freq="Y")
+    data = pd.DataFrame({"US": np.arange(10, 20, dtype=float)}, index=periods)
+
+    standardized = statistics_model.finalize_dataset(
+        data, "2015", "2016", 4, standardize=True, axis="rows", row_slice=True
+    )
+
+    assert standardized["US"].tolist() == [-0.7071, 0.7071]
+
+
+def test_rounding_leaves_text_and_dates_and_rounds_numbers_among_them():
+    data = pd.DataFrame(
+        {
+            "number": [1.23456, -0.00001],
+            "mixed": pd.Series([1.23456, "n/a"], dtype=object),
+            "date": pd.to_datetime(["2020-01-01", "2020-01-02"]),
+            "text": ["x", "y"],
+        }
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        rounded = statistics_model.apply_rounding(data, 2)
+        mixed = statistics_model.apply_rounding(
+            pd.Series([1.23456, "x"], dtype=object), 2
+        )
+
+    assert rounded["number"].tolist() == [1.23, 0.0]
+    assert rounded["mixed"].tolist() == [1.23, "n/a"]
+    assert rounded["date"].equals(data["date"])
+    assert rounded["text"].tolist() == ["x", "y"]
+    assert mixed.tolist() == [1.23, "x"]
+
+
+def test_rounding_keeps_small_statistics_and_rounds_integers():
+    statistics = pd.DataFrame(
+        {"value": pd.Series([0.000012345, 0.123456, -0.000004, 0.0], dtype=object)}
+    )
+    integers = pd.DataFrame({"count": [1234, 5678], "value": [1234.5, 5678.9]})
+
+    rounded = statistics_model.apply_rounding(statistics, 4)
+
+    # A p-value of 0.000012345 keeps its first four significant digits instead of showing as 0.
+    assert rounded["value"].tolist() == [0.00001234, 0.1235, -0.000004, 0.0]
+    assert statistics_model.apply_rounding(integers, -2)["count"].tolist() == [
+        1200,
+        5700,
+    ]
+    assert statistics_model.apply_rounding(integers["count"], -2).tolist() == [
+        1200,
+        5700,
+    ]
+
+
+@pytest.mark.parametrize("lag", [0, -1, 1.5, True, [], [1, 0]])
+def test_calculate_growth_refuses_lags_that_are_not_positive(lag):
+    data = pd.DataFrame([[1.0, 2.0, 3.0]], columns=["2020", "2021", "2022"])
+
+    with pytest.raises(ValueError):
+        statistics_model.calculate_growth(data, lag=lag)
+
+
+def test_official_country_names_resolve_to_the_global_macro_database_names():
+    from financetoolkit.utilities.statistics_model import normalize_country_name
+
+    known = ["Macedonia", "Macau", "Cape Verde", "Sao Tome and Principe"]
+
+    assert normalize_country_name("North Macedonia", known) == "Macedonia"
+    assert normalize_country_name("Macao", known) == "Macau"
+    assert normalize_country_name("Cabo Verde", known) == "Cape Verde"
+    assert (
+        normalize_country_name("São Tomé and Príncipe", known)
+        == "Sao Tome and Principe"
     )

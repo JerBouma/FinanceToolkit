@@ -57,7 +57,9 @@ def get_var_gaussian(
      - "Risk Management and Financial Institutions" by John C. Hull
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns. A rolling
+            window of them (`returns.rolling(window_size)`) works too and gives the VaR of
+            every window, as the out-of-sample estimate of the risk module uses.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
 
     Returns:

@@ -6,6 +6,7 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.cache import frame_model, policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities.requests_model import get_request
 
 FRED_API_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
@@ -108,7 +109,10 @@ def _request_series(
         response = get_request(url, timeout=30)
         payload = response.json()
     except Exception as e:
-        raise RuntimeError(f"Error fetching data from FRED: {e}") from e
+        # The request error names the URL, which carries the API key, so the cause is not chained.
+        raise RuntimeError(
+            f"Error fetching data from FRED: {redact_credentials(str(e))}"
+        ) from None
 
     observations = payload.get("observations", [])
     if not observations:

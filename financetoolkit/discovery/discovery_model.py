@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import re
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -31,6 +32,11 @@ FMP_SECTORS = [
     "Technology",
     "Utilities",
 ]
+
+# The most companies the shares float endpoint returns per page, and the most pages
+# requested (about 90,000 companies take 18).
+SHARES_FLOAT_PAGE_SIZE = 5000
+SHARES_FLOAT_MAX_PAGES = 50
 
 
 def get_cached_financial_data(
@@ -132,7 +138,7 @@ def get_instruments(
     # FinancialModelingPrep ignores it and answers with Apple for every ISIN or CUSIP.
     url = (
         f"https://financialmodelingprep.com/stable/search-{search_method}"
-        f"?{SEARCH_PARAMETERS[search_method]}={query}&apikey={api_key}"
+        f"?{SEARCH_PARAMETERS[search_method]}={quote(str(query), safe='')}&apikey={api_key}"
     )
 
     instruments_query = get_cached_financial_data(
@@ -410,7 +416,7 @@ def get_stock_screener(
 
     for parameter, value in query_parameters.items():
         if value is not None:
-            url += f"&{parameter}={value}"
+            url += f"&{parameter}={quote(str(value), safe='')}"
 
     stock_screener = get_cached_financial_data(
         url=url, user_subscription=user_subscription
@@ -649,14 +655,35 @@ def get_stock_shares_float(
     Returns:
         pd.DataFrame: DataFrame of shares float.
     """
-    url = f"https://financialmodelingprep.com/api/v4/shares_float/all?apikey={api_key}"
+    # The endpoint returns at most SHARES_FLOAT_PAGE_SIZE companies per page. A page can
+    # come back shorter without being the last, so pages are requested until an empty one
+    # (or an error). A page that starts like the previous one means the page parameter was
+    # not applied, and SHARES_FLOAT_MAX_PAGES bounds the number of requests either way.
+    page_frames: list[pd.DataFrame] = []
 
-    stock_shares_float = get_cached_financial_data(
-        url=url, user_subscription=user_subscription
+    for page in range(SHARES_FLOAT_MAX_PAGES):
+        page_data = get_cached_financial_data(
+            url="https://financialmodelingprep.com/stable/shares-float-all"
+            f"?page={page}&limit={SHARES_FLOAT_PAGE_SIZE}&apikey={api_key}",
+            user_subscription=user_subscription,
+        )
+
+        if page_data.empty or "symbol" not in page_data.columns:
+            break
+
+        if page_frames and (
+            page_data["symbol"].iloc[0] == page_frames[-1]["symbol"].iloc[0]
+        ):
+            break
+
+        page_frames.append(page_data)
+
+    if not page_frames:
+        return pd.DataFrame()
+
+    stock_shares_float = pd.concat(page_frames, ignore_index=True).drop_duplicates(
+        "symbol"
     )
-
-    if stock_shares_float.empty:
-        return stock_shares_float
 
     stock_shares_float = stock_shares_float.rename(
         columns={
@@ -714,7 +741,8 @@ def get_sectors_performance(
         # A year up to today unless a range is given (see _history_range).
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"?sector={quote(str(sector), safe='')}{_history_range(start_date, end_date)}"
+            f"&exchange={quote(str(exchange), safe='')}"
             f"&apikey={api_key}"
         )
 
@@ -1826,12 +1854,13 @@ def get_sector_performance(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/sector-performance-snapshot"
-            f"?date={date}&exchange={exchange}&apikey={api_key}"
+            f"?date={date}&exchange={quote(str(exchange), safe='')}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-performance"
-            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"?sector={quote(str(sector), safe='')}{_history_range(start_date, end_date)}"
+            f"&exchange={quote(str(exchange), safe='')}"
             f"&apikey={api_key}"
         )
 
@@ -1898,12 +1927,13 @@ def get_industry_performance(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/industry-performance-snapshot"
-            f"?date={date}&exchange={exchange}&apikey={api_key}"
+            f"?date={date}&exchange={quote(str(exchange), safe='')}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-performance"
-            f"?industry={industry}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"?industry={quote(str(industry), safe='')}{_history_range(start_date, end_date)}"
+            f"&exchange={quote(str(exchange), safe='')}"
             f"&apikey={api_key}"
         )
 
@@ -1970,12 +2000,13 @@ def get_sector_pe(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/sector-pe-snapshot"
-            f"?date={date}&exchange={exchange}&apikey={api_key}"
+            f"?date={date}&exchange={quote(str(exchange), safe='')}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-sector-pe"
-            f"?sector={sector}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"?sector={quote(str(sector), safe='')}{_history_range(start_date, end_date)}"
+            f"&exchange={quote(str(exchange), safe='')}"
             f"&apikey={api_key}"
         )
 
@@ -2036,12 +2067,13 @@ def get_industry_pe(
     if date:
         url = (
             "https://financialmodelingprep.com/stable/industry-pe-snapshot"
-            f"?date={date}&exchange={exchange}&apikey={api_key}"
+            f"?date={date}&exchange={quote(str(exchange), safe='')}&apikey={api_key}"
         )
     else:
         url = (
             "https://financialmodelingprep.com/stable/historical-industry-pe"
-            f"?industry={industry}{_history_range(start_date, end_date)}&exchange={exchange}"
+            f"?industry={quote(str(industry), safe='')}{_history_range(start_date, end_date)}"
+            f"&exchange={quote(str(exchange), safe='')}"
             f"&apikey={api_key}"
         )
 

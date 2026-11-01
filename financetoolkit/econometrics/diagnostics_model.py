@@ -20,8 +20,9 @@ MINIMUM_VARIANCE_RATIO_Q = 2
 # `statsmodels.stats.stattools.jarque_bera` requires at least 2 observations.
 MINIMUM_JARQUE_BERA_OBSERVATIONS = 2
 
-# The CUSUM test needs at least a handful of OLS residuals to be meaningful.
-MINIMUM_CUSUM_OBSERVATIONS = 3
+# The CUSUM test compares the path of the residuals with the asymptotic boundaries of a
+# Brownian bridge, which a handful of residuals cannot follow; shorter series return NaN.
+MINIMUM_CUSUM_OBSERVATIONS = 10
 
 # The conventional 5% significance level used for the "Reject" boolean flags.
 SIGNIFICANCE_LEVEL = 0.05

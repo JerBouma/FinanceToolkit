@@ -123,6 +123,12 @@ def get_brinson_fachler_attribution(
     return result
 
 
+# The highest annual money-weighted return searched for. Annualized, a short holding period
+# with an ordinary gain is an enormous rate (ten times the money in 14 days is about 1e26 a
+# year), so the search reaches far beyond any realistic return.
+MAXIMUM_MONEY_WEIGHTED_RETURN = 1e30
+
+
 def get_money_weighted_return(cash_flows: pd.Series) -> float:
     """
     The money-weighted (internal) rate of return of dated cash flows, as an annual rate:
@@ -137,6 +143,10 @@ def get_money_weighted_return(cash_flows: pd.Series) -> float:
 
     Returns:
         float: The annualized money-weighted return.
+
+    Raises:
+        ValueError: When the cash flows lack an investment or a receipt, or no rate between
+            -99.99% and 1e30 a year makes them add up to zero.
     """
     flows = cash_flows.groupby(level=0).sum()
     flows = flows[flows != 0]
@@ -151,9 +161,16 @@ def get_money_weighted_return(cash_flows: pd.Series) -> float:
     amounts = flows.to_numpy(dtype=float)
 
     def net_present_value(rate):
-        return float(np.sum(amounts / (1 + rate) ** years))
+        with np.errstate(over="ignore"):
+            return float(np.sum(amounts / (1 + rate) ** years))
 
-    return float(brentq(net_present_value, -0.9999, 100, maxiter=1000))
+    lower, upper = -0.9999, MAXIMUM_MONEY_WEIGHTED_RETURN
+    if np.sign(net_present_value(lower)) == np.sign(net_present_value(upper)):
+        raise ValueError(
+            "No annual rate between -99.99% and 1e30 makes the cash flows add up to zero."
+        )
+
+    return float(brentq(net_present_value, lower, upper, maxiter=1000))
 
 
 def get_scenario_returns(
@@ -229,8 +246,11 @@ def get_look_through_exposure(
     total = pd.Series(dtype=float)
 
     for asset, weight in weights.items():
+        # An asset without weight adds nothing, not even an "Unclassified" row of 0.
+        if weight == 0:
+            continue
         exposure = exposures.get(str(asset))
-        if exposure is None or exposure.empty or weight == 0:
+        if exposure is None or exposure.empty:
             exposure = pd.Series({"Unclassified": 1.0})
         exposure = exposure[exposure > 0]
         covered = exposure.sum()

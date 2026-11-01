@@ -2,9 +2,7 @@ Statistics,Generic
 reportedCurrency,Reported Currency
 periodEndDate,Period End Date
 cik,CIK ID
-fillingDate,Filling Date
+filingDate,Filing Date
 acceptedDate,Accepted Date
-calendarYear,Calendar Year
+fiscalYear,Fiscal Year
 period,Period
-link,SEC Link
-finalLink,Document Link

@@ -13,6 +13,10 @@ MODELS = ("vasicek", "cir")
 # (the effective convexity of a callable bond can even turn positive); twenty steps match a
 # continuous-time valuation to a fraction of a basis point.
 STEPS_PER_PERIOD = 20
+# The most steps an option-adjusted spread tree may have: its nodes and repricing time grow with
+# the square of the steps, and 2,400 steps (30 years of semi-annual or 10 years of monthly
+# coupons) price in a few seconds.
+MAX_TREE_STEPS = 2_400
 
 
 def calibrate_short_rate_model(
@@ -383,6 +387,12 @@ def get_option_adjusted_spread(
         raise ValueError("The bond must have at least one coupon left.")
     first_coupon_step = max(1, round((periods - (coupons - 1)) * STEPS_PER_PERIOD))
     steps = first_coupon_step + (coupons - 1) * STEPS_PER_PERIOD
+    if steps > MAX_TREE_STEPS:
+        raise ValueError(
+            f"A tree of {steps:,} steps ({coupons:,} coupons of {STEPS_PER_PERIOD} steps) is too "
+            f"large; keep the coupons (years to maturity times frequency) under "
+            f"{MAX_TREE_STEPS // STEPS_PER_PERIOD:,}."
+        )
     dt = 1 / (frequency * STEPS_PER_PERIOD)
     accrued = (
         face_value

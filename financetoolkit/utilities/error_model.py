@@ -24,6 +24,10 @@ ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
 # Errors that say the data is missing or unusable, reported as an empty result.
 REPORTED_ERRORS = (KeyError, IndexError, ZeroDivisionError, ValueError)
 
+# The modules that calculate from financial statements, where a missing key is a statement
+# row; elsewhere it is a ticker, column or date missing from the data.
+STATEMENT_MODULES = ("financetoolkit.ratios", "financetoolkit.models")
+
 
 # Counts the requests that failed (a rate limit, a plan restriction, a timeout) rather than
 # returned an answer. A caller compares it before and after retrieving something: when it
@@ -143,10 +147,12 @@ def handle_errors(func):
     a financial library can produce, so the behaviour is deliberately split by what the
     exception actually says about the data:
 
-        - KeyError and IndexError mean a line item the calculation needs is not in the
-          statements, which is a genuine and common gap between data providers rather
-          than a defect. These are logged as an error naming the metric, the tickers and
-          the missing item, and an empty Series is returned.
+        - KeyError and IndexError mean something the calculation needs is not in the
+          data, which is a genuine and common gap between data providers rather than a
+          defect. In the Ratios and Models (STATEMENT_MODULES) a missing key is a
+          statement line item, and the error asks to fill that row; elsewhere it is a
+          ticker, column or date, and the error names it as missing from the data. Both
+          name the metric and the tickers, and an empty Series is returned.
         - ValueError and ZeroDivisionError mean the data is present but could not be
           computed with. These are logged as an error, with the traceback attached so
           the failing line is identifiable, and an empty Series is returned.
@@ -231,10 +237,17 @@ def _report_failure(func, args: tuple, error: Exception) -> pd.Series:
     if use_strict_errors() or not isinstance(error, REPORTED_ERRORS):
         raise error
 
-    if isinstance(error, KeyError):
+    if isinstance(error, KeyError) and func.__module__.startswith(STATEMENT_MODULES):
         logger.error(
             "%s could not be calculated%s because the item %s is missing from "
             "the provided financial statements. Fill this row to obtain the metric.",
+            func.__name__,
+            tickers,
+            error,
+        )
+    elif isinstance(error, KeyError):
+        logger.error(
+            "%s could not be calculated%s because %s is missing from the data.",
             func.__name__,
             tickers,
             error,

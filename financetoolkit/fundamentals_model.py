@@ -360,7 +360,6 @@ def collect_financial_statements(
                 normalization_model.convert_financial_statements(
                     financial_statements=fmp_financial_statements,
                     statement_format=fmp_statistics_format,
-                    reverse_dates=True,
                 )
             )
 
@@ -368,7 +367,6 @@ def collect_financial_statements(
                 normalization_model.convert_financial_statements(
                     financial_statements=fmp_financial_statements,
                     statement_format=fmp_statement_format,
-                    reverse_dates=True,
                 )
             )
         elif source == "YahooFinance" and financial_statement_dict[source]:
@@ -397,7 +395,6 @@ def collect_financial_statements(
                     normalization_model.convert_financial_statements(
                         financial_statements=yf_financial_statements,
                         statement_format=yf_statement_format,
-                        reverse_dates=True,
                     )
                 )
                 if not yf_financial_statements.empty
@@ -412,7 +409,6 @@ def collect_financial_statements(
                         ),
                         statement_format=yf_statistics_format,
                         adjust_financial_statements=False,
-                        reverse_dates=True,
                     )
                 )
 
@@ -507,6 +503,36 @@ def collect_financial_statements(
     financial_statement_total = financial_statement_total.sort_index(axis=1).truncate(
         before=start_date, after=end_date, axis=1
     )
+
+    # A calendar period that holds the end date can belong to a fiscal period that ends
+    # after it (Apple's fiscal 2023 ends in September 2023, so it is not known on 1 January
+    # 2023), so the figures of a period ending after the end date are left out.
+    if (
+        end_date
+        and not financial_statement_statistics.empty
+        and helpers.PERIOD_END_DATE
+        in financial_statement_statistics.index.get_level_values(1)
+    ):
+        period_ends = financial_statement_statistics.xs(
+            helpers.PERIOD_END_DATE, level=1
+        ).apply(pd.to_datetime, errors="coerce")
+        ends_later = (period_ends > pd.Timestamp(end_date)).reindex(
+            index=financial_statement_total.index.get_level_values(0),
+            columns=financial_statement_total.columns,
+            fill_value=False,
+        )
+        financial_statement_total = financial_statement_total.mask(
+            ends_later.to_numpy(dtype=bool)
+        )
+        financial_statement_statistics = financial_statement_statistics.mask(
+            (period_ends > pd.Timestamp(end_date))
+            .reindex(
+                index=financial_statement_statistics.index.get_level_values(0),
+                columns=financial_statement_statistics.columns,
+                fill_value=False,
+            )
+            .to_numpy(dtype=bool)
+        )
 
     # Columns with no data over the entire period are dropped automatically.
     financial_statement_total = financial_statement_total.dropna(axis=1, how="all")

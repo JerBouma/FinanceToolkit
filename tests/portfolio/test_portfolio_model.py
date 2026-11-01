@@ -364,3 +364,162 @@ def test_benchmark_data_is_aligned_with_carried_forward_prices():
     assert aligned["Close"].tolist() == [10.0, 12.0, 12.0, 13.0]
     assert aligned["Dividends"].tolist() == [0.0, 0.5, 0.0, 0.0]
     assert aligned["Return"].tolist() == pytest.approx([0.0, 0.2, 0.0, 13 / 12 - 1])
+
+
+def _format(data: pd.DataFrame) -> pd.DataFrame:
+    """The transactions formatted with the column names of the template."""
+    return format_portfolio_dataset(
+        dataset=data,
+        date_columns=["Date"],
+        date_format_options=["%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S"],
+        name_columns=["Name"],
+        tickers_columns=["Ticker"],
+        price_columns=["Price"],
+        volume_columns=["Volume"],
+        currency_columns=["Currency"],
+        costs_columns=["Costs"],
+        column_mapping={
+            "date": "Date",
+            "name": "Name",
+            "identifier": "Ticker",
+            "price": "Price",
+            "volume": "Volume",
+            "currency": "Currency",
+            "costs": "Costs",
+        },
+    )[0]
+
+
+@pytest.mark.parametrize(
+    "dates",
+    [
+        ["05-06-2024", "07-06-2024"],
+        ["2024/06/05", "2024/06/07"],
+        ["2024-06-05 00:00:00", "2024-06-07 00:00:00"],
+    ],
+)
+def test_transaction_dates_are_parsed_with_one_format(dates):
+    data = pd.DataFrame(
+        {
+            "Date": dates,
+            "Ticker": ["AAPL", "AAPL"],
+            "Price": [100.0, 101.0],
+            "Volume": [1, 1],
+            "Currency": ["USD", "USD"],
+            "Costs": [0.0, 0.0],
+        }
+    )
+
+    formatted = _format(data)
+
+    assert [str(date) for date in formatted["Date"]] == ["2024-06-05", "2024-06-07"]
+
+
+def _one_transaction(price: float) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Date": ["2024-06-05"],
+            "Ticker": ["AAPL"],
+            "Price": [price],
+            "Volume": [1],
+            "Currency": ["USD"],
+            "Costs": [0.0],
+        }
+    )
+
+
+def test_a_negative_price_is_refused():
+    with pytest.raises(ValueError, match="negative price"):
+        _format(_one_transaction(-100.0))
+
+
+def test_a_price_of_zero_is_accepted():
+    # A gift, spin-off or stock dividend is booked at zero cost.
+    assert _format(_one_transaction(0.0))["Price"].tolist() == [0.0]
+
+
+@pytest.mark.parametrize(
+    ("text", "number"),
+    [
+        ("-4.587,24", -4587.24),
+        ("-4,587.24", -4587.24),
+        ("1,000", 1.0),
+        ("2,500", 2.5),
+        ("-1,500", -1.5),
+        ("1,234,567", 1234567.0),
+        ("1.234.567", 1234567.0),
+        ("1,234,567.89", 1234567.89),
+        ("1 234,56", 1234.56),
+        ("1'234.56", 1234.56),
+        ("1234,56", 1234.56),
+        ("0,125", 0.125),
+        ("4,5", 4.5),
+        ("1.234", 1.234),
+    ],
+)
+def test_numbers_with_thousands_separators_are_read(text, number):
+    from financetoolkit.portfolio.helpers import convert_to_float  # noqa: PLC0415
+
+    assert convert_to_float(text) == pytest.approx(number)
+
+
+def test_duplicates_in_another_case_are_merged(tmp_path):
+    data = pd.DataFrame(
+        {
+            "Date": ["2023-01-03", "2023-01-03"],
+            "Name": ["Apple Inc", "Apple Inc"],
+            "Ticker": ["aapl", "AAPL"],
+            "Price": [150.0, 150.0],
+            "Volume": [10, 10],
+            "Currency": ["USD", "USD"],
+            "Costs": [1.0, 1.0],
+        }
+    )
+    location = tmp_path / "transactions.csv"
+    data.to_csv(location, index=False)
+
+    dataset = read_portfolio_dataset(
+        excel_location=[str(location)],
+        adjust_duplicates=True,
+        date_column=["Date"],
+        date_format_options=["%Y-%m-%d"],
+        name_columns=["Name"],
+        ticker_columns=["Ticker"],
+        price_columns=["Price"],
+        volume_columns=["Volume"],
+        currency_columns=["Currency"],
+        costs_columns=["Costs"],
+        column_mapping={
+            "date": "Date",
+            "name": "Name",
+            "identifier": "Identifier",
+            "price": "Price",
+            "volume": "Volume",
+            "currency": "Currency",
+            "costs": "Costs",
+        },
+    )[0]
+
+    assert len(dataset) == 1
+    assert dataset["Identifier"].iloc[0] == "AAPL"
+    assert dataset["Volume"].iloc[0] == 20
+
+
+@pytest.mark.parametrize(
+    ("column", "numbers"),
+    [
+        (["1,500", "2,500", "1,234.50"], [1500.0, 2500.0, 1234.5]),
+        (["1,500", "1,234,567"], [1500.0, 1234567.0]),
+        (["1,500", "2,5"], [1.5, 2.5]),
+        (["1.234,56", "2,500"], [1234.56, 2.5]),
+        (["2,500", float("nan"), 3.0], [2.5, float("nan"), 3.0]),
+    ],
+)
+def test_a_column_reads_its_separators_once(column, numbers):
+    from financetoolkit.portfolio.helpers import (
+        convert_column_to_float,
+    )  # noqa: PLC0415
+
+    converted = convert_column_to_float(pd.Series(column, dtype=object))
+
+    assert converted.tolist() == pytest.approx(numbers, nan_ok=True)

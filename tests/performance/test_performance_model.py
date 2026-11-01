@@ -806,3 +806,40 @@ def test_get_win_rate_leaves_out_days_without_both_returns():
     per_period = performance_model.get_win_rate(stacked, stacked_benchmark)
     assert per_period["A"].tolist() == pytest.approx([2 / 3, 2 / 3])
     assert per_period["B"].isna().all()
+
+
+def test_rolling_omega_ratio_matches_every_window_and_is_infinite_without_losses():
+    rng = np.random.default_rng(0)
+    returns = pd.DataFrame(rng.normal(0, 0.01, size=(200, 2)), columns=["A", "B"])
+    returns.iloc[50, 1] = np.nan
+
+    def window_omega(window):
+        gains = window[window > 0].sum()
+        losses = -window[window < 0].sum()
+        return gains / losses
+
+    pd.testing.assert_frame_equal(
+        performance_model.get_rolling_omega_ratio(returns, 20),
+        returns.rolling(20).apply(window_omega, raw=True),
+        rtol=1e-12,
+    )
+    assert performance_model.get_rolling_omega_ratio(
+        pd.Series([0.01, 0.02, 0.0, 0.0]), 2
+    ).tolist()[1:] == [np.inf, np.inf, pytest.approx(np.nan, nan_ok=True)]
+
+
+def test_omega_ratio_without_losses_is_infinite():
+    gains_only = pd.Series([0.01, 0.02, 0.005])
+
+    assert performance_model.get_omega_ratio(gains_only) == np.inf
+    assert np.isnan(performance_model.get_omega_ratio(pd.Series([0.0, 0.0])))
+    assert performance_model.get_rolling_omega_ratio(gains_only, 2).iloc[-1] == np.inf
+
+
+def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
+    returns = pd.DataFrame({"A": [0.01, -0.02, 0.01], "B": [np.nan] * 3})
+
+    measure = performance_model.get_burke_drawdown_measure(returns)
+
+    assert measure["A"] > 0
+    assert np.isnan(measure["B"])

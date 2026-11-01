@@ -41,3 +41,14 @@ def test_the_best_matching_indicator_comes_first(query, expected):
 def test_a_close_spelling_does_not_count_when_a_word_matches_exactly():
     # "sharpe" is close to "share", but the Sharpe ratio exists, so no per share metric.
     assert all("per_share" not in indicator for _, indicator in search("sharpe"))
+
+
+def test_a_search_is_kept_to_a_few_words():
+    from financetoolkit.mcp_server import tools_model
+
+    long_query = " ".join(["volatility"] * 100)
+    result = asyncio.run(
+        mcp_controller.mcp.call_tool("search_metrics", {"query": long_query})
+    )
+    assert "keep it to a few keywords" in result[0][0].text
+    assert len(long_query) > tools_model.MAX_QUERY_CHARACTERS

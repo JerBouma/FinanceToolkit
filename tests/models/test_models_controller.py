@@ -1,5 +1,6 @@
 """Models Controller Tests""" ""
 # pylint: disable=missing-function-docstring
+import pandas as pd
 
 
 def test_get_dupont_analysis(recorder, models_module):
@@ -201,14 +202,18 @@ def test_capital_asset_pricing_inputs_cover_the_trailing_span():
     assert residual_income == pytest.approx(0)
 
     # Without trailing the rates stay per quarter, and the default premium (the average
-    # benchmark return above the per-quarter rate, 1.25%) scales the same way.
+    # benchmark return above the per-quarter rate, 1.25%, when no country premium is
+    # known) scales the same way.
+    no_country = SimpleNamespace(
+        _quarterly=True, _country_risk_premiums=pd.Series({"AAPL": float("nan")})
+    )
     risk_free, market_return = Models._capital_asset_pricing_inputs(
-        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, None
+        no_country, risk_free_rate, benchmark_returns, None
     )
     assert risk_free.iloc[-1] == pytest.approx(0.01)
     assert market_return.iloc[-1] == pytest.approx(0.0225)
     risk_free, market_return = Models._capital_asset_pricing_inputs(
-        SimpleNamespace(_quarterly=True), risk_free_rate, benchmark_returns, None, 4
+        no_country, risk_free_rate, benchmark_returns, None, 4
     )
     assert market_return.iloc[-1] == pytest.approx(0.09)
 
@@ -1306,3 +1311,86 @@ def test_monte_carlo_valuation_without_a_share_price(models_module, monkeypatch)
 
     assert pd.isna(valuation.loc[ticker, "Probability Undervalued"])
     assert valuation.drop(index=ticker)["Probability Undervalued"].notna().all()
+
+
+def test_z_scores_describe_the_periods_shown(models_module, monkeypatch):
+    from financetoolkit.utilities.statistics_model import (  # noqa: PLC0415
+        calculate_standardization,
+    )
+
+    periods = models_module.get_dupont_analysis().columns
+    monkeypatch.setattr(models_module, "_start_date", str(periods[2]))
+
+    shown = models_module.get_dupont_analysis()
+    standardized = models_module.get_dupont_analysis(standardize=True)
+
+    assert standardized.columns[0] == periods[2]
+    pd.testing.assert_frame_equal(
+        standardized, calculate_standardization(shown, rounding=4, axis="columns")
+    )
+
+
+def test_cost_of_equity_uses_the_country_premium_of_each_company(test_toolkit):
+    import numpy as np
+    import pandas as pd
+
+    def cost_of_equity(models, **kwargs):
+        return models.get_weighted_average_cost_of_capital(rounding=None, **kwargs).xs(
+            "Cost of Equity", level=1
+        )
+
+    historical = cost_of_equity(test_toolkit.models)
+
+    models = test_toolkit.models
+    models._country_risk_premiums_source = pd.Series({"AAPL": 0.05, "MSFT": np.nan})
+    mixed = cost_of_equity(models)
+
+    # AAPL takes its country's premium, MSFT (no premium known) the historical one.
+    pd.testing.assert_series_equal(
+        mixed.loc["AAPL"],
+        cost_of_equity(test_toolkit.models, market_risk_premium=0.05).loc["AAPL"],
+    )
+    pd.testing.assert_series_equal(mixed.loc["MSFT"], historical.loc["MSFT"])
+
+
+def test_toolkit_without_a_key_has_no_country_premiums(test_toolkit):
+    assert test_toolkit._get_country_risk_premiums().isna().all()
+
+
+def test_country_premiums_follow_the_premium_table_names(
+    test_toolkit, monkeypatch, caplog
+):
+    import pandas as pd
+
+    table = pd.DataFrame(
+        {"Total Equity Risk Premium": [0.0433, 0.0487, 0.0584, 0.0499]},
+        index=pd.Index(
+            ["United States", "Korea", "Cayman Islands", "South Korea"], name="Country"
+        ),
+    )
+    profile = pd.DataFrame({"AAPL": ["US"], "MSFT": ["KY"]}, index=["Country"])
+
+    def get_profile():
+        # The real profile marks and, with remove_invalid_tickers, drops invalid tickers.
+        test_toolkit._invalid_tickers = ["MSFT"]
+        test_toolkit._tickers = ["AAPL"]
+        return profile
+
+    tickers = list(test_toolkit._tickers)
+    monkeypatch.setattr(test_toolkit, "_api_key", "key")
+    monkeypatch.setattr(test_toolkit, "get_market_risk_premium", lambda: table)
+    monkeypatch.setattr(test_toolkit, "get_profile", get_profile)
+
+    premiums = test_toolkit._get_country_risk_premiums()
+
+    assert premiums.to_dict() == {"AAPL": 0.0433, "MSFT": 0.0584}
+    # The tickers stay; the invalid tickers the profile found stay recorded for get_profile.
+    assert test_toolkit._tickers == tickers
+    assert test_toolkit._invalid_tickers == ["MSFT"]
+
+    # A country the table does not cover is named in a warning.
+    profile.loc["Country", "MSFT"] = "VG"
+    premiums = test_toolkit._get_country_risk_premiums()
+
+    assert premiums.isna().to_dict() == {"AAPL": False, "MSFT": True}
+    assert "VG" in caplog.text

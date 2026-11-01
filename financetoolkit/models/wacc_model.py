@@ -19,7 +19,7 @@ logger = get_logger()
 def get_cost_of_equity(
     risk_free_rate: pd.Series,
     beta: pd.Series | pd.DataFrame,
-    benchmark_returns: pd.Series,
+    benchmark_returns: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
     The cost of equity represents the return required by investors (shareholders) for
@@ -37,8 +37,8 @@ def get_cost_of_equity(
         hypothetical investment with no risk of financial loss.
         beta (pd.Series | pd.DataFrame): Beta is a measure of the volatility, or systematic risk,
         of a security or portfolio compared to the market as a whole.
-        benchmark_returns (float or pd.Series): The benchmark return is the return of a
-        chosen benchmark, such as the S&P 500 or the Russell 2000.
+        benchmark_returns (float, pd.Series or pd.DataFrame): The expected market return, e.g.
+        that of a chosen benchmark such as the S&P 500, or one column per company.
 
     Returns:
         pd.Series | pd.DataFrame: The Cost of Equity, shaped like `beta`.
@@ -131,7 +131,7 @@ def get_weighted_average_cost_of_capital(
     total_debt: pd.Series,
     risk_free_rate: pd.Series,
     beta: pd.Series | pd.DataFrame,
-    benchmark_returns: pd.Series,
+    benchmark_returns: pd.Series | pd.DataFrame,
     income_tax_expense: pd.Series,
     income_before_tax: pd.Series,
 ) -> pd.DataFrame:
@@ -156,8 +156,8 @@ def get_weighted_average_cost_of_capital(
         hypothetical investment with no risk of financial loss.
         beta (pd.Series | pd.DataFrame): Beta is a measure of the volatility, or systematic risk,
         of a security or portfolio compared to the market as a whole.
-        benchmark_returns (float or pd.Series): The benchmark return is the return of a
-        chosen benchmark, such as the S&P 500 or the Russell 2000.
+        benchmark_returns (float, pd.Series or pd.DataFrame): The expected market return, e.g.
+        that of a chosen benchmark such as the S&P 500, or one column per company.
         income_tax_expense (float or pd.Series): Income tax expense of the company.
         income_before_tax (float or pd.Series): Income before taxes of the company.
 

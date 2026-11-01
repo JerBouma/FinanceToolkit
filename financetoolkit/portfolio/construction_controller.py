@@ -14,6 +14,9 @@ from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_ro
 
 logger = get_logger()
 
+# The trading days an asset's first price may come after the first day of an attribution.
+START_PRICE_TOLERANCE_DAYS = 5
+
 BENCHMARK_TICKER = "Benchmark"
 PORTFOLIO_TICKER = "Portfolio"
 PERIODS = ["daily", "weekly", "monthly", "quarterly", "yearly"]
@@ -120,7 +123,10 @@ class PortfolioConstruction:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        returns = self._historical_data[period]["Return"]
+        # Historical data supplied to the Toolkit can reach beyond its date range.
+        returns = self._historical_data[period]["Return"].loc[
+            self._start_date : self._end_date
+        ]
         assets = [
             asset
             for asset in self._get_assets(include_benchmark)
@@ -181,6 +187,12 @@ class PortfolioConstruction:
 
         if resolved.sum() == 0:
             raise ValueError("The weights sum to zero.")
+        # Scaling by a negative sum would flip every sign and turn a short portfolio long.
+        if resolved.sum() < 0:
+            raise ValueError(
+                f"The weights sum to {resolved.sum():.4f}; a portfolio needs a positive net "
+                "weight to be scaled to one."
+            )
         if abs(resolved.sum() - 1) > WEIGHT_SUM_TOLERANCE:
             logger.info(
                 "The weights sum to %.4f and are scaled to one.", resolved.sum()
@@ -1442,8 +1454,37 @@ class PortfolioConstruction:
         assets = self._get_assets()
         resolved = self._resolve_weights(weights, assets)
 
-        prices = self._historical_data["daily"]["Adj Close"][assets].dropna(how="all")
-        start_prices = prices.bfill().iloc[0]
+        # Historical data supplied to the Toolkit can reach beyond its date range.
+        prices = (
+            self._historical_data["daily"]["Adj Close"][assets]
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all")
+        )
+
+        # Each asset starts at its first price within a few trading days, so a holding
+        # whose exchange is closed on the first day (a local holiday) still counts. An
+        # asset without a price by then would be measured over a shorter span than the
+        # benchmark sectors, or not at all (a NaN return that the sector sums would count
+        # as 0%), so it is left out and the other weights are scaled back up to one.
+        start_prices = prices.bfill(limit=START_PRICE_TOLERANCE_DAYS).iloc[0]
+        unpriced = [asset for asset in assets if pd.isna(start_prices[asset])]
+        if unpriced:
+            if len(unpriced) == len(assets):
+                raise ValueError(
+                    "None of the assets has a price at the start of the range."
+                )
+            logger.warning(
+                "No price data is available for %s at the start of the range, so the "
+                "attribution leaves them out and scales the other weights up.",
+                ", ".join(unpriced),
+            )
+            assets = [asset for asset in assets if asset not in unpriced]
+            if resolved[assets].sum() <= 0:
+                raise ValueError("The assets with a price at the start have no weight.")
+            resolved = resolved[assets] / resolved[assets].sum()
+            prices = prices[assets]
+            start_prices = start_prices[assets]
+
         asset_returns = prices.ffill().iloc[-1] / start_prices - 1
 
         # Every asset as one or more sector slices: a stock in its own sector, a fund spread

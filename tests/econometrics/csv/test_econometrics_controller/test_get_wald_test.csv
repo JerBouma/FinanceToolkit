@@ -4,4 +4,4 @@ Chi2 P-Value,0.0
 F-Statistic,156.1164
 F P-Value,0.0
 Restrictions (q),2
-Reject Restrictions (5%),1
+Reject Restrictions (5%),True

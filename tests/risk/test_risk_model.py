@@ -476,3 +476,9 @@ def test_ulcer_index_per_period_with_interleaved_rows(rolling, method):
         expected,
         check_names=False,
     )
+
+
+def test_hill_estimator_of_a_constant_tail_is_nan():
+    estimate = risk_model.get_hill_estimator(pd.Series([-0.01] * 50), tail="left")
+
+    assert np.isnan(estimate["Hill Tail Index"])

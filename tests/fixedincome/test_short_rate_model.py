@@ -280,3 +280,15 @@ def test_effective_duration_shifts_the_curve():
     assert result["Effective Convexity"] == pytest.approx(
         (down + up - 2 * 101.0) / (101.0 * 0.01**2), rel=1e-9
     )
+
+
+def test_option_adjusted_spread_refuses_a_tree_that_is_too_large():
+    with pytest.raises(ValueError, match="too large"):
+        short_rate_model.get_option_adjusted_spread(
+            price=100,
+            coupon_rate=0.05,
+            years_to_maturity=30,
+            maturities=np.array([1.0, 30.0]),
+            zero_rates=np.array([0.04, 0.045]),
+            frequency=12,
+        )

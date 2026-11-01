@@ -8,10 +8,14 @@ on:
       - 'main'
       - 'develop'
 
+permissions:
+  contents: read
+
 jobs:
   code-linting:
     name: General Code Linting
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -29,14 +33,15 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - run: uv run black --diff --check financetoolkit
-      - run: uv run ruff check financetoolkit
-      - run: uv run codespell financetoolkit
+      - run: uv run black --diff --check financetoolkit tests
+      - run: uv run ruff check financetoolkit tests
+      - run: uv run codespell financetoolkit tests
       - run: uv check --preview-features check-command
 
   markdown-link-check:
     name: Markdown Linting
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         name: Check out the code

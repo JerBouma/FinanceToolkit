@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import contextlib
 import importlib.util
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -173,6 +174,58 @@ def _covers_requested_range(
     return start_shortfall_days <= MAX_START_SHORTFALL_DAYS
 
 
+# The relative change of the adjusted prices on the dates a cached and a new part share
+# above which the provider is taken to have adjusted its history again. Prices are
+# published to a cent, so the typical difference from rounding alone is far below it,
+# while a dividend or split moves every earlier adjusted price by at least about this much.
+ADJUSTMENT_TOLERANCE = 1e-4
+# The fewest dates both parts must share, besides the latest cached one, before their
+# adjustment is compared: a median of one or two prices is too easily a single correction.
+MIN_SHARED_DATES = 5
+
+
+def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bool:
+    """
+    Whether the adjusted prices of a newly retrieved part differ from the cached part on
+    the dates they share, which happens when a dividend went ex or a split took effect
+    after the cached part was retrieved: the provider then rescales its whole history.
+
+    Adj Close and Close are each compared on their own, not as a ratio: a dividend moves
+    Adj Close only, while a split rescales both alike and so moves Close as well.
+
+    The median relative difference over at least MIN_SHARED_DATES dates is used, so a
+    single corrected price does not count as a new adjustment and the rounding of
+    individual prices averages out. The latest cached date is left out, as it may have
+    been retrieved during that day's trading and so hold an intraday price.
+
+    Args:
+        cached_data (pd.DataFrame): The cached prices.
+        new_data (pd.DataFrame): The newly retrieved prices.
+
+    Returns:
+        bool: True when the shared dates are on a different adjustment basis.
+    """
+    for column in ("Adj Close", "Close"):
+        if column not in cached_data.columns or column not in new_data.columns:
+            continue
+
+        shared = cached_data.index.sort_values()[:-1].intersection(new_data.index)
+
+        if len(shared) < MIN_SHARED_DATES:
+            continue
+
+        cached = pd.to_numeric(cached_data.loc[shared, column], errors="coerce")
+        new = pd.to_numeric(new_data.loc[shared, column], errors="coerce")
+        relative_change = (new / cached - 1).replace([np.inf, -np.inf], np.nan).dropna()
+
+        if not relative_change.empty and (
+            abs(relative_change.median()) > ADJUSTMENT_TOLERANCE
+        ):
+            return True
+
+    return False
+
+
 def get_historical_data(
     tickers: list[str] | str,
     api_key: str | None = None,
@@ -212,9 +265,9 @@ def get_historical_data(
         enforce_source (str, optional): Restrict retrieval to 'FinancialModelingPrep' or
         'YahooFinance'. Defaults to None, which tries FinancialModelingPrep first.
         start (str, optional): A string representing the start date of the period to retrieve data for
-            in 'YYYY-MM-DD' format. Defaults to None.
+            in 'YYYY-MM-DD' format. Defaults to None, which is ten years before the end date.
         end (str, optional): A string representing the end date of the period to retrieve data for
-            in 'YYYY-MM-DD' format. Defaults to None.
+            in 'YYYY-MM-DD' format. Defaults to None, which is today.
         interval (str, optional): A string representing the interval to retrieve data for.
         return_column (str, optional): A string representing the column to use for return calculations.
         include_dividends (bool, optional): A boolean representing whether to include dividends in the
@@ -245,6 +298,12 @@ def get_historical_data(
         with the column (Open, High, Low, Close, Adj Close, Volume, Return, Cumulative Return)
         as the first level and the ticker symbol(s) as the second level.
     """
+    # Resolved here, so the placeholder frame below and the cached ranges have both ends.
+    end = end or datetime.today().strftime("%Y-%m-%d")
+    start = start or (
+        datetime.strptime(end, "%Y-%m-%d") - timedelta(days=10 * 365)
+    ).strftime("%Y-%m-%d")
+
     # NaN rather than 0 so that a ticker without data is recognisable as missing instead of reading as a genuine price, volume and return of zero.  # noqa: E501
     empty_historical_data = pd.DataFrame(
         data=np.nan,
@@ -372,6 +431,8 @@ def get_historical_data(
         fetch_start = fetch_span[0].strftime("%Y-%m-%d") if fetch_span else start
         fetch_end = fetch_span[1].strftime("%Y-%m-%d") if fetch_span else end
 
+        incomplete: list[str] = []
+
         def fetch(fetch_start, fetch_end):
             """Retrieve the range from the first provider that has it."""
             cache_source = None
@@ -435,6 +496,15 @@ def get_historical_data(
                         sleep_timer=sleep_timer,
                         user_subscription=user_subscription,
                     )
+
+                    # The prices came back but the adjusted close or the dividends did not
+                    # (a rate limit, for instance), so Adj Close is the unadjusted close or
+                    # the dividends are 0. That is returned for now but never cached, as the
+                    # cached range would not be asked for again. A plan restriction is not
+                    # flagged: it answers the same every time, so asking again only spends
+                    # requests.
+                    if historical_data.attrs.pop("incomplete", False):
+                        incomplete.append(ticker)
 
                     # Only worth setting aside when there is somewhere to fall back to. With the source forced to FinancialModelingPrep, a truncated response is the best answer available and discarding it would return nothing at all.  # noqa: E501
                     can_fall_back = (
@@ -531,9 +601,13 @@ def get_historical_data(
                 historical_data, cache_source = cached_data, cached_source
                 cached_data = None
                 retrieved = False
-            elif cache_source != cached_source:
-                # Another provider served the missing part. The providers adjust prices
-                # differently, so the two parts cannot be joined and the whole range is
+            elif cache_source != cached_source or _adjustment_changed(
+                cached_data, historical_data
+            ):
+                # Another provider served the missing part, or the same provider adjusted
+                # its history again (a dividend or split since the cached part was
+                # retrieved rescales every earlier adjusted price). Either way the two parts
+                # are on a different basis and cannot be joined, so the whole range is
                 # retrieved again, from the provider that has it now.
                 full_data, full_provider, full_cache_source = fetch(start, end)
 
@@ -554,6 +628,7 @@ def get_historical_data(
             cache is not None
             and retrieved
             and cache_source
+            and not incomplete
             and not historical_data.empty
         ):
             # Only for a non-empty response: an empty frame may just be a rate limit.
@@ -687,12 +762,14 @@ def get_historical_data(
 
     if len(historical_data_dict) == 0:
         # Zero-filled so a DataFrame is returned even when nothing is found.
-        for ticker in tickers:
+        for ticker in ticker_list:
             historical_data_dict[ticker] = empty_historical_data
 
-    reorder_tickers = [ticker for ticker in tickers if ticker in historical_data_dict]
+    reorder_tickers = [
+        ticker for ticker in ticker_list if ticker in historical_data_dict
+    ]
 
-    if historical_data_dict and len(no_data) != len(tickers):
+    if historical_data_dict and len(no_data) != len(ticker_list):
         historical_data = pd.concat(historical_data_dict).unstack(level=0)
         historical_data = historical_data.reindex(reorder_tickers, level=1, axis=1)
 

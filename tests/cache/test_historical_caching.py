@@ -1,5 +1,8 @@
 """Historical Caching Tests"""
 
+import threading
+import time
+
 import pandas as pd
 import pytest
 
@@ -473,3 +476,142 @@ def test_a_longer_yahoo_finance_history_is_remembered(cache, monkeypatch):
         assert str(data.index.min()) == "2005-01-01"
 
     assert requests_made == {"fmp": 1, "yahoo": 1}
+
+
+def test_a_new_dividend_adjustment_retrieves_the_whole_range_again(cache, monkeypatch):
+    """Cached adjusted prices from before a dividend are not joined to rescaled ones."""
+    fmp_requests: list[tuple[str, str]] = []
+    adjustment = {"factor": 1.0}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        # FinancialModelingPrep answers with a year before the start as well, so a gap
+        # overlaps the cached part.
+        data = bars(str(pd.Timestamp(start) - pd.Timedelta(days=365))[:10], end)
+        # A dividend that went ex after the first run scales every earlier Adj Close.
+        data["Adj Close"] = adjustment["factor"]
+        return data
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    adjustment["factor"] = 0.98
+
+    data = collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert fmp_requests[-1] == ("2018-01-01", "2021-12-31")
+    assert (data["Adj Close"] == 0.98).all().all()
+
+
+def test_prices_without_their_adjusted_close_are_not_cached(cache, monkeypatch):
+    """A failed adjusted close or dividends request is returned but not stored."""
+    fmp_requests: list[tuple[str, str]] = []
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        # The prices came back, the adjusted close request hit a rate limit.
+        data = bars(start, end)
+        data.attrs["incomplete"] = True
+        return data
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+
+    assert len(fmp_requests) == 2
+
+
+def test_a_failure_of_another_ticker_does_not_stop_caching(cache, monkeypatch):
+    """A ticker fetched while another one fails concurrently is still cached."""
+    requests: list[str] = []
+    aapl_started = threading.Event()
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        requests.append(ticker)
+        if ticker == "AAPL":
+            aapl_started.set()
+            time.sleep(0.3)
+            return bars(start, end)
+        # BADX fails while the request of AAPL is in flight.
+        aapl_started.wait()
+        historical_model.error_model.report_request_failure()
+        return pd.DataFrame()
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+    monkeypatch.setattr(historical_model, "ENABLE_YFINANCE", False)
+
+    for _ in range(2):
+        historical_model.get_historical_data(
+            tickers=["AAPL", "BADX"],
+            api_key="test-key",
+            enforce_source=None,
+            start="2018-01-01",
+            end="2020-12-31",
+            interval="1d",
+            show_errors=False,
+            cache=cache,
+        )
+
+    assert requests.count("AAPL") == 1
+
+
+def test_a_corrected_latest_price_does_not_retrieve_the_whole_range(cache, monkeypatch):
+    """Only the latest cached date differing, as an intraday close does, is no new basis."""
+    fmp_requests: list[tuple[str, str]] = []
+    run = {"number": 0}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        data = bars(str(pd.Timestamp(start) - pd.Timedelta(days=365))[:10], end)
+        if run["number"] == 0:
+            # The first run ended during the trading day of its last date.
+            data.loc[data.index[-1], ["Close", "Adj Close"]] = 1.05
+        return data
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    run["number"] = 1
+    collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert fmp_requests[-1] != ("2018-01-01", "2021-12-31")
+
+
+def test_too_few_shared_dates_are_not_compared():
+    """A median of a few prices is not taken as a new adjustment."""
+    cached = bars("2020-01-01", "2020-01-04")
+    new = bars("2020-01-02", "2020-01-10")
+    new["Adj Close"] = 0.9
+
+    assert not historical_model._adjustment_changed(cached, new)
+    assert historical_model._adjustment_changed(bars("2020-01-01", "2020-01-20"), new)
+
+
+def test_a_split_retrieves_the_whole_range_again(cache, monkeypatch):
+    """A split rescales Close and Adj Close alike, which is a new basis as well."""
+    fmp_requests: list[tuple[str, str]] = []
+    price = {"value": 400.0}
+
+    def fake_fmp(ticker, api_key, start, end, **kwargs):  # noqa: ARG001
+        fmp_requests.append((start, end))
+        data = bars(str(pd.Timestamp(start) - pd.Timedelta(days=365))[:10], end)
+        data[["Open", "High", "Low", "Close", "Adj Close"]] = price["value"]
+        return data
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
+
+    collect_from_any_provider("2018-01-01", "2020-12-31", cache)
+    # A 4-for-1 split after the first run divides the whole history by four.
+    price["value"] = 100.0
+
+    data = collect_from_any_provider("2018-01-01", "2021-12-31", cache)
+
+    assert fmp_requests[-1] == ("2018-01-01", "2021-12-31")
+    assert (data["Close"] == 100.0).all().all()
+    assert not historical_model._adjustment_changed(
+        bars("2020-01-01", "2020-01-20"), bars("2020-01-01", "2020-01-20")
+    )
+    split = bars("2020-01-01", "2020-01-20")
+    split[["Close", "Adj Close"]] = 0.25
+    assert historical_model._adjustment_changed(bars("2020-01-01", "2020-01-20"), split)

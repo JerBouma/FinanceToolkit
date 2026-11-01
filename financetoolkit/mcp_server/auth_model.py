@@ -6,12 +6,16 @@ import base64
 import hashlib
 import hmac
 import html
+import ipaddress
 import json
 import os
 import pathlib
+import re
 import secrets
+import threading
 import time
 from typing import Any
+from urllib.parse import urlencode, urlsplit
 
 import fastmcp.server.dependencies as deps
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -26,6 +30,39 @@ from financetoolkit.utilities.logger_model import get_logger
 logger = get_logger()
 
 _JWT_PART_COUNT = 3
+
+# Authorization codes are random strings that point to the submitted keys held here, so the
+# keys never travel through the browser's address bar, history or the redirect target's logs.
+# Each code is exchanged once and expires after five minutes. The codes live in this process
+# only, so the server must run as a single process (as main() starts it): with several
+# workers, a token request could reach a worker that never saw the code.
+AUTH_CODE_LIFETIME = 300
+_MAX_PENDING_CODES = 10_000
+
+# The longest value each authorization field may have; a form field may otherwise be up to
+# a megabyte, and every pending code keeps its fields in memory.
+FIELD_LIMITS = {
+    "fmp_api_key": 128,
+    "fred_api_key": 128,
+    "client_id": 256,
+    "redirect_uri": 2048,
+    "state": 1024,
+}
+# A S256 code challenge is the base64url SHA-256 of the verifier, without padding.
+CODE_CHALLENGE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_auth_codes: dict[str, tuple[float, dict[str, Any]]] = {}
+_auth_codes_lock = threading.Lock()
+
+# The secret signing the access tokens, read once per process.
+_secret_key: bytes | None = None
+MINIMUM_SECRET_BYTES = 32
+
+# Headers that keep the pages (one of which asks for API keys) from being framed by another
+# site, so a visitor can't be tricked into typing a key into an invisible overlay.
+FRAME_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+}
 
 # Checked in order. FastMCP forwards `x-*`; `authorization` must be opted in.
 _HEADER_NAMES: tuple[str, ...] = (
@@ -620,27 +657,79 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
 """
 
 
+def _restrict_to_owner(secret_file: pathlib.Path) -> None:
+    """
+    Make an existing secret file readable by its owner only, when others can read it.
+
+    Only ever tightens: a file that is already private (or owned by someone else, such as a
+    mounted secret) is left as it is, and a failure is logged rather than raised.
+
+    Args:
+        secret_file (pathlib.Path): The stored secret.
+    """
+    try:
+        # Windows has no owner and group bits to clear: its files are guarded by access lists.
+        if not hasattr(os, "getuid"):
+            return
+        status = secret_file.stat()
+        if status.st_uid == os.getuid() and status.st_mode & 0o077:
+            # Clear the group and other bits only, so a read-only file stays read-only.
+            secret_file.chmod(status.st_mode & 0o700)
+            logger.warning(
+                "The MCP secret file %s was readable by others and is now private.",
+                secret_file,
+            )
+    except OSError as error:
+        logger.warning(
+            "The MCP secret file could not be made private (%s).", type(error).__name__
+        )
+
+
 def get_secret_key() -> bytes:
     """Load or generate a stable secret key stored in the global configuration directory."""
-    # First check environment variable
+    global _secret_key  # noqa: PLW0603
+
     env_key = os.environ.get("FT_MCP_SECRET_KEY")
     if env_key:
         return env_key.encode("utf-8")
 
-    # Fallback to a file in the global config dir
-    try:
+    if _secret_key is not None:
+        return _secret_key
 
+    # A file in the global config directory keeps the tokens valid across restarts. When it
+    # can't be written, a random key for this process only is safer than any fixed fallback:
+    # tokens then stop working after a restart, but nobody can forge them.
+    try:
         config_dir = get_global_env_path().parent
         config_dir.mkdir(parents=True, exist_ok=True)
         secret_file = config_dir / ".mcp_secret"
-        if secret_file.exists():
-            return secret_file.read_bytes()
+        stored = secret_file.read_bytes() if secret_file.exists() else b""
+        # An empty or truncated file (an interrupted first write) counts as missing.
+        if len(stored) >= MINIMUM_SECRET_BYTES:
+            _restrict_to_owner(secret_file)
+            _secret_key = stored
         else:
             key = secrets.token_bytes(32)
-            secret_file.write_bytes(key)
-            return key
-    except Exception:  # pragma: no cover  # noqa: S110
-        return b"emergency_fallback_secret_key_12345"
+            # Created private, so the key is never readable by others, not even briefly.
+            # The mode only applies to a new file, so a short file that already existed is
+            # made private before the key goes in.
+            descriptor = os.open(
+                secret_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(descriptor, "wb") as handle:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(handle.fileno(), 0o600)
+                handle.write(key)
+            _secret_key = key
+    except OSError as error:
+        logger.warning(
+            "The MCP secret could not be stored (%s), so a key for this process is used and "
+            "access tokens stop working after a restart. Set FT_MCP_SECRET_KEY to keep them.",
+            type(error).__name__,
+        )
+        _secret_key = secrets.token_bytes(32)
+
+    return _secret_key
 
 
 def _base64url_encode(data: bytes) -> str:
@@ -705,22 +794,53 @@ def get_api_key_from_headers(headers: Any) -> str:
     for name in _HEADER_NAMES:
         value = headers.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fmp_api_key" in payload:
-                return str(payload["fmp_api_key"])
-            return value.strip()
+            return key_from_credential(value, "fmp_api_key")
 
     # 2. Authorization header
     auth_header = headers.get("authorization", "")
     if auth_header.lower().startswith("bearer "):
         token = auth_header[7:].strip()
         if token:
-            payload = verify_jwt(token)
-            if payload and "fmp_api_key" in payload:
-                return str(payload["fmp_api_key"])
-            return token
+            return key_from_credential(token, "fmp_api_key")
 
     return ""
+
+
+def key_from_credential(credential: str, field: str) -> str:
+    """Read an API key from a credential: an access token issued here, or the key itself.
+
+    Args:
+        credential (str): The header, bearer or query value.
+        field (str): The key an access token holds it under ("fmp_api_key" or "fred_api_key").
+
+    Returns:
+        str: The key; "" for an access token that doesn't verify or doesn't hold it.
+    """
+    credential = credential.strip()
+    payload = verify_jwt(credential)
+    if payload is not None:
+        return str(payload.get(field) or "")
+    # An access token that no longer verifies (expired, or signed with another secret) is
+    # not an API key: MCPAuthMiddleware answers it with a 401 so the client signs in again,
+    # and its contents are never sent on to FinancialModelingPrep.
+    if is_invalid_access_token(credential):
+        return ""
+    return credential
+
+
+def is_invalid_access_token(token: str) -> bool:
+    """Whether a bearer token has the shape of an access token but does not verify.
+
+    API keys are plain strings without dots, so a three-part token is one this server (or an
+    earlier secret) issued, and one that fails verification is expired or forged.
+
+    Args:
+        token (str): The bearer token.
+
+    Returns:
+        bool: True for a three-part token that fails verification.
+    """
+    return len(token.split(".")) == _JWT_PART_COUNT and verify_jwt(token) is None
 
 
 def get_api_key_from_request(request: Request) -> str:
@@ -734,10 +854,7 @@ def get_api_key_from_request(request: Request) -> str:
     for name in _QUERY_NAMES:
         value = request.query_params.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fmp_api_key" in payload:
-                return str(payload["fmp_api_key"])
-            return value.strip()
+            return key_from_credential(value, "fmp_api_key")
 
     return ""
 
@@ -763,10 +880,7 @@ def resolve_api_key() -> str:
         for name in _QUERY_NAMES:
             value = request.query_params.get(name)
             if value:
-                payload = verify_jwt(value.strip())
-                if payload and "fmp_api_key" in payload:
-                    return str(payload["fmp_api_key"])
-                return value.strip()
+                return key_from_credential(value, "fmp_api_key")
     except RuntimeError:
         pass
 
@@ -778,10 +892,7 @@ def get_fred_api_key_from_headers(headers: Any) -> str:
     for name in _FRED_HEADER_NAMES:
         value = headers.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fred_api_key" in payload:
-                return str(payload["fred_api_key"])
-            return value.strip()
+            return key_from_credential(value, "fred_api_key")
 
     # A signed FMP bearer token carries the FRED key alongside it, if authorized.
     auth_header = headers.get("authorization", "")
@@ -804,10 +915,7 @@ def get_fred_api_key_from_request(request: Request) -> str:
     for name in _FRED_QUERY_NAMES:
         value = request.query_params.get(name)
         if value:
-            payload = verify_jwt(value.strip())
-            if payload and "fred_api_key" in payload:
-                return str(payload["fred_api_key"])
-            return value.strip()
+            return key_from_credential(value, "fred_api_key")
 
     return ""
 
@@ -836,14 +944,105 @@ def resolve_fred_api_key() -> str:
         for name in _FRED_QUERY_NAMES:
             value = request.query_params.get(name)
             if value:
-                payload = verify_jwt(value.strip())
-                if payload and "fred_api_key" in payload:
-                    return str(payload["fred_api_key"])
-                return value.strip()
+                return key_from_credential(value, "fred_api_key")
     except RuntimeError:
         pass
 
     return ""
+
+
+def validate_redirect_uri(redirect_uri: str) -> str:
+    """Check where the authorization may send the browser back to.
+
+    The browser is sent to the redirect URI with the authorization code, so it must be an
+    https address, or http on the user's own machine (loopback) for local clients.
+
+    Args:
+        redirect_uri (str): The redirect URI the client asked for.
+
+    Returns:
+        str: An explanation of what is wrong, or "" when the redirect URI is acceptable.
+    """
+    if not redirect_uri:
+        return "redirect_uri is required."
+
+    parts = urlsplit(redirect_uri)
+    if not parts.scheme or parts.fragment:
+        return "redirect_uri must be an absolute URL without a fragment."
+    # Native apps register a private-use scheme (cursor://..., or com.example.app:/callback
+    # without a host as in RFC 8252), which the operating system hands to the app itself.
+    if parts.scheme not in {"http", "https"}:
+        if parts.scheme in {"javascript", "data", "file", "vbscript"}:
+            return "redirect_uri must use https (http is only allowed for localhost)."
+        return ""
+    if not parts.hostname:
+        return "redirect_uri must be an absolute URL without a fragment."
+    if parts.scheme == "https":
+        return ""
+    if parts.scheme == "http":
+        host = parts.hostname
+        try:
+            if host == "localhost" or ipaddress.ip_address(host).is_loopback:
+                return ""
+        except ValueError:
+            pass
+    return "redirect_uri must use https (http is only allowed for localhost)."
+
+
+def build_redirect_url(redirect_uri: str, **params: str) -> str:
+    """Add query parameters to a redirect URI, keeping any query it already has.
+
+    Args:
+        redirect_uri (str): The redirect URI.
+        **params (str): The parameters to add; empty values are left out.
+
+    Returns:
+        str: The redirect URI with the parameters URL-encoded.
+    """
+    query = urlencode({key: value for key, value in params.items() if value})
+    separator = "&" if urlsplit(redirect_uri).query else "?"
+    return f"{redirect_uri}{separator}{query}"
+
+
+def issue_authorization_code(payload: dict[str, Any]) -> str | None:
+    """Store the submitted keys and return a random code that refers to them.
+
+    Args:
+        payload (dict[str, Any]): The keys and the client binding of the authorization.
+
+    Returns:
+        str | None: The single-use authorization code, or None when the store is full.
+    """
+    code = secrets.token_urlsafe(32)
+    now = time.time()
+    with _auth_codes_lock:
+        for expired in [
+            key for key, (expires, _) in _auth_codes.items() if expires < now
+        ]:
+            del _auth_codes[expired]
+        # A flood of authorizations is refused rather than pushing out the codes of people
+        # who are signing in; the store empties as codes are used or expire.
+        if len(_auth_codes) >= _MAX_PENDING_CODES:
+            return None
+        _auth_codes[code] = (now + AUTH_CODE_LIFETIME, payload)
+    return code
+
+
+def redeem_authorization_code(code: str) -> dict[str, Any] | None:
+    """Take an authorization code out of the store, so it can be exchanged only once.
+
+    Args:
+        code (str): The authorization code.
+
+    Returns:
+        dict[str, Any] | None: The stored payload, or None when the code is unknown,
+            already used or expired.
+    """
+    with _auth_codes_lock:
+        entry = _auth_codes.pop(code, None)
+    if entry is None or entry[0] < time.time():
+        return None
+    return entry[1]
 
 
 def _is_browser(request: Request) -> bool:
@@ -873,7 +1072,7 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
         # Someone who opens the server's URL in a browser gets the setup page instead of a 401.
         # MCP clients never ask for HTML: they send JSON (POST) or ask for an event stream (GET).
         if path == "/mcp" and request.method == "GET" and _is_browser(request):
-            return HTMLResponse(ROOT_PAGE)
+            return HTMLResponse(ROOT_PAGE, headers=FRAME_HEADERS)
 
         # Protect the MCP endpoints: SSE (/sse, /messages) and streamable-HTTP (/mcp).
         if path == "/sse" or path.startswith("/messages") or path == "/mcp":
@@ -881,11 +1080,31 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
             if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY"):
                 return await call_next(request)
 
+            base_url = str(request.base_url).rstrip("/")
+            metadata_url = f"{base_url}/.well-known/oauth-protected-resource"
+            auth_header = request.headers.get("authorization", "")
+            bearer = (
+                auth_header[7:].strip()
+                if auth_header.lower().startswith("bearer ")
+                else ""
+            )
+
+            # An expired or foreign access token gets invalid_token, the signal for a client to
+            # run the authorization again instead of failing every call with a dead key.
+            if bearer and is_invalid_access_token(bearer):
+                return JSONResponse(
+                    {
+                        "error": "invalid_token",
+                        "error_description": "The access token is expired or invalid. Please authorize again.",
+                    },
+                    status_code=401,
+                    headers={
+                        "WWW-Authenticate": f'Bearer error="invalid_token", resource_metadata="{metadata_url}"'
+                    },
+                )
+
             api_key = get_api_key_from_request(request)
             if not api_key:
-                base_url = str(request.base_url).rstrip("/")
-                metadata_url = f"{base_url}/.well-known/oauth-protected-resource"
-
                 # WWW-Authenticate header pointing to our protected resource metadata
                 headers = {
                     "WWW-Authenticate": f'Bearer resource_metadata="{metadata_url}"'
@@ -900,6 +1119,26 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
                 )
 
         return await call_next(request)
+
+
+def _authorization_problem(
+    redirect_uri: str, code_challenge: str, code_challenge_method: str, **fields: str
+) -> str:
+    """Explain what makes an authorization request unacceptable, or return ""."""
+    for name, value in {"redirect_uri": redirect_uri, **fields}.items():
+        if len(value) > FIELD_LIMITS[name]:
+            return f"{name} is longer than {FIELD_LIMITS[name]} characters."
+    problem = validate_redirect_uri(redirect_uri)
+    if problem:
+        return problem
+    if code_challenge_method != "S256" or not CODE_CHALLENGE_PATTERN.match(
+        code_challenge
+    ):
+        return (
+            "PKCE is required: send a S256 code_challenge (43 base64url characters) with "
+            "code_challenge_method=S256."
+        )
+    return ""
 
 
 def register_auth_routes(mcp: Any) -> None:
@@ -945,7 +1184,7 @@ def register_auth_routes(mcp: Any) -> None:
 
     @mcp.custom_route("/", methods=["GET"])
     async def root(request: Request) -> HTMLResponse:
-        return HTMLResponse(ROOT_PAGE)
+        return HTMLResponse(ROOT_PAGE, headers=FRAME_HEADERS)
 
     @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
     async def oauth_protected_resource(request: Request) -> JSONResponse:
@@ -1014,17 +1253,31 @@ def register_auth_routes(mcp: Any) -> None:
         )
         state = request.query_params.get("state", "")
 
+        problem = _authorization_problem(
+            redirect_uri,
+            code_challenge,
+            code_challenge_method,
+            client_id=client_id,
+            state=state,
+        )
+        if problem:
+            return HTMLResponse(
+                html.escape(problem), status_code=400, headers=FRAME_HEADERS
+            )
+
         # Every value comes from the URL, so it is escaped: a crafted link must not be able
-        # to add markup or scripts to the page where users enter their API keys.
+        # to add markup or scripts to the page where users enter their API keys. The badge
+        # names the site the keys are sent back to, so a link from elsewhere stands out.
+        redirect_host = urlsplit(redirect_uri).hostname or redirect_uri
         page = HTML_TEMPLATE.format(
             client_id=html.escape(client_id, quote=True),
-            client_name=html.escape(client_id or "MCP Client"),
+            client_name=html.escape(f"{client_id or 'MCP Client'} · {redirect_host}"),
             redirect_uri=html.escape(redirect_uri, quote=True),
             code_challenge=html.escape(code_challenge, quote=True),
             code_challenge_method=html.escape(code_challenge_method, quote=True),
             state=html.escape(state, quote=True),
         )
-        return HTMLResponse(content=page)
+        return HTMLResponse(content=page, headers=FRAME_HEADERS)
 
     @mcp.custom_route("/oauth/authorize", methods=["POST"])
     async def authorize_post(request: Request) -> HTMLResponse | RedirectResponse:
@@ -1040,7 +1293,19 @@ def register_auth_routes(mcp: Any) -> None:
         if not fmp_api_key:
             return HTMLResponse("FMP API Key is required", status_code=400)
 
-        # PKCE code signed by the server; fred_api_key only unlocks the FRED subset.
+        problem = _authorization_problem(
+            redirect_uri,
+            code_challenge,
+            code_challenge_method,
+            client_id=client_id,
+            state=state,
+            fmp_api_key=fmp_api_key,
+            fred_api_key=fred_api_key,
+        )
+        if problem:
+            return HTMLResponse(html.escape(problem), status_code=400)
+
+        # fred_api_key only unlocks the FRED subset.
         payload = {
             "fmp_api_key": fmp_api_key,
             "fred_api_key": fred_api_key,
@@ -1049,14 +1314,17 @@ def register_auth_routes(mcp: Any) -> None:
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
         }
-        # Code lasts 5 minutes
-        auth_code = sign_jwt(payload, expires_in=300)
+        auth_code = issue_authorization_code(payload)
+        if auth_code is None:
+            return HTMLResponse(
+                "Too many authorizations are pending. Please try again in a few minutes.",
+                status_code=503,
+            )
 
-        redirect_url = f"{redirect_uri}?code={auth_code}"
-        if state:
-            redirect_url += f"&state={state}"
-
-        return RedirectResponse(url=redirect_url, status_code=303)
+        return RedirectResponse(
+            url=build_redirect_url(redirect_uri, code=auth_code, state=state),
+            status_code=303,
+        )
 
     @mcp.custom_route("/oauth/token", methods=["POST"])
     async def oauth_token(request: Request) -> JSONResponse:
@@ -1092,8 +1360,7 @@ def register_auth_routes(mcp: Any) -> None:
         client_id = form.get("client_id")
         code_verifier = form.get("code_verifier")
 
-        # Decode & verify code
-        payload = verify_jwt(str(code))
+        payload = redeem_authorization_code(str(code))
         if not payload:
             return JSONResponse(
                 {
@@ -1109,7 +1376,7 @@ def register_auth_routes(mcp: Any) -> None:
                 {"error": "invalid_grant", "error_description": "Client ID mismatch"},
                 status_code=400,
             )
-        if redirect_uri and payload.get("redirect_uri") != redirect_uri:
+        if payload.get("redirect_uri") != redirect_uri:
             return JSONResponse(
                 {
                     "error": "invalid_grant",
@@ -1118,40 +1385,27 @@ def register_auth_routes(mcp: Any) -> None:
                 status_code=400,
             )
 
-        # PKCE validation
-        code_challenge = payload.get("code_challenge")
-        code_challenge_method = payload.get("code_challenge_method", "S256")
-
-        if code_challenge:
-            if not code_verifier:
-                return JSONResponse(
-                    {
-                        "error": "invalid_grant",
-                        "error_description": "code_verifier is required",
-                    },
-                    status_code=400,
-                )
-
-            if code_challenge_method == "S256":
-                sha256 = hashlib.sha256(str(code_verifier).encode("utf-8")).digest()
-                expected_challenge = _base64url_encode(sha256)
-                if not hmac.compare_digest(expected_challenge, str(code_challenge)):
-                    return JSONResponse(
-                        {
-                            "error": "invalid_grant",
-                            "error_description": "PKCE S256 verification failed",
-                        },
-                        status_code=400,
-                    )
-            # plain
-            elif not hmac.compare_digest(str(code_verifier), str(code_challenge)):
-                return JSONResponse(
-                    {
-                        "error": "invalid_grant",
-                        "error_description": "PKCE plain verification failed",
-                    },
-                    status_code=400,
-                )
+        # PKCE (S256, required at /oauth/authorize): only the client that started the
+        # authorization holds the verifier.
+        if not code_verifier:
+            return JSONResponse(
+                {
+                    "error": "invalid_grant",
+                    "error_description": "code_verifier is required",
+                },
+                status_code=400,
+            )
+        sha256 = hashlib.sha256(str(code_verifier).encode("utf-8")).digest()
+        if not hmac.compare_digest(
+            _base64url_encode(sha256), str(payload.get("code_challenge", ""))
+        ):
+            return JSONResponse(
+                {
+                    "error": "invalid_grant",
+                    "error_description": "PKCE S256 verification failed",
+                },
+                status_code=400,
+            )
 
         # Issue JWT Access Token
         token_payload = {

@@ -23,6 +23,7 @@ BENCHMARK_TICKER = "Benchmark"
 TRADING_DAYS = 252
 # The most days the close compared with the NAV may lie before the NAV's date (a weekend).
 NAV_PRICE_DAYS = 3
+FREQUENCIES = {"weekly": "W", "monthly": "M", "quarterly": "Q", "yearly": "Y"}
 # Symbols are short; a longer identifier is an ISIN or a name.
 MAXIMUM_SYMBOL_LENGTH = 10
 # The NAV is struck at the 16:00 New York close, so an update at any time is of the last close
@@ -161,7 +162,12 @@ class ETF:
             fund_weights.index = keys.to_numpy()
             fund_weights = fund_weights.groupby(level=0).sum().dropna()
             # Short positions and derivatives with a negative weight do not add to exposure.
-            weights[fund] = fund_weights[fund_weights > 0]
+            fund_weights = fund_weights[fund_weights > 0]
+            # Without its short positions and cash borrowings a fund's weights can add up to
+            # a little more than one; scaled back to one, a fund overlaps itself fully, not
+            # more. Weights below one (an incomplete list) are kept as they are.
+            total = fund_weights.sum()
+            weights[fund] = fund_weights / total if total > 1 else fund_weights
         # A fund missing from the holdings has no weights, so its results are NaN.
         return {
             fund: weights.get(fund, pd.Series(dtype=float)) for fund in self._funds()
@@ -188,6 +194,7 @@ class ETF:
         overwrite: bool = False,
         show_columns: list[str] | None = None,
         limit: int | None = None,
+        rounding: int | None = None,
     ) -> pd.DataFrame | None:
         """
         Get the holdings of every fund: each asset it holds with the number of shares, the
@@ -210,6 +217,10 @@ class ETF:
                 -10. Defaults to None, which keeps every holding. The holdings carry no sector or
                 country; get_sector_weightings and get_country_weightings break the fund down by
                 those.
+            rounding (int | None, optional): The number of decimals to round the shares, weights
+                and market values to. Defaults to None, which uses the rounding of the Toolkit.
+                The smallest holdings of a broad fund weigh less than 0.0001, so they need a
+                higher rounding (e.g. 8) to keep a weight above zero.
 
         Returns:
             pd.DataFrame | None: The holdings per fund, indexed by asset (only by asset for a
@@ -232,13 +243,13 @@ class ETF:
 
         Which returns:
 
-        | Asset   | Name                       | ISIN         | CUSIP     |      Shares |    Weight |   Market Value | Updated At          |
-        |:--------|:---------------------------|:-------------|:----------|------------:|----------:|---------------:|:--------------------|
-        | NVDA    | NVIDIA Corp                | US67066G1040 | 67066G104 | 1.80964e+08 | 0.0850518 |    4.32937e+10 | 2026-10-07 14:14:58 |
-        | AAPL    | Apple Inc                  | US0378331005 | 037833100 | 1.09586e+08 | 0.0718253 |    3.65611e+10 | 2026-10-07 14:14:58 |
-        | MSFT    | Microsoft Corp             | US5949181045 | 594918104 | 5.57574e+07 | 0.057978  |    2.95124e+10 | 2026-10-07 14:14:58 |
-        | MU      | Micron Technology Inc      | US5951121038 | 595112103 | 2.34119e+07 | 0.0480888 |    2.44785e+10 | 2026-10-07 14:14:58 |
-        | AMD     | Advanced Micro Devices Inc | US0079031078 | 007903107 | 3.38406e+07 | 0.043174  |    2.19767e+10 | 2026-10-07 14:14:58 |
+        | Asset   | Name                  | ISIN         | CUSIP     |      Shares |   Weight |   Market Value | Updated At          |
+        |:--------|:----------------------|:-------------|:----------|------------:|---------:|---------------:|:--------------------|
+        | NVDA    | NVIDIA Corp           | US67066G1040 | 67066G104 | 1.81778e+08 |   0.0808 |    3.88388e+10 | 2026-10-31 15:30:02 |
+        | AAPL    | Apple Inc             | US0378331005 | 037833100 | 1.10079e+08 |   0.0799 |    3.84077e+10 | 2026-10-31 15:30:02 |
+        | MSFT    | Microsoft Corp        | US5949181045 | 594918104 | 5.60069e+07 |   0.0617 |    2.96915e+10 | 2026-10-31 15:30:02 |
+        | MU      | Micron Technology Inc | US5951121038 | 595112103 | 2.35156e+07 |   0.0457 |    2.19699e+10 | 2026-10-31 15:30:02 |
+        | AMZN    | Amazon.com Inc        | US0231351067 | 023135106 | 8.13519e+07 |   0.0412 |    1.98328e+10 | 2026-10-31 15:30:02 |
         """
         holdings = self._fund_data_function("holdings", overwrite=overwrite)
         if holdings is None:
@@ -257,6 +268,8 @@ class ETF:
                 .drop(columns="_weight")
                 .reindex(holdings.index.get_level_values(0).unique(), level=0)
             )
+
+        holdings = self._round(holdings, rounding)
 
         if len(self._tickers) == 1 and not holdings.empty:
             return filter_columns(holdings.loc[self._tickers[0]], show_columns)
@@ -543,6 +556,26 @@ class ETF:
                 else:
                     # The prices end before the NAV date, so its close is not known yet.
                     close_at_nav = float("nan")
+            if (
+                pd.isna(close_at_nav)
+                and not stale_nav
+                and pd.notna(nav_date)
+                and len(dates)
+            ):
+                # Said in the result's notes, as an empty premium otherwise looks like missing data.
+                reason = (
+                    f"its prices end on {dates.max():%Y-%m-%d}, before the NAV Date "
+                    f"{nav_date:%Y-%m-%d}, so use an end date on or after it"
+                    if dates.max() < nav_date
+                    else f"there is no close within {NAV_PRICE_DAYS} days before the NAV Date "
+                    f"{nav_date:%Y-%m-%d}"
+                )
+                logger.warning(
+                    "No premium data is available for %s: %s. stale_nav=True compares the NAV "
+                    "with the nearest close instead.",
+                    fund,
+                    reason,
+                )
             if stale_nav and pd.isna(close_at_nav):
                 # Asked for regardless of age: the nearest close there is.
                 close_at_nav = float(before.iloc[-1]) if not before.empty else latest
@@ -644,7 +677,9 @@ class ETF:
         - Correlation, Beta and R Squared of the fund's returns with the Benchmark's.
 
         With yearly=True the tracking difference is given per calendar year instead, the return
-        of the fund minus that of the Benchmark. The daily closes of two funds can differ by the
+        of the fund minus that of the Benchmark. Each fund is compared with the Benchmark on the
+        dates both have a close, so a fund whose prices stop within a year (after a ticker
+        change, for example) is measured up to its last close. The daily closes of two funds can differ by the
         timing of their last trade, which adds noise to a daily tracking error; fund reports
         usually measure it from monthly returns.
 
@@ -668,7 +703,7 @@ class ETF:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["VOO", "IVV", "SPLG"],
+            ["VOO", "IVV", "SPYM"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             benchmark_ticker="SPY",
             start_date="2021-01-01",
@@ -680,13 +715,13 @@ class ETF:
 
         Which returns:
 
-        |                     |    VOO |    IVV |    SPLG |
-        |:--------------------|-------:|-------:|--------:|
-        | Tracking Difference | 0.0008 | 0.0007 | -0      |
-        | Tracking Error      | 0.0011 | 0.0018 |  0.0021 |
-        | Correlation         | 1      | 0.9999 |  0.9999 |
-        | Beta                | 0.9994 | 1.0014 |  0.9986 |
-        | R Squared           | 0.9999 | 0.9999 |  0.9998 |
+        |                     |    VOO |    IVV |   SPYM |
+        |:--------------------|-------:|-------:|-------:|
+        | Tracking Difference | 0.0008 | 0.0007 | 0.0006 |
+        | Tracking Error      | 0.0011 | 0.0018 | 0.0017 |
+        | Correlation         | 1      | 0.9999 | 0.9999 |
+        | Beta                | 0.9994 | 1.0014 | 0.9996 |
+        | R Squared           | 0.9999 | 0.9999 | 0.9999 |
         """
         if period not in PERIODS_PER_YEAR:
             raise ValueError(
@@ -697,45 +732,39 @@ class ETF:
             raise ValueError(
                 "Tracking is measured against the Benchmark of the Toolkit."
             )
-        prices = full.loc[self._start_date : self._end_date]
+        frequency = "Y" if yearly else FREQUENCIES.get(period)
 
-        # The first return starts from the last close before the range (the history holds
-        # a year before the start date), so the first day, or period, is not lost.
-        base = full[full.index < prices.index[0]].iloc[-1:]
-
-        if yearly:
-            yearly_prices = prices.groupby(prices.index.asfreq("Y")).last()
-            first = (base if not base.empty else prices.iloc[[0]]).set_axis(
-                [yearly_prices.index[0] - 1]
-            )
+        results = {}
+        for fund in self._funds():
+            # Only the dates on which both have a close count, so a fund whose prices stop
+            # (a ticker change, a delisting) or start later is compared with the Benchmark
+            # over the same days, not with the Benchmark's later year-end close.
+            pair = full[[fund, BENCHMARK_TICKER]]
+            pair = pair[pair.notna().all(axis=1)]
+            prices = pair.loc[self._start_date : self._end_date]
+            if prices.empty:
+                results[fund] = pd.Series(dtype=float)
+                continue
+            # The first return starts from the last common close before the range (the
+            # history holds a year before the start date), so the first period is not lost.
+            base = pair[pair.index < prices.index[0]].iloc[-1:]
+            if frequency is not None:
+                prices = prices.groupby(prices.index.asfreq(frequency)).last()
+                base = base.set_axis(base.index.asfreq(frequency))
+            if yearly and base.empty:
+                # Without a close before the range the first year starts from its first close.
+                base = pair.loc[self._start_date :].iloc[[0]]
+                base = base.set_axis([prices.index[0] - 1])
             returns = (
-                pd.concat([first, yearly_prices]).pct_change(fill_method=None).iloc[1:]
+                pd.concat([base, prices]).pct_change(fill_method=None).iloc[len(base) :]
             )
-            difference = returns[self._funds()].sub(returns[BENCHMARK_TICKER], axis=0)
-            return self._round(difference, rounding)
-
-        if period != "daily":
-            frequency = {
-                "weekly": "W",
-                "monthly": "M",
-                "quarterly": "Q",
-                "yearly": "Y",
-            }[period]
-            prices = prices.groupby(prices.index.asfreq(frequency)).last()
-            base = base.set_axis(base.index.asfreq(frequency))
-        returns = (
-            pd.concat([base, prices]).pct_change(fill_method=None).iloc[len(base) :]
-        )
-
-        tracking = pd.DataFrame(
-            {
-                fund: etf_model.get_tracking(
+            if yearly:
+                results[fund] = returns[fund] - returns[BENCHMARK_TICKER]
+            else:
+                results[fund] = etf_model.get_tracking(
                     returns[fund], returns[BENCHMARK_TICKER], PERIODS_PER_YEAR[period]
                 )
-                for fund in self._funds()
-            }
-        )
-        return self._round(tracking, rounding)
+        return self._round(pd.DataFrame(results), rounding)
 
     @handle_errors
     def get_concentration(self, rounding: int | None = None) -> pd.DataFrame:
@@ -928,8 +957,9 @@ class ETF:
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to None, which keeps the full precision (the price impact of the largest
-                funds is a fraction of a basis point).
+                Defaults to None, which uses the rounding of the Toolkit for every measure but
+                the price impact: that of the largest funds is a fraction of a basis point, so it
+                keeps its full precision unless rounding is given.
 
         Returns:
             pd.DataFrame: The liquidity measures (rows) per fund (columns).
@@ -955,7 +985,7 @@ class ETF:
         |:------------------------------|------------------:|-------------------:|-----------------:|
         | Average Volume                |    7734399.056000 |    48666218.588000 |  10799597.760000 |
         | Average Dollar Volume         | 4400329488.944520 | 26740006060.354679 | 719035298.234000 |
-        | Dollar Volume to Assets       |          0.002588 |           0.056270 |         0.090822 |
+        | Dollar Volume to Assets       |          0.002588 |           0.057650 |         0.090822 |
         | Price Impact per $100 Million |          0.000179 |           0.000036 |         0.002990 |
         """
         data = self._historical().loc[self._start_date : self._end_date]
@@ -985,6 +1015,12 @@ class ETF:
                     data["Adj Close"][fund].pct_change(fill_method=None), dollar_volume
                 ),
             }
-        # A price impact of a fraction of a basis point matters here, so the result is only
-        # rounded when asked for.
-        return apply_rounding(pd.DataFrame(liquidity), rounding)
+        liquidity = pd.DataFrame(liquidity)
+        rounded = self._round(liquidity, rounding)
+        if rounding is None:
+            # A price impact of a fraction of a basis point matters, so the Toolkit's
+            # rounding would turn it into zero.
+            rounded.loc["Price Impact per $100 Million"] = liquidity.loc[
+                "Price Impact per $100 Million"
+            ]
+        return rounded

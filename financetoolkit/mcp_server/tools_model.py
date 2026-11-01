@@ -27,13 +27,17 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from financetoolkit.mcp_server.analytics_model import UsageAnalytics
+from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
 from financetoolkit.utilities.logger_model import get_logger
 
 if TYPE_CHECKING:
     from financetoolkit.mcp_server.registry_controller import ToolRegistry
 
 logger = get_logger()
+
+# The longest search and the most terms of it that are matched.
+MAX_QUERY_CHARACTERS = 200
+MAX_QUERY_TERMS = 12
 
 
 def join_initials(text: str) -> str:
@@ -175,11 +179,12 @@ class UtilityToolRegistry:
             (self.search_metrics, "search_metrics", "Search Metrics"),
         ]
         for method, tool_name, title in tools:
+            tool = run_in_thread(method)
             self._mcp.add_tool(
                 (
-                    self._analytics.counted(tool_name, method)
+                    self._analytics.counted(tool_name, tool)
                     if self._analytics is not None
-                    else method
+                    else tool
                 ),
                 name=tool_name,
                 description=method.__doc__ or "",
@@ -377,12 +382,19 @@ class UtilityToolRegistry:
             str: Markdown table of matching tools sorted by relevance score,
                 or a guidance message when no strong matches are found.
         """
+        # Every term is matched against every indicator and description with typo tolerance,
+        # so the work grows with the length of the query; a search is a few words.
+        if len(query) > MAX_QUERY_CHARACTERS:
+            return (
+                f"The search is {len(query)} characters long; keep it to a few keywords "
+                f"(at most {MAX_QUERY_CHARACTERS} characters)."
+            )
         index = self._registry.get_tool_index()
         query_tokens = [
             w.lower()
             for w in re.findall(r"\b[a-zA-Z]{2,}\b", join_initials(query))
             if w.lower() not in self._search_stop_words
-        ]
+        ][:MAX_QUERY_TERMS]
         if not query_tokens:
             return (
                 f"No meaningful search terms in '{query}'. "

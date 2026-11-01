@@ -144,3 +144,38 @@ def test_cache_enabled_env_overrides_transport(monkeypatch):
     monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
 
     assert _resolve_cache_mode(True) == "full"
+
+
+def test_setup_leaves_a_config_it_cannot_read_unchanged(monkeypatch, tmp_path):
+    import json
+
+    from financetoolkit.mcp_server import setup_model
+
+    monkeypatch.setattr(
+        setup_model, "get_global_env_path", lambda: tmp_path / "config" / ".env"
+    )
+    vscode = tmp_path / ".vscode"
+    vscode.mkdir()
+    text = '{\n  // my servers\n  "servers": {"other": {"command": "x"}}\n}\n'
+    (vscode / "mcp.json").write_text(text)
+
+    setup_model.write_vscode_config("KEY", tmp_path)
+    setup_model.remove_vscode_config(tmp_path)
+
+    assert (vscode / "mcp.json").read_text() == text
+
+    (vscode / "mcp.json").write_text('{"servers": {"other": {"command": "x"}}}')
+    setup_model.write_vscode_config("KEY", tmp_path)
+    servers = json.loads((vscode / "mcp.json").read_text())["servers"]
+    assert set(servers) == {"other", "finance-toolkit"}
+
+
+def test_project_configs_leave_out_keys_the_global_env_holds(monkeypatch, tmp_path):
+    from financetoolkit.mcp_server import setup_model
+
+    env = tmp_path / ".env"
+    env.write_text("FINANCIAL_MODELING_PREP_API_KEY=FMPKEY\n")
+    monkeypatch.setattr(setup_model, "get_global_env_path", lambda: env)
+
+    assert setup_model.keys_outside_global_env("FMPKEY", "FREDKEY") == ("", "FREDKEY")
+    assert setup_model.keys_outside_global_env("OTHER", "") == ("OTHER", "")

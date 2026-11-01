@@ -9,9 +9,14 @@ import pandas as pd
 from statsmodels.tsa.stattools import coint
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
-from financetoolkit.econometrics.unitroot_model import default_max_lag
+from financetoolkit.econometrics.unitroot_model import (
+    MINIMUM_TEST_OBSERVATIONS,
+    default_max_lag,
+)
 
 JOHANSEN_MINIMUM_NUMBER_OF_SERIES = 2
+# The observations the Johansen test needs beyond the parameters of its VECM.
+MINIMUM_JOHANSEN_FREEDOM = 3
 
 # The conventional 5% significance level used for the "Cointegrated (5%)" flag.
 SIGNIFICANCE_LEVEL = 0.05
@@ -66,6 +71,9 @@ def get_engle_granger_cointegration(
     independent = aligned.iloc[:, 1].to_numpy()
 
     try:
+        if len(dependent) < MINIMUM_TEST_OBSERVATIONS:
+            raise ValueError("Too few observations for the test.")
+
         eg_statistic, p_value, critical_values = coint(
             dependent,
             independent,
@@ -194,7 +202,17 @@ def get_johansen_cointegration(
     }
     index = [f"r <= {rank}" for rank in range(number_of_series)]
 
+    # The VECM estimates k_ar_diff lagged differences of every series plus the deterministic
+    # terms; with too few observations left over the eigenvalues reach 1 and every rank is
+    # rejected, so shorter samples return NaN.
+    minimum_observations = (
+        number_of_series * (k_ar_diff + 1) + number_of_series + MINIMUM_JOHANSEN_FREEDOM
+    )
+
     try:
+        if len(aligned) < minimum_observations:
+            raise ValueError("Too few observations for the test.")
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = coint_johansen(aligned.to_numpy(), det_order, k_ar_diff)

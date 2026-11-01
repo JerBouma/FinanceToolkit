@@ -1404,7 +1404,14 @@ def get_hill_estimator(
         # At least one order statistic when there is data, and none when there is not (a period before a ticker listed, or without a single loss or gain), so the count reports what was actually used.  # noqa: E501
         number_of_order_statistics = max(number_of_order_statistics, 1) if n else 0
 
-        if number_of_order_statistics >= n:
+        if number_of_order_statistics < n:
+            order_statistics = tail_values.to_numpy()[:number_of_order_statistics]
+            threshold = tail_values.to_numpy()[number_of_order_statistics]
+            xi_hill = np.mean(np.log(order_statistics) - np.log(threshold))
+
+        # Without more observations than order statistics, or with a tail of equal values
+        # (a constant series, whose shape is 0 and index infinite), there is no estimate.
+        if number_of_order_statistics >= n or xi_hill <= 0:
             return pd.Series(
                 {
                     "Hill Tail Index": np.nan,
@@ -1414,10 +1421,6 @@ def get_hill_estimator(
                 }
             )
 
-        order_statistics = tail_values.to_numpy()[:number_of_order_statistics]
-        threshold = tail_values.to_numpy()[number_of_order_statistics]
-
-        xi_hill = np.mean(np.log(order_statistics) - np.log(threshold))
         alpha_hill = 1 / xi_hill
         standard_error = alpha_hill / np.sqrt(number_of_order_statistics)
 

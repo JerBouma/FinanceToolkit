@@ -265,7 +265,8 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -542,7 +543,8 @@ class Risk:
             of per `period` (e.g. a rolling 60-day VaR). Only available for
             `distribution="historic"`; see `get_var_backtest` for a rolling, out-of-sample VaR path
             under the parametric distributions. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -729,7 +731,8 @@ class Risk:
             of per `period` (e.g. a rolling 60-day CVaR). Only available for
             `distribution="historic"`; see `get_acerbi_szekely_test` for a rolling, out-of-sample CVaR
             path under the parametric distributions. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -902,7 +905,8 @@ class Risk:
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1032,7 +1036,8 @@ class Risk:
             rolling (int, optional): The rolling window size to use for the calculation. If set, CDaR is
             calculated over a rolling window of this many periods across the full return history instead
             of per `period`. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CDaR values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1167,7 +1172,8 @@ class Risk:
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Tail
             Ratio is calculated over a rolling window of this many periods across the full return history
             instead of per `period`. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Tail Ratio values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1299,7 +1305,8 @@ class Risk:
             (if period = 'yearly') or look at the entirety of all years. Defaults to False.
             Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Maximum Drawdown values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1421,7 +1428,8 @@ class Risk:
             'yearly') or look at the entirety of all years. Defaults to False.
             Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the duration values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1540,7 +1548,8 @@ class Risk:
             period = 'yearly') or look at the entirety of all years. Defaults to False.
             Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the recovery time values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1678,7 +1687,8 @@ class Risk:
                 (since-inception) high-water mark instead -- Martin's "Highest High"; a fixed
                 int window is the common trailing-high variant (e.g. a 14-day trailing high).
                 Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the UI values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1783,12 +1793,15 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate GARCH for.
+            time_steps (int, optional): Time steps to calculate GARCH for. Defaults to None, which uses the length of the
+                returns.
             optimization_t (int, optional): Time steps to optimize GARCH for. It is only used if no weights are given.
+                Defaults to None, which uses the length of the returns.
             within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
             period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the
             entirety of all years. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1908,7 +1921,7 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for.
+            time_steps (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for. Defaults to 10.
             within_period (bool, optional): Whether to calculate GARCH within each specified period or all
             at once. Thus whether to look at the GARCH within each specific year (if period = 'yearly') or
             look at the entirety of all years. Defaults to False.
@@ -2166,12 +2179,14 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate GJR-GARCH for.
+            time_steps (int, optional): Time steps to calculate GJR-GARCH for. Defaults to None, which uses the length of
+                the returns.
             optimization_t (int, optional): Time steps to optimize GJR-GARCH for. It is only used if no
-            weights are given.
+            weights are given. Defaults to None, which uses the length of the returns.
             within_period (bool, optional): Whether to calculate GJR-GARCH within the specified period or
             for the entire period. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the GJR-GARCH values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -2292,7 +2307,8 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate GJR-GARCH and to forecast sigma_2 values for.
+            time_steps (int, optional): Time steps to calculate GJR-GARCH and to forecast sigma_2 values for. Defaults to
+                10.
             within_period (bool, optional): Whether to calculate GJR-GARCH within each specified period or
             all at once. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -2546,12 +2562,14 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate EGARCH for.
+            time_steps (int, optional): Time steps to calculate EGARCH for. Defaults to None, which uses the length of the
+                returns.
             optimization_t (int, optional): Time steps to optimize EGARCH for. It is only used if no
-            weights are given.
+            weights are given. Defaults to None, which uses the length of the returns.
             within_period (bool, optional): Whether to calculate EGARCH within the specified period or
             for the entire period. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the EGARCH values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -2686,7 +2704,7 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate EGARCH and to forecast sigma_2 values for.
+            time_steps (int, optional): Time steps to calculate EGARCH and to forecast sigma_2 values for. Defaults to 10.
             within_period (bool, optional): Whether to calculate EGARCH within each specified period or
             all at once. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -4203,7 +4221,8 @@ class Risk:
             rolling (int, optional): The rolling window size to use for the calculation. If set, Skewness is
             calculated over a rolling window of this many periods across the full return history instead of
             per `period`. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Skewness values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4348,7 +4367,8 @@ class Risk:
             rolling (int, optional): The rolling window size to use for the calculation. If set, Kurtosis is
             calculated over a rolling window of this many periods across the full return history instead of
             per `period`. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Kurtosis values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4586,7 +4606,8 @@ class Risk:
             Variance is calculated over a rolling window of this many periods (e.g. period='monthly'
             and rolling=6 gives the rolling 6-month Variance) instead of one value per `period`.
             Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Variance values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4738,7 +4759,8 @@ class Risk:
             method (str, optional): Which Volatility estimator to use, one of "close_to_close",
             "parkinson", "garman_klass", "rogers_satchell" or "yang_zhang", as described above.
             Defaults to "close_to_close".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Volatility values over time.
             Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -4907,7 +4929,8 @@ class Risk:
             monthly_window (int, optional): The trailing window (in trading days) for the monthly RV
             component. Defaults to 22.
             horizon (int, optional): The number of days ahead to forecast. Defaults to 1.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the HAR-RV forecast values over
             time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -5057,7 +5080,8 @@ class Risk:
             single day only nests observations when intraday data was fetched.
             scale (float, optional): A multiplier applied to the resulting ratio purely for readability.
             Defaults to 1,000,000.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Amihud Illiquidity values over
             time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -5299,7 +5323,8 @@ class Risk:
             Excess Volatility is calculated over a rolling window of this many periods (e.g.
             period='monthly' and rolling=6 gives the rolling 6-month Excess Volatility) instead of
             one value per `period`. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Excess Volatility values
             over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -5419,7 +5444,8 @@ class Risk:
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Downside
             Deviation is calculated over a rolling window of this many periods across the full return history
             instead of per `period`. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Downside Deviation values over
             time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -5539,7 +5565,8 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
                 to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MAD values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5643,7 +5670,8 @@ class Risk:
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
                 to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CV values over time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5748,7 +5776,8 @@ class Risk:
             lambda_ (float, optional): The decay factor. Higher values weight the past
             more heavily (slower to react), lower values weight recent returns more
             heavily (faster to react). RiskMetrics uses 0.94 for daily data. Defaults to 0.94.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the EWMA Volatility values over
             time. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -5834,8 +5863,8 @@ class Risk:
 
         Args:
             lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: The ACF value for each lag (rows) and each asset (columns).
@@ -5914,8 +5943,8 @@ class Risk:
         Args:
             max_lag (int, optional): The maximum lag, included, to use when estimating the exponent:
                 the regression runs over the lags 2 up to and including `max_lag`. Defaults to 20.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.Series: The estimated Hurst Exponent for each asset.

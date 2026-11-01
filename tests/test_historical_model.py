@@ -253,3 +253,40 @@ def test_period_conversion_keeps_the_column_level_names():
     monthly = historical_model.convert_daily_to_other_period("monthly", daily)
 
     assert list(monthly.columns.names) == ["Field", "Ticker"]
+
+
+def test_a_single_ticker_string_and_default_dates_are_accepted(monkeypatch):
+    requested = []
+
+    def fmp(ticker, start, end, interval, api_key, **kwargs):  # noqa: ARG001
+        requested.append((start, end))
+        return pd.DataFrame(
+            {
+                "Open": 1.0,
+                "High": 1.0,
+                "Low": 1.0,
+                "Close": 2.0,
+                "Adj Close": 2.0,
+                "Volume": 1,
+                "Dividends": 0.0,
+            },
+            index=pd.period_range(start, end, freq="D"),
+        )
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fmp)
+    monkeypatch.setattr(
+        historical_model.yfinance_model,
+        "get_historical_data",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    data, no_data = historical_model.get_historical_data(
+        "AAPL", api_key="KEY", sleep_timer=False
+    )
+
+    start, end = requested[0]
+    # Ten years up to today unless dates are given.
+    assert pd.Timestamp(end) - pd.Timestamp(start) == pd.Timedelta(days=10 * 365)
+    assert not data["Close"]["AAPL"].dropna().empty
+    assert (data["Close"]["AAPL"].dropna() == 2.0).all()
+    assert no_data == []

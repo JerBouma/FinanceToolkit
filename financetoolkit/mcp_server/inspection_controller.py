@@ -69,14 +69,10 @@ class ControllerInspector:
         self._init_handled_params: frozenset[str] = frozenset(init_handled_params or [])
         self._benchmark_ticker: str = benchmark_ticker
 
-        self._start_date: str = (
-            start_date
-            if start_date is not None
-            else (datetime.today() - timedelta(days=365 * 5)).strftime("%Y-%m-%d")
-        )
-        self._end_date: str = (
-            end_date if end_date is not None else datetime.today().strftime("%Y-%m-%d")
-        )
+        # Without dates, the defaults follow the day of the call: a server runs for weeks,
+        # and dates fixed when it started would quietly end every answer on that day.
+        self._start_date: str | None = start_date
+        self._end_date: str | None = end_date
 
     def unwrap_to_class_source(self, fn: Any, cls: type) -> Any:
         """
@@ -457,23 +453,18 @@ class ControllerInspector:
         if self._categories.get("standalone") in effective:
             params.append(P("countries", POS, default="", annotation=str | list[str]))
 
-        if self._categories.get("discovery") in effective:
-            # Discovery lists are snapshots; only the calendars and filings take a range,
-            # and only when one is given, so their own default window applies otherwise.
-            params.extend(
-                [
-                    P("start_date", POS, default="", annotation=str),
-                    P("end_date", POS, default="", annotation=str),
-                ]
-            )
-        else:
-            params.extend(
-                [
-                    P("start_date", POS, default=self._start_date, annotation=str),
-                    P("end_date", POS, default=self._end_date, annotation=str),
-                    P("quarterly", POS, default=False, annotation=bool),
-                ]
-            )
+        # The dates default to "" in the schema and are filled in at the time of the call
+        # (see start_date and end_date). Discovery lists are snapshots; only the calendars and
+        # filings take a range, and only when one is given, so their own default window
+        # applies otherwise.
+        params.extend(
+            [
+                P("start_date", POS, default="", annotation=str),
+                P("end_date", POS, default="", annotation=str),
+            ]
+        )
+        if self._categories.get("discovery") not in effective:
+            params.append(P("quarterly", POS, default=False, annotation=bool))
 
         if (
             self._categories.get("ticker") in effective
@@ -494,13 +485,17 @@ class ControllerInspector:
 
     @property
     def start_date(self) -> str:
-        """Default start date (YYYY-MM-DD) used for tool signature defaults."""
-        return self._start_date
+        """Default start date (YYYY-MM-DD): five years before today unless one was set."""
+        if self._start_date is not None:
+            return self._start_date
+        return (datetime.today() - timedelta(days=365 * 5)).strftime("%Y-%m-%d")
 
     @property
     def end_date(self) -> str:
-        """Default end date (YYYY-MM-DD) used for tool signature defaults."""
-        return self._end_date
+        """Default end date (YYYY-MM-DD): today unless one was set."""
+        if self._end_date is not None:
+            return self._end_date
+        return datetime.today().strftime("%Y-%m-%d")
 
     @property
     def benchmark_ticker(self) -> str:

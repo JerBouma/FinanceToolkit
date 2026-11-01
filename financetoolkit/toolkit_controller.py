@@ -93,6 +93,34 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 TICKER_LIMIT = 20
 
+# Profile country codes (ISO 3166-1 alpha-2) whose name in Damodaran's equity risk premium
+# table (get_market_risk_premium) differs from economics.helpers.COUNTRY_CODES or is not
+# in it. Many US-listed companies are domiciled in these offshore jurisdictions. Puerto
+# Rico has no entry of its own and carries the rating of the United States.
+RISK_PREMIUM_COUNTRIES: dict[str, str] = {
+    "AD": "Andorra (Principality of)",
+    "AW": "Aruba",
+    "BM": "Bermuda",
+    "BS": "Bahamas",
+    "CD": "Congo (Democratic Republic of)",
+    "CG": "Congo (Republic of)",
+    "CI": "Ivory Coast",
+    "CK": "Cook Islands",
+    "CW": "Curacao",
+    "GG": "Guernsey",
+    "IM": "Isle of Man",
+    "JE": "Jersey (States of)",
+    "KR": "Korea",
+    "KY": "Cayman Islands",
+    "MK": "Macedonia",
+    "MO": "Macau",
+    "MS": "Montserrat",
+    "PR": "United States",
+    "SX": "St. Maarten",
+    "SZ": "Swaziland",
+    "TC": "Turks and Caicos Islands",
+}
+
 # Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
@@ -2927,6 +2955,9 @@ class Toolkit:
         The Cost of Equity of the Models uses it as the market risk premium. Tickers without
         a profile country, a country the table does not cover or no API key are NaN.
 
+        The table holds the latest premiums only, so every historical period gets today's
+        premium of its country.
+
         Returns:
             pd.Series: The premiums as decimals, indexed by ticker.
         """
@@ -2939,32 +2970,47 @@ class Toolkit:
         if not self._api_key or self._enforce_source == "YahooFinance":
             return premiums
 
+        # The profile also records invalid tickers and, with remove_invalid_tickers, drops
+        # them from the Toolkit. Reading the countries must not change the Toolkit.
+        toolkit_tickers, invalid_tickers = self._tickers, self._invalid_tickers
+
         try:
             market_risk_premium = self.get_market_risk_premium()
             profile = self.get_profile()
+
+            if (
+                market_risk_premium is None
+                or market_risk_premium.empty
+                or "Total Equity Risk Premium" not in market_risk_premium.columns
+                or profile is None
+                or profile.empty
+                or "Country" not in profile.index
+            ):
+                return premiums
+
+            country_premiums = market_risk_premium["Total Equity Risk Premium"]
+            country_premiums = country_premiums[~country_premiums.index.duplicated()]
+
+            codes = profile.loc["Country"].reindex(tickers).dropna().astype(str)
+            countries = codes.str.upper().map(
+                lambda code: RISK_PREMIUM_COUNTRIES.get(code, COUNTRY_CODES.get(code))
+            )
+            premiums = countries.map(country_premiums).astype(float).reindex(tickers)
+            unmatched = sorted(set(codes[premiums.reindex(codes.index).isna()]))
         except (KeyError, ValueError, TypeError) as error:
             logger.info("The country equity risk premiums are not available: %s", error)
             return premiums
+        finally:
+            self._tickers, self._invalid_tickers = toolkit_tickers, invalid_tickers
 
-        if (
-            market_risk_premium is None
-            or market_risk_premium.empty
-            or "Total Equity Risk Premium" not in market_risk_premium.columns
-            or profile is None
-            or profile.empty
-            or "Country" not in profile.index
-        ):
-            return premiums
+        if unmatched:
+            logger.warning(
+                "No country equity risk premium is available for the countries %s, so the "
+                "historical market risk premium is used for their companies.",
+                ", ".join(unmatched),
+            )
 
-        countries = (
-            profile.loc["Country"]
-            .reindex(tickers)
-            .map(lambda code: COUNTRY_CODES.get(str(code).upper()))
-        )
-
-        return countries.map(market_risk_premium["Total Equity Risk Premium"]).astype(
-            float
-        )
+        return premiums
 
     def get_commitment_of_traders(self, overwrite: bool = False):
         """

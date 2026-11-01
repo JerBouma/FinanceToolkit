@@ -907,7 +907,8 @@ class Models:
         - market_risk_premium when it is given, for every company.
         - Otherwise the equity risk premium of each company's country (Damodaran's Total
           Equity Risk Premium, from FinancialModelingPrep), a forward-looking premium of a
-          few percent.
+          few percent. The source keeps no history, so every period uses today's premium,
+          also periods long past: a backtest sees the country risk known today.
         - For a company whose country premium is not available (no API key, or a country
           the table does not cover), the benchmark's average return above the risk-free
           rate over every period of the data. A short or strong sample makes this premium
@@ -1054,7 +1055,7 @@ class Models:
         - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM): the risk-free rate of
         the period plus Beta times the market risk premium. That premium defaults to the equity risk
         premium of the company's country (Damodaran's Total Equity Risk Premium, about 4.5% for the
-        United States), the current premium for every period. Without it (no API key, or a country the
+        United States), today's premium for every period, as the source keeps no history. Without it (no API key, or a country the
         table does not cover) it is the benchmark's average return above the risk-free rate over the
         data, which a short or strong sample makes large: about 15% a year for the S&P 500 over
         2022-2026. Set `market_risk_premium` to use one premium for every company. Beta is estimated

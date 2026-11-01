@@ -1337,3 +1337,41 @@ def test_cost_of_equity_uses_the_country_premium_of_each_company(test_toolkit):
 
 def test_toolkit_without_a_key_has_no_country_premiums(test_toolkit):
     assert test_toolkit._get_country_risk_premiums().isna().all()
+
+
+def test_country_premiums_follow_the_premium_table_names(
+    test_toolkit, monkeypatch, caplog
+):
+    import pandas as pd
+
+    table = pd.DataFrame(
+        {"Total Equity Risk Premium": [0.0433, 0.0487, 0.0584, 0.0499]},
+        index=pd.Index(
+            ["United States", "Korea", "Cayman Islands", "South Korea"], name="Country"
+        ),
+    )
+    profile = pd.DataFrame({"AAPL": ["US"], "MSFT": ["KY"]}, index=["Country"])
+
+    def get_profile():
+        # The real profile marks and, with remove_invalid_tickers, drops invalid tickers.
+        test_toolkit._invalid_tickers = ["MSFT"]
+        test_toolkit._tickers = ["AAPL"]
+        return profile
+
+    tickers, invalid = list(test_toolkit._tickers), list(test_toolkit._invalid_tickers)
+    monkeypatch.setattr(test_toolkit, "_api_key", "key")
+    monkeypatch.setattr(test_toolkit, "get_market_risk_premium", lambda: table)
+    monkeypatch.setattr(test_toolkit, "get_profile", get_profile)
+
+    premiums = test_toolkit._get_country_risk_premiums()
+
+    assert premiums.to_dict() == {"AAPL": 0.0433, "MSFT": 0.0584}
+    assert test_toolkit._tickers == tickers
+    assert test_toolkit._invalid_tickers == invalid
+
+    # A country the table does not cover is named in a warning.
+    profile.loc["Country", "MSFT"] = "VG"
+    premiums = test_toolkit._get_country_risk_premiums()
+
+    assert premiums.isna().to_dict() == {"AAPL": False, "MSFT": True}
+    assert "VG" in caplog.text

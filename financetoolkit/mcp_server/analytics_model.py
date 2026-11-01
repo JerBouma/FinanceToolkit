@@ -25,11 +25,15 @@ import json
 import os
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import anyio
+import anyio.to_thread
+from anyio.lowlevel import RunVar
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -46,6 +50,19 @@ ANONYMOUS = "anonymous"
 SAVE_EVERY_CALLS = 5
 DAILY_SERIES_DAYS = 30
 TOP_TOOLS = 15
+
+# The most tool calls that run at the same time; the others wait their turn. A data
+# collection can take hundreds of megabytes, and the hosted server has 1.5 GB.
+MAXIMUM_TOOL_THREADS = 6
+# A call that waits for an instance another call is using gives up its work slot meanwhile
+# (see hold_lock), so the worker threads get a wider cap than the work slots. That way calls
+# queued on one Toolkit can't take every slot and hold up the other users.
+MAXIMUM_WAITING_THREADS = 4 * MAXIMUM_TOOL_THREADS
+_WORK_SLOTS = threading.BoundedSemaphore(MAXIMUM_TOOL_THREADS)
+# Whether the current worker thread holds a work slot.
+_SLOT = threading.local()
+# One limiter per event loop (a limiter belongs to the loop it was first used in).
+_TOOL_LIMITER: RunVar[anyio.CapacityLimiter] = RunVar("financetoolkit_tool_limiter")
 
 
 def is_enabled() -> bool:
@@ -240,23 +257,7 @@ class UsageAnalytics:
 
             wrapper = counting_function
 
-        # The annotations are resolved here, against the tool's own module: FastMCP would
-        # otherwise look string annotations up in this module and fail.
-        signature = inspect.signature(function, eval_str=True)
-        wrapper.__signature__ = signature
-        wrapper.__annotations__ = {
-            name: parameter.annotation
-            for name, parameter in signature.parameters.items()
-            if parameter.annotation is not inspect.Parameter.empty
-        }
-
-        if signature.return_annotation is not inspect.Signature.empty:
-            wrapper.__annotations__["return"] = signature.return_annotation
-
-        # The wrapper is described by __signature__, so FastMCP must not unwrap it.
-        del wrapper.__wrapped__
-
-        return wrapper
+        return keep_signature(wrapper, function)
 
     # ── Storage ───────────────────────────────────────────────────────────────
     def to_dict(self) -> dict[str, Any]:
@@ -287,7 +288,8 @@ class UsageAnalytics:
             stored = json.loads(self.location.read_text(encoding="utf-8"))
 
             def first(*names: str, default: Any) -> Any:
-                # Earlier versions of the counter named some totals differently.
+                # A stats file can hold a total under another name ("total"), so each
+                # total is read from the first of its names that is present.
                 return next((stored[name] for name in names if name in stored), default)
 
             with self._lock:
@@ -449,6 +451,107 @@ class UsageAnalytics:
             if "text/html" in accept and "application/json" not in accept:
                 return HTMLResponse(stats_page_model.render(self.summary()))
             return JSONResponse(self.summary())
+
+
+def keep_signature(wrapper: Any, function: Callable) -> Any:
+    """
+    Give a wrapper the signature and annotations of the function it wraps, which FastMCP
+    builds the tool's input schema from.
+
+    Args:
+        wrapper (Any): The wrapper, made with functools.wraps.
+        function (Callable): The wrapped tool.
+
+    Returns:
+        Any: The wrapper.
+    """
+    # The annotations are resolved here, against the tool's own module: FastMCP would
+    # otherwise look string annotations up in the wrapper's module and fail.
+    signature = inspect.signature(function, eval_str=True)
+    wrapper.__signature__ = signature
+    wrapper.__annotations__ = {
+        name: parameter.annotation
+        for name, parameter in signature.parameters.items()
+        if parameter.annotation is not inspect.Parameter.empty
+    }
+
+    if signature.return_annotation is not inspect.Signature.empty:
+        wrapper.__annotations__["return"] = signature.return_annotation
+
+    # The wrapper is described by __signature__, so FastMCP must not unwrap it.
+    del wrapper.__wrapped__
+
+    return wrapper
+
+
+def run_in_thread(function: Callable) -> Any:
+    """
+    Turn a synchronous tool into one that runs in a worker thread.
+
+    FastMCP calls a synchronous tool on the event loop itself, so one slow data collection
+    would hold up every other request (other users, /health, the OAuth pages) until it
+    finishes. The worker thread starts with a copy of the request's context, so the API key
+    and the notes collected for the answer stay with the call. At most
+    MAXIMUM_TOOL_THREADS calls run at once (each holds a work slot), so a burst of heavy
+    calls queues instead of running the server out of memory.
+
+    Args:
+        function (Callable): The synchronous tool.
+
+    Returns:
+        Any: An asynchronous tool with the same signature.
+    """
+
+    def work(*args, **kwargs):
+        with _WORK_SLOTS:
+            _SLOT.held = True
+            try:
+                return function(*args, **kwargs)
+            finally:
+                _SLOT.held = False
+
+    @functools.wraps(function)
+    async def threaded(*args, **kwargs):
+        try:
+            limiter = _TOOL_LIMITER.get()
+        except LookupError:
+            limiter = anyio.CapacityLimiter(MAXIMUM_WAITING_THREADS)
+            _TOOL_LIMITER.set(limiter)
+        return await anyio.to_thread.run_sync(
+            functools.partial(work, *args, **kwargs), limiter=limiter
+        )
+
+    return keep_signature(threaded, function)
+
+
+@contextmanager
+def hold_lock(lock: threading.RLock) -> Generator[None]:
+    """
+    Hold a lock, giving up the thread's work slot while waiting for it.
+
+    A slot is only held by a call that runs, never by one waiting for a lock, so the calls
+    queued on one busy instance leave the slots to everyone else. This can't deadlock: a
+    slot holder never waits for a lock, so it always finishes and frees its slot for the
+    call that took the lock and waits for a slot again.
+
+    Args:
+        lock (threading.RLock): The lock to hold.
+    """
+    if not lock.acquire(blocking=False):
+        if getattr(_SLOT, "held", False):
+            _WORK_SLOTS.release()
+            _SLOT.held = False
+            try:
+                lock.acquire()
+            finally:
+                _WORK_SLOTS.acquire()
+                _SLOT.held = True
+        else:
+            lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def create_from_environment(

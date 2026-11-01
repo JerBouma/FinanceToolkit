@@ -9,6 +9,11 @@ import pandas as pd
 # pylint: disable=too-many-locals
 
 
+# The most time steps of a tree: the tree is returned as a table of steps by steps, so its size
+# grows with the square of the steps.
+MAX_TIMESTEPS = 1_000
+
+
 def calculate_up_and_down_movements(volatility: float, time_delta: float):
     """
     Calculates the up and down movements in the binomial tree.
@@ -85,6 +90,12 @@ def calculate_stock_prices(
     Returns:
         pd.DataFrame: Stock prices at each node.
     """
+    if period_length > MAX_TIMESTEPS:
+        raise ValueError(
+            f"A tree of {period_length:,} time steps is too large; use at most "
+            f"{MAX_TIMESTEPS:,}."
+        )
+
     if up_movement == down_movement:
         raise ValueError(
             "The up and down movement are equal, which happens when the volatility or the "

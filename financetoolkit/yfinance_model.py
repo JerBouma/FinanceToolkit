@@ -470,10 +470,10 @@ def get_historical_statistics(ticker: str) -> pd.Series:
         return pd.Series()
 
     if response.status_code == 200:  # noqa
-        data = response.json()
-
         try:
-            statistics = data["chart"]["result"][0]["meta"]
+            # A consent page instead of JSON, a null result or an empty one is no data
+            # for this ticker rather than a failure of every ticker requested with it.
+            statistics = response.json()["chart"]["result"][0]["meta"]
 
             # The dates are the exchange's calendar dates: a timestamp read in the
             # machine's own timezone would move a day for users east or west of it.
@@ -487,7 +487,7 @@ def get_historical_statistics(ticker: str) -> pd.Series:
                     ).strftime("%Y-%m-%d")
                     statistics[timestamp_data] = timestamp
 
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError, IndexError):
             return pd.Series()
 
         columns = {

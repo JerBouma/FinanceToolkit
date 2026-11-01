@@ -554,7 +554,22 @@ def format_result(
     if isinstance(dataset, list | tuple):
         if not dataset:
             return _no_data(reason)
-        return json.dumps(_inject([_clean(value) for value in dataset]), default=str)
+        values = [_clean(value) for value in dataset]
+        # A list has no rows to cut by date, so it keeps its first values that fit.
+        if max_characters and len(json.dumps(values, default=str)) > max_characters:
+            kept = len(values)
+            while (
+                kept > 1
+                and len(json.dumps(values[:kept], default=str)) > max_characters
+            ):
+                kept //= 2
+            notes = [
+                *(notes or []),
+                f"The answer was cut to its first {kept} of {len(values)} values to fit the "
+                "response size; use limit to choose which values are returned.",
+            ]
+            values = values[:kept]
+        return json.dumps(_inject(values), default=str)
 
     logger.warning("Unexpected result type: %s. Returning raw string.", type(dataset))
     return json.dumps(_inject({"value": str(dataset)}))

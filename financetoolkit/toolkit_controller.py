@@ -324,10 +324,15 @@ class Toolkit:
         self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
 
-        # One extra period so two-period metrics have a prior value for the first year.
+        # Data before the start date, so the first periods have what they build on: a prior
+        # year for annual growth, and for quarterly data the three quarters before the first
+        # one of a trailing twelve months (the default of the valuation ratios) plus the four
+        # before those for the growth over a year (lag=4) of statement figures. Prices start at
+        # the start date, so ratios with a price have no growth in their first period. Only the
+        # periods from the start date on are returned.
         if quarterly:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(
-                days=92
+                days=92 * 8
             )
         else:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(
@@ -1719,8 +1724,9 @@ class Toolkit:
         Also known as: earnings dates, earnings schedule, reporting date.
 
         Args:
-            actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters.
-            overwrite (bool): Defines whether to overwrite the existing data.
+            actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters. Defaults to
+                True.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
             rounding (int | None): The number of decimals to round the results to. Defaults to None,
@@ -1998,7 +2004,7 @@ class Toolkit:
         Also known as: revenue by region, geographic revenue breakdown.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2094,7 +2100,7 @@ class Toolkit:
         Also known as: revenue by product, product segment revenue.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2230,9 +2236,10 @@ class Toolkit:
             technical indicators.
             overwrite (bool): Defines whether to overwrite the existing data. If this is not enabled, the function
             will return the earlier retrieved data. This is done to prevent too many API calls. Defaults to False.
-            rounding (int): Defines the number of decimal places to round the data to.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
-            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
+            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
             show_columns (list[str], optional): A list of columns to include in the output. Valid columns
             are Open, High, Low, Close, Adj Close, Volume, Dividends, Return and Cumulative Return.
             Invalid column names are logged as warnings. If all
@@ -2598,8 +2605,9 @@ class Toolkit:
         Also known as: dividend dates, ex-dividend date, dividend history.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2742,8 +2750,9 @@ class Toolkit:
         Also known as: environmental social governance, sustainability, ESG rating.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2843,7 +2852,7 @@ class Toolkit:
         Also known as: country risk premium, Damodaran equity risk premium.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The market risk premium by country, including the continent, Country
@@ -2940,7 +2949,7 @@ class Toolkit:
         Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The Commitment of Traders report for the specified tickers.
@@ -3040,7 +3049,7 @@ class Toolkit:
         Also known as: management team, company officers, leadership.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3118,7 +3127,7 @@ class Toolkit:
         Also known as: executive pay, management compensation, proxy statement compensation.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3197,7 +3206,7 @@ class Toolkit:
         Also known as: listed debt, bonds issued, debt securities.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3270,7 +3279,7 @@ class Toolkit:
         Also known as: headcount, number of employees, workforce size.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The employee count per reporting year (rows) and ticker (columns).
@@ -3338,7 +3347,7 @@ class Toolkit:
         Also known as: free float, float shares, public float, share liquidity.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The share float figures (rows) per ticker (columns).
@@ -3401,7 +3410,7 @@ class Toolkit:
         Also known as: M&A, acquisitions, mergers, takeovers.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3486,7 +3495,7 @@ class Toolkit:
         Also known as: share splits, reverse splits, split history.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The splits per ticker, indexed by their date.
@@ -3569,8 +3578,9 @@ class Toolkit:
         Also known as: insider trading, insider transactions, Form 4 statistics.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3658,7 +3668,7 @@ class Toolkit:
         Also known as: analyst ratings, upgrades and downgrades, analyst grades.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3821,7 +3831,7 @@ class Toolkit:
                 "2025Q4" (or "2025-Q4", "Q4 2025"). It is the company's own fiscal year, which
                 differs from the calendar year for e.g. Apple and Microsoft. Takes precedence
                 over latest. Defaults to None.
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The date and transcript per ticker, indexed by fiscal period.
@@ -3971,7 +3981,8 @@ class Toolkit:
         Also known as: US Treasury yields, yield curve, treasury rates.
 
         Args:
-            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly, or yearly.
+            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly,
+                or yearly. Defaults to "daily".
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
@@ -4231,12 +4242,12 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the returned data to. Defaults
             to None, which uses the rounding of the Toolkit. The rates the financial statements are
             translated with are never rounded.
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
-            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
+            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -4537,11 +4548,12 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            growth (bool): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int]): Defines the number of periods to lag the growth data by.
-            E.g. 4 with quarterly data gives the growth against the same quarter a year earlier.
+            E.g. 4 with quarterly data gives the growth against the same quarter a year earlier. Defaults to 1.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -4719,12 +4731,14 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
-            lag (int | list[int]): Defines the number of periods to lag the growth data by.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            growth (bool): Defines whether to return the growth of the data. Defaults to False.
+            lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
+            window.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -4924,12 +4938,14 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
-            lag (int | list[int]): Defines the number of periods to lag the growth data by.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            growth (bool): Defines whether to return the growth of the data. Defaults to False.
+            lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
+            window.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -5128,8 +5144,9 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 

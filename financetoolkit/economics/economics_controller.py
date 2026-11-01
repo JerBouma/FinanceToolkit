@@ -1095,8 +1095,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3458,8 +3458,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3572,8 +3572,8 @@ class Economics:
                 Global Macro Database (GMDB). Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3720,8 +3720,8 @@ class Economics:
                 Defaults to None, which is the monthly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3829,8 +3829,8 @@ class Economics:
                 quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3919,8 +3919,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4000,8 +4000,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4090,8 +4090,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4184,13 +4184,14 @@ class Economics:
                 annual data (False). Defaults to None, which returns the quarterly data, the
                 highest frequency the OECD publishes.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data or the nominal data.
+                Defaults to False.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB),
                 which is annual. Defaults to None, which uses the OECD for quarterly data and the GMDB for
                 annual data; asking for the GMDB together with quarterly data logs a warning.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4312,8 +4313,8 @@ class Economics:
                 highest frequency the OECD publishes.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4413,8 +4414,8 @@ class Economics:
                 highest frequency the OECD publishes.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4511,8 +4512,8 @@ class Economics:
                 highest frequency the OECD publishes.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4612,8 +4613,8 @@ class Economics:
                 quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4725,8 +4726,8 @@ class Economics:
                 quarter or year instead of its average. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5246,8 +5247,8 @@ class Economics:
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5395,8 +5396,8 @@ class Economics:
                 Not used for daily and weekly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5541,8 +5542,8 @@ class Economics:
             period (str, optional): Whether to return the daily, weekly or monthly data. Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5952,8 +5953,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6044,8 +6045,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6169,8 +6170,8 @@ class Economics:
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6444,8 +6445,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6535,8 +6536,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6642,8 +6643,8 @@ class Economics:
                 Defaults to None, which falls back to the gmdb_source set on the Economics class (True by default).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6747,8 +6748,8 @@ class Economics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7090,8 +7091,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7179,8 +7180,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7271,8 +7272,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7362,8 +7363,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7451,8 +7452,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7544,8 +7545,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7643,8 +7644,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7737,8 +7738,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7837,8 +7838,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8076,8 +8077,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8210,8 +8211,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8327,8 +8328,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8501,8 +8502,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8801,8 +8802,8 @@ class Economics:
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
             trailing periods. Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9091,8 +9092,8 @@ class Economics:
                 to False, which returns nothing.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9202,8 +9203,8 @@ class Economics:
                 "share prices"]. Defaults to None, which includes all of them.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data.
-            lag (int, optional): The number of periods to lag the data by.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9814,7 +9815,7 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2026-01-01')
+        economics = Economics(start_date='2026-01-01', end_date='2026-09-30')
 
         economics.get_shiller_stock_market_data()[['Price', 'Dividend', 'Earnings', 'CAPE']]
         ```
@@ -9832,7 +9833,6 @@ class Economics:
         | 2026-07 | 7481.34 |   nan      |    nan     | 40.0086 |
         | 2026-08 | 7711.32 |   nan      |    nan     | 40.9874 |
         | 2026-09 | 7669.41 |   nan      |    nan     | 40.5809 |
-        | 2026-10 | 7722.72 |   nan      |    nan     | 40.7106 |
         """
         stock_market_data = shiller_model.get_stock_market_data()
 

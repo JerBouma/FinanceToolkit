@@ -1005,3 +1005,35 @@ def test_an_expiry_without_a_chain_leaves_the_other_tickers(option_market, monke
     with pytest.raises(ValueError, match=f"{bad} has no option chain"):
         module._model_free_volatility(bad, days=30)
     assert not module._model_free_volatility(good, days=30).empty
+
+
+def test_monte_carlo_paths_in_chunks_give_the_same_price_and_large_runs_are_refused():
+    import numpy as np
+    import pytest
+
+    from financetoolkit.options import options_model
+
+    kwargs = {
+        "stock_price": 100.0,
+        "strike_price": 100.0,
+        "risk_free_rate": 0.05,
+        "volatility": 0.2,
+        "time_to_expiration": 1.0,
+        "simulations": 25_000,
+        "time_steps": 50,
+        "seed": 1,
+    }
+
+    # The price of all paths drawn at once, as before the paths were drawn in chunks.
+    shocks = np.random.default_rng(1).standard_normal((25_000, 50))
+    delta = 1 / 50
+    log_paths = ((0.05 - 0.02) * delta + 0.2 * np.sqrt(delta) * shocks).sum(axis=1)
+    expected = np.exp(-0.05) * np.maximum(100 * np.exp(log_paths) - 100, 0).mean()
+
+    price, _ = options_model.get_monte_carlo_option_price(**kwargs)
+
+    assert price == pytest.approx(expected, rel=1e-12)
+    with pytest.raises(ValueError, match="too large"):
+        options_model.get_monte_carlo_option_price(
+            **{**kwargs, "simulations": 1_000_000, "time_steps": 1_000}
+        )

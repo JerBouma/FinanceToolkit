@@ -455,3 +455,21 @@ def test_an_unreadable_span_serves_the_cached_history(tmp_path):
     cache_controller.clear_active_cache()
     with pytest.raises(ValueError, match="TIME_PERIOD"):
         collect_ranged_data(fetch=unreadable, end_date="2026-10-05", **arguments)
+
+
+def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
+    from financetoolkit.fixedincome import fred_model
+
+    def refused(url, **kwargs):  # noqa: ARG001
+        raise requests.exceptions.ConnectionError(
+            "Max retries exceeded with url: /fred/series/observations"
+            "?series_id=GS10&api_key=SECRETKEY123&file_type=json"
+        )
+
+    monkeypatch.setattr(fred_model, "get_request", refused)
+
+    with pytest.raises(RuntimeError) as error:
+        fred_model._request_series("GS10", "2026-01-01", "2026-02-01", "SECRETKEY123")
+
+    assert "SECRETKEY123" not in str(error.value)
+    assert error.value.__cause__ is None

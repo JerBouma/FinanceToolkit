@@ -226,50 +226,12 @@ def test_get_choppiness_index(recorder):
 
 
 def test_get_know_sure_thing(recorder):
-    recorder.capture(
-        momentum_model.get_know_sure_thing(
-            pd.Series(
-                [
-                    100,
-                    102,
-                    101,
-                    105,
-                    110,
-                    108,
-                    112,
-                    115,
-                    111,
-                    120,
-                    118,
-                    123,
-                    127,
-                    130,
-                    128,
-                    132,
-                    135,
-                    140,
-                    138,
-                    145,
-                    150,
-                    148,
-                    152,
-                    155,
-                    160,
-                    158,
-                    162,
-                    165,
-                    170,
-                    168,
-                    172,
-                    175,
-                    180,
-                    178,
-                    182,
-                    185,
-                ]
-            )
-        ).round(3)
-    )
+    prices = sample_prices()
+    result = momentum_model.get_know_sure_thing(prices["Close"]).round(6)
+
+    # The windows fill within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
 
 
 def test_get_know_sure_thing_custom_parameters(recorder):

@@ -39,9 +39,12 @@ def test_get_double_exponential_moving_average(recorder):
 
 
 def test_get_trix(recorder):
-    recorder.capture(
-        overlap_model.get_trix(pd.Series([0.01, -0.03, 0.05, 0.01, -0.02]), 10).round(3)
-    )
+    prices = sample_prices()
+    result = overlap_model.get_trix(prices["Close"], 10).round(6)
+
+    # The windows fill within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
 
 
 def test_get_triangular_moving_average(recorder):

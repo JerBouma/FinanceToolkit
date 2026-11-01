@@ -877,12 +877,14 @@ def get_cache(
     registry_key = f"{resolved}|{','.join(sorted(excluded))}"
 
     with _REGISTRY_LOCK:
-        if registry_key not in _CACHE_REGISTRY:
-            _CACHE_REGISTRY[registry_key] = Cache(
-                location=location, enabled=True, excluded_sources=excluded
-            )
+        cache = _CACHE_REGISTRY.get(registry_key)
+    if cache is not None:
+        return cache
 
-        return _CACHE_REGISTRY[registry_key]
+    # Opened outside the lock: opening evicts stale entries once a day, which can wait for another process's write lock, and that would hold up every other caller meanwhile. When two threads open the same location at once, the first instance registered is kept.  # noqa: E501
+    cache = Cache(location=location, enabled=True, excluded_sources=excluded)
+    with _REGISTRY_LOCK:
+        return _CACHE_REGISTRY.setdefault(registry_key, cache)
 
 
 def reset_cache_registry() -> None:

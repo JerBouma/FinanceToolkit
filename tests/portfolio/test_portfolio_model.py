@@ -443,7 +443,9 @@ def test_a_price_of_zero_is_accepted():
     [
         ("-4.587,24", -4587.24),
         ("-4,587.24", -4587.24),
-        ("1,000", 1000.0),
+        ("1,000", 1.0),
+        ("2,500", 2.5),
+        ("-1,500", -1.5),
         ("1,234,567", 1234567.0),
         ("1.234.567", 1234567.0),
         ("1,234,567.89", 1234567.89),
@@ -459,3 +461,45 @@ def test_numbers_with_thousands_separators_are_read(text, number):
     from financetoolkit.portfolio.helpers import convert_to_float  # noqa: PLC0415
 
     assert convert_to_float(text) == pytest.approx(number)
+
+
+def test_duplicates_in_another_case_are_merged(tmp_path):
+    data = pd.DataFrame(
+        {
+            "Date": ["2023-01-03", "2023-01-03"],
+            "Name": ["Apple Inc", "Apple Inc"],
+            "Ticker": ["aapl", "AAPL"],
+            "Price": [150.0, 150.0],
+            "Volume": [10, 10],
+            "Currency": ["USD", "USD"],
+            "Costs": [1.0, 1.0],
+        }
+    )
+    location = tmp_path / "transactions.csv"
+    data.to_csv(location, index=False)
+
+    dataset = read_portfolio_dataset(
+        excel_location=[str(location)],
+        adjust_duplicates=True,
+        date_column=["Date"],
+        date_format_options=["%Y-%m-%d"],
+        name_columns=["Name"],
+        ticker_columns=["Ticker"],
+        price_columns=["Price"],
+        volume_columns=["Volume"],
+        currency_columns=["Currency"],
+        costs_columns=["Costs"],
+        column_mapping={
+            "date": "Date",
+            "name": "Name",
+            "identifier": "Identifier",
+            "price": "Price",
+            "volume": "Volume",
+            "currency": "Currency",
+            "costs": "Costs",
+        },
+    )[0]
+
+    assert len(dataset) == 1
+    assert dataset["Identifier"].iloc[0] == "AAPL"
+    assert dataset["Volume"].iloc[0] == 20

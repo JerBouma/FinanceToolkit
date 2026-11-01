@@ -4,6 +4,7 @@ import os
 import shutil
 from importlib import resources
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.portfolio import (
@@ -354,6 +355,10 @@ class Portfolio:
         )
         if not rate_tickers:
             return pd.DataFrame()
+        # Ten days earlier, so a transaction on a weekend or holiday at the start has the last rate before it.  # noqa: E501
+        start_date = (pd.Timestamp(start_date) - pd.Timedelta(days=10)).strftime(
+            "%Y-%m-%d"
+        )
 
         retrieved = (
             set()
@@ -1417,60 +1422,100 @@ class Portfolio:
         Express every transaction in one reporting currency when they are made in more than
         one, so the invested amounts, values and weights of different holdings add up. The
         reporting currency is the `currency` of the Portfolio or else the currency most is
-        invested in. Prices and costs are converted at the exchange rate of each transaction's
-        day; the historical data then follows the currency of the transactions.
+        invested in, with the amounts compared in dollars. Prices and costs are converted at
+        the exchange rate of each transaction's day (or the last one before it), and a
+        transaction without such a rate raises a ValueError. Prices in pence (GBp) and pounds
+        without a `currency` are expressed in pounds. The historical data then follows the currency of the
+        transactions.
         """
         currencies = self._portfolio_dataset[self._currency_column]
         known = currencies.dropna().astype(str)
-        majors = {portfolio_model.get_price_unit(currency)[0] for currency in known}
-        if not majors or (len(majors) == 1 and self._currency in (None, *majors)):
-            return
-
-        invested = (
-            self._portfolio_dataset[self._price_column]
-            * self._portfolio_dataset[self._volume_column]
-        ).abs()
-        totals: dict[str, float] = {}
-        for currency, amount in zip(currencies, invested, strict=True):
-            if isinstance(currency, str) and not pd.isna(amount):
-                major = portfolio_model.get_price_unit(currency)[0]
-                totals[major] = totals.get(major, 0.0) + float(amount)
-        reporting_currency = self._currency or max(totals, key=totals.__getitem__)
-        _, reporting_units = portfolio_model.get_price_unit(reporting_currency)
-
-        rate_tickers = {
-            currency: portfolio_model.get_exchange_rate_ticker(
-                reporting_currency, currency
+        price_units = {portfolio_model.get_price_unit(currency) for currency in known}
+        # Nothing to convert when every transaction is in the same unit as the reporting currency;
+        # pence and pounds are one major currency but still differ by a factor of 100.
+        if not price_units or (
+            len(price_units) == 1
+            and (
+                self._currency is None
+                or portfolio_model.get_price_unit(self._currency) in price_units
             )
-            for currency in set(known)
-        }
-        exchange_rates = self._get_exchange_rates(
-            list(rate_tickers.values()), self._start_date
-        )
+        ):
+            return
+        majors = {major for major, _ in price_units}
         dates = pd.PeriodIndex(
             self._portfolio_dataset.index.get_level_values(0), freq="D"
         )
 
-        factors = pd.Series(1.0, index=self._portfolio_dataset.index)
-        for currency, rate_ticker in rate_tickers.items():
-            rows = (currencies == currency).to_numpy()
-            _, units = portfolio_model.get_price_unit(currency)
-            rate: pd.Series | float = 1.0
-            if rate_ticker is not None:
-                if (
-                    exchange_rates.empty
-                    or rate_ticker not in exchange_rates.columns
-                    or exchange_rates[rate_ticker].isna().all()
-                ):
-                    raise ValueError(
-                        f"Transactions in {currency} cannot be converted to the reporting "
-                        f"currency {reporting_currency} without the exchange rate {rate_ticker}."
+        def conversion_factors(reporting_currency: str) -> pd.Series:
+            # The factor that turns a price of each transaction into the reporting currency at the rate of its day.  # noqa: E501
+            _, reporting_units = portfolio_model.get_price_unit(reporting_currency)
+            rate_tickers = {
+                currency: portfolio_model.get_exchange_rate_ticker(
+                    reporting_currency, currency
+                )
+                for currency in set(known)
+            }
+            exchange_rates = self._get_exchange_rates(
+                list(rate_tickers.values()), self._start_date
+            )
+            factors = pd.Series(np.nan, index=self._portfolio_dataset.index)
+            for currency, rate_ticker in rate_tickers.items():
+                rows = (currencies == currency).to_numpy()
+                _, units = portfolio_model.get_price_unit(currency)
+                rate: np.ndarray | float = 1.0
+                if rate_ticker is not None:
+                    # The rate of each transaction's day, or the last one before it.
+                    rate = (
+                        portfolio_model.align_exchange_rate(
+                            exchange_rates[rate_ticker], dates[rows]
+                        ).to_numpy(dtype=float)
+                        if rate_ticker in exchange_rates.columns
+                        else np.full(rows.sum(), np.nan)
                     )
-                # The rate of each transaction's day, or the last one before it.
-                rate = portfolio_model.align_exchange_rate(
-                    exchange_rates[rate_ticker], dates[rows]
-                ).to_numpy()
-            factors[rows] = reporting_units / units / rate
+                    if np.isnan(rate).any():
+                        missing = dates[rows][np.isnan(rate)].min()
+                        raise ValueError(
+                            f"Transactions in {currency} cannot be converted to the reporting "
+                            f"currency {reporting_currency} without the exchange rate "
+                            f"{rate_ticker} on or before {missing}."
+                        )
+                factors[rows] = reporting_units / units / rate
+            return factors
+
+        if self._currency:
+            reporting_currency = self._currency
+        elif len(majors) == 1:
+            reporting_currency = next(iter(majors))
+        else:
+            # The currency most is invested in, with every amount compared in dollars at the rate of its day: 1,000,000 yen is less than 50,000 dollars.  # noqa: E501
+            invested = (
+                self._portfolio_dataset[self._price_column]
+                * self._portfolio_dataset[self._volume_column]
+            ).abs()
+            try:
+                invested = invested * conversion_factors("USD")
+            except ValueError:
+                # Without the dollar rates, the amounts are compared in the major units of their own currency.  # noqa: E501
+                invested = invested / [
+                    (
+                        portfolio_model.get_price_unit(currency)[1]
+                        if isinstance(currency, str)
+                        else 1
+                    )
+                    for currency in currencies
+                ]
+            major_currencies = [
+                (
+                    portfolio_model.get_price_unit(currency)[0]
+                    if isinstance(currency, str)
+                    else None
+                )
+                for currency in currencies
+            ]
+            totals = invested.groupby(major_currencies, sort=False).sum()
+            reporting_currency = str(totals.idxmax())
+
+        factors = conversion_factors(reporting_currency)
 
         for column in (self._price_column, self._costs_column):
             if column in self._portfolio_dataset.columns:
@@ -2316,8 +2361,10 @@ class Portfolio:
                 should be calculated. This can be one of the following: 'yearly', 'quarterly',
                 'monthly', 'weekly', or 'daily'. If None, the default is 'quarterly' if
                 the 'quarterly' attribute is set to True, otherwise 'yearly'.
-            exclude_sold_positions (bool): Whether to leave out the periods without purchases,
-                in which only units bought earlier were sold. Defaults to True.
+            exclude_sold_positions (bool): Whether to leave out the periods without an invested
+                amount: those in which only units bought earlier were sold, and those whose only
+                purchases cost nothing (a price of 0), which have no return to measure. Defaults
+                to True.
             rounding (int | None): The number of decimal places to round the output to.
                 If None, it defaults to the rounding specified in the configuration.
 

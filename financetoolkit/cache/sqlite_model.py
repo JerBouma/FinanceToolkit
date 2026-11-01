@@ -286,8 +286,8 @@ class SQLiteBackend:
 
         Reading the coverage and the payload over three separate connections lets
         a concurrent writer commit in between, so the planner could see coverage
-        that does not describe the payload it read. A single connection gives one
-        consistent view of both.
+        that does not describe the payload it read. One read transaction on a single
+        connection gives one consistent view of both.
 
         Args:
             key (str): The dataset key.
@@ -301,15 +301,20 @@ class SQLiteBackend:
                 stored payload (None when nothing is cached).
         """
         with self._connect() as connection:
-            ever_rows = connection.execute(
-                "SELECT start_date, end_date, fetched_at FROM coverage "
-                "WHERE key = ? AND entity = ?",
-                (key, entity),
-            ).fetchall()
-            payload_row = connection.execute(
-                "SELECT payload FROM series WHERE key = ? AND entity = ?",
-                (key, entity),
-            ).fetchone()
+            # One read transaction, so both SELECTs see the same snapshot; in autocommit mode each would take its own.  # noqa: E501
+            connection.execute("BEGIN")
+            try:
+                ever_rows = connection.execute(
+                    "SELECT start_date, end_date, fetched_at FROM coverage "
+                    "WHERE key = ? AND entity = ?",
+                    (key, entity),
+                ).fetchall()
+                payload_row = connection.execute(
+                    "SELECT payload FROM series WHERE key = ? AND entity = ?",
+                    (key, entity),
+                ).fetchone()
+            finally:
+                connection.execute("COMMIT")
 
         ever_covered = [
             (normalize_date(start), normalize_date(end)) for start, end, _ in ever_rows

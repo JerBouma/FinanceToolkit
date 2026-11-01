@@ -826,3 +826,20 @@ def test_ratios_call_only_the_loaders_a_ratio_needs(ratios_module):
 
     ratios.get_price_to_earnings_ratio()
     assert sorted(loaded) == ["income", "period", "tickers"]
+
+
+def test_collected_z_scores_equal_those_of_each_ratio(ratios_module, monkeypatch):
+    # Both describe the periods shown, so a later start date gives the same Z-Scores.
+    periods = ratios_module.get_gross_margin().columns
+    monkeypatch.setattr(ratios_module, "_start_date", str(periods[2]))
+
+    collected = ratios_module.collect_profitability_ratios(standardize=True)
+    single = ratios_module.get_gross_margin(standardize=True)
+
+    ticker = single.index[0]
+    pd.testing.assert_series_equal(
+        collected.loc[(ticker, "Gross Margin")],
+        single.loc[ticker],
+        check_names=False,
+    )
+    assert collected.columns[0] == periods[2]

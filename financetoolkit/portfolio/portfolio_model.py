@@ -112,6 +112,13 @@ def read_portfolio_dataset(
             costs_columns=costs_columns,
         )
 
+        # Written as the Portfolio writes them, so "aapl" and "AAPL" on the same day are one duplicate.  # noqa: E501
+        portfolio_dataset[selected_ticker_column] = portfolio_dataset[
+            selected_ticker_column
+        ].map(
+            lambda ticker: ticker.strip().upper() if isinstance(ticker, str) else ticker
+        )
+
         duplicate_mask = portfolio_dataset.duplicated(keep=False)
 
         if duplicate_mask.any() and adjust_duplicates:

@@ -605,3 +605,22 @@ def test_a_buy_at_zero_cost_has_no_return_of_its_own_but_counts_in_the_totals():
     assert overview.loc["Portfolio", "Invested"] == pytest.approx(1000.0)
     assert overview.loc["Portfolio", "Latest Value"] == pytest.approx(1350.0)
     assert overview.loc["Portfolio", "Return"] == pytest.approx(0.35)
+
+
+def test_selling_everything_held_in_fractions_does_not_warn(caplog):
+    dates = pd.period_range("2024-01-02", periods=3, freq="D")
+    transactions = pd.DataFrame(
+        {
+            "Identifier": ["A", "A", "A"],
+            "Volume": [0.1, 0.2, -0.3],
+            "Price": [100.0, 100.0, 110.0],
+        },
+        index=pd.Index(dates, name="Date"),
+    ).set_index("Identifier", append=True)
+
+    with caplog.at_level("WARNING"):
+        create_profit_and_loss_overview(
+            transactions, "Identifier", "Volume", "Price", method="FIFO"
+        )
+
+    assert "More units are sold than held" not in caplog.text

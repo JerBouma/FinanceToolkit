@@ -1,5 +1,6 @@
 """Cache Controller Tests"""
 
+import contextlib
 import sqlite3
 import threading
 from datetime import date, timedelta
@@ -7,7 +8,7 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from financetoolkit.cache import cache_controller, policy_model
+from financetoolkit.cache import cache_controller, policy_model, sqlite_model
 
 
 @pytest.fixture(name="cache")
@@ -519,3 +520,45 @@ def test_reads_do_not_wait_for_a_writer_of_the_same_process(cache):
         reader.join(timeout=5)
 
     assert answers == [{"a": 1}]
+
+
+def test_opening_a_cache_does_not_hold_the_registry_lock(tmp_path, monkeypatch):
+    """Test that a slow eviction at one location does not block the registry for others."""
+    cache_controller.reset_cache_registry()
+    seen = []
+
+    def remove_stale_entries(self):
+        # Another thread could not take the registry lock if it were held here.
+        seen.append(cache_controller._REGISTRY_LOCK.acquire(blocking=False))
+        if seen[-1]:
+            cache_controller._REGISTRY_LOCK.release()
+
+    monkeypatch.setattr(
+        cache_controller.Cache, "_remove_stale_entries", remove_stale_entries
+    )
+
+    first = cache_controller.get_cache(tmp_path / "a")
+
+    assert seen == [True]
+    assert cache_controller.get_cache(tmp_path / "a") is first
+    cache_controller.reset_cache_registry()
+
+
+def test_coverage_and_payload_are_read_in_one_transaction(tmp_path, monkeypatch):
+    """Test that both reads run inside one BEGIN/COMMIT, so they share a snapshot."""
+    backend = sqlite_model.SQLiteBackend(tmp_path / "cache.db")
+    statements = []
+    connect = backend._connect
+
+    @contextlib.contextmanager
+    def tracing_connect(write=False):
+        with connect(write) as connection:
+            connection.set_trace_callback(statements.append)
+            yield connection
+
+    monkeypatch.setattr(backend, "_connect", tracing_connect)
+
+    backend.read_entity_state("key", "entity", 0.0)
+
+    queries = [statement.split()[0] for statement in statements]
+    assert queries == ["BEGIN", "SELECT", "SELECT", "COMMIT"]

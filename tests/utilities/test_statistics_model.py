@@ -557,3 +557,23 @@ def test_rounding_leaves_text_and_dates_and_rounds_numbers_among_them():
     assert rounded["date"].equals(data["date"])
     assert rounded["text"].tolist() == ["x", "y"]
     assert mixed.tolist() == [1.23, "x"]
+
+
+def test_rounding_keeps_small_statistics_and_rounds_integers():
+    statistics = pd.DataFrame(
+        {"value": pd.Series([0.000012345, 0.123456, -0.000004, 0.0], dtype=object)}
+    )
+    integers = pd.DataFrame({"count": [1234, 5678], "value": [1234.5, 5678.9]})
+
+    rounded = statistics_model.apply_rounding(statistics, 4)
+
+    # A p-value of 0.000012345 keeps its first four significant digits instead of showing as 0.
+    assert rounded["value"].tolist() == [0.00001234, 0.1235, -0.000004, 0.0]
+    assert statistics_model.apply_rounding(integers, -2)["count"].tolist() == [
+        1200,
+        5700,
+    ]
+    assert statistics_model.apply_rounding(integers["count"], -2).tolist() == [
+        1200,
+        5700,
+    ]

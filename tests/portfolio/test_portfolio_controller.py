@@ -673,3 +673,117 @@ def test_a_period_with_purchases_and_larger_sales_keeps_its_performance(monkeypa
     march = performance.loc[(pd.Period("2021-03", freq="M"), "AAPL")]
     assert march["Volume"] == -5.0
     assert march["Invested Amount"] > 0
+
+
+def _converted_portfolio(monkeypatch, trades, rates, **kwargs):
+    monkeypatch.setattr(
+        Portfolio,
+        "_get_exchange_rates",
+        lambda self, rate_tickers, start_date: rates.reindex(
+            columns=sorted(rate_ticker for rate_ticker in rate_tickers if rate_ticker)
+        ),
+    )
+    portfolio = Portfolio(transactions=trades, **kwargs)
+    portfolio._convert_transactions_to_reporting_currency()
+    return portfolio._portfolio_dataset.droplevel(0)
+
+
+def test_the_reporting_currency_compares_amounts_in_one_currency(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-05", "2021-01-05"],
+            "Ticker": ["7203.T", "AAPL"],
+            "Price": [1000.0, 200.0],
+            "Volume": [1000, 250],
+            "Costs": [0.0, 0.0],
+            "Currency": ["JPY", "USD"],
+        }
+    )
+    dates = pd.period_range("2021-01-01", "2021-01-10", freq="D")
+    rates = pd.DataFrame({"USDJPY=X": 150.0}, index=dates)
+
+    dataset = _converted_portfolio(monkeypatch, trades, rates)
+
+    # 1,000,000 yen is about 6,667 dollars, less than the 50,000 dollars in AAPL.
+    assert set(dataset["Currency"]) == {"USD"}
+    assert dataset.loc["AAPL", "Price"] == pytest.approx(200.0)
+    assert dataset.loc["7203.T", "Price"] == pytest.approx(1000.0 / 150.0)
+
+
+def test_a_weekend_transaction_uses_the_last_rate_before_it(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2024-01-06", "2024-01-08"],
+            "Ticker": ["ASML.AS", "AAPL"],
+            "Price": [100.0, 100.0],
+            "Volume": [1, 10],
+            "Costs": [0.0, 0.0],
+            "Currency": ["EUR", "USD"],
+        }
+    )
+    # Rates retrieved from before the first transaction, with Friday's rate the last before Saturday.  # noqa: E501
+    rates = pd.DataFrame(
+        {"USDEUR=X": [0.9, 0.8]},
+        index=pd.PeriodIndex(["2024-01-05", "2024-01-08"], freq="D"),
+    )
+
+    dataset = _converted_portfolio(monkeypatch, trades, rates)
+
+    assert dataset.loc["ASML.AS", "Price"] == pytest.approx(100.0 / 0.9)
+
+
+def test_a_transaction_without_any_rate_before_it_raises(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2024-01-06", "2024-01-08"],
+            "Ticker": ["ASML.AS", "AAPL"],
+            "Price": [100.0, 100.0],
+            "Volume": [1, 10],
+            "Costs": [0.0, 0.0],
+            "Currency": ["EUR", "USD"],
+        }
+    )
+    rates = pd.DataFrame(
+        {"USDEUR=X": [0.8]}, index=pd.PeriodIndex(["2024-01-08"], freq="D")
+    )
+
+    with pytest.raises(ValueError, match="USDEUR=X on or before 2024-01-06"):
+        _converted_portfolio(monkeypatch, trades, rates)
+
+
+def test_pence_and_pounds_are_expressed_in_pounds(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-05", "2021-01-05"],
+            "Ticker": ["VOD.L", "BP.L"],
+            "Price": [120.0, 3.0],
+            "Volume": [100, 10],
+            "Costs": [-50.0, -1.0],
+            "Currency": ["GBp", "GBP"],
+        }
+    )
+
+    dataset = _converted_portfolio(monkeypatch, trades, pd.DataFrame())
+
+    assert set(dataset["Currency"]) == {"GBP"}
+    assert dataset.loc["VOD.L", "Price"] == pytest.approx(1.2)
+    assert dataset.loc["VOD.L", "Costs"] == pytest.approx(-0.5)
+    assert dataset.loc["BP.L", "Price"] == pytest.approx(3.0)
+
+
+def test_pence_are_expressed_in_pounds_when_the_currency_is_pounds(monkeypatch):
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-05"],
+            "Ticker": ["VOD.L"],
+            "Price": [120.0],
+            "Volume": [100],
+            "Costs": [0.0],
+            "Currency": ["GBp"],
+        }
+    )
+
+    dataset = _converted_portfolio(monkeypatch, trades, pd.DataFrame(), currency="GBP")
+
+    assert set(dataset["Currency"]) == {"GBP"}
+    assert dataset.loc["VOD.L", "Price"] == pytest.approx(1.2)

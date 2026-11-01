@@ -12,6 +12,8 @@ logger = logger_model.get_logger()
 
 # Trading days used to annualize, matching the Risk module's convention.
 TRADING_DAYS_PER_YEAR = 252
+# Units left to sell below this are floating point residue of the volumes, not an oversold position.
+OVERSOLD_TOLERANCE = 1e-9
 
 
 def _safe_divide(
@@ -1235,8 +1237,8 @@ def create_profit_and_loss_overview(
                         total_volume = 0
 
                 pnl.append(realized_pnl)
-                # Units sold beyond those held have no purchase to realize a PnL against.
-                if sell_volume > 0:
+                # Units sold beyond those held have no purchase to realize a PnL against. A remainder from floating point residue (0.1 + 0.2 - 0.3) is not a sale.  # noqa: E501
+                if sell_volume > OVERSOLD_TOLERANCE:
                     oversold.add(str(ticker))
 
             else:

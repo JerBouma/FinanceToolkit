@@ -469,36 +469,60 @@ def apply_rounding(
         return dataset
 
     # A small negative number rounds to -0.0, which prints as "-0"; adding 0.0 turns it
-    # into 0.0 and leaves every other number as it is. Numbers in a column of mixed values
-    # are rounded one by one; text, dates, integers and booleans are left as they are.
+    # into 0.0 and leaves every other number as it is. Numeric columns round as pandas
+    # rounds them (integers too, for a negative rounding). Numbers in a column of mixed
+    # values, such as the statistics of a regression, are rounded one by one, and a number
+    # that would round to zero keeps its first significant digits instead, so a p-value
+    # of 0.00001 doesn't show as 0. Text, dates and booleans are left as they are.
     def round_value(value: object) -> object:
-        if isinstance(value, float | np.floating):
-            return round(float(value), rounding) + 0.0
-        return value
+        if not isinstance(value, float | np.floating) or isinstance(value, bool):
+            return value
+        value = float(value)
+        rounded_value = round(value, rounding) + 0.0
+        if rounded_value == 0 and value != 0 and np.isfinite(value) and rounding > 0:
+            return float(f"{value:.{rounding}g}")
+        return rounded_value
 
     if isinstance(dataset, pd.Series):
-        if pd.api.types.is_float_dtype(dataset):
-            return dataset.round(rounding) + 0.0
         if pd.api.types.is_object_dtype(dataset):
             return dataset.map(round_value)
-        return dataset
+        if pd.api.types.is_bool_dtype(dataset) or not pd.api.types.is_numeric_dtype(
+            dataset
+        ):
+            return dataset
+        rounded_series = dataset.round(rounding)
+        return (
+            rounded_series + 0.0
+            if pd.api.types.is_float_dtype(rounded_series)
+            else rounded_series
+        )
 
-    float_columns = dataset.dtypes.map(pd.api.types.is_float_dtype).to_numpy(dtype=bool)
+    def is_number_dtype(dtype: object) -> bool:
+        return pd.api.types.is_numeric_dtype(dtype) and not pd.api.types.is_bool_dtype(
+            dtype
+        )
+
+    number_columns = dataset.dtypes.map(is_number_dtype).to_numpy(dtype=bool)
     object_columns = dataset.dtypes.map(pd.api.types.is_object_dtype).to_numpy(
         dtype=bool
     )
-    if not float_columns.any() and not object_columns.any():
+    if (
+        number_columns.all()
+        and dataset.dtypes.map(pd.api.types.is_float_dtype).to_numpy(dtype=bool).all()
+    ):
+        return dataset.round(rounding) + 0.0
+    if not number_columns.any() and not object_columns.any():
         return dataset
 
     rounded = dataset.copy()
-    if float_columns.all():
-        return rounded.round(rounding) + 0.0
-    if float_columns.any():
-        rounded.iloc[:, float_columns] = (
-            rounded.iloc[:, float_columns].round(rounding) + 0.0
+    for position in np.flatnonzero(number_columns):
+        column = rounded.iloc[:, position].round(rounding)
+        rounded.isetitem(
+            position,
+            column + 0.0 if pd.api.types.is_float_dtype(column) else column,
         )
     for position in np.flatnonzero(object_columns):
-        rounded.iloc[:, position] = rounded.iloc[:, position].map(round_value)
+        rounded.isetitem(position, rounded.iloc[:, position].map(round_value))
 
     return rounded
 

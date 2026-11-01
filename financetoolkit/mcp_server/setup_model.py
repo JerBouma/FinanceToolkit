@@ -230,6 +230,29 @@ def get_global_env_path() -> pathlib.Path:
     return base / "financetoolkit" / ".env"
 
 
+def keys_outside_global_env(api_key: str, fred_api_key: str) -> tuple[str, str]:
+    """
+    Leave out the keys the global .env file already holds.
+
+    VS Code and Cursor keep their config in the project (``.vscode``, ``.cursor``), which is
+    often committed, so a key the server can read from the global .env file is not written
+    there as well.
+
+    Args:
+        api_key (str): FinancialModelingPrep API key.
+        fred_api_key (str): FRED API key.
+
+    Returns:
+        tuple[str, str]: The FMP and FRED keys, each "" when the global .env file holds it.
+    """
+    global_env = get_global_env_path()
+    values = dotenv_values(global_env) if global_env.exists() else {}
+    return (
+        "" if values.get("FINANCIAL_MODELING_PREP_API_KEY") == api_key else api_key,
+        "" if values.get("FRED_API_KEY") == fred_api_key else fred_api_key,
+    )
+
+
 def get_global_cache_db_path() -> pathlib.Path:
     """
     Return the path to the global Finance Toolkit SQLite cache database.
@@ -421,6 +444,35 @@ def remove_global_env_key() -> None:
         env_path.parent.rmdir()  # only succeeds if the directory is now empty
 
 
+def _read_json_config(config_path: pathlib.Path) -> dict | None:
+    """
+    Read a client's JSON config, or return None when it can't be read as JSON.
+
+    Editors allow comments in some of these files (VS Code's mcp.json, Gemini's
+    settings.json), which strict JSON can't read. Such a file is left untouched rather than
+    rewritten with only the Finance Toolkit entry, which would lose everything else in it.
+
+    Args:
+        config_path: The config file.
+
+    Returns:
+        dict | None: The config ({} when the file doesn't exist), or None when it isn't
+            valid JSON.
+    """
+    if not config_path.exists():
+        return {}
+    try:
+        existing = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        err(
+            f"[dim cyan]{config_path}[/] is not valid JSON ({error.msg}, line {error.lineno}), "
+            "so it was left unchanged. Remove comments or trailing commas, or add the "
+            "'finance-toolkit' entry by hand."
+        )
+        return None
+    return existing if isinstance(existing, dict) else None
+
+
 def _remove_entry_from_config(
     config_path: pathlib.Path,
     outer_key: str,
@@ -442,9 +494,9 @@ def _remove_entry_from_config(
         info(f"No config found at {config_path} — skipping.")
         return
 
-    existing: dict = {}
-    with suppress(json.JSONDecodeError):
-        existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     if entry_key not in existing.get(outer_key, {}):
         info(f"No '{entry_key}' entry found in {config_path} — skipping.")
@@ -514,10 +566,8 @@ def remove_all_configs(target_dir: pathlib.Path) -> None:
     for name, path, key in candidates:
         if not path.exists():
             continue
-        existing: dict = {}
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        if "finance-toolkit" in existing.get(key, {}):
+        existing = _read_json_config(path)
+        if existing is not None and "finance-toolkit" in existing.get(key, {}):
             found.append((name, path, key))
 
     global_env = get_global_env_path()
@@ -586,10 +636,9 @@ def write_gemini_config(api_key: str, fred_api_key: str = "") -> None:
     config_path = get_gemini_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    existing: dict = {}
-    if config_path.exists():
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     current_entry = existing.get("mcpServers", {}).get("finance-toolkit")
     if current_entry is not None:
@@ -641,10 +690,9 @@ def write_windsurf_config(api_key: str, fred_api_key: str = "") -> None:
     config_path = get_windsurf_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    existing: dict = {}
-    if config_path.exists():
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     current_entry = existing.get("mcpServers", {}).get("finance-toolkit")
     if current_entry is not None:
@@ -739,10 +787,9 @@ def write_client_config_uvx(
             return
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    existing: dict = {}
-    if config_path.exists():
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     current_entry = existing.get(outer_key, {}).get("finance-toolkit")
     if current_entry is not None and not overwrite:
@@ -785,10 +832,9 @@ def write_claude_code_config(api_key: str, fred_api_key: str = "") -> None:
     config_path = get_claude_code_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    existing: dict = {}
-    if config_path.exists():
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     current_entry = existing.get("mcpServers", {}).get("finance-toolkit")
     if current_entry is not None:
@@ -847,10 +893,9 @@ def write_vscode_config(
     vscode_dir.mkdir(exist_ok=True)
     config_path = vscode_dir / "mcp.json"
 
-    existing: dict = {}
-    if config_path.exists():
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     current_entry = existing.get("servers", {}).get("finance-toolkit")
     if current_entry is not None:
@@ -901,10 +946,9 @@ def write_cursor_config(
     cursor_dir.mkdir(exist_ok=True)
     config_path = cursor_dir / "mcp.json"
 
-    existing: dict = {}
-    if config_path.exists():
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     current_entry = existing.get("mcpServers", {}).get("finance-toolkit")
     if current_entry is not None:
@@ -951,10 +995,9 @@ def write_claude_config(api_key: str, fred_api_key: str = "") -> None:
     config_path = get_claude_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    existing: dict = {}
-    if config_path.exists():
-        with suppress(json.JSONDecodeError):
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
+    existing = _read_json_config(config_path)
+    if existing is None:
+        return
 
     current_entry = existing.get("mcpServers", {}).get("finance-toolkit")
     if current_entry is not None:

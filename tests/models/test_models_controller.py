@@ -1,5 +1,6 @@
 """Models Controller Tests""" ""
 # pylint: disable=missing-function-docstring
+import pandas as pd
 
 
 def test_get_dupont_analysis(recorder, models_module):
@@ -1310,6 +1311,23 @@ def test_monte_carlo_valuation_without_a_share_price(models_module, monkeypatch)
 
     assert pd.isna(valuation.loc[ticker, "Probability Undervalued"])
     assert valuation.drop(index=ticker)["Probability Undervalued"].notna().all()
+
+
+def test_z_scores_describe_the_periods_shown(models_module, monkeypatch):
+    from financetoolkit.utilities.statistics_model import (  # noqa: PLC0415
+        calculate_standardization,
+    )
+
+    periods = models_module.get_dupont_analysis().columns
+    monkeypatch.setattr(models_module, "_start_date", str(periods[2]))
+
+    shown = models_module.get_dupont_analysis()
+    standardized = models_module.get_dupont_analysis(standardize=True)
+
+    assert standardized.columns[0] == periods[2]
+    pd.testing.assert_frame_equal(
+        standardized, calculate_standardization(shown, rounding=4, axis="columns")
+    )
 
 
 def test_cost_of_equity_uses_the_country_premium_of_each_company(test_toolkit):

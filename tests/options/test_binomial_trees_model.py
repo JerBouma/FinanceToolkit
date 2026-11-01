@@ -25,3 +25,10 @@ def test_a_regular_risk_neutral_probability():
         )
         < 1
     )
+
+
+def test_binomial_tree_refuses_too_many_time_steps():
+    with pytest.raises(ValueError, match="too large"):
+        binomial_trees_model.calculate_stock_prices(
+            100, 1.01, 0.99, binomial_trees_model.MAX_TIMESTEPS + 1
+        )

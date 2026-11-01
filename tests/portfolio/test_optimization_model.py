@@ -340,3 +340,71 @@ def test_black_litterman_returns_are_total_returns():
         risk_free_rate=0.03,
     )
     assert confident.loc["D", "Black-Litterman Return"] == pytest.approx(0.2, abs=1e-3)
+
+
+def test_minimum_cvar_weights_use_sparse_constraints_for_long_histories():
+    returns = pd.DataFrame(
+        np.random.default_rng(0).normal(0.0005, 0.01, (6000, 4)), columns=list("ABCD")
+    )
+
+    weights = optimization_model.get_minimum_cvar_weights(returns)
+
+    assert weights.sum() == pytest.approx(1)
+    with pytest.raises(ValueError, match="No period"):
+        optimization_model.get_minimum_cvar_weights(returns.iloc[:0])
+
+
+def test_black_litterman_reads_hyphenated_tickers_and_singular_covariances():
+    covariance = pd.DataFrame(
+        [[0.04, 0.01, 0.012], [0.01, 0.09, 0.02], [0.012, 0.02, 0.0625]],
+        index=["A", "BRK-B", "C"],
+        columns=["A", "BRK-B", "C"],
+    )
+    weights = pd.Series({"A": 0.3, "BRK-B": 0.3, "C": 0.4})
+
+    relative = optimization_model.get_black_litterman_returns(
+        covariance, weights, views={"BRK-B-C": 0.02}
+    )["Black-Litterman Return"]
+    implied = optimization_model.get_black_litterman_returns(covariance, weights)[
+        "Implied Return"
+    ]
+
+    # The view that BRK-B beats C pulls their gap towards 2%.
+    assert (relative["BRK-B"] - relative["C"]) > (implied["BRK-B"] - implied["C"])
+
+    duplicate = pd.DataFrame(0.04, index=["X", "Y"], columns=["X", "Y"])
+    posterior = optimization_model.get_black_litterman_returns(
+        duplicate, pd.Series({"X": 0.5, "Y": 0.5}), views={"X": 0.1}
+    )["Black-Litterman Return"]
+
+    assert np.isfinite(posterior).all()
+    with pytest.raises(ValueError, match="view confidences"):
+        optimization_model.get_black_litterman_returns(
+            covariance, weights, views={"A": 0.1}, view_confidences={"C": 0.5}
+        )
+
+
+def test_optimizers_explain_a_covariance_they_cannot_use():
+    covariance = pd.DataFrame(
+        [[0.04, 0.0], [0.0, 0.0]], index=["A", "CASH"], columns=["A", "CASH"]
+    )
+
+    with pytest.raises(ValueError, match="CASH has no variance"):
+        optimization_model.get_risk_parity_weights(covariance)
+
+    missing = pd.DataFrame(
+        [[0.04, np.nan], [np.nan, 0.09]], index=["A", "B"], columns=["A", "B"]
+    )
+    with pytest.raises(ValueError, match="missing values"):
+        optimization_model.get_inverse_volatility_weights(missing)
+
+    single = pd.DataFrame([[0.04]], index=["A"], columns=["A"])
+    with pytest.raises(ValueError, match="two assets"):
+        optimization_model.get_hierarchical_risk_parity_weights(single)
+
+    statistics = optimization_model.get_portfolio_statistics(
+        pd.Series({"A": 1.0}),
+        pd.Series({"A": 0.05}),
+        pd.DataFrame([[1e-34]], index=["A"], columns=["A"]),
+    )
+    assert np.isnan(statistics["Sharpe Ratio"])

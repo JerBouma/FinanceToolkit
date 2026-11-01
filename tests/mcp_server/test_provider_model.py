@@ -184,3 +184,45 @@ def test_a_single_country_reaches_a_method_of_one_country(monkeypatch, provider)
         provider.call_standalone_module_functionality(
             countries=["Germany", "Japan"], **arguments
         )
+
+
+def test_calls_on_one_cached_toolkit_run_one_at_a_time(monkeypatch, tmp_path):
+    import threading
+    import time
+
+    from financetoolkit.mcp_server.provider_model import ToolkitProvider
+
+    class SlowToolkit:
+        def __init__(self):
+            self.active = 0
+            self.peak = 0
+
+        def get_profile(self):
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            time.sleep(0.05)
+            self.active -= 1
+            return "profile"
+
+    provider = ToolkitProvider(
+        cache_ttl=0,
+        database_location=str(tmp_path),
+        api_key="KEY",
+        cache_enabled=False,
+    )
+    shared = SlowToolkit()
+    monkeypatch.setattr(provider, "get_toolkit_instance", lambda **kwargs: shared)
+
+    def call():
+        provider.call_toolkit_functionality(
+            "get_profile", ["AAPL"], "2024-01-01", "2025-01-01", False, "SPY"
+        )
+
+    threads = [threading.Thread(target=call) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert shared.peak == 1
+    assert provider.instance_lock(shared) is provider.instance_lock(shared)

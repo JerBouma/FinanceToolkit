@@ -297,3 +297,10 @@ def test_get_augmented_dickey_fuller_short_sample():
     result = unitroot_model.get_augmented_dickey_fuller(series)
 
     assert result["Lags Used"] <= 3  # noqa: PLR2004
+
+
+def test_unit_root_tests_need_enough_observations():
+    series = pd.Series([1.0, 1.2, 0.9, 1.4, 1.1])
+
+    assert np.isnan(unitroot_model.get_augmented_dickey_fuller(series)["P-Value"])
+    assert np.isnan(unitroot_model.get_kpss_test(series)["P-Value"])

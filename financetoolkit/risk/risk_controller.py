@@ -106,7 +106,15 @@ def _get_out_of_sample_estimates(
                     column_returns, alpha, window_size
                 )
             )
+        elif distribution == "gaussian":
+            # The gaussian estimate only needs the mean and the sample standard deviation, which
+            # a rolling window gives in one pass, so the same formula is applied to it directly.
+            estimate = parametric_estimators[(measure, distribution)](
+                column_returns.rolling(window=window_size), alpha
+            )
         else:
+            # The Student-t and EVT estimates fit a distribution to every window, which takes
+            # seconds per thousand windows.
             estimator = parametric_estimators[(measure, distribution)]
             estimate = column_returns.rolling(window=window_size).apply(
                 lambda window, estimator=estimator: _as_scalar(
@@ -3950,6 +3958,8 @@ class Risk:
             (252 only means "about one year" when `period` is daily).
             distribution (str, optional): The distribution to use for the rolling VaR estimates, one of
             "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
+            "studentt" and "evt" fit their distribution to every window, which takes minutes for
+            years of daily data, where "historic" and "gaussian" take well under a second.
             alpha (float, optional): The tail probability for the VaR estimates (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
             Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an
@@ -4072,6 +4082,8 @@ class Risk:
             Defaults to "daily", since `window_size` is expressed in return observations of this frequency.
             distribution (str, optional): The distribution to use for the rolling VaR/CVaR estimates,
             one of "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
+            "studentt" and "evt" fit their distribution to every window, which takes minutes for
+            years of daily data, where "historic" and "gaussian" take well under a second.
             alpha (float, optional): The tail probability for the VaR/CVaR estimates (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
             Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an

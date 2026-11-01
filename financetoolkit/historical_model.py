@@ -825,15 +825,27 @@ def convert_daily_to_other_period(
         "Dividends": "sum",
     }
 
-    # One aggregation over all columns gives one row per period directly.
-    period_historical_data = daily_historical_data.groupby(dates).agg(
-        {
-            column: aggregations.get(
-                column[0] if isinstance(column, tuple) else column, "last"
-            )
-            for column in daily_historical_data.columns
-        }
-    )
+    # One grouping, aggregated once per kind of aggregation over all its columns at once
+    # (an aggregation per column takes about three times as long), in the original order.
+    columns_per_aggregation: dict[str, list] = {}
+
+    for column in daily_historical_data.columns:
+        aggregation = aggregations.get(
+            column[0] if isinstance(column, tuple) else column, "last"
+        )
+        columns_per_aggregation.setdefault(aggregation, []).append(column)
+
+    grouped = daily_historical_data.groupby(dates)
+    period_historical_data = pd.concat(
+        [
+            grouped[columns].agg(aggregation)
+            for aggregation, columns in columns_per_aggregation.items()
+        ],
+        axis=1,
+    )[daily_historical_data.columns]
+    # Built from the labels themselves, as an aggregation per column does, so the label
+    # types are inferred (strings) rather than copied from the daily data.
+    period_historical_data.columns = pd.Index(list(period_historical_data.columns))
 
     if "Return" in period_historical_data:
         period_historical_data["Return"] = (

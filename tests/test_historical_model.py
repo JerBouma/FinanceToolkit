@@ -211,3 +211,28 @@ def test_calculate_period_average_averages_the_observed_days():
 
     with pytest.raises(ValueError):
         historical_model.calculate_period_average("daily", daily)
+
+
+def test_period_aggregation_matches_an_aggregation_per_column():
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    aggregations = {
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Volume": "sum",
+        "Dividends": "sum",
+    }
+
+    for period in ["weekly", "monthly", "quarterly", "yearly"]:
+        dates = historical_model.to_period_index(historical.index).asfreq(
+            historical_model.PERIOD_TRANSLATION[period]
+        )
+        expected = historical.groupby(dates.rename("Date")).agg(
+            {column: aggregations.get(column[0], "last") for column in historical}
+        )
+        converted = historical_model.convert_daily_to_other_period(period, historical)
+
+        assert list(converted.columns) == list(historical.columns)
+
+        for column in ["Open", "High", "Low", "Close", "Volume", "Dividends"]:
+            pd.testing.assert_frame_equal(converted[column], expected[column])

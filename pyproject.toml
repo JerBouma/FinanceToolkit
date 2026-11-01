@@ -60,7 +60,6 @@ mcp = [
     "financetoolkit[econometrics]",
     "fastmcp>=3.4.2",
     "mcp[cli]>=1.27.0,<2",
-    "tabulate>=0.9.0",
     "python-dotenv>=1.0",
     "rich>=13.0",
 ]
@@ -101,6 +100,8 @@ dev = [
     "matplotlib>=3.11.1",
     "seaborn>=0.13.2",
     "pytest-xdist>=3.8.0",
+    # DataFrame.to_markdown, for the docstring tables.
+    "tabulate>=0.9.0",
 ]
 
 [tool.uv]

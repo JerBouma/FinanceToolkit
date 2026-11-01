@@ -1059,7 +1059,6 @@ mcp = [
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "statsmodels" },
-    { name = "tabulate" },
 ]
 
 [package.dev-dependencies]
@@ -1081,6 +1080,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "seaborn" },
+    { name = "tabulate" },
     { name = "types-pyyaml" },
     { name = "types-requests" },
 ]
@@ -1101,7 +1101,6 @@ requires-dist = [
     { name = "rich", marker = "extra == 'mcp'", specifier = ">=13.0" },
     { name = "scipy", specifier = ">=1.10" },
     { name = "statsmodels", marker = "extra == 'econometrics'", specifier = ">=0.14" },
-    { name = "tabulate", marker = "extra == 'mcp'", specifier = ">=0.9.0" },
     { name = "xlrd", specifier = ">=2.0" },
     { name = "yfinance" },
 ]
@@ -1127,6 +1126,7 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.13.2" },
     { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "tabulate", specifier = ">=0.9.0" },
     { name = "types-pyyaml", specifier = ">=6.0" },
     { name = "types-requests", specifier = ">=2.32" },
 ]

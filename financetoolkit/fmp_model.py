@@ -388,7 +388,7 @@ def get_financial_statement(
     else:
         raise ValueError(
             "Please choose either 'balance', 'income', or "
-            "cashflow' for the statement parameter."
+            "'cashflow' for the statement parameter."
         )
 
     if not api_key:
@@ -1056,12 +1056,20 @@ def get_revenue_segmentation(
                     ]
 
                 revenue_segmentation = revenue_segmentation.rename(index=naming)
-                revenue_segmentation.index = [
-                    index.lower().title() for index in revenue_segmentation.index
-                ]
 
-                # This groups items that have the same naming convention
-                revenue_segmentation = revenue_segmentation.groupby(level=0).sum()
+                # A segment can be written in another case in some periods ("Services" and
+                # "services"); those are one segment, under the first name it is given as
+                # (so "iPhone" keeps its name). A period without the segment stays NaN.
+                keys = [str(index).casefold() for index in revenue_segmentation.index]
+                names: dict[str, str] = {}
+                for key, index in zip(keys, revenue_segmentation.index, strict=True):
+                    names.setdefault(key, str(index))
+                revenue_segmentation = revenue_segmentation.groupby(keys).sum(
+                    min_count=1
+                )
+                revenue_segmentation.index = [
+                    names[key] for key in revenue_segmentation.index
+                ]
 
                 return ticker, revenue_segmentation, True
             except (KeyError, ValueError):
@@ -1102,8 +1110,7 @@ def get_revenue_segmentation(
         naming = {}
     else:
         raise ValueError(
-            "Please choose either 'balance', 'income', or "
-            "cashflow' for the statement parameter."
+            "Please choose either 'geographic' or 'product' for the method parameter."
         )
 
     if not api_key:
@@ -1665,8 +1672,8 @@ def get_earnings_calendar(
         https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
-        actual_dates (bool): Whether to retrieve actual dates. Defaults to False (converted to quarterly). This is the
-        default because the actual date refers to the corresponding quarter.
+        actual_dates (bool): Whether to return the actual reporting dates (True) or the fiscal quarters they
+        are converted to (False). Defaults to True.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
         if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to False.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -1910,19 +1917,19 @@ def get_esg_scores(
             # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
             esg_scores["date"] = pd.to_datetime(esg_scores["date"]) - pd.offsets.Day(1)
 
-            esg_scores = esg_scores.set_index("date")
+            esg_scores = esg_scores.sort_values("date", kind="stable").set_index("date")
             esg_scores.index = pd.DatetimeIndex(esg_scores.index).to_period(
                 freq="Q" if quarter else "Y"
             )
 
-            esg_scores = esg_scores.sort_index()
             esg_scores = esg_scores.rename(columns=naming)
 
-            esg_scores = esg_scores.sort_index(axis=0).truncate(
+            esg_scores = esg_scores.sort_index(axis=0, kind="stable").truncate(
                 before=start_date, after=end_date, axis=0
             )
 
-            esg_scores = esg_scores[~esg_scores.index.duplicated()]
+            # A year (or quarter) with several disclosures takes the latest of them.
+            esg_scores = esg_scores[~esg_scores.index.duplicated(keep="last")]
 
             return ticker, esg_scores[naming.values()], True
         except KeyError:

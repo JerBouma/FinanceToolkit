@@ -123,6 +123,8 @@ def get_instruments(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         query (str): The query to search for.
+        search_method (str, optional): What the query is: "name", "symbol", "cik", "cusip" or
+            "isin". Defaults to "name".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -337,7 +339,10 @@ def get_stock_screener(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         market_cap_higher (int, optional): The market cap higher than. Defaults to None.
-        market_cap_lower (int, optional): The market cap lower than. Defaults to None.
+        market_cap_lower (int, optional): The market cap lower than, in US dollars. It is sent to
+            the screener when the currency of the listings is known (an exchange, or a country
+            with primary_only) and otherwise applied to the largest companies the screener
+            returns. Defaults to None.
         price_higher (float, optional): The price higher than. Defaults to None.
         price_lower (float, optional): The price lower than. Defaults to None.
         beta_higher (float, optional): The beta higher than. Defaults to None.
@@ -374,6 +379,18 @@ def get_stock_screener(
           (a perfectly valid beta, dividend or volume floor) is sent to the API instead of dropped.
     """
     url = f"https://financialmodelingprep.com/stable/company-screener?apikey={api_key}"
+    upper_bound = (
+        _local_upper_market_cap_bound(
+            market_cap_lower,
+            exchange,
+            country,
+            primary_only,
+            api_key,
+            user_subscription,
+        )
+        if market_cap_lower is not None
+        else None
+    )
     widened = (
         market_cap_higher is not None or market_cap_lower is not None or primary_only
     )
@@ -388,13 +405,17 @@ def get_stock_screener(
     # The endpoint compares market caps in each listing's own currency, while the bounds
     # are in US dollars: the lower bound is widened for currencies worth more than a dollar
     # and the upper bound is applied after converting, so no listing is wrongly left out.
-    # More results are asked for, since the converted bounds then narrow them down.
+    # The upper bound is also sent when the currency of the listings is known (see
+    # _local_upper_market_cap_bound), since the endpoint otherwise returns the largest
+    # companies first and a small-cap screen would only see those. More results are asked
+    # for, since the converted bounds then narrow them down.
     query_parameters = {
         "marketCapMoreThan": (
             int(market_cap_higher * MARKET_CAP_BOUND_MARGIN)
             if market_cap_higher is not None
             else None
         ),
+        "marketCapLowerThan": upper_bound,
         "priceMoreThan": price_higher,
         "priceLowerThan": price_lower,
         "betaMoreThan": beta_higher,
@@ -508,8 +529,84 @@ def get_stock_screener(
             "Narrow the criteria or raise the limit to see the remainder.",
             requested_limit,
         )
+        if market_cap_lower is not None and upper_bound is None:
+            logger.warning(
+                "The upper market cap bound is applied after retrieving the largest "
+                "companies, so smaller companies below it can be missing. Restrict the "
+                "screen to an exchange, or to a country with primary_only=True, to send the "
+                "bound to the screener itself."
+            )
 
     return stock_screener
+
+
+def _local_upper_market_cap_bound(
+    market_cap_lower: float,
+    exchange: str | None,
+    country: str | None,
+    primary_only: bool,
+    api_key: str,
+    user_subscription: str,
+) -> int | None:
+    """
+    The upper market cap bound in the currency of the listings, when that currency is known:
+    the currency of the exchange, or of the country for its home listings (primary_only).
+    Listings elsewhere can trade in any currency, and a bound in the wrong one would leave
+    out companies that fit it, so no bound is returned then. The bound is widened by the
+    margin of the lower bound, and the exact one is applied after converting.
+
+    Args:
+        market_cap_lower (float): The upper market cap bound in US dollars.
+        exchange (str | None): The exchange the screen is restricted to.
+        country (str | None): The country the screen is restricted to.
+        primary_only (bool): Whether only the home listing of each company is kept.
+        api_key (str): The API key from Financial Modeling Prep.
+        user_subscription (str): The user subscription level.
+
+    Returns:
+        int | None: The bound in the listings' currency, or None when it is not known.
+    """
+    currency = None
+
+    if exchange is not None:
+        exchanges = get_cached_financial_data(
+            url=f"https://financialmodelingprep.com/stable/available-exchanges?apikey={api_key}",
+            user_subscription=user_subscription,
+        )
+        if not exchanges.empty and {"exchange", "countryCode"}.issubset(
+            exchanges.columns
+        ):
+            country_codes = exchanges.loc[
+                exchanges["exchange"].astype(str).str.upper() == exchange.upper(),
+                "countryCode",
+            ]
+            if not country_codes.empty:
+                currency = COUNTRY_CURRENCIES.get(str(country_codes.iloc[0]).upper())
+    elif primary_only and country is not None:
+        currency = COUNTRY_CURRENCIES.get(str(_to_country_code(country)).upper())
+
+    if currency is None:
+        return None
+
+    rate = 1.0
+    if currency != "USD":
+        quote = get_cached_financial_data(
+            url=(
+                "https://financialmodelingprep.com/stable/batch-quote?symbols="
+                f"{currency}USD&apikey={api_key}"
+            ),
+            user_subscription=user_subscription,
+        )
+        if quote.empty or not {"symbol", "price"}.issubset(quote.columns):
+            return None
+        prices = quote.loc[quote["symbol"] == f"{currency}USD", "price"]
+        if prices.empty:
+            return None
+        rate = float(prices.iloc[0])
+        if not np.isfinite(rate) or rate <= 0:
+            return None
+
+    return int(market_cap_lower / rate / MARKET_CAP_BOUND_MARGIN)
 
 
 def _add_market_cap_in_dollars(
@@ -555,9 +652,12 @@ def _add_market_cap_in_dollars(
         zip(exchanges["exchange"], exchanges["countryCode"], strict=False)
     )
     if "Country" in listings.columns:
+        # Both sides write the United Kingdom as GB: the exchanges list it as UK.
         listings[HOME_LISTING] = listings["Exchange Code"].map(
             exchange_countries
-        ) == listings["Country"].astype(str).str.upper().replace({"UK": "GB"})
+        ).replace({"UK": "GB"}) == listings["Country"].astype(str).str.upper().replace(
+            {"UK": "GB"}
+        )
 
     foreign_currencies = sorted(
         {currency for currency in listings["Currency"].dropna() if currency != "USD"}

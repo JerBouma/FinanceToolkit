@@ -4,16 +4,18 @@ import pandas as pd
 import pytest
 
 from financetoolkit.technicals import breadth_model
+from tests.technical.sample_prices import sample_prices
 
 # pylint: disable=missing-function-docstring
 
 
 def test_get_mcclellan_oscillator(recorder):
-    recorder.capture(
-        breadth_model.get_mcclellan_oscillator(
-            pd.Series([100, 110, 120, 130, 80]), 10, 20
-        ).round(2)
-    )
+    prices = sample_prices()
+    result = breadth_model.get_mcclellan_oscillator(prices["Close"], 10, 20).round(2)
+
+    # The window fills within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
 
 
 def test_get_advancers_decliners(recorder):
@@ -45,16 +47,14 @@ def test_get_accumulation_distribution_line(recorder):
 
 
 def test_get_chaikin_oscillator(recorder):
-    recorder.capture(
-        breadth_model.get_chaikin_oscillator(
-            pd.Series([0.01, -0.03, 0.05, 0.01, -0.02]),
-            pd.Series([0.005, -0.02, 0.06, 0.005, 0.0]),
-            pd.Series([0.005, -0.02, 0.06, 0.005, 0.0]),
-            pd.Series([0.005, -0.02, 0.06, 0.005, 0.0]),
-            10,
-            20,
-        )
-    )
+    prices = sample_prices()
+    result = breadth_model.get_chaikin_oscillator(
+        prices["High"], prices["Low"], prices["Close"], prices["Volume"], 10, 20
+    ).round(3)
+
+    # The window fills within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
 
 
 def test_get_chaikin_money_flow(recorder):

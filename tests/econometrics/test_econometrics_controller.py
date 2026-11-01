@@ -440,16 +440,18 @@ def test_get_iv_2sls(recorder, econometrics_module):
     )
 
 
-def test_get_iv_2sls_with_exogenous(recorder, econometrics_module):
-    recorder.capture(
-        econometrics_module.get_iv_2sls(
-            "AAPL",
-            "MSFT",
-            instrument_tickers="Benchmark",
-            exogenous_tickers="Benchmark",
-            period="weekly",
-        )
+def test_get_iv_2sls_with_the_instrument_as_exogenous_is_refused(econometrics_module):
+    # A ticker that is both the instrument and an exogenous regressor leaves the first stage
+    # without an excluded instrument, so there is no fit (the fit with exogenous controls is
+    # covered in test_causal_inference_model.py). @handle_errors returns an empty Series.
+    result = econometrics_module.get_iv_2sls(
+        "AAPL",
+        "MSFT",
+        instrument_tickers="Benchmark",
+        exogenous_tickers="Benchmark",
+        period="weekly",
     )
+    assert result.empty
 
 
 def test_get_iv_2sls_underidentified(econometrics_module):

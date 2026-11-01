@@ -458,6 +458,7 @@ class Toolkit:
             self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
             self._dividend_calendar: pd.DataFrame = pd.DataFrame()
             self._earnings_calendar: pd.DataFrame = pd.DataFrame()
+            self._earnings_calendar_actual_dates: bool | None = None
             self._esg_scores: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
@@ -1771,7 +1772,8 @@ class Toolkit:
                     api_key=self._api_key,
                     quarter=self._quarterly,
                     start_date=self._start_date,
-                    rounding=rounding if rounding is not None else self._rounding,
+                    # Stored unrounded, so a later call can round differently.
+                    rounding=None,
                     sleep_timer=self._sleep_timer,
                     user_subscription=self._fmp_plan,
                 ),
@@ -1791,15 +1793,20 @@ class Toolkit:
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
+        analyst_estimates = apply_rounding(
+            self._analyst_estimates,
+            rounding if rounding is not None else self._rounding,
+        )
+
         if len(self._tickers) == 1 and not self._analyst_estimates.empty:
             result = (
                 self._analyst_estimates_growth.loc[self._tickers[0]]
                 if growth
-                else self._analyst_estimates.loc[self._tickers[0]]
+                else analyst_estimates.loc[self._tickers[0]]
             )
             return filter_columns(result, show_columns)
 
-        result = self._analyst_estimates_growth if growth else self._analyst_estimates
+        result = self._analyst_estimates_growth if growth else analyst_estimates
         return filter_columns(result, show_columns)
 
     def get_earnings_calendar(
@@ -1871,7 +1878,14 @@ class Toolkit:
             )
             return None
 
-        if self._earnings_calendar.empty or overwrite:
+        # The dates differ with actual_dates (the reported date or its fiscal quarter), so
+        # the calendar is retrieved again when it was retrieved with the other choice.
+        if (
+            self._earnings_calendar.empty
+            or overwrite
+            or self._earnings_calendar_actual_dates != actual_dates
+        ):
+            self._earnings_calendar_actual_dates = actual_dates
             (
                 self._earnings_calendar,
                 self._invalid_tickers,
@@ -4798,7 +4812,9 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                # Stored unrounded: the ratios and models read these figures, and only what
+                # this method returns is rounded.
+                rounding=None,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statistics_format=self._yf_statistics_statement_generic,
@@ -4990,7 +5006,9 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                # Stored unrounded: the ratios and models read these figures, and only what
+                # this method returns is rounded.
+                rounding=None,
                 fmp_statement_format=self._fmp_income_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statistics_format=self._yf_statistics_statement_generic,
@@ -5210,7 +5228,9 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                # Stored unrounded: the ratios and models read these figures, and only what
+                # this method returns is rounded.
+                rounding=None,
                 fmp_statement_format=self._fmp_cash_flow_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statistics_format=self._yf_statistics_statement_generic,

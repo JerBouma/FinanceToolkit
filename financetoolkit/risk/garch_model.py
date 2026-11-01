@@ -1,6 +1,9 @@
 """GARCH Model"""
 
+import hashlib
 import math
+import threading
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -892,6 +895,16 @@ def egarch_log_maximization(
     return -np.sum(-np.log(v) - u**2 / v)
 
 
+# The EGARCH fits of the latest return series. A fit takes seconds to a minute (33 starting
+# points with numerical gradients), and get_egarch, get_egarch_forecast and
+# get_egarch_parameters each fit the same returns, so a repeated fit is taken from here.
+EGARCH_WEIGHTS_CACHE: OrderedDict[tuple, np.ndarray] = OrderedDict()
+EGARCH_WEIGHTS_CACHE_SIZE = 64
+# The cache is shared by threads (the MCP server runs tools in threads), and an OrderedDict
+# is not safe to reorder and read concurrently.
+EGARCH_WEIGHTS_CACHE_LOCK = threading.Lock()
+
+
 def get_egarch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
 ) -> np.ndarray:
@@ -919,6 +932,14 @@ def get_egarch_weights(
     if t is None:
         t = len(returns)
 
+    values = np.ascontiguousarray(returns, dtype=float)
+    key = (hashlib.sha256(values.tobytes()).hexdigest(), values.shape, t, p, q)
+    with EGARCH_WEIGHTS_CACHE_LOCK:
+        cached = EGARCH_WEIGHTS_CACHE.get(key)
+        if cached is not None:
+            EGARCH_WEIGHTS_CACHE.move_to_end(key)
+            return cached.copy()
+
     # Omega sits well below -1 on a log scale; the rest stay near empirical EGARCH.
     bounds = [(-15, 5), (-1, 1), (-1, 1), (-0.999, 0.999)]
     initial_guess = [0.0, 0.1, -0.1, 0.9]
@@ -929,7 +950,14 @@ def get_egarch_weights(
             return np.inf
         return egarch_log_maximization(parameters, returns, t, p, q)
 
-    return _fit_multi_start(wrapper_func, bounds, initial_guess, "EGARCH")
+    weights = _fit_multi_start(wrapper_func, bounds, initial_guess, "EGARCH")
+
+    with EGARCH_WEIGHTS_CACHE_LOCK:
+        EGARCH_WEIGHTS_CACHE[key] = weights.copy()
+        if len(EGARCH_WEIGHTS_CACHE) > EGARCH_WEIGHTS_CACHE_SIZE:
+            EGARCH_WEIGHTS_CACHE.popitem(last=False)
+
+    return weights
 
 
 def get_egarch(

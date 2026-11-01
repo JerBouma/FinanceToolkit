@@ -34,7 +34,7 @@ COUNTRY_CODES: dict[str, str] = {
     "JO": "Jordan", "JP": "Japan", "KE": "Kenya", "KG": "Kyrgyzstan", "KH": "Cambodia",
     "KR": "South Korea", "KW": "Kuwait", "KZ": "Kazakhstan", "LB": "Lebanon",
     "LK": "Sri Lanka", "LT": "Lithuania", "LU": "Luxembourg", "LV": "Latvia", "LY": "Libya",
-    "MA": "Morocco", "MD": "Moldova", "ME": "Montenegro", "MK": "North Macedonia",
+    "MA": "Morocco", "MD": "Moldova", "ME": "Montenegro", "MK": "Macedonia",
     "ML": "Mali", "MN": "Mongolia", "MO": "Macau", "MT": "Malta", "MU": "Mauritius",
     "MV": "Maldives", "MW": "Malawi", "MX": "Mexico", "MY": "Malaysia", "MZ": "Mozambique",
     "NA": "Namibia", "NG": "Nigeria", "NL": "Netherlands", "NO": "Norway", "NP": "Nepal",

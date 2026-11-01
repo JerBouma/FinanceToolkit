@@ -118,3 +118,16 @@ def test_risk_neutral_density_recovers_the_lognormal_density():
             relative_error = density.to_numpy() / expected - 1
             assert abs(relative_error[0]) < 0.01  # noqa: PLR2004
             assert abs(relative_error[-1]) < 0.01  # noqa: PLR2004
+
+
+def test_barrier_option_requires_a_positive_volatility():
+    with pytest.raises(ValueError, match="volatility must be positive"):
+        exotics_model.get_barrier_option(
+            stock_price=100,
+            strike_price=100,
+            barrier=120,
+            risk_free_rate=0.05,
+            volatility=0,
+            time_to_expiration=1,
+            barrier_direction="up",
+        )

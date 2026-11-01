@@ -396,3 +396,9 @@ def test_hurst_exponent_bounds_lags_to_available_differences():
 @pytest.mark.parametrize("values", [[], [1.0], [1.0, 2.0, 3.0, 4.0], [2.0] * 30])
 def test_hurst_exponent_without_two_usable_lags(values):
     assert np.isnan(risk_model.get_hurst_exponent(pd.Series(values, dtype=float)))
+
+
+def test_hill_estimator_of_a_constant_tail_is_nan():
+    estimate = risk_model.get_hill_estimator(pd.Series([-0.01] * 50), tail="left")
+
+    assert np.isnan(estimate["Hill Tail Index"])

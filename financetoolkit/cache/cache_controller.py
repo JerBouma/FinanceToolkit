@@ -388,7 +388,7 @@ class Cache:
             start (str | date | None): Inclusive start of the requested range.
             end (str | date | None): Inclusive end of the requested range.
             parameters (dict[str, Any] | None): Parameters that change the data.
-            date_axis (int): 0 when the index holds the dates, 1 when the columns do.
+            date_axis (int): 0 when the index holds the dates, 1 when the columns do. Defaults to 0.
             reference_date (date | None): The date the revision window is measured
                 back from when the requested range has no end. Defaults to today;
                 mainly useful for testing.
@@ -507,7 +507,7 @@ class Cache:
             start (str | date | None): Inclusive start of the range that was requested.
             end (str | date | None): Inclusive end of the range that was requested.
             parameters (dict[str, Any] | None): Parameters that change the data.
-            date_axis (int): 0 when the index holds the dates, 1 when the columns do.
+            date_axis (int): 0 when the index holds the dates, 1 when the columns do. Defaults to 0.
         """
         if not self.serves(source):
             return
@@ -813,7 +813,7 @@ def get_cache(
         location (str | Path | None): Directory or database file to use. None
             selects the shared default location.
         enabled (bool): When False a disabled cache is returned, which misses on
-            every read and ignores every write.
+            every read and ignores every write. Defaults to True.
         excluded_sources (frozenset[str] | set[str] | None): Sources this cache never
             reads or writes, see Cache. Defaults to None.
 

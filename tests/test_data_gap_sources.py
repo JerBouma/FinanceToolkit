@@ -391,3 +391,42 @@ def test_life_table_keeps_one_column_for_age_85(monkeypatch):
         ("Germany", 95),
     ]
     assert life_table[("Germany", 85)].tolist() == [1.0, 0.08]
+
+
+def test_imf_country_names_match_the_other_sources(monkeypatch):
+    from financetoolkit.economics import imf_model
+    from financetoolkit.economics.helpers import COUNTRY_CODES
+    from financetoolkit.economics.oecd_model import CODE_TO_COUNTRY
+
+    structure = (
+        '<str:Codelist id="CL_COUNTRY">'
+        + "".join(
+            f'<str:Code id="{code}"><com:Name xml:lang="en">{name}</com:Name></str:Code>'
+            for code, name in [
+                ("CPV", "Cabo Verde"),
+                (
+                    "MAC",
+                    "Macao Special Administrative Region, People's Republic of China",
+                ),
+                ("STP", "São Tomé and Príncipe, Democratic Republic of"),
+                ("MKD", "North Macedonia, Republic of"),
+            ]
+        )
+        + "</str:Codelist>"
+    )
+
+    monkeypatch.setattr(
+        imf_model, "get_request", lambda url, timeout: FakeResponse(text=structure)
+    )
+
+    countries = imf_model.get_countries()["Country"].to_dict()
+
+    # One name per country, whichever source (Eurostat, the OECD or the IMF) reports it.
+    assert countries == {
+        "CPV": "Cape Verde",
+        "MAC": "Macau",
+        "STP": "Sao Tome and Principe",
+        "MKD": "Macedonia",
+    }
+    assert COUNTRY_CODES["MK"] == CODE_TO_COUNTRY["MKD"] == "Macedonia"
+    assert COUNTRY_CODES["CV"] == "Cape Verde"

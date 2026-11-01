@@ -214,7 +214,8 @@ class Models:
         Also known as: DuPont, ROE decomposition, three-factor DuPont.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -364,7 +365,8 @@ class Models:
         Also known as: extended DuPont, five-factor DuPont, ROE breakdown.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -560,7 +562,8 @@ class Models:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -985,7 +988,8 @@ class Models:
             show_full_results (bool, optional): Whether to show the full results or just the WACC values.
             Defaults to True.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1624,7 +1628,8 @@ class Models:
             When set, uses the sum of the last N periods instead of only the most recent period. Defaults to
             None, which uses 4 (the trailing twelve months) with quarterly data and the most recent year with
             yearly data.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value for each ticker.
@@ -2209,7 +2214,8 @@ class Models:
             growth_rate (float): The growth rate of the dividends.
             project_periods (int, optional): The number of years to project the intrinsic value for, beyond the
                 last complete period. Defaults to 5.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value for each ticker over time.
@@ -2343,7 +2349,8 @@ class Models:
             rate for each ticker.
             high_growth_periods (int, optional): The number of years in the explicit
             high-growth phase. Defaults to 5.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value and its components for
@@ -4603,7 +4610,8 @@ class Models:
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
                 over every period of the data.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -5008,7 +5016,8 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None,
                 which uses 4 (the trailing twelve months of earnings) with quarterly data and a single period
                 with yearly data.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When

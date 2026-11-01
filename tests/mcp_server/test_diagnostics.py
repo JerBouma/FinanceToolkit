@@ -99,3 +99,39 @@ def test_an_empty_result_is_not_cached(tmp_path, monkeypatch):
     assert provider.call_method(**arguments).empty
     # The empty answer was not stored, so the second call reaches the source again.
     assert provider.call_method(**arguments).iloc[0, 0] == 0.04
+
+
+def test_the_key_hints_survive_redaction_and_logs_are_redacted():
+    import logging
+
+    assert diagnostics_model.redact(diagnostics_model.FMP_KEY_HINT) == (
+        diagnostics_model.FMP_KEY_HINT
+    )
+    assert "?fmp_api_key=<your key>" in diagnostics_model.FMP_KEY_HINT
+
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        (
+            "1.2.3.4",
+            "POST",
+            "/mcp?fmp_api_key=SECRET123&fred_api_key=FREDSECRET",
+            "1.1",
+            200,
+        ),
+        None,
+    )
+    diagnostics_model.RedactingFilter().filter(record)
+    assert "SECRET" not in record.getMessage()
+    assert "fmp_api_key=***" in record.getMessage()
+
+
+def test_a_long_list_is_cut_to_the_response_size():
+    answer = json.loads(format_result(list(range(200_000)), max_characters=1_000))
+
+    assert len(json.dumps(answer["data"])) <= 1_000
+    assert answer["data"][:3] == [0, 1, 2]
+    assert "of 200000 values" in answer["_notes"][-1]

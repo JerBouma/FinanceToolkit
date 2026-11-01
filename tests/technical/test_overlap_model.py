@@ -212,3 +212,49 @@ def test_kaufman_adaptive_moving_average_is_nan_only_for_missing_prices():
 
     assert kama.iloc[:5].isna().all()
     assert kama.iloc[5:].notna().all()
+
+
+def test_parabolic_sar_starts_at_each_ticker_first_bar():
+    index = pd.date_range("2024-01-01", periods=30)
+    high = pd.Series(
+        [10 + i * 0.5 + (i % 3) for i in range(30)], index=index, dtype="float64"
+    )
+    low = high - 1.5
+
+    full = overlap_model.get_parabolic_sar(high, low)
+
+    later_high, later_low = high.copy(), low.copy()
+    later_high.iloc[:5] = float("nan")
+    later_low.iloc[:5] = float("nan")
+    later = overlap_model.get_parabolic_sar(later_high, later_low)
+
+    assert later.iloc[:5].isna().all()
+    pd.testing.assert_series_equal(
+        later.iloc[5:], overlap_model.get_parabolic_sar(high.iloc[5:], low.iloc[5:])
+    )
+    assert full.notna().all()
+
+    gap_high, gap_low = high.copy(), low.copy()
+    gap_high.iloc[12] = float("nan")
+    assert pd.isna(overlap_model.get_parabolic_sar(gap_high, gap_low).iloc[12])
+
+
+def test_support_resistance_follow_each_ticker_own_data():
+    index = pd.date_range("2024-01-01", periods=80)
+    prices = pd.Series(
+        [
+            100 + 10 * ((i % 20) - 10 if (i // 20) % 2 else 10 - (i % 20))
+            for i in range(80)
+        ],
+        index=index,
+        dtype="float64",
+    )
+
+    listed_later = prices.copy()
+    listed_later.iloc[:15] = float("nan")
+
+    levels = overlap_model.get_support_resistance_levels(listed_later, window=5)
+    truncated = overlap_model.get_support_resistance_levels(prices.iloc[15:], window=5)
+
+    assert levels.iloc[:15].isna().all().all()
+    pd.testing.assert_frame_equal(levels.iloc[15:], truncated)

@@ -806,3 +806,20 @@ def test_get_win_rate_leaves_out_days_without_both_returns():
     per_period = performance_model.get_win_rate(stacked, stacked_benchmark)
     assert per_period["A"].tolist() == pytest.approx([2 / 3, 2 / 3])
     assert per_period["B"].isna().all()
+
+
+def test_omega_ratio_without_losses_is_infinite():
+    gains_only = pd.Series([0.01, 0.02, 0.005])
+
+    assert performance_model.get_omega_ratio(gains_only) == np.inf
+    assert np.isnan(performance_model.get_omega_ratio(pd.Series([0.0, 0.0])))
+    assert performance_model.get_rolling_omega_ratio(gains_only, 2).iloc[-1] == np.inf
+
+
+def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
+    returns = pd.DataFrame({"A": [0.01, -0.02, 0.01], "B": [np.nan] * 3})
+
+    measure = performance_model.get_burke_drawdown_measure(returns)
+
+    assert measure["A"] > 0
+    assert np.isnan(measure["B"])

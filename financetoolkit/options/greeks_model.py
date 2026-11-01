@@ -389,7 +389,9 @@ def get_lambda(
         put_option=put_option,
     )
 
-    lambda_value = delta * (stock_price / option_price)
+    # An option worth nothing (out of the money at expiration) has no finite elasticity;
+    # np.divide gives inf or NaN for it instead of raising for a float price of 0.
+    lambda_value = delta * np.divide(stock_price, option_price)
 
     return lambda_value
 

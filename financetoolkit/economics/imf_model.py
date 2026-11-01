@@ -35,6 +35,16 @@ PERIOD_ATTRIBUTE = re.compile(r'\bTIME_PERIOD="([^"]+)"')
 VALUE_ATTRIBUTE = re.compile(r'\bOBS_VALUE="([^"]+)"')
 
 
+# The IMF countries whose common name differs from the one the other sources (Eurostat, the
+# BIS and the Global Macro Database) use, so the inflation of a country is one column no
+# matter which source it came from.
+IMF_TO_COUNTRY_NAMES = {
+    "CPV": "Cape Verde",
+    "MAC": "Macau",
+    "STP": "Sao Tome and Principe",
+}
+
+
 def _short_name(imf_name: str) -> str:
     """
     Shortens an IMF country name to its common form: "Bahamas, The" becomes "Bahamas" and
@@ -80,7 +90,9 @@ def get_countries() -> pd.DataFrame:
             for code, block in CODE_PATTERN.findall(codelist.group(1))
         }
         names = {
-            code: CODE_TO_COUNTRY.get(code, _short_name(imf_name))
+            code: CODE_TO_COUNTRY.get(
+                code, IMF_TO_COUNTRY_NAMES.get(code, _short_name(imf_name))
+            )
             for code, imf_name in imf_names.items()
         }
 

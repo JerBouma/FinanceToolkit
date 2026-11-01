@@ -911,3 +911,157 @@ def test_statements_keep_the_fiscal_period_end_date(responses):
     # actual last day of the fiscal year is kept as a statistic.
     assert [str(period) for period in statement.columns] == ["2023", "2022"]
     assert statement.loc["periodEndDate"].tolist() == ["2024-01-28", "2023-01-29"]
+
+
+def test_a_certificate_error_is_reported_without_retrying(monkeypatch):
+    attempts = []
+
+    def certificate_error(*_, **__):
+        attempts.append(1)
+        raise requests.exceptions.SSLError("certificate verify failed")
+
+    monkeypatch.setattr(fmp_model, "get_request", certificate_error)
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    assert fmp_model.get_financial_data("https://example.com").empty
+    assert len(attempts) == 1
+
+
+def test_a_refused_connection_is_retried_a_few_times(monkeypatch):
+    attempts = []
+
+    def refused(*_, **__):
+        attempts.append(1)
+        raise requests.exceptions.ConnectionError("Name or service not known")
+
+    monkeypatch.setattr(fmp_model, "get_request", refused)
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    assert fmp_model.get_financial_data("https://example.com").empty
+    assert len(attempts) == fmp_model.TRANSIENT_RETRY_LIMIT + 1
+
+
+def test_an_unrecognised_error_is_logged_without_the_api_key(monkeypatch, caplog):
+    url = (
+        "https://financialmodelingprep.com/stable/profile?symbol=X&apikey=SECRETKEY123"
+    )
+
+    def not_found(*_, **__):
+        response = requests.models.Response()
+        response.status_code = 404
+        response.url = url
+        response.raise_for_status()
+
+    monkeypatch.setattr(fmp_model, "get_request", not_found)
+
+    with caplog.at_level("ERROR"):
+        result = fmp_model.get_financial_data(url)
+
+    assert list(result.columns) == ["REQUEST FAILED"]
+    assert "unrecognised error" in caplog.text
+    assert "SECRETKEY123" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("adjusted_error", "incomplete"),
+    [("LIMIT REACH", True), ("PREMIUM QUERY PARAMETER", False)],
+)
+def test_prices_are_incomplete_only_after_a_temporary_failure(
+    monkeypatch, adjusted_error, incomplete
+):
+    prices = [
+        {"date": "2024-01-02", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
+    ]
+
+    def fake(url, **kwargs):  # noqa: ARG001
+        if "dividend-adjusted" in url:
+            return pd.DataFrame(columns=[adjusted_error])
+        if "/dividends" in url:
+            return []
+        return prices
+
+    monkeypatch.setattr(fmp_model, "get_financial_data", fake)
+
+    data = fmp_model.get_historical_data(
+        "AAPL", api_key="KEY", start="2024-01-01", end="2024-01-05"
+    )
+
+    assert data.attrs.get("incomplete", False) is incomplete
+    assert data["Adj Close"].tolist() == data["Close"].tolist()
+
+
+def test_free_plan_dividends_are_completed_with_older_yahoo_payments(monkeypatch):
+    import yfinance as yf
+
+    from financetoolkit import fmp_model
+
+    latest = pd.Series(
+        [0.25] * 5,
+        index=pd.period_range("2024-02-01", periods=5, freq="Q").asfreq("D", "start"),
+    )
+    yahoo = pd.Series(
+        [0.2, 0.2, 0.25],
+        index=pd.DatetimeIndex(
+            ["2023-05-01", "2023-08-01", "2024-02-01"], tz="America/New_York"
+        ),
+    )
+    monkeypatch.setattr(
+        yf, "Ticker", lambda symbol: type("T", (), {"dividends": yahoo})()
+    )
+
+    completed = fmp_model._complete_older_dividends("AAPL", latest)
+
+    # The two earlier payments come first; the overlapping one is kept from FMP.
+    assert completed.index[:2].astype(str).tolist() == ["2023-05-01", "2023-08-01"]
+    assert completed.iloc[2:].equals(latest)
+
+
+def test_free_plan_dividends_without_yahoo_history_warn(monkeypatch):
+    import yfinance as yf
+
+    from financetoolkit import fmp_model
+
+    latest = pd.Series(
+        [0.25] * 5, index=pd.period_range("2024-01-01", periods=5, freq="D")
+    )
+    monkeypatch.setattr(
+        yf,
+        "Ticker",
+        lambda symbol: type("T", (), {"dividends": pd.Series(dtype=float)})(),
+    )
+
+    from unittest.mock import patch
+
+    with patch.object(fmp_model.logger, "warning") as warning:
+        assert fmp_model._complete_older_dividends("XYZ", latest).equals(latest)
+
+    assert warning.call_args[0][0].startswith("No dividend data is available for")
+
+
+def _raising_ticker(symbol):
+    raise RuntimeError("Too Many Requests")
+
+
+@pytest.mark.parametrize(
+    "ticker",
+    [lambda symbol: type("T", (), {"dividends": None})(), _raising_ticker],
+    ids=["none", "raises"],
+)
+def test_free_plan_dividends_when_yahoo_fails(monkeypatch, ticker):
+    import yfinance as yf
+
+    from financetoolkit import fmp_model
+
+    latest = pd.Series(
+        [0.25] * 5, index=pd.period_range("2025-01-01", periods=5, freq="D")
+    )
+    # yfinance returns None for the dividends when Yahoo answers with an error, and the
+    # request itself can raise; both count as no older payments.
+    monkeypatch.setattr(yf, "Ticker", ticker)
+
+    from unittest.mock import patch
+
+    with patch.object(fmp_model.logger, "warning") as warning:
+        assert fmp_model._complete_older_dividends("AAPL", latest).equals(latest)
+
+    assert warning.call_args[0][0].startswith("No dividend data is available for")

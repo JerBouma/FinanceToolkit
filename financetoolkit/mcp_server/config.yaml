@@ -152,10 +152,6 @@ skip_params:
   - "progress_bar"
   - "overwrite"
   - "rounding"
-  # Deprecated misspelling of smooth_window kept for backwards compatibility on
-  # get_stochastic_oscillator. Exposing it would teach the model the typo, and
-  # passing both raises, so only the correct spelling reaches the tool schema.
-  - "smooth_widow"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Parameters handled at wrapper level (not forwarded to sub-methods)
@@ -172,11 +168,11 @@ init_handled_params:
   - "show_columns"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Toolkit direct-method allowlist (exposed by get_toolkit_data)
+# Toolkit direct-method allowlist (exposed by the market_data tool)
 # These are raw-data methods on the Toolkit class that return uncomputed data
 # (financial statements, price history, company profile, quotes, …).
 #
-# get_esg_scores is not listed here as it is exposed by the get_environment
+# get_esg_scores is not listed here as it is exposed by the environment
 # group instead (which mixes tickers and countries).
 # get_exchange_rates (Toolkit) is omitted here as it is mostly a helper functionality
 # economics.get_exchange_rates is exposed separately through the macroeconomics tool.
@@ -911,7 +907,7 @@ utility_tools:
 # Listing a period here causes the wrapper to return an informative error
 # instead of raising a confusing KeyError or returning empty data.
 # ──────────────────────────────────────────────────────────────────────────────
-# Risk (and econometrics) tools are no longer listed: their methods compute over the
+# Risk (and econometrics) tools are not listed: their methods compute over the
 # entire daily return series by default (within_period=False), which needs no intraday
 # data. Performance metrics remain per-period by construction, and the server never
 # fetches intraday data, so a daily period cannot work there.

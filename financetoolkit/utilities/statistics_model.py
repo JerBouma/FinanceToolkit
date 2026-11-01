@@ -67,6 +67,11 @@ COUNTRY_ALIASES = {
     "czechia": "Czech Republic",
     "turkiye": "Turkey",
     "türkiye": "Turkey",
+    # The official names of countries the Global Macro Database names differently.
+    "north macedonia": "Macedonia",
+    "macao": "Macau",
+    "cabo verde": "Cape Verde",
+    "são tomé and príncipe": "Sao Tome and Principe",
 }
 
 

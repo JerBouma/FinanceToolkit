@@ -27,8 +27,9 @@ MAXIMUM_REASON_LENGTH = 300
 
 # Credentials that can appear in a logged URL or message, which must never reach the
 # client: the value after any parameter whose name ends in "key" or is "apikey"/"token".
+# A placeholder in angle brackets, as in the hints below, is not a credential.
 CREDENTIAL_PATTERN = re.compile(
-    r"((?:api_?key|apikey|token|key)=)[^&\s'\"]+", re.IGNORECASE
+    r"((?:api_?key|apikey|token|key)=)[^&\s'\"<>]+", re.IGNORECASE
 )
 
 
@@ -37,13 +38,13 @@ CREDENTIAL_PATTERN = re.compile(
 FMP_KEY_HINT = (
     "A FinancialModelingPrep API key is required for this tool. Local setup: set "
     "FINANCIAL_MODELING_PREP_API_KEY in your environment or .env file. Hosted setup: pass "
-    "your key via the `X-FMP-API-Key` header or a `?fmp_api_key=...` URL parameter. Get a "
+    "your key via the `X-FMP-API-Key` header or a `?fmp_api_key=<your key>` URL parameter. Get a "
     "key with 15% off via https://www.jeroenbouma.com/fmp"
 )
 FRED_KEY_HINT = (
     "A FRED API key is required for this indicator. Local setup: set FRED_API_KEY in your "
     "environment or .env file. Hosted setup: pass your key via the `X-FRED-API-Key` header "
-    "or a `?fred_api_key=...` URL parameter. A key is free at "
+    "or a `?fred_api_key=<your key>` URL parameter. A key is free at "
     "https://fred.stlouisfed.org/docs/api/api_key.html"
 )
 
@@ -122,6 +123,19 @@ def redact(text: object) -> str:
         str: The message with every credential replaced by "***".
     """
     return CREDENTIAL_PATTERN.sub(r"\1***", str(text))
+
+
+class RedactingFilter(logging.Filter):
+    """Removes credentials from log records, such as the API key in a logged request URL."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                redact(arg) if isinstance(arg, str) else arg for arg in record.args
+            )
+        elif isinstance(record.msg, str):
+            record.msg = redact(record.msg)
+        return True
 
 
 @contextmanager

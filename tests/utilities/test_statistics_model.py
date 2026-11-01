@@ -517,3 +517,17 @@ def test_calculate_growth_refuses_lags_that_are_not_positive(lag):
 
     with pytest.raises(ValueError):
         statistics_model.calculate_growth(data, lag=lag)
+
+
+def test_official_country_names_resolve_to_the_global_macro_database_names():
+    from financetoolkit.utilities.statistics_model import normalize_country_name
+
+    known = ["Macedonia", "Macau", "Cape Verde", "Sao Tome and Principe"]
+
+    assert normalize_country_name("North Macedonia", known) == "Macedonia"
+    assert normalize_country_name("Macao", known) == "Macau"
+    assert normalize_country_name("Cabo Verde", known) == "Cape Verde"
+    assert (
+        normalize_country_name("São Tomé and Príncipe", known)
+        == "Sao Tome and Principe"
+    )

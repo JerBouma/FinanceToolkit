@@ -385,3 +385,26 @@ def test_moving_average_convergence_divergence_seeds_every_average():
     assert macd["Signal Line"].iloc[33] == pytest.approx(
         macd["MACD Line"].iloc[25:34].mean()
     )
+
+
+def test_rate_of_change_and_oscillators_are_decimals():
+    index = pd.date_range("2024-01-01", periods=60)
+    close = pd.Series([100 * 1.01**i for i in range(60)], index=index)
+
+    rate_of_change = momentum_model.get_rate_of_change(close, window=10)
+    assert rate_of_change.iloc[-1] == pytest.approx(1.01**10 - 1)
+
+    ppo = momentum_model.get_percentage_price_oscillator(close, 12, 26)
+    assert 0 < ppo.iloc[-1] < 1
+
+
+def test_windows_of_one_period_are_refused():
+    index = pd.date_range("2024-01-01", periods=10)
+    close = pd.Series(range(10, 20), index=index, dtype="float64")
+
+    with pytest.raises(ValueError, match="at least 2"):
+        momentum_model.get_choppiness_index(close + 1, close - 1, close, window=1)
+    with pytest.raises(ValueError, match="at least 2"):
+        momentum_model.get_commodity_channel_index(
+            close + 1, close - 1, close, window=1
+        )

@@ -1473,7 +1473,7 @@ class Portfolio:
             exchange_rates = self._get_exchange_rates(
                 list(rate_tickers.values()), self._start_date
             )
-            # A transaction without a known currency is taken to be in the reporting currency (see the warning below).  # noqa: E501
+            # A transaction without a known currency is taken to be in the reporting currency (see the warning above).  # noqa: E501
             factors = pd.Series(1.0, index=self._portfolio_dataset.index)
             for currency, rate_ticker in rate_tickers.items():
                 rows = (currencies == currency).to_numpy()

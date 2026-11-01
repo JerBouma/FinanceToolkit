@@ -5382,7 +5382,6 @@ class Toolkit:
 
         | date   | KO                  | PEP                 |
         |:-------|:--------------------|:--------------------|
-        | 2020   | 2021-02-25 13:47:17 | 2021-02-10 17:41:49 |
         | 2021   | 2022-02-22 15:45:48 | 2022-02-09 18:03:39 |
         | 2022   | 2023-02-21 16:03:20 | 2023-02-08 18:06:37 |
         | 2023   | 2024-02-20 13:21:24 | 2024-02-08 17:58:51 |
@@ -5435,6 +5434,13 @@ class Toolkit:
             ]
 
         statistics_statement = self._remove_unfiled_periods(self._statistics_statement)
+
+        # Retrieved from the lookback start for the trailing and growth figures, but shown
+        # from the start date like the statements themselves.
+        if not statistics_statement.empty:
+            statistics_statement = statistics_statement.truncate(
+                before=self._start_date, axis=1
+            )
 
         if len(self._tickers) == 1 and not statistics_statement.empty:
             return filter_columns(

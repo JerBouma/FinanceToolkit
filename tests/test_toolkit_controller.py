@@ -758,3 +758,32 @@ def test_quarterly_lookback_covers_a_trailing_year_and_its_growth():
     lookback = pd.Timestamp(toolkit._lookback_start_date)
     assert lookback <= pd.Timestamp("2023-03-31")
     assert lookback > pd.Timestamp("2022-09-30")
+
+
+def test_statistics_are_shown_from_the_start_date(monkeypatch):
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        api_key="KEY",
+        start_date="2021-01-01",
+        end_date="2022-12-31",
+        sleep_timer=False,
+    )
+    periods = pd.period_range("2019", "2022", freq="Y")
+    statistics = pd.DataFrame(
+        "2020-12-31",
+        index=pd.MultiIndex.from_product([["AAPL", "MSFT"], ["Period End Date"]]),
+        columns=periods,
+    )
+
+    def get_balance_sheet_statement(**kwargs):  # noqa: ARG001
+        toolkit._statistics_statement = statistics
+        toolkit._balance_sheet_statement = pd.DataFrame({"x": [1.0]})
+
+    monkeypatch.setattr(
+        toolkit, "get_balance_sheet_statement", get_balance_sheet_statement
+    )
+
+    # Retrieved from the lookback start, shown from the start date like the statements.
+    result = toolkit.get_statistics_statement()
+
+    assert [str(period) for period in result.columns] == ["2021", "2022"]

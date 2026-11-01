@@ -119,7 +119,9 @@ def fetch_or_explain(name, fetch, caplog):
     if data.empty:
         logged = " | ".join(record.getMessage() for record in caplog.records)
         if REQUEST_LIMIT_PATTERN.search(logged):
-            pytest.skip(f"{name} refused the request because of a request limit: {logged}")
+            pytest.skip(
+                f"{name} refused the request because of a request limit: {logged}"
+            )
         pytest.fail(f"{name} returned no data. Logged: {logged or 'nothing'}")
 
     return data

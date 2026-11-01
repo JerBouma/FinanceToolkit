@@ -519,8 +519,12 @@ def collect_financial_statements(
             .to_numpy(dtype=bool)
         )
 
-    # Columns with no data over the entire period are dropped automatically.
+    # Columns with no data over the entire period are dropped automatically, also from the
+    # statistics: a period every ticker ends after the end date has none left.
     financial_statement_total = financial_statement_total.dropna(axis=1, how="all")
+    financial_statement_statistics = financial_statement_statistics.dropna(
+        axis=1, how="all"
+    )
 
     # Round the financial statement total if rounding is specified; rounding=None is documented as no rounding at all, and DataFrame.round(None) raises a TypeError.  # noqa: E501
     financial_statement_total = apply_rounding(financial_statement_total, rounding)

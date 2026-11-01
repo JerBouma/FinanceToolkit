@@ -310,14 +310,18 @@ class Ratios:
         Returns:
             pd.DataFrame: The daily or period-end closing prices.
         """
+        # A ticker without prices (a failed download or custom historical data that leaves
+        # it out) becomes NaN, so it doesn't empty the ratios of the other tickers.
         if show_daily:
-            return self._daily_historical_data.loc[begin:, "Close"][
-                self._tickers_without_portfolio
-            ]
+            return self._daily_historical_data.loc[begin:, "Close"].reindex(
+                columns=self._tickers_without_portfolio
+            )
 
-        return self._historical_data.loc[begin:end, "Close"][
-            self._tickers_without_portfolio
-        ].T
+        return (
+            self._historical_data.loc[begin:end, "Close"]
+            .reindex(columns=self._tickers_without_portfolio)
+            .T
+        )
 
     @staticmethod
     def _sum_trailing(data: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
@@ -446,6 +450,17 @@ class Ratios:
                 self._valuation_ratios,
             ]
         )
+
+        # Each category lists every ticker, so the rows are grouped per ticker again (in the
+        # order of the tickers, keeping the categories in order within each) for one block
+        # per ticker that can be sliced.
+        tickers = self._all_ratios.index.get_level_values(0)
+        self._all_ratios = self._all_ratios.iloc[
+            np.argsort(
+                pd.Categorical(tickers, categories=tickers.unique()).codes,
+                kind="stable",
+            )
+        ]
 
         self._all_ratios = apply_rounding(
             self._all_ratios, rounding if rounding is not None else self._rounding
@@ -743,7 +758,7 @@ class Ratios:
 
         if len(self._tickers) == 1:
             return (
-                custom_ratios_growth[self._tickers[0]]
+                custom_ratios_growth.loc[self._tickers[0]]
                 if growth
                 else custom_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
@@ -943,7 +958,7 @@ class Ratios:
 
         if len(self._tickers) == 1:
             return (
-                efficiency_ratios_growth[self._tickers[0]]
+                efficiency_ratios_growth.loc[self._tickers[0]]
                 if growth
                 else efficiency_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
@@ -3181,7 +3196,7 @@ class Ratios:
 
         if len(self._tickers) == 1:
             return (
-                liquidity_ratios_growth[self._tickers[0]]
+                liquidity_ratios_growth.loc[self._tickers[0]]
                 if growth
                 else liquidity_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
@@ -4252,7 +4267,7 @@ class Ratios:
 
         if len(self._tickers) == 1:
             return (
-                profitability_ratios_growth[self._tickers[0]]
+                profitability_ratios_growth.loc[self._tickers[0]]
                 if growth
                 else profitability_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
@@ -6773,7 +6788,7 @@ class Ratios:
 
         if len(self._tickers) == 1:
             return (
-                solvency_ratios_growth[self._tickers[0]]
+                solvency_ratios_growth.loc[self._tickers[0]]
                 if growth
                 else solvency_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
@@ -7578,6 +7593,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -8614,7 +8630,7 @@ class Ratios:
 
         if len(self._tickers) == 1:
             return (
-                valuation_ratios_growth[self._tickers[0]]
+                valuation_ratios_growth.loc[self._tickers[0]]
                 if growth
                 else valuation_ratios.loc[self._tickers[0]]
             ).loc[:, self._start_date : self._end_date]
@@ -8970,6 +8986,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -9697,6 +9714,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10046,6 +10064,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10177,6 +10196,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10290,6 +10310,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10403,6 +10424,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10519,6 +10541,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10627,6 +10650,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10757,6 +10781,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10866,6 +10891,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -10991,6 +11017,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -11101,6 +11128,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -11211,6 +11239,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -11691,6 +11720,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 
@@ -11799,6 +11829,7 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows" if show_daily else "columns",
             row_slice=show_daily,
         )
 

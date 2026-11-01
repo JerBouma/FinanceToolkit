@@ -537,7 +537,20 @@ def calculate_growth(
 
     Returns:
         pd.Series | pd.DataFrame: the period over period growth of the dataset.
+
+    Raises:
+        ValueError: When a lag is not a positive whole number: a lag of 0 compares a period
+            with itself and a negative lag with a later period.
     """
+    lags = lag if isinstance(lag, list) else [lag]
+    if not lags or any(
+        isinstance(value, bool) or not isinstance(value, int | np.integer) or value < 1
+        for value in lags
+    ):
+        raise ValueError(
+            f"The lag must be a positive whole number or a list of them, not {lag}."
+        )
+
     if isinstance(lag, list):
         # Each row (axis="columns") or column (axis="rows") is an entity, and every lag
         # becomes an extra index level after it: (entity, "Lag 1"), (entity, "Lag 2").

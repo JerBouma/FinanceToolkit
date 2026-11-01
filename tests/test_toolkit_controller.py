@@ -617,3 +617,26 @@ def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
 
     assert not january.equals(regular.loc[january.index])
     pd.testing.assert_frame_equal(may, regular.loc[may.index])
+
+
+def test_statistics_come_from_the_balance_sheet_getter(monkeypatch):
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        api_key="KEY",
+        start_date="2020-01-01",
+        end_date="2022-06-30",
+        sleep_timer=False,
+        point_in_time=True,
+    )
+    calls = []
+    monkeypatch.setattr(
+        toolkit,
+        "get_balance_sheet_statement",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    # Retrieving the statistics first goes through the getter that converts and filters the
+    # balance sheet, so it cannot store an unfiltered balance sheet for later calls.
+    toolkit.get_statistics_statement()
+
+    assert calls == [{"enforce_source": None, "overwrite": False, "rounding": None}]

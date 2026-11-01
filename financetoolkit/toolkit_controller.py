@@ -257,8 +257,9 @@ class Toolkit:
                 - Otherwise, for companies that do not file with the SEC (FinancialModelingPrep then
                   reports about the period end as the filing date, so a filing date within a week of
                   the period end is not used) and for sources without filing dates such as
-                  Yahoo Finance, the period end plus 120 days for a fiscal year and 90 days for a quarter,
-                  the longest common reporting deadlines (the EU Transparency Directive and Form 20-F).
+                  Yahoo Finance, the period end plus 120 days for a fiscal year (and for the quarter that
+                  closes it, which comes with the annual report) and 90 days for another quarter, the
+                  longest common reporting deadlines (the EU Transparency Directive and Form 20-F).
 
             The statements, and every ratio and model calculated from them, then hold only the periods
             that were public on end_date, so end_date acts as the "as of" date. Daily ratios (show_daily)
@@ -5249,37 +5250,14 @@ class Toolkit:
                 "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
             )
 
-        # Correct for the case where a Portfolio ticker exists
-        ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
-
-        if self._statistics_statement.empty or overwrite:
-            (
-                self._balance_sheet_statement,
-                self._statistics_statement,
-                self._invalid_tickers,
-                _fy_adj,
-            ) = collect_financial_statements(
-                tickers=ticker_list,
-                statement="balance",
-                api_key=self._api_key,
-                quarter=self._quarterly,
-                start_date=self._lookback_start_date,
-                end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-                fmp_statement_format=self._fmp_balance_sheet_statement_generic,
-                fmp_statistics_format=self._fmp_statistics_statement_generic,
-                yf_statistics_format=self._yf_statistics_statement_generic,
-                yf_statement_format=self._yf_balance_sheet_statement_generic,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
-                cache=self._cache,
+        if overwrite or self._balance_sheet_statement.empty:
+            # The statistics come with the balance sheet, which its own getter converts and
+            # filters (point_in_time), so the two are never retrieved apart.
+            self.get_balance_sheet_statement(
+                enforce_source=enforce_source,
+                overwrite=overwrite,
+                rounding=rounding,
             )
-            self._fiscal_year_adjustments.update(_fy_adj)
 
         if self._remove_invalid_tickers:
             self._tickers = [

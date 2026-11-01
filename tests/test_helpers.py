@@ -413,3 +413,32 @@ def test_availability_dates_without_statistics_use_the_annual_deadline():
     )
 
     assert availability.loc["AAPL"].tolist() == [pd.Timestamp("2023-04-30")]
+
+
+def test_availability_of_the_quarter_closing_a_fiscal_year_uses_the_annual_deadline():
+    periods = pd.PeriodIndex(["2023Q3", "2023Q4"], freq="Q")
+    period_end_dates = pd.DataFrame(
+        [
+            pd.to_datetime(["2023-09-30", "2023-12-31"]),
+            pd.to_datetime(["2023-09-30", "2023-12-31"]),
+        ],
+        index=["SEPTEMBER", "DECEMBER"],
+        columns=periods,
+    )
+    statistics = pd.DataFrame(
+        [["Q4", "Q1"]],
+        index=pd.MultiIndex.from_tuples([("SEPTEMBER", "Period")]),
+        columns=periods.astype(str),
+    )
+
+    availability = helpers.determine_availability_dates(
+        period_end_dates, statistics, quarter=True
+    )
+
+    # The fiscal Q4 label decides where the source reports it, December otherwise.
+    assert availability.loc["SEPTEMBER"].tolist() == list(
+        pd.to_datetime(["2024-01-28", "2024-03-30"])
+    )
+    assert availability.loc["DECEMBER"].tolist() == list(
+        pd.to_datetime(["2023-12-29", "2024-04-29"])
+    )

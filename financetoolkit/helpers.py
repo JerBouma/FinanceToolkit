@@ -296,6 +296,8 @@ def determine_period_end_dates(
 
 ACCEPTED_DATE = "Accepted Date"
 FILING_DATE = "Filing Date"
+FISCAL_PERIOD = "Period"
+DECEMBER = 12
 
 # The latest a period's figures are expected to be public when no filing date is known: four
 # months after a fiscal year end (the annual report deadline of the EU Transparency Directive
@@ -328,7 +330,8 @@ def determine_availability_dates(
           day when the filing was accepted at or after the 16:00 close.
         - Otherwise the Filing Date, from the day after it, since its time is not known.
         - Otherwise the period end plus the longest common reporting deadline: 120 days for a
-          fiscal year and 90 days for a quarter (see FALLBACK_FILING_DAYS).
+          fiscal year (and the quarter that closes it) and 90 days for another quarter (see
+          FALLBACK_FILING_DAYS).
 
     A filing date within a week of the period end is not a real filing date
     (FinancialModelingPrep reports about the period end for companies that do not file with
@@ -352,12 +355,39 @@ def determine_availability_dates(
         days=FALLBACK_FILING_DAYS["interim" if quarter else "annual"]
     )
     availability = period_ends + deadline
+    has_statistics = (
+        statistics_statement is not None
+        and not statistics_statement.empty
+        and isinstance(statistics_statement.index, pd.MultiIndex)
+    )
 
-    if (
-        statistics_statement is None
-        or statistics_statement.empty
-        or not isinstance(statistics_statement.index, pd.MultiIndex)
-    ):
+    if quarter:
+        # The quarter that closes a fiscal year is published with the annual report, so it
+        # gets the annual deadline: the quarter the source labels Q4, or December without one.
+        fiscal_period = pd.DataFrame(
+            index=period_ends.index, columns=period_ends.columns
+        )
+
+        if (
+            has_statistics
+            and FISCAL_PERIOD in statistics_statement.index.get_level_values(1)
+        ):
+            fiscal_period = statistics_statement.xs(FISCAL_PERIOD, level=1)
+            fiscal_period.columns = pd.PeriodIndex(
+                fiscal_period.columns, freq=period_ends.columns.freq
+            )
+            fiscal_period = fiscal_period.reindex(
+                index=period_ends.index, columns=period_ends.columns
+            )
+
+        december = period_ends.apply(lambda dates: dates.dt.month == DECEMBER)
+        fiscal_year_end = (fiscal_period == "Q4") | (fiscal_period.isna() & december)
+        availability = availability.where(
+            ~fiscal_year_end,
+            period_ends + pd.Timedelta(days=FALLBACK_FILING_DAYS["annual"]),
+        )
+
+    if not has_statistics:
         return availability
 
     items = statistics_statement.index.get_level_values(1)
@@ -367,7 +397,7 @@ def determine_availability_dates(
             return pd.DataFrame(index=period_ends.index, columns=period_ends.columns)
 
         dates = statistics_statement.xs(item, level=1).apply(
-            pd.to_datetime, errors="coerce"
+            pd.to_datetime, errors="coerce", format="mixed"
         )
         dates.columns = pd.PeriodIndex(dates.columns, freq=period_ends.columns.freq)
 

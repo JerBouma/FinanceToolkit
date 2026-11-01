@@ -74,7 +74,7 @@ def get_wealth_and_peak(
     return wealth, wealth.cummax().clip(lower=1)
 
 
-def apply_to_rolling_windows(
+def apply_to_stacked_windows(
     returns: pd.Series | pd.DataFrame,
     window_size: int,
     function: Callable[[np.ndarray], np.ndarray],
@@ -270,6 +270,7 @@ def get_ui(
                 .rolling(window=rolling, min_periods=1)
                 .max()
                 .droplevel(0)
+                .reindex(returns.index)
             )
             drawdowns = returns - reference_max
         else:
@@ -283,6 +284,9 @@ def get_ui(
                     .rolling(window=rolling, min_periods=1)
                     .max()
                     .droplevel(0)
+                    # A grouped rolling window lists the rows per sub-period; back in the
+                    # original order, the positional start mask below lines up with them.
+                    .reindex(returns.index)
                 )
                 # The windows that reach back to the start of each sub-period also hold
                 # the starting wealth of 1, see get_wealth_and_peak.
@@ -724,7 +728,7 @@ def get_rolling_conditional_drawdown_at_risk(
             np.where(drawdowns <= drawdown_at_risk, drawdowns, np.nan), axis=1
         )
 
-    return apply_to_rolling_windows(returns, window_size, _cdar)
+    return apply_to_stacked_windows(returns, window_size, _cdar)
 
 
 def _drawdown_trough(

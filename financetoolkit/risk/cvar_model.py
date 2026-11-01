@@ -76,7 +76,7 @@ def get_rolling_cvar_historic(
         # The value at the percentile is always in the tail, so no window has an empty one.
         return np.nanmean(np.where(windows <= value_at_risk, windows, np.nan), axis=1)
 
-    return risk_model.apply_to_rolling_windows(returns, window_size, _cvar)
+    return risk_model.apply_to_stacked_windows(returns, window_size, _cvar)
 
 
 def get_cvar_gaussian(
@@ -93,7 +93,9 @@ def get_cvar_gaussian(
     `alpha` and `std` the sample standard deviation (ddof=1).
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns. A rolling
+            window of them (`returns.rolling(window_size)`) works too and gives the CVaR of
+            every window, as the out-of-sample estimate of the risk module uses.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
 
     Returns:

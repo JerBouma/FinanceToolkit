@@ -236,3 +236,20 @@ def test_period_aggregation_matches_an_aggregation_per_column():
 
         for column in ["Open", "High", "Low", "Close", "Volume", "Dividends"]:
             pd.testing.assert_frame_equal(converted[column], expected[column])
+
+
+def test_period_conversion_keeps_the_column_level_names():
+    columns = pd.MultiIndex.from_product(
+        [
+            ["Open", "Close", "Adj Close", "Volume", "Dividends", "Return"],
+            ["AAPL", "MSFT"],
+        ],
+        names=["Field", "Ticker"],
+    )
+    daily = pd.DataFrame(
+        1.0, index=pd.period_range("2024-01-01", periods=70, freq="D"), columns=columns
+    )
+
+    monthly = historical_model.convert_daily_to_other_period("monthly", daily)
+
+    assert list(monthly.columns.names) == ["Field", "Ticker"]

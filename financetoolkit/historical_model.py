@@ -845,7 +845,9 @@ def convert_daily_to_other_period(
     )[daily_historical_data.columns]
     # Built from the labels themselves, as an aggregation per column does, so the label
     # types are inferred (strings) rather than copied from the daily data.
-    period_historical_data.columns = pd.Index(list(period_historical_data.columns))
+    period_historical_data.columns = pd.Index(
+        list(period_historical_data.columns)
+    ).set_names(daily_historical_data.columns.names)
 
     if "Return" in period_historical_data:
         period_historical_data["Return"] = (

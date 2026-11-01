@@ -449,3 +449,30 @@ def test_ulcer_index_per_period_matches_each_period_on_its_own(rolling, method):
         rtol=1e-12,
         atol=1e-12,
     )
+
+
+@pytest.mark.parametrize("rolling", [None, 3])
+@pytest.mark.parametrize("method", ["return", "level"])
+def test_ulcer_index_per_period_with_interleaved_rows(rolling, method):
+    rng = np.random.default_rng(0)
+    periods = ["A", "A", "B", "B", "A", "A", "B", "B", "A", "B", "A", "B"]
+    returns = pd.DataFrame(
+        rng.normal(0, 0.02, (12, 2)),
+        index=pd.MultiIndex.from_arrays(
+            [periods, pd.date_range("2020-01-01", periods=12)]
+        ),
+        columns=["x", "y"],
+    )
+
+    expected = pd.DataFrame(
+        {
+            period: risk_model.get_ui(returns.loc[period], rolling, method)
+            for period in ["A", "B"]
+        }
+    ).T
+
+    pd.testing.assert_frame_equal(
+        risk_model.get_ui(returns, rolling, method).sort_index(),
+        expected,
+        check_names=False,
+    )

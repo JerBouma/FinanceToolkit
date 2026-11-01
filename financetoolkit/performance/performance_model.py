@@ -14,7 +14,7 @@ from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.risk import cvar_model
 from financetoolkit.risk.risk_model import (
-    apply_to_rolling_windows,
+    apply_to_stacked_windows,
     get_wealth_and_peak,
 )
 from financetoolkit.utilities.requests_model import get_request
@@ -2037,6 +2037,10 @@ def get_rolling_omega_ratio(
     """
     Calculate the rolling Omega Ratio of returns.
 
+    A window with gains but no losses has an infinite ratio (inf), like get_omega_ratio
+    over the whole period; a window without gains or losses (all returns equal to the
+    minimum acceptable return) has none (NaN).
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         window_size (int): The size of the rolling window.
@@ -2058,7 +2062,7 @@ def get_rolling_omega_ratio(
                 losses > 0, gains / losses, np.where(gains > 0, np.inf, np.nan)
             )
 
-    return apply_to_rolling_windows(returns, window_size, _omega)
+    return apply_to_stacked_windows(returns, window_size, _omega)
 
 
 def get_gain_to_pain_ratio(

@@ -159,3 +159,109 @@ def test_the_dashboard_renders_without_any_calls(tmp_path):
     page = stats_page_model.render(make_analytics(tmp_path).summary())
 
     assert "No calls yet." in page
+
+
+def test_a_threaded_tool_runs_off_the_event_loop_and_keeps_its_signature():
+    import inspect
+    import threading
+
+    from financetoolkit.mcp_server import mcp_controller
+    from financetoolkit.mcp_server.analytics_model import run_in_thread
+
+    def tool(query: str, limit: int = 5) -> str:
+        return (
+            f"{query}:{limit}:{threading.current_thread() is threading.main_thread()}"
+        )
+
+    threaded = run_in_thread(tool)
+
+    assert inspect.iscoroutinefunction(threaded)
+    assert list(inspect.signature(threaded).parameters) == ["query", "limit"]
+    assert asyncio.run(threaded("debt", limit=2)) == "debt:2:False"
+    assert all(
+        tool.is_async
+        for tool in mcp_controller.mcp._tool_manager.list_tools()
+        if tool.name in ("valuation", "search_metrics")
+    )
+
+
+def test_threaded_tools_run_a_limited_number_at_a_time():
+    import threading
+    import time
+
+    import anyio
+
+    from financetoolkit.mcp_server.analytics_model import (
+        MAXIMUM_TOOL_THREADS,
+        run_in_thread,
+    )
+
+    running, peak, lock = [0], [0], threading.Lock()
+
+    def tool() -> None:
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.05)
+        with lock:
+            running[0] -= 1
+
+    threaded = run_in_thread(tool)
+
+    async def burst():
+        async with anyio.create_task_group() as group:
+            for _ in range(MAXIMUM_TOOL_THREADS * 3):
+                group.start_soon(threaded)
+
+    anyio.run(burst)
+    assert peak[0] == MAXIMUM_TOOL_THREADS
+
+
+def test_calls_waiting_for_a_busy_instance_leave_the_work_slots_to_others():
+    import threading
+    import time
+
+    import anyio
+
+    from financetoolkit.mcp_server.analytics_model import (
+        MAXIMUM_TOOL_THREADS,
+        hold_lock,
+        run_in_thread,
+    )
+
+    instance_lock = threading.RLock()
+    release = threading.Event()
+    other_done = threading.Event()
+
+    def busy_instance() -> None:
+        # Every call on the same instance queues on its lock; the first holds it until the
+        # other user's call has finished.
+        with hold_lock(instance_lock):
+            release.wait(5)
+
+    def other_user() -> None:
+        other_done.set()
+        release.set()
+
+    async def burst():
+        async with anyio.create_task_group() as group:
+            for _ in range(MAXIMUM_TOOL_THREADS * 2):
+                group.start_soon(run_in_thread(busy_instance))
+            await anyio.sleep(0.2)
+            started = time.monotonic()
+            await run_in_thread(other_user)()
+            assert time.monotonic() - started < 2  # noqa: PLR2004
+
+    anyio.run(burst)
+    assert other_done.is_set()
+
+
+def test_a_reentrant_hold_does_not_give_up_the_slot():
+    import threading
+
+    from financetoolkit.mcp_server.analytics_model import hold_lock
+
+    lock = threading.RLock()
+    with hold_lock(lock), hold_lock(lock):
+        assert lock._is_owned()  # noqa: SLF001
+    assert not lock._is_owned()  # noqa: SLF001

@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
 from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.optimize import linprog, minimize
 from scipy.spatial.distance import pdist
@@ -28,6 +29,11 @@ SLSQP_LINE_SEARCH_STATUS = 8
 # How closely the risk contributions of a risk parity portfolio must match the budget.
 RISK_BUDGET_TOLERANCE = 1e-6
 
+# The volatility below which a portfolio or asset counts as riskless: rounding leaves a
+# constant return series with a volatility of about 1e-17 instead of 0, which would give
+# a Sharpe ratio of 1e17.
+ZERO_VOLATILITY_TOLERANCE = 1e-12
+
 
 def _bounds(
     assets: int, minimum_weight: float, maximum_weight: float
@@ -44,6 +50,28 @@ def _bounds(
             f"for {assets} assets."
         )
     return [(minimum_weight, maximum_weight)] * assets
+
+
+def _validate_covariance(covariance: pd.DataFrame, positive: bool = True) -> None:
+    """
+    Raises a clear error for a covariance matrix the optimizers cannot use: one with missing
+    or infinite values (e.g. an asset without returns) or, when positive, an asset without
+    any variance (a constant return), which a risk-based weighting divides by.
+    """
+    values = covariance.to_numpy(dtype=float)
+    if not np.all(np.isfinite(values)):
+        missing = covariance.index[~np.isfinite(values).all(axis=1)]
+        raise ValueError(
+            f"The covariance of {', '.join(map(str, missing))} has missing values; these "
+            "assets have no returns over the range."
+        )
+    if positive:
+        riskless = covariance.index[np.diag(values) <= ZERO_VOLATILITY_TOLERANCE**2]
+        if len(riskless):
+            raise ValueError(
+                f"{', '.join(map(str, riskless))} has no variance (a constant return), "
+                "which this weighting cannot handle."
+            )
 
 
 def _fully_invested() -> dict:
@@ -194,7 +222,7 @@ def get_portfolio_statistics(
             "Volatility": portfolio_volatility,
             "Sharpe Ratio": (
                 (portfolio_return - risk_free_rate) / portfolio_volatility
-                if portfolio_volatility > 0
+                if portfolio_volatility > ZERO_VOLATILITY_TOLERANCE
                 else np.nan
             ),
         }
@@ -218,6 +246,7 @@ def get_minimum_variance_weights(
     Returns:
         pd.Series: The weight per asset.
     """
+    _validate_covariance(covariance, positive=False)
     sigma = covariance.to_numpy()
     assets = len(sigma)
 
@@ -253,6 +282,7 @@ def get_maximum_sharpe_weights(
     Returns:
         pd.Series: The weight per asset.
     """
+    _validate_covariance(covariance)
     mu = expected_returns.to_numpy() - risk_free_rate
     sigma = covariance.to_numpy()
     assets = len(mu)
@@ -366,6 +396,9 @@ def get_efficient_frontier(
         pd.DataFrame: Per portfolio its Expected Return, Volatility, Sharpe Ratio and the
         weight per asset.
     """
+    _validate_covariance(covariance)
+    if len(covariance) < 2:  # noqa: PLR2004
+        raise ValueError("At least two assets are needed.")
     if points < 2:  # noqa: PLR2004
         raise ValueError("The efficient frontier needs at least two points.")
 
@@ -422,6 +455,7 @@ def get_inverse_volatility_weights(covariance: pd.DataFrame) -> pd.Series:
     Returns:
         pd.Series: The weight per asset.
     """
+    _validate_covariance(covariance)
     inverse_volatility = 1 / np.sqrt(np.diag(covariance.to_numpy()))
 
     return _as_series(inverse_volatility / inverse_volatility.sum(), covariance.index)
@@ -444,6 +478,7 @@ def get_risk_parity_weights(
     Returns:
         pd.Series: The weight per asset.
     """
+    _validate_covariance(covariance)
     sigma = covariance.to_numpy()
     assets = len(sigma)
 
@@ -502,6 +537,9 @@ def get_hierarchical_risk_parity_weights(
     Returns:
         pd.Series: The weight per asset.
     """
+    _validate_covariance(covariance)
+    if len(covariance) < 2:  # noqa: PLR2004
+        raise ValueError("At least two assets are needed.")
     volatility = np.sqrt(np.diag(covariance.to_numpy()))
     correlation = covariance / np.outer(volatility, volatility)
 
@@ -566,6 +604,8 @@ def get_minimum_cvar_weights(
 
     data = returns.dropna(how="any").to_numpy()
     periods, assets = data.shape
+    if periods == 0:
+        raise ValueError("No period has a return for every asset.")
     bounds = _bounds(assets, minimum_weight, maximum_weight)
 
     # Variables: the weights (assets), the Value at Risk (1) and the shortfall per period.
@@ -576,8 +616,17 @@ def get_minimum_cvar_weights(
             np.full(periods, 1 / ((1 - confidence_level) * periods)),
         ]
     )
-    # Shortfall_t >= -r_t'w - VaR, written as -r_t'w - VaR - shortfall_t <= 0.
-    inequality = np.hstack([-data, -np.ones((periods, 1)), -np.eye(periods)])
+    # Shortfall_t >= -r_t'w - VaR, written as -r_t'w - VaR - shortfall_t <= 0. Sparse, since
+    # the shortfall block is an identity matrix of periods by periods (a dense one of 25 years
+    # of daily returns holds 40 million zeros).
+    inequality = sparse.hstack(
+        [
+            sparse.csr_matrix(-data),
+            sparse.csr_matrix(-np.ones((periods, 1))),
+            -sparse.eye(periods, format="csr"),
+        ],
+        format="csr",
+    )
     equality = np.concatenate([np.ones(assets), [0.0], np.zeros(periods)])[None, :]
 
     result = linprog(
@@ -660,16 +709,35 @@ def get_black_litterman_returns(
     implied = risk_aversion * sigma @ weights + risk_free_rate
     posterior = implied
 
+    unmatched = set(view_confidences or {}) - set(views or {})
+    if unmatched:
+        raise ValueError(
+            f"The view confidences name views that are not given: {', '.join(sorted(unmatched))}."
+        )
+
     if views:
         pick, targets, uncertainty = [], [], []
         for view, value in views.items():
             row = np.zeros(len(assets))
+            # Tickers can hold a hyphen themselves (BRK-B), so every hyphen is tried as the
+            # split between the two legs of a relative view.
+            legs = [
+                (view[:position], view[position + 1 :])
+                for position, character in enumerate(view)
+                if character == "-"
+                and view[:position] in assets
+                and view[position + 1 :] in assets
+            ]
             if view in assets:
                 row[assets.get_loc(view)] = 1
-            elif "-" in view and all(part in assets for part in view.split("-", 1)):
-                long_leg, short_leg = view.split("-", 1)
+            elif len(legs) == 1:
+                long_leg, short_leg = legs[0]
                 row[assets.get_loc(long_leg)] = 1
                 row[assets.get_loc(short_leg)] = -1
+            elif len(legs) > 1:
+                raise ValueError(
+                    f"The view {view!r} can be read as more than one pair of assets."
+                )
             else:
                 raise ValueError(
                     f"The view {view!r} names no asset; use 'TICKER' or 'TICKER-TICKER'."
@@ -687,11 +755,17 @@ def get_black_litterman_returns(
         p = np.array(pick)
         q = np.array(targets)
         omega = np.diag(uncertainty)
-        tau_sigma_inverse = np.linalg.inv(tau * sigma)
-        posterior = np.linalg.solve(
-            tau_sigma_inverse + p.T @ np.linalg.inv(omega) @ p,
-            tau_sigma_inverse @ implied + p.T @ np.linalg.inv(omega) @ q,
-        )
+        # The posterior Π + τΣP'(PτΣP' + Ω)^-1 (Q - PΠ), the same as the textbook
+        # ((τΣ)^-1 + P'Ω^-1 P)^-1 ((τΣ)^-1 Π + P'Ω^-1 Q) but without inverting Σ or Ω, so
+        # duplicate or collinear assets (a singular covariance) and certain views work.
+        tau_sigma = tau * sigma
+        try:
+            adjustment = np.linalg.solve(p @ tau_sigma @ p.T + omega, q - p @ implied)
+        except np.linalg.LinAlgError as error:
+            raise ValueError(
+                "The views contradict or repeat each other, so they cannot be combined."
+            ) from error
+        posterior = implied + tau_sigma @ p.T @ adjustment
 
     return pd.DataFrame(
         {"Implied Return": implied, "Black-Litterman Return": posterior}, index=assets

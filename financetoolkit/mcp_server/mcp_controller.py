@@ -4,6 +4,7 @@ Finance Toolkit MCP Server
 
 import argparse
 import contextlib
+import logging
 import os
 import pathlib
 import subprocess
@@ -32,6 +33,7 @@ from financetoolkit.mcp_server.auth_model import (
     resolve_api_key,
     resolve_fred_api_key,
 )
+from financetoolkit.mcp_server.diagnostics_model import RedactingFilter, redact
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.mcp_server.registry_controller import ToolRegistry
@@ -290,7 +292,7 @@ def _build_mcp_app() -> FastMCP:
                 report["mcp_session_id"] = headers.get("mcp-session-id", "")
                 try:
                     request = get_http_request()
-                    report["query_string"] = str(request.url.query)
+                    report["query_string"] = redact(str(request.url.query))
                     report["query_keys"] = sorted(request.query_params.keys())
                 except RuntimeError as exc:
                     report["request_err"] = repr(exc)
@@ -429,6 +431,10 @@ def main() -> None:
             proxy_headers=True,
             forwarded_allow_ips="*",
         )
+        # The access log prints each request's path with its query string, which can hold
+        # the caller's FMP or FRED key (?fmp_api_key=...). Added after the Config, which
+        # sets up uvicorn's loggers.
+        logging.getLogger("uvicorn.access").addFilter(RedactingFilter())
         server = uvicorn.Server(config)
         anyio.run(server.serve)
     else:
@@ -574,6 +580,11 @@ def _setup_cli(client: str, overwrite: bool) -> None:
             "US-only economic indicators. Set FRED_API_KEY in your environment "
             "to include it, or get one at "
             "https://fred.stlouisfed.org/docs/api/api_key.html"
+        )
+
+    if client in ("vscode", "cursor"):
+        api_key, fred_api_key = setup_model.keys_outside_global_env(
+            api_key, fred_api_key
         )
 
     setup_model.console.print()
@@ -723,10 +734,13 @@ def _setup_interactive() -> None:
                 )
 
     setup_model.console.print()
+    # VS Code and Cursor keep their config in the project, so they only get the keys the
+    # global .env file doesn't hold.
+    project_keys = setup_model.keys_outside_global_env(api_key, fred_api_key)
     for char in to_process:
         name, func = valid_map[char]
         try:
-            func(api_key, fred_api_key)
+            func(*(project_keys if char in ("3", "4") else (api_key, fred_api_key)))
         except Exception as e:
             setup_model.err(f"Error configuring {name}: {e}")
 

@@ -2,7 +2,7 @@
 name = "finance-toolkit-mcp"
 version = "2.3.0"
 description = "Finance Toolkit MCP Server"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.16"
 dependencies = [
     "financetoolkit[mcp]==2.3.0",
 ]

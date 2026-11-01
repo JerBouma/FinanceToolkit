@@ -576,3 +576,185 @@ def test_collection_without_statements_fails_once():
         "cash_flow_statement",
         "income_statement",
     ]
+
+
+def _custom_toolkit(tickers=("AAPL", "MSFT"), **kwargs):
+    kwargs.setdefault("start_date", "2019-12-31")
+    kwargs.setdefault("end_date", "2023-01-01")
+    toolkit = Toolkit(
+        tickers=list(tickers),
+        historical=kwargs.pop("historical", historical_dataset),
+        balance=kwargs.pop("balance", balance_dataset),
+        income=kwargs.pop("income", income_dataset),
+        cash=kwargs.pop("cash", cash_dataset),
+        convert_currency=False,
+        sleep_timer=False,
+        **kwargs,
+    )
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
+    return toolkit
+
+
+def test_supplied_statements_are_never_replaced_by_downloads(monkeypatch):
+    toolkit = _custom_toolkit(start_date="2024-06-01", end_date="2025-01-01")
+
+    def fail(*args, **kwargs):
+        raise AssertionError("supplied statements must not be downloaded")
+
+    monkeypatch.setattr(
+        "financetoolkit.toolkit_controller.collect_financial_statements", fail
+    )
+
+    # The window holds none of the supplied periods, which leaves the statements empty.
+    assert toolkit.get_balance_sheet_statement().empty
+    assert toolkit.get_statistics_statement().empty
+    assert toolkit.ratios.get_gross_margin().empty
+
+
+def test_supplied_statements_keep_only_the_tickers():
+    toolkit = _custom_toolkit(tickers=["AAPL"])
+
+    assert toolkit.ratios.get_gross_margin().index.tolist() == ["AAPL"]
+    assert _custom_toolkit(tickers=["TSLA"]).get_balance_sheet_statement().empty
+
+
+def test_supplied_statements_labelled_as_text_are_cut_as_periods():
+    income = income_dataset.copy()
+    income.columns = income.columns.astype(str)
+    toolkit = _custom_toolkit(income=income, start_date="2021-01-01")
+
+    assert [str(period) for period in toolkit.get_income_statement().columns] == [
+        "2021",
+        "2022",
+        "2023",
+    ]
+
+
+def test_supplied_statements_labelled_with_dates_keep_their_period_end():
+    income = income_dataset.copy()
+    income.columns = ["2020-09-26", "2021-09-25", "2022-09-24", "2023-09-30"]
+    toolkit = _custom_toolkit(income=income, start_date="2019-01-01")
+
+    # The fiscal year ending after the end date is left out, and each period keeps its end.
+    assert [str(period) for period in toolkit.get_income_statement().columns] == [
+        "2020",
+        "2021",
+        "2022",
+    ]
+    period_ends = toolkit._statistics_statement.xs("Period End Date", level=1)
+    assert period_ends.loc["AAPL", pd.Period("2022", "Y")] == pd.Timestamp("2022-09-24")
+
+
+def test_a_ticker_without_prices_leaves_the_others_their_ratios():
+    historical = historical_dataset.drop(columns="MSFT", level=1)
+    price_to_earnings = _custom_toolkit(
+        historical=historical
+    ).ratios.get_price_to_earnings_ratio()
+
+    assert price_to_earnings.loc["AAPL"].notna().any()
+    assert price_to_earnings.loc["MSFT"].isna().all()
+
+
+def test_sleep_timer_does_not_decide_the_plan():
+    toolkit = _custom_toolkit()
+
+    # Without a key nothing paid is requested, whatever the sleep timer says.
+    assert toolkit._fmp_plan == "Free"
+
+
+def test_toolkit_dates_and_tickers_are_checked_after_their_defaults():
+    toolkit = _custom_toolkit(start_date=None, end_date="2015-01-01")
+    assert toolkit._start_date < toolkit._end_date
+
+    with pytest.raises(ValueError):
+        _custom_toolkit(start_date="2023-02-30")
+    with pytest.raises(ValueError):
+        _custom_toolkit(tickers=[])
+    with pytest.raises(TypeError):
+        _custom_toolkit(tickers=["AAPL", 1])
+
+    toolkit = _custom_toolkit(tickers=[" aapl ", "SPY"], benchmark_ticker="spy")
+    assert toolkit._tickers == ["AAPL"]
+    assert toolkit._benchmark_ticker == "SPY"
+
+
+def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
+    def toolkit(end_date, point_in_time):
+        return Toolkit(
+            tickers=["AAPL", "MSFT"],
+            historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+            balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+            income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+            cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+            convert_currency=False,
+            start_date="2019-12-31",
+            end_date=end_date,
+            sleep_timer=False,
+            point_in_time=point_in_time,
+        )
+
+    # Supplied statements have no filing dates, so a year counts from 120 days after it ends:
+    # 2022 is public from 30 April 2023 on.
+    before = toolkit("2023-03-31", point_in_time=True)
+    after = toolkit("2023-06-30", point_in_time=True)
+
+    assert pd.Period("2022") not in before.get_income_statement().columns
+    assert pd.Period("2022") in after.get_income_statement().columns
+    assert (
+        pd.Period("2022") in toolkit("2023-03-31", False).get_income_statement().columns
+    )
+
+    # Daily ratios apply 2021 from its availability day (30 April 2022) instead of from its
+    # period end, so the first months of 2022 still use the figures of 2020.
+    daily = after.ratios.get_price_to_earnings_ratio(show_daily=True)
+    regular = toolkit("2023-06-30", False).ratios.get_price_to_earnings_ratio(
+        show_daily=True
+    )
+    january = daily.loc["2022-01-03":"2022-04-29"]
+    may = daily.loc["2022-05-02":]
+
+    assert not january.empty and not may.empty
+
+    assert not january.equals(regular.loc[january.index])
+    pd.testing.assert_frame_equal(may, regular.loc[may.index])
+
+
+def test_statistics_come_from_the_balance_sheet_getter(monkeypatch):
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        api_key="KEY",
+        start_date="2020-01-01",
+        end_date="2022-06-30",
+        sleep_timer=False,
+        point_in_time=True,
+    )
+    calls = []
+    monkeypatch.setattr(
+        toolkit,
+        "get_balance_sheet_statement",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    # Retrieving the statistics first goes through the getter that converts and filters the
+    # balance sheet, so it cannot store an unfiltered balance sheet for later calls.
+    toolkit.get_statistics_statement()
+
+    assert calls == [{"enforce_source": None, "overwrite": False, "rounding": None}]
+
+
+def test_quarterly_lookback_covers_a_trailing_year_and_its_growth():
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        api_key="",
+        start_date="2025-01-01",
+        end_date="2026-01-01",
+        quarterly=True,
+        sleep_timer=False,
+    )
+
+    # A trailing twelve months for the first quarter needs the three quarters before it,
+    # and its growth over a year the four before those, all ending before the start.
+    lookback = pd.Timestamp(toolkit._lookback_start_date)
+    assert lookback <= pd.Timestamp("2023-03-31")
+    assert lookback > pd.Timestamp("2022-09-30")

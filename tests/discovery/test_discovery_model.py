@@ -310,3 +310,75 @@ def test_the_screener_sends_fractional_bounds(monkeypatch):
     assert "betaMoreThan=0.8" in urls[0]
     assert "betaLowerThan=1.5" in urls[0]
     assert "dividendMoreThan=0.25" in urls[0]
+
+
+def test_free_float_of_all_stocks_collects_every_page(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        page = int(url.split("page=")[1].split("&")[0])
+        # Two full pages, a short one and then an empty one.
+        size = {0: 5000, 1: 5000, 2: 1}.get(page, 0)
+        if size == 0:
+            return pd.DataFrame()
+        return pd.DataFrame(
+            {
+                "symbol": [f"T{page}_{number}" for number in range(size)],
+                "freeFloat": 50.0,
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    shares_float = discovery_model.get_stock_shares_float(api_key="KEY")
+
+    assert len(requested) == 4
+    assert all("/stable/shares-float-all" in url for url in requested)
+    assert len(shares_float) == 2 * 5000 + 1
+
+
+def test_free_float_of_all_stocks_stops_when_the_page_is_ignored(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        # The same page whatever page is asked for.
+        return pd.DataFrame({"symbol": ["AAA", "BBB"], "freeFloat": 50.0})
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    shares_float = discovery_model.get_stock_shares_float(api_key="KEY")
+
+    assert len(requested) == 2
+    assert list(shares_float.index) == ["AAA", "BBB"]
+
+
+def test_free_float_of_all_stocks_requests_at_most_the_page_cap(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame({"symbol": [f"T{len(requested)}"], "freeFloat": 50.0})
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    discovery_model.get_stock_shares_float(api_key="KEY")
+
+    assert len(requested) == discovery_model.SHARES_FLOAT_MAX_PAGES
+
+
+def test_names_with_ampersands_are_sent_whole(monkeypatch):
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    discovery_model.get_instruments(api_key="KEY", query="AT&T")
+    discovery_model.get_sector_performance(api_key="KEY", sector="Aerospace & Defense")
+
+    assert "query=AT%26T&apikey=KEY" in requested[0]
+    assert "sector=Aerospace%20%26%20Defense&" in requested[1]

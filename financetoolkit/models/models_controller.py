@@ -70,6 +70,7 @@ class Models:
         peer_function: (
             Callable[[dict[str, list[str]] | None], pd.DataFrame] | None
         ) = None,
+        country_risk_premiums: pd.Series | Callable[[], pd.Series] | None = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -90,6 +91,11 @@ class Models:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             peer_function (Callable | None, optional): Compares the companies with their peers,
                 used by get_peer_comparison. Defaults to None.
+            country_risk_premiums (pd.Series | Callable[[], pd.Series] | None, optional): The
+                annual equity risk premium of each company's country (Damodaran's Total Equity
+                Risk Premium), indexed by ticker, which the Cost of Equity uses unless a
+                market_risk_premium is given. Defaults to None, which uses the benchmark's
+                average return above the risk-free rate for every company.
 
         As an example:
 
@@ -126,6 +132,7 @@ class Models:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._peer_function = peer_function
+        self._country_risk_premiums_source = country_risk_premiums
 
         # Historical Data
         self._historical_data = historical_data
@@ -157,6 +164,17 @@ class Models:
             if callable(self._tickers_source)
             else self._tickers_source
         )
+
+    @cached_property
+    def _country_risk_premiums(self) -> pd.Series:
+        """The equity risk premium of each company's country, retrieved when first needed."""
+        source = self._country_risk_premiums_source
+        premiums = source() if callable(source) else source
+
+        if premiums is None:
+            return pd.Series(index=self._tickers, dtype=float)
+
+        return premiums.reindex(self._tickers).astype(float)
 
     @cached_property
     def _balance_sheet_statement(self) -> pd.DataFrame:
@@ -214,7 +232,8 @@ class Models:
         Also known as: DuPont, ROE decomposition, three-factor DuPont.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -368,7 +387,8 @@ class Models:
         Also known as: extended DuPont, five-factor DuPont, ROE breakdown.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -568,7 +588,8 @@ class Models:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -892,13 +913,21 @@ class Models:
         benchmark_returns: pd.Series,
         market_risk_premium: float | None,
         trailing: int | None = None,
-    ) -> tuple[pd.Series, pd.Series]:
+    ) -> tuple[pd.Series, pd.Series | pd.DataFrame]:
         """
         The risk-free rate and the expected market return for the Cost of Equity, over the
         span of the flows it is compared with. The market return is the risk-free rate plus
-        the market risk premium, by default the benchmark's average return above the
-        risk-free rate over every period of the data, so that the Cost of Equity does not
-        follow the market up and down from year to year.
+        the market risk premium:
+
+        - market_risk_premium when it is given, for every company.
+        - Otherwise the equity risk premium of each company's country (Damodaran's Total
+          Equity Risk Premium, from FinancialModelingPrep), a forward-looking premium of a
+          few percent. The source keeps no history, so every period uses today's premium,
+          also periods long past: a backtest sees the country risk known today.
+        - For a company whose country premium is not available (no API key, or a country
+          the table does not cover), the benchmark's average return above the risk-free
+          rate over every period of the data. A short or strong sample makes this premium
+          large: over 2022-2026 the S&P 500's was about 15% a year.
 
         With quarterly data the annual yield and premium are divided by four, matching the
         quarterly returns and costs of debt. With `trailing` set, the flows (Net Income,
@@ -914,23 +943,46 @@ class Models:
                 over. Defaults to None, which is a single period.
 
         Returns:
-            tuple[pd.Series, pd.Series]: The risk-free rate and the expected market return,
-            both over the span of the flows.
+            tuple[pd.Series, pd.Series | pd.DataFrame]: The risk-free rate and the expected
+            market return, both over the span of the flows. The market return has a column
+            per ticker when the premium differs per company.
         """
         periods_per_year = 4 if self._quarterly else 1
         span = trailing if trailing else 1
 
         risk_free_rate = risk_free_rate / periods_per_year
-        premium = (
-            (benchmark_returns - risk_free_rate).mean()
-            if market_risk_premium is None
-            else market_risk_premium / periods_per_year
-        )
+        historical_premium = (benchmark_returns - risk_free_rate).mean()
 
         # Scaled after the premium is averaged, which compares per-period benchmark returns with the per-period rate.  # noqa: E501
-        risk_free_rate = risk_free_rate * span
+        risk_free_span = risk_free_rate * span
 
-        return risk_free_rate, risk_free_rate + premium * span
+        if market_risk_premium is not None:
+            return (
+                risk_free_span,
+                risk_free_span + market_risk_premium / periods_per_year * span,
+            )
+
+        country_premiums = self._country_risk_premiums
+
+        if country_premiums.isna().all():
+            return risk_free_span, risk_free_span + historical_premium * span
+
+        if without_premium := country_premiums[country_premiums.isna()].index.tolist():
+            logger.info(
+                "No country equity risk premium is available for %s, so their Cost of Equity "
+                "uses the benchmark's average return above the risk-free rate (%.4f a period).",
+                ", ".join(without_premium),
+                historical_premium,
+            )
+
+        premiums = (country_premiums / periods_per_year).fillna(historical_premium)
+
+        return risk_free_span, pd.DataFrame(
+            {
+                ticker: risk_free_span + premium * span
+                for ticker, premium in premiums.items()
+            }
+        )
 
     def get_weighted_average_cost_of_capital(
         self,
@@ -997,7 +1049,8 @@ class Models:
             show_full_results (bool, optional): Whether to show the full results or just the WACC values.
             Defaults to True.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -1005,8 +1058,9 @@ class Models:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
-                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
-                over every period of the data.
+                uses. Defaults to None, which takes the equity risk premium of each company's country
+                (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
+                not available, the benchmark's average return above the risk-free rate over the data.
             show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
                 which shows all columns.
 
@@ -1015,10 +1069,13 @@ class Models:
 
         Notes:
         - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM): the risk-free rate of
-        the period plus Beta times the market risk premium, which defaults to the benchmark's average
-        return above the risk-free rate over every period of the data (set `market_risk_premium` to use
-        another premium, e.g. an implied equity risk premium). Beta is estimated from the period's daily
-        returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
+        the period plus Beta times the market risk premium. That premium defaults to the equity risk
+        premium of the company's country (Damodaran's Total Equity Risk Premium, about 4.5% for the
+        United States), today's premium for every period, as the source keeps no history. Without it (no API key, or a country the
+        table does not cover) it is the benchmark's average return above the risk-free rate over the
+        data, which a short or strong sample makes large: about 15% a year for the S&P 500 over
+        2022-2026. Set `market_risk_premium` to use one premium for every company. Beta is estimated
+        from the period's daily returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
         - With `trailing` set, the Interest Expense is summed over the trailing periods, so the Cost of
         Debt covers that span, and the risk-free rate and premium of the Cost of Equity are the per-period
         rates times `trailing`. With quarterly data and trailing=4, every rate is an annual rate.
@@ -1051,9 +1108,9 @@ class Models:
 
         |      |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|
-        | T    | 0.0787 | 0.0754 | 0.0259 | 0.0496 |
-        | TMUS | 0.1087 | 0.0776 | 0.072  | 0.0645 |
-        | VZ   | 0.0562 | 0.0727 | 0.0346 | 0.0425 |
+        | T    | 0.0453 | 0.0457 | 0.0358 | 0.0411 |
+        | TMUS | 0.047  | 0.0437 | 0.0447 | 0.0425 |
+        | VZ   | 0.0304 | 0.0406 | 0.036  | 0.0358 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -1252,8 +1309,9 @@ class Models:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
-                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
-                over every period of the data.
+                uses. Defaults to None, which takes the equity risk premium of each company's country
+                (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
+                not available, the benchmark's average return above the risk-free rate over the data.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -1274,8 +1332,8 @@ class Models:
         its closing balance, consistent with the Return on Invested Capital calculation in the
         Ratios module.
         - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
-        with the market risk premium given by `market_risk_premium` (by default the benchmark's
-        average return above the risk-free rate over the data) and the same `trailing`, so that it
+        with the market risk premium given by `market_risk_premium` (by default the equity risk
+        premium of the company's country) and the same `trailing`, so that it
         covers the span of the NOPAT (an annual rate for trailing=4 with quarterly data).
 
         As an example:
@@ -1297,9 +1355,9 @@ class Models:
 
         |    |        2022 |        2023 |        2024 |        2025 |
         |:---|------------:|------------:|------------:|------------:|
-        | HD | 9.57216e+09 | 5.61294e+09 | 6.25513e+09 | 5.96403e+09 |
-        | MA | 6.03519e+09 | 7.72427e+09 | 1.00151e+10 | 1.06193e+10 |
-        | V  | 3.68483e+09 | 6.85635e+09 | 1.04752e+10 | 8.9369e+09  |
+        | HD | 1.51585e+10 | 1.2373e+10  | 1.21356e+10 | 1.12645e+10 |
+        | MA | 9.17359e+09 | 1.03462e+10 | 1.21324e+10 | 1.32974e+10 |
+        | V  | 1.14098e+10 | 1.30284e+10 | 1.5452e+10  | 1.53158e+10 |
         """
         eva = {}
 
@@ -1640,7 +1698,8 @@ class Models:
             When set, uses the sum of the last N periods instead of only the most recent period. Defaults to
             None, which uses 4 (the trailing twelve months) with quarterly data and the most recent year with
             yearly data.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value for each ticker.
@@ -2225,7 +2284,8 @@ class Models:
             growth_rate (float): The growth rate of the dividends.
             project_periods (int, optional): The number of years to project the intrinsic value for, beyond the
                 last complete period. Defaults to 5.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value for each ticker over time.
@@ -2359,7 +2419,8 @@ class Models:
             rate for each ticker.
             high_growth_periods (int, optional): The number of years in the explicit
             high-growth phase. Defaults to 5.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value and its components for
@@ -2520,8 +2581,9 @@ class Models:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
-                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
-                over every period of the data.
+                uses. Defaults to None, which takes the equity risk premium of each company's country
+                (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
+                not available, the benchmark's average return above the risk-free rate over the data.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -2535,8 +2597,8 @@ class Models:
         if it still reported a positive Net Income.
         - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM), as in
         `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta times
-        the market risk premium, by default the benchmark's average return above the risk-free
-        rate over the data (see `market_risk_premium`). It covers the span of the Net Income: a
+        the market risk premium, by default the equity risk premium of the company's country
+        (see `market_risk_premium`). It covers the span of the Net Income: a
         quarter with quarterly data, and the per-period rate times `trailing` when the Net Income
         is a trailing sum (an annual rate for trailing twelve months, trailing=4 with quarterly data).
         - The Book Value of Equity is the Total Shareholder Equity minus Preferred Stock at the
@@ -2568,9 +2630,9 @@ class Models:
 
         |     |        2022 |        2023 |        2024 |        2025 |
         |:----|------------:|------------:|------------:|------------:|
-        | AXP | 2.05135e+09 | 1.68244e+09 | 3.53878e+09 | 1.9205e+09  |
-        | MA  | 8.21049e+09 | 9.901e+09   | 1.17405e+10 | 1.37721e+10 |
-        | V   | 7.63433e+09 | 1.11901e+10 | 1.3996e+10  | 1.28472e+10 |
+        | AXP | 5.6287e+09  | 5.94485e+09 | 7.56011e+09 | 7.62486e+09 |
+        | MA  | 9.35646e+09 | 1.06974e+10 | 1.23824e+10 | 1.44718e+10 |
+        | V   | 1.24384e+10 | 1.48241e+10 | 1.71898e+10 | 1.69421e+10 |
         """
         residual_income = {}
 
@@ -4617,9 +4679,11 @@ class Models:
             attributable to common shareholders only. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
-                uses. Defaults to None, which takes the benchmark's average return above the risk-free rate
-                over every period of the data.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+                uses. Defaults to None, which takes the equity risk premium of each company's country
+                (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
+                not available, the benchmark's average return above the risk-free rate over the data.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -4656,12 +4720,12 @@ class Models:
 
         Which returns:
 
-        | Date   |     ADI |     NVDA |     TXN |
-        |:-------|--------:|---------:|--------:|
-        | 2022   | 144.669 |  14.2204 | 124.854 |
-        | 2023   | 174.632 |  46.6789 | 144.668 |
-        | 2024   | 203.027 | 128.862  | 169.902 |
-        | 2025   | 257.776 | 174.087  | 154.735 |
+        | Date   |     ADI |     NVDA |      TXN |
+        |:-------|--------:|---------:|---------:|
+        | 2022   | 103.665 |  13.2452 |  44.5133 |
+        | 2023   | 129.768 |  40.3283 |  96.2961 |
+        | 2024   | 183.871 | 116.01   | 136.603  |
+        | 2025   | 230.98  | 147.764  | 119.941  |
         """
         # Full precision, so that the rounding of the display does not move the no-growth value.
         wacc_components = self.get_weighted_average_cost_of_capital(
@@ -5024,7 +5088,8 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None,
                 which uses 4 (the trailing twelve months of earnings) with quarterly data and a single period
                 with yearly data.
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When

@@ -186,7 +186,7 @@ def get_rolling_beta(
 def get_capital_asset_pricing_model(
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
-    benchmark_returns: pd.Series | float,
+    benchmark_returns: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
     CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment,
@@ -218,7 +218,8 @@ def get_capital_asset_pricing_model(
     Args:
         risk_free_rate (pd.Series | float): the risk free rate.
         beta (pd.Series | pd.DataFrame | float): the beta.
-        benchmark_returns (pd.Series | float): the benchmark returns.
+        benchmark_returns (pd.Series | pd.DataFrame | float): the benchmark returns, or with a
+            DataFrame beta, a column of market returns per column of beta.
 
     Returns:
         pd.Series | pd.DataFrame | float: the capital asset pricing model.
@@ -228,9 +229,15 @@ def get_capital_asset_pricing_model(
             index=beta.index, columns=beta.columns, dtype=np.float64
         )
         for column in capital_asset_pricing_model.columns:
+            # A market return per column (e.g. a country risk premium per company) or one for all.
+            market_returns = (
+                benchmark_returns[column]
+                if isinstance(benchmark_returns, pd.DataFrame)
+                else benchmark_returns
+            )
             capital_asset_pricing_model.loc[:, column] = risk_free_rate + beta[
                 column
-            ] * (benchmark_returns - risk_free_rate)
+            ] * (market_returns - risk_free_rate)
     elif isinstance(beta, (pd.Series | float)):
         capital_asset_pricing_model = risk_free_rate + beta * (
             benchmark_returns - risk_free_rate
@@ -1722,7 +1729,12 @@ def get_burke_drawdown_measure(
         wealth, peak = get_wealth_and_peak(returns)
         drawdowns = wealth / peak - 1
 
-    return np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
+    burke_drawdown_measure = np.sqrt((drawdowns[drawdowns < 0] ** 2).sum())
+
+    # A series without a single return has no drawdowns to measure, rather than none.
+    if isinstance(returns, pd.DataFrame):
+        return burke_drawdown_measure.where(returns.notna().any())
+    return burke_drawdown_measure if returns.notna().any() else np.nan
 
 
 def get_burke_ratio(
@@ -1992,7 +2004,9 @@ def get_omega_ratio(
 
     Returns:
         pd.Series | pd.DataFrame: Omega Ratio values as float if returns is a pd.Series,
-        otherwise as pd.Series or pd.DataFrame with time as index.
+        otherwise as pd.Series or pd.DataFrame with time as index. Without any return below
+        the minimum acceptable return the ratio is infinite, and without any return away
+        from it NaN.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -2021,9 +2035,21 @@ def get_omega_ratio(
         gains = excess_returns[excess_returns > 0].sum()
         losses = -excess_returns[excess_returns < 0].sum()
 
-        return gains / losses
+        return _divide_gains_by_losses(gains, losses)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def _divide_gains_by_losses(gains: float, losses: float) -> float:
+    """
+    The Omega ratio from the summed gains and losses: infinite when there are gains and no
+    losses (the sum of no losses is -0.0, which would give minus infinity) and NaN when
+    there are neither.
+    """
+    if losses > 0:
+        return gains / losses
+
+    return np.inf if gains > 0 else np.nan
 
 
 def get_rolling_omega_ratio(
@@ -2049,7 +2075,7 @@ def get_rolling_omega_ratio(
         gains = excess_returns[excess_returns > 0].sum()
         losses = -excess_returns[excess_returns < 0].sum()
 
-        return gains / losses if losses else np.nan
+        return _divide_gains_by_losses(gains, losses)
 
     return returns.rolling(window=window_size).apply(_omega, raw=True)
 

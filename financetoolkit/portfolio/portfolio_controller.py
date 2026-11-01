@@ -1973,7 +1973,8 @@ class Portfolio:
         Args:
             include_portfolio (bool): A boolean flag indicating whether the portfolio itself should be included
                 in the overview. Defaults to `True`.
-            exclude_sold_positions (bool): A flag indicating whether to exclude sold positions from the overview.
+            exclude_sold_positions (bool): A flag indicating whether to exclude sold positions from the overview. Defaults
+                to True.
             rounding (int | None): An optional integer specifying the number of decimal places to round the data.
                 If None, the default rounding precision is used.
 
@@ -2107,7 +2108,7 @@ class Portfolio:
                 It can be one of the following: 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'.
                 If None, the default period is 'quarterly' (if the 'quarterly' attribute is set to True),
                 otherwise, it defaults to 'yearly'.
-            exclude_sold_positions (bool): A flag indicating whether to exclude sold positions.
+            exclude_sold_positions (bool): A flag indicating whether to exclude sold positions. Defaults to True.
             rounding (int | None): The number of decimal places to round the output to.
                 If None, it defaults to the rounding precision specified in the configuration.
 
@@ -2640,7 +2641,12 @@ class Portfolio:
             )
             try:
                 money_weighted = attribution_model.get_money_weighted_return(all_flows)
-            except ValueError:
+            except ValueError as error:
+                logger.warning(
+                    "No money-weighted return is available for %s: %s",
+                    identifier,
+                    error,
+                )
                 money_weighted = float("nan")
 
             rows[identifier] = {

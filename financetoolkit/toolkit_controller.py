@@ -48,7 +48,11 @@ from financetoolkit.fmp_model import (
     get_stock_splits as _get_stock_splits,
 )
 from financetoolkit.fundamentals_model import collect_financial_statements
-from financetoolkit.helpers import LazyDict, determine_period_end_dates
+from financetoolkit.helpers import (
+    LazyDict,
+    determine_availability_dates,
+    determine_period_end_dates,
+)
 from financetoolkit.historical_model import (
     calculate_period_average as _calculate_period_average,
     convert_daily_to_other_period as _convert_daily_to_other_period,
@@ -93,6 +97,34 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 TICKER_LIMIT = 20
 
+# Profile country codes (ISO 3166-1 alpha-2) whose name in Damodaran's equity risk premium
+# table (get_market_risk_premium) differs from economics.helpers.COUNTRY_CODES or is not
+# in it. Many US-listed companies are domiciled in these offshore jurisdictions. Puerto
+# Rico has no entry of its own and carries the rating of the United States.
+RISK_PREMIUM_COUNTRIES: dict[str, str] = {
+    "AD": "Andorra (Principality of)",
+    "AW": "Aruba",
+    "BM": "Bermuda",
+    "BS": "Bahamas",
+    "CD": "Congo (Democratic Republic of)",
+    "CG": "Congo (Republic of)",
+    "CI": "Ivory Coast",
+    "CK": "Cook Islands",
+    "CW": "Curacao",
+    "GG": "Guernsey",
+    "IM": "Isle of Man",
+    "JE": "Jersey (States of)",
+    "KR": "Korea",
+    "KY": "Cayman Islands",
+    "MK": "Macedonia",
+    "MO": "Macau",
+    "MS": "Montserrat",
+    "PR": "United States",
+    "SX": "St. Maarten",
+    "SZ": "Swaziland",
+    "TC": "Turks and Caicos Islands",
+}
+
 # Used as the Toolkit's default API key when set as an environment variable.
 API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
@@ -126,7 +158,6 @@ class Toolkit:
         cash: pd.DataFrame = pd.DataFrame(),
         format_location: str = "",
         convert_currency: bool | None = None,
-        reverse_dates: bool = True,
         intraday_period: str | None = None,
         rounding: int | None = 4,
         remove_invalid_tickers: bool = False,
@@ -134,6 +165,7 @@ class Toolkit:
         progress_bar: bool = True,
         fred_api_key: str = FRED_API_KEY,
         allow_stale_oecd_cache: bool = True,
+        point_in_time: bool = False,
     ):
         """
         Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -162,7 +194,7 @@ class Toolkit:
             empty to use Yahoo Finance where possible. Defaults to the value of the FINANCIAL_MODELING_PREP_API_KEY
             environment variable if set, otherwise an empty string.
             start_date (str | None): A string containing the start date of the data. Needs to be formatted as YYYY-MM-DD.
-            Defaults to 5 years/quarters back from today depending on the 'quarterly' flag.
+            Defaults to 5 years/quarters back from the end date depending on the 'quarterly' flag.
             end_date (str | None): A string containing the end date of the data. Needs to be formatted as YYYY-MM-DD.
             Defaults to today.
             quarterly (bool): A boolean indicating whether to collect quarterly data. Defaults to False (yearly).
@@ -187,15 +219,15 @@ class Toolkit:
             format_location (str): Path to custom normalization files. Defaults to "".
             convert_currency (bool | None): Convert financial statements currency to match historical data currency.
             Important for cross-ticker comparison and calculations involving both data types.
-            Defaults to None (True if FMP plan is Premium, False if Free). Can be overridden.
-            reverse_dates (bool): Reverse the order of dates in financial statements (oldest first). Defaults to True.
+            Defaults to None (True if FMP plan is Premium, False if Free or without an API key). Can be overridden.
             intraday_period (str | None): Intraday data interval ('1min', '5min', '15min', '30min', '1hour').
             Enables short-term analysis using Risk, Performance, and Technicals modules. Requires FMP Premium.
             Defaults to None (no intraday data).
             rounding (int | None): Number of decimal places for results. Defaults to 4.
             remove_invalid_tickers (bool): Remove tickers that fail data retrieval. Defaults to False.
             sleep_timer (bool | None): Enable sleep timer on FMP rate limit (requires Premium).
-            Defaults to None (determined by FMP plan: True for Premium, False for Free).
+            Defaults to None (determined by FMP plan: True for Premium, False for Free). It only controls
+            sleeping: the plan is always determined from the API key.
             progress_bar (bool): Show progress bar for operations involving multiple tickers. Defaults to True.
             fred_api_key (str): A FRED API key used to retrieve ICE BofA bond index data via the fixedincome module
             (option-adjusted spread, effective yield, total return, yield to worst). Obtain a free key at
@@ -206,6 +238,10 @@ class Toolkit:
             successful response for that query instead of empty data -- opt-in, since served data may be
             stale. Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
             different mechanism). Defaults to True.
+            point_in_time (bool): Use each period's figures only from the day they were filed, as a backtest
+            would have seen them: the statements leave out the periods filed after end_date and daily ratios
+            apply a period's figures from its filing day instead of from its period end. See "Point in time"
+            below. Defaults to False.
 
         Fiscal periods and calendar periods:
 
@@ -235,6 +271,44 @@ class Toolkit:
             This convention is what makes financial statements line up with price history, since prices
             are always in calendar time. It also means the labels are not the company's own fiscal year
             numbering: what NVIDIA calls fiscal 2024 appears here as 2023.
+
+        Point in time:
+
+            A company files its figures weeks after a period ends, so a backtest that uses them from the
+            period end knows them before the market did. With point_in_time=True, a period counts from the
+            first day its figures were public:
+
+                - The Accepted Date of the SEC filing: that day, or the next day when the filing was
+                  accepted at or after the 16:00 New York close.
+                - Otherwise the day after the Filing Date.
+                - Otherwise, for companies that do not file with the SEC (FinancialModelingPrep then
+                  reports about the period end as the filing date, so a filing date within a week of
+                  the period end is not used) and for sources without filing dates such as
+                  Yahoo Finance, the period end plus 120 days for a fiscal year (and for the quarter that
+                  closes it, which comes with the annual report) and 90 days for another quarter, the
+                  longest common reporting deadlines (the EU Transparency Directive and Form 20-F).
+
+            The statements, and every ratio and model calculated from them, then hold only the periods
+            that were public on end_date, so end_date acts as the "as of" date. Daily ratios (show_daily)
+            apply each period's figures from that first day, so every day only sees what was public on
+            it. The figures themselves are the ones the source reports today: a later restatement
+            replaces the originally filed figures, as no source in the Toolkit keeps earlier versions.
+
+            ```python
+            from financetoolkit import Toolkit
+
+            # The statements as they were public on 15 June 2022
+            toolkit = Toolkit(
+                ["AAPL", "MSFT"],
+                api_key="FINANCIAL_MODELING_PREP_KEY",
+                start_date="2018-01-01",
+                end_date="2022-06-15",
+                quarterly=True,
+                point_in_time=True,
+            )
+
+            toolkit.get_income_statement()
+            ```
 
         As an example:
 
@@ -298,6 +372,9 @@ class Toolkit:
         # Published so the OECD/FRED/ECB/Fed free functions pick up this cache too.
         cache_controller.set_active_cache(self._cache)
         self._allow_stale_oecd_cache = allow_stale_oecd_cache
+        # Tickers are upper-cased, so the benchmark is too, to be found among them.
+        if isinstance(benchmark_ticker, str):
+            benchmark_ticker = benchmark_ticker.strip().upper() or None
         self._benchmark_ticker = benchmark_ticker
 
         # Everything the user can get wrong is checked in one place; this raises on
@@ -314,20 +391,28 @@ class Toolkit:
             benchmark_ticker=benchmark_ticker,
         )
 
+        self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
+        # The default start lies before the end date, also when only an early end is given.
         self._start_date = (
             start_date
             if start_date
             else (
-                datetime.now() - timedelta(days=90 * 5 if quarterly else 365 * 5)
+                datetime.strptime(self._end_date, "%Y-%m-%d")
+                - timedelta(days=90 * 5 if quarterly else 365 * 5)
             ).strftime("%Y-%m-%d")
         )
-        self._end_date = end_date if end_date else datetime.now().strftime("%Y-%m-%d")
         self._quarterly = quarterly
+        self._point_in_time = point_in_time
 
-        # One extra period so two-period metrics have a prior value for the first year.
+        # Data before the start date, so the first periods have what they build on: a prior
+        # year for annual growth, and for quarterly data the three quarters before the first
+        # one of a trailing twelve months (the default of the valuation ratios) plus the four
+        # before those for the growth over a year (lag=4) of statement figures. Prices start at
+        # the start date, so ratios with a price have no growth in their first period. Only the
+        # periods from the start date on are returned.
         if quarterly:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(
-                days=92
+                days=92 * 8
             )
         else:
             _lookback_dt = datetime.strptime(self._start_date, "%Y-%m-%d") - timedelta(
@@ -340,13 +425,14 @@ class Toolkit:
         self._tickers: list[str] = validated_tickers
         self._enforce_source: str | None = enforce_source
 
-        if sleep_timer is None:
-            # Determines the plan, which drives the sleep timer and other components.
+        if api_key:
+            # Determines the plan, which drives the sleep timer, what is requested per call
+            # and the currency conversion default. sleep_timer only decides on sleeping.
             self._fmp_plan, invalid_api_key = _determine_subscription_plan(
                 api_key=api_key
             )
 
-            if invalid_api_key and api_key:
+            if invalid_api_key:
                 self._enforce_source = "YahooFinance"
                 logger.error(
                     "You have entered an invalid API key from Financial Modeling Prep. Obtain your API key for free "
@@ -354,7 +440,8 @@ class Toolkit:
                     "the project: https://www.jeroenbouma.com/fmp\nUsing Yahoo Finance as data source instead."
                 )
         else:
-            self._fmp_plan = "Premium"
+            # Without a key there is no plan to probe, and nothing paid is requested.
+            self._fmp_plan = "Free"
 
         self._sleep_timer = (
             sleep_timer if sleep_timer is not None else self._fmp_plan != "Free"
@@ -423,8 +510,14 @@ class Toolkit:
         self._yearly_historical_data: pd.DataFrame = pd.DataFrame()
         self._historical_statistics: pd.DataFrame = pd.DataFrame()
 
-        # Initialization of the Financial Statements and Normalization
-        self._reverse_dates = reverse_dates
+        # Initialization of the Financial Statements and Normalization. Supplied statements
+        # are used as given and never replaced by downloaded ones, also when the window
+        # holds none of their periods.
+        self._custom_statements = {
+            "balance_sheet_statement": not balance.empty,
+            "income_statement": not income.empty,
+            "cash_flow_statement": not cash.empty,
+        }
 
         (
             self._balance_sheet_statement,
@@ -444,10 +537,10 @@ class Toolkit:
             income=income,
             cash=cash,
             format_location=format_location,
-            reverse_dates=self._reverse_dates,
             start_date=self._start_date,
             end_date=self._end_date,
             quarterly=self._quarterly,
+            tickers=self._tickers,
         )
 
         self._balance_sheet_statement_growth: pd.DataFrame = pd.DataFrame()
@@ -456,6 +549,16 @@ class Toolkit:
         self._currencies: list = []
         self._statement_currencies: pd.Series = pd.Series()
         self._fiscal_year_adjustments: dict[str, list[dict]] = {}
+
+        # Supplied statements carry no filing dates, so point_in_time uses the reporting deadlines.
+        self._balance_sheet_statement = self._remove_unfiled_periods(
+            self._balance_sheet_statement
+        )
+        self._income_statement = self._remove_unfiled_periods(self._income_statement)
+        self._cash_flow_statement = self._remove_unfiled_periods(
+            self._cash_flow_statement
+        )
+
         self._convert_currency = (
             convert_currency
             if convert_currency is not None
@@ -580,7 +683,7 @@ class Toolkit:
             sleep_timer=self._sleep_timer,
             user_subscription=self._fmp_plan,
             analyst_estimates_cache=self._analyst_estimates_cache,
-            period_end_dates=lambda: self._get_period_end_dates(
+            period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Ratios")
             ),
         )
@@ -725,6 +828,7 @@ class Toolkit:
             start_date=self._start_date,
             end_date=self._end_date,
             peer_function=compare_with_peers,
+            country_risk_premiums=self._get_country_risk_premiums,
         )
 
     @property
@@ -1719,8 +1823,9 @@ class Toolkit:
         Also known as: earnings dates, earnings schedule, reporting date.
 
         Args:
-            actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters.
-            overwrite (bool): Defines whether to overwrite the existing data.
+            actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters. Defaults to
+                True.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
             rounding (int | None): The number of decimals to round the results to. Defaults to None,
@@ -1998,7 +2103,7 @@ class Toolkit:
         Also known as: revenue by region, geographic revenue breakdown.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2094,7 +2199,7 @@ class Toolkit:
         Also known as: revenue by product, product segment revenue.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2230,9 +2335,10 @@ class Toolkit:
             technical indicators.
             overwrite (bool): Defines whether to overwrite the existing data. If this is not enabled, the function
             will return the earlier retrieved data. This is done to prevent too many API calls. Defaults to False.
-            rounding (int): Defines the number of decimal places to round the data to.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
-            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
+            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
             show_columns (list[str], optional): A list of columns to include in the output. Valid columns
             are Open, High, Low, Close, Adj Close, Volume, Dividends, Return and Cumulative Return.
             Invalid column names are logged as warnings. If all
@@ -2598,8 +2704,9 @@ class Toolkit:
         Also known as: dividend dates, ex-dividend date, dividend history.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2742,8 +2849,9 @@ class Toolkit:
         Also known as: environmental social governance, sustainability, ESG rating.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -2843,7 +2951,7 @@ class Toolkit:
         Also known as: country risk premium, Damodaran equity risk premium.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The market risk premium by country, including the continent, Country
@@ -2919,6 +3027,71 @@ class Toolkit:
 
         return self._market_risk_premium
 
+    def _get_country_risk_premiums(self) -> pd.Series:
+        """
+        Returns the annual equity risk premium of each company's country: Damodaran's Total
+        Equity Risk Premium (get_market_risk_premium) of the country in the company profile.
+        The Cost of Equity of the Models uses it as the market risk premium. Tickers without
+        a profile country, a country the table does not cover or no API key are NaN.
+
+        The table holds the latest premiums only, so every historical period gets today's
+        premium of its country.
+
+        Returns:
+            pd.Series: The premiums as decimals, indexed by ticker.
+        """
+        # Imported when first used, as only the Cost of Equity needs the country names.
+        from financetoolkit.economics.helpers import COUNTRY_CODES  # noqa: PLC0415
+
+        tickers = self._get_statement_tickers("Models")
+        premiums = pd.Series(index=tickers, dtype=float)
+
+        if not self._api_key or self._enforce_source == "YahooFinance":
+            return premiums
+
+        # With remove_invalid_tickers, the profile drops invalid tickers from the Toolkit.
+        # Reading the countries must not change the Toolkit's tickers; the invalid tickers it
+        # records stay, so a later get_profile (which reuses the profile) still drops them.
+        toolkit_tickers = self._tickers
+
+        try:
+            market_risk_premium = self.get_market_risk_premium()
+            profile = self.get_profile()
+
+            if (
+                market_risk_premium is None
+                or market_risk_premium.empty
+                or "Total Equity Risk Premium" not in market_risk_premium.columns
+                or profile is None
+                or profile.empty
+                or "Country" not in profile.index
+            ):
+                return premiums
+
+            country_premiums = market_risk_premium["Total Equity Risk Premium"]
+            country_premiums = country_premiums[~country_premiums.index.duplicated()]
+
+            codes = profile.loc["Country"].reindex(tickers).dropna().astype(str)
+            countries = codes.str.upper().map(
+                lambda code: RISK_PREMIUM_COUNTRIES.get(code, COUNTRY_CODES.get(code))
+            )
+            premiums = countries.map(country_premiums).astype(float).reindex(tickers)
+            unmatched = sorted(set(codes[premiums.reindex(codes.index).isna()]))
+        except (KeyError, ValueError, TypeError) as error:
+            logger.info("The country equity risk premiums are not available: %s", error)
+            return premiums
+        finally:
+            self._tickers = toolkit_tickers
+
+        if unmatched:
+            logger.warning(
+                "No country equity risk premium is available for the countries %s, so the "
+                "historical market risk premium is used for their companies.",
+                ", ".join(unmatched),
+            )
+
+        return premiums
+
     def get_commitment_of_traders(self, overwrite: bool = False):
         """
         Obtains the CFTC Commitment of Traders (COT) report for the tickers the Toolkit was
@@ -2940,7 +3113,7 @@ class Toolkit:
         Also known as: COT report, CFTC positioning data, speculator/hedger positioning.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The Commitment of Traders report for the specified tickers.
@@ -3040,7 +3213,7 @@ class Toolkit:
         Also known as: management team, company officers, leadership.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3118,7 +3291,7 @@ class Toolkit:
         Also known as: executive pay, management compensation, proxy statement compensation.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3197,7 +3370,7 @@ class Toolkit:
         Also known as: listed debt, bonds issued, debt securities.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3270,7 +3443,7 @@ class Toolkit:
         Also known as: headcount, number of employees, workforce size.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The employee count per reporting year (rows) and ticker (columns).
@@ -3338,7 +3511,7 @@ class Toolkit:
         Also known as: free float, float shares, public float, share liquidity.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The share float figures (rows) per ticker (columns).
@@ -3401,7 +3574,7 @@ class Toolkit:
         Also known as: M&A, acquisitions, mergers, takeovers.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3486,7 +3659,7 @@ class Toolkit:
         Also known as: share splits, reverse splits, split history.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The splits per ticker, indexed by their date.
@@ -3569,8 +3742,9 @@ class Toolkit:
         Also known as: insider trading, insider transactions, Form 4 statistics.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3658,7 +3832,7 @@ class Toolkit:
         Also known as: analyst ratings, upgrades and downgrades, analyst grades.
 
         Args:
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -3821,7 +3995,7 @@ class Toolkit:
                 "2025Q4" (or "2025-Q4", "Q4 2025"). It is the company's own fiscal year, which
                 differs from the calendar year for e.g. Apple and Microsoft. Takes precedence
                 over latest. Defaults to None.
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
 
         Returns:
             pd.DataFrame: The date and transcript per ticker, indexed by fiscal period.
@@ -3971,7 +4145,8 @@ class Toolkit:
         Also known as: US Treasury yields, yield curve, treasury rates.
 
         Args:
-            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly, or yearly.
+            period (str): The interval at which the treasury data should be returned - daily, weekly, monthly, quarterly,
+                or yearly. Defaults to "daily".
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
@@ -4231,12 +4406,12 @@ class Toolkit:
             fill_nan (bool): Defines whether to forward fill NaN values. This defaults
             to True to prevent holes in the dataset. This is especially relevant for
             technical indicators.
-            overwrite (bool): Defines whether to overwrite the existing data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the returned data to. Defaults
             to None, which uses the rounding of the Toolkit. The rates the financial statements are
             translated with are never rounded.
             show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
-            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
+            acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -4537,11 +4712,12 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            growth (bool): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int]): Defines the number of periods to lag the growth data by.
-            E.g. 4 with quarterly data gives the growth against the same quarter a year earlier.
+            E.g. 4 with quarterly data gives the growth against the same quarter a year earlier. Defaults to 1.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -4574,6 +4750,7 @@ class Toolkit:
         convert_currency = bool(
             self._convert_currency
             and (self._balance_sheet_statement.empty or overwrite)
+            and not self._custom_statements["balance_sheet_statement"]
         )
 
         if enforce_source is not None and enforce_source not in [
@@ -4590,6 +4767,7 @@ class Toolkit:
         if (
             not self._api_key
             and self._balance_sheet_statement.empty
+            and not self._custom_statements["balance_sheet_statement"]
             and source == "FinancialModelingPrep"
         ):
             logger.error(
@@ -4605,7 +4783,9 @@ class Toolkit:
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
-        if self._balance_sheet_statement.empty or overwrite:
+        if (
+            self._balance_sheet_statement.empty or overwrite
+        ) and not self._custom_statements["balance_sheet_statement"]:
             (
                 self._balance_sheet_statement,
                 self._statistics_statement,
@@ -4646,6 +4826,10 @@ class Toolkit:
                         ),
                         financial_statement_name="balance sheet statement",
                     )
+
+            self._balance_sheet_statement = self._remove_unfiled_periods(
+                self._balance_sheet_statement
+            )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -4719,12 +4903,14 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
-            lag (int | list[int]): Defines the number of periods to lag the growth data by.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            growth (bool): Defines whether to return the growth of the data. Defaults to False.
+            lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
+            window.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -4754,7 +4940,9 @@ class Toolkit:
         | Net Income | 6.046e+09 | 5.07e+09   | 5.7e+09    | 3.219e+09  | 3.108e+09  |
         """
         convert_currency = bool(
-            self._convert_currency and (self._income_statement.empty or overwrite)
+            self._convert_currency
+            and (self._income_statement.empty or overwrite)
+            and not self._custom_statements["income_statement"]
         )
 
         if enforce_source is not None and enforce_source not in [
@@ -4771,6 +4959,7 @@ class Toolkit:
         if (
             not self._api_key
             and self._income_statement.empty
+            and not self._custom_statements["income_statement"]
             and source == "FinancialModelingPrep"
         ):
             logger.error(
@@ -4786,7 +4975,9 @@ class Toolkit:
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
-        if self._income_statement.empty or overwrite:
+        if (self._income_statement.empty or overwrite) and not self._custom_statements[
+            "income_statement"
+        ]:
             (
                 self._income_statement,
                 self._statistics_statement,
@@ -4835,6 +5026,10 @@ class Toolkit:
                         ],
                         financial_statement_name="income statement",
                     )
+
+            self._income_statement = self._remove_unfiled_periods(
+                self._income_statement
+            )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -4924,12 +5119,14 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
-            growth (bool): Defines whether to return the growth of the data.
-            lag (int | list[int]): Defines the number of periods to lag the growth data by.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            growth (bool): Defines whether to return the growth of the data. Defaults to False.
+            lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
+            window.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -4963,7 +5160,9 @@ class Toolkit:
         | Dividends Paid      | -1.0179e+10 | -1.0968e+10 | -1.1336e+10 | -1.18e+10   | -1.2751e+10 |
         """
         convert_currency = bool(
-            self._convert_currency and (self._cash_flow_statement.empty or overwrite)
+            self._convert_currency
+            and (self._cash_flow_statement.empty or overwrite)
+            and not self._custom_statements["cash_flow_statement"]
         )
 
         if enforce_source is not None and enforce_source not in [
@@ -4980,6 +5179,7 @@ class Toolkit:
         if (
             not self._api_key
             and self._cash_flow_statement.empty
+            and not self._custom_statements["cash_flow_statement"]
             and source == "FinancialModelingPrep"
         ):
             logger.error(
@@ -4995,7 +5195,9 @@ class Toolkit:
         # Correct for the case where a Portfolio ticker exists
         ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
-        if self._cash_flow_statement.empty or overwrite:
+        if (
+            self._cash_flow_statement.empty or overwrite
+        ) and not self._custom_statements["cash_flow_statement"]:
             (
                 self._cash_flow_statement,
                 self._statistics_statement,
@@ -5049,6 +5251,10 @@ class Toolkit:
                             ),
                         },
                     )
+
+            self._cash_flow_statement = self._remove_unfiled_periods(
+                self._cash_flow_statement
+            )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -5128,8 +5334,9 @@ class Toolkit:
                 data from the free Yahoo Finance source while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
-            overwrite (bool): Defines whether to overwrite the existing data.
-            rounding (int): Defines the number of decimal places to round the data to.
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -5162,6 +5369,17 @@ class Toolkit:
         | 2024   | 2025-02-20 15:17:12 | 2025-02-03 18:22:47 |
         | 2025   | 2026-02-20 09:46:32 | 2026-02-02 18:07:04 |
         """
+        # With a supplied balance sheet, the statistics are those of the supplied statements
+        # (the Period End Date of date labelled columns), never a download that would
+        # replace the balance sheet with it.
+        if self._custom_statements["balance_sheet_statement"]:
+            if len(self._tickers) == 1 and not self._statistics_statement.empty:
+                return filter_columns(
+                    self._statistics_statement.loc[self._tickers[0]], show_columns
+                )
+
+            return filter_columns(self._statistics_statement, show_columns)
+
         if not self._api_key and self._statistics_statement.empty:
             logger.error(
                 "The requested data requires the api_key parameter to be set, consider "
@@ -5180,37 +5398,14 @@ class Toolkit:
                 "The enforce_source parameter must be either 'FinancialModelingPrep' or 'YahooFinance'."
             )
 
-        # Correct for the case where a Portfolio ticker exists
-        ticker_list = [ticker for ticker in self._tickers if ticker != "Portfolio"]
-
-        if self._statistics_statement.empty or overwrite:
-            (
-                self._balance_sheet_statement,
-                self._statistics_statement,
-                self._invalid_tickers,
-                _fy_adj,
-            ) = collect_financial_statements(
-                tickers=ticker_list,
-                statement="balance",
-                api_key=self._api_key,
-                quarter=self._quarterly,
-                start_date=self._lookback_start_date,
-                end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-                fmp_statement_format=self._fmp_balance_sheet_statement_generic,
-                fmp_statistics_format=self._fmp_statistics_statement_generic,
-                yf_statistics_format=self._yf_statistics_statement_generic,
-                yf_statement_format=self._yf_balance_sheet_statement_generic,
-                sleep_timer=self._sleep_timer,
-                user_subscription=self._fmp_plan,
-                enforce_source=(
-                    enforce_source
-                    if enforce_source is not None
-                    else self._enforce_source
-                ),
-                cache=self._cache,
+        if overwrite or self._balance_sheet_statement.empty:
+            # The statistics come with the balance sheet, which its own getter converts and
+            # filters (point_in_time), so the two are never retrieved apart.
+            self.get_balance_sheet_statement(
+                enforce_source=enforce_source,
+                overwrite=overwrite,
+                rounding=rounding,
             )
-            self._fiscal_year_adjustments.update(_fy_adj)
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -5219,12 +5414,14 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if len(self._tickers) == 1 and not self._statistics_statement.empty:
+        statistics_statement = self._remove_unfiled_periods(self._statistics_statement)
+
+        if len(self._tickers) == 1 and not statistics_statement.empty:
             return filter_columns(
-                self._statistics_statement.loc[self._tickers[0]], show_columns
+                statistics_statement.loc[self._tickers[0]], show_columns
             )
 
-        return filter_columns(self._statistics_statement, show_columns)
+        return filter_columns(statistics_statement, show_columns)
 
     def get_normalization_files(self, path: str = ""):
         """
@@ -5291,6 +5488,12 @@ class Toolkit:
                     getattr(self, f"get_{other}")()
 
             if all(getattr(self, f"_{other}").empty for other in statements):
+                if any(self._custom_statements.values()):
+                    raise ValueError(
+                        f"The supplied financial statements hold no data for {', '.join(self._tickers)} "
+                        f"between {self._start_date} and {self._end_date}, so the {module} class "
+                        "cannot calculate this."
+                    )
                 raise ValueError(
                     f"The datasets could not be populated and therefore the {module} class cannot "
                     "calculate this. This is usually because no tickers are equities, you have "
@@ -5435,6 +5638,78 @@ class Toolkit:
             statistics_statement=self._statistics_statement,
             fiscal_year_adjustments=self._fiscal_year_adjustments,
         )
+
+    def _get_availability_dates(
+        self, statement: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the first day the figures of every statement column were public per ticker:
+        the filing day, or the period end plus the reporting deadline when no filing date is
+        known (see helpers.determine_availability_dates and "Point in time" on the Toolkit).
+
+        Args:
+            statement (pd.DataFrame | None, optional): The statement whose periods and tickers
+                to use. Defaults to None, which uses the balance sheet statement.
+
+        Returns:
+            pd.DataFrame: The availability dates with the tickers as index and the periods as
+            columns.
+        """
+        period_end_dates = self._get_period_end_dates(statement)
+
+        if period_end_dates.empty:
+            return period_end_dates
+
+        return determine_availability_dates(
+            period_end_dates=period_end_dates,
+            statistics_statement=self._statistics_statement,
+            quarter=self._quarterly,
+        )
+
+    def _get_daily_start_dates(
+        self, statement: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
+        """
+        Returns the day from which daily ratios apply each period's figures: the filing day
+        with point_in_time and otherwise the period end.
+
+        Args:
+            statement (pd.DataFrame | None, optional): The statement whose periods and tickers
+                to use. Defaults to None, which uses the balance sheet statement.
+
+        Returns:
+            pd.DataFrame: The dates with the tickers as index and the periods as columns.
+        """
+        if self._point_in_time:
+            return self._get_availability_dates(statement)
+
+        return self._get_period_end_dates(statement)
+
+    def _remove_unfiled_periods(self, statement: pd.DataFrame) -> pd.DataFrame:
+        """
+        Removes the figures that were not yet public on the end date when point_in_time is set:
+        each ticker's periods filed after the end date become NaN, and periods no ticker had
+        filed are left out.
+
+        Args:
+            statement (pd.DataFrame): A statement with a (ticker, item) index and the periods
+                as columns.
+
+        Returns:
+            pd.DataFrame: The statement as it was public on the end date.
+        """
+        if not self._point_in_time or statement.empty:
+            return statement
+
+        availability = self._get_availability_dates(statement)
+        end_date = pd.Timestamp(self._end_date)
+        filed = (availability <= end_date).reindex(
+            index=statement.index.get_level_values(0), columns=statement.columns
+        )
+        filed = filed.fillna(False).astype(bool)
+        filed.index = statement.index
+
+        return statement.where(filed).loc[:, filed.any(axis=0)]
 
     def _get_statement_exchange_rates(
         self, statement: pd.DataFrame, rate: str

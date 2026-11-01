@@ -152,7 +152,6 @@ def test_the_yahoo_period_end_dates_are_the_fiscal_period_ends(monkeypatch, quar
         financial_statements=pd.concat({"AAPL": statistics}, axis=0),
         statement_format=statistics_format,
         adjust_financial_statements=False,
-        reverse_dates=True,
     )
 
     period_end_dates = determine_period_end_dates(
@@ -199,3 +198,26 @@ def test_a_yahoo_statement_without_period_end_dates_leaves_the_statistic_out(
     )
 
     assert statistics.loc["periodEndDate"].tolist() == ["2023-09-30", "2022-09-24"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        ValueError("Expecting value"),
+        {"chart": {"result": None}},
+        {"chart": {"result": []}},
+    ],
+)
+def test_statistics_from_an_unexpected_answer_are_empty(monkeypatch, payload):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            # A consent page instead of JSON raises when it is read.
+            if isinstance(payload, Exception):
+                raise payload
+            return payload
+
+    monkeypatch.setattr(yfinance_model, "get_request", lambda *_, **__: Response())
+
+    assert yfinance_model.get_historical_statistics("AAPL").empty

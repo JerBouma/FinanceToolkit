@@ -8,9 +8,10 @@ import hashlib
 import inspect
 import os
 import time
+import weakref
 from collections import OrderedDict
 from importlib import metadata
-from threading import Lock
+from threading import Lock, RLock
 from typing import Any
 
 import pandas as pd
@@ -21,6 +22,7 @@ from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
+from financetoolkit.mcp_server.analytics_model import hold_lock
 from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
 from financetoolkit.mcp_server.diagnostics_model import (
     FMP_KEY_HINT,
@@ -212,6 +214,15 @@ class ToolkitProvider:
         self._toolkit_cache: OrderedDict[str, Any] = OrderedDict()
         self._standalone_cache: OrderedDict[str, Any] = OrderedDict()
         self._lock = Lock()
+        # One lock per cached Toolkit or module instance, held for the whole call. Tools run
+        # in worker threads, and an instance fills its statements, prices and conversions
+        # lazily without locks of its own, so two calls on one instance at once would read
+        # half-converted statements or download the same data twice. It is taken through
+        # analytics_model.hold_lock, so a call waiting for it leaves its work slot to others.
+        self._instance_locks: weakref.WeakKeyDictionary[Any, RLock] = (
+            weakref.WeakKeyDictionary()
+        )
+        self._shared_instance_lock = RLock()
         self._last_eviction = 0.0
 
     def call_method(
@@ -509,7 +520,8 @@ class ToolkitProvider:
         except Exception:
             return notes
 
-        fy_adj: dict = getattr(toolkit, "_fiscal_year_adjustments", {})
+        with hold_lock(self.instance_lock(toolkit)):
+            fy_adj: dict = dict(getattr(toolkit, "_fiscal_year_adjustments", {}))
         fy_tickers = []
 
         for ticker, adjustments in fy_adj.items():
@@ -564,6 +576,26 @@ class ToolkitProvider:
                 )
 
         return notes
+
+    def instance_lock(self, instance: Any) -> RLock:
+        """
+        Return the lock of a cached Toolkit or module instance, to hold while it is used.
+
+        Args:
+            instance (Any): The cached instance.
+
+        Returns:
+            RLock: The lock of that instance.
+        """
+        with self._lock:
+            try:
+                lock = self._instance_locks.get(instance)
+                if lock is None:
+                    lock = self._instance_locks[instance] = RLock()
+            except TypeError:
+                # An object without weak references (a stand-in in tests) shares one lock.
+                lock = self._shared_instance_lock
+            return lock
 
     def get_toolkit_instance(
         self,
@@ -695,10 +727,9 @@ class ToolkitProvider:
             api_key=api_key,
             fred_api_key=fred_api_key,
         )
-        module = getattr(toolkit_instance, module_name)
-        method = getattr(module, method_name)
-
-        return method(**kwargs)
+        with hold_lock(self.instance_lock(toolkit_instance)):
+            module = getattr(toolkit_instance, module_name)
+            return getattr(module, method_name)(**kwargs)
 
     def call_toolkit_functionality(
         self,
@@ -743,9 +774,8 @@ class ToolkitProvider:
             api_key=api_key,
             fred_api_key=fred_api_key,
         )
-        method = getattr(toolkit_instance, method_name)
-
-        return method(**kwargs)
+        with hold_lock(self.instance_lock(toolkit_instance)):
+            return getattr(toolkit_instance, method_name)(**kwargs)
 
     @staticmethod
     def call_econometrics_with_data(
@@ -890,7 +920,8 @@ class ToolkitProvider:
                 kwargs["country"] = countries[0]
                 countries_handled = True
 
-        result = method(**kwargs)
+        with hold_lock(self.instance_lock(instance)):
+            result = method(**kwargs)
 
         # Countries requested but not accepted by the method, so filter post-call.
         if countries and not countries_handled and isinstance(result, pd.DataFrame):

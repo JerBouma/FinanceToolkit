@@ -159,3 +159,13 @@ def test_get_bachelier_price_scales_with_tenor(recorder):
         is_receiver=True,
     )
     recorder.capture(bool(long_tenor_price > short_tenor_price))
+
+
+def test_swaptions_without_volatility_or_time_pay_their_intrinsic_value():
+    _, black_payoff = derivative_model.get_black_price(0.03, 0.03, 0.2, 0, 0.03)
+    _, bachelier_payoff = derivative_model.get_bachelier_price(
+        0.03, 0.02, 0.0, 1, 0.03, is_receiver=False
+    )
+
+    assert black_payoff == 0
+    assert abs(bachelier_payoff - 0.01) < 1e-12

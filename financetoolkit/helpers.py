@@ -294,6 +294,133 @@ def determine_period_end_dates(
     return pd.DataFrame(period_end_dates, index=periods).T
 
 
+ACCEPTED_DATE = "Accepted Date"
+FILING_DATE = "Filing Date"
+FISCAL_PERIOD = "Period"
+DECEMBER = 12
+
+# The latest a period's figures are expected to be public when no filing date is known: four
+# months after a fiscal year end (the annual report deadline of the EU Transparency Directive
+# and of a Form 20-F) and three months after an interim period end (the EU half-yearly report
+# deadline, which also covers the 40 and 45 days of a Form 10-Q).
+FALLBACK_FILING_DAYS = {"annual": 120, "interim": 90}
+
+# No company files its statements within a week of the period end, so a date that close is the
+# period end FinancialModelingPrep reports for companies that do not file with the SEC.
+MINIMUM_FILING_DAYS = 7
+
+# SEC filings accepted at or after the 16:00 New York close are first reflected in the next
+# day's prices.
+MARKET_CLOSE_HOUR = 16
+
+
+def determine_availability_dates(
+    period_end_dates: pd.DataFrame,
+    statistics_statement: pd.DataFrame | None,
+    quarter: bool,
+) -> pd.DataFrame:
+    """
+    Determines the first day the figures of every statement period were public per ticker.
+
+    A period's figures are only known once the company files them, weeks after the period
+    ends, so a point-in-time analysis applies them from the filing instead of from the
+    period end. The day is taken from:
+
+        - The Accepted Date (the moment the SEC accepted the filing): that day, or the next
+          day when the filing was accepted at or after the 16:00 close.
+        - Otherwise the Filing Date, from the day after it, since its time is not known.
+        - Otherwise the period end plus the longest common reporting deadline: 120 days for a
+          fiscal year (and the quarter that closes it) and 90 days for another quarter (see
+          FALLBACK_FILING_DAYS).
+
+    A filing date within a week of the period end is not a real filing date
+    (FinancialModelingPrep reports about the period end for companies that do not file with
+    the SEC), so the deadline is used for those periods.
+
+    Args:
+        period_end_dates (pd.DataFrame): The last day of the fiscal period behind every
+            statement column, with the tickers as index and the periods as columns, as
+            returned by determine_period_end_dates.
+        statistics_statement (pd.DataFrame | None): The statistics statement with a
+            (ticker, item) index and the periods as columns, holding the Accepted Date and
+            Filing Date rows when the source reports them.
+        quarter (bool): Whether the periods are quarters. Years when False.
+
+    Returns:
+        pd.DataFrame: The availability dates (Timestamps) with the tickers as index and the
+        periods as columns.
+    """
+    period_ends = period_end_dates.apply(pd.to_datetime).astype("datetime64[ns]")
+    deadline = pd.Timedelta(
+        days=FALLBACK_FILING_DAYS["interim" if quarter else "annual"]
+    )
+    availability = period_ends + deadline
+    has_statistics = (
+        statistics_statement is not None
+        and not statistics_statement.empty
+        and isinstance(statistics_statement.index, pd.MultiIndex)
+    )
+
+    if quarter:
+        # The quarter that closes a fiscal year is published with the annual report, so it
+        # gets the annual deadline: the quarter the source labels Q4, or December without one.
+        fiscal_period = pd.DataFrame(
+            index=period_ends.index, columns=period_ends.columns
+        )
+
+        if (
+            has_statistics
+            and FISCAL_PERIOD in statistics_statement.index.get_level_values(1)
+        ):
+            fiscal_period = statistics_statement.xs(FISCAL_PERIOD, level=1)
+            fiscal_period.columns = pd.PeriodIndex(
+                fiscal_period.columns, freq=period_ends.columns.freq
+            )
+            fiscal_period = fiscal_period.reindex(
+                index=period_ends.index, columns=period_ends.columns
+            )
+
+        december = period_ends.apply(lambda dates: dates.dt.month == DECEMBER)
+        fiscal_year_end = (fiscal_period == "Q4") | (fiscal_period.isna() & december)
+        availability = availability.where(
+            ~fiscal_year_end,
+            period_ends + pd.Timedelta(days=FALLBACK_FILING_DAYS["annual"]),
+        )
+
+    if not has_statistics:
+        return availability
+
+    items = statistics_statement.index.get_level_values(1)
+
+    def reported(item: str) -> pd.DataFrame:
+        if item not in items:
+            return pd.DataFrame(index=period_ends.index, columns=period_ends.columns)
+
+        dates = statistics_statement.xs(item, level=1).apply(
+            pd.to_datetime, errors="coerce", format="mixed"
+        )
+        dates.columns = pd.PeriodIndex(dates.columns, freq=period_ends.columns.freq)
+
+        return dates.reindex(index=period_ends.index, columns=period_ends.columns)
+
+    accepted = reported(ACCEPTED_DATE).astype("datetime64[ns]")
+    after_close = accepted.apply(lambda column: column.dt.hour >= MARKET_CLOSE_HOUR)
+    accepted_day = accepted.apply(lambda column: column.dt.normalize()).where(
+        ~after_close,
+        accepted.apply(lambda column: column.dt.normalize()) + pd.Timedelta(days=1),
+    )
+    filed_day = reported(FILING_DATE).astype("datetime64[ns]").apply(
+        lambda column: column.dt.normalize()
+    ) + pd.Timedelta(days=1)
+
+    # Only dates well after the period end are filings; the rest falls back to the deadline.
+    earliest_filing = period_ends + pd.Timedelta(days=MINIMUM_FILING_DAYS)
+    accepted_day = accepted_day.where(accepted_day > earliest_filing)
+    filed_day = filed_day.where(filed_day > earliest_filing + pd.Timedelta(days=1))
+
+    return accepted_day.fillna(filed_day).fillna(availability)
+
+
 def enrich_historical_data(
     historical_data: pd.DataFrame,
     start: str | None = None,

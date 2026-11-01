@@ -77,8 +77,8 @@ if TYPE_CHECKING:
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
     from financetoolkit.performance.performance_controller import Performance
-    from financetoolkit.portfolio.construction_controller import (
-        PortfolioConstruction,
+    from financetoolkit.portfolio.attribution_controller import (
+        PortfolioAttribution,
     )
     from financetoolkit.ratios.ratios_controller import Ratios
     from financetoolkit.risk.risk_controller import Risk
@@ -1249,9 +1249,9 @@ class Toolkit:
         )
 
     @property
-    def portfolio(self) -> "PortfolioConstruction":
+    def portfolio_attribution(self) -> "PortfolioAttribution":
         """
-        This gives access to the Portfolio Construction module, which builds and examines
+        This gives access to the Portfolio Attribution module, which builds and examines
         portfolios from the assets of this Toolkit: optimal weights (minimum variance,
         maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity,
         inverse volatility, minimum CVaR and Black-Litterman), the efficient frontier, risk
@@ -1260,6 +1260,9 @@ class Toolkit:
 
         When the Toolkit comes from a Portfolio (`Portfolio.toolkit`), the methods that take
         weights use the Portfolio's latest weights by default.
+
+        To follow the value and returns of a portfolio you hold, from its transactions,
+        holdings or weights over time, use the `Portfolio` class instead.
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization
 
@@ -1275,12 +1278,12 @@ class Toolkit:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_risk_parity_weights()
+        toolkit.portfolio_attribution.get_risk_parity_weights()
         ```
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
-        from financetoolkit.portfolio.construction_controller import (  # noqa: PLC0415
-            PortfolioConstruction,
+        from financetoolkit.portfolio.attribution_controller import (  # noqa: PLC0415
+            PortfolioAttribution,
         )
 
         # The prices and the risk free rate of a period are retrieved when a calculation
@@ -1346,7 +1349,7 @@ class Toolkit:
                 result = result.to_frame(tickers[0])
             return result
 
-        portfolio = PortfolioConstruction(
+        portfolio = PortfolioAttribution(
             tickers=self._tickers,
             historical_data=historical_data,
             risk_free_rate_data=risk_free_rate_data,

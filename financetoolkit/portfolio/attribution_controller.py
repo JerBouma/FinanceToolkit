@@ -1,4 +1,4 @@
-"""Portfolio Construction Module"""
+"""Portfolio Attribution Module"""
 
 __docformat__ = "google"
 
@@ -28,9 +28,9 @@ WEIGHT_SUM_TOLERANCE = 1e-6
 # ruff: noqa: E501
 
 
-class PortfolioConstruction:
+class PortfolioAttribution:
     """
-    The Portfolio Construction module builds and examines portfolios from the assets of a
+    The Portfolio Attribution module builds and examines portfolios from the assets of a
     Toolkit: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance,
     risk parity, Hierarchical Risk Parity, Black-Litterman, minimum CVaR), the efficient
     frontier, risk contributions, historical stress tests, look-through exposure and a
@@ -52,7 +52,7 @@ class PortfolioConstruction:
         end_date: str | None = None,
     ):
         """
-        Initializes the Portfolio Construction Controller Class.
+        Initializes the Portfolio Attribution Controller Class.
 
         Args:
             tickers (str | list[str]): The tickers of the Toolkit instance.
@@ -88,7 +88,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_maximum_sharpe_weights()
+        toolkit.portfolio_attribution.get_maximum_sharpe_weights()
         ```
         """
         self._tickers = [tickers] if isinstance(tickers, str) else list(tickers)
@@ -317,7 +317,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_minimum_variance_weights()
+        toolkit.portfolio_attribution.get_minimum_variance_weights()
         ```
 
         Which returns:
@@ -402,7 +402,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_maximum_sharpe_weights(maximum_weight=0.4)
+        toolkit.portfolio_attribution.get_maximum_sharpe_weights(maximum_weight=0.4)
         ```
 
         Which returns:
@@ -488,7 +488,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_mean_variance_weights(target_return=0.15)
+        toolkit.portfolio_attribution.get_mean_variance_weights(target_return=0.15)
         ```
 
         Which returns:
@@ -567,7 +567,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_efficient_frontier(points=5)
+        toolkit.portfolio_attribution.get_efficient_frontier(points=5)
         ```
 
         Which returns:
@@ -647,7 +647,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_risk_parity_weights()
+        toolkit.portfolio_attribution.get_risk_parity_weights()
         ```
 
         Which returns:
@@ -726,7 +726,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_hierarchical_risk_parity_weights()
+        toolkit.portfolio_attribution.get_hierarchical_risk_parity_weights()
         ```
 
         Which returns:
@@ -787,7 +787,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_inverse_volatility_weights()
+        toolkit.portfolio_attribution.get_inverse_volatility_weights()
         ```
 
         Which returns:
@@ -867,7 +867,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_minimum_cvar_weights()
+        toolkit.portfolio_attribution.get_minimum_cvar_weights()
         ```
 
         Which returns:
@@ -983,7 +983,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_black_litterman_weights(
+        toolkit.portfolio_attribution.get_black_litterman_weights(
             views={"XOM": 0.10, "AAPL-MSFT": 0.02}
         )
         ```
@@ -1084,7 +1084,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_risk_contributions(
+        toolkit.portfolio_attribution.get_risk_contributions(
             weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1}
         )
         ```
@@ -1162,7 +1162,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_stress_test()
+        toolkit.portfolio_attribution.get_stress_test()
         ```
 
         Which returns:
@@ -1314,7 +1314,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_look_through_exposure()
+        toolkit.portfolio_attribution.get_look_through_exposure()
         ```
 
         Which returns:
@@ -1428,7 +1428,7 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_brinson_attribution()
+        toolkit.portfolio_attribution.get_brinson_attribution()
         ```
 
         Which returns:

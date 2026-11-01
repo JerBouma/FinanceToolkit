@@ -14,6 +14,7 @@
 #   toolkit    — method called directly on a Toolkit instance (needs tickers=)
 #   standalone — module instantiated with countries/dates only (no tickers)
 #   discovery  — Discovery controller; no tickers, no date range
+#   portfolio  — a Portfolio built from transactions, weights, holdings or a preset
 #   mixed      — spans multiple modules / categories; per-indicator routing
 # ──────────────────────────────────────────────────────────────────────────────
 categories:
@@ -21,6 +22,7 @@ categories:
   toolkit:    "toolkit"
   standalone: "standalone"
   discovery:  "discovery"
+  portfolio:  "portfolio"
   mixed:      "mixed"
 
 
@@ -95,7 +97,8 @@ module_class_map:
   performance:  "financetoolkit.performance.performance_controller.Performance"
   risk:         "financetoolkit.risk.risk_controller.Risk"
   econometrics: "financetoolkit.econometrics.econometrics_controller.Econometrics"
-  portfolio:    "financetoolkit.portfolio.construction_controller.PortfolioConstruction"
+  portfolio_attribution: "financetoolkit.portfolio.attribution_controller.PortfolioAttribution"
+  portfolio_performance: "financetoolkit.portfolio.portfolio_controller.Portfolio"
   options:      "financetoolkit.options.options_controller.Options"
   etf:          "financetoolkit.etf.etf_controller.ETF"
   economics:    "financetoolkit.economics.economics_controller.Economics"
@@ -279,7 +282,8 @@ category_descriptions:
   performance:             "Risk-adjusted returns (Sharpe, Sortino, alpha, beta, CAPM, Treynor, M2, tracking error, information ratio, Fama-French, period/cumulative Returns and Excess Returns). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
   risk:                    "Risk metrics (VaR incl. EVT/GPD tail fitting, CVaR, EVaR, GARCH, max drawdown, drawdown duration/recovery time, CDaR, tail ratio, skewness, kurtosis, downside deviation, Variance, Volatility, Excess Volatility). Most metrics support rolling= for a rolling-window value instead of one per period. No need to fetch price data first."
   econometrics:            "Statistical and econometric analysis of price or return series, or of any other indicator (series=): unit root, cointegration and causality tests, VAR and ARIMA forecasts, regressions (OLS, quantile, IV, panel), causal designs (difference-in-differences, event study, synthetic control), Markov regime switching, structural breaks, time-varying beta, DCC-GARCH correlations, pairs trading and diagnostics. No need to fetch price data first."
-  portfolio:               "Portfolio construction: optimal weights (minimum variance, maximum Sharpe, mean-variance, risk parity, HRP, minimum CVaR, Black-Litterman), efficient frontier, risk contributions, historical stress tests, look-through exposure of ETFs and Brinson attribution."
+  portfolio_attribution:   "Portfolio attribution and construction: optimal weights (minimum variance, maximum Sharpe, mean-variance, risk parity, HRP, minimum CVaR, Black-Litterman), efficient frontier, risk contributions, historical stress tests, look-through exposure of ETFs and Brinson attribution."
+  portfolio_performance:   "A portfolio you hold, from its transactions, holdings, weights or a classic preset: positions, value and returns over time, returns per period, profit and loss per trade and the money-weighted return, next to a benchmark."
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
   technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
@@ -526,11 +530,25 @@ tool_groups:
     module_name:  "etf"
     category:     "ticker"
 
-  - tool_name:    "portfolio"
-    display_name: "Portfolio Construction"
-    description:  "Portfolio construction and analysis for the given tickers (at least two). Optimal weights: get_minimum_variance_weights, get_maximum_sharpe_weights, get_mean_variance_weights (target_return= or risk_aversion=), get_risk_parity_weights (risk_budget={'AAPL': 0.5, ...} optional), get_hierarchical_risk_parity_weights, get_inverse_volatility_weights, get_minimum_cvar_weights (confidence_level=) and get_black_litterman_weights (views={'AAPL': 0.10, 'AAPL-MSFT': 0.02}, optional view_confidences= and market_weights=; market capitalizations by default). Each returns per ticker and for the Portfolio the Weight, annualized Expected Return, Volatility, Sharpe Ratio and Risk Contribution. minimum_weight=/maximum_weight= bound the weights (a negative minimum allows shorting). get_efficient_frontier (points=) returns portfolios from the lowest risk to the highest return. For given weights (weights={'AAPL': 0.6, 'MSFT': 0.4}, equal weights when omitted): get_risk_contributions, get_stress_test (returns in the Dot-com Crash, Global Financial Crisis, Euro Area Debt Crisis, 2015-2016 and 2018 Q4 sell-offs, COVID-19 Crash and 2022 Rate Shock next to the benchmark, or scenarios={'name': ['start', 'end']}), get_look_through_exposure (by='sector'|'country'|'holdings', looks through ETFs to their holdings, with the benchmark's exposure next to it) and get_brinson_attribution (allocation, selection and interaction effects by sector against the benchmark over start_date/end_date). Expected returns are historical averages; period= sets the return frequency (daily by default). Weights, returns and volatilities are decimals."
-    module_name:  "portfolio"
+  - tool_name:    "portfolio_attribution"
+    display_name: "Portfolio Attribution"
+    description:  "Portfolio attribution and construction for the given tickers (at least two). Optimal weights: get_minimum_variance_weights, get_maximum_sharpe_weights, get_mean_variance_weights (target_return= or risk_aversion=), get_risk_parity_weights (risk_budget={'AAPL': 0.5, ...} optional), get_hierarchical_risk_parity_weights, get_inverse_volatility_weights, get_minimum_cvar_weights (confidence_level=) and get_black_litterman_weights (views={'AAPL': 0.10, 'AAPL-MSFT': 0.02}, optional view_confidences= and market_weights=; market capitalizations by default). Each returns per ticker and for the Portfolio the Weight, annualized Expected Return, Volatility, Sharpe Ratio and Risk Contribution. minimum_weight=/maximum_weight= bound the weights (a negative minimum allows shorting). get_efficient_frontier (points=) returns portfolios from the lowest risk to the highest return. For given weights (weights={'AAPL': 0.6, 'MSFT': 0.4}, equal weights when omitted): get_risk_contributions, get_stress_test (returns in the Dot-com Crash, Global Financial Crisis, Euro Area Debt Crisis, 2015-2016 and 2018 Q4 sell-offs, COVID-19 Crash and 2022 Rate Shock next to the benchmark, or scenarios={'name': ['start', 'end']}), get_look_through_exposure (by='sector'|'country'|'holdings', looks through ETFs to their holdings, with the benchmark's exposure next to it) and get_brinson_attribution (allocation, selection and interaction effects by sector against the benchmark over start_date/end_date). Expected returns are historical averages; period= sets the return frequency (daily by default). Weights, returns and volatilities are decimals. To follow a portfolio you hold (its trades, holdings or weights over time), use portfolio_performance."
+    module_name:  "portfolio_attribution"
     category:     "ticker"
+
+  - tool_name:    "portfolio_performance"
+    display_name: "Portfolio Performance"
+    description:  "The value and returns of a portfolio over time, built from one of: transactions (a list of trades, e.g. [{'date': '2023-01-03', 'ticker': 'AAPL', 'volume': 10, 'price': 125.1}]; volume negative for a sale, price optional (the closing price of the day), costs and currency optional), holdings ({'AAPL': 10, 'MSFT': 5}, bought at the close of start_date), weights ({'VTI': 0.6, 'BND': 0.4}, investing initial_value on start_date and rebalancing as rebalancing= says) or preset (a classic portfolio such as '60/40', 'All Weather' or 'Permanent'; get_presets lists them). get_portfolio_overview: per position and for the Portfolio the volume, average purchase price, invested amount, latest value, return, dividends, weight, volatility, beta and alpha against the benchmark. get_portfolio_performance (period=): the return per period of each position and the Portfolio. get_positions_overview: per day the volume, invested amount, value, cumulative return and weights of each position (use limit=-5 for the latest days). get_transactions_overview (pnl_method='FIFO'|'LIFO'|'AVERAGE'): each trade with its value, return and profit and loss. get_transactions_performance (period=): how the units bought in each period did against the same purchases of the benchmark. get_money_weighted_return: the annual money-weighted return (XIRR) per position and for the Portfolio. Prices are valued in one currency (currency=, by default the currency most of the portfolio trades in). Returns, weights and rates are decimals."
+    module_name:  "portfolio_performance"
+    category:     "portfolio"
+    method_override:
+      - "get_portfolio_overview"
+      - "get_portfolio_performance"
+      - "get_positions_overview"
+      - "get_transactions_overview"
+      - "get_transactions_performance"
+      - "get_money_weighted_return"
+      - "get_presets"
 
   - tool_name:    "options"
     display_name: "Options"

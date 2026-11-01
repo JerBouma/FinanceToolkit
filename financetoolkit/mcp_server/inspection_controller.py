@@ -442,6 +442,42 @@ class ControllerInspector:
             else {category}
         )
 
+        if self._categories.get("portfolio") in effective:
+            # A Portfolio is built from its own inputs rather than from tickers: one of the
+            # transactions, holdings, weights or a preset, valued in one currency. It has no
+            # end date (it runs up to today) and no quarterly statements.
+            return [
+                P(
+                    "transactions",
+                    POS,
+                    default=None,
+                    annotation=str | list[dict] | None,
+                ),
+                P(
+                    "holdings",
+                    POS,
+                    default=None,
+                    annotation=str | dict[str, float] | None,
+                ),
+                P(
+                    "weights",
+                    POS,
+                    default=None,
+                    annotation=str | dict[str, float] | None,
+                ),
+                P("preset", POS, default="", annotation=str),
+                P("start_date", POS, default="", annotation=str),
+                P("initial_value", POS, default=None, annotation=float | None),
+                P("rebalancing", POS, default="", annotation=str),
+                P("currency", POS, default="", annotation=str),
+                P(
+                    "benchmark_ticker",
+                    POS,
+                    default=self._benchmark_ticker,
+                    annotation=str,
+                ),
+            ]
+
         if (
             self._categories.get("ticker") in effective
             or self._categories.get("toolkit") in effective

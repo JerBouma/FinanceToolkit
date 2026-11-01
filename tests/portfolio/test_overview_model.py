@@ -566,3 +566,42 @@ def test_the_portfolio_beta_ignores_a_sold_position_without_a_beta():
     )
 
     assert overview.loc["Portfolio", "Beta"] == pytest.approx(1.2)
+
+
+def test_a_buy_at_zero_cost_has_no_return_of_its_own_but_counts_in_the_totals():
+    from financetoolkit.portfolio.overview_model import (  # noqa: PLC0415
+        create_transactions_overview,
+    )
+
+    day = pd.Period("2024-01-02", freq="D")
+    index = pd.MultiIndex.from_tuples(
+        [(day, "A"), (day, "GIFT")], names=["Date", "Identifier"]
+    )
+
+    transactions = create_transactions_overview(
+        portfolio_volume=pd.Series([10.0, 5.0], index=index),
+        portfolio_price=pd.Series([100.0, 0.0], index=index),
+        portfolio_costs=pd.Series([0.0, 0.0], index=index),
+        latest_returns=pd.Series({"A": 120.0, "GIFT": 30.0}),
+    )
+    overview = create_portfolio_overview(
+        portfolio_name=pd.Series(["A", "GIFT"], index=index),
+        portfolio_volume=pd.Series([10.0, 5.0], index=index),
+        portfolio_price=pd.Series([100.0, 0.0], index=index),
+        portfolio_costs=pd.Series([0.0, 0.0], index=index),
+        latest_returns=pd.Series({"A": 120.0, "GIFT": 30.0}),
+        benchmark_prices=pd.Series([100.0, 100.0], index=index),
+        benchmark_latest_prices=pd.Series({"A": 110.0, "GIFT": 110.0}),
+        volatilities=pd.Series({"A": 0.2, "GIFT": 0.3, "Benchmark": 0.1}),
+        betas=pd.Series({"A": 1.0, "GIFT": 1.5}),
+        include_portfolio=True,
+    )
+
+    assert np.isnan(transactions.loc[(day, "GIFT"), "% Return"])
+    assert transactions.loc[(day, "GIFT"), "Return"] == pytest.approx(150.0)
+    assert np.isnan(overview.loc["GIFT", "Return"])
+    numbers = overview.select_dtypes("number").to_numpy(dtype=float)
+    assert not np.isinf(numbers).any()
+    assert overview.loc["Portfolio", "Invested"] == pytest.approx(1000.0)
+    assert overview.loc["Portfolio", "Latest Value"] == pytest.approx(1350.0)
+    assert overview.loc["Portfolio", "Return"] == pytest.approx(0.35)

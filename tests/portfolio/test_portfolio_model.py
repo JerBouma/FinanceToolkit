@@ -415,21 +415,27 @@ def test_transaction_dates_are_parsed_with_one_format(dates):
     assert [str(date) for date in formatted["Date"]] == ["2024-06-05", "2024-06-07"]
 
 
-@pytest.mark.parametrize("price", [0.0, -100.0])
-def test_a_price_of_zero_or_below_is_refused(price):
-    data = pd.DataFrame(
+def _one_transaction(price: float) -> pd.DataFrame:
+    return pd.DataFrame(
         {
             "Date": ["2024-06-05"],
             "Ticker": ["AAPL"],
             "Price": [price],
-            "Volume": [-1],
+            "Volume": [1],
             "Currency": ["USD"],
             "Costs": [0.0],
         }
     )
 
-    with pytest.raises(ValueError, match="price of zero or below"):
-        _format(data)
+
+def test_a_negative_price_is_refused():
+    with pytest.raises(ValueError, match="negative price"):
+        _format(_one_transaction(-100.0))
+
+
+def test_a_price_of_zero_is_accepted():
+    # A gift, spin-off or stock dividend is booked at zero cost.
+    assert _format(_one_transaction(0.0))["Price"].tolist() == [0.0]
 
 
 @pytest.mark.parametrize(

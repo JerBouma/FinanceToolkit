@@ -257,7 +257,7 @@ def format_portfolio_dataset(
         ValueError: If no price columns are found in the portfolio dataset.
         ValueError: If no volume columns are found in the portfolio dataset.
         ValueError: If cost or income columns are specified, but none are found in the dataset.
-        ValueError: If a price is missing, zero or negative, or a volume is missing.
+        ValueError: If a price is missing or negative, or a volume is missing.
         ValueError: If the currency column contains values other than 3-letter currency codes.
         ValueError: If the provided currency code is not a 3-letter code.
     """
@@ -340,15 +340,15 @@ def format_portfolio_dataset(
             f"{incomplete_rows[reported_columns].to_string()}"
         )
 
-    # A price is what one unit cost, also for a sale (which has a negative volume); a price of zero or below would make every return of the position meaningless.  # noqa: E501
-    non_positive_rows = dataset[dataset[price_column_first] <= 0]
+    # A price is what one unit cost, also for a sale (which has a negative volume); a negative price has no meaning. A price of zero is a gift, a spin-off or a stock dividend.  # noqa: E501
+    negative_rows = dataset[dataset[price_column_first] < 0]
 
-    if not non_positive_rows.empty:
+    if not negative_rows.empty:
         raise ValueError(
-            "The portfolio dataset contains transactions with a price of zero or below. A price is "
-            "the positive amount paid or received per unit; a sale is a negative volume. Please "
-            "correct the following row(s):\n"
-            f"{non_positive_rows[[date_column_first, tickers_column_first, price_column_first, volume_column_first]].to_string()}"  # noqa: E501
+            "The portfolio dataset contains transactions with a negative price. A price is the "
+            "amount paid or received per unit (zero for a gift, spin-off or stock dividend); a "
+            "sale is a negative volume. Please correct the following row(s):\n"
+            f"{negative_rows[[date_column_first, tickers_column_first, price_column_first, volume_column_first]].to_string()}"  # noqa: E501
         )
 
     if costs_columns:

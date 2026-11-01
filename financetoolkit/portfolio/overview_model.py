@@ -62,7 +62,8 @@ def create_transactions_overview(
     - "Invested Amount": The initial investment made for each asset, accounting for transaction costs.
     - "Current Value": The current market value of the units bought, at the latest closing price.
     - "Dividends": The cash dividends the units bought have received since the transaction.
-    - "% Return": The total return of the units bought, dividends included.
+    - "% Return": The total return of the units bought, dividends included. NaN for units
+      bought at no cost (a gift, spin-off or stock dividend), which have no return of their own.
     - "Return": The absolute profit or loss of the units bought, dividends included.
 
     Args:
@@ -111,7 +112,12 @@ def create_transactions_overview(
         invested_amount.append(bought_value)
         current_value.append(recent_value)
         dividends_received.append(received)
-        percentage_return.append(((recent_value + received) / bought_value) - 1)
+        # A buy that cost nothing (a gift, spin-off or stock dividend) has no return of its own.
+        percentage_return.append(
+            ((recent_value + received) / bought_value) - 1
+            if bought_value > 0
+            else np.nan
+        )
         value_return.append(recent_value + received - bought_value)
 
     new_columns = pd.DataFrame(
@@ -126,7 +132,13 @@ def create_transactions_overview(
         index=["Invested Amount", "Current Value", "Dividends", "% Return", "Return"],
     ).T
 
-    return new_columns.fillna(0.0)
+    zero_cost_buys = (portfolio_volume > 0).to_numpy() & (
+        new_columns["Invested Amount"] <= 0
+    ).to_numpy()
+    new_columns = new_columns.fillna(0.0)
+    new_columns.loc[zero_cost_buys, "% Return"] = np.nan
+
+    return new_columns
 
 
 def calculate_trailing_volatility(

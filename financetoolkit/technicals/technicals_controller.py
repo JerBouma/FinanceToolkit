@@ -2,7 +2,6 @@
 
 __docformat__ = "google"
 
-import warnings
 from collections.abc import Callable
 from functools import cached_property
 
@@ -32,9 +31,6 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 # pylint: disable=too-many-boolean-expressions
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
-
-# The default number of periods the Stochastic Oscillator's %K line is smoothed over to obtain the %D signal line, named so the deprecated `smooth_widow` alias can tell an explicitly passed `smooth_window` apart from the untouched default.  # noqa: E501
-DEFAULT_STOCHASTIC_SMOOTH_WINDOW = 3
 
 
 class Technicals:
@@ -140,7 +136,8 @@ class Technicals:
             period (str, optional): The period to use for the calculation. Defaults to "daily".
             window (int, optional): The number of days to use for the calculation. Defaults to 14.
             close_column (str, optional): The column to use for the calculation. Defaults to "Adj Close".
-            rounding (int, optional): The number of decimals to round the results to. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -265,8 +262,8 @@ class Technicals:
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -528,8 +525,8 @@ class Technicals:
                 Defaults to 19.
             long_ema_window (int, optional): The window size for the long-term EMA.
                 Defaults to 39.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -644,8 +641,8 @@ class Technicals:
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -760,8 +757,8 @@ class Technicals:
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the OBV.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -873,8 +870,8 @@ class Technicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Accumulation/Distribution Line.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -999,8 +996,8 @@ class Technicals:
                 Defaults to 3.
             long_window (int, optional): Number of periods for the long-term moving average.
                 Defaults to 10.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Chaikin Oscillator.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -1123,8 +1120,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): Number of periods to sum the Money Flow Volume and
                 volume over. Defaults to 20.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Chaikin Money Flow.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -1258,8 +1255,8 @@ class Technicals:
             volume_divisor (float, optional): Scaling constant applied to volume so that the
                 Box Ratio (and therefore EMV) stays in a readable range regardless of an
                 asset's typical share volume. Defaults to 100,000,000.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Ease of Movement.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -1386,8 +1383,8 @@ class Technicals:
                 Defaults to "Adj Close".
             start_value (float, optional): The index value to start the series at.
                 Defaults to 1000.0.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Negative Volume Index.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -1513,8 +1510,8 @@ class Technicals:
                 Defaults to "Adj Close".
             start_value (float, optional): The index value to start the series at.
                 Defaults to 1000.0.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Positive Volume Index.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -1624,8 +1621,8 @@ class Technicals:
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -1893,8 +1890,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): The number of periods for calculating the MFI.
                 Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2010,8 +2007,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): The number of periods for calculating the Williams %R.
                 Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2125,8 +2122,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): The number of periods for calculating the Aroon Indicator.
                 Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2251,8 +2248,8 @@ class Technicals:
                 Defaults to 14.
             constant (float, optional): Constant multiplier used in the CCI calculation.
                 Defaults to 0.015.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2385,8 +2382,8 @@ class Technicals:
                 low prices are adjusted for dividends in the same way.
             window (int, optional): The number of periods for the averages of the numerator
                 and denominator. Defaults to 10, Ehlers' setting.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2511,8 +2508,8 @@ class Technicals:
             window (int, optional): The number of periods of the EMA that smooths the raw
                 Force Index. Defaults to 13, Elder's setting for the trend (2 is his setting
                 for timing entries).
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2635,8 +2632,8 @@ class Technicals:
                 Defaults to 14.
             window_3 (int, optional): The number of periods for the third long-term window.
                 Defaults to 28.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2764,8 +2761,8 @@ class Technicals:
                 Defaults to 12, as for MACD.
             long_window (int, optional): The number of periods for the long-term moving average.
                 Defaults to 26, as for MACD.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -2881,8 +2878,8 @@ class Technicals:
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the DPO calculation.
                 Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3001,8 +2998,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): The number of periods to consider for the ADX calculation.
                 Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3123,8 +3120,8 @@ class Technicals:
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the CMO calculation.
                 Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3256,8 +3253,8 @@ class Technicals:
                 Leading Spans. Defaults to 26.
             lead_span_b_window (int, optional): The number of periods to consider for the
                 Lead Span B (Senkou Span B) calculation. Defaults to 52.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3361,12 +3358,11 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        smooth_window: int = DEFAULT_STOCHASTIC_SMOOTH_WINDOW,
+        smooth_window: int = 3,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        smooth_widow: int | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Stochastic Oscillator indicator for a given price series.
@@ -3392,8 +3388,8 @@ class Technicals:
                 Defaults to 14.
             smooth_window (int, optional): The number of periods used to smooth the %K line
                 into the %D signal line. Defaults to 3.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the %K and %D values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3401,16 +3397,12 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            smooth_widow (int | None, optional): Deprecated misspelling of `smooth_window`,
-                accepted so that existing callers keep working. Passing it emits a
-                DeprecationWarning and forwards the value to `smooth_window`. Defaults to None.
 
         Returns:
             pd.Series or pd.DataFrame: Stochastic Oscillator (%K and %D) values.
 
         Raises:
-            ValueError: If the specified `period` is not one of the valid options, or if both
-                `smooth_window` and the deprecated `smooth_widow` are given conflicting values.
+            ValueError: If the specified `period` is not one of the valid options.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
@@ -3443,20 +3435,6 @@ class Technicals:
         | 2025-12-30 |         79.3458 |         71.5532 |
         | 2025-12-31 |         75.4495 |         71.5532 |
         """
-        if smooth_widow is not None:
-            warnings.warn(
-                "The 'smooth_widow' parameter is a misspelling and is deprecated, use "
-                "'smooth_window' instead. It will be removed in a future version.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            if smooth_window not in (DEFAULT_STOCHASTIC_SMOOTH_WINDOW, smooth_widow):
-                raise ValueError(
-                    "Received conflicting values for 'smooth_window' and the deprecated "
-                    "'smooth_widow'. Pass only 'smooth_window'."
-                )
-            smooth_window = smooth_widow
-
         if period not in [
             "intraday",
             "daily",
@@ -3554,8 +3532,8 @@ class Technicals:
                 Defaults to 26.
             signal_window (int, optional): The number of periods for the signal line.
                 Defaults to 9.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MACD and signal values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3683,8 +3661,8 @@ class Technicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods for RSI calculation. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the RSI.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3794,8 +3772,8 @@ class Technicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the BOP.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -3916,8 +3894,8 @@ class Technicals:
                 median price. Defaults to 5.
             long_window (int, optional): The number of periods for the long-term SMA of the
                 median price. Defaults to 34.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the AO.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -4048,8 +4026,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): The number of periods to sum the directional movement and
                 true range over. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the VI+ and VI- values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -4179,8 +4157,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): The number of periods for the EMA used as the trend baseline.
                 Defaults to 13, as originally proposed by Elder.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Bull and Bear Power.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -4311,8 +4289,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to look back for the rate of change
                 calculation. Defaults to 12.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Rate of Change.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -4433,8 +4411,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): Number of periods to consider for the Choppiness Index
                 calculation. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Choppiness Index.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -4576,8 +4554,8 @@ class Technicals:
                 Rate of Change series before summing. Defaults to the standard [1, 2, 3, 4].
             signal_window (int, optional): Number of periods for the Simple Moving Average of
                 the KST used as the signal line. Defaults to 9.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the KST and Signal Line.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -4694,8 +4672,8 @@ class Technicals:
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -4902,8 +4880,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to consider for the moving average.
                 The number of periods (time intervals) over which to calculate the MA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5021,8 +4999,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for EMA calculation.
                 The number of periods (time intervals) over which to calculate the EMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the EMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5136,8 +5114,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
                 The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the DEMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5258,8 +5236,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of each of the three exponential moving
                 averages. Defaults to 15, the window of Hutson (1983) and StockCharts.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Trix.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5388,8 +5366,8 @@ class Technicals:
                 The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
             num_std_dev (float, optional): Number of standard deviations for the bands.
                 Defaults to 2.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the bands.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5513,8 +5491,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for TMA calculation.
                 The number of periods (time intervals) over which to calculate the TMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the TMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5626,8 +5604,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to consider for the WMA.
                 The number of periods (time intervals) over which to calculate the WMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the WMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5742,8 +5720,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to consider for the HMA.
                 The number of periods (time intervals) over which to calculate the HMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the HMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -5874,8 +5852,8 @@ class Technicals:
             slow_window (int, optional): The number of periods that corresponds to the
                 slowest EMA constant used when the Efficiency Ratio is at its minimum (0.0).
                 Defaults to 30.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the KAMA.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -6005,8 +5983,8 @@ class Technicals:
                 for dividends in the same way.
             window (int, optional): Number of periods to consider for the VWAP.
                 The number of periods (time intervals) over which to calculate the VWAP. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the VWAP.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -6137,8 +6115,8 @@ class Technicals:
                 increases every time a new extreme point is reached. Defaults to 0.02.
             af_max (float, optional): Maximum value the acceleration factor can reach.
                 Defaults to 0.2.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Parabolic SAR.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -6263,8 +6241,8 @@ class Technicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Pivot Points.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -6562,8 +6540,8 @@ class Technicals:
                 prior move was up and price is now pulling back) or a "downtrend" (levels
                 measured up from the low, used when a prior move was down and price is now
                 bouncing). Defaults to "uptrend".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the retracement levels.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -6695,8 +6673,8 @@ class Technicals:
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -6884,8 +6862,8 @@ class Technicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the True Range.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -7155,8 +7133,8 @@ class Technicals:
                 calculation. Defaults to 10.
             multiplier (float, optional): Multiplier applied to the Average True Range to
                 determine how far the bands sit from the median price. Defaults to 3.0.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Supertrend and
                 Trend Direction values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -7297,8 +7275,8 @@ class Technicals:
                 Defaults to 10, as on StockCharts.
             atr_multiplier (float, optional): Multiplier for ATR to determine channel width.
                 Defaults to 2.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the channels.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -7429,8 +7407,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for the Donchian Channels.
                 Defaults to 20.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the channels.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -7705,8 +7683,8 @@ class Technicals:
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
@@ -7840,8 +7818,8 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for the new high / new low lookback.
                 Defaults to 252.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.

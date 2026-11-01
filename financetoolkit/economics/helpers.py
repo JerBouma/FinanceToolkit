@@ -10,6 +10,7 @@ import requests
 
 from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -186,7 +187,9 @@ def collect_cached_data(
 
     try:
         data = _fetch_with_retry(fetch)
-    except requests.exceptions.RequestException as error:
+    except requests.exceptions.RequestException as request_error:
+        # A request error names its URL, so a key in it is removed before it is logged.
+        error = redact_credentials(str(request_error))
         stale_data = (
             cache.get(
                 source=source, dataset=dataset, entity=entity, ttl=STALE_TTL_SECONDS
@@ -298,7 +301,9 @@ def collect_ranged_data(
 
     try:
         data = _fetch_with_retry(fetch, fetch_start, fetch_end)
-    except requests.exceptions.RequestException as error:
+    except requests.exceptions.RequestException as request_error:
+        # A request error names its URL, so a key in it is removed before it is logged.
+        error = redact_credentials(str(request_error))
         if cached_data is not None and not cached_data.empty:
             logger.warning(
                 "Could not reach %s for the %s (%s). Serving the cached copy instead, which "

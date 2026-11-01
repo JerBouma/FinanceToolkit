@@ -578,6 +578,70 @@ def test_collection_without_statements_fails_once():
     ]
 
 
+def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
+    def toolkit(end_date, point_in_time):
+        return Toolkit(
+            tickers=["AAPL", "MSFT"],
+            historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+            balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+            income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+            cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+            convert_currency=False,
+            start_date="2019-12-31",
+            end_date=end_date,
+            sleep_timer=False,
+            point_in_time=point_in_time,
+        )
+
+    # Supplied statements have no filing dates, so a year counts from 120 days after it ends:
+    # 2022 is public from 30 April 2023 on.
+    before = toolkit("2023-03-31", point_in_time=True)
+    after = toolkit("2023-06-30", point_in_time=True)
+
+    assert pd.Period("2022") not in before.get_income_statement().columns
+    assert pd.Period("2022") in after.get_income_statement().columns
+    assert (
+        pd.Period("2022") in toolkit("2023-03-31", False).get_income_statement().columns
+    )
+
+    # Daily ratios apply 2021 from its availability day (30 April 2022) instead of from its
+    # period end, so the first months of 2022 still use the figures of 2020.
+    daily = after.ratios.get_price_to_earnings_ratio(show_daily=True)
+    regular = toolkit("2023-06-30", False).ratios.get_price_to_earnings_ratio(
+        show_daily=True
+    )
+    january = daily.loc["2022-01-03":"2022-04-29"]
+    may = daily.loc["2022-05-02":]
+
+    assert not january.empty and not may.empty
+
+    assert not january.equals(regular.loc[january.index])
+    pd.testing.assert_frame_equal(may, regular.loc[may.index])
+
+
+def test_statistics_come_from_the_balance_sheet_getter(monkeypatch):
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        api_key="KEY",
+        start_date="2020-01-01",
+        end_date="2022-06-30",
+        sleep_timer=False,
+        point_in_time=True,
+    )
+    calls = []
+    monkeypatch.setattr(
+        toolkit,
+        "get_balance_sheet_statement",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    # Retrieving the statistics first goes through the getter that converts and filters the
+    # balance sheet, so it cannot store an unfiltered balance sheet for later calls.
+    toolkit.get_statistics_statement()
+
+    assert calls == [{"enforce_source": None, "overwrite": False, "rounding": None}]
+
+
 def test_quarterly_lookback_covers_a_trailing_year_and_its_growth():
     toolkit = Toolkit(
         tickers=["AAPL"],

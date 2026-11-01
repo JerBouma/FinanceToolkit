@@ -106,9 +106,10 @@ class Ratios:
                 None, which uses a private dict scoped to this instance only.
             period_end_dates (pd.DataFrame | Callable[[], pd.DataFrame], optional): The last day
                 of the fiscal period behind each statement column, with the tickers as index and
-                the periods as columns, as the Toolkit determines it. Daily ratios
-                (show_daily=True) apply each period's figures from that day on. Defaults to None, which applies them from the end of
-                the calendar period the column is labelled with.
+                the periods as columns, as the Toolkit determines it (the filing days with
+                point_in_time). Daily ratios (show_daily=True) apply each period's figures from that
+                day on. Defaults to None, which applies them from the end of the calendar period the
+                column is labelled with.
 
         As an example:
 

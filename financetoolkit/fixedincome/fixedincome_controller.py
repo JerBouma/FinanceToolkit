@@ -251,6 +251,8 @@ SHORT_RATE_SIMULATION_MODELS = ("hull_white", "vasicek", "cir")
 SIMULATION_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
 # The most rates a simulation may hold (paths times steps), which bounds its memory use.
 MAX_SIMULATED_VALUES = 20_000_000
+# The most bond prices one option-adjusted spread call solves for, each a search over a tree.
+MAX_OAS_PRICES = 25
 
 TREASURY_SECURITY_TYPES = (
     "Bill",
@@ -1759,6 +1761,11 @@ class FixedIncome:
         prices = (
             [bond_price] if isinstance(bond_price, int | float) else list(bond_price)
         )
+        if len(prices) > MAX_OAS_PRICES:
+            raise ValueError(
+                f"{len(prices)} bond prices is too many for one call; pass at most "
+                f"{MAX_OAS_PRICES}."
+            )
         results = {
             price: short_rate_model.get_option_adjusted_spread(
                 price=price,

@@ -188,8 +188,8 @@ def get_barrier_option(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if barrier_direction is not "down"/"up" or knock_type is not
-        "in"/"out".
+        ValueError: if barrier_direction is not "down"/"up", knock_type is not
+        "in"/"out" or volatility is not positive.
 
     Notes:
         Reference: Reiner, E., & Rubinstein, M. (1991). "Breaking Down the Barriers."
@@ -213,6 +213,10 @@ def get_barrier_option(
 
     if knock_type not in ("in", "out"):
         raise ValueError(f"knock_type must be 'in' or 'out', received {knock_type!r}.")
+
+    # The barrier terms divide by the variance, which a constant price does not have.
+    if volatility <= 0:
+        raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
     cost_of_carry = risk_free_rate - dividend_yield
     volatility_time = volatility * np.sqrt(time_to_expiration)

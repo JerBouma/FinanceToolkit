@@ -211,3 +211,82 @@ def test_calculate_period_average_averages_the_observed_days():
 
     with pytest.raises(ValueError):
         historical_model.calculate_period_average("daily", daily)
+
+
+def test_period_aggregation_matches_an_aggregation_per_column():
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    aggregations = {
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Volume": "sum",
+        "Dividends": "sum",
+    }
+
+    for period in ["weekly", "monthly", "quarterly", "yearly"]:
+        dates = historical_model.to_period_index(historical.index).asfreq(
+            historical_model.PERIOD_TRANSLATION[period]
+        )
+        expected = historical.groupby(dates.rename("Date")).agg(
+            {column: aggregations.get(column[0], "last") for column in historical}
+        )
+        converted = historical_model.convert_daily_to_other_period(period, historical)
+
+        assert list(converted.columns) == list(historical.columns)
+
+        for column in ["Open", "High", "Low", "Close", "Volume", "Dividends"]:
+            pd.testing.assert_frame_equal(converted[column], expected[column])
+
+
+def test_period_conversion_keeps_the_column_level_names():
+    columns = pd.MultiIndex.from_product(
+        [
+            ["Open", "Close", "Adj Close", "Volume", "Dividends", "Return"],
+            ["AAPL", "MSFT"],
+        ],
+        names=["Field", "Ticker"],
+    )
+    daily = pd.DataFrame(
+        1.0, index=pd.period_range("2024-01-01", periods=70, freq="D"), columns=columns
+    )
+
+    monthly = historical_model.convert_daily_to_other_period("monthly", daily)
+
+    assert list(monthly.columns.names) == ["Field", "Ticker"]
+
+
+def test_a_single_ticker_string_and_default_dates_are_accepted(monkeypatch):
+    requested = []
+
+    def fmp(ticker, start, end, interval, api_key, **kwargs):  # noqa: ARG001
+        requested.append((start, end))
+        return pd.DataFrame(
+            {
+                "Open": 1.0,
+                "High": 1.0,
+                "Low": 1.0,
+                "Close": 2.0,
+                "Adj Close": 2.0,
+                "Volume": 1,
+                "Dividends": 0.0,
+            },
+            index=pd.period_range(start, end, freq="D"),
+        )
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fmp)
+    monkeypatch.setattr(
+        historical_model.yfinance_model,
+        "get_historical_data",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    data, no_data = historical_model.get_historical_data(
+        "AAPL", api_key="KEY", sleep_timer=False
+    )
+
+    start, end = requested[0]
+    # Ten years up to today unless dates are given.
+    assert pd.Timestamp(end) - pd.Timestamp(start) == pd.Timedelta(days=10 * 365)
+    assert not data["Close"]["AAPL"].dropna().empty
+    assert (data["Close"]["AAPL"].dropna() == 2.0).all()
+    assert no_data == []

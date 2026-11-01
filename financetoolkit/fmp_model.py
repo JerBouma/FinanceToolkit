@@ -21,6 +21,7 @@ from urllib3.exceptions import MaxRetryError
 from financetoolkit import currencies_model, helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
@@ -198,9 +199,10 @@ def get_financial_data(
                 continue
 
             # Anything that is not one of the messages above is not retryable, without this the loop would fall through and hammer the endpoint indefinitely.  # noqa: E501
+            # An HTTP error without a body reads as its URL, which carries the API key.
             logger.error(
                 "The request to Financial Modeling Prep failed with an unrecognised error: %s",
-                error_message or e,
+                redact_credentials(str(error_message or e)),
             )
 
             error_model.report_request_failure()
@@ -220,18 +222,49 @@ def get_financial_data(
             time.sleep(determine_retry_delay(error_retry_counter))
             error_retry_counter += 1
 
+        except requests.exceptions.SSLError:
+            # A certificate error fails the same way on every attempt (get_request does not
+            # retry unverified when the URL carries a key), so it is reported at once.
+            error_model.report_request_failure()
+            return pd.DataFrame(columns=["NO ERRORS"])
+
         except (
             MaxRetryError,
-            requests.exceptions.SSLError,
             requests.exceptions.ConnectionError,
         ):
-            # Retry a refused connection up to RETRY_LIMIT times, then return empty.
-            if error_retry_counter >= RETRY_LIMIT:
+            # A refused connection or a failed DNS lookup is retried a few times, then
+            # reported, so being offline does not block for minutes per request.
+            if error_retry_counter >= TRANSIENT_RETRY_LIMIT:
                 error_model.report_request_failure()
                 return pd.DataFrame(columns=["NO ERRORS"])
 
             time.sleep(determine_retry_delay(error_retry_counter))
             error_retry_counter += 1
+
+
+# The error frames of get_financial_data that a later request may not get: a rate limit
+# or a failed connection, as opposed to a plan restriction, which answers the same each time.
+TEMPORARY_FAILURES = (
+    "LIMIT REACH",
+    "BANDWIDTH LIMIT REACH",
+    "REQUEST FAILED",
+    "NO ERRORS",
+)
+
+
+def _failed_temporarily(response) -> bool:
+    """
+    Whether a response of get_financial_data is an error frame for a temporary failure.
+
+    Args:
+        response: The response, a DataFrame for an error and JSON data otherwise.
+
+    Returns:
+        bool: True for a rate limit or a failed request, False for data or a plan restriction.
+    """
+    return isinstance(response, pd.DataFrame) and any(
+        column in TEMPORARY_FAILURES for column in response.columns
+    )
 
 
 PLAN_RESTRICTION_MESSAGES = (
@@ -454,6 +487,66 @@ def get_financial_statement(
     return financial_statement
 
 
+# A Free plan receives only the latest dividend payments.
+FREE_DIVIDEND_LIMIT = 5
+
+
+def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
+    """
+    Adds the dividends paid before the latest payments a Free plan receives, from Yahoo
+    Finance, which reports them split-adjusted as FinancialModelingPrep's adjDividend is.
+    Without them every earlier payment would count as no dividend at all in the dividend
+    yield, total returns and dividend income.
+
+    Args:
+        ticker (str): The ticker the dividends belong to.
+        dividends (pd.Series): The payments FinancialModelingPrep returned, indexed by a
+            daily PeriodIndex.
+
+    Returns:
+        pd.Series: The earlier Yahoo Finance payments followed by the given ones, or the
+        given ones with a warning when Yahoo Finance has none.
+    """
+    # Imported when first used, as only a Free plan with a long dividend history needs it.
+    import yfinance as yf  # noqa: PLC0415
+
+    from financetoolkit.currencies_model import (  # noqa: PLC0415
+        to_yahoo_finance_symbol,
+    )
+
+    first_payment = dividends.index.min()
+
+    # The older payments are an optional addition, so any failure counts as no history. When
+    # Yahoo Finance answers with an error (a rate limit, for example), yfinance logs it and
+    # returns None instead of raising.
+    try:
+        older = yf.Ticker(to_yahoo_finance_symbol(ticker)).dividends
+    except Exception as error:  # noqa: BLE001
+        logger.info(
+            "Yahoo Finance dividends of %s could not be retrieved: %s", ticker, error
+        )
+        older = None
+
+    if not isinstance(older, pd.Series):
+        older = pd.Series(dtype=float)
+
+    if not older.empty:
+        older.index = pd.DatetimeIndex(older.index).tz_localize(None).to_period("D")
+        older = older[older.index < first_payment]
+
+    if older.empty:
+        logger.warning(
+            "No dividend data is available for %s before %s: the Free plan returns only the "
+            "latest %s payments, so earlier dividends count as none.",
+            ticker,
+            first_payment,
+            FREE_DIVIDEND_LIMIT,
+        )
+        return dividends
+
+    return pd.concat([older, dividends]).sort_index()
+
+
 def get_historical_data(
     ticker: str,
     api_key: str,
@@ -502,6 +595,8 @@ def get_historical_data(
                       The index of the DataFrame is the date of the data and the columns include OHLC, Volume,
                       Dividends (if requested), Return, and Cumulative Return.
                       Returns an empty DataFrame if data retrieval fails or no data is found for the given parameters.
+                      When the adjusted close or the dividends could not be retrieved because of a rate limit
+                      or a failed request, the frame's attrs hold "incomplete": True.
     """
     # Additional data is collected to ensure return calculations are correct
     end_date_value = (
@@ -545,7 +640,7 @@ def get_historical_data(
 
     dividend_url = (
         f"https://financialmodelingprep.com/stable/dividends"
-        f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
+        f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else FREE_DIVIDEND_LIMIT}"
     )
 
     try:
@@ -592,6 +687,11 @@ def get_historical_data(
         }
     )
 
+    # Set when the adjusted close or the dividends could not be retrieved for a reason that
+    # passes (see _failed_temporarily), so the caller can return the prices without caching.
+    incomplete = False
+    adjusted_data = None
+
     try:
         adjusted_data = get_financial_data(
             url=adjusted_data_url,
@@ -605,7 +705,10 @@ def get_historical_data(
         adjusted_data = adjusted_data[~adjusted_data.index.duplicated(keep="first")]
 
         historical_data["Adj Close"] = adjusted_data["adjClose"]
-    except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected):
+    except (HTTPError, KeyError, ValueError, URLError, RemoteDisconnected) as error:
+        incomplete = not isinstance(
+            error, (KeyError, ValueError)
+        ) or _failed_temporarily(adjusted_data)
         # Without the adjusted close, returns would be based on raw prices and would therefore exclude dividends, so this is reported rather than silently accepted.  # noqa: E501
         logger.warning(
             "No adjusted close data found for %s, falling back to the unadjusted close. "
@@ -625,6 +728,8 @@ def get_historical_data(
             historical_data = historical_data.div(divide_ohlc_by)
 
     if include_dividends:
+        dividends = None
+
         try:
             dividends = get_financial_data(
                 url=dividend_url,
@@ -648,14 +753,25 @@ def get_historical_data(
                     # The prices are split-adjusted, so the dividends are too: "dividend"
                     # is the amount as paid, which before a 4-for-1 split is four times
                     # the dividend per share of today.
-                    historical_data["Dividends"] = dividends_df[
+                    paid = dividends_df[
                         ("adjDividend" if "adjDividend" in dividends_df else "dividend")
                     ]
+
+                    if (
+                        user_subscription == "Free"
+                        and len(paid) >= FREE_DIVIDEND_LIMIT
+                        and paid.index.min() > historical_data.index.min()
+                    ):
+                        paid = _complete_older_dividends(ticker, paid)
+
+                    historical_data["Dividends"] = paid
                 else:
                     historical_data["Dividends"] = 0
             except KeyError:
+                incomplete = incomplete or _failed_temporarily(dividends)
                 historical_data["Dividends"] = 0
         except (HTTPError, URLError, RemoteDisconnected):
+            incomplete = True
             historical_data["Dividends"] = 0
 
     historical_data = historical_data.loc[
@@ -668,6 +784,9 @@ def get_historical_data(
         end=end,
         return_column=return_column,
     )
+
+    if incomplete:
+        historical_data.attrs["incomplete"] = True
 
     return historical_data
 
@@ -1559,7 +1678,7 @@ def get_earnings_calendar(
     def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/earnings"
-            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
+            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else FREE_DIVIDEND_LIMIT}"
         )
         earnings_calendar = get_financial_data(
             url=url, sleep_timer=sleep_timer, user_subscription=user_subscription
@@ -1661,7 +1780,7 @@ def get_dividend_calendar(
     def worker(ticker):
         url = (
             "https://financialmodelingprep.com/stable/dividends"
-            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else '5'}"
+            f"?symbol={ticker}&apikey={api_key}&limit={'99999' if user_subscription != 'Free' else FREE_DIVIDEND_LIMIT}"
         )
         dividend_calendar = get_financial_data(
             url=url,

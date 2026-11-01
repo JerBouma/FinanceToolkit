@@ -51,15 +51,16 @@ def get_mcclellan_oscillator(
     Returns:
         pd.Series: McClellan Oscillator values.
     """
-    # The first price has no previous close and therefore no advance or decline; leaving
-    # it missing keeps a zero that never happened out of the seed of both EMAs.
-    advancers_decliners = get_advancers_decliners(prices_close).where(
-        prices_close.shift(1).notna()
-    )
+    # Over the observed closes, so a close after a gap compares with the last close before
+    # it and the EMAs carry on over the gap; days without a close stay NaN. The first close
+    # has no previous one and therefore no advance or decline; leaving it missing keeps a
+    # zero that never happened out of the seed of both EMAs.
+    observed = prices_close.dropna()
+    advancers_decliners = get_advancers_decliners(observed).iloc[1:]
     short_ema = get_exponential_moving_average(advancers_decliners, short_ema_window)
     long_ema = get_exponential_moving_average(advancers_decliners, long_ema_window)
 
-    return short_ema - long_ema
+    return (short_ema - long_ema).reindex(prices_close.index)
 
 
 def get_advancers_decliners(
@@ -95,14 +96,23 @@ def get_advancers_decliners(
         pd.Series | pd.DataFrame: Advance/decline signal values (+1, 0 or -1), in the
             shape of the input.
     """
-    price_change = prices_close.diff(1)
 
-    # apply() hands a ufunc straight to pandas, which keeps the Series or DataFrame
-    # (np.sign called directly is typed as returning a bare array).
-    return price_change.apply(np.sign).fillna(0)
+    def signal(closes: pd.Series) -> pd.Series:
+        # Over the observed closes, so the day after a missing one compares with the last
+        # close before it, and days without a close (before listing, gaps) stay NaN. The
+        # first close has no earlier one and counts as unchanged.
+        observed = closes.dropna()
+        return np.sign(observed.diff()).fillna(0).reindex(closes.index)
+
+    if isinstance(prices_close, pd.DataFrame):
+        return prices_close.apply(signal)
+
+    return signal(prices_close)
 
 
-def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
+def get_on_balance_volume(
+    prices_close: pd.Series | pd.DataFrame, volumes: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the On-Balance Volume (OBV) of a given price series.
 
@@ -124,17 +134,29 @@ def get_on_balance_volume(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
     Prentice-Hall.
 
     Args:
-        prices_close (pd.Series): Series of closing prices.
-        volumes (pd.Series): Series of trading volumes.
+        prices_close (pd.Series | pd.DataFrame): Closing prices, one column per ticker when
+            a DataFrame is given.
+        volumes (pd.Series | pd.DataFrame): Trading volumes, in the shape of `prices_close`.
 
     Returns:
-        pd.Series: OBV values.
+        pd.Series | pd.DataFrame: OBV values, in the shape of the input.
     """
-    price_diff = prices_close.diff(1)
-    direction = price_diff.apply(np.sign).fillna(0)
-    obv = direction * volumes
+    if isinstance(prices_close, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_on_balance_volume(prices_close[column], volumes[column])
+                for column in prices_close.columns
+            },
+            index=prices_close.index,
+        )
 
-    return obv.cumsum()
+    # Over the days with both a close and a volume, so the day after a missing one compares
+    # with the last close before it; days without data stay NaN.
+    observed = prices_close.notna() & volumes.notna()
+    direction = np.sign(prices_close[observed].diff()).fillna(0)
+    obv = direction * volumes[observed]
+
+    return obv.cumsum().reindex(prices_close.index)
 
 
 def _get_money_flow_multiplier(
@@ -158,12 +180,18 @@ def _get_money_flow_multiplier(
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
 
+    A period whose high equals its low has no range to place the close in, so its
+    multiplier is 0 and its volume adds nothing, as in TA-Lib, instead of a NaN that would
+    break the running total.
+
     Returns:
         pd.Series: Money Flow Multiplier values, bounded between -1 and 1.
     """
-    return ((prices_close - prices_low) - (prices_high - prices_close)) / (
+    multiplier = ((prices_close - prices_low) - (prices_high - prices_close)) / (
         prices_high - prices_low
     )
+
+    return multiplier.mask(prices_high == prices_low, 0.0)
 
 
 def get_accumulation_distribution_line(
@@ -262,6 +290,11 @@ def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series
 
     - New Highs - New Lows = (Number of tickers at a window-period high) - (Number of tickers at a window-period low)
 
+    A new high is a close above the highest close of the previous window - 1 periods, so
+    the highest of the last `window` periods; a close that only equals the previous high is
+    no new high (and the same for lows), as in get_market_breadth. The result is NaN until
+    at least one ticker has `window` closes.
+
     Also known as: new highs minus new lows, record high percent.
 
     Reference: A standard market-breadth statistic with no single named inventor; see Colby,
@@ -274,13 +307,11 @@ def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series
     Returns:
         pd.Series: New Highs - New Lows values.
     """
-    rolling_high = prices_close.rolling(window=window, min_periods=1).max()
-    rolling_low = prices_close.rolling(window=window, min_periods=1).min()
+    breadth = get_market_breadth(prices_close, high_low_window=window)
 
-    new_highs = (prices_close >= rolling_high).sum(axis=1)
-    new_lows = (prices_close <= rolling_low).sum(axis=1)
-
-    return new_highs - new_lows
+    # The breadth starts at the first daily change, so the first date (never a full window)
+    # is added back as NaN to keep the dates of the prices.
+    return (breadth["New Highs"] - breadth["New Lows"]).reindex(prices_close.index)
 
 
 def get_chaikin_oscillator(
@@ -486,14 +517,19 @@ def _get_volume_based_index(
     Returns:
         pd.Series: The cumulative volume-based index values.
     """
-    price_change_pct = prices_close.pct_change()
-    volume_change = volumes.diff()
+    # Over the days with both a close and a volume, so a missing day neither drops the next
+    # day's change nor prints the start value before the first close; those days stay NaN.
+    observed = prices_close.notna() & volumes.notna()
+    closes, volumes_observed = prices_close[observed], volumes[observed]
+
+    price_change_pct = closes.pct_change()
+    volume_change = volumes_observed.diff()
 
     qualifying_day = volume_change < 0 if direction == "negative" else volume_change > 0
 
     adjusted_change = price_change_pct.where(qualifying_day, 0.0).fillna(0.0)
 
-    return start_value * (1 + adjusted_change).cumprod()
+    return (start_value * (1 + adjusted_change).cumprod()).reindex(prices_close.index)
 
 
 def get_negative_volume_index(

@@ -380,6 +380,13 @@ def get_trailing_dividend_yield(
     return dividend_yield.where(full_year).clip(lower=0).bfill().where(close.notna())
 
 
+# The most random numbers a Monte Carlo price draws (simulations times time steps), which bounds
+# its run time; the paths are simulated in chunks, so the memory stays small regardless.
+MAX_SIMULATED_VALUES = 50_000_000
+# The paths simulated at once, so one chunk of shocks holds at most this many rows.
+SIMULATION_CHUNK_SIZE = 10_000
+
+
 def get_monte_carlo_option_price(
     stock_price: float,
     strike_price: float,
@@ -448,7 +455,8 @@ def get_monte_carlo_option_price(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if simulations or time_steps is not a positive integer.
+        ValueError: if simulations or time_steps is not a positive integer, or if
+            simulations times time_steps exceeds MAX_SIMULATED_VALUES (50 million).
 
     Notes:
         Reference: Boyle, P. P. (1977). "Options: A Monte Carlo Approach." Journal of
@@ -507,9 +515,9 @@ def _simulate_terminal_stock_prices(
     Simulates the stock price at expiration of Geometric Brownian Motion paths under the
     risk-neutral measure.
 
-    Every path is built from time_steps shocks as before, so a seed gives the same terminal
-    prices; only the end of each path is exponentiated, since a European payoff needs
-    nothing else.
+    Every path is built from time_steps shocks, so a seed gives the same terminal prices
+    whatever the number of paths simulated at once; only the end of each path is kept,
+    since a European payoff needs nothing else.
 
     Args:
         stock_price (float): The current stock price.
@@ -524,17 +532,29 @@ def _simulate_terminal_stock_prices(
     Returns:
         np.ndarray: The stock price at expiration of every path.
     """
+    if simulations * time_steps > MAX_SIMULATED_VALUES:
+        raise ValueError(
+            f"{simulations:,} simulations of {time_steps:,} time steps is too large; keep "
+            f"simulations times time steps under {MAX_SIMULATED_VALUES:,}."
+        )
+
     random_number_generator = np.random.default_rng(seed)
 
     time_delta = time_to_expiration / time_steps
     drift = (risk_free_rate - dividend_yield - 0.5 * volatility**2) * time_delta
     diffusion = volatility * np.sqrt(time_delta)
+    terminal_log_returns = np.empty(simulations)
 
-    random_shocks = random_number_generator.standard_normal((simulations, time_steps))
-    log_returns = drift + diffusion * random_shocks
-    log_paths = np.cumsum(log_returns, axis=1)
+    # The generator fills the shocks row by row, so drawing the paths in chunks of rows gives
+    # the same shocks as one draw of all paths while holding only a chunk in memory.
+    for first in range(0, simulations, SIMULATION_CHUNK_SIZE):
+        rows = min(SIMULATION_CHUNK_SIZE, simulations - first)
+        random_shocks = random_number_generator.standard_normal((rows, time_steps))
+        terminal_log_returns[first : first + rows] = (
+            drift + diffusion * random_shocks
+        ).sum(axis=1)
 
-    return stock_price * np.exp(log_paths[:, -1])
+    return stock_price * np.exp(terminal_log_returns)
 
 
 def get_monte_carlo_option_prices(

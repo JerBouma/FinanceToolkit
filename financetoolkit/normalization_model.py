@@ -2,13 +2,19 @@
 
 __docformat__ = "google"
 
+import contextlib
 import shutil
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from financetoolkit.helpers import (
+    PERIOD_END_DATE,
+    convert_period_end_dates_to_calendar_periods,
+)
 from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
@@ -21,10 +27,10 @@ def initialize_statements_and_normalization(
     income: pd.DataFrame,
     cash: pd.DataFrame,
     format_location: str,
-    reverse_dates: bool,
     start_date: str,
     end_date: str,
     quarterly: bool,
+    tickers: list[str] | None = None,
 ):
     """
     Initializes financial statements by applying normalization and date conversion.
@@ -39,16 +45,20 @@ def initialize_statements_and_normalization(
         balance (pd.DataFrame): Raw balance sheet data.
         income (pd.DataFrame): Raw income statement data.
         cash (pd.DataFrame): Raw cash flow statement data.
-        format_location (str): Path to normalization file directory.
-        reverse_dates (bool): Whether to reverse the order of dates.
+        format_location (str): Path to normalization file directory. A file missing there
+            falls back to the packaged one.
         start_date (str): Start date for filtering.
         end_date (str): End date for filtering.
         quarterly (bool): Whether the data is quarterly.
+        tickers (list[str] | None, optional): The tickers to keep from the statements.
+            Defaults to None, which keeps every ticker.
 
     Returns:
         tuple: A tuple containing the processed statements (balance, income, cash, statistics)
                and the loaded normalization formats, for FinancialModelingPrep and for
-               Yahoo Finance, including the statistics format of both sources.
+               Yahoo Finance, including the statistics format of both sources. The statistics
+               hold the Period End Date of every period when the statements are labelled with
+               dates.
     """
     norm_file_names = [
         "balance",
@@ -72,46 +82,81 @@ def initialize_statements_and_normalization(
     fmp_statistics_statement_generic = norm_formats["statistics"]
     yf_statistics_statement_generic = norm_formats["statistics_yf"]
 
+    period_end_dates: list[pd.DataFrame] = []
+
     def _process_statement(
         statement_df: pd.DataFrame,
         statement_format: pd.Series,
         statement_name: str,
     ) -> pd.DataFrame:
         """Normalizes a user supplied statement and relabels its dates."""
-        if not statement_df.empty:
-            try:
-                processed_statement = convert_financial_statements(
-                    financial_statements=statement_df,
-                    statement_format=statement_format,
-                    adjust_financial_statements=False,
-                    reverse_dates=reverse_dates,
-                )
+        if statement_df.empty:
+            return pd.DataFrame()
 
-                # Ensure DataFrame type
-                if not isinstance(processed_statement, pd.DataFrame):
-                    logger.error(
-                        "convert_financial_statements for %s did not return a DataFrame (got %s). Returning empty.",
-                        statement_name,
-                        type(processed_statement),
-                    )
-                    return pd.DataFrame()
+        if tickers is not None and isinstance(statement_df.index, pd.MultiIndex):
+            available = statement_df.index.unique(level=0)
+            missing = [ticker for ticker in tickers if ticker not in available]
 
-                processed_statement = convert_date_label(
-                    financial_statement=processed_statement,
-                    start_date=start_date,
-                    end_date=end_date,
-                    quarter=quarterly,
-                )
-                return processed_statement
-            except Exception as e:
-                logger.error(
-                    "Error processing %s statement: %s. Returning empty DataFrame.",
+            if missing:
+                logger.warning(
+                    "The %s statement holds no data for %s.",
                     statement_name,
-                    e,
+                    ", ".join(missing),
+                )
+
+            statement_df = statement_df.loc[
+                statement_df.index.get_level_values(0).isin(tickers)
+            ]
+
+            if statement_df.empty:
+                return pd.DataFrame()
+
+        try:
+            processed_statement = convert_financial_statements(
+                financial_statements=statement_df,
+                statement_format=statement_format,
+                adjust_financial_statements=False,
+            )
+
+            # Ensure DataFrame type
+            if not isinstance(processed_statement, pd.DataFrame):
+                logger.error(
+                    "convert_financial_statements for %s did not return a DataFrame (got %s). Returning empty.",
+                    statement_name,
+                    type(processed_statement),
                 )
                 return pd.DataFrame()
-        else:
+
+            processed_statement, statement_end_dates = convert_date_label(
+                financial_statement=processed_statement,
+                start_date=start_date,
+                end_date=end_date,
+                quarter=quarterly,
+            )
+        except Exception as e:
+            logger.error(
+                "Error processing %s statement: %s. Returning empty DataFrame.",
+                statement_name,
+                e,
+            )
             return pd.DataFrame()
+
+        # Supplied statements are never replaced by downloaded ones, so a window that holds
+        # none of their periods says where the data does run.
+        if processed_statement.empty:
+            logger.warning(
+                "The %s statement has no periods between %s and %s. Its columns run "
+                "from %s to %s.",
+                statement_name,
+                start_date,
+                end_date,
+                statement_df.columns.min(),
+                statement_df.columns.max(),
+            )
+
+        period_end_dates.append(statement_end_dates)
+
+        return processed_statement
 
     balance_sheet_statement = _process_statement(
         balance,
@@ -125,7 +170,18 @@ def initialize_statements_and_normalization(
         cash, fmp_cash_flow_statement_generic, "cash flow"
     )
 
+    # The fiscal period end dates of date labelled statements, kept as the statistic the
+    # daily ratios and currency translation take each period's end from.
     statistics_statement = pd.DataFrame()
+    end_dates = [dates for dates in period_end_dates if not dates.empty]
+
+    if end_dates:
+        combined = end_dates[0]
+        for dates in end_dates[1:]:
+            combined = combined.combine_first(dates)
+
+        combined.index = pd.MultiIndex.from_product([combined.index, [PERIOD_END_DATE]])
+        statistics_statement = combined.sort_index(axis=1)
 
     return (
         balance_sheet_statement,
@@ -151,7 +207,8 @@ def read_normalization_file(statement: str, format_location: str = ""):
 
     Args:
         statement (string): the type of statement you wish to read (balance, income, or cash).
-        format_location (string): the location to read the file from.
+        format_location (string): the folder to read the file from. When the folder has no file
+            for the statement, the packaged file is read.
     Returns:
         A pandas Series containing the line items for the desired statement.
     """
@@ -169,8 +226,10 @@ def read_normalization_file(statement: str, format_location: str = ""):
             "Please provide a valid statement type (balance, income, cash or statistics)."
         )
 
-    if format_location:
-        file_location = f"{format_location}/{statement}.csv"
+    # A folder made with get_normalization_files holds only the FinancialModelingPrep files,
+    # so a statement without its own file there uses the packaged one.
+    if format_location and Path(format_location, f"{statement}.csv").is_file():
+        file_location: str | Any = f"{format_location}/{statement}.csv"
     else:
         file_location = resources.files(__package__).joinpath(
             f"normalization/{statement}.csv"
@@ -198,7 +257,6 @@ def convert_financial_statements(
     financial_statements: pd.DataFrame,
     statement_format: pd.Series | pd.DataFrame = pd.DataFrame(),
     adjust_financial_statements: bool = True,
-    reverse_dates: bool = False,
 ):
     """
     Converts financial statements (balance, income, or cash flow statements) based on custom input
@@ -212,8 +270,6 @@ def convert_financial_statements(
         adjust_financial_statements (bool): Whether to add every line item in the format that the provider did not
                             return, filled with NaN, so that every ticker has the same rows. Defaults to True.
                             NaN keeps an item the provider never reported apart from one it reported as zero.
-        reverse_dates (bool): Whether to reverse the order of the columns so the oldest period comes first.
-                            Defaults to False.
 
     Returns:
         pd.DataFrame: A DataFrame containing the financial statement data. If only one ticker is provided, the
@@ -263,8 +319,9 @@ def convert_financial_statements(
     financial_statements = financial_statements.loc[:, list(naming.keys()), :]
     financial_statements = financial_statements.rename(index=naming)
 
-    if reverse_dates:
-        financial_statements = financial_statements[financial_statements.columns[::-1]]
+    # Oldest period first, whatever order the provider or user supplied the columns in.
+    if not isinstance(financial_statements.columns, pd.MultiIndex):
+        financial_statements = financial_statements.sort_index(axis=1)
 
     return financial_statements.sort_index(level=0, sort_remaining=False)
 
@@ -274,14 +331,18 @@ def convert_date_label(
     start_date: str | None = None,
     end_date: str | None = None,
     quarter: bool = False,
-):
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     This function converts the date labels of the financial statements to a PeriodIndex. This is meant to be used
     throughout the entire Toolkit. This function is relevant for custom datasets that do not have a PeriodIndex.
 
-    As an example, if quarter = False, the date labels will be converted to a PeriodIndex with a frequency of 'Y'
-    which would convert 2022-12-31 to 2022. If quarter = True, the date labels will be converted to a PeriodIndex
-    with a frequency of 'Q' which would convert 2022-12-31 to 2022Q4.
+    Labels that are periods (2022, "2022" or "2022Q4") keep their period, at a frequency of 'Y' or, with
+    quarter = True, 'Q', and the periods that overlap the start and end date are kept. Labels that are dates
+    are the last day of a fiscal period: a period ending after the end date (or before the start date) is
+    left out and the others are labelled with the calendar period most of the fiscal period falls in (see
+    helpers.convert_period_end_dates_to_calendar_periods), as downloaded statements are. A fiscal year ending
+    30 June 2022 is labelled 2022 and one ending 31 January 2023 is labelled 2022. Columns of different
+    tickers that end up in the same period are combined.
 
     Args:
         financial_statement (pd.DataFrame): DataFrame containing the financial statement data.
@@ -290,17 +351,23 @@ def convert_date_label(
         quarter (bool): Whether to convert the date labels to a PeriodIndex with a frequency of 'Q' or 'Y'.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the financial statement data with a PeriodIndex.
+        tuple[pd.DataFrame, pd.DataFrame]: The financial statement data with a PeriodIndex, and the last day of
+        each ticker's fiscal period (tickers as index, periods as columns), which is empty when the labels are
+        periods.
     """
-    financial_statement = financial_statement.sort_index(axis=1).truncate(
-        before=start_date, after=end_date, axis=1
-    )
+    frequency = "Q" if quarter else "Y"
+    columns = financial_statement.columns
+    period_end_dates = pd.DataFrame()
 
-    if financial_statement.columns.duplicated().any():
-        # Duplicate statements for one period are equal, so one copy can be dropped.
-        financial_statement = financial_statement.loc[
-            :, ~financial_statement.columns.duplicated()
-        ]
+    if isinstance(columns, pd.PeriodIndex | pd.DatetimeIndex):
+        is_date_label = isinstance(columns, pd.DatetimeIndex)
+    else:
+        labels = pd.Index(columns.astype(str).str.strip())
+        # A period label is a year ("2022") or a quarter ("2022Q4"); anything else that
+        # parses is a date. Comparing either as text would truncate "2021" before
+        # "2021-01-01" and "2022Q1" after "2022-12-31".
+        is_date_label = not labels.str.fullmatch(r"\d{4}([Qq][1-4])?").all()
+        columns = pd.DatetimeIndex(pd.to_datetime(labels)) if is_date_label else labels
 
     try:
         financial_statement = financial_statement.astype(np.float64)
@@ -312,16 +379,52 @@ def convert_date_label(
             error,
         )
 
-    if quarter:
-        financial_statement.columns = pd.PeriodIndex(
-            financial_statement.columns, freq="Q"
-        )
-    else:
-        financial_statement.columns = pd.PeriodIndex(
-            financial_statement.columns, freq="Y"
+    if is_date_label:
+        dates = pd.DatetimeIndex(columns).normalize()
+        within = np.ones(len(dates), dtype=bool)
+        if start_date:
+            within &= dates >= pd.Timestamp(start_date)
+        if end_date:
+            within &= dates <= pd.Timestamp(end_date)
+
+        financial_statement = financial_statement.loc[:, within]
+        dates = dates[within]
+        periods = convert_period_end_dates_to_calendar_periods(dates, quarter=quarter)
+
+        tickers = (
+            financial_statement.index.get_level_values(0)
+            if isinstance(financial_statement.index, pd.MultiIndex)
+            else None
         )
 
-    return financial_statement
+        if tickers is not None:
+            # Each ticker's fiscal end is the date of the column it has data in.
+            has_data = financial_statement.notna().groupby(tickers).any()
+            period_end_dates = pd.DataFrame(
+                np.where(has_data.to_numpy(), np.asarray(dates)[None, :], None),
+                index=has_data.index,
+                columns=periods,
+            )
+            period_end_dates = period_end_dates.T.groupby(level=0).first().T
+
+        financial_statement.columns = periods
+    else:
+        financial_statement.columns = pd.PeriodIndex(columns, freq=frequency)
+        financial_statement = financial_statement.sort_index(axis=1).truncate(
+            before=start_date, after=end_date, axis=1
+        )
+
+    if financial_statement.columns.duplicated().any():
+        # Columns sharing a period hold different tickers (each ending its fiscal period on
+        # its own date) or equal copies, so the first value of each is kept.
+        financial_statement = financial_statement.T.groupby(level=0).first().T
+
+    financial_statement = financial_statement.sort_index(axis=1)
+    financial_statement.columns = pd.PeriodIndex(
+        financial_statement.columns, freq=frequency
+    )
+
+    return financial_statement, period_end_dates
 
 
 def copy_normalization_files(
@@ -348,6 +451,11 @@ def copy_normalization_files(
     )
     save_location = Path(save_location)
 
+    # A server often has no Downloads folder, so a missing folder is created; one that
+    # cannot be falls back to the current working directory below.
+    with contextlib.suppress(OSError):
+        save_location.mkdir(parents=True, exist_ok=True)
+
     for statement in ["balance", "income", "cash", "statistics"]:
         if format_location:
             file_location = f"{format_location}/{statement}.csv"
@@ -372,10 +480,10 @@ def copy_normalization_files(
         destination = save_location / f"{statement}.csv"
         try:
             copy_to(destination)
-        except PermissionError:
+        except OSError:
             fallback = Path.cwd() / f"{statement}.csv"
             logger.warning(
-                "Cannot write to %s (permission denied). Saving to %s instead.",
+                "Cannot write to %s. Saving to %s instead.",
                 destination,
                 fallback,
             )
@@ -403,8 +511,9 @@ def get_normalization_files(path: str | Path = ""):
             saves them to the 'Downloads' folder of your home directory.
 
     Returns:
-        None: The four csv files are saved to the chosen folder. When that folder cannot be
-        written to, they are saved to the current working directory instead.
+        None: The four csv files are saved to the chosen folder, which is created when it does
+        not exist. When that folder cannot be written to, they are saved to the current
+        working directory instead.
 
     As an example:
 

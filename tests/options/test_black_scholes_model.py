@@ -112,3 +112,26 @@ def test_bjerksund_stensland_stays_finite_and_close_at_low_volatility():
             100.0, 100.0, 0.05, sigma, 1.0, 0.0, True
         )
         assert price == price and price >= 0  # noqa: PLR0124
+
+
+def test_options_without_volatility_or_time_are_worth_their_discounted_intrinsic_value():
+    import numpy as np
+    import pytest
+
+    from financetoolkit.options import greeks_model
+
+    # At the money at expiration, and in the money without volatility.
+    assert black_scholes_model.get_black_scholes(100, 100, 0, 0, 1) == 0
+    assert black_scholes_model.get_black_scholes(100, 100, 0.05, 0.2, 0) == 0
+    assert black_scholes_model.get_black_scholes(110, 100, 0.05, 0, 1) == pytest.approx(
+        110 - 100 * np.exp(-0.05)
+    )
+    assert black_scholes_model.get_black_scholes(
+        90, 100, 0.05, 0, 1, put_option=True
+    ) == pytest.approx(100 * np.exp(-0.05) - 90)
+    assert np.isnan(greeks_model.get_lambda(90, 100, 0.0, 0.2, 0))
+
+    with pytest.raises(ValueError, match="volatility must be positive"):
+        black_scholes_model.get_bjerksund_stensland(
+            100, 100, 0.05, 0, 1, put_option=True
+        )

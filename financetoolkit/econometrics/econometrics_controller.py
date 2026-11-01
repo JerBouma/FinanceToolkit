@@ -663,7 +663,7 @@ class Econometrics:
         Returns:
             pd.DataFrame: The CUSUM statistic, its p-value, the number of observations used, the
             1%/5%/10% critical boundary values, and whether stability is rejected at the 5% level,
-            per asset.
+            per asset. An asset with fewer than 10 observations has NaN values.
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and runs the
@@ -751,7 +751,10 @@ class Econometrics:
         key = ("column", period, column, tuple(tickers) if tickers else None)
 
         if key not in self._data_cache:
-            data = self._historical_data[period][column]
+            # Historical data supplied to the Toolkit can reach beyond its date range.
+            data = self._historical_data[period][column].loc[
+                self._start_date : self._end_date
+            ]
             self._data_cache[key] = (
                 data.dropna(how="all") if tickers is None else data[tickers].dropna()
             )
@@ -772,9 +775,11 @@ class Econometrics:
         key = ("returns", period, within_period)
 
         if key not in self._data_cache:
-            self._data_cache[key] = self._within_historical_data[period][
-                "Return"
-            ].dropna(how="all")
+            self._data_cache[key] = (
+                self._within_historical_data[period]["Return"]
+                .loc[self._start_date : self._end_date]
+                .dropna(how="all")
+            )
 
         return self._data_cache[key]
 
@@ -932,6 +937,7 @@ class Econometrics:
         Returns:
             pd.DataFrame: The ADF statistic, its p-value, lags used, observations used, 1%/5%/10%
             critical values, and whether the unit root is rejected at the 5% level, per asset.
+            An asset with fewer than 10 observations has NaN values.
 
         Notes:
         - The method retrieves historical price data based on the specified `period` and runs the ADF
@@ -1041,7 +1047,7 @@ class Econometrics:
         Returns:
             pd.DataFrame: The KPSS statistic, its p-value, truncation lag used, observations used,
             1%/2.5%/5%/10% critical values, and whether stationarity is rejected at the 5% level,
-            per asset.
+            per asset. An asset with fewer than 10 observations has NaN values.
 
         Notes:
         - The method retrieves historical price data based on the specified `period` and runs the
@@ -1386,7 +1392,8 @@ class Econometrics:
             pd.DataFrame: One row per ordered `(Dependent, Independent)` ticker pair, with the
             Engle-Granger statistic, its p-value, 1%/5%/10% critical values, and whether
             cointegration is found at the 5% level -- the test is not symmetric (normalizing on
-            the dependent ticker matters), so both orderings of every pair are included.
+            the dependent ticker matters), so both orderings of every pair are included. A pair
+            with fewer than 10 common observations has NaN values.
 
         Notes:
         - The method retrieves historical price data based on the specified `period` for every
@@ -1507,7 +1514,9 @@ class Econometrics:
             pd.DataFrame: One row per candidate cointegration rank `r = 0, ..., N-1`, with the
             corresponding eigenvalue, trace statistic, max-eigenvalue statistic, their 90%/95%/99%
             critical values, and whether each is rejected at the 5% level. The estimated rank is the
-            first row (in rank order) that is NOT rejected.
+            first row (in rank order) that is NOT rejected. With fewer observations than the
+            VECM needs (the tickers times k_ar_diff + 1, plus the tickers, plus 3) every row
+            is NaN.
 
         Notes:
         - The method retrieves historical price data based on the specified `period` for every ticker
@@ -1773,7 +1782,9 @@ class Econometrics:
             )
 
         returns = self._filter_benchmark(
-            self._historical_data[period]["Return"].dropna(how="all"),
+            self._historical_data[period]["Return"]
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all"),
             include_benchmark=include_benchmark,
         )
 
@@ -4770,7 +4781,9 @@ class Econometrics:
             )
 
         # The raw slice: panel methods need each entity's own NaN pattern on the full date index.
-        prices = self._historical_data[period][column]
+        prices = self._historical_data[period][column].loc[
+            self._start_date : self._end_date
+        ]
 
         if independent_tickers is not None:
             independent_tickers = (
@@ -4834,7 +4847,9 @@ class Econometrics:
                     "explicitly."
                 )
 
-            independent_prices = self._historical_data[period][independent_column]
+            independent_prices = self._historical_data[period][independent_column].loc[
+                self._start_date : self._end_date
+            ]
 
             y_panel = prices[dependent_tickers].T
             x_series = independent_prices[dependent_tickers].T.stack()

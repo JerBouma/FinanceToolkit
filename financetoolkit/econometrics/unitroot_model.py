@@ -13,6 +13,12 @@ from statsmodels.tsa.stattools import adfuller, kpss, zivot_andrews
 # The conventional 5% significance level used for the boolean "reject" flags.
 SIGNIFICANCE_LEVEL = 0.05
 
+# The fewest observations a unit root or cointegration test runs on. On a handful of points
+# the test regression fits almost perfectly, so the statistic rejects or accepts at random
+# (Engle-Granger on four yearly points reports cointegration at p = 0.0015). Shorter series
+# return NaN.
+MINIMUM_TEST_OBSERVATIONS = 10
+
 
 def default_max_lag(observations: int) -> int:
     """
@@ -120,6 +126,9 @@ def get_augmented_dickey_fuller(
     values = series.dropna().to_numpy()
 
     try:
+        if len(values) < MINIMUM_TEST_OBSERVATIONS:
+            raise ValueError("Too few observations for the test.")
+
         # statsmodels 0.15 announces a switch to a result object in 0.16; the tuple layout used here is still returned until then and passing result_object would fail on 0.14.  # noqa: E501
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -229,6 +238,9 @@ def get_kpss_test(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
+            if n < MINIMUM_TEST_OBSERVATIONS:
+                raise ValueError("Too few observations for the test.")
+
             kpss_statistic, p_value, used_lags, critical_values = kpss(
                 values,
                 regression=regression,

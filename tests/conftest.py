@@ -20,6 +20,15 @@ from _pytest.mark.structures import Mark
 # cache itself create their own, in a temporary location.
 os.environ["FINANCE_TOOLKIT_CACHE_ENABLED"] = "0"
 
+# yfinance keeps its timezone and cookie caches in one SQLite file per user, which the test
+# processes of a parallel run (pytest -n) would lock for each other. Each process gets its
+# own, in a temporary location.
+import tempfile
+
+import yfinance
+
+yfinance.set_tz_cache_location(tempfile.mkdtemp(prefix="financetoolkit-yfinance-"))
+
 """"
 Credits go out to the original author of this code snippet:
 

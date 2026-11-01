@@ -51,8 +51,12 @@ portfolio._toolkit._daily_risk_free_rate = risk_free_rate
 
 
 def test_read_portfolio_dataset(recorder):
-    recorder.capture(portfolio.read_portfolio_dataset(adjust_duplicates=True))
-    recorder.capture(portfolio.read_portfolio_dataset(adjust_duplicates=False))
+    # A separate Portfolio: reading the dataset again restores its currency column, which the
+    # shared portfolio above leaves out so its tests never ask for the tickers' currencies
+    # online (and, run in parallel, never touch yfinance's shared timezone cache).
+    reader = Portfolio(portfolio_dataset="tests/datasets/portfolio_test.xlsx")
+    recorder.capture(reader.read_portfolio_dataset(adjust_duplicates=True))
+    recorder.capture(reader.read_portfolio_dataset(adjust_duplicates=False))
 
 
 def test_collect_benchmark_historical_data(recorder):

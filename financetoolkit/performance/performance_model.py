@@ -13,7 +13,10 @@ from scipy.stats import linregress
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.risk import cvar_model
-from financetoolkit.risk.risk_model import get_wealth_and_peak
+from financetoolkit.risk.risk_model import (
+    apply_to_stacked_windows,
+    get_wealth_and_peak,
+)
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
@@ -2060,6 +2063,10 @@ def get_rolling_omega_ratio(
     """
     Calculate the rolling Omega Ratio of returns.
 
+    A window with gains but no losses has an infinite ratio (inf), like get_omega_ratio
+    over the whole period; a window without gains or losses (all returns equal to the
+    minimum acceptable return) has none (NaN).
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         window_size (int): The size of the rolling window.
@@ -2070,14 +2077,18 @@ def get_rolling_omega_ratio(
         pd.Series | pd.DataFrame: Rolling Omega Ratio values with time as index.
     """
 
-    def _omega(window):
-        excess_returns = window - minimum_acceptable_return
-        gains = excess_returns[excess_returns > 0].sum()
-        losses = -excess_returns[excess_returns < 0].sum()
+    def _omega(windows):
+        excess_returns = windows - minimum_acceptable_return
+        gains = excess_returns.clip(min=0).sum(axis=1)
+        losses = (-excess_returns).clip(min=0).sum(axis=1)
 
-        return _divide_gains_by_losses(gains, losses)
+        # A window without losses has an infinite ratio, one without gains or losses none.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(
+                losses > 0, gains / losses, np.where(gains > 0, np.inf, np.nan)
+            )
 
-    return returns.rolling(window=window_size).apply(_omega, raw=True)
+    return apply_to_stacked_windows(returns, window_size, _omega)
 
 
 def get_gain_to_pain_ratio(

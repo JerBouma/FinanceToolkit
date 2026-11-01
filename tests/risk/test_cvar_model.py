@@ -277,3 +277,63 @@ def test_get_cvar_evt_alpha_outside_fitted_tail_raises():
 
     with pytest.raises(ValueError, match="outside the tail"):
         cvar_model.get_cvar_evt(returns, alpha=0.2, threshold_percentile=0.9)
+
+
+def test_rolling_cvar_historic_matches_the_cvar_of_every_window():
+    rng = np.random.default_rng(0)
+    returns = pd.DataFrame(
+        rng.standard_t(5, size=(300, 3)) * 0.01, columns=["A", "B", "C"]
+    ).round(4)
+    returns.iloc[:40, 1] = np.nan
+    returns.iloc[150, 2] = np.nan
+
+    def window_cvar(window):
+        value_at_risk = np.percentile(window, 5)
+        return window[window <= value_at_risk].mean()
+
+    expected = returns.rolling(30).apply(window_cvar, raw=True)
+    rolling_cvar = cvar_model.get_rolling_cvar_historic(returns, 0.05, 30)
+
+    # Windows with a missing return stay empty, as in a rolling apply.
+    pd.testing.assert_frame_equal(rolling_cvar, expected, rtol=1e-12, atol=1e-15)
+    pd.testing.assert_series_equal(
+        cvar_model.get_rolling_cvar_historic(returns["A"], 0.05, 30),
+        expected["A"],
+        rtol=1e-12,
+        atol=1e-15,
+    )
+    assert (
+        cvar_model.get_rolling_cvar_historic(returns.iloc[:10], 0.05, 30)
+        .isna()
+        .all()
+        .all()
+    )
+
+
+def test_out_of_sample_gaussian_estimates_match_a_fit_per_window():
+    from financetoolkit.risk import risk_controller
+
+    rng = np.random.default_rng(1)
+    returns = pd.DataFrame(rng.normal(0, 0.01, size=(200, 2)), columns=["A", "B"])
+    returns.iloc[:30, 1] = np.nan
+
+    for measure, estimator in [
+        ("var", var_model.get_var_gaussian),
+        ("cvar", cvar_model.get_cvar_gaussian),
+    ]:
+        estimates = risk_controller._get_out_of_sample_estimates(
+            returns, measure, "gaussian", 0.05, 50
+        )
+        expected = pd.DataFrame(
+            {
+                column: returns[column]
+                .dropna()
+                .rolling(50)
+                .apply(lambda window: estimator(window, 0.05), raw=False)
+                .shift(1)
+                .reindex(returns.index)
+                for column in returns
+            }
+        )
+
+        pd.testing.assert_frame_equal(estimates, expected, rtol=1e-12)

@@ -808,6 +808,26 @@ def test_get_win_rate_leaves_out_days_without_both_returns():
     assert per_period["B"].isna().all()
 
 
+def test_rolling_omega_ratio_matches_every_window_and_is_infinite_without_losses():
+    rng = np.random.default_rng(0)
+    returns = pd.DataFrame(rng.normal(0, 0.01, size=(200, 2)), columns=["A", "B"])
+    returns.iloc[50, 1] = np.nan
+
+    def window_omega(window):
+        gains = window[window > 0].sum()
+        losses = -window[window < 0].sum()
+        return gains / losses
+
+    pd.testing.assert_frame_equal(
+        performance_model.get_rolling_omega_ratio(returns, 20),
+        returns.rolling(20).apply(window_omega, raw=True),
+        rtol=1e-12,
+    )
+    assert performance_model.get_rolling_omega_ratio(
+        pd.Series([0.01, 0.02, 0.0, 0.0]), 2
+    ).tolist()[1:] == [np.inf, np.inf, pytest.approx(np.nan, nan_ok=True)]
+
+
 def test_omega_ratio_without_losses_is_infinite():
     gains_only = pd.Series([0.01, 0.02, 0.005])
 

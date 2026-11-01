@@ -133,3 +133,19 @@ def test_get_engle_granger_cointegration_short_sample():
 
     assert result["Engle-Granger Statistic"] < -1
     assert result["P-Value"] < 0.5  # noqa: PLR2004
+
+
+def test_cointegration_tests_need_enough_observations():
+    rng = np.random.default_rng(0)
+    walk = pd.Series(np.cumsum(rng.normal(size=4)))
+    other = walk + rng.normal(scale=0.1, size=4)
+
+    engle_granger = cointegration_model.get_engle_granger_cointegration(walk, other)
+    johansen = cointegration_model.get_johansen_cointegration(
+        pd.concat([walk, other], axis=1)
+    )
+
+    # Four points used to report cointegration at p = 0.0015.
+    assert np.isnan(engle_granger["P-Value"])
+    assert not engle_granger["Cointegrated (5%)"]
+    assert johansen["Trace Statistic"].isna().all()

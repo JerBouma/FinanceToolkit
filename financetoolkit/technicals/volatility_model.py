@@ -273,7 +273,10 @@ def get_supertrend(
 
     final_upper[0] = basic_upper[0]
     final_lower[0] = basic_lower[0]
-    direction[0] = 1.0
+    # Without valid bands there is no trend yet, so the direction stays NaN until they start.
+    direction[0] = (
+        math.nan if math.isnan(basic_upper[0]) or math.isnan(basic_lower[0]) else 1.0
+    )
     trend[0] = final_lower[0]
 
     for i in range(1, length):

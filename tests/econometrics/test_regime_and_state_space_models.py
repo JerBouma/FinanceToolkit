@@ -226,3 +226,11 @@ def test_markov_regime_switching_is_reproducible_and_keeps_the_random_state():
 
     second, _ = regime_model.get_markov_regime_switching(returns)
     assert first == second
+
+
+def test_dcc_garch_refuses_perfectly_correlated_series():
+    series = np.random.default_rng(1).normal(0, 0.01, 300)
+    returns = pd.DataFrame({"A": series, "B": series})
+
+    with pytest.raises(ValueError, match="perfectly correlated"):
+        state_space_model.get_dcc_garch(returns)

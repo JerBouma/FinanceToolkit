@@ -5,6 +5,10 @@ import math
 import numpy as np
 import pandas as pd
 
+# The largest gap between the price at a solved yield or spread and the price it solves for,
+# as a share of that price (0.1%).
+RESIDUAL_PRICE_TOLERANCE = 0.001
+
 
 def get_number_of_periods(years_to_maturity: float, frequency: int) -> int:
     """
@@ -153,7 +157,11 @@ def get_accrued_interest(
 
 
 def solve_with_secant_method(
-    function, guess: float, tolerance: float, max_iterations: int
+    function,
+    guess: float,
+    tolerance: float,
+    max_iterations: int,
+    residual_tolerance: float = np.inf,
 ) -> float:
     """
     Find the rate at which a function is zero with the secant method.
@@ -163,9 +171,14 @@ def solve_with_secant_method(
         guess (float): The rate to start from.
         tolerance (float): The step size below which the rate is accepted.
         max_iterations (int): The maximum number of steps.
+        residual_tolerance (float, optional): The largest absolute value of the function at
+            which a rate is a root. The steps can become small far from a root (where the
+            function flattens out, e.g. a bond price at high yields), so a rate is only
+            returned when the function is also close to zero there. Defaults to infinity,
+            which accepts any rate the steps settle on.
 
     Returns:
-        float: The rate, or NaN when it does not converge.
+        float: The rate, or NaN when it does not converge to a root.
     """
     # The second starting point differs from the first even for a guess of 0.
     previous_rate = guess
@@ -182,7 +195,9 @@ def solve_with_secant_method(
         next_rate = rate - value * (rate - previous_rate) / (value - previous_value)
 
         if abs(next_rate - rate) < tolerance:
-            return next_rate
+            return (
+                next_rate if abs(function(next_rate)) <= residual_tolerance else np.nan
+            )
 
         previous_rate, rate = rate, next_rate
 
@@ -242,6 +257,11 @@ def get_bond_price(
     Returns:
         float: The clean price of the bond.
     """
+    if frequency <= 0:
+        raise ValueError(
+            "The frequency must be a positive number of payments per year."
+        )
+
     # The quoted (clean) price excludes the accrued coupon the buyer pays on top, so a 2.5 year bond at its coupon yield prices close to par (99.97) instead of at par plus half a coupon.  # noqa: E501
     return _get_dirty_bond_price(
         par_value, coupon_rate, years_to_maturity, yield_to_maturity, frequency
@@ -300,6 +320,11 @@ def get_effective_yield(coupon_rate: float, frequency: int) -> float:
     Returns:
         float: The effective yield of the bond.
     """
+    if frequency <= 0:
+        raise ValueError(
+            "The frequency must be a positive number of payments per year."
+        )
+
     return (1 + (coupon_rate / frequency)) ** frequency - 1
 
 
@@ -332,7 +357,8 @@ def get_yield_to_maturity(
         max_iterations (int): Maximum number of iterations to perform.
 
     Returns:
-        float: The yield to maturity of the bond.
+        float: The yield to maturity of the bond, or NaN when no yield prices the bond at
+        bond_price.
     """
 
     # The same pricing as get_bond_price, so a price it returns is inverted to the yield it was priced at.  # noqa: E501
@@ -342,7 +368,15 @@ def get_yield_to_maturity(
             - bond_price
         )
 
-    return solve_with_secant_method(bond_value, guess, tolerance, max_iterations)
+    # A yield whose price is more than 0.1% of the price away from it is no solution: the
+    # steps also become small where the price flattens out at high yields.
+    return solve_with_secant_method(
+        bond_value,
+        guess,
+        tolerance,
+        max_iterations,
+        residual_tolerance=RESIDUAL_PRICE_TOLERANCE * max(abs(bond_price), 1),
+    )
 
 
 def get_macaulays_duration(
@@ -810,7 +844,13 @@ def get_z_spread(
             - bond_price
         )
 
-    return solve_with_secant_method(price_difference, guess, tolerance, max_iterations)
+    return solve_with_secant_method(
+        price_difference,
+        guess,
+        tolerance,
+        max_iterations,
+        residual_tolerance=RESIDUAL_PRICE_TOLERANCE * max(abs(bond_price), 1),
+    )
 
 
 def get_bond_equivalent_yield(discount_yield: float, days_to_maturity: float) -> float:

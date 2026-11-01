@@ -148,7 +148,7 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
     - EMA1 = EMA(Close, window)
     - EMA2 = EMA(EMA1, window)
     - EMA3 = EMA(EMA2, window)
-    - Trix = ((EMA3(t) - EMA3(t-1)) / EMA3(t-1)) * 100
+    - Trix = (EMA3(t) - EMA3(t-1)) / EMA3(t-1)
 
     Also known as: TRIX, Triple Exponential Average.
 
@@ -160,13 +160,13 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
         window (int): Number of periods for Trix calculation.
 
     Returns:
-        pd.Series: Trix Indicator values.
+        pd.Series: Trix Indicator values as a decimal (0.001 is 0.1%).
     """
     ema_1 = get_exponential_moving_average(prices_close, window)
     ema_2 = get_exponential_moving_average(ema_1, window)
     ema_3 = get_exponential_moving_average(ema_2, window)
 
-    trix = (ema_3 - ema_3.shift(1)) / ema_3.shift(1) * 100
+    trix = (ema_3 - ema_3.shift(1)) / ema_3.shift(1)
 
     return trix
 
@@ -490,8 +490,13 @@ def get_parabolic_sar(
     Returns:
         pd.Series: Parabolic SAR values.
     """
-    length = len(prices_high)
     sar = pd.Series(index=prices_high.index, dtype="float64")
+
+    # The recursion runs over the bars with both a high and a low, so a ticker that lists
+    # later starts from its own first bar and a missing day is NaN instead of a carried value.
+    valid = prices_high.notna() & prices_low.notna()
+    prices_high, prices_low = prices_high[valid], prices_low[valid]
+    length = len(prices_high)
 
     if length == 0:
         return sar
@@ -537,9 +542,9 @@ def get_parabolic_sar(
 
         sar_values[i] = current_sar
 
-    sar = pd.Series(sar_values, index=prices_high.index, dtype="float64")
-
-    return sar
+    return pd.Series(sar_values, index=prices_high.index, dtype="float64").reindex(
+        sar.index
+    )
 
 
 def get_pivot_points(
@@ -721,14 +726,21 @@ def get_support_resistance_levels(
     # scipy.signal takes around a second to import, so only where it is needed.
     from scipy.signal import argrelextrema  # noqa: PLC0415
 
-    local_maxima_indices = argrelextrema(prices.to_numpy(), np.greater, order=window)[0]
-    local_minima_indices = argrelextrema(prices.to_numpy(), np.less, order=window)[0]
+    # The extremes are found on the observed prices only, so a ticker that lists later or
+    # misses a day is judged on its own closes, and only over full windows: an extreme in
+    # the first `window` closes has no full window before it.
+    observed = prices.dropna()
+    values = observed.to_numpy()
+    local_maxima_indices = argrelextrema(values, np.greater, order=window)[0]
+    local_minima_indices = argrelextrema(values, np.less, order=window)[0]
+    local_maxima_indices = local_maxima_indices[local_maxima_indices >= window]
+    local_minima_indices = local_minima_indices[local_minima_indices >= window]
 
     resistance_levels = _get_confirmed_levels(
-        prices, local_maxima_indices, window, sensitivity
+        observed, local_maxima_indices, window, sensitivity
     )
     support_levels = _get_confirmed_levels(
-        prices, local_minima_indices, window, sensitivity
+        observed, local_minima_indices, window, sensitivity
     )
 
     support_resistance_levels = pd.DataFrame(

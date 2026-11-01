@@ -341,3 +341,72 @@ def test_a_stale_nav_after_the_prices_uses_the_latest_close(etf):
     assert etf.get_profile(stale_nav=True, rounding=8).loc[
         "Premium/Discount", "AAA"
     ] == pytest.approx(0, abs=1e-8)
+
+
+def test_tracking_compares_a_fund_on_the_dates_it_has_a_close(etf):
+    daily = etf._historical()
+    # Fund AAA follows the Benchmark exactly until its prices stop 60 days before the end
+    # (a ticker change, say); after that the Benchmark keeps moving.
+    for column in ("Close", "Adj Close"):
+        daily[(column, "AAA")] = daily[(column, "Benchmark")]
+        daily.loc[daily.index[-60:], (column, "AAA")] = np.nan
+
+    yearly = etf.get_tracking(yearly=True, rounding=12)
+    monthly = etf.get_tracking(period="monthly", rounding=12)
+
+    assert (yearly["AAA"].dropna().abs() < 1e-12).all()  # noqa: PLR2004
+    assert monthly.loc["Tracking Difference", "AAA"] == pytest.approx(0, abs=1e-12)
+
+
+def test_a_fund_whose_weights_add_up_to_more_than_one_overlaps_itself_fully(etf):
+    holdings = etf._fund_data_function("holdings").copy()
+    holdings.loc[("AAA", "X"), "Weight"] = 0.6  # AAA's weights now add up to 1.1
+    datasets = {
+        "information": etf._fund_data_function("information"),
+        "holdings": holdings,
+    }
+    etf._fund_data_function = lambda dataset, overwrite=False: datasets[dataset]
+
+    overlap = etf.get_overlap()
+
+    assert overlap.loc["AAA", "AAA"] == pytest.approx(1)
+    assert overlap.loc["BBB", "BBB"] == pytest.approx(1)
+    assert overlap.loc["AAA", "BBB"] == pytest.approx(0.6 / 1.1, abs=1e-4)
+
+
+def test_holdings_and_liquidity_use_the_rounding_of_the_toolkit(etf):
+    holdings = etf._fund_data_function("holdings").copy()
+    holdings.loc[("AAA", "X"), "Weight"] = 0.123456789
+    datasets = {
+        "information": etf._fund_data_function("information"),
+        "holdings": holdings,
+    }
+    etf._fund_data_function = lambda dataset, overwrite=False: datasets[dataset]
+
+    liquidity = etf.get_liquidity()
+    unrounded = etf.get_liquidity(rounding=12)
+
+    assert etf.get_holdings().loc[("AAA", "X"), "Weight"] == 0.1235  # noqa: PLR2004
+    assert (
+        etf.get_holdings(rounding=2).loc[("AAA", "X"), "Weight"] == 0.12
+    )  # noqa: PLR2004
+    assert liquidity.loc["Dollar Volume to Assets", "AAA"] == round(
+        unrounded.loc["Dollar Volume to Assets", "AAA"], 4
+    )
+    # The price impact of a liquid fund is a fraction of a basis point and keeps its precision.
+    impact = liquidity.loc["Price Impact per $100 Million", "AAA"]
+    assert impact == pytest.approx(
+        unrounded.loc["Price Impact per $100 Million", "AAA"]
+    )
+    assert impact != round(impact, 4)
+
+
+def test_an_empty_premium_says_why(etf, caplog):
+    close = etf._historical()["Close"]["AAA"]
+    nav_day = close.index[-1].to_timestamp() + pd.offsets.BDay(1)
+    with_information(etf, Updated_At=nav_day.strftime("%Y-%m-%d"))
+
+    etf.get_profile()
+
+    assert "No premium data is available for AAA: its prices end on" in caplog.text
+    assert "stale_nav=True" in caplog.text

@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import contextlib
-import importlib.util
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -20,10 +19,6 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 logger = logger_model.get_logger()
-
-# Check if yfinance is installed
-yf_spec = importlib.util.find_spec("yfinance")
-ENABLE_YFINANCE = yf_spec is not None
 
 # pylint: disable=too-many-locals,unsubscriptable-object,too-many-lines
 
@@ -507,9 +502,7 @@ def get_historical_data(
                         incomplete.append(ticker)
 
                     # Only worth setting aside when there is somewhere to fall back to. With the source forced to FinancialModelingPrep, a truncated response is the best answer available and discarding it would return nothing at all.  # noqa: E501
-                    can_fall_back = (
-                        enforce_source != "FinancialModelingPrep" and ENABLE_YFINANCE
-                    )
+                    can_fall_back = enforce_source != "FinancialModelingPrep"
 
                     if (
                         not historical_data.empty
@@ -538,11 +531,7 @@ def get_historical_data(
 
                     attempted_fmp = True
 
-                if (
-                    enforce_source != "FinancialModelingPrep"
-                    and historical_data.empty
-                    and ENABLE_YFINANCE
-                ):
+                if enforce_source != "FinancialModelingPrep" and historical_data.empty:
                     historical_data = cached_yahoo_finance_data(
                         ticker, fetch_start, fetch_end
                     )
@@ -748,17 +737,9 @@ def get_historical_data(
         )
 
     if no_data and show_errors:
-        if not ENABLE_YFINANCE:
-            logger.info(
-                "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
-                "data for the following tickers could not be acquired: %s\n"
-                "Enable this functionality by using:\033[1m pip install yfinance\033[0m",
-                ", ".join(no_data),
-            )
-        else:
-            logger.warning(
-                "No data found for the following tickers: %s", ", ".join(no_data)
-            )
+        logger.warning(
+            "No data found for the following tickers: %s", ", ".join(no_data)
+        )
 
     if len(historical_data_dict) == 0:
         # Zero-filled so a DataFrame is returned even when nothing is found.

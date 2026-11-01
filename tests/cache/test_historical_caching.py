@@ -539,7 +539,12 @@ def test_a_failure_of_another_ticker_does_not_stop_caching(cache, monkeypatch):
         return pd.DataFrame()
 
     monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fake_fmp)
-    monkeypatch.setattr(historical_model, "ENABLE_YFINANCE", False)
+    # Without a Yahoo Finance fallback, so only the FMP requests count.
+    monkeypatch.setattr(
+        historical_model.yfinance_model,
+        "get_historical_data",
+        lambda *args, **kwargs: pd.DataFrame(),  # noqa: ARG005
+    )
 
     for _ in range(2):
         historical_model.get_historical_data(

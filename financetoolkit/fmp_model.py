@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 
 import hashlib
-import importlib.util
 import random
 import re
 import time
@@ -28,12 +27,6 @@ from financetoolkit.utilities.requests_model import get_request
 
 logger = logger_model.get_logger()
 
-
-# Check if yfinance is installed
-yf_spec = importlib.util.find_spec("yfinance")
-ENABLE_YFINANCE = yf_spec is not None
-
-logger = logger_model.get_logger()
 
 # pylint: disable=no-member,too-many-locals,too-many-lines
 

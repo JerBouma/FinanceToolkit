@@ -290,3 +290,44 @@ def test_a_single_ticker_string_and_default_dates_are_accepted(monkeypatch):
     assert not data["Close"]["AAPL"].dropna().empty
     assert (data["Close"]["AAPL"].dropna() == 2.0).all()
     assert no_data == []
+
+
+def test_a_ticker_without_data_adds_no_calendar_days(monkeypatch):
+    # A Friday and the Monday after it: the ticker without data must not add the weekend,
+    # over which the other ticker's prices would then be carried.
+    trading_days = pd.PeriodIndex(["2024-01-05", "2024-01-08"], freq="D")
+
+    def fmp(ticker, start, end, interval, api_key, **kwargs):
+        if ticker == "NOTATICKER":
+            return pd.DataFrame()
+        return pd.DataFrame(
+            {
+                "Open": 1.0,
+                "High": 1.0,
+                "Low": 1.0,
+                "Close": [1.0, 2.0],
+                "Adj Close": [1.0, 2.0],
+                "Volume": 1,
+                "Dividends": 0.0,
+            },
+            index=trading_days,
+        )
+
+    monkeypatch.setattr(historical_model.fmp_model, "get_historical_data", fmp)
+    monkeypatch.setattr(
+        historical_model.yfinance_model,
+        "get_historical_data",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    data, no_data = historical_model.get_historical_data(
+        ["AAPL", "NOTATICKER"],
+        api_key="KEY",
+        start="2024-01-05",
+        end="2024-01-08",
+        sleep_timer=False,
+    )
+
+    assert no_data == ["NOTATICKER"]
+    assert data.index.tolist() == trading_days.tolist()
+    assert data["Close"]["NOTATICKER"].isna().all()

@@ -741,6 +741,22 @@ def get_historical_data(
             "No data found for the following tickers: %s", ", ".join(no_data)
         )
 
+    observed_dates = [
+        historical_data_dict[ticker].index
+        for ticker in ticker_list
+        if ticker in historical_data_dict and ticker not in no_data
+    ]
+    if no_data and observed_dates:
+        # A ticker without data takes the dates of the tickers that have them: its placeholder
+        # covers every calendar day, which would otherwise add weekends and holidays to every
+        # ticker (whose prices are then carried over them, as in the volume indices).
+        dates = observed_dates[0]
+        for other_dates in observed_dates[1:]:
+            dates = dates.union(other_dates)
+        placeholder = empty_historical_data.reindex(dates)
+        for ticker in no_data:
+            historical_data_dict[ticker] = placeholder
+
     if len(historical_data_dict) == 0:
         # Zero-filled so a DataFrame is returned even when nothing is found.
         for ticker in ticker_list:

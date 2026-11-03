@@ -124,7 +124,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "own window)."
     ),
     "quarterly": "Return quarterly data instead of annual when True.",
-    "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'.",
+    "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark.",
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
     "standardize": (
@@ -1587,6 +1587,15 @@ class ToolRegistry:
             benchmark_ticker = kwargs.pop(
                 "benchmark_ticker", inspector.benchmark_ticker
             )
+            # Clients write "no benchmark" as text; a ticker named NONE has no data.
+            if isinstance(
+                benchmark_ticker, str
+            ) and benchmark_ticker.strip().lower() in (
+                "",
+                "none",
+                "null",
+            ):
+                benchmark_ticker = None
 
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)

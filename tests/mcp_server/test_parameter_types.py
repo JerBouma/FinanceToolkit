@@ -120,3 +120,17 @@ def test_wls_and_gls_estimate_their_weights_and_covariance(schemas, captured):
         assert "Required" not in text
     assert captured[0]["weights"] == "feasible"
     assert captured[1]["omega"] == "ar1"
+
+
+@pytest.mark.parametrize("benchmark", ["None", "none", "null", ""])
+def test_no_benchmark_written_as_text_means_no_benchmark(captured, benchmark):
+    call(
+        "breadth",
+        {
+            "indicator": "get_negative_volume_index",
+            "tickers": "SPY",
+            "benchmark_ticker": benchmark,
+        },
+    )
+
+    assert captured[-1]["benchmark_ticker"] is None

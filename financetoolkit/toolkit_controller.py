@@ -77,8 +77,8 @@ if TYPE_CHECKING:
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
     from financetoolkit.performance.performance_controller import Performance
-    from financetoolkit.portfolio.attribution_controller import (
-        PortfolioAttribution,
+    from financetoolkit.portfolio.construction_controller import (
+        PortfolioConstruction,
     )
     from financetoolkit.ratios.ratios_controller import Ratios
     from financetoolkit.risk.risk_controller import Risk
@@ -1250,9 +1250,9 @@ class Toolkit:
         )
 
     @property
-    def portfolio_attribution(self) -> "PortfolioAttribution":
+    def portfolio(self) -> "PortfolioConstruction":
         """
-        This gives access to the Portfolio Attribution module, which builds and examines
+        This gives access to the Portfolio Construction module, which builds and examines
         portfolios from the assets of this Toolkit: optimal weights (minimum variance,
         maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity,
         inverse volatility, minimum CVaR and Black-Litterman), the efficient frontier, risk
@@ -1279,12 +1279,12 @@ class Toolkit:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio_attribution.get_risk_parity_weights()
+        toolkit.portfolio.get_risk_parity_weights()
         ```
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
-        from financetoolkit.portfolio.attribution_controller import (  # noqa: PLC0415
-            PortfolioAttribution,
+        from financetoolkit.portfolio.construction_controller import (  # noqa: PLC0415
+            PortfolioConstruction,
         )
 
         # The prices and the risk free rate of a period are retrieved when a calculation
@@ -1350,7 +1350,7 @@ class Toolkit:
                 result = result.to_frame(tickers[0])
             return result
 
-        portfolio = PortfolioAttribution(
+        portfolio = PortfolioConstruction(
             tickers=self._tickers,
             historical_data=historical_data,
             risk_free_rate_data=risk_free_rate_data,

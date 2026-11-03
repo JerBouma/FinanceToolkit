@@ -1,17 +1,17 @@
-"""Portfolio Attribution Controller Tests"""
+"""Portfolio Construction Controller Tests"""
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.portfolio.attribution_controller import PortfolioAttribution
+from financetoolkit.portfolio.construction_controller import PortfolioConstruction
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
 
 @pytest.fixture(scope="module")
 def portfolio_module(test_toolkit):
-    return test_toolkit.portfolio_attribution
+    return test_toolkit.portfolio
 
 
 def test_get_minimum_variance_weights(recorder, portfolio_module):
@@ -120,8 +120,8 @@ def test_get_risk_contributions_unknown_asset(portfolio_module):
     assert portfolio_module.get_risk_contributions(weights={"TSLA": 1.0}).empty
 
 
-def _offline_construction(test_toolkit) -> PortfolioAttribution:
-    """A Portfolio Attribution module whose outside data comes from fixed frames."""
+def _offline_construction(test_toolkit) -> PortfolioConstruction:
+    """A Portfolio Construction module whose outside data comes from fixed frames."""
     days = pd.period_range("2020-02-14", "2020-03-31", freq="D")
     rng = np.random.default_rng(3)
     prices = pd.DataFrame(
@@ -154,8 +154,8 @@ def _offline_construction(test_toolkit) -> PortfolioAttribution:
             )
         return pd.DataFrame()
 
-    original = test_toolkit.portfolio_attribution
-    return PortfolioAttribution(
+    original = test_toolkit.portfolio
+    return PortfolioConstruction(
         tickers=["AAPL", "MSFT"],
         historical_data=original._historical_data,
         risk_free_rate_data=original._risk_free_rate_data,

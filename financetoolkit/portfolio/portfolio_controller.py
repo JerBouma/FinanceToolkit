@@ -121,7 +121,7 @@ class Portfolio:
                 unless the FINANCE_TOOLKIT_CACHE_ENABLED environment variable is set to 0.
             weights (dict[str, float] | pd.Series | str | None): The target weight per ticker, e.g.
                 {"VTI": 0.6, "BND": 0.4}, "VTI:0.6, BND:0.4" or the table an optimizer of
-                `toolkit.portfolio_attribution` returns. Defaults to None.
+                `toolkit.portfolio` returns. Defaults to None.
             holdings (dict[str, float] | None): The number of shares per ticker, bought on `start_date`.
                 Defaults to None.
             transactions (pd.DataFrame | str | None): The transactions, as a DataFrame or the path to a CSV or

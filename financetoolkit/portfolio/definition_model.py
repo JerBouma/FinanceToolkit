@@ -227,7 +227,7 @@ class PortfolioDefinition:
     ) -> "PortfolioDefinition":
         """
         A definition from weights: a dictionary, a Series, the table an optimizer of
-        `toolkit.portfolio_attribution` returns (its Weight column), or text such as "VTI:0.6, BND:0.4".
+        `toolkit.portfolio` returns (its Weight column), or text such as "VTI:0.6, BND:0.4".
         Holdings with a weight of zero are left out and the weights are scaled to sum to one.
 
         Args:

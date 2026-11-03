@@ -256,7 +256,7 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
 
 # The inputs that describe the portfolio of the portfolio_performance tool. They replace the
 # shared descriptions there: its start_date only applies to holdings, weights and presets,
-# and its weights are a portfolio rather than the weights of portfolio_attribution.
+# and its weights are a portfolio rather than the weights of the portfolio tool.
 _PORTFOLIO_PARAM_DESCRIPTIONS: dict[str, str] = {
     "transactions": (
         "The trades of the portfolio as a list, e.g. [{'date': '2023-01-03', 'ticker': "

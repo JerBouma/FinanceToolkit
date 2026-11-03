@@ -448,7 +448,7 @@ The three US funds and SMH largely hold the same companies, with SOXX and SMH sh
 
 ## Building a Diversified Portfolio
 
-A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio attribution](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module (`toolkit.portfolio_attribution`) builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, minimum CVaR and Black-Litterman weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
+A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, minimum CVaR and Black-Litterman weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
 
 ```python
 # Initialize the Toolkit for funds across sectors and asset classes from 2021 to 2025
@@ -460,11 +460,11 @@ assets = Toolkit(
 )
 
 # The efficient frontier and the maximum Sharpe ratio portfolio, with at most 40% per asset
-efficient_frontier = assets.portfolio_attribution.get_efficient_frontier(points=25, maximum_weight=0.4)
-maximum_sharpe = assets.portfolio_attribution.get_maximum_sharpe_weights(maximum_weight=0.4)
+efficient_frontier = assets.portfolio.get_efficient_frontier(points=25, maximum_weight=0.4)
+maximum_sharpe = assets.portfolio.get_maximum_sharpe_weights(maximum_weight=0.4)
 
 # The portfolio in which every asset contributes the same share of the risk
-risk_parity = assets.portfolio_attribution.get_risk_parity_weights()
+risk_parity = assets.portfolio.get_risk_parity_weights()
 
 # Show the risk parity portfolio
 risk_parity

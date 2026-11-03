@@ -1,4 +1,4 @@
-"""Tests for the portfolio_performance tool and the portfolio_attribution tool name."""
+"""Tests for the portfolio_performance tool."""
 
 import asyncio
 
@@ -41,11 +41,10 @@ def call(indicator="get_portfolio_overview", **arguments):
     return str(result)
 
 
-def test_the_tools_are_registered_under_their_new_names():
+def test_both_portfolio_tools_are_registered():
     tools = {tool.name for tool in asyncio.run(mcp_controller.mcp.list_tools())}
 
-    assert {"portfolio_attribution", "portfolio_performance"} <= tools
-    assert "portfolio" not in tools
+    assert {"portfolio", "portfolio_performance"} <= tools
 
 
 def test_transactions_reach_the_provider_as_validated_trades(captured):

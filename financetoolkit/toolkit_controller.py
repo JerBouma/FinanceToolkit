@@ -458,6 +458,7 @@ class Toolkit:
             self._analyst_estimates_growth: pd.DataFrame = pd.DataFrame()
             self._dividend_calendar: pd.DataFrame = pd.DataFrame()
             self._earnings_calendar: pd.DataFrame = pd.DataFrame()
+            self._earnings_calendar_actual_dates: bool | None = None
             self._esg_scores: pd.DataFrame = pd.DataFrame()
             self._revenue_geographic_segmentation: pd.DataFrame = pd.DataFrame()
             self._revenue_product_segmentation: pd.DataFrame = pd.DataFrame()
@@ -1261,6 +1262,9 @@ class Toolkit:
         When the Toolkit comes from a Portfolio (`Portfolio.toolkit`), the methods that take
         weights use the Portfolio's latest weights by default.
 
+        To follow the value and returns of a portfolio you hold, from its transactions,
+        holdings or weights over time, use the `Portfolio` class instead.
+
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization
 
         As an example:
@@ -1771,7 +1775,8 @@ class Toolkit:
                     api_key=self._api_key,
                     quarter=self._quarterly,
                     start_date=self._start_date,
-                    rounding=rounding if rounding is not None else self._rounding,
+                    # Stored unrounded, so a later call can round differently.
+                    rounding=None,
                     sleep_timer=self._sleep_timer,
                     user_subscription=self._fmp_plan,
                 ),
@@ -1791,15 +1796,20 @@ class Toolkit:
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
+        analyst_estimates = apply_rounding(
+            self._analyst_estimates,
+            rounding if rounding is not None else self._rounding,
+        )
+
         if len(self._tickers) == 1 and not self._analyst_estimates.empty:
             result = (
                 self._analyst_estimates_growth.loc[self._tickers[0]]
                 if growth
-                else self._analyst_estimates.loc[self._tickers[0]]
+                else analyst_estimates.loc[self._tickers[0]]
             )
             return filter_columns(result, show_columns)
 
-        result = self._analyst_estimates_growth if growth else self._analyst_estimates
+        result = self._analyst_estimates_growth if growth else analyst_estimates
         return filter_columns(result, show_columns)
 
     def get_earnings_calendar(
@@ -1871,7 +1881,14 @@ class Toolkit:
             )
             return None
 
-        if self._earnings_calendar.empty or overwrite:
+        # The dates differ with actual_dates (the reported date or its fiscal quarter), so
+        # the calendar is retrieved again when it was retrieved with the other choice.
+        if (
+            self._earnings_calendar.empty
+            or overwrite
+            or self._earnings_calendar_actual_dates != actual_dates
+        ):
+            self._earnings_calendar_actual_dates = actual_dates
             (
                 self._earnings_calendar,
                 self._invalid_tickers,
@@ -4798,7 +4815,9 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                # Stored unrounded: the ratios and models read these figures, and only what
+                # this method returns is rounded.
+                rounding=None,
                 fmp_statement_format=self._fmp_balance_sheet_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statistics_format=self._yf_statistics_statement_generic,
@@ -4990,7 +5009,9 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                # Stored unrounded: the ratios and models read these figures, and only what
+                # this method returns is rounded.
+                rounding=None,
                 fmp_statement_format=self._fmp_income_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statistics_format=self._yf_statistics_statement_generic,
@@ -5210,7 +5231,9 @@ class Toolkit:
                 quarter=self._quarterly,
                 start_date=self._lookback_start_date,
                 end_date=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                # Stored unrounded: the ratios and models read these figures, and only what
+                # this method returns is rounded.
+                rounding=None,
                 fmp_statement_format=self._fmp_cash_flow_statement_generic,
                 fmp_statistics_format=self._fmp_statistics_statement_generic,
                 yf_statistics_format=self._yf_statistics_statement_generic,
@@ -5362,7 +5385,6 @@ class Toolkit:
 
         | date   | KO                  | PEP                 |
         |:-------|:--------------------|:--------------------|
-        | 2020   | 2021-02-25 13:47:17 | 2021-02-10 17:41:49 |
         | 2021   | 2022-02-22 15:45:48 | 2022-02-09 18:03:39 |
         | 2022   | 2023-02-21 16:03:20 | 2023-02-08 18:06:37 |
         | 2023   | 2024-02-20 13:21:24 | 2024-02-08 17:58:51 |
@@ -5415,6 +5437,13 @@ class Toolkit:
             ]
 
         statistics_statement = self._remove_unfiled_periods(self._statistics_statement)
+
+        # Retrieved from the lookback start for the trailing and growth figures, but shown
+        # from the start date like the statements themselves.
+        if not statistics_statement.empty:
+            statistics_statement = statistics_statement.truncate(
+                before=self._start_date, axis=1
+            )
 
         if len(self._tickers) == 1 and not statistics_statement.empty:
             return filter_columns(

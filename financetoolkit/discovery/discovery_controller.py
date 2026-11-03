@@ -251,8 +251,11 @@ class Discovery:
         Args:
             market_cap_higher (int): The minimum market capitalization of the stock in US dollars
                 (not in millions), e.g. 1_000_000_000 for $1 billion. Defaults to None, which applies no filter.
-            market_cap_lower (int): The maximum market capitalization of the stock in US dollars. Defaults to None, which
-                applies no filter.
+            market_cap_lower (int): The maximum market capitalization of the stock in US dollars.
+                The screener returns the largest companies first, so this bound is only sent to it
+                when the currency of the listings is known: with an exchange, or with a country and
+                primary_only. Otherwise it is applied to the companies returned. Defaults to None,
+                which applies no filter.
             price_higher (float | None): The minimum price of the stock. Defaults to None, which applies no filter.
             price_lower (float | None): The maximum price of the stock. Defaults to None, which applies no filter.
             beta_higher (float | None): The minimum beta of the stock. Defaults to None, which applies no filter.
@@ -267,8 +270,8 @@ class Discovery:
                 filter.
             industry (str | None): The industry to restrict the screen to, e.g. "Biotechnology". Defaults to None, which
                 applies no filter.
-            country (str | None): The two-letter country code to restrict the screen to, e.g. "US". Defaults to None,
-                which applies no filter.
+            country (str | None): The country to restrict the screen to, as a two-letter code ("US")
+                or a name ("United States"). Defaults to None, which applies no filter.
             exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ". Defaults to None, which
                 applies no filter.
             is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them. Defaults to None, which

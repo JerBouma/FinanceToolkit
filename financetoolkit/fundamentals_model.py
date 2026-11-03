@@ -1,6 +1,5 @@
 """Fundamentals Model"""
 
-import importlib.util
 from datetime import datetime
 
 import numpy as np
@@ -11,11 +10,6 @@ from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.statistics_model import apply_rounding
-
-# Check if yfinance is installed
-yf_spec = importlib.util.find_spec("yfinance")
-ENABLE_YFINANCE = yf_spec is not None
-
 
 logger = logger_model.get_logger()
 
@@ -72,7 +66,7 @@ def collect_financial_statements(
         enforce_source (str): Specifies the data source to use ("FinancialModelingPrep" or "YahooFinance").
                               If "FinancialModelingPrep", only FMP is used. If "YahooFinance", only Yahoo Finance is used.
                               If None (or any other value), FMP is tried first, and Yahoo Finance is used as a fallback.
-                              Defaults to "FinancialModelingPrep".
+                              Defaults to None.
         cache (Cache): An incremental cache to serve already retrieved statements from. Statements are cached
                        per ticker and per source, so adding a ticker only requests that one ticker.
 
@@ -218,16 +212,15 @@ def collect_financial_statements(
                     True,
                 )
 
-            if ENABLE_YFINANCE:
-                financial_statement_data = yfinance_model.get_financial_statement(
-                    ticker=ticker,
-                    statement=statement,
-                    quarter=quarter,
-                    fallback=attempted_fmp,
-                    fiscal_year_adjustments=ticker_adjustments,
-                )
+            financial_statement_data = yfinance_model.get_financial_statement(
+                ticker=ticker,
+                statement=statement,
+                quarter=quarter,
+                fallback=attempted_fmp,
+                fiscal_year_adjustments=ticker_adjustments,
+            )
 
-                statements["YahooFinance"] = financial_statement_data
+            statements["YahooFinance"] = financial_statement_data
 
             if not financial_statement_data.empty:
                 resolved_source = policy_model.YAHOO_FINANCE
@@ -424,7 +417,7 @@ def collect_financial_statements(
             ", ".join(yf_tickers),
         )
 
-    if yf_tickers and not fmp_tickers and enforce_source == "FinancialModelingPrep":
+    if yf_tickers and not fmp_tickers and enforce_source is None:
         logger.info(
             "No data found using FinancialModelingPrep, this is usually due to Bandwidth "
             "API limits or usage of the Free plan. Therefore data was retrieved from YahooFinance instead for: %s",
@@ -432,19 +425,11 @@ def collect_financial_statements(
         )
 
     if no_data:
-        if not ENABLE_YFINANCE:
-            logger.info(
-                "Due to a missing optional dependency (yfinance) and your current FinancialModelingPrep plan, "
-                "data for the following tickers could not be acquired: %s\n"
-                "Enable this functionality by using:\033[1m pip install yfinance \033[0m",
-                ", ".join(no_data),
-            )
-        else:
-            logger.info(
-                "No %s data found for the following tickers: %s",
-                statement,
-                ", ".join(no_data),
-            )
+        logger.info(
+            "No %s data found for the following tickers: %s",
+            statement,
+            ", ".join(no_data),
+        )
 
     financial_statement_total = pd.concat(
         [fmp_financial_statements_total, yf_financial_statements_total], axis=0
@@ -534,8 +519,12 @@ def collect_financial_statements(
             .to_numpy(dtype=bool)
         )
 
-    # Columns with no data over the entire period are dropped automatically.
+    # Columns with no data over the entire period are dropped automatically, also from the
+    # statistics: a period every ticker ends after the end date has none left.
     financial_statement_total = financial_statement_total.dropna(axis=1, how="all")
+    financial_statement_statistics = financial_statement_statistics.dropna(
+        axis=1, how="all"
+    )
 
     # Round the financial statement total if rounding is specified; rounding=None is documented as no rounding at all, and DataFrame.round(None) raises a TypeError.  # noqa: E501
     financial_statement_total = apply_rounding(financial_statement_total, rounding)

@@ -1,7 +1,7 @@
 """
 Dynamic tool registration for the Finance Toolkit MCP Server — Router Pattern.
 
-Consolidates 500+ individual methods into 22 categorical master tools, each
+Consolidates 500+ individual methods into categorical master tools, each
 accepting an indicator parameter (Literal enum) that routes to the
 correct underlying method.
 """
@@ -12,6 +12,8 @@ import contextlib
 import difflib
 import importlib
 import inspect
+import json
+import math
 import re
 import time
 import traceback
@@ -98,6 +100,10 @@ PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis"})
 # The indicators whose own limit also takes a negative number, for the last rows.
 NEGATIVE_LIMIT_METHODS = frozenset({"get_holdings"})
 
+
+# The most transactions a portfolio_performance call takes: every one is priced and valued
+# per day, and a portfolio passed by hand rarely has more.
+MAX_TRANSACTIONS = 1000
 
 # Injected into each tool's Args docstring so FastMCP can surface them.
 _PARAM_DESCRIPTIONS: dict[str, str] = {
@@ -248,12 +254,54 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+# The inputs that describe the portfolio of the portfolio_performance tool. They replace the
+# shared descriptions there: its start_date only applies to holdings, weights and presets,
+# and its weights are a portfolio rather than the weights of the portfolio tool.
+_PORTFOLIO_PARAM_DESCRIPTIONS: dict[str, str] = {
+    "transactions": (
+        "The trades of the portfolio as a list, e.g. [{'date': '2023-01-03', 'ticker': "
+        "'AAPL', 'volume': 10, 'price': 125.1}, {'date': '2024-06-03', 'ticker': 'AAPL', "
+        "'volume': -5, 'price': 194.0}]. volume is negative for a sale; price (for every "
+        "trade or none: the close of the day), costs (negative) and currency are optional. "
+        f"At most {MAX_TRANSACTIONS} trades."
+    ),
+    "holdings": (
+        "The shares held per ticker, e.g. {'AAPL': 10, 'MSFT': 5} or 'AAPL:10, MSFT:5', "
+        "bought at the close of start_date."
+    ),
+    "weights": (
+        "The target weight per ticker, e.g. {'VTI': 0.6, 'BND': 0.4} or 'VTI:0.6, BND:0.4': "
+        "initial_value is invested on start_date and brought back to these weights as "
+        "rebalancing says, with the dividends reinvested."
+    ),
+    "preset": (
+        "A classic portfolio by name, e.g. '60/40', 'All Weather', 'Permanent', 'Golden "
+        "Butterfly' or 'Three Fund' (get_presets lists them all)."
+    ),
+    "start_date": (
+        "When holdings, weights or a preset are invested, YYYY-MM-DD; left empty, ten years "
+        "ago for weights and presets and five years ago for holdings. Transactions start on "
+        "their first date."
+    ),
+    "initial_value": "The amount invested in weights or a preset. Defaults to 10,000.",
+    "rebalancing": (
+        "How often weights or a preset return to their weights: 'none', 'monthly', "
+        "'quarterly' or 'yearly'. Defaults to quarterly (a preset: its own frequency)."
+    ),
+    "currency": (
+        "The currency the portfolio is valued in, e.g. 'USD' or 'EUR'; prices in other "
+        "currencies are converted at each day's rate. Defaults to the currency most of the "
+        "portfolio trades in."
+    ),
+}
+
+
 # Beyond this many characters the per-indicator default listing stops helping.
 _DISPUTED_DEFAULT_DETAIL_LIMIT = 320
 
 
 def _annotate_with_description(
-    name: str, ann: Any, suffix: str = "", documented: str = ""
+    name: str, ann: Any, suffix: str = "", documented: str = "", description: str = ""
 ) -> Any:
     """Wrap *ann* in ``Annotated[ann, Field(description=...)]`` for JSON schema output.
 
@@ -268,11 +316,18 @@ def _annotate_with_description(
             defaults that differ between the indicators of a router group.
         documented (str): The description the indicators' docstrings give, used when
             there is no shared description for the parameter.
+        description (str): A description that replaces the shared one, for a parameter
+            that means something else in one tool (the start_date of a Portfolio).
 
     Returns:
         Any: The annotated type carrying the description metadata.
     """
-    desc = _PARAM_DESCRIPTIONS.get(name) or documented or f"Value for {name}."
+    desc = (
+        description
+        or _PARAM_DESCRIPTIONS.get(name)
+        or documented
+        or f"Value for {name}."
+    )
 
     if suffix:
         desc = f"{desc} {suffix}"
@@ -319,6 +374,24 @@ MAX_ENTITIES = 50
 
 # How alike an unknown indicator name must be to a known one to be read as it.
 NEAR_CERTAIN_MATCH = 0.9
+
+# How a portfolio_performance call names the columns of a transaction, in any casing.
+TRANSACTION_FIELDS = {
+    "date": "Date",
+    "ticker": "Ticker",
+    "symbol": "Ticker",
+    "volume": "Volume",
+    "quantity": "Volume",
+    "shares": "Volume",
+    "price": "Price",
+    "costs": "Costs",
+    "cost": "Costs",
+    "currency": "Currency",
+}
+REBALANCING_FREQUENCIES = ("none", "monthly", "quarterly", "yearly")
+TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
+CURRENCY_PATTERN = re.compile(r"^[A-Za-z]{3}$")
+
 
 # The most rows a note names one by one; more are counted instead.
 MAXIMUM_NAMED_ROWS = 10
@@ -770,6 +843,226 @@ def _split_values(value: object) -> list[str]:
     items = value if isinstance(value, list | tuple) else str(value).split(",")
 
     return [str(item).strip() for item in items if str(item).strip()]
+
+
+def _finite_number(value: object, name: str) -> float:
+    """A finite number, or a ValueError naming the input it came from."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        number = math.nan
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be a number, not {value!r}.")
+    return number
+
+
+def _ticker(value: object, name: str) -> str:
+    """A ticker symbol in upper case, or a ValueError naming the input it came from."""
+    ticker = str(value).strip().upper()
+    if not TICKER_PATTERN.match(ticker):
+        raise ValueError(f"{name} has an invalid ticker: {value!r}.")
+    return ticker
+
+
+def _parse_json_text(value: object) -> object:
+    """A JSON list or object sent as text, parsed; any other value as it is."""
+    if isinstance(value, str) and value.strip()[:1] in ("[", "{"):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"The JSON could not be read: {error.msg}.") from error
+    return value
+
+
+def _amounts_per_ticker(value: object, name: str) -> dict[str, float]:
+    """
+    Weights or holdings given as {"VTI": 0.6} or as text such as "VTI:0.6, BND:0.4".
+
+    Args:
+        value (object): The value as the client sent it.
+        name (str): The input, named in an error.
+
+    Returns:
+        dict[str, float]: The amount per ticker.
+    """
+    value = _parse_json_text(value)
+    if isinstance(value, str):
+        pairs = [item.split(":", 1) for item in value.split(",") if item.strip()]
+        if any(len(pair) != 2 for pair in pairs):  # noqa: PLR2004
+            raise ValueError(
+                f"{name} must be given per ticker, e.g. {{'VTI': 0.6, 'BND': 0.4}} or "
+                "'VTI:0.6, BND:0.4'."
+            )
+        value = dict(pairs)
+    if not isinstance(value, dict) or not value:
+        raise ValueError(
+            f"{name} must be given per ticker, e.g. {{'VTI': 0.6, 'BND': 0.4}}."
+        )
+    amounts: dict[str, float] = {}
+    for ticker, amount in value.items():
+        symbol = _ticker(ticker, name)
+        amounts[symbol] = amounts.get(symbol, 0.0) + _finite_number(
+            amount, f"The {name} of {symbol}"
+        )
+    return amounts
+
+
+def _transactions(value: object) -> list[dict[str, object]]:
+    """
+    Transactions given as a list of trades, e.g. [{"date": "2023-01-03", "ticker": "AAPL",
+    "volume": 10, "price": 125.1}], with their fields in any casing. Prices, costs and
+    currencies are given for every trade or for none: a trade without a price is priced at
+    the close of its day, which applies to the whole list.
+
+    Args:
+        value (object): The value as the client sent it.
+
+    Returns:
+        list[dict[str, object]]: The trades with the column names of a Portfolio dataset.
+    """
+    value = _parse_json_text(value)
+    if not isinstance(value, list) or not value:
+        raise ValueError(
+            "transactions must be a list of trades, e.g. [{'date': '2023-01-03', "
+            "'ticker': 'AAPL', 'volume': 10, 'price': 125.1}]."
+        )
+    if len(value) > MAX_TRANSACTIONS:
+        raise ValueError(
+            f"transactions holds {len(value)} trades; at most {MAX_TRANSACTIONS} can be "
+            "analyzed in one call."
+        )
+    trades: list[dict[str, object]] = []
+    for number, raw in enumerate(value, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"Transaction {number} is not an object with fields.")
+        fields = {}
+        for key, item in raw.items():
+            column = TRANSACTION_FIELDS.get(str(key).strip().lower())
+            if column is None:
+                raise ValueError(
+                    f"Transaction {number} has an unknown field {key!r}; use date, ticker, "
+                    "volume and optionally price, costs and currency."
+                )
+            fields[column] = item
+        missing = [
+            name for name in ("Date", "Ticker", "Volume") if fields.get(name) is None
+        ]
+        if missing:
+            raise ValueError(
+                f"Transaction {number} has no {', '.join(name.lower() for name in missing)}."
+            )
+        date = str(fields["Date"]).strip().replace("/", "-")
+        if not validation_model.is_valid_date(date):
+            raise ValueError(
+                f"Transaction {number} has an invalid date {fields['Date']!r}; use YYYY-MM-DD."
+            )
+        trade: dict[str, object] = {
+            "Date": date,
+            "Ticker": _ticker(fields["Ticker"], f"Transaction {number}"),
+            "Volume": _finite_number(
+                fields["Volume"], f"The volume of transaction {number}"
+            ),
+        }
+        if fields.get("Price") is not None:
+            trade["Price"] = _finite_number(
+                fields["Price"], f"The price of transaction {number}"
+            )
+        # A trade without costs had none, rather than costs the Portfolio warns are missing.
+        trade["Costs"] = (
+            _finite_number(fields["Costs"], f"The costs of transaction {number}")
+            if fields.get("Costs") is not None
+            else 0.0
+        )
+        if fields.get("Currency") is not None:
+            currency = str(fields["Currency"]).strip()
+            if not CURRENCY_PATTERN.match(currency):
+                raise ValueError(
+                    f"Transaction {number} has an invalid currency {currency!r}; use a "
+                    "three-letter code such as 'USD'."
+                )
+            trade["Currency"] = currency
+        trades.append(trade)
+    for column in ("Price", "Currency"):
+        given = sum(column in trade for trade in trades)
+        if 0 < given < len(trades):
+            raise ValueError(
+                f"{column} is given for {given} of the {len(trades)} transactions; give it "
+                "for every transaction or for none."
+            )
+    return trades
+
+
+def _portfolio_inputs(arguments: dict[str, Any]) -> dict[str, Any]:
+    """
+    The portfolio a portfolio_performance call describes, read from its arguments (which
+    are removed from them): exactly one of transactions, holdings, weights or preset, and
+    optionally start_date, initial_value, rebalancing and currency.
+
+    Args:
+        arguments (dict[str, Any]): The call's arguments.
+
+    Raises:
+        ValueError: When the portfolio is missing, given more than once or invalid.
+
+    Returns:
+        dict[str, Any]: The validated inputs, plain values only, so they also key the
+        response cache.
+    """
+    given = {
+        name: arguments.pop(name, None)
+        for name in ("transactions", "holdings", "weights", "preset")
+    }
+    given = {
+        name: value for name, value in given.items() if value not in (None, "", [], {})
+    }
+    options = {
+        name: arguments.pop(name, None)
+        for name in ("initial_value", "rebalancing", "currency")
+    }
+    if len(given) != 1:
+        raise ValueError(
+            "Please describe the portfolio with exactly one of transactions, holdings, "
+            "weights or preset"
+            + (f" (received {', '.join(sorted(given))})." if given else ".")
+        )
+    ((kind, value),) = given.items()
+    inputs: dict[str, Any] = {}
+    if kind == "transactions":
+        inputs["transactions"] = _transactions(value)
+        tickers = {trade["Ticker"] for trade in inputs["transactions"]}
+    elif kind == "preset":
+        inputs["preset"] = str(value).strip()[:100]
+        tickers = set()
+    else:
+        inputs[kind] = _amounts_per_ticker(value, kind)
+        tickers = set(inputs[kind])
+    if len(tickers) > MAX_ENTITIES:
+        raise ValueError(
+            f"The portfolio holds {len(tickers)} tickers; at most {MAX_ENTITIES} can be "
+            "analyzed in one call."
+        )
+    if options["initial_value"] not in (None, ""):
+        initial_value = _finite_number(options["initial_value"], "initial_value")
+        if initial_value <= 0:
+            raise ValueError("initial_value must be more than 0.")
+        inputs["initial_value"] = initial_value
+    if options["rebalancing"] not in (None, ""):
+        rebalancing = str(options["rebalancing"]).strip().lower()
+        if rebalancing not in REBALANCING_FREQUENCIES:
+            raise ValueError(
+                f"rebalancing must be one of {', '.join(REBALANCING_FREQUENCIES)}, not "
+                f"{options['rebalancing']!r}."
+            )
+        inputs["rebalancing"] = rebalancing
+    if options["currency"] not in (None, ""):
+        currency = str(options["currency"]).strip()
+        if not CURRENCY_PATTERN.match(currency):
+            raise ValueError(
+                f"currency must be a three-letter code such as 'USD', not {currency!r}."
+            )
+        # Pence keep their lower-case p (GBp); other codes are written in capitals.
+        inputs["currency"] = currency if currency == "GBp" else currency.upper()
+    return inputs
 
 
 class ToolRegistry:
@@ -1234,6 +1527,20 @@ class ToolRegistry:
                     "or `tickers='AAPL,MSFT'`."
                 )
 
+            # A portfolio_performance call describes its portfolio instead of tickers; the
+            # list of classic portfolios needs none.
+            portfolio_inputs = None
+            if effective_category == inspector.categories.get("portfolio", "portfolio"):
+                try:
+                    portfolio_inputs = _portfolio_inputs(kwargs)
+                except ValueError as exc:
+                    if method_name != "get_presets":
+                        return (
+                            f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
+                        )
+                if method_name == "get_presets":
+                    portfolio_inputs = {}
+
             # Tickers on a tool that works with countries would otherwise be dropped as an
             # unknown parameter and every country returned.
             if (
@@ -1359,6 +1666,11 @@ class ToolRegistry:
             if effective_category == inspector.categories.get("discovery", "discovery"):
                 start_date = given_dates.get("start_date", "")
                 end_date = given_dates.get("end_date", "")
+            # A Portfolio runs from its first transaction (or start_date when one is given,
+            # for holdings, weights and presets) up to today.
+            if portfolio_inputs is not None:
+                start_date = given_dates.get("start_date", "")
+                end_date = ""
 
             # MCP-only defaults (config.yaml method_defaults) keep a broad request small: they
             # apply only to what the caller left unset, so an explicit value always wins. The
@@ -1563,6 +1875,7 @@ class ToolRegistry:
                             end_date=end_date,
                             quarterly=quarterly,
                             benchmark_ticker=benchmark_ticker,
+                            portfolio=portfolio_inputs,
                             **method_kwargs,
                         )
                     input_info = call_input_info()
@@ -1867,12 +2180,21 @@ class ToolRegistry:
         common = inspector.build_common_signature_params(
             category, mixed_categories=mixed_cats
         )
+        portfolio_tool = category == inspector.categories.get("portfolio", "portfolio")
         sig_params = [indicator_param] + [
             P(
                 p.name,
                 POS,
                 default=p.default,
-                annotation=_annotate_with_description(p.name, p.annotation),
+                annotation=_annotate_with_description(
+                    p.name,
+                    p.annotation,
+                    description=(
+                        _PORTFOLIO_PARAM_DESCRIPTIONS.get(p.name, "")
+                        if portfolio_tool
+                        else ""
+                    ),
+                ),
             )
             for p in common
         ]

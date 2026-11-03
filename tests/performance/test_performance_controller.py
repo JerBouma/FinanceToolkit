@@ -162,7 +162,8 @@ def test_get_treynor_ratio(recorder, performance_module):
 def test_get_sharpe_ratio(recorder, performance_module):
     recorder.capture(round(performance_module.get_sharpe_ratio(), 2))
     recorder.capture(performance_module.get_sharpe_ratio(period="quarterly"))
-    recorder.capture(performance_module.get_sharpe_ratio(rolling=10))
+    # Ten years would not fit in the three years of data, so the window is in quarters.
+    recorder.capture(performance_module.get_sharpe_ratio(period="quarterly", rolling=4))
     recorder.capture(performance_module.get_sharpe_ratio(growth=True))
     recorder.capture(performance_module.get_sharpe_ratio(growth=True, lag=[1, 2, 3]))
 
@@ -427,3 +428,14 @@ def test_intraday_excess_return_uses_the_per_bar_risk_free_rate():
 def test_within_period_daily_without_intraday_data_raises(performance_module):
     with pytest.raises(ValueError, match="Intraday data is required"):
         performance_module._get_within_historical_data("daily")
+
+
+def test_ratios_over_the_whole_period_hold_one_number_per_ticker(performance_module):
+    # Over the whole period the ratio is indexed by ticker; slicing it by date left nothing.
+    for ratio in (
+        performance_module.get_omega_ratio(within_period=False),
+        performance_module.get_gain_to_pain_ratio(within_period=False),
+        performance_module.get_rachev_ratio(within_period=False),
+    ):
+        assert not ratio.empty
+        assert ratio.notna().all()

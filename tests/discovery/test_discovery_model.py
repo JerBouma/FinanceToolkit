@@ -382,3 +382,80 @@ def test_names_with_ampersands_are_sent_whole(monkeypatch):
 
     assert "query=AT%26T&apikey=KEY" in requested[0]
     assert "sector=Aerospace%20%26%20Defense&" in requested[1]
+
+
+def test_the_upper_market_cap_bound_is_sent_in_the_currency_of_the_listings(
+    monkeypatch,
+):
+    urls = []
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        urls.append(url)
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["JPX", "NYSE"], "countryCode": ["JP", "US"]}
+            )
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {"symbol": ["CADUSD", "JPYUSD"], "price": [0.70, 0.005]}
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    def screener_url():
+        return next(url for url in reversed(urls) if "/company-screener" in url)
+
+    # One exchange: its currency, widened by the margin (1 billion dollars is 200 billion yen).
+    discovery_model.get_stock_screener(
+        api_key="KEY", market_cap_lower=1e9, exchange="JPX"
+    )
+    assert "marketCapLowerThan=400000000000" in screener_url()
+
+    discovery_model.get_stock_screener(
+        api_key="KEY", market_cap_lower=1e9, exchange="NYSE"
+    )
+    assert "marketCapLowerThan=2000000000" in screener_url()
+
+    # The home listings of a country trade in its currency.
+    discovery_model.get_stock_screener(
+        api_key="KEY", market_cap_lower=1e9, country="Canada", primary_only=True
+    )
+    assert "marketCapLowerThan=2857142857" in screener_url()
+
+    # Listings anywhere can trade in any currency, so the bound is applied afterwards only.
+    discovery_model.get_stock_screener(
+        api_key="KEY", market_cap_lower=1e9, country="Canada"
+    )
+    assert "marketCapLowerThan" not in screener_url()
+
+
+def test_a_listing_in_the_united_kingdom_is_its_home_listing(monkeypatch):
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/company-screener" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["SHEL", "SHEL.L"],
+                    "companyName": ["Shell plc"] * 2,
+                    "marketCap": [210e9, 155e9],
+                    "exchangeShortName": ["NYSE", "LSE"],
+                    "country": ["GB", "GB"],
+                    "volume": [4_000_000, 1_000_000],
+                }
+            )
+        if "/available-exchanges" in url:
+            # The exchanges write the United Kingdom as UK.
+            return pd.DataFrame(
+                {"exchange": ["NYSE", "LSE"], "countryCode": ["US", "UK"]}
+            )
+        if "/batch-quote" in url:
+            return pd.DataFrame({"symbol": ["GBPUSD"], "price": [1.26]})
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    every_listing = discovery_model.get_stock_screener(api_key="KEY")
+    primary = discovery_model.get_stock_screener(api_key="KEY", primary_only=True)
+
+    assert list(primary.index) == ["SHEL.L"]
+    assert every_listing["Market Cap (USD)"].tolist() == pytest.approx([195.3e9] * 2)

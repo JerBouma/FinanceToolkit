@@ -45,14 +45,40 @@ if not portfolio._toolkit:
     )
 
 portfolio._toolkit._daily_treasury_data = treasury_data
+# The benchmark's periods need the risk-free rate too; without it the test would retrieve
+# Treasury yields from Yahoo Finance, whose parallel requests lock its SQLite cache in CI.
+portfolio._benchmark_toolkit._daily_treasury_data = treasury_data
+portfolio._benchmark_toolkit._daily_risk_free_rate = risk_free_rate
 portfolio._toolkit._daily_risk_free_rate = risk_free_rate
 
 # pylint: disable=missing-function-docstring,protected-access
 
 
+@pytest.fixture(autouse=True)
+def offline_rates(monkeypatch):
+    """
+    Give every Toolkit built from supplied prices the supplied Treasury yields too. Without
+    them, valuing a portfolio retrieves the yields from Yahoo Finance, whose parallel requests
+    lock its SQLite cache when tests run in parallel.
+    """
+    initialise = Toolkit.__init__
+
+    def initialise_offline(self, *args, **kwargs):
+        initialise(self, *args, **kwargs)
+        if kwargs.get("historical") is not None:
+            self._daily_treasury_data = treasury_data
+            self._daily_risk_free_rate = risk_free_rate
+
+    monkeypatch.setattr(Toolkit, "__init__", initialise_offline)
+
+
 def test_read_portfolio_dataset(recorder):
-    recorder.capture(portfolio.read_portfolio_dataset(adjust_duplicates=True))
-    recorder.capture(portfolio.read_portfolio_dataset(adjust_duplicates=False))
+    # A separate Portfolio: reading the dataset again restores its currency column, which the
+    # shared portfolio above leaves out so its tests never ask for the tickers' currencies
+    # online (and, run in parallel, never touch yfinance's shared timezone cache).
+    reader = Portfolio(portfolio_dataset="tests/datasets/portfolio_test.xlsx")
+    recorder.capture(reader.read_portfolio_dataset(adjust_duplicates=True))
+    recorder.capture(reader.read_portfolio_dataset(adjust_duplicates=False))
 
 
 def test_collect_benchmark_historical_data(recorder):

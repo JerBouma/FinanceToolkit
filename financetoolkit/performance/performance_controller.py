@@ -3890,6 +3890,8 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Over the whole period the ratio is one number per ticker, with no dates to slice.
+            apply_slice=bool(rolling) or within_period,
         )
 
     @handle_portfolio
@@ -3980,6 +3982,8 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Over the whole period the ratio is one number per ticker, with no dates to slice.
+            apply_slice=within_period,
         )
 
     @handle_portfolio
@@ -4977,6 +4981,8 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Over the whole period the ratio is one number per ticker, with no dates to slice.
+            apply_slice=within_period,
             dropna=True,
         )
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
 import os
 import time
 import weakref
@@ -30,6 +31,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
     call_input_info,
     current_call_messages,
 )
+from financetoolkit.portfolio.portfolio_controller import Portfolio
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
 
@@ -45,6 +47,8 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # Discovery instances (per dates and key) the provider keeps; the least recently used go
 # first. An Economics instance holds the Global Macro Database, over 100 MB, so few.
 MAXIMUM_TOOLKIT_INSTANCES = 64
+# A Portfolio holds the daily prices and values of all its positions and its benchmark.
+MAXIMUM_PORTFOLIO_INSTANCES = 16
 MAXIMUM_STANDALONE_INSTANCES = 4
 
 # Tool responses are computed output, so they sit under their own source.
@@ -213,6 +217,7 @@ class ToolkitProvider:
         # and an Economics instance holds the Global Macro Database (over 100 MB) per range.
         self._toolkit_cache: OrderedDict[str, Any] = OrderedDict()
         self._standalone_cache: OrderedDict[str, Any] = OrderedDict()
+        self._portfolio_cache: OrderedDict[str, Portfolio] = OrderedDict()
         self._lock = Lock()
         # One lock per cached Toolkit or module instance, held for the whole call. Tools run
         # in worker threads, and an instance fills its statements, prices and conversions
@@ -236,6 +241,7 @@ class ToolkitProvider:
         end_date: str = "",
         quarterly: bool = False,
         benchmark_ticker: str = "SPY",
+        portfolio: dict[str, Any] | None = None,
         **method_kwargs: Any,
     ) -> Any:
         """
@@ -264,6 +270,10 @@ class ToolkitProvider:
                 to ``False`` (annual).
             benchmark_ticker (str): Benchmark symbol used by ticker-category
                 modules. Defaults to ``"SPY"``.
+            portfolio (dict[str, Any] | None): The portfolio of a ``"portfolio"`` category
+                call: transactions, holdings, weights or a preset, with optional
+                start_date, initial_value, rebalancing and currency (see
+                ``registry_controller._portfolio_inputs``). Defaults to None.
             **method_kwargs: Additional keyword arguments forwarded verbatim to
                 the underlying controller method.
 
@@ -299,6 +309,7 @@ class ToolkitProvider:
             "end": end_date,
             "quarterly": quarterly,
             "benchmark_ticker": benchmark_ticker,
+            "portfolio": portfolio or {},
             # Every keyword argument, whatever its type: filtering to scalars here dropped list-valued arguments from the key entirely, so `lag=[1, 4]` and `lag=[5, 10]` hashed the same and the second call was answered with the first one's frame. The key derivation canonicalises nested structures itself, so nothing has to be excluded to keep it stable.  # noqa: E501
             **method_kwargs,
         }
@@ -398,6 +409,16 @@ class ToolkitProvider:
                 countries=countries,
                 api_key=effective_key,
                 fred_api_key=effective_fred_key,
+                **method_kwargs,
+            )
+        elif category == "portfolio":
+            # A Portfolio of the caller's transactions, holdings, weights or a preset.
+            result = self.call_portfolio_functionality(
+                method_name=method_name,
+                portfolio=portfolio or {},
+                start_date=start_date,
+                benchmark_ticker=benchmark_ticker,
+                api_key=effective_key,
                 **method_kwargs,
             )
         elif category == "discovery":
@@ -776,6 +797,119 @@ class ToolkitProvider:
         )
         with hold_lock(self.instance_lock(toolkit_instance)):
             return getattr(toolkit_instance, method_name)(**kwargs)
+
+    def get_portfolio_instance(
+        self,
+        portfolio: dict[str, Any],
+        start_date: str,
+        benchmark_ticker: str,
+        api_key: str = "",
+    ) -> Portfolio:
+        """
+        Return a (potentially cached) Portfolio for the given transactions, holdings, weights
+        or preset.
+
+        The inputs are validated by the registry (registry_controller._portfolio_inputs) and
+        never name a file: transactions arrive as a list of trades and become a DataFrame here.
+        Instances are kept per portfolio, start date, benchmark and hashed API key, least
+        recently used first, like the Toolkit instances.
+
+        Args:
+            portfolio (dict[str, Any]): The validated portfolio inputs.
+            start_date (str): When holdings, weights or a preset are invested, or "" for
+                their default.
+            benchmark_ticker (str): The benchmark the portfolio is compared with.
+            api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
+
+        Returns:
+            Portfolio: The Portfolio.
+        """
+        effective_key = api_key or self._api_key
+        key_hash = hashlib.sha256((effective_key or "").encode()).hexdigest()
+        cache_key = hashlib.sha256(
+            json.dumps(
+                [portfolio, start_date, benchmark_ticker, key_hash],
+                sort_keys=True,
+                default=str,
+            ).encode()
+        ).hexdigest()
+
+        with self._lock:
+            if cache_key in self._portfolio_cache:
+                self._portfolio_cache.move_to_end(cache_key)
+                return self._portfolio_cache[cache_key]
+
+        if not effective_key:
+            raise ValueError(FMP_KEY_HINT)
+
+        options: dict[str, Any] = {
+            "api_key": effective_key,
+            "benchmark_ticker": benchmark_ticker or None,
+            "use_cached_data": self._use_cached_data,
+            "currency": portfolio.get("currency"),
+        }
+        if "transactions" in portfolio:
+            instance = Portfolio(
+                transactions=pd.DataFrame(portfolio["transactions"]), **options
+            )
+        else:
+            options["start_date"] = start_date or None
+            if "holdings" in portfolio:
+                instance = Portfolio(holdings=portfolio["holdings"], **options)
+            else:
+                options["initial_value"] = portfolio.get("initial_value", 10000.0)
+                options["rebalancing"] = portfolio.get("rebalancing")
+                instance = (
+                    Portfolio(weights=portfolio["weights"], **options)
+                    if "weights" in portfolio
+                    else Portfolio.from_preset(portfolio["preset"], **options)
+                )
+
+        # Built outside the lock, as building collects prices; a portfolio built twice at
+        # once keeps the first one stored.
+        with self._lock:
+            instance = self._portfolio_cache.setdefault(cache_key, instance)
+            self._portfolio_cache.move_to_end(cache_key)
+            while len(self._portfolio_cache) > MAXIMUM_PORTFOLIO_INSTANCES:
+                self._portfolio_cache.popitem(last=False)
+
+        return instance
+
+    def call_portfolio_functionality(
+        self,
+        method_name: str,
+        portfolio: dict[str, Any],
+        start_date: str,
+        benchmark_ticker: str,
+        api_key: str = "",
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Invoke a Portfolio method on the Portfolio of the given inputs.
+
+        Args:
+            method_name (str): The Portfolio method, e.g. "get_portfolio_overview".
+            portfolio (dict[str, Any]): The validated portfolio inputs.
+            start_date (str): When holdings, weights or a preset are invested, or "".
+            benchmark_ticker (str): The benchmark the portfolio is compared with.
+            api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
+            **kwargs (Any): The arguments of the method.
+
+        Returns:
+            Any: The method's result.
+        """
+        # The classic portfolios are a fixed list that needs no portfolio of its own.
+        if method_name == "get_presets":
+            return Portfolio.get_presets()
+
+        instance = self.get_portfolio_instance(
+            portfolio=portfolio,
+            start_date=start_date,
+            benchmark_ticker=benchmark_ticker,
+            api_key=api_key,
+        )
+        with hold_lock(self.instance_lock(instance)):
+            return getattr(instance, method_name)(**kwargs)
 
     @staticmethod
     def call_econometrics_with_data(

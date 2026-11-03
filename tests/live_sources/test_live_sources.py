@@ -23,7 +23,9 @@ Sources that need a key (FinancialModelingPrep, FRED) are not checked here. Skip
 unless FINANCETOOLKIT_LIVE_SOURCES=1, since it needs network access.
 """
 
+import logging
 import os
+import re
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -95,6 +97,35 @@ YEARLY_START = f"{TODAY.year - 6}-01-01"
 QUARTERLY_MAX_AGE_DAYS = 200
 MONTHLY_MAX_AGE_DAYS = 130
 DAILY_MAX_AGE_DAYS = 10
+
+# What a source answers when it refuses a request because of a request limit, such as the
+# 25 keyless requests a day per IP address of the BLS. The runners of the workflow share
+# their IP addresses, so such a refusal says nothing about the source itself.
+REQUEST_LIMIT_PATTERN = re.compile(
+    r"daily threshold|request limit|rate limit|too many requests|\b429\b", re.IGNORECASE
+)
+
+
+def fetch_or_explain(name, fetch, caplog):
+    """
+    The data of a source, after skipping the check when the source refused the request
+    because of a request limit. An empty answer otherwise fails with what the source
+    logged, since the retrieval logs why it returned nothing (often at info level, when
+    another source is used instead) rather than raising.
+    """
+    with caplog.at_level(logging.INFO):
+        data = fetch()
+
+    if data.empty:
+        logged = " | ".join(record.getMessage() for record in caplog.records)
+        if REQUEST_LIMIT_PATTERN.search(logged):
+            pytest.skip(
+                f"{name} refused the request because of a request limit: {logged}"
+            )
+        pytest.fail(f"{name} returned no data. Logged: {logged or 'nothing'}")
+
+    return data
+
 
 # The ticker the Yahoo Finance checks ask for: liquid, listed options, a long history.
 YAHOO_TICKER = "AAPL"
@@ -675,12 +706,11 @@ STATIC_SOURCES = {
 
 
 @pytest.mark.parametrize("name", SOURCES)
-def test_source_is_current_and_plausible(name):
+def test_source_is_current_and_plausible(name, caplog):
     fetch, country, frequency, *bounds = SOURCES[name]
 
-    data = fetch()
+    data = fetch_or_explain(name, fetch, caplog)
 
-    assert not data.empty, f"{name} returned no data"
     assert country in data.columns, f"{name} has no {country} column"
 
     series = data[country].dropna()
@@ -718,12 +748,11 @@ def test_source_is_current_and_plausible(name):
 
 
 @pytest.mark.parametrize("name", STATIC_SOURCES)
-def test_source_is_reachable_and_parses(name):
+def test_source_is_reachable_and_parses(name, caplog):
     fetch, column, (low, high) = STATIC_SOURCES[name]
 
-    data = fetch()
+    data = fetch_or_explain(name, fetch, caplog)
 
-    assert not data.empty, f"{name} returned no data"
     assert column in data.columns, f"{name} has no {column} column"
 
     series = data[column].dropna()

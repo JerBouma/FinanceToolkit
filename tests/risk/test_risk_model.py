@@ -146,7 +146,8 @@ def test_get_rolling_kurtosis(recorder):
     recorder.capture(
         risk_model.get_rolling_kurtosis(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
-            window_size=3,
+            # Kurtosis needs four observations, so a smaller window is all NaN.
+            window_size=4,
             fisher=True,
         ).round(4)
     )
@@ -154,7 +155,8 @@ def test_get_rolling_kurtosis(recorder):
     recorder.capture(
         risk_model.get_rolling_kurtosis(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
-            window_size=3,
+            # Kurtosis needs four observations, so a smaller window is all NaN.
+            window_size=4,
             fisher=False,
         ).round(4)
     )

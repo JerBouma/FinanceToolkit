@@ -681,7 +681,7 @@ def test_toolkit_dates_and_tickers_are_checked_after_their_defaults():
 
 def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
     def toolkit(end_date, point_in_time):
-        return Toolkit(
+        instance = Toolkit(
             tickers=["AAPL", "MSFT"],
             historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
             balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
@@ -693,6 +693,10 @@ def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
             sleep_timer=False,
             point_in_time=point_in_time,
         )
+        # The daily ratios need the risk-free rate; supplied, so nothing is retrieved.
+        instance._daily_risk_free_rate = risk_free_rate
+        instance._daily_treasury_data = treasury_data
+        return instance
 
     # Supplied statements have no filing dates, so a year counts from 120 days after it ends:
     # 2022 is public from 30 April 2023 on.
@@ -758,3 +762,32 @@ def test_quarterly_lookback_covers_a_trailing_year_and_its_growth():
     lookback = pd.Timestamp(toolkit._lookback_start_date)
     assert lookback <= pd.Timestamp("2023-03-31")
     assert lookback > pd.Timestamp("2022-09-30")
+
+
+def test_statistics_are_shown_from_the_start_date(monkeypatch):
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        api_key="KEY",
+        start_date="2021-01-01",
+        end_date="2022-12-31",
+        sleep_timer=False,
+    )
+    periods = pd.period_range("2019", "2022", freq="Y")
+    statistics = pd.DataFrame(
+        "2020-12-31",
+        index=pd.MultiIndex.from_product([["AAPL", "MSFT"], ["Period End Date"]]),
+        columns=periods,
+    )
+
+    def get_balance_sheet_statement(**kwargs):  # noqa: ARG001
+        toolkit._statistics_statement = statistics
+        toolkit._balance_sheet_statement = pd.DataFrame({"x": [1.0]})
+
+    monkeypatch.setattr(
+        toolkit, "get_balance_sheet_statement", get_balance_sheet_statement
+    )
+
+    # Retrieved from the lookback start, shown from the start date like the statements.
+    result = toolkit.get_statistics_statement()
+
+    assert [str(period) for period in result.columns] == ["2021", "2022"]

@@ -2028,7 +2028,6 @@ class Econometrics:
         As an example:
 
         ```python
-        import pandas as pd
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
@@ -2038,19 +2037,16 @@ class Econometrics:
             end_date="2025-12-31",
         )
 
-        returns = toolkit.econometrics._get_series_column("weekly", "Return", ["AAPL", "MSFT"])
-        weights = pd.Series(1.0, index=returns.index)
-
-        # AAPL (the first ticker) is dependent, MSFT is independent
-        toolkit.econometrics.get_wls(weights, period="weekly")
+        # AAPL (the first ticker) is dependent, MSFT is independent; the weights are estimated
+        toolkit.econometrics.get_wls(period="weekly")
         ```
 
         Which returns:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0019 |        0.6328 |    0.5274 |
-        | MSFT      |        0.6283 |       0.058  |       10.8323 |    0      |
+        | Intercept |        0.0012 |       0.0019 |        0.6263 |    0.5317 |
+        | MSFT      |        0.6356 |       0.0596 |       10.6643 |    0      |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -2171,8 +2167,6 @@ class Econometrics:
         As an example:
 
         ```python
-        import numpy as np
-        import pandas as pd
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
@@ -2182,20 +2176,16 @@ class Econometrics:
             end_date="2025-12-31",
         )
 
-        returns = toolkit.econometrics._get_series_column("weekly", "Return", ["AAPL", "MSFT"])
-        n = len(returns)
-        omega = pd.DataFrame(np.eye(n))
-
-        # AAPL (the first ticker) is dependent; MSFT is independent
-        toolkit.econometrics.get_gls(omega, period="weekly")
+        # AAPL (the first ticker) is dependent, MSFT is independent; Omega is estimated (AR(1))
+        toolkit.econometrics.get_gls(period="weekly")
         ```
 
         Which returns:
 
         |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0019 |        0.6328 |    0.5274 |
-        | MSFT      |        0.6283 |       0.058  |       10.8323 |    0      |
+        | Intercept |        0.0012 |       0.0017 |        0.7282 |    0.4671 |
+        | MSFT      |        0.6312 |       0.0576 |       10.9557 |    0      |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(

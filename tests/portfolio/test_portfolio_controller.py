@@ -54,6 +54,24 @@ portfolio._toolkit._daily_risk_free_rate = risk_free_rate
 # pylint: disable=missing-function-docstring,protected-access
 
 
+@pytest.fixture(autouse=True)
+def offline_rates(monkeypatch):
+    """
+    Give every Toolkit built from supplied prices the supplied Treasury yields too. Without
+    them, valuing a portfolio retrieves the yields from Yahoo Finance, whose parallel requests
+    lock its SQLite cache when tests run in parallel.
+    """
+    initialise = Toolkit.__init__
+
+    def initialise_offline(self, *args, **kwargs):
+        initialise(self, *args, **kwargs)
+        if kwargs.get("historical") is not None:
+            self._daily_treasury_data = treasury_data
+            self._daily_risk_free_rate = risk_free_rate
+
+    monkeypatch.setattr(Toolkit, "__init__", initialise_offline)
+
+
 def test_read_portfolio_dataset(recorder):
     # A separate Portfolio: reading the dataset again restores its currency column, which the
     # shared portfolio above leaves out so its tests never ask for the tickers' currencies

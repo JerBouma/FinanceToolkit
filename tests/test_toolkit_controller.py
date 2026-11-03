@@ -681,7 +681,7 @@ def test_toolkit_dates_and_tickers_are_checked_after_their_defaults():
 
 def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
     def toolkit(end_date, point_in_time):
-        return Toolkit(
+        instance = Toolkit(
             tickers=["AAPL", "MSFT"],
             historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
             balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
@@ -693,6 +693,10 @@ def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
             sleep_timer=False,
             point_in_time=point_in_time,
         )
+        # The daily ratios need the risk-free rate; supplied, so nothing is retrieved.
+        instance._daily_risk_free_rate = risk_free_rate
+        instance._daily_treasury_data = treasury_data
+        return instance
 
     # Supplied statements have no filing dates, so a year counts from 120 days after it ends:
     # 2022 is public from 30 April 2023 on.

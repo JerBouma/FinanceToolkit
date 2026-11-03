@@ -45,6 +45,10 @@ if not portfolio._toolkit:
     )
 
 portfolio._toolkit._daily_treasury_data = treasury_data
+# The benchmark's periods need the risk-free rate too; without it the test would retrieve
+# Treasury yields from Yahoo Finance, whose parallel requests lock its SQLite cache in CI.
+portfolio._benchmark_toolkit._daily_treasury_data = treasury_data
+portfolio._benchmark_toolkit._daily_risk_free_rate = risk_free_rate
 portfolio._toolkit._daily_risk_free_rate = risk_free_rate
 
 # pylint: disable=missing-function-docstring,protected-access

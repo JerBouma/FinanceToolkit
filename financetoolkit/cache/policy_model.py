@@ -241,6 +241,8 @@ POLICIES: dict[str, CachePolicy] = {
     f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.listing": CachePolicy(ttl_seconds=7 * DAY),
     # The default spreads of the synthetic rating table are updated once a year.
     f"{DAMODARAN}.synthetic_ratings": CachePolicy(ttl_seconds=30 * DAY),
+    # The industry datasets are updated every January.
+    f"{DAMODARAN}.industry_statistics": CachePolicy(ttl_seconds=30 * DAY),
     f"{FEDERAL_RESERVE_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365

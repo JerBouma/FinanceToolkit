@@ -127,6 +127,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{FINANCIAL_MODELING_PREP}.shares_float": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.insider_trade_statistics": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.stock_grades": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.price_targets": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.price_target_history": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.analyst_recommendations": CachePolicy(ttl_seconds=DAY),
     # Fund holdings and allocations are republished daily by most issuers.
     f"{FINANCIAL_MODELING_PREP}.etf_holdings": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.etf_information": CachePolicy(ttl_seconds=DAY),

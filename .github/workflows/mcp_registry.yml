@@ -1,0 +1,42 @@
+name: Publish to the MCP Registry
+
+# Publishes server.json to registry.modelcontextprotocol.io, which MCP directories read the listed
+# version from. Runs on every release; run it by hand to republish the current version.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC proves ownership of the io.github.JerBouma namespace
+
+jobs:
+  publish:
+    name: Publish server.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Check the version matches pyproject.toml
+        run: |
+          expected=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          python3 - "$expected" <<'PY'
+          import json, sys
+          server = json.load(open("server.json"))
+          versions = {server["version"], *(package["version"] for package in server["packages"])}
+          if versions != {sys.argv[1]}:
+              sys.exit(f"server.json has {sorted(versions)}, pyproject.toml has {sys.argv[1]}")
+          PY
+
+      - name: Install mcp-publisher
+        run: |
+          curl -sSL https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz \
+            | tar xz mcp-publisher
+
+      - name: Publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

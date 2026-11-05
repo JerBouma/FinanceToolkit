@@ -36,6 +36,7 @@ from financetoolkit.fmp_model import (
     get_executive_compensation as _get_executive_compensation,
     get_executives as _get_executives,
     get_insider_trade_statistics as _get_insider_trade_statistics,
+    get_institutional_ownership as _get_institutional_ownership,
     get_market_risk_premium as _get_market_risk_premium,
     get_mergers_acquisitions as _get_mergers_acquisitions,
     get_profile as _get_profile,
@@ -474,6 +475,7 @@ class Toolkit:
             self._mergers_acquisitions: pd.DataFrame = pd.DataFrame()
             self._stock_splits: pd.DataFrame = pd.DataFrame()
             self._insider_trade_statistics: pd.DataFrame = pd.DataFrame()
+            self._institutional_ownership: pd.DataFrame = pd.DataFrame()
             self._stock_grades: pd.DataFrame = pd.DataFrame()
             self._etf_holdings: pd.DataFrame = pd.DataFrame()
             self._etf_information: pd.DataFrame = pd.DataFrame()
@@ -3833,6 +3835,121 @@ class Toolkit:
             )
 
         return filter_columns(insider_trade_statistics, show_columns)
+
+    def get_institutional_ownership(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain the institutional ownership of each company per quarter, based on the Form 13F
+        filings of institutional investment managers (those managing over $100 million in US
+        equities): the number of holders and its change, the shares and value they hold, their
+        share of the shares outstanding (Ownership) and its change, the positions opened,
+        increased, reduced and closed, the put/call ratio of the options they report and the
+        share of the shares outstanding held by the ten largest holders (Top 10 Ownership).
+
+        Institutional ownership shows how widely professional investors hold a company. A
+        rising number of holders and ownership points to growing interest, while many closed
+        and reduced positions can signal the opposite. A high Top 10 Ownership means a few
+        holders can move the share price when they buy or sell, and crowding in a share
+        increases the risk of forced selling (Sias, Starks and Titman, 2006; Gompers and
+        Metrick, 2001, "Institutional Investors and Equity Prices").
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: 13F holdings, institutional holders, institutional investors, ownership
+        concentration.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The ownership per ticker, indexed by quarter.
+
+        Notes:
+            - The figures are dated by the quarter end the holdings are reported for, but the
+              filings only become public up to 45 days later. Each quarter shows from the day
+              its filing deadline has passed; a quarter still within its 45 days is left out,
+              as its totals are still filling up. Late and amended filings can still change a
+              quarter slightly afterwards.
+            - Ownership, Ownership Change and Top 10 Ownership are decimals of the shares
+              outstanding as Financial Modeling Prep reports them (0.63 is 63%), and the
+              changes compare with the previous quarter. Ownership Change is the change in
+              percentage points, as a decimal.
+            - 13F filings cover US-listed shares only, so companies listed elsewhere have no
+              data, and the filings include holdings managed for clients (index funds
+              included). Ownership can exceed 100% when shares are lent out and the borrowed
+              shares are held by another filer.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_institutional_ownership(
+            show_columns=["Holders", "Ownership", "Ownership Change", "New Positions", "Closed Positions", "Top 10 Ownership"]
+        )
+        ```
+
+        Which returns:
+
+        | Period   |   Holders |   Ownership |   Ownership Change |   New Positions |   Closed Positions |   Top 10 Ownership |
+        |:---------|----------:|------------:|-------------------:|----------------:|-------------------:|-------------------:|
+        | 2025Q1   |      5882 |      0.6263 |             0      |             167 |                240 |             0.3302 |
+        | 2025Q2   |      5893 |      0.6319 |             0.0056 |             206 |                212 |             0.332  |
+        | 2025Q3   |      5898 |      0.6165 |            -0.0155 |             204 |                198 |             0.3267 |
+        | 2025Q4   |      6416 |      0.6474 |             0.0309 |             733 |                210 |             0.3343 |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._institutional_ownership.empty or overwrite:
+            self._institutional_ownership, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="institutional_ownership",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_institutional_ownership(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        institutional_ownership = apply_rounding(
+            self._institutional_ownership,
+            rounding if rounding is not None else self._rounding,
+        )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._institutional_ownership.empty:
+            return filter_columns(
+                institutional_ownership.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(institutional_ownership, show_columns)
 
     def get_stock_grades(
         self, overwrite: bool = False, show_columns: list[str] | None = None

@@ -2799,6 +2799,128 @@ def get_insider_trade_statistics(
     )
 
 
+# Institutional investment managers file Form 13F within 45 days of each quarter end, so the
+# totals of a quarter are only complete once that deadline has passed.
+FORM_13F_FILING_DAYS = 45
+
+
+def get_institutional_ownership(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves quarterly institutional ownership of each ticker from the Form 13F filings:
+    the number of holders, the shares and value they hold, their share of the shares
+    outstanding, the positions opened, increased, reduced and closed, and the share
+    held by the ten largest holders.
+
+    Only quarters whose 13F filing deadline (45 days after the quarter end) has passed
+    are retrieved, as the totals of a later quarter are still filling up.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the ownership for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to select the quarters with. Defaults to
+            None, which starts ten years before the end date.
+        end_date (str | None): The end date to select the quarters with. Defaults to None,
+            which ends at the last quarter with a passed filing deadline.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The ownership indexed by ticker and quarter, and the
+            tickers for which no data could be found.
+    """
+    naming: dict = {
+        "investorsHolding": "Holders",
+        "investorsHoldingChange": "Holders Change",
+        "numberOf13Fshares": "Shares Held",
+        "numberOf13FsharesChange": "Shares Held Change",
+        "totalInvested": "Value Held",
+        "ownershipPercent": "Ownership",
+        "ownershipPercentChange": "Ownership Change",
+        "newPositions": "New Positions",
+        "increasedPositions": "Increased Positions",
+        "reducedPositions": "Reduced Positions",
+        "closedPositions": "Closed Positions",
+        "putCallRatio": "Put/Call Ratio",
+    }
+
+    # The quarter before the one FORM_13F_FILING_DAYS ago is the last one whose deadline has
+    # passed (on 15 November, the third quarter).
+    deadline_date = datetime.today() - timedelta(days=FORM_13F_FILING_DAYS)
+    deadline_quarter = (deadline_date.month - 1) // 3 + 1
+    last_complete = pd.Period(
+        year=deadline_date.year - (deadline_quarter == 1),
+        quarter=deadline_quarter - 1 or 4,
+        freq="Q",
+    )
+    last_quarter = (
+        min(pd.Period(end_date, freq="Q"), last_complete) if end_date else last_complete
+    )
+    quarters = (
+        pd.period_range(pd.Period(start_date, freq="Q"), last_quarter, freq="Q")
+        if start_date
+        else pd.period_range(end=last_quarter, periods=40, freq="Q")
+    )
+
+    def quarter_worker(ticker, quarter):
+        query = f"symbol={ticker}&year={quarter.year}&quarter={quarter.quarter}&apikey={api_key}"
+        summary = get_financial_data(
+            url=f"https://financialmodelingprep.com/stable/institutional-ownership/symbol-positions-summary?{query}",
+            user_subscription=user_subscription,
+        )
+
+        if "investorsHolding" not in summary.columns:
+            return quarter, summary
+
+        holders = get_financial_data(
+            url=f"https://financialmodelingprep.com/stable/institutional-ownership/extract-analytics/holder?{query}&page=0&limit=20",  # noqa: E501
+            user_subscription=user_subscription,
+        )
+
+        summary = summary.rename(columns=naming)[list(naming.values())].iloc[[0]]
+        # The holders come largest first; option positions (calls and puts) are left out so
+        # the ten largest are holders of the shares themselves.
+        summary["Top 10 Ownership"] = (
+            holders.loc[holders["putCallShare"] == "Share", "ownership"].head(10).sum()
+            if {"ownership", "putCallShare"}.issubset(holders.columns)
+            else float("nan")
+        )
+        summary.index = pd.PeriodIndex([quarter], name="Period")
+
+        return quarter, summary
+
+    def worker(ticker):
+        results = helpers.run_in_parallel(
+            quarter_worker, [(ticker, quarter) for quarter in quarters]
+        )
+        frames = [frame for _, frame in sorted(results, key=lambda result: result[0])]
+        ownership = [frame for frame in frames if "Holders" in frame.columns]
+
+        if not ownership:
+            # An error response (e.g. a plan without access) stays in so it is reported.
+            errors = [frame for frame in frames if not frame.empty]
+            return ticker, (errors[0] if errors else pd.DataFrame()), False
+
+        ownership_data = pd.concat(ownership).sort_index()
+
+        # FinancialModelingPrep reports the percentages in percent.
+        percentages = ["Ownership", "Ownership Change", "Top 10 Ownership"]
+        ownership_data[percentages] = ownership_data[percentages] / 100
+
+        return ticker, ownership_data, True
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "institutional ownership", user_subscription
+    )
+
+
 def get_stock_grades(
     tickers: list[str] | str,
     api_key: str,

@@ -1394,3 +1394,8 @@ def test_country_premiums_follow_the_premium_table_names(
 
     assert premiums.isna().to_dict() == {"AAPL": False, "MSFT": True}
     assert "VG" in caplog.text
+
+
+def test_get_return_decomposition(recorder, models_module):
+    recorder.capture(models_module.get_return_decomposition())
+    recorder.capture(models_module.get_return_decomposition(logarithmic=True))

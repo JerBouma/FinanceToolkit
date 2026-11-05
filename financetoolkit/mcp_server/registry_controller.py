@@ -158,6 +158,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "downside, e.g. 0.0 for downside relative to a zero return."
     ),
     "days": "Number of calendar days used in day-count-based calculations.",
+    "factor": (
+        "The name of the ratio or technical indicator method to test as the factor, e.g. "
+        "'get_price_to_earnings_ratio', 'get_return_on_equity' or 'get_rate_of_change'."
+    ),
     "period": (
         "Observation frequency, e.g. 'daily', 'weekly', 'monthly', 'quarterly', or 'annual' "
         "(supported values differ per method)."
@@ -1953,6 +1957,8 @@ class ToolRegistry:
                         pname.endswith(("_ticker", "_tickers"))
                         for pname in method_kwargs
                     )
+                    # A factor evaluation answers for the tickers together, not per ticker.
+                    and dispatch_module != "factors"
                 ):
                     # An empty column of its own counts as missing too.
                     if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:

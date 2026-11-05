@@ -439,3 +439,22 @@ def test_ratios_over_the_whole_period_hold_one_number_per_ticker(performance_mod
     ):
         assert not ratio.empty
         assert ratio.notna().all()
+
+
+@pytest.mark.parametrize(
+    "method", ["blume", "vasicek", "dimson", "scholes_williams", "upside", "downside"]
+)
+def test_get_beta_with_another_estimator(performance_module, method):
+    ordinary = performance_module.get_beta()
+    estimated = performance_module.get_beta(method=method)
+
+    assert estimated.shape == ordinary.shape
+    assert estimated.notna().all().all()
+
+    if method == "blume":
+        pd.testing.assert_frame_equal(
+            estimated, (0.67 * ordinary + 0.33).round(4), check_exact=False, atol=1e-4
+        )
+
+    rolling = performance_module.get_beta(method=method, period="monthly", rolling=6)
+    assert not rolling.dropna(how="all").empty

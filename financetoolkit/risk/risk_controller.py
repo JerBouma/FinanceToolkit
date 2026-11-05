@@ -1637,6 +1637,207 @@ class Risk:
             apply_slice=False,
         )
 
+    @handle_errors
+    def get_drawdown_series(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the drawdown in every period: how far an asset stands below its highest value so far.
+
+        The drawdown series, also known as the underwater curve, shows the whole history of losses from a
+        previous high instead of only the worst one. It is 0 at every new high and negative while the
+        value is below one, so its lowest point is the Maximum Drawdown (see `get_maximum_drawdown`) and
+        the stretches below 0 are the drawdowns that `get_drawdown_table` lists.
+
+        The formula is as follows:
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+
+        Returns are total returns (Adj Close). Wealth starts at 1 at the first close of the window, so a
+        decline from the start of the window counts as well.
+
+        Also known as: underwater curve, underwater plot, drawdown curve.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: The drawdown per period as a negative decimal (0 at a new high), with time as the index.
+
+        Notes:
+        - Each ticker keeps its own history: a ticker that listed during the window starts at its first close
+        and is NaN before it.
+        - A longer period only compares the closes of each period, so period="monthly" shows shallower
+        drawdowns than period="daily".
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["META", "NFLX", "AMZN"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_drawdown_series(period="quarterly")
+        ```
+
+        Which returns:
+
+        | Date   |    META |    NFLX |    AMZN |   Benchmark |
+        |:-------|--------:|--------:|--------:|------------:|
+        | 2021Q1 |  0      |  0      |  0      |      0      |
+        | 2021Q2 |  0      |  0      |  0      |      0      |
+        | 2021Q3 | -0.0239 |  0      | -0.0451 |      0      |
+        | 2021Q4 | -0.0327 | -0.0129 | -0.0308 |      0      |
+        | 2022Q1 | -0.3605 | -0.3862 | -0.0524 |     -0.0461 |
+        | 2022Q2 | -0.5362 | -0.7134 | -0.3825 |     -0.1998 |
+        | 2022Q3 | -0.6098 | -0.6143 | -0.3431 |     -0.2392 |
+        | 2022Q4 | -0.6539 | -0.5168 | -0.5116 |     -0.1817 |
+        | 2023Q1 | -0.3904 | -0.4339 | -0.3995 |     -0.1207 |
+        | 2023Q2 | -0.1746 | -0.2782 | -0.2421 |     -0.0443 |
+        | 2023Q3 | -0.1365 | -0.3813 | -0.261  |     -0.0751 |
+        | 2023Q4 |  0      | -0.2021 | -0.1168 |      0      |
+        | 2024Q1 |  0      | -0.0048 |  0      |      0      |
+        | 2024Q2 |  0      |  0      |  0      |      0      |
+        | 2024Q3 |  0      |  0      | -0.0358 |      0      |
+        | 2024Q4 |  0      |  0      |  0      |      0      |
+        | 2025Q1 | -0.0148 |  0      | -0.1328 |     -0.0427 |
+        | 2025Q2 |  0      |  0      |  0      |      0      |
+        | 2025Q3 | -0.0043 | -0.1047 |  0      |      0      |
+        | 2025Q4 | -0.1043 | -0.2998 |  0      |      0      |
+        """
+        period = period if period else "daily"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        # The first row holds the first close of the window (its return is NaN), the wealth of 1
+        # the drawdowns are measured from; _get_returns would drop it.
+        returns = self._historical_data[period]["Return"]
+
+        drawdown_series = risk_model.get_drawdown_series(returns)
+
+        return finalize_dataset(
+            dataset=drawdown_series,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_errors
+    def get_drawdown_table(
+        self,
+        top: int = 5,
+        period: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        List the largest drawdowns of each asset with their peak, trough and recovery dates, depth and length.
+
+        Where the Maximum Drawdown gives only the single worst decline, the drawdown table shows the
+        largest declines side by side: when each started (the last high before it), when it bottomed
+        out, when the asset was back at its high and how many periods each phase took. It shows whether
+        an asset has one bad episode or recurring ones, and how long recoveries usually take, which a
+        single figure hides.
+
+        The formula is as follows:
+
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1 (see `get_drawdown_series`)
+        - A drawdown runs from the Peak (the last period at a high) to the Recovery (the first period back at
+          that high), with its Trough at the lowest Drawdown in between
+        - To Trough = t(trough) - t(peak), To Recovery = t(recovery) - t(trough) and
+          Length = t(recovery) - t(peak), in periods
+
+        The dates follow pyfolio's drawdown table (peak, valley and recovery dates). QuantStats and ffn
+        instead start a drawdown at the first period below the peak and count calendar days. The deepest
+        drawdown matches `get_maximum_drawdown`, `get_maximum_drawdown_duration` (To Trough) and
+        `get_maximum_drawdown_recovery_time` (To Recovery).
+
+        Also known as: worst drawdowns, drawdown details, drawdown periods.
+
+        Args:
+            top (int, optional): The number of drawdowns per asset, deepest first. Defaults to 5.
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: One row per drawdown, indexed by ticker and rank, with the dates of the Peak, Trough
+                and Recovery, the Drawdown as a negative decimal and, in periods, the time from peak to trough
+                (To Trough), from trough to recovery (To Recovery) and from peak to recovery (Length).
+
+        Notes:
+        - A drawdown that has not recovered by the end of the window has no Recovery, To Recovery or
+        Length (NaN).
+        - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
+        - The table depends on the window: a drawdown that started before the start date is measured from
+        the first close of the window.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["META", "NFLX"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_drawdown_table(top=3)
+        ```
+
+        Which returns:
+
+        |                  | Peak       | Trough     | Recovery   |   Drawdown |   To Trough |   To Recovery |   Length |
+        |:-----------------|:-----------|:-----------|:-----------|-----------:|------------:|--------------:|---------:|
+        | ('META', 1)      | 2021-09-07 | 2022-11-03 | 2024-01-19 |    -0.7672 |         293 |           302 |      595 |
+        | ('META', 2)      | 2025-02-14 | 2025-04-21 | 2025-06-30 |    -0.3416 |          44 |            48 |       92 |
+        | ('META', 3)      | 2025-08-12 | 2025-11-20 | NaT        |    -0.2537 |          71 |           nan |      nan |
+        | ('NFLX', 1)      | 2021-11-17 | 2022-05-11 | 2024-08-20 |    -0.7593 |         120 |           571 |      691 |
+        | ('NFLX', 2)      | 2025-06-30 | 2025-12-10 | NaT        |    -0.3076 |         114 |           nan |      nan |
+        | ('NFLX', 3)      | 2025-02-14 | 2025-04-04 | 2025-04-24 |    -0.1916 |          34 |            13 |       47 |
+        | ('Benchmark', 1) | 2022-01-03 | 2022-10-12 | 2023-12-13 |    -0.245  |         195 |           294 |      489 |
+        | ('Benchmark', 2) | 2025-02-19 | 2025-04-08 | 2025-06-26 |    -0.1877 |          34 |            54 |       88 |
+        | ('Benchmark', 3) | 2024-07-16 | 2024-08-05 | 2024-09-19 |    -0.0841 |          14 |            32 |       46 |
+        """
+        period = period if period else "daily"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if top < 1:
+            raise ValueError("top must be at least 1.")
+
+        # The first row holds the first close of the window, see get_drawdown_series.
+        returns = self._historical_data[period]["Return"]
+
+        drawdown_table = risk_model.get_drawdown_table(returns, top=top)
+        decimals = rounding if rounding is not None else self._rounding
+
+        if decimals is not None:
+            drawdown_table["Drawdown"] = drawdown_table["Drawdown"].round(decimals)
+
+        return drawdown_table
+
     @handle_portfolio
     @handle_errors
     def get_ulcer_index(

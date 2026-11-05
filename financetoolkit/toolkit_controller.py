@@ -1188,6 +1188,22 @@ class Toolkit:
 
         return econometrics
 
+    def _other_toolkit(self, tickers: list[str], start: str, end: str) -> "Toolkit":
+        """
+        A Toolkit of other tickers (sector funds, a fund's holdings, earlier crises) that
+        shares this one's key, cache and source.
+        """
+        return Toolkit(
+            tickers=tickers,
+            api_key=self._api_key,
+            start_date=start,
+            end_date=end,
+            use_cached_data=self._cache,
+            enforce_source=self._enforce_source,
+            benchmark_ticker=None,
+            progress_bar=False,
+        )
+
     @property
     def etf(self) -> "ETF":
         """
@@ -1238,6 +1254,26 @@ class Toolkit:
                 return pd.Series(dtype=object)
             return statistics.loc["Currency"]
 
+        def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
+            # The traded (split-adjusted) close, as an index level is a price index.
+            historical = self._other_toolkit(tickers, start, end).get_historical_data(
+                period="daily"
+            )
+            if historical.empty:
+                return pd.DataFrame(columns=tickers)
+            close = historical["Close"]
+            return close.to_frame(tickers[0]) if isinstance(close, pd.Series) else close
+
+        def sectors(tickers: list[str]) -> pd.Series:
+            profile = self._other_toolkit(
+                tickers, self._start_date, self._end_date
+            ).get_profile()
+            if isinstance(profile, pd.Series):
+                return pd.Series({tickers[0]: profile.get("Sector")})
+            if profile.empty or "Sector" not in profile.index:
+                return pd.Series(dtype=object)
+            return profile.loc["Sector"]
+
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
@@ -1247,6 +1283,8 @@ class Toolkit:
             end_date=self._end_date,
             rounding=self._rounding,
             currency_function=currencies,
+            prices_function=prices,
+            sector_function=sectors,
         )
 
     @property
@@ -1294,22 +1332,8 @@ class Toolkit:
             lambda period: self._get_module_risk_free_rate(period)["Adj Close"]
         )
 
-        def other_toolkit(tickers: list[str], start: str, end: str) -> "Toolkit":
-            # Other tickers (sector funds, the benchmark, earlier crises) get a Toolkit of
-            # their own that shares this one's key, cache and source.
-            return Toolkit(
-                tickers=tickers,
-                api_key=self._api_key,
-                start_date=start,
-                end_date=end,
-                use_cached_data=self._cache,
-                enforce_source=self._enforce_source,
-                benchmark_ticker=None,
-                progress_bar=False,
-            )
-
         def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
-            historical = other_toolkit(tickers, start, end).get_historical_data(
+            historical = self._other_toolkit(tickers, start, end).get_historical_data(
                 period="daily"
             )
             if historical.empty:
@@ -1324,7 +1348,7 @@ class Toolkit:
             source = (
                 self
                 if own
-                else other_toolkit(tickers, self._start_date, self._end_date)
+                else self._other_toolkit(tickers, self._start_date, self._end_date)
             )
             if kind == "sector":
                 result = source._collect_fund_data("sector_weightings")

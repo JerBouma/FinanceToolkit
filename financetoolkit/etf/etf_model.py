@@ -203,3 +203,54 @@ def get_tracking(
             "R Squared": correlation**2,
         }
     )
+
+
+def get_contribution(
+    weights: pd.Series,
+    start_prices: pd.Series,
+    end_prices: pd.Series,
+    weight_date_prices: pd.Series,
+    fund_change: float,
+) -> pd.DataFrame:
+    """
+    Calculate the contribution of every holding to a fund's return over a period: its weight
+    at the start of the period times its return over the period, so the contributions add up
+    to the return of the part of the fund the holdings cover.
+
+    The weights are those of a later date (a fund publishes only its current holdings). They
+    are rolled back to the start of the period with every holding's own price change between
+    the two dates, relative to the fund's: w_start = w × (P_start / P_weights) × (F_weights /
+    F_start), with F the fund's price. That is exact for a fund that kept the same number of
+    shares of each holding (and the same cash), as a market capitalization weighted index does
+    between its rebalancings.
+
+    Args:
+        weights (pd.Series): The weight of every holding on the date of the holdings, as decimals.
+        start_prices (pd.Series): The price of every holding at the start of the period.
+        end_prices (pd.Series): The price of every holding at the end of the period.
+        weight_date_prices (pd.Series): The price of every holding on the date of the holdings.
+        fund_change (float): The fund's price on the date of the holdings over its price at the
+            start of the period, F_weights / F_start.
+
+    Returns:
+        pd.DataFrame: The Start Weight, Return and Contribution of every holding with a price on
+        all three dates, as decimals.
+    """
+    prices = pd.concat(
+        [start_prices, end_prices, weight_date_prices],
+        axis=1,
+        keys=["start", "end", "weights"],
+    ).reindex(weights.index)
+    priced = prices.notna().all(axis=1) & (prices > 0).all(axis=1)
+    weights, prices = weights[priced], prices[priced]
+
+    start_weights = weights * prices["start"] / prices["weights"] * fund_change
+    returns = prices["end"] / prices["start"] - 1
+
+    return pd.DataFrame(
+        {
+            "Start Weight": start_weights,
+            "Return": returns,
+            "Contribution": start_weights * returns,
+        }
+    )

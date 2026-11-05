@@ -484,3 +484,43 @@ def test_hill_estimator_of_a_constant_tail_is_nan():
     estimate = risk_model.get_hill_estimator(pd.Series([-0.01] * 50), tail="left")
 
     assert np.isnan(estimate["Hill Tail Index"])
+
+
+def test_move_significance_only_compares_a_move_with_the_moves_before_it():
+    dates = pd.period_range("2024-01-01", periods=8, freq="D")
+    returns = pd.Series(
+        [0.01, -0.02, 0.005, -0.01, 0.03, np.nan, -0.025, 0.002], index=dates
+    )
+
+    significance = risk_model.get_move_significance(returns, window=3)
+
+    # The volatility of the three returns before the day, not including the day itself.
+    expected = -0.01 / np.std([0.01, -0.02, 0.005], ddof=1)
+    assert significance.loc["2024-01-04", "Volatility Multiple"] == pytest.approx(
+        expected
+    )
+    # The gap is skipped: the window before 2024-01-07 is the three returns before the gap.
+    expected = -0.025 / np.std([0.005, -0.01, 0.03], ddof=1)
+    assert significance.loc["2024-01-07", "Volatility Multiple"] == pytest.approx(
+        expected
+    )
+    assert significance.loc["2024-01-06"].isna().all()
+
+    # Smaller in absolute value than four of the five earlier moves.
+    assert significance.loc["2024-01-07", "Percentile"] == pytest.approx(0.8)
+    assert significance.loc[:"2024-01-03", "Percentile"].isna().all()
+
+
+def test_largest_since_compares_falls_with_falls_and_rises_with_rises():
+    dates = pd.period_range("2024-01-01", periods=6, freq="D")
+    returns = pd.Series([-0.05, 0.04, -0.01, 0.02, -0.03, 0.05], index=dates)
+
+    largest_since = risk_model.get_move_significance(returns, window=2)["Largest Since"]
+
+    # A 3% fall: the last fall at least as deep was the 5% fall, the rises don't count.
+    assert largest_since["2024-01-05"] == "2024-01-01"
+    # A 2% rise: the 4% rise was larger.
+    assert largest_since["2024-01-04"] == "2024-01-02"
+    # The largest rise of the history has no earlier date.
+    assert pd.isna(largest_since["2024-01-06"])
+    assert pd.isna(largest_since["2024-01-01"])

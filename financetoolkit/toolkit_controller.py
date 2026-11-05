@@ -1705,6 +1705,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         show_columns: list[str] | None = None,
     ):
         """
@@ -1720,6 +1721,9 @@ class Toolkit:
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
             growth (bool, optional): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int], optional): Defines the number of periods to lag the growth data by. Defaults to 1.
+            compound (bool): Defines whether the growth is the compound annual growth rate over the lag
+            (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
+            Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -1793,6 +1797,7 @@ class Toolkit:
             self._analyst_estimates_growth = calculate_growth(
                 self._analyst_estimates,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
             )
 
@@ -4698,6 +4703,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         show_columns: list[str] | None = None,
     ):
         """
@@ -4735,6 +4741,9 @@ class Toolkit:
             growth (bool): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int]): Defines the number of periods to lag the growth data by.
             E.g. 4 with quarterly data gives the growth against the same quarter a year earlier. Defaults to 1.
+            compound (bool): Defines whether the growth is the compound annual growth rate over the lag
+            (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
+            Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -4863,6 +4872,7 @@ class Toolkit:
             self._balance_sheet_statement_growth = calculate_growth(
                 balance_sheet_statement,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
@@ -4896,6 +4906,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ):
@@ -4930,6 +4941,9 @@ class Toolkit:
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
             window.
+            compound (bool): Defines whether the growth is the compound annual growth rate over the lag
+            (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
+            Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -5083,6 +5097,7 @@ class Toolkit:
             self._income_statement_growth = calculate_growth(
                 income_statement,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)
@@ -5111,6 +5126,7 @@ class Toolkit:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         trailing: int | None = None,
         show_columns: list[str] | None = None,
     ):
@@ -5148,6 +5164,9 @@ class Toolkit:
             trailing (int): Defines whether to select a trailing period.
             E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
             window.
+            compound (bool): Defines whether the growth is the compound annual growth rate over the lag
+            (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
+            Defaults to False.
             show_columns (list[str] | None): A list of column names to keep in the result. Invalid
             names are reported and ignored. Defaults to None, which keeps every column.
 
@@ -5309,6 +5328,7 @@ class Toolkit:
             self._cash_flow_statement_growth = calculate_growth(
                 cash_flow_statement,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             ).truncate(before=self._start_date, axis=1)

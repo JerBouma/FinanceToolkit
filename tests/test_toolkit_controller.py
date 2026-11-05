@@ -791,3 +791,18 @@ def test_statistics_are_shown_from_the_start_date(monkeypatch):
     result = toolkit.get_statistics_statement()
 
     assert [str(period) for period in result.columns] == ["2021", "2022"]
+
+
+def test_compound_growth_of_a_statement_is_the_cagr_of_its_values(test_toolkit):
+    statement = test_toolkit.get_income_statement(rounding=None)
+    cagr = test_toolkit.get_income_statement(
+        growth=True, lag=2, compound=True, rounding=None
+    )
+
+    revenue = statement.xs("Revenue", level=1)
+    periods = revenue.columns
+    expected = (revenue[periods[-1]] / revenue[periods[-3]]) ** (1 / 2) - 1
+
+    pd.testing.assert_series_equal(
+        cagr.xs("Revenue", level=1)[periods[-1]], expected, check_names=False, atol=1e-4
+    )

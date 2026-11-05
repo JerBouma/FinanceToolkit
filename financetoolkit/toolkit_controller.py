@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from financetoolkit import currencies_model
+from financetoolkit import currencies_model, earnings_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
 from financetoolkit.discovery.discovery_model import (
     search_crypto_news as _search_crypto_news,
@@ -1929,6 +1929,166 @@ class Toolkit:
             return filter_columns(earnings_calendar.loc[self._tickers[0]], show_columns)
 
         return filter_columns(earnings_calendar, show_columns)
+
+    def get_earnings_surprise(
+        self,
+        window: int = 1,
+        sue_window: int = 8,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how far each reported EPS and revenue came in above or below the analyst
+        consensus, and how the share price reacted to it, in one table per announcement.
+
+        - The EPS Surprise and Revenue Surprise are (reported - estimate) / |estimate|.
+        - The SUE (standardized unexpected earnings) divides the EPS surprise (reported -
+          estimate) by the standard deviation (ddof=1) of the EPS surprises of the sue_window
+          announcements before it. Only surprises known at the time are used, so it can be
+          compared across companies and over time. This follows Livnat and Mendenhall (2006),
+          "Comparing the Post-Earnings Announcement Drift for Surprises Calculated from Analyst
+          and Time Series Forecasts", with the analyst consensus as the expectation. Bernard
+          and Thomas (1989), "Post-Earnings-Announcement Drift: Delayed Price Response or Risk
+          Premium?", scale a time-series surprise the same way and show that shares keep
+          drifting in the direction of the SUE for weeks after the announcement.
+        - The Reaction compounds the share's (dividend-adjusted) returns over the trading days
+          from window days before to window days after the announcement. Day 0 is the
+          announcement date or, when that isn't a trading day, the next one.
+        - The Benchmark Reaction is the benchmark's return between the same dates, and the
+          Abnormal Reaction is the Reaction minus the Benchmark Reaction (a market-adjusted
+          return). Both need the Toolkit's benchmark_ticker.
+
+        The source doesn't say whether a company reported before the open or after the close.
+        The default window of 1 covers days -1, 0 and +1, so the reaction is captured either
+        way: on day 0 for a report before the open and on day +1 for one after the close. This
+        is the three-day window of the post-earnings drift literature.
+
+        Each ticker's own trading days are used. An announcement too close to the start_date
+        or end_date of the Toolkit for its window has no reaction, and the SUE needs sue_window
+        earlier announcements. The full reporting history is retrieved for this, so it is
+        usually available.
+
+        Note that this information requires a Premium FMP subscription.
+
+        Also known as: earnings surprise, earnings beat or miss, standardized unexpected
+        earnings, SUE, earnings reaction, post-earnings announcement drift (PEAD).
+
+        Args:
+            window (int, optional): The trading days before and after the announcement the
+                reaction covers. Defaults to 1, the three days -1, 0 and +1.
+            sue_window (int, optional): The number of earlier announcements whose EPS surprises
+                scale the SUE. Defaults to 8 (two years of quarterly reports).
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding set on the Toolkit.
+            show_columns (list[str] | None, optional): A list of column names to keep in the
+                result. Invalid names are reported and ignored. Defaults to None, which keeps
+                every column.
+
+        Returns:
+            pd.DataFrame: Per reported announcement the EPS, Estimated EPS, EPS Surprise,
+                Revenue, Estimated Revenue, Revenue Surprise, SUE, Reaction, Benchmark Reaction
+                and Abnormal Reaction. The surprises and reactions are decimals (0.05 is 5%).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-06-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_earnings_surprise(
+            show_columns=["EPS Surprise", "Revenue Surprise", "SUE", "Reaction", "Abnormal Reaction"]
+        )
+        ```
+
+        Which returns:
+
+        | date                |   EPS Surprise |   Revenue Surprise |    SUE |   Reaction |   Abnormal Reaction |
+        |:--------------------|---------------:|-------------------:|-------:|-----------:|--------------------:|
+        | 2024-08-28 00:00:00 |         0.0543 |             0.0438 | 1.123  |    -0.0701 |             -0.0657 |
+        | 2024-11-20 00:00:00 |         0.08   |             0.0581 | 2.2513 |     0.0466 |              0.0372 |
+        | 2025-02-26 00:00:00 |         0.0495 |             0.0323 | 2.0736 |    -0.0778 |             -0.0574 |
+        | 2025-05-28 00:00:00 |         0.0991 |             0.0168 | 4.8777 |     0.0602 |              0.0413 |
+        | 2025-08-27 00:00:00 |         0.0396 |             0.0151 | 3.3169 |     0.002  |             -0.008  |
+        | 2025-11-19 00:00:00 |         0.0317 |             0.0372 | 3.0966 |    -0.0319 |             -0.0122 |
+        """
+        if not self._api_key:
+            logger.error(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+                "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+            return pd.DataFrame()
+
+        # The whole reporting history, so the SUE of the first announcements in the period
+        # is scaled by the surprises before it.
+        earnings, _ = self._collect_per_ticker(
+            dataset="earnings_calendar",
+            tickers=self._tickers,
+            ticker_axis=ticker_model.TICKER_ON_INDEX,
+            parameters={
+                "start_date": None,
+                "end_date": self._end_date,
+                "actual_dates": True,
+                "user_subscription": self._fmp_plan,
+            },
+            collector=lambda tickers: _get_earnings_calendar(
+                tickers=tickers,
+                api_key=self._api_key,
+                start_date=None,
+                end_date=self._end_date,
+                actual_dates=True,
+                sleep_timer=self._sleep_timer,
+                user_subscription=self._fmp_plan,
+            ),
+        )
+
+        historical_data = self.get_historical_data()
+
+        if earnings.empty or historical_data.empty:
+            return pd.DataFrame()
+
+        prices = historical_data["Adj Close"]
+        # A date only another ticker traded on is filled with volume 0; leaving it out keeps
+        # each ticker's own trading days.
+        traded = historical_data["Volume"] != 0
+        benchmark_prices = (
+            prices["Benchmark"].where(traded["Benchmark"])
+            if "Benchmark" in prices.columns
+            else None
+        )
+
+        surprises = {}
+        for ticker in self._tickers:
+            if ticker not in earnings.index.get_level_values(0) or ticker not in prices:
+                continue
+            surprise = earnings_model.get_earnings_surprise(
+                earnings=earnings.loc[ticker],
+                prices=prices[ticker].where(traded[ticker]),
+                benchmark_prices=benchmark_prices,
+                window=window,
+                sue_window=sue_window,
+            )
+            surprises[ticker] = surprise.loc[self._start_date : self._end_date]
+
+        if not surprises:
+            return pd.DataFrame()
+
+        earnings_surprise = apply_rounding(
+            pd.concat(surprises, axis=0),
+            rounding if rounding is not None else self._rounding,
+        )
+
+        if len(self._tickers) == 1:
+            return filter_columns(earnings_surprise.loc[self._tickers[0]], show_columns)
+
+        return filter_columns(earnings_surprise, show_columns)
 
     def get_stock_news(
         self,

@@ -15,6 +15,7 @@ from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.risk import cvar_model
 from financetoolkit.risk.risk_model import (
     apply_to_stacked_windows,
+    get_tail_ratio,
     get_wealth_and_peak,
 )
 from financetoolkit.utilities.requests_model import get_request
@@ -2142,6 +2143,262 @@ def get_gain_to_pain_ratio(
         return returns.sum() / losses
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_return_statistics(returns: pd.Series) -> pd.Series:
+    """
+    Calculate the statistics traders report about a series of returns: how often it wins,
+    how large its wins and losses are, how long its streaks run and how it recovers from
+    its drawdown.
+
+    The formulas are as follows:
+
+        - Win Rate = Number of Positive Returns / Number of Non-Zero Returns
+        - Average Win = Average of the Positive Returns
+        - Average Loss = Average of the Negative Returns
+        - Payoff Ratio = Average Win / |Average Loss|
+        - Profit Factor = Sum of the Positive Returns / |Sum of the Negative Returns|
+        - Expectancy = Win Rate x Average Win + (1 - Win Rate) x Average Loss
+        - Maximum Consecutive Wins (Losses) = The longest run of positive (negative) returns
+        - Recovery Factor = Cumulative Return / |Maximum Drawdown|
+        - Common Sense Ratio = Profit Factor x Tail Ratio (95th / 5th percentile)
+
+    A return of exactly zero is neither a win nor a loss: it is left out of the win rate
+    and ends a streak. The definitions follow the QuantStats package, except that the
+    Recovery Factor compounds the returns into the cumulative return (QuantStats sums them),
+    so that it relates the same wealth path to the drawdown measured on it.
+
+    For more information, see the following sources:
+
+    - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
+    (Expectancy and the payoff ratio as the basis of evaluating a trading system.)
+    - Aroussi, R. "QuantStats: Portfolio analytics for quants."
+    https://github.com/ranaroussi/quantstats (profit factor, payoff ratio, consecutive
+    wins and losses, recovery factor and common sense ratio).
+
+    Args:
+        returns (pd.Series): A Series of returns; missing returns are left out.
+
+    Returns:
+        pd.Series: The statistics, indexed by their name. A Profit Factor with gains but
+        no losses is infinite (inf), as for the Omega Ratio; a statistic without the
+        returns it needs (e.g. the Payoff Ratio without losses) is NaN.
+    """
+    returns = returns.dropna()
+    wins = returns[returns > 0]
+    losses = returns[returns < 0]
+    non_zero = len(wins) + len(losses)
+
+    win_rate = len(wins) / non_zero if non_zero else np.nan
+    average_win = wins.mean() if len(wins) else np.nan
+    average_loss = losses.mean() if len(losses) else np.nan
+
+    # Gains without losses give an infinite ratio, as for the Omega Ratio.
+    no_losses = np.inf if len(wins) else np.nan
+    profit_factor = wins.sum() / abs(losses.sum()) if len(losses) else no_losses
+
+    # Streaks: every change of sign (a zero return included) starts a new run.
+    signs = np.sign(returns)
+    runs = (signs != signs.shift()).cumsum()
+    run_lengths = signs.groupby(runs).agg(["first", "size"])
+    longest = run_lengths.groupby("first")["size"].max()
+
+    wealth, peak = get_wealth_and_peak(returns)
+    maximum_drawdown = (wealth / peak - 1).min() if len(returns) else np.nan
+    cumulative_return = wealth.iloc[-1] - 1 if len(returns) else np.nan
+
+    tail_ratio = get_tail_ratio(returns, 0.05) if len(returns) else np.nan
+
+    return pd.Series(
+        {
+            "Win Rate": win_rate,
+            "Average Win": average_win,
+            "Average Loss": average_loss,
+            "Payoff Ratio": (
+                average_win / abs(average_loss) if len(losses) else np.nan
+            ),
+            "Profit Factor": profit_factor,
+            # Equal to the average of the non-zero returns.
+            "Expectancy": (
+                (wins.sum() + losses.sum()) / non_zero if non_zero else np.nan
+            ),
+            "Max Consecutive Wins": (
+                float(longest.get(1.0, 0)) if len(returns) else np.nan
+            ),
+            "Max Consecutive Losses": (
+                float(longest.get(-1.0, 0)) if len(returns) else np.nan
+            ),
+            "Recovery Factor": (
+                cumulative_return / abs(maximum_drawdown)
+                if maximum_drawdown < 0
+                else np.nan
+            ),
+            "Common Sense Ratio": profit_factor * tail_ratio,
+        }
+    )
+
+
+def get_return_statistics_table(
+    returns: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Calculate the return statistics of `get_return_statistics` for every column, and for a
+    within period index for every period.
+
+    Args:
+        returns (pd.DataFrame): A DataFrame of returns, one column per asset, optionally
+            with a (period, date) index.
+
+    Returns:
+        pd.DataFrame: Over the whole history, the statistics as the index and the assets as
+        the columns. Within periods, the periods as the index and (statistic, asset) as the
+        columns.
+    """
+    if returns.index.nlevels != MULTI_PERIOD_INDEX_LEVELS:
+        return returns.apply(get_return_statistics)
+
+    statistics = {
+        sub_period: returns.loc[sub_period].apply(get_return_statistics).stack()
+        for sub_period in returns.index.get_level_values(0).unique()
+    }
+
+    return pd.DataFrame(statistics).T
+
+
+def get_kelly_criterion(
+    returns: pd.Series | pd.DataFrame,
+    method: str = "discrete",
+    fraction: float = 1.0,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Kelly Criterion, the share of capital to put at risk that maximizes the
+    expected logarithmic growth of wealth.
+
+    The formulas are as follows:
+
+        - Discrete: Kelly = Win Rate - (1 - Win Rate) / Payoff Ratio
+        - Continuous: Kelly = Average Excess Return / Variance of the Excess Returns
+
+    The discrete form is Kelly's (1956) bet with a probability of winning and a ratio of the
+    average win to the average loss, as the QuantStats package calculates it from returns
+    (a zero return counting as neither). The continuous form is Thorp's (2006) for returns
+    that are (close to) normally distributed, on excess returns over the risk free rate,
+    with the sample variance (ddof=1); its value does not depend on the return frequency,
+    since the average and the variance scale alike. A value above 1 means borrowing to
+    invest, a negative value means the edge is negative (short or stay out).
+
+    For more information, see the following sources:
+
+    - Kelly, J.L. (1956). "A New Interpretation of Information Rate." Bell System Technical
+    Journal, 35(4), 917-926.
+    - Thorp, E.O. (2006). "The Kelly Criterion in Blackjack, Sports Betting, and the Stock
+    Market." Handbook of Asset and Liability Management, Volume 1, 385-428.
+    - MacLean, L.C., Thorp, E.O. & Ziemba, W.T. (2011). "The Kelly Capital Growth Investment
+    Criterion." World Scientific. (Fractional Kelly to reduce the volatility of growth.)
+
+    Args:
+        returns (pd.Series | pd.DataFrame): Returns for the discrete form, excess returns
+            for the continuous form, optionally with a (period, date) index.
+        method (str, optional): "discrete" or "continuous". Defaults to "discrete".
+        fraction (float, optional): The share of the full Kelly bet, e.g. 0.5 for half
+            Kelly. Defaults to 1.0.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The Kelly Criterion as a float for a Series, per
+        column for a DataFrame and per period and column for a within period index. NaN
+        when it is undefined: the discrete form without wins or losses, the continuous form
+        without variance.
+    """
+    if method not in ("discrete", "continuous"):
+        raise ValueError("Please choose a method of 'discrete' or 'continuous'.")
+
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            return pd.DataFrame(
+                {
+                    sub_period: get_kelly_criterion(
+                        returns.loc[sub_period], method, fraction
+                    )
+                    for sub_period in returns.index.get_level_values(0).unique()
+                }
+            ).T
+
+        return returns.apply(get_kelly_criterion, method=method, fraction=fraction)
+
+    if not isinstance(returns, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    kelly = kelly_of_windows(returns.dropna().to_numpy(dtype=float)[None, :], method)
+
+    return float(kelly[0]) * fraction
+
+
+def get_rolling_kelly_criterion(
+    returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    method: str = "discrete",
+    fraction: float = 1.0,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Kelly Criterion of returns (discrete) or excess returns
+    (continuous), as `get_kelly_criterion` calculates it.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        window_size (int): The size of the rolling window.
+        method (str, optional): "discrete" or "continuous". Defaults to "discrete".
+        fraction (float, optional): The share of the full Kelly bet. Defaults to 1.0.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Kelly Criterion values with time as index.
+    """
+    if method not in ("discrete", "continuous"):
+        raise ValueError("Please choose a method of 'discrete' or 'continuous'.")
+
+    return (
+        apply_to_stacked_windows(
+            returns, window_size, lambda windows: kelly_of_windows(windows, method)
+        )
+        * fraction
+    )
+
+
+def kelly_of_windows(windows: np.ndarray, method: str) -> np.ndarray:
+    """
+    Calculate the full Kelly Criterion of every row of an array of returns.
+
+    Args:
+        windows (np.ndarray): One set of returns per row, without missing values.
+        method (str): "discrete" or "continuous".
+
+    Returns:
+        np.ndarray: The Kelly Criterion per row, NaN where it is undefined.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if method == "continuous":
+            variance = (
+                windows.var(axis=1, ddof=1)
+                if windows.shape[1] > 1
+                else np.full(len(windows), np.nan)
+            )
+
+            return np.where(variance > 0, windows.mean(axis=1) / variance, np.nan)
+
+        wins = windows > 0
+        losses = windows < 0
+        win_count = wins.sum(axis=1)
+        loss_count = losses.sum(axis=1)
+
+        win_rate = win_count / (win_count + loss_count)
+        payoff_ratio = (np.where(wins, windows, 0).sum(axis=1) / win_count) / (
+            np.abs(np.where(losses, windows, 0).sum(axis=1)) / loss_count
+        )
+
+        return np.where(
+            (win_count > 0) & (loss_count > 0),
+            win_rate - (1 - win_rate) / payoff_ratio,
+            np.nan,
+        )
 
 
 def get_compound_growth_rate(

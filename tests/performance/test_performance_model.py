@@ -843,3 +843,91 @@ def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
 
     assert measure["A"] > 0
     assert np.isnan(measure["B"])
+
+
+# A small history with four wins, three losses and a zero return (counted as neither).
+TRADES = pd.Series([0.02, 0.01, -0.01, 0.0, 0.03, -0.02, -0.01, 0.02])
+
+
+def test_return_statistics_match_a_hand_calculation():
+    statistics = performance_model.get_return_statistics(TRADES)
+
+    assert statistics["Win Rate"] == pytest.approx(4 / 7)
+    assert statistics["Average Win"] == pytest.approx(0.02)
+    assert statistics["Average Loss"] == pytest.approx(-0.04 / 3)
+    assert statistics["Payoff Ratio"] == pytest.approx(1.5)
+    assert statistics["Profit Factor"] == pytest.approx(2.0)
+    assert statistics["Expectancy"] == pytest.approx(0.04 / 7)
+    assert statistics["Max Consecutive Wins"] == 2
+    assert statistics["Max Consecutive Losses"] == 2
+
+    # From the peak after the fifth return to the trough after the seventh.
+    wealth = (1 + TRADES).cumprod()
+    drawdown = wealth.iloc[6] / wealth.iloc[4] - 1
+    assert statistics["Recovery Factor"] == pytest.approx(
+        (wealth.iloc[-1] - 1) / abs(drawdown)
+    )
+
+
+def test_a_history_without_losses_has_an_infinite_profit_factor():
+    statistics = performance_model.get_return_statistics(pd.Series([0.01, 0.02, 0.0]))
+
+    assert statistics["Profit Factor"] == np.inf
+    assert np.isnan(statistics["Payoff Ratio"])
+    assert np.isnan(statistics["Recovery Factor"])
+    assert statistics["Max Consecutive Losses"] == 0
+
+
+def test_a_losing_history_keeps_the_sign_of_its_recovery_factor():
+    statistics = performance_model.get_return_statistics(pd.Series([0.01, -0.05, 0.01]))
+
+    assert statistics["Recovery Factor"] < 0
+
+
+def test_return_statistics_per_period_and_per_column():
+    returns = pd.DataFrame({"A": TRADES, "B": TRADES * 2})
+    returns.index = pd.MultiIndex.from_arrays([["2020"] * 4 + ["2021"] * 4, range(8)])
+
+    table = performance_model.get_return_statistics_table(returns)
+
+    assert list(table.index) == ["2020", "2021"]
+    assert table.loc["2020", ("Win Rate", "A")] == pytest.approx(2 / 3)
+    assert table.loc["2021", ("Average Win", "B")] == pytest.approx(0.05)
+
+
+def test_the_discrete_kelly_criterion_matches_a_hand_calculation():
+    win_rate, payoff_ratio = 4 / 7, 1.5
+
+    assert performance_model.get_kelly_criterion(TRADES) == pytest.approx(
+        win_rate - (1 - win_rate) / payoff_ratio
+    )
+    assert performance_model.get_kelly_criterion(TRADES, fraction=0.5) == pytest.approx(
+        (win_rate - (1 - win_rate) / payoff_ratio) / 2
+    )
+
+
+def test_the_continuous_kelly_criterion_is_the_mean_over_the_variance():
+    assert performance_model.get_kelly_criterion(
+        TRADES, method="continuous"
+    ) == pytest.approx(TRADES.mean() / TRADES.var(ddof=1))
+
+
+def test_the_kelly_criterion_without_losses_is_undefined():
+    assert np.isnan(performance_model.get_kelly_criterion(pd.Series([0.01, 0.02])))
+
+
+def test_the_rolling_kelly_criterion_matches_each_window():
+    returns = pd.DataFrame({"A": TRADES})
+
+    for method in ("discrete", "continuous"):
+        rolling = performance_model.get_rolling_kelly_criterion(returns, 5, method)
+
+        assert rolling["A"].iloc[:4].isna().all()
+        assert rolling["A"].iloc[-1] == pytest.approx(
+            performance_model.get_kelly_criterion(TRADES.iloc[-5:], method)
+        )
+
+
+def test_an_unknown_kelly_method_raises():
+    with pytest.raises(ValueError, match="discrete"):
+        performance_model.get_kelly_criterion(TRADES, method="binary")

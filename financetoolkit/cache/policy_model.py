@@ -161,6 +161,7 @@ POLICIES: dict[str, CachePolicy] = {
     # Full history per series and no date range accepted, so only a TTL applies.
     f"{EUROPEAN_CENTRAL_BANK}.series": CachePolicy(ttl_seconds=DAY),
     f"{FEDERAL_RESERVE}.rate": CachePolicy(ttl_seconds=DAY),
+    f"{FEDERAL_RESERVE}.series": CachePolicy(ttl_seconds=DAY),
     # Statistical offices and central banks that publish a series whole and revise its
     # recent past; most release daily or monthly, so a day keeps the data current.
     # A rerun only asks for the revision window: a year of monthly releases for Eurostat,

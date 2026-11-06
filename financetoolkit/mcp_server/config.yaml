@@ -285,7 +285,7 @@ category_descriptions:
   portfolio:               "Portfolio construction: optimal weights (minimum variance, maximum Sharpe, mean-variance, risk parity, HRP, minimum CVaR, Black-Litterman), efficient frontier, risk contributions, historical stress tests, look-through exposure of ETFs and Brinson attribution."
   portfolio_performance:   "A portfolio you hold, from its transactions, holdings, weights or a classic preset: positions, value and returns over time, returns per period, profit and loss per trade and the money-weighted return, next to a benchmark."
   models:                  "Financial models (DCF/intrinsic value, WACC, DuPont, Altman Z, Piotroski). Pre-computed."
-  technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages). Applied to price data automatically."
+  technicals:              "Technical indicators (RSI, MACD, Bollinger Bands, moving averages), candlestick patterns and trading signals. Applied to price data automatically."
   options:                 "Option pricing and Greeks (Black-Scholes, binomial, delta, gamma, theta, vega, implied vol)."
   etf:                     "ETF analysis (holdings, information, sector and country weightings, profile and premium/discount to NAV, tracking difference and error, concentration, overlap between funds, look-through valuation of the holdings, liquidity)."
   government:              "Government fiscal metrics by country (debt, deficit, expenditure, revenue, tax). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
@@ -426,7 +426,7 @@ tool_groups:
 
   - tool_name:      "momentum"
     display_name:   "Momentum Indicators"
-    description:    "Momentum technical indicators (RSI, MACD, Stochastic Oscillator, Williams %R, Aroon, ADX, CCI, MFI, rate of change, Ichimoku Cloud, awesome, ultimate and Chande momentum oscillators, vortex, Know Sure Thing and more). Applied to price data automatically — no need to fetch prices first. Each indicator needs its window of history before it produces values, so the first periods after start_date can be empty and quarterly or yearly periods with long windows can be empty on short histories; start earlier to warm up. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_relative_strength gives the price relative to the benchmark, the Mansfield relative strength and a 1-99 relative strength rating across the tickers; get_seasonality the average return, hit rate and t-statistic per calendar month (frequency='month') or weekday (frequency='weekday')."
+    description:    "Momentum technical indicators (RSI, MACD, Stochastic Oscillator, Williams %R, Aroon, ADX, CCI, MFI, rate of change, Ichimoku Cloud, awesome, ultimate and Chande momentum oscillators, vortex, Know Sure Thing and more). Applied to price data automatically — no need to fetch prices first. Each indicator needs its window of history before it produces values, so the first periods after start_date can be empty and quarterly or yearly periods with long windows can be empty on short histories; start earlier to warm up. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_relative_strength gives the price relative to the benchmark, the Mansfield relative strength and a 1-99 relative strength rating across the tickers; get_seasonality the average return, hit rate and t-statistic per calendar month (frequency='month') or weekday (frequency='weekday'); get_signals the events per period: moving average crossovers (golden and death cross with the default 50 and 200), MACD crossovers, the RSI entering and leaving its overbought and oversold zones, Bollinger Band breakouts and new 52-week highs and lows, each 1 for a cross upwards, -1 for a cross downwards and 0 otherwise."
     module_name:    "technicals"
     category:       "ticker"
     # Listed explicitly, as the market-wide and relative measures are not part of the
@@ -456,10 +456,11 @@ tool_groups:
       - "get_know_sure_thing"
       - "get_relative_strength"
       - "get_seasonality"
+      - "get_signals"
 
   - tool_name:      "overlap"
     display_name:   "Overlap Indicators"
-    description:    "Overlap technical indicators drawn over the price (simple, exponential, double exponential, triangular, weighted, Hull and Kaufman adaptive moving averages, TRIX, VWAP, Parabolic SAR, pivot points, Fibonacci retracement levels, support and resistance levels). Applied to price data automatically — no need to fetch prices first. Each indicator needs its window of history before it produces values, so the first periods after start_date can be empty and quarterly or yearly periods with long windows can be empty on short histories; start earlier to warm up. Bollinger Bands and Keltner Channels are in the volatility tool. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    description:    "Overlap technical indicators drawn over the price (simple, exponential, double exponential, triangular, weighted, Hull and Kaufman adaptive moving averages, TRIX, VWAP, Parabolic SAR, pivot points, Fibonacci retracement levels, support and resistance levels). Applied to price data automatically — no need to fetch prices first. Each indicator needs its window of history before it produces values, so the first periods after start_date can be empty and quarterly or yearly periods with long windows can be empty on short histories; start earlier to warm up. Bollinger Bands and Keltner Channels are in the volatility tool. get_candlestick_patterns recognises 15 candlestick patterns with TA-Lib's definitions (doji, hammer, hanging man, inverted hammer, shooting star, engulfing, harami, piercing line, dark cloud cover, morning and evening star, three white soldiers, three black crows, marubozu, spinning top), 1 for a bullish and -1 for a bearish pattern per period (0.8 for the weaker engulfing and harami); patterns='Hammer,Engulfing' returns only those. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
     module_name:    "technicals"
     category:       "ticker"
     # Support/Resistance returns one row per level so collect_overlap_indicators cannot include it,
@@ -480,6 +481,7 @@ tool_groups:
       - "get_pivot_points"
       - "get_fibonacci_retracement_levels"
       - "get_support_resistance_levels"
+      - "get_candlestick_patterns"
 
   - tool_name:      "volatility"
     display_name:   "Volatility Indicators"

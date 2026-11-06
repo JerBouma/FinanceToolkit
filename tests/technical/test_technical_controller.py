@@ -1,6 +1,10 @@
 """Technical Controller Tests""" ""
 # pylint: disable=missing-function-docstring
 
+import pandas as pd
+
+from financetoolkit.technicals import pattern_model
+
 
 def test_collect_all_indicators(recorder, technical_module):
     recorder.capture(technical_module.collect_all_indicators().round(0))
@@ -563,3 +567,38 @@ def test_on_balance_volume_skips_gaps_per_ticker():
     assert obv.loc[index[3], "A"] == 200 + 150
     assert obv.loc[index[2], "A"] != obv.loc[index[2], "A"]
     assert obv.loc[index[3], "B"] == 100 - 200 + 400
+
+
+def test_candlestick_patterns_per_pattern_and_ticker(technical_module):
+    patterns = technical_module.get_candlestick_patterns()
+
+    assert list(dict.fromkeys(patterns.columns.get_level_values(0))) == list(
+        pattern_model.PATTERN_LOOKBACK
+    )
+    values = patterns.to_numpy().ravel()
+    assert set(values[~pd.isna(values)]) <= {
+        -1.0,
+        -0.8,
+        0.0,
+        0.8,
+        1.0,
+    }
+    chosen = technical_module.get_candlestick_patterns(patterns="Hammer, Doji")
+    assert list(dict.fromkeys(chosen.columns.get_level_values(0))) == [
+        "Hammer",
+        "Doji",
+    ]
+
+
+def test_signals_match_the_indicators_they_come_from(technical_module):
+    signals = technical_module.get_signals(short_window=5, long_window=20)
+    short = technical_module.get_moving_average(window=5)
+    long = technical_module.get_moving_average(window=20)
+
+    ticker = short.columns[0]
+    expected = pattern_model.get_crossover(short[ticker], long[ticker])
+    observed = signals["Moving Average Crossover"][ticker]
+    pd.testing.assert_series_equal(
+        observed.dropna(), expected.loc[observed.dropna().index], check_names=False
+    )
+    assert observed.abs().sum() > 0

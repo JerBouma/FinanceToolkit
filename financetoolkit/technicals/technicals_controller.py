@@ -12,6 +12,7 @@ from financetoolkit.technicals import (
     breadth_model,
     momentum_model,
     overlap_model,
+    pattern_model,
     seasonality_model,
     volatility_model,
 )
@@ -8267,3 +8268,310 @@ class Technicals:
         return apply_rounding(
             relative_strength, rounding if rounding is not None else self._rounding
         )
+
+    @handle_errors
+    def get_candlestick_patterns(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        patterns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Recognise 15 classic candlestick patterns in every ticker's candles, with the definitions
+        of TA-Lib's CDL functions. Candlestick charting reads the open, high, low and close of a
+        period as one candle: the real body between the open and the close and the shadows up to
+        the high and down to the low. Certain shapes and sequences are read as a sign that a move
+        is ending or continuing.
+
+        Each pattern is 1 on the candle that completes it as a bullish pattern, -1 as a bearish
+        pattern and 0 otherwise (TA-Lib's +100 and -100 divided by 100). The weaker engulfing and
+        harami, where one end of the two real bodies is equal, are 0.8 and -0.8 (TA-Lib's 80). The
+        doji is indecision rather than a direction and is 1 when present; a marubozu and a spinning
+        top take the colour of the candle (1 white, -1 black).
+
+        The patterns:
+
+        - Doji: an open and close nearly equal.
+        - Hammer (bullish) and Hanging Man (bearish): a short real body at the top of a long lower
+          shadow, near the previous low or the previous high respectively.
+        - Inverted Hammer (bullish) and Shooting Star (bearish): a short real body at the bottom
+          of a long upper shadow that gaps down or up from the previous real body.
+        - Engulfing: a real body that engulfs the previous real body of the opposite colour.
+        - Harami: a short real body inside the previous long real body, opposite to its colour.
+        - Piercing Line (bullish) and Dark Cloud Cover (bearish): a long candle followed by one
+          of the opposite colour that opens beyond the previous low (high) and closes past the
+          middle of the previous real body.
+        - Morning Star (bullish) and Evening Star (bearish): a long real body, a short real body
+          that gaps away from it and a real body of the opposite colour that closes at least 30%
+          into the first.
+        - Three White Soldiers (bullish) and Three Black Crows (bearish): three long-enough
+          candles of one colour with ever higher (lower) closes, each opening within the previous
+          real body.
+        - Marubozu: a long real body with (almost) no shadows.
+        - Spinning Top: a short real body with both shadows longer than the body.
+
+        Sizes are relative to the ticker's own recent candles, as in TA-Lib: a real body is long
+        (short) when it is longer (shorter) than the average real body of the 10 previous candles,
+        a doji's body is at most 10% and a very short shadow less than 10% of their average
+        high-low range, a long shadow is longer than the candle's own real body, and "near" is
+        within 20% and "far" at least 60% of the average high-low range of the 5 previous candles.
+
+        For more information, see the following books:
+
+        - Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute of
+          Finance.
+        - Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley.
+
+        Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way, so an ex-dividend day doesn't read as a gap. "Close"
+                uses the candles as traded (split-adjusted).
+            patterns (str | list[str] | None, optional): The patterns to return, e.g. ["Hammer",
+                "Engulfing"]. Defaults to None, which returns all 15.
+
+        Returns:
+            pd.DataFrame: The patterns per date, with a column per pattern and ticker: 1 (bullish),
+            -1 (bearish), 0.8 / -0.8 (the weaker engulfing and harami) or 0.
+
+        Notes:
+        - The patterns match TA-Lib (github.com/TA-Lib/ta-lib, src/ta_func/ta_CDL*.c) candle for
+          candle, including its default candle settings and penetrations (30% for the stars, 50%
+          for the dark cloud cover).
+        - A pattern is empty until TA-Lib's lookback has passed: the 10 to 13 candles its
+          averages and the pattern itself need, counted from the ticker's own first candle.
+        - A pattern only describes the candles. The trend before it, which candlestick analysis
+          requires for a reversal (a hammer after a decline, a hanging man after a rise), is not
+          checked, as in TA-Lib; combine a pattern with a trend measure such as
+          `get_moving_average` or `get_signals`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        patterns = toolkit.technicals.get_candlestick_patterns()
+
+        engulfing = patterns["Engulfing"]
+        engulfing[engulfing.ne(0).any(axis=1)].tail()
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-10 |      0 |      0 |           1 |
+        | 2025-12-15 |     -1 |      0 |           0 |
+        | 2025-12-17 |     -1 |      0 |           0 |
+        | 2025-12-19 |      1 |      0 |           0 |
+        | 2025-12-31 |      0 |     -1 |           0 |
+        """
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        if isinstance(patterns, str):
+            patterns = [pattern.strip() for pattern in patterns.split(",")]
+        unknown = set(patterns or []) - set(pattern_model.PATTERN_LOOKBACK)
+        if unknown:
+            raise ValueError(
+                f"Unknown pattern(s) {sorted(unknown)}, choose from "
+                f"{list(pattern_model.PATTERN_LOOKBACK)}."
+            )
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        pattern_dict = {}
+        for ticker in historical_data[close_column].columns:
+            candles = pd.concat(
+                [
+                    historical_data[column][ticker]
+                    for column in ("Open", "High", "Low", close_column)
+                ],
+                axis=1,
+                keys=["Open", "High", "Low", "Close"],
+            ).dropna()
+            # Each ticker is evaluated on its own candles, so a later listing or a missing
+            # day doesn't shift the candles a pattern compares.
+            pattern_dict[ticker] = (
+                pattern_model.get_candlestick_patterns(
+                    candles["Open"], candles["High"], candles["Low"], candles["Close"]
+                )
+                .reindex(historical_data.index)
+                .loc[self._start_date : self._end_date]
+            )
+
+        candlestick_patterns = pd.concat(pattern_dict, axis=1).swaplevel(0, 1, axis=1)
+
+        return candlestick_patterns[list(patterns or pattern_model.PATTERN_LOOKBACK)]
+
+    @handle_errors
+    def get_signals(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        short_window: int = 50,
+        long_window: int = 200,
+        macd_short_window: int = 12,
+        macd_long_window: int = 26,
+        macd_signal_window: int = 9,
+        rsi_window: int = 14,
+        rsi_overbought: float = 70,
+        rsi_oversold: float = 30,
+        bollinger_window: int = 20,
+        bollinger_std_dev: float = 2,
+        high_low_window: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Turn the moving averages, the MACD, the RSI, the Bollinger Bands and new highs and lows
+        into the events traders act on: the period a line is crossed. The indicators themselves
+        are available as `get_moving_average`, `get_moving_average_convergence_divergence`,
+        `get_relative_strength_index` and `get_bollinger_bands`, and give the same values.
+
+        Every signal is 1 on the period a line is crossed upwards, -1 on the period it is crossed
+        downwards and 0 otherwise:
+
+        - Moving Average Crossover: the short Simple Moving Average crossing the long one; with
+          the default 50 and 200 periods a golden cross (1) or a death cross (-1).
+        - MACD Crossover: the MACD line crossing its signal line, the classic trigger of the MACD.
+        - RSI Overbought: the RSI entering (1) or leaving (-1) the overbought zone above
+          `rsi_overbought`. Leaving it is the classic sell signal.
+        - RSI Oversold: the RSI leaving (1) or entering (-1) the oversold zone below
+          `rsi_oversold`. Leaving it is the classic buy signal.
+        - Upper Bollinger Band: the price breaking out above (1) or falling back below (-1) the
+          upper band.
+        - Lower Bollinger Band: the price recovering above (1) or breaking down below (-1) the
+          lower band.
+        - New High/Low: a close above every close of the previous `high_low_window` periods (1),
+          a 52-week high with daily prices by default, or below every one of them (-1).
+
+        For more information, see the following books and papers:
+
+        - Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute
+          of Finance.
+        - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert
+          Corp.
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
+        - Brock, W., Lakonishok, J., and LeBaron, B. (1992). "Simple Technical Trading Rules and
+          the Stochastic Properties of Stock Returns." The Journal of Finance, 47(5), 1731-1764.
+
+        Also known as: trading signals, golden cross, death cross, crossovers, breakouts, MACD
+        crossover, RSI signal, 52-week high, new high.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            short_window (int, optional): The window of the short moving average. Defaults to 50.
+            long_window (int, optional): The window of the long moving average. Defaults to 200.
+            macd_short_window (int, optional): The short window of the MACD. Defaults to 12.
+            macd_long_window (int, optional): The long window of the MACD. Defaults to 26.
+            macd_signal_window (int, optional): The window of the MACD's signal line. Defaults to 9.
+            rsi_window (int, optional): The window of the RSI. Defaults to 14.
+            rsi_overbought (float, optional): The RSI above which a price is overbought. Defaults to 70.
+            rsi_oversold (float, optional): The RSI below which a price is oversold. Defaults to 30.
+            bollinger_window (int, optional): The window of the Bollinger Bands. Defaults to 20.
+            bollinger_std_dev (float, optional): The number of standard deviations of the Bollinger
+                Bands. Defaults to 2.
+            high_low_window (int | None, optional): The number of previous periods a new high or
+                low is measured against. Defaults to None, which uses a year of periods: 252 daily
+                (and intraday), 52 weekly, 12 monthly, 4 quarterly and 1 yearly.
+
+        Returns:
+            pd.DataFrame: The signals per date, with a column per signal and ticker: 1 (crossed
+            upwards), -1 (crossed downwards) or 0.
+
+        Notes:
+        - A signal is empty until its indicator has two values to compare, e.g. 200 periods
+          for the default long moving average, counted from the ticker's own first price; start
+          the Toolkit early enough for the signals of interest.
+        - A crossover is the period the line reaches the other side than the side it was on
+          last: touching a line and turning back is no signal, while moving through it over two
+          periods counts on the period the other side is reached.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2020-01-01",
+            end_date="2025-12-31",
+        )
+
+        signals = toolkit.technicals.get_signals()
+
+        crossovers = signals["Moving Average Crossover"]
+        crossovers[crossovers.ne(0).any(axis=1)].tail()
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-04-07 |     -1 |      0 |           0 |
+        | 2025-04-16 |      0 |      0 |          -1 |
+        | 2025-06-09 |      0 |      1 |           0 |
+        | 2025-06-27 |      0 |      0 |           1 |
+        | 2025-09-15 |      1 |      0 |           0 |
+        """
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        prices = self._historical_data[period][close_column]
+        if high_low_window is None:
+            high_low_window = PERIODS_PER_YEAR.get(period, 252)
+
+        signal_dict = {
+            ticker: pattern_model.get_signals(
+                prices[ticker].dropna(),
+                short_window=short_window,
+                long_window=long_window,
+                macd_short_window=macd_short_window,
+                macd_long_window=macd_long_window,
+                macd_signal_window=macd_signal_window,
+                rsi_window=rsi_window,
+                rsi_overbought=rsi_overbought,
+                rsi_oversold=rsi_oversold,
+                bollinger_window=bollinger_window,
+                bollinger_std_dev=bollinger_std_dev,
+                high_low_window=high_low_window,
+            )
+            .reindex(prices.index)
+            .loc[self._start_date : self._end_date]
+            for ticker in prices.columns
+        }
+
+        return pd.concat(signal_dict, axis=1).swaplevel(0, 1, axis=1)[
+            list(signal_dict[prices.columns[0]].columns)
+        ]

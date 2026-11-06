@@ -9,6 +9,8 @@ import json
 import tomllib
 from pathlib import Path
 
+import yaml
+
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
@@ -36,8 +38,8 @@ def test_versions_are_aligned():
             server_version == pyproject_version
         ), f"server.json ({server_version}) does not match pyproject.toml ({pyproject_version})"
 
-    # build-mcpb.sh restamps the bundle's own pyproject.toml at build time, but the
-    # committed copy is what people read in the repository, so it should not lag behind.
+    # The bundle installs the pinned financetoolkit[mcp] from PyPI, so its pyproject.toml
+    # has to name the version being released.
     bundle_project = tomllib.loads(
         (
             PROJECT_ROOT / "financetoolkit" / "mcp_server" / "mcpb" / "pyproject.toml"
@@ -49,3 +51,32 @@ def test_versions_are_aligned():
     assert (
         f"financetoolkit[mcp]=={pyproject_version}" in bundle_project["dependencies"]
     ), f"mcpb/pyproject.toml does not pin financetoolkit[mcp]=={pyproject_version}"
+
+    # uv.lock records the project's own version too; the release builds from it.
+    locked_version = next(
+        package["version"]
+        for package in tomllib.loads((PROJECT_ROOT / "uv.lock").read_text())["package"]
+        if package["name"] == "financetoolkit"
+    )
+    assert (
+        locked_version == pyproject_version
+    ), f"uv.lock ({locked_version}) does not match pyproject.toml ({pyproject_version})"
+
+
+def test_bundle_manifest_lists_the_server_tools():
+    # The bundle's manifest.json shows the tools in the MCP directories and Claude Desktop before
+    # anything is installed, so it lists the server's tools with the same descriptions.
+    config = yaml.safe_load(
+        (PROJECT_ROOT / "financetoolkit" / "mcp_server" / "config.yaml").read_text()
+    )
+    manifest = json.loads(
+        (
+            PROJECT_ROOT / "financetoolkit" / "mcp_server" / "mcpb" / "manifest.json"
+        ).read_text()
+    )
+    expected = [
+        {"name": tool["tool_name"], "description": tool["description"]}
+        for tool in config["tool_groups"] + config["utility_tools"]
+    ]
+
+    assert manifest["tools"] == expected

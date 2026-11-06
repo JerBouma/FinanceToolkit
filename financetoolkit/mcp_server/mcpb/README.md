@@ -11,23 +11,14 @@ This directory contains the source for `financetoolkit.mcpb`, an [MCP Bundle](ht
 5. Enable the bundle by toggling the switch which says "Disabled" to "Enabled".
 6. Restart Claude Desktop and the Finance Toolkit MCP Server will be available for use in your conversations.
 
+## Releases
+
+Every release builds `financetoolkit.mcpb` from this directory and attaches it to the GitHub release (see `.github/workflows/release.yml`). The bundle holds no code of its own: it installs the `financetoolkit[mcp]` version pinned in `pyproject.toml` from PyPI. `manifest.json` lists the server's tools with the descriptions from `financetoolkit/mcp_server/config.yaml`, and the tests check that both stay the same.
+
 ## Building and Testing Locally
 
-1. Pull in the repository with `git pull https://github.com/JerBouma/FinanceToolkit`
-2. Install required dependencies with `uv sync`
-3. Build the MCP bundle with `bash financetoolkit/mcp_server/mcpb/build-mcpb.sh`
-4. Find the generated `financetoolkit.mcpb` in the `dist/` directory
-5. Double-click it to install it into Claude Desktop.
+1. Install the [MCPB CLI](https://github.com/modelcontextprotocol/mcpb) with `npm install -g @anthropic-ai/mcpb`.
+2. Build the bundle from the repository root with `mcpb pack financetoolkit/mcp_server/mcpb dist/financetoolkit.mcpb`.
+3. Double-click `dist/financetoolkit.mcpb` to install it into Claude Desktop.
 
-By default the bundle depends on the published PyPI package (pinned to the
-current version), so it won't reflect uncommitted local changes. Pass
-`--local` to bundle against this checkout instead:
-
-```bash
-bash financetoolkit/mcp_server/mcpb/build-mcpb.sh --local
-```
-
-This produces `dist/financetoolkit-local.mcpb`, with the dependency pointed
-at your local checkout (editable, via `uv`'s `[tool.uv.sources]`) instead of
-the pinned PyPI release. Use it to test uncommitted changes end-to-end in
-Claude Desktop before cutting a release. Don't publish this build.
+The bundle installs the pinned version from PyPI, so it runs the latest release rather than local changes. To test local changes, run the server from your checkout with `uv run financetoolkit-mcp` instead.

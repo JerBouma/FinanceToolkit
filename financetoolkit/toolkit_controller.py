@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from financetoolkit import currencies_model
+from financetoolkit import currencies_model, finra_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
 from financetoolkit.discovery.discovery_model import (
     search_crypto_news as _search_crypto_news,
@@ -3833,6 +3833,149 @@ class Toolkit:
             )
 
         return filter_columns(insider_trade_statistics, show_columns)
+
+    def get_short_volume(
+        self,
+        history_days: int | None = 92,
+        window: int = 20,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain the daily short sale volume of each company from FINRA's Reg SHO files: the
+        number of shares sold short, of which short exempt, the total number of shares
+        reported to FINRA, the short volume ratio (short volume divided by total volume, as
+        a decimal) and the z-score of that ratio against the `window` trading days before
+        it. A ratio well above its usual level means an unusually large share of the day's
+        selling was short selling.
+
+        This is short sale VOLUME, the shares sold short during a day, not short interest,
+        the short positions still open (which FINRA publishes twice a month through
+        api.finra.org). Most short sales are closed again within days, and market makers
+        sell short to fill buy orders, so a ratio around 0.4 to 0.5 is normal for liquid
+        stocks. The total volume is only the volume reported to FINRA's facilities (the
+        Trade Reporting Facilities, where off-exchange trades are reported, and the
+        Alternative Display Facility), not the consolidated volume of all exchanges, so it
+        is lower than the volume of the historical data. The short volume includes the short
+        exempt volume, and volumes include fractional shares.
+
+        FINRA publishes one file per trading day, from August 2018, covering securities
+        listed in the United States only: a ticker with an exchange suffix (such as ASML.AS)
+        has no data. Each day is a separate download of about half a megabyte, so only the
+        `history_days` before the Toolkit's end date are retrieved, by default about three months
+        (some 65 files, a few seconds). The days are cached per ticker, so a rerun only
+        downloads the days that are new.
+
+        The z-score is (ratio − mean) / standard deviation (ddof=1) of the `window` trading
+        days before each day, so a day is not part of its own comparison, and it is empty
+        for the first `window` days. Research finds that heavy short selling predicts lower
+        returns in the following weeks, see Boehmer, Jones and Zhang (2008), "Which Shorts
+        Are Informed?", Journal of Finance 63(2), and Diether, Lee and Werner (2009),
+        "Short-Sale Strategies and Return Predictability", Review of Financial Studies 22(2).
+
+        Also known as: short sale volume, short volume ratio, daily short volume, Reg SHO
+        short volume.
+
+        Args:
+            history_days (int | None): The number of calendar days before the Toolkit's end date to
+            retrieve, never before its start date. Defaults to 92, about three months. None
+            retrieves the Toolkit's whole date range (one download per trading day).
+            window (int): The number of earlier trading days the z-score compares with.
+            Defaults to 20, about a month.
+            rounding (int | None): The number of decimals to round the results to. Defaults to
+            None, which uses the rounding of the Toolkit.
+            show_columns (list[str] | None): A list of column names to keep in the result.
+            Invalid names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Short Volume, Short Exempt Volume, Total Volume, Short Volume
+            Ratio and Short Volume Ratio Z-Score per ticker (columns) per trading day (index).
+
+        Notes:
+            Short Volume Ratio = Short Volume / Total Volume. A ticker FINRA has no data for
+            is left out with a warning.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GME"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2026-09-01",
+            end_date="2026-10-30",
+        )
+
+        toolkit.get_short_volume().drop(columns="Short Exempt Volume").tail()
+        ```
+
+        Which returns:
+
+        | Date       |   Short Volume |   Total Volume |   Short Volume Ratio |   Short Volume Ratio Z-Score |
+        |:-----------|---------------:|---------------:|---------------------:|-----------------------------:|
+        | 2026-10-26 |    1.64656e+06 |    3.75988e+06 |               0.4379 |                      -2.0905 |
+        | 2026-10-27 |    1.34555e+06 |    2.42539e+06 |               0.5548 |                      -0.5315 |
+        | 2026-10-28 |    1.51079e+06 |    2.53413e+06 |               0.5962 |                       0.0279 |
+        | 2026-10-29 |    1.34307e+06 |    2.34151e+06 |               0.5736 |                      -0.2147 |
+        | 2026-10-30 |    2.39821e+06 |    4.14535e+06 |               0.5785 |                      -0.1479 |
+        """
+        start = pd.Timestamp(self._start_date)
+        end = pd.Timestamp(self._end_date)
+
+        if history_days is not None:
+            start = max(start, end - pd.Timedelta(days=history_days))
+
+        symbols = {
+            ticker: finra_model.to_finra_symbol(ticker) for ticker in self._tickers
+        }
+        uncovered = [ticker for ticker, symbol in symbols.items() if symbol is None]
+        symbols = {
+            ticker: symbol for ticker, symbol in symbols.items() if symbol is not None
+        }
+
+        volumes = finra_model.collect_short_volume(
+            symbols=list(dict.fromkeys(symbols.values())),
+            start_date=start.strftime("%Y-%m-%d"),
+            end_date=end.strftime("%Y-%m-%d"),
+        )
+
+        statistics = {}
+
+        for ticker, symbol in symbols.items():
+            if volumes[symbol].empty:
+                uncovered.append(ticker)
+                continue
+
+            statistics[ticker] = finra_model.get_short_volume_ratio_statistics(
+                volumes[symbol], window
+            )
+
+        if uncovered:
+            logger.warning(
+                "FINRA has no short sale volume for the following tickers, which it only "
+                "reports for securities listed in the United States: %s",
+                ", ".join(uncovered),
+            )
+
+        if not statistics:
+            return pd.DataFrame()
+
+        # Metrics on the outer level and tickers on the inner level, as in the historical data.
+        short_volume = pd.concat(statistics, axis=1).swaplevel(axis=1)
+        short_volume = short_volume[
+            pd.MultiIndex.from_product(
+                [statistics[next(iter(statistics))].columns, list(statistics)]
+            )
+        ]
+        short_volume = apply_rounding(
+            short_volume, rounding if rounding is not None else self._rounding
+        )
+
+        if len(statistics) == 1:
+            short_volume = short_volume.droplevel(1, axis=1)
+
+        return filter_columns(short_volume, show_columns)
 
     def get_stock_grades(
         self, overwrite: bool = False, show_columns: list[str] | None = None

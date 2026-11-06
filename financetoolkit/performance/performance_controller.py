@@ -573,6 +573,8 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
+        method: str = "ols",
+        lags: int = 1,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -612,6 +614,17 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If you select
                 period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Beta. Defaults to None.
+            method (str, optional): The estimator of the Beta. Defaults to "ols". Choose from:
+                - "ols": the covariance over the benchmark variance (the formula above).
+                - "blume": the adjusted Beta of Bloomberg, 0.67 x OLS Beta + 0.33 (Blume, 1971, 1975).
+                - "vasicek": the OLS Beta shrunk towards the mean Beta of the tickers by the precision of
+                  each estimate (Vasicek, 1973).
+                - "dimson": the sum of the slopes on the lagged, same and leading benchmark returns
+                  (Dimson, 1979).
+                - "scholes_williams": the lagged, same and leading slopes over the benchmark's
+                  autocorrelation (Scholes and Williams, 1977).
+                - "upside" or "downside": the OLS Beta on the days the benchmark rose or fell.
+            lags (int, optional): The number of leads and lags of the Dimson Beta. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -628,6 +641,19 @@ class Performance:
         not give any useful insights.
         - The method retrieves historical data and calculates the Beta for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - The OLS Beta of a stock that trades thinly or reacts to the market a day late understates its market
+        risk, because part of the reaction falls on the next day. Dimson and Scholes-Williams add the slopes on
+        the neighbouring benchmark returns to correct for that; their leads and lags come from the full history,
+        so the first day of a period uses the benchmark return of the day before.
+        - Blume found that Betas move towards 1 between estimation windows by about a third. Vasicek shrinks
+        each Beta in proportion to its uncertainty: the prior is the mean and sample variance (ddof=1) of the
+        OLS Betas of the tickers in the same period, so it depends on which tickers are passed. A single
+        ticker gets a prior mean of 1 (the market's Beta) with a variance of 0.25.
+        - The upside and downside Betas show asymmetric market exposure: a stock with a downside Beta above
+        its upside Beta falls harder in down markets than it rises in up markets. They follow empyrical's
+        up_alpha_beta and down_alpha_beta, which pick the observations by the benchmark's direction.
+        - Every estimator needs at least three observations in a period (Dimson: more than the number of
+        slopes plus one), otherwise the period is NaN.
 
         As an example:
 
@@ -648,11 +674,27 @@ class Performance:
 
         | Date   |   NVDA |   TSLA |    JPM |
         |:-------|-------:|-------:|-------:|
-        | 2021   | 2.0429 | 1.9542 | 0.8378 |
-        | 2022   | 2.2015 | 1.7398 | 0.8813 |
-        | 2023   | 2.0247 | 2.2485 | 0.8724 |
-        | 2024   | 2.659  | 2.3803 | 0.8013 |
-        | 2025   | 1.8732 | 2.2343 | 0.9478 |
+        | 2021   | 2.0446 | 1.9542 | 0.8378 |
+        | 2022   | 2.2    | 1.7398 | 0.8813 |
+        | 2023   | 2.0229 | 2.2485 | 0.8724 |
+        | 2024   | 2.6586 | 2.3803 | 0.8013 |
+        | 2025   | 1.8731 | 2.2343 | 0.9478 |
+
+        The downside Beta shows how the same stocks moved on the days the S&P 500 fell:
+
+        ```python
+        toolkit.performance.get_beta(method="downside")
+        ```
+
+        Which returns:
+
+        | Date   |   NVDA |   TSLA |    JPM |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 2.0938 | 1.6149 | 0.7877 |
+        | 2022   | 1.9875 | 1.5848 | 0.7921 |
+        | 2023   | 2.1135 | 2.5952 | 1.048  |
+        | 2024   | 2.0508 | 2.6545 | 0.9306 |
+        | 2025   | 1.8311 | 1.9833 | 0.9638 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -661,7 +703,15 @@ class Performance:
             period, "Return", within_period=not rolling, benchmark=True
         )
 
-        if rolling:
+        if method != "ols":
+            beta = performance_model.get_beta_estimate(
+                returns,
+                benchmark_returns,
+                method=method,
+                lags=lags,
+                window_size=rolling,
+            )
+        elif rolling:
             beta = performance_model.get_rolling_beta(
                 returns, benchmark_returns, rolling
             )

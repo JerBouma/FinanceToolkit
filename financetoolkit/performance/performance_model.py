@@ -186,6 +186,218 @@ def get_rolling_beta(
     return rolling_beta
 
 
+BETA_METHODS = (
+    "ols",
+    "blume",
+    "vasicek",
+    "dimson",
+    "scholes_williams",
+    "upside",
+    "downside",
+)
+
+# Blume (1971, 1975) found betas regress towards 1 by about a third between estimation
+# windows; Bloomberg's adjusted beta applies the rounded weights 2/3 and 1/3.
+BLUME_WEIGHT = 0.67
+
+# The Vasicek prior for a single asset, which has no cross-section to estimate it from:
+# the market's own beta as the mean and a standard deviation of 0.5 around it.
+VASICEK_SINGLE_ASSET_PRIOR = (1.0, 0.25)
+
+
+def _slope(asset: np.ndarray, market: np.ndarray) -> tuple[float, float]:
+    """
+    The least squares slope of the asset on the market and the squared standard
+    error of that slope, over the observations both have. Fewer than three shared
+    observations (or a market without variance) give NaN.
+    """
+    shared = ~(np.isnan(asset) | np.isnan(market))
+    asset, market = asset[shared], market[shared]
+
+    if len(asset) < 3:  # noqa: PLR2004
+        return np.nan, np.nan
+
+    market_deviation = market - market.mean()
+    sum_of_squares = (market_deviation**2).sum()
+
+    if sum_of_squares == 0:
+        return np.nan, np.nan
+
+    slope = (market_deviation * (asset - asset.mean())).sum() / sum_of_squares
+    residuals = asset - asset.mean() - slope * market_deviation
+
+    return slope, (residuals**2).sum() / (len(asset) - 2) / sum_of_squares
+
+
+def _beta_of_sample(
+    asset_returns: pd.DataFrame, market_returns: pd.DataFrame, method: str, lags: int
+) -> pd.Series:
+    """
+    The beta of every asset over one sample of returns.
+
+    Args:
+        asset_returns (pd.DataFrame): The asset returns of the sample (one column per asset).
+        market_returns (pd.DataFrame): The benchmark returns on the same rows, one column per
+            shift k from -lags to lags holding the benchmark return of k periods later.
+        method (str): One of BETA_METHODS.
+        lags (int): The number of leads and lags of the Dimson beta.
+
+    Returns:
+        pd.Series: The beta per asset.
+    """
+    market = market_returns[0].to_numpy(dtype=float)
+    betas, variances = {}, {}
+
+    for column in asset_returns.columns:
+        asset = asset_returns[column].to_numpy(dtype=float)
+
+        if method in ("ols", "blume", "vasicek"):
+            betas[column], variances[column] = _slope(asset, market)
+        elif method in ("upside", "downside"):
+            # The benchmark's direction picks the observations, as in empyrical's
+            # up_alpha_beta and down_alpha_beta; a flat benchmark falls in neither.
+            direction = market > 0 if method == "upside" else market < 0
+            betas[column] = _slope(asset[direction], market[direction])[0]
+        elif method == "dimson":
+            shifts = market_returns.loc[:, list(range(-lags, lags + 1))].to_numpy(
+                dtype=float
+            )
+            complete = ~(np.isnan(asset) | np.isnan(shifts).any(axis=1))
+
+            if complete.sum() <= shifts.shape[1] + 1:
+                betas[column] = np.nan
+                continue
+
+            design = np.column_stack([np.ones(complete.sum()), shifts[complete]])
+            coefficients = np.linalg.lstsq(design, asset[complete], rcond=None)[0]
+            # The intercept is left out: the beta is the sum of the slopes on the
+            # lagged, contemporaneous and leading benchmark returns.
+            betas[column] = coefficients[1:].sum()
+        else:
+            # Scholes and Williams (1977): the three simple slopes and the benchmark's
+            # first-order autocorrelation over the same observations.
+            shifts = market_returns.loc[:, [-1, 0, 1]].to_numpy(dtype=float)
+            complete = ~(np.isnan(asset) | np.isnan(shifts).any(axis=1))
+            sample, shifted = asset[complete], shifts[complete]
+
+            if len(sample) < 3:  # noqa: PLR2004
+                betas[column] = np.nan
+                continue
+
+            slopes = sum(_slope(sample, shifted[:, index])[0] for index in range(3))
+            autocorrelation = np.corrcoef(shifted[:, 1], shifted[:, 0])[0, 1]
+            betas[column] = slopes / (1 + 2 * autocorrelation)
+
+    beta = pd.Series(betas, dtype=float)
+
+    if method == "blume":
+        return BLUME_WEIGHT * beta + (1 - BLUME_WEIGHT)
+
+    if method == "vasicek":
+        variance = pd.Series(variances, dtype=float)
+        estimated = beta.dropna()
+
+        if len(estimated) >= 2:  # noqa: PLR2004
+            prior_mean, prior_variance = estimated.mean(), estimated.var(ddof=1)
+        else:
+            prior_mean, prior_variance = VASICEK_SINGLE_ASSET_PRIOR
+
+        # The posterior weighs the asset's own beta against the prior by their
+        # precisions: a noisy estimate (a large standard error) moves towards the
+        # prior mean, a precise one keeps close to its own value.
+        return (prior_variance * beta + variance * prior_mean) / (
+            prior_variance + variance
+        )
+
+    return beta
+
+
+def get_beta_estimate(
+    returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    method: str = "blume",
+    lags: int = 1,
+    window_size: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate beta with an estimator other than ordinary least squares:
+
+        - Blume: 0.67 x OLS Beta + 0.33, the adjusted beta of Bloomberg (Blume, 1971, 1975).
+        - Vasicek: the OLS beta shrunk towards the cross-sectional mean beta of the assets,
+          weighted by the precisions: (σ²_prior x β + SE² x β_prior) / (σ²_prior + SE²)
+          (Vasicek, 1973). The prior is the mean and sample variance (ddof=1) of the OLS
+          betas of the assets in the same period; one asset alone gets a prior mean of 1
+          with a variance of 0.25.
+        - Dimson: the sum of the slopes of a regression of the asset returns on the
+          benchmark returns from `lags` periods before to `lags` periods after (Dimson, 1979).
+        - Scholes-Williams: (β₋₁ + β₀ + β₊₁) / (1 + 2ρ), the simple slopes on the previous,
+          same and next benchmark return over the benchmark's first-order autocorrelation
+          ρ (Scholes and Williams, 1977).
+        - Upside and downside: the OLS beta over the observations on which the benchmark
+          rose or fell.
+
+    Dimson and Scholes-Williams correct the downward bias of the OLS beta of assets that
+    trade infrequently or react late to the market. The leads and lags come from the full
+    history, so the first observation of a period uses the benchmark return before it.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
+            'within period' MultiIndex (period, date) to get one beta per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+        method (str, optional): One of "blume", "vasicek", "dimson", "scholes_williams",
+            "upside", "downside" or "ols". Defaults to "blume".
+        lags (int, optional): The leads and lags of the Dimson beta. Defaults to 1.
+        window_size (int | None, optional): A rolling window over a flat index instead of
+            one beta per period. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The betas per period (rows) and asset (columns) for a
+        'within period' index or a rolling window, otherwise a Series of betas per asset.
+        Assets with fewer than three shared observations get NaN.
+    """
+    if method not in BETA_METHODS:
+        raise ValueError(
+            f"The method must be one of {', '.join(BETA_METHODS)}, not {method}."
+        )
+
+    if lags < 1:
+        raise ValueError("The number of lags must be at least 1.")
+
+    frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
+    market = pd.concat(
+        {shift: benchmark_returns.shift(-shift) for shift in range(-lags, lags + 1)},
+        axis=1,
+    )
+
+    if window_size:
+        betas = {
+            frame.index[end - 1]: _beta_of_sample(
+                frame.iloc[end - window_size : end],
+                market.iloc[end - window_size : end],
+                method,
+                lags,
+            )
+            for end in range(window_size, len(frame) + 1)
+        }
+
+        return pd.DataFrame(betas, index=frame.columns).T.reindex(frame.index)
+
+    if frame.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        periods = frame.index.get_level_values(0)
+
+        return pd.DataFrame(
+            {
+                period: _beta_of_sample(
+                    frame[periods == period], market[periods == period], method, lags
+                )
+                for period in periods.unique()
+            },
+            index=frame.columns,
+        ).T.rename_axis(frame.index.names[0])
+
+    return _beta_of_sample(frame, market, method, lags)
+
+
 def get_capital_asset_pricing_model(
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,

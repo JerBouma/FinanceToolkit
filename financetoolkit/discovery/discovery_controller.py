@@ -9,6 +9,7 @@ import pandas as pd
 from financetoolkit import fmp_model
 from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
+from financetoolkit.models import damodaran_model
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
 
@@ -2043,6 +2044,112 @@ class Discovery:
         )
 
         return industry_pe
+
+    def get_industry_statistics(
+        self,
+        dataset: str = "cost_of_capital",
+        region: str = "United States",
+    ) -> pd.DataFrame:
+        """
+        Returns Aswath Damodaran's industry averages: betas, the cost of capital, margins
+        and valuation multiples for each of his roughly 95 industries and the market as a
+        whole, per region. They are the inputs of a bottom-up valuation: a company's beta
+        is better estimated from the unlevered beta of its industry, relevered at its own
+        debt-to-equity ratio, than from a regression on its own noisy returns, and its
+        multiples and margins read best next to those of its industry.
+
+        Damodaran computes the averages from the financial statements and prices of all
+        listed companies (about 6,000 in the United States and 48,000 globally) at the
+        start of each year, and publishes them every January. The figures are therefore a
+        snapshot at the start of the current year and do not change during it.
+
+        The datasets are:
+
+        - **betas**: the average levered Beta (2-year and 5-year weekly regressions),
+          D/E Ratio, Effective Tax rate, Unlevered beta, Cash/Firm value, the Unlevered
+          beta corrected for cash, HiLo Risk and the standard deviations of equity and
+          operating income.
+        - **total_betas**: the market betas next to the Total Unlevered and Levered Beta,
+          the beta divided by the correlation with the market, for an investor who is not
+          diversified.
+        - **cost_of_capital**: Beta, Cost of Equity, E/(D+E), Cost of Debt, Tax Rate,
+          After-tax Cost of Debt, D/(D+E) and Cost of Capital, from the treasury rate and
+          implied equity risk premium of the start of the year.
+        - **margins**: gross, net, operating (unadjusted, lease adjusted, lease and R&D
+          adjusted, before and after tax) and EBITDA margins, and expense ratios.
+        - **price_to_earnings**: the Current, Trailing and Forward PE, aggregate multiples,
+          the expected growth of the next five years and the PEG Ratio.
+        - **price_to_book**: PBV, ROE, EV/ Invested Capital and ROIC.
+        - **price_to_sales**: Price/Sales, Net Margin, EV/Sales and the pre-tax operating
+          margin.
+        - **enterprise_value_multiples**: EV/EBITDAR&D, EV/EBITDA, EV/EBIT and
+          EV/EBIT (1-t), for firms with a positive EBITDA and for all firms.
+
+        The regions are the United States, Europe, Japan, Australia, New Zealand and
+        Canada, Emerging Markets, China, India and Global. Rates, margins and returns are
+        decimals (0.08 is 8%), betas and multiples plain numbers.
+
+        Also known as: Damodaran industry data, industry betas, unlevered beta by
+        industry, bottom-up beta, industry cost of capital, industry WACC, industry
+        margins, industry multiples, sector EV/EBITDA, industry PE.
+
+        Args:
+            dataset (str, optional): The dataset: "betas", "total_betas", "cost_of_capital",
+                "margins", "price_to_earnings", "price_to_book", "price_to_sales" or
+                "enterprise_value_multiples". Defaults to "cost_of_capital".
+            region (str, optional): The region: "United States", "Europe", "Japan",
+                "Australia, New Zealand and Canada", "Emerging Markets", "China", "India" or
+                "Global". Defaults to "United States".
+
+        Returns:
+            pd.DataFrame: One row per industry, indexed by Industry, followed by the
+                "Total Market" and "Total Market (without financials)" rows, with the
+                Number of Firms and the dataset's figures as columns.
+
+        Raises:
+            ValueError: When the dataset or region is not available.
+
+        Notes:
+            - The yearly beta history at the end of Damodaran's beta files is left out:
+              its label differs per region, so it cannot be named reliably.
+            - The averages are simple averages across the firms of an industry for
+              betas, and aggregates (sums of the numerators over sums of the
+              denominators) for margins and multiples, as Damodaran computes them.
+            - The source is Damodaran's data page, https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datacurrent.html,
+              which also lists the companies in each industry.
+
+        References:
+            - Damodaran, A. (2012). Investment Valuation: Tools and Techniques for
+              Determining the Value of Any Asset (3rd ed.). Wiley.
+            - Damodaran, A. (2002). Estimating Risk Parameters. NYU Stern Working Paper.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        cost_of_capital = discovery.get_industry_statistics(
+            dataset="cost_of_capital", region="Europe"
+        )
+
+        cost_of_capital.loc[
+            ["Semiconductor", "Software (System & Application)", "Utility (General)", "Total Market"],
+            ["Beta", "Cost of Equity", "After-tax Cost of Debt", "D/(D+E)", "Cost of Capital"],
+        ].round(4)
+        ```
+
+        Which returns:
+
+        | Industry                        |   Beta |   Cost of Equity |   After-tax Cost of Debt |   D/(D+E) |   Cost of Capital |
+        |:--------------------------------|-------:|-----------------:|-------------------------:|----------:|------------------:|
+        | Semiconductor                   | 1.3221 |           0.1092 |                   0.0427 |    0.1635 |            0.0983 |
+        | Software (System & Application) | 0.9573 |           0.0899 |                   0.0427 |    0.0632 |            0.087  |
+        | Utility (General)               | 0.6367 |           0.0731 |                   0.0386 |    0.4786 |            0.0565 |
+        | Total Market                    | 0.9101 |           0.0875 |                   0.0411 |    0.4031 |            0.0688 |
+        """
+        return damodaran_model.get_industry_statistics(dataset=dataset, region=region)
 
     def get_mergers_acquisitions_latest(
         self, limit: int = 100, page: int = 0

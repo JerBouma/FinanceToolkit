@@ -1,0 +1,158 @@
+name: Release
+
+# Releases a version when its release PR is merged into main. A release PR has the head branch
+# feature/vX.Y.Z; any other merged PR is ignored. The release has three stages:
+#
+# 1. Prepare: checks the release (versions, notes, tag) and builds the package and financetoolkit.mcpb
+#    from the merge commit. Nothing is published yet.
+# 2. Publish: waits for an approval on the "release" environment, then publishes the package to PyPI,
+#    creates the tag vX.Y.Z and the release "FinanceToolkit vX.Y.Z" with the PR description as its text
+#    and attaches financetoolkit.mcpb.
+# 3. MCP Registry: publishes server.json.
+#
+# Every publishing step skips what already exists (a version already on PyPI, an existing tag or
+# release) and replaces the attached bundle, so re-running a failed run continues where it stopped.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare
+    # Only merged PRs from a branch of this repository; the exact branch name is checked below.
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'feature/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read # to check that the "release" environment requires an approval
+    outputs:
+      release: ${{ steps.release.outputs.release }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Checkout the merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Check the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release.py prepare
+
+      - name: Install uv
+        if: steps.release.outputs.release == 'true'
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build the package
+        if: steps.release.outputs.release == 'true'
+        run: uv build --out-dir dist
+
+      - name: Set up Node.js
+        if: steps.release.outputs.release == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The bundle installs financetoolkit[mcp]==X.Y.Z from PyPI when it starts, so it holds no code of
+      # its own and can be built before the package is published.
+      - name: Build financetoolkit.mcpb
+        if: steps.release.outputs.release == 'true'
+        run: |
+          npx --yes @anthropic-ai/mcpb@2.1.2 validate financetoolkit/mcp_server/mcpb/manifest.json
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack financetoolkit/mcp_server/mcpb bundle/financetoolkit.mcpb
+
+      - name: Upload the release files
+        if: steps.release.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/
+            bundle/financetoolkit.mcpb
+            release-notes.md
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The environment requires an approval before this job starts.
+    environment:
+      name: release
+      url: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare.outputs.version }}
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHA: ${{ needs.prepare.outputs.sha }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download the release files
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # --check-url skips files PyPI already has, so a re-run doesn't fail on them.
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --check-url https://pypi.org/simple/ dist/*
+
+      # The bundle and the MCP Registry point people at this version, so wait until PyPI serves it.
+      - name: Wait for the version on PyPI
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -sf "https://pypi.org/pypi/financetoolkit/$VERSION/json" > /dev/null; then
+              echo "financetoolkit $VERSION is on PyPI."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::financetoolkit $VERSION did not appear on PyPI within 10 minutes."
+          exit 1
+
+      - name: Create the tag and the release
+        run: |
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            gh release edit "v$VERSION" --title "FinanceToolkit v$VERSION" --notes-file release-notes.md
+            gh release upload "v$VERSION" bundle/financetoolkit.mcpb --clobber
+          else
+            gh release create "v$VERSION" bundle/financetoolkit.mcpb \
+              --target "$SHA" \
+              --title "FinanceToolkit v$VERSION" \
+              --notes-file release-notes.md \
+              --latest
+          fi
+
+  mcp-registry:
+    name: MCP Registry
+    needs: [prepare, publish]
+    # A release created with the workflow token doesn't start other workflows, so the registry
+    # workflow is called from here.
+    uses: ./.github/workflows/mcp_registry.yml
+    with:
+      ref: v${{ needs.prepare.outputs.version }}
+    permissions:
+      contents: read
+      id-token: write

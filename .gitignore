@@ -28,9 +28,6 @@ debugging.py
 # Claude
 CLAUDE.md
 
-# Specific files for the MCP Bundle
-!financetoolkit/mcp_server/mcpb/build-mcpb.sh
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

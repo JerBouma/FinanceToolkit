@@ -5,6 +5,7 @@ __docformat__ = "google"
 from collections.abc import Callable
 from functools import cached_property
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import LazyDict
@@ -1686,6 +1687,7 @@ class Models:
         periods: int = 5,
         cash_flow_type: str = "Free Cash Flow to Firm",
         trailing: int | None = None,
+        historical: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1742,11 +1744,15 @@ class Models:
             When set, uses the sum of the last N periods instead of only the most recent period. Defaults to
             None, which uses 4 (the trailing twelve months) with quarterly data and the most recent year with
             yearly data.
+            historical (bool, optional): Whether to value every period instead of only the most recent one,
+            which gives the intrinsic value per share over time. Each period is valued from the base cash
+            flow ending in it and the cash, debt and shares reported at its end. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
-            pd.DataFrame: DataFrame containing the intrinsic value for each ticker.
+            pd.DataFrame: DataFrame containing the intrinsic value and its components for each ticker, or
+            with `historical=True` the intrinsic value per share for each ticker (rows) and period (columns).
 
         Notes:
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
@@ -1761,6 +1767,9 @@ class Models:
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
         such row.
         - The Equity Value is divided by the Weighted Average Shares Diluted of the most recent period.
+        - With `historical=True` no period uses figures reported after it, so the series shows what this
+        DCF gave at each period end with the same assumptions. A period whose cash flow, cash, debt or
+        shares are missing is NaN, while the single valuation takes the most recent value of each.
 
         As an example:
 
@@ -1786,8 +1795,27 @@ class Models:
         |      |   Periods = 5 |
         |:-----|--------------:|
         | ADBE |       389.526 |
-        | CRM  |       190.408 |
+        | CRM  |       142.64  |
         | INTU |       304.583 |
+
+        And the same valuation for every period with `historical=True`:
+
+        ```python
+        toolkit.models.get_intrinsic_valuation(
+            growth_rate=0.08,
+            perpetual_growth_rate=0.025,
+            weighted_average_cost_of_capital=0.09,
+            historical=True,
+        )
+        ```
+
+        Which returns:
+
+        |      |     2021 |     2022 |    2023 |    2024 |    2025 |
+        |:-----|---------:|---------:|--------:|--------:|--------:|
+        | ADBE | 236.528  | 239.021  | 245.452 | 279.695 | 389.526 |
+        | CRM  |  25.9053 |  23.2663 |  93.958 | 142.64  | nan     |
+        | INTU | 168.842  | 137.273  | 246.42  | 211.482 | 304.583 |
         """
         if cash_flow_type not in [
             "Free Cash Flow to Firm",
@@ -1872,6 +1900,17 @@ class Models:
         else:
             wacc_dict = dict.fromkeys(self._tickers, weighted_average_cost_of_capital)
 
+        if historical:
+            return self._historical_intrinsic_values(
+                cash_flows=cash_flows,
+                growth_rates=growth_rate_dict,
+                perpetual_growth_rates=perpetual_growth_rate_dict,
+                waccs=wacc_dict,
+                periods=periods,
+                trailing=trailing,
+                rounding=rounding,
+            )
+
         intrinsic_values_dict = {}
         for ticker in self._tickers:
             perpetual_growth_rate_float = perpetual_growth_rate_dict[ticker]
@@ -1924,6 +1963,71 @@ class Models:
         self._intrinsic_values = pd.concat(intrinsic_values_dict)
 
         return self._intrinsic_values.loc[:, self._start_date :]
+
+    def _historical_intrinsic_values(
+        self,
+        cash_flows: pd.DataFrame,
+        growth_rates: dict[str, float],
+        perpetual_growth_rates: dict[str, float],
+        waccs: dict[str, float],
+        periods: int,
+        trailing: int | None,
+        rounding: int | None,
+    ) -> pd.DataFrame:
+        """
+        The intrinsic value per share of every period, each from the base cash flow ending
+        in that period and the cash, debt and shares reported at its end, so that no period
+        uses figures reported after it.
+        """
+        cash_flows = cash_flows.reindex(self._tickers)
+        base_cash_flows = (
+            cash_flows.T.rolling(trailing).sum().T if trailing else cash_flows
+        )
+        cash = self._rows(self._balance_sheet_statement, "Cash and Cash Equivalents")
+        debt = self._rows(self._balance_sheet_statement, "Total Debt")
+        # Added back with the cash, as get_enterprise_value_breakdown deducts both.
+        investments = self._rows(
+            self._balance_sheet_statement, "Short Term Investments"
+        ).fillna(0)
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+
+        intrinsic_values = pd.DataFrame(
+            float("nan"), index=self._tickers, columns=base_cash_flows.columns
+        )
+        for ticker in self._tickers:
+            for period in base_cash_flows.columns:
+                inputs = [
+                    base_cash_flows.loc[ticker, period],
+                    cash.loc[ticker, period],
+                    debt.loc[ticker, period],
+                    shares.loc[ticker, period],
+                ]
+                if (
+                    any(pd.isna(value) for value in inputs)
+                    or not shares.loc[ticker, period]
+                ):
+                    continue
+                intrinsic_values.loc[ticker, period] = (
+                    intrinsic_model.get_intrinsic_value(
+                        cash_flow=float(base_cash_flows.loc[ticker, period]),
+                        growth_rate=growth_rates[ticker],
+                        perpetual_growth_rate=perpetual_growth_rates[ticker],
+                        weighted_average_cost_of_capital=waccs[ticker],
+                        cash_and_cash_equivalents=float(cash.loc[ticker, period]),
+                        total_debt=float(debt.loc[ticker, period]),
+                        short_term_investments=float(investments.loc[ticker, period]),
+                        shares_outstanding=float(shares.loc[ticker, period]),
+                        periods=periods,
+                    )
+                    .loc["Intrinsic Value"]
+                    .iloc[0]
+                )
+
+        intrinsic_values = apply_rounding(
+            intrinsic_values.dropna(axis=1, how="all"),
+            rounding if rounding is not None else self._rounding,
+        )
+        return intrinsic_values.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_free_cash_flow_to_firm(
@@ -2429,6 +2533,7 @@ class Models:
         high_growth_rate: float | list | dict[str, float],
         stable_growth_rate: float | list | dict[str, float],
         high_growth_periods: int = 5,
+        transition_periods: int = 0,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -2448,7 +2553,15 @@ class Models:
             - Intrinsic Value = High-Growth Phase Present Value +
             (Terminal Value / (1 + Rate of Return)^High Growth Periods)
 
-        Also known as: two-stage DDM, two-stage dividend discount model.
+        With transition periods it becomes the Three-Stage Dividend Discount Model: between
+        the high-growth and the stable phase, the growth rate declines in equal steps from the
+        high to the stable rate, and those dividends are discounted explicitly as well. In
+        transition period k (of n), dividends grow at High Growth Rate - (High Growth Rate -
+        Stable Growth Rate) * k / (n + 1), and the Terminal Value is taken at the end of the
+        transition phase.
+
+        Also known as: two-stage DDM, two-stage dividend discount model, three-stage DDM,
+        three-stage dividend discount model.
 
         Args:
             rate_of_return (float, list or dict): The required rate of return (discount rate)
@@ -2463,12 +2576,16 @@ class Models:
             rate for each ticker.
             high_growth_periods (int, optional): The number of years in the explicit
             high-growth phase. Defaults to 5.
+            transition_periods (int, optional): The number of years in which the growth rate
+            declines linearly from the high to the stable growth rate (the Three-Stage Dividend
+            Discount Model). Defaults to 0, no transition phase.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value and its components for
-            each ticker.
+            each ticker, including the present value of the transition phase when there is
+            one.
 
         Notes:
         - The results are highly dependent on the input. Therefore, think carefully about
@@ -2581,6 +2698,7 @@ class Models:
                     high_growth_rate=high_growth_rate_float,
                     stable_growth_rate=stable_growth_rate_float,
                     high_growth_periods=high_growth_periods,
+                    transition_periods=transition_periods,
                 )
             )
             two_stage_ddm_dict[ticker] = two_stage_ddm_dict[ticker].pipe(
@@ -2590,6 +2708,255 @@ class Models:
         two_stage_ddm_results = pd.concat(two_stage_ddm_dict)
 
         return two_stage_ddm_results.loc[:, self._start_date :]
+
+    @handle_errors
+    def get_h_model(
+        self,
+        rate_of_return: float,
+        high_growth_rate: float,
+        stable_growth_rate: float,
+        high_growth_periods: int = 10,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The H-Model of Fuller and Hsia (1984) values a stock whose dividend growth starts at
+        a high rate and declines linearly to a stable rate over a number of years, after
+        which it grows at the stable rate forever. It is a closed-form approximation of the
+        three-stage dividend discount model (see `get_two_stage_dividend_discount_model` with
+        `transition_periods`): the Gordon Growth Model at the stable rate plus the value of
+        the extra growth during the decline, which is about half the high-growth period (H)
+        times the extra growth.
+
+        The formula is as follows:
+
+            - H = High Growth Periods / 2
+            - Intrinsic Value = Dividends Per Share * (1 + Stable Growth Rate) / (Rate of
+            Return - Stable Growth Rate) + Dividends Per Share * H * (High Growth Rate -
+            Stable Growth Rate) / (Rate of Return - Stable Growth Rate)
+
+        Like the Gordon Growth Model, each period is valued off that period's actual annual
+        Dividends per Share, which gives the intrinsic value over time.
+
+        Also known as: H-Model, Fuller-Hsia model, H model dividend discount model.
+
+        Args:
+            rate_of_return (float): The required rate of return, which must be greater than
+                the stable growth rate.
+            high_growth_rate (float): The growth rate of the dividends at the start of the
+                decline.
+            stable_growth_rate (float): The growth rate the decline ends at, which holds
+                forever after it.
+            high_growth_periods (int, optional): The number of years over which the growth
+                rate declines from the high to the stable rate. Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set
+                otherwise).
+
+        Returns:
+            pd.DataFrame: The intrinsic value per share for each period (rows) and ticker
+            (columns).
+
+        Notes:
+        - The results depend heavily on the inputs, in particular the high growth rate and
+        how long it lasts.
+        - The H-Model is close to the exact value of a linearly declining growth rate when
+        the high-growth period is short or the gap between the growth rates is small, and
+        overstates it as either grows.
+        - The rates are annual, so the model values an annual dividend: the Dividends per
+        Share of each year, or with quarterly data the sum of the trailing four complete
+        quarters. The first year of the window often covers only part of the year's
+        dividends, so start the window a year before the first period you intend to read.
+        - Fuller, R. J. and C.-C. Hsia, "A Simplified Common Stock Valuation Model,"
+        Financial Analysts Journal 40(5), 1984, pp. 49-56.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_h_model(
+            rate_of_return=0.08, high_growth_rate=0.08, stable_growth_rate=0.03
+        )
+        ```
+
+        Which returns:
+
+        |      |     KO |     PEP |
+        |:-----|-------:|--------:|
+        | 2021 | 43.008 | 108.736 |
+        | 2022 | 45.056 | 115.84  |
+        | 2023 | 47.104 | 126.592 |
+        | 2024 | 49.664 | 136.448 |
+        | 2025 | 52.224 | 143.936 |
+        """
+        dividends_per_share = self._annual_dividends_per_share()
+
+        h_model = intrinsic_model.get_h_model(
+            dividends_per_share=dividends_per_share.reindex(columns=self._tickers),
+            rate_of_return=rate_of_return,
+            high_growth_rate=high_growth_rate,
+            stable_growth_rate=stable_growth_rate,
+            high_growth_periods=high_growth_periods,
+        ).dropna(how="all")
+        h_model.index.name = None
+
+        h_model = apply_rounding(
+            h_model, rounding if rounding is not None else self._rounding
+        )
+
+        return h_model.loc[self._start_date :]
+
+    @handle_errors
+    def get_justified_multiples(
+        self,
+        rate_of_return: float,
+        growth_rate: float | None = None,
+        diluted: bool = True,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        The justified multiples are the Price-to-Earnings and Price-to-Book ratios the
+        dividend discount and residual income models imply for a company with a constant
+        payout ratio, Return on Equity and growth rate. Comparing them with the actual
+        multiples shows whether the market prices a company above or below what its
+        profitability, payout and growth justify at a given required rate of return.
+
+        The formula is as follows:
+
+            - Growth Rate = Return on Equity * (1 - Payout Ratio), the sustainable growth
+            rate, unless a growth rate is given
+            - Justified Trailing P/E = Payout Ratio * (1 + Growth Rate) / (Rate of Return -
+            Growth Rate)
+            - Justified Leading P/E = Payout Ratio / (Rate of Return - Growth Rate)
+            - Justified P/B = (Return on Equity - Growth Rate) / (Rate of Return - Growth
+            Rate)
+            - Price-to-Earnings Ratio = Share Price / (Net Income / Weighted Average Shares)
+            - Price-to-Book Ratio = Share Price / (Total Shareholder Equity / Weighted Average
+            Shares)
+
+        Also known as: justified P/E, justified P/B, fundamental P/E, warranted multiples.
+
+        Args:
+            rate_of_return (float): The required rate of return on equity.
+            growth_rate (float | None, optional): The constant growth rate of the earnings,
+                dividends and book value. Defaults to None, which uses the sustainable growth
+                rate of each period.
+            diluted (bool, optional): Whether to use the diluted share count for the actual
+                multiples. Defaults to True.
+            trailing (int | None, optional): Sum the flows over this many periods and measure
+                the Return on Equity on the equity that many periods back. Defaults to None,
+                which is 4 for quarterly data (a trailing twelve months) and 1 otherwise.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set
+                otherwise).
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Payout Ratio, Return on Equity, Growth
+            Rate, Justified Trailing P/E, Justified Leading P/E, Justified P/B and the actual
+            Price-to-Earnings and Price-to-Book Ratios.
+
+        Notes:
+        - The justified multiples are NaN where the growth rate is at or above the rate of
+        return, since the models then have no finite value, and they mean little for a
+        company that pays no dividend or makes a loss.
+        - The Return on Equity is measured on the equity at the beginning of the period, as
+        in the sustainable growth rate (Higgins), so the first period has none.
+        - The actual multiples use the share price at the period end and the reported Net
+        Income and equity per share, without the adjustment for preferred dividends that
+        `toolkit.ratios.get_price_to_earnings_ratio` makes.
+        - CFA Institute, "Equity Valuation: Applications and Processes" and "Market-Based
+        Valuation: Price and Enterprise Value Multiples," CFA Program Curriculum Level II.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "PG"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_justified_multiples(rate_of_return=0.08, growth_rate=0.04).loc["KO"]
+        ```
+
+        Which returns:
+
+        |                         |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Payout Ratio            |  0.7422 |  0.7982 |  0.7422 |  0.7863 |  0.6698 |
+        | Return on Equity        |  0.4591 |  0.3838 |  0.4149 |  0.3869 |  0.497  |
+        | Growth Rate             |  0.04   |  0.04   |  0.04   |  0.04   |  0.04   |
+        | Justified Trailing P/E  | 19.2971 | 20.752  | 19.2974 | 20.4434 | 17.4147 |
+        | Justified Leading P/E   | 18.5549 | 19.9539 | 18.5552 | 19.6571 | 16.7449 |
+        | Justified P/B           | 10.4769 |  8.5957 |  9.3713 |  8.6716 | 11.4251 |
+        | Price-to-Earnings Ratio | 26.2994 | 28.9985 | 23.8657 | 25.2999 | 23.0046 |
+        | Price-to-Book Ratio     | 11.1732 | 11.4791 |  9.8569 | 10.8209 |  9.3731 |
+        """
+        if trailing is None and self._quarterly:
+            trailing = 4
+
+        return_on_equity, payout_ratio = self._return_on_equity_and_payout(trailing)
+        return_on_equity = return_on_equity.reindex(self._tickers)
+        payout_ratio = payout_ratio.reindex(self._tickers)
+
+        if growth_rate is None:
+            growth = growth_model.get_sustainable_growth_rate(
+                return_on_equity=return_on_equity,
+                retention_ratio=valuation_model.get_reinvestment_ratio(
+                    dividend_payout_ratio=payout_ratio
+                ),
+            )
+        else:
+            growth = pd.DataFrame(
+                growth_rate,
+                index=return_on_equity.index,
+                columns=return_on_equity.columns,
+            )
+
+        net_income = self._rows(self._income_statement, "Net Income")
+        if trailing:
+            net_income = net_income.T.rolling(trailing).sum().T
+        shares = self._rows(
+            self._income_statement,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+        )
+        equity = self._rows(self._balance_sheet_statement, "Total Shareholder Equity")
+        prices = self._period_prices().reindex(self._tickers)
+
+        results = {
+            "Payout Ratio": payout_ratio,
+            "Return on Equity": return_on_equity,
+            "Growth Rate": growth,
+            "Justified Trailing P/E": intrinsic_model.get_justified_price_to_earnings(
+                payout_ratio, rate_of_return, growth
+            ),
+            "Justified Leading P/E": intrinsic_model.get_justified_price_to_earnings(
+                payout_ratio, rate_of_return, growth, leading=True
+            ),
+            "Justified P/B": intrinsic_model.get_justified_price_to_book(
+                return_on_equity, rate_of_return, growth
+            ),
+            "Price-to-Earnings Ratio": prices / (net_income / shares),
+            "Price-to-Book Ratio": prices / (equity / shares),
+        }
+
+        return self._finish_score(
+            results, rounding, show_columns, first_columns=trailing or 1
+        )
 
     @handle_errors
     def get_residual_income(
@@ -4864,6 +5231,157 @@ class Models:
         return pvgo.loc[self._start_date :]
 
     @handle_errors
+    def get_return_decomposition(
+        self,
+        lag: int | None = None,
+        diluted: bool = True,
+        trailing: int | None = None,
+        logarithmic: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Return Decomposition splits the share price return over a window into the growth of
+        the Earnings per Share and the change of the Price-to-Earnings ratio (the multiple), and
+        adds the dividends paid over the window for the total return. It shows whether a share
+        rose because the company earned more or because investors paid more for the same
+        earnings, e.g. a share whose earnings beat expectations but whose price fell because its
+        multiple contracted.
+
+        Since the share price equals the Earnings per Share times the P/E ratio, the price
+        relative over a window is the product of the earnings relative and the multiple
+        relative, which is the earnings and valuation split of equity returns used in return
+        attribution (e.g. Bogle, "Common Sense on Mutual Funds", and the building blocks of
+        Grinold and Kroner, "The Equity Risk Premium", 2002).
+
+        The formula is as follows:
+
+            - 1 + Price Return = (1 + EPS Growth) * (1 + P/E Change)
+            - EPS Growth = EPS_t / EPS_t-lag - 1
+            - P/E Change = (Price_t / EPS_t) / (Price_t-lag / EPS_t-lag) - 1
+            - Dividend Return = Dividends per Share paid over the window / Price_t-lag
+            - Total Return = Price Return + Dividend Return
+
+        With logarithmic=True the parts are log returns that add up:
+        ln(1 + Total Return) = ln(1 + EPS Growth) + ln(1 + P/E Change) + ln(1 + Dividends / Price_t).
+
+        Also known as: earnings and multiple decomposition, P/E expansion and contraction,
+        multiple expansion, return attribution by earnings growth and re-rating.
+
+        Args:
+            lag (int | None, optional): The number of periods the window spans. Defaults to None,
+                which compares each period with the same period a year earlier: 1 with annual
+                data and 4 with quarterly data.
+            diluted (bool, optional): Whether to use the diluted Earnings per Share. Defaults to
+                True.
+            trailing (int | None, optional): The number of periods to sum the Net Income over
+                (and average the shares over). Defaults to None, which uses the trailing twelve
+                months (4 quarters) with quarterly data and single years with annual data, as
+                the P/E ratio does.
+            logarithmic (bool, optional): Whether to return log returns, which add up, instead of
+                simple returns, which multiply. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: The Price Return, EPS Growth, P/E Change, Dividend Return and Total
+            Return per ticker (rows) and period (columns), as decimals.
+
+        Notes:
+        - The share price is the traded Close (adjusted for splits, not for dividends) at the end
+        of each period, the same price the P/E ratio uses, and the Earnings per Share is the Net
+        Income over the weighted average (diluted) shares, as in `ratios.get_earnings_per_share`.
+        - The P/E ratio has no meaning when the earnings are zero or negative, so the EPS Growth
+        and P/E Change are NaN when the Earnings per Share at either end of the window is not
+        positive. The Price Return, Dividend Return and Total Return remain; the growth of the
+        earnings themselves is `ratios.get_earnings_per_share(growth=True)`.
+        - Dividends are added as paid, without reinvestment, so the Total Return differs slightly
+        from a return on the dividend-adjusted price.
+        - Each period is a calendar period that holds the fiscal period reported in it (see the
+        Toolkit), so the price at the end of the calendar period is compared with the earnings
+        reported for it, as in the P/E ratio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AMD", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_return_decomposition()
+        ```
+
+        Which returns:
+
+        |                             |    2022 |    2023 |    2024 |    2025 |
+        |:----------------------------|--------:|--------:|--------:|--------:|
+        | ('AMD', 'Price Return')     | -0.5499 |  1.2759 | -0.1806 |  0.773  |
+        | ('AMD', 'EPS Growth')       | -0.6734 | -0.3745 |  0.9075 |  1.6433 |
+        | ('AMD', 'P/E Change')       |  0.3782 |  2.6387 | -0.5704 | -0.3292 |
+        | ('AMD', 'Dividend Return')  |  0      |  0      |  0      |  0      |
+        | ('AMD', 'Total Return')     | -0.5499 |  1.2759 | -0.1806 |  0.773  |
+        | ('MSFT', 'Price Return')    | -0.2869 |  0.568  |  0.1209 |  0.1474 |
+        | ('MSFT', 'EPS Growth')      |  0.1979 |  0.0039 |  0.2185 |  0.156  |
+        | ('MSFT', 'P/E Change')      | -0.4047 |  0.562  | -0.0801 | -0.0075 |
+        | ('MSFT', 'Dividend Return') |  0.0076 |  0.0116 |  0.0082 |  0.0081 |
+        | ('MSFT', 'Total Return')    | -0.2794 |  0.5796 |  0.1291 |  0.1554 |
+        """
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
+        lag = lag if lag is not None else (4 if self._quarterly else 1)
+
+        if not isinstance(lag, int) or lag < 1:
+            raise ValueError(
+                "The lag is the number of periods of the window: 1 or more."
+            )
+
+        shares = self._rows(
+            self._income_statement,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+        )
+        net_income = self._rows(self._income_statement, "Net Income")
+
+        if trailing:
+            net_income = net_income.T.rolling(trailing).sum().T
+            shares = shares.T.rolling(trailing).mean().T
+
+        earnings_per_share = valuation_model.get_earnings_per_share(
+            net_income=net_income,
+            preferred_dividends=0,
+            average_outstanding_shares=shares,
+        )
+
+        columns = self._income_statement.columns
+        dividends = self._historical_data["quarterly" if self._quarterly else "yearly"][
+            "Dividends"
+        ].reindex(columns=self._tickers)
+        dividends.index = dividends.index.asfreq(columns.freq)
+        dividends = dividends.reindex(columns).T
+
+        decomposition = growth_model.get_return_decomposition(
+            close_prices=self._period_prices(),
+            earnings_per_share=earnings_per_share,
+            dividends_per_share=dividends,
+            lag=lag,
+            logarithmic=logarithmic,
+        )
+
+        decomposition = apply_rounding(
+            decomposition.loc[:, self._start_date : self._end_date],
+            rounding if rounding is not None else self._rounding,
+        ).dropna(how="all", axis=1)
+
+        if len(self._tickers) == 1:
+            return decomposition.droplevel(level=0)
+
+        return decomposition
+
+    @handle_errors
     def get_sustainable_growth_rate(
         self,
         rounding: int | None = None,
@@ -4935,6 +5453,39 @@ class Models:
         | LULU | 0.3812 | 0.312  | 0.4923 | 0.4288 | 0.3652 |
         | NKE  | 0.3297 | 0.2001 | 0.2521 | 0.0637 | 0.0531 |
         """
+        return_on_equity, dividend_payout_ratio = self._return_on_equity_and_payout(
+            trailing
+        )
+        retention_ratio = valuation_model.get_reinvestment_ratio(
+            dividend_payout_ratio=dividend_payout_ratio,
+        )
+
+        sustainable_growth_rate = growth_model.get_sustainable_growth_rate(
+            return_on_equity=return_on_equity,
+            retention_ratio=retention_ratio,
+        )
+
+        return finalize_dataset(
+            dataset=sustainable_growth_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    def _return_on_equity_and_payout(
+        self, trailing: int | None
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        The Return on Equity on the equity at the beginning of the period (`trailing` periods
+        back with `trailing` set, the flows then summed over `trailing` periods) and the
+        dividend payout ratio, per ticker and period, as the sustainable growth rate and the
+        justified multiples use them.
+        """
         net_income = (
             self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
             if trailing
@@ -4961,26 +5512,7 @@ class Models:
             dividends=dividends,
             net_income=net_income,
         )
-        retention_ratio = valuation_model.get_reinvestment_ratio(
-            dividend_payout_ratio=dividend_payout_ratio,
-        )
-
-        sustainable_growth_rate = growth_model.get_sustainable_growth_rate(
-            return_on_equity=return_on_equity,
-            retention_ratio=retention_ratio,
-        )
-
-        return finalize_dataset(
-            dataset=sustainable_growth_rate,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
+        return return_on_equity, dividend_payout_ratio
 
     @handle_errors
     def get_internal_growth_rate(
@@ -6820,6 +7352,210 @@ class Models:
             show_columns,
             first_columns=first_columns,
             name="The Montier C-Score",
+        )
+
+    @handle_errors
+    def get_quality_score(
+        self,
+        growth_years: int = 5,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Quality Score follows the Quality Minus Junk (QMJ) score of Asness, Frazzini and
+        Pedersen (2019): a company is of high quality when it is profitable, growing, safe and
+        pays out to its shareholders. Every measure is ranked across the tickers given in each
+        period and turned into a z-score, each of the four components is the z-score of the
+        average of its measures, and the Quality Score is the z-score of their sum. A positive
+        score is a higher quality than the average of the tickers given.
+
+        The measures are as follows (a higher value is a higher quality, so the measures marked
+        "low" enter with a minus sign):
+
+            - Profitability: Gross Profits to Assets ((Revenue - Cost of Goods Sold) / Total
+            Assets, Novy-Marx 2013), Return on Equity, Return on Assets, Cash Flow to Assets
+            ((Operating Cash Flow - Capital Expenditure) / Total Assets), Gross Margin and low
+            accruals ((Operating Cash Flow - Net Income) / Total Assets)
+            - Growth: the change in Gross Profits to Assets, Return on Equity, Return on Assets,
+            Cash Flow to Assets and Gross Margin over `growth_years`
+            - Safety: low Beta (of the period's returns against the benchmark), low leverage
+            (Total Debt / Total Assets), low Ohlson O-Score, high Altman Z-Score and low
+            earnings volatility (the standard deviation of the Return on Equity over
+            `growth_years`)
+            - Payout: low equity issuance (-ln of the change in the diluted shares over a year),
+            low debt issuance (-ln of the change in Total Debt over a year) and the net payout
+            ratio ((Dividends + Share Repurchases - Shares Issued) / Net Income)
+
+        Also known as: QMJ, Quality Minus Junk, quality factor, quality composite.
+
+        Args:
+            growth_years (int, optional): The number of years over which the growth and the
+                earnings volatility are measured. Defaults to 5, as in the paper.
+            trailing (int | None, optional): Sum the flows over this many periods. Defaults to
+                None, which is 4 for quarterly data (a trailing twelve months) and 1 otherwise.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set
+                otherwise).
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the z-scores of Profitability, Growth, Safety
+            and Payout, and the Quality Score.
+
+        Notes:
+        - The scores are relative to the tickers given: AQR ranks every stock in the market,
+        while this ranks the tickers passed to the Toolkit, so pass a broad or comparable set
+        (at least three tickers, preferably many more). With fewer than three, it is empty.
+        - The growth measures need `growth_years` of earlier statements, so the first Quality
+        Score is `growth_years` after the first period (with quarterly data, plus the three
+        quarters of the first trailing year). Set an earlier start_date to obtain it.
+        - The paper measures growth as the change in profits per share scaled by the assets
+        of five years earlier; this takes the change in the profitability ratios themselves,
+        and it leaves out the idiosyncratic volatility of the safety component.
+        - A ticker without one of the components has no Quality Score.
+        - Asness, C. S., A. Frazzini and L. H. Pedersen, "Quality Minus Junk," Review of
+        Accounting Studies 24, 2019, pp. 34-112. Novy-Marx, R., "The Other Side of Value: The
+        Gross Profitability Premium," Journal of Financial Economics 108(1), 2013, pp. 1-28.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "META", "NVDA", "INTC", "IBM", "ORCL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_quality_score().xs("Quality Score", level=1)
+        ```
+
+        Which returns:
+
+        |       |    2020 |    2021 |    2022 |    2023 |    2024 |     2025 |
+        |:------|--------:|--------:|--------:|--------:|--------:|---------:|
+        | AAPL  |  0.6124 |  1.0206 |  1.4289 |  0.6124 |  0.6124 |   1.3363 |
+        | GOOGL | -1.0206 |  0.2041 |  0.6124 |  1.0206 |  1.0206 |   0.8018 |
+        | IBM   | -1.4289 | -0.6124 | -0.6124 | -0.6124 | -0.6124 |  -0.2673 |
+        | INTC  | -0.6124 | -1.0206 | -1.4289 | -1.4289 | -1.4289 |  -1.3363 |
+        | META  |  1.4289 |  1.4289 |  0.2041 | -0.2041 |  0.2041 |   0.2673 |
+        | MSFT  |  1.0206 |  0.6124 |  1.0206 |  0.2041 | -0.2041 |  -0.8018 |
+        | NVDA  |  0.2041 | -0.2041 | -0.2041 |  1.4289 |  1.4289 | nan      |
+        | ORCL  | -0.2041 | -1.4289 | -1.0206 | -1.0206 | -1.0206 | nan      |
+        """
+        if len(self._tickers) < quality_model.QUALITY_MINIMUM_TICKERS:
+            logger.warning(
+                "The Quality Score ranks the tickers against each other and needs at least "
+                "three tickers, while %s were given.",
+                len(self._tickers),
+            )
+            return pd.DataFrame()
+
+        if trailing is None and self._quarterly:
+            trailing = 4
+        year = 4 if self._quarterly else 1
+        growth_lag = growth_years * year
+        inputs = self._score_inputs(trailing)
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            frame = self._rows(statement, row)
+            return frame.T.rolling(trailing).sum().T if trailing else frame
+
+        total_assets = inputs["Total Assets"]
+        net_income = inputs["Net Income"]
+        operating_cash_flow = inputs["Operating Cash Flow"]
+        gross_profit = inputs["Revenue"] - inputs["Cost of Goods Sold"]
+        total_debt = inputs["Total Debt"]
+        total_equity = self._rows(self._balance_sheet_statement, "Total Equity")
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+
+        profitability = {
+            "Gross Profits to Assets": gross_profit / total_assets,
+            "Return on Equity": net_income / total_equity,
+            "Return on Assets": net_income / total_assets,
+            "Cash Flow to Assets": (
+                operating_cash_flow - inputs["Capital Expenditure"].abs()
+            )
+            / total_assets,
+            "Gross Margin": gross_profit / inputs["Revenue"],
+            "Low Accruals": (operating_cash_flow - net_income) / total_assets,
+        }
+        growth = {
+            name: profitability[name] - profitability[name].shift(growth_lag, axis=1)
+            for name in [
+                "Gross Profits to Assets",
+                "Return on Equity",
+                "Return on Assets",
+                "Cash Flow to Assets",
+                "Gross Margin",
+            ]
+        }
+
+        def score_row(scores: pd.DataFrame, row: str) -> pd.DataFrame:
+            return scores.xs(row, level=1).reindex(
+                index=self._tickers, columns=total_assets.columns
+            )
+
+        period = "quarterly" if self._quarterly else "yearly"
+        returns = self._within_historical_data[period]["Return"]
+        # Periods by tickers, as the tickers are at least three.
+        beta = pd.DataFrame(
+            get_beta(returns[self._tickers], returns[self._benchmark_name])
+        ).T
+        beta.columns = beta.columns.asfreq(total_assets.columns.freq)
+
+        safety = {
+            "Low Beta": -beta.reindex(
+                index=self._tickers, columns=total_assets.columns
+            ),
+            "Low Leverage": -(total_debt / total_assets),
+            "Low Ohlson O-Score": -score_row(
+                self.get_ohlson_o_score(trailing=trailing), "Ohlson O-Score"
+            ),
+            "Altman Z-Score": score_row(
+                self.get_altman_z_score(trailing=trailing), "Altman Z-Score"
+            ),
+            "Low Earnings Volatility": -profitability["Return on Equity"]
+            .T.rolling(growth_lag, min_periods=growth_lag)
+            .std()
+            .T,
+        }
+
+        # Logarithms of the change only exist between two positive values.
+        def log_change(frame: pd.DataFrame) -> pd.DataFrame:
+            previous = frame.shift(year, axis=1)
+            return np.log(frame.where(frame > 0) / previous.where(previous > 0))
+
+        net_payout = (
+            flow(self._cash_flow_statement, "Dividends Paid").abs().fillna(0)
+            + flow(self._cash_flow_statement, "Common Stock Purchased").abs().fillna(0)
+            - inputs["Common Stock Issued"].abs().fillna(0)
+        )
+        payout = {
+            "Low Equity Issuance": -log_change(shares),
+            "Low Debt Issuance": -log_change(total_debt),
+            "Net Payout Ratio": net_payout / net_income.where(net_income > 0),
+        }
+
+        results = quality_model.get_quality_minus_junk(
+            {
+                "Profitability": profitability,
+                "Growth": growth,
+                "Safety": safety,
+                "Payout": payout,
+            }
+        )
+
+        return self._finish_score(
+            results,
+            rounding,
+            show_columns,
+            first_columns=growth_lag + ((trailing or 1) - 1),
+            name="The Quality Score",
         )
 
     @handle_errors

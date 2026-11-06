@@ -352,6 +352,7 @@ def get_two_stage_dividend_discount_model(
     high_growth_rate: float,
     stable_growth_rate: float,
     high_growth_periods: int = 5,
+    transition_periods: int = 0,
 ) -> pd.DataFrame:
     """
     The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model to
@@ -387,11 +388,17 @@ def get_two_stage_dividend_discount_model(
         from the end of the high-growth phase onward.
         high_growth_periods (int, optional): The number of periods in the explicit
         high-growth phase. Defaults to 5.
+        transition_periods (int, optional): The number of periods between the high-growth
+        phase and the stable phase in which the growth rate declines linearly from the high to
+        the stable growth rate, which makes it the Three-Stage Dividend Discount Model. In
+        transition period k (of n) dividends grow at High Growth Rate - (High Growth Rate -
+        Stable Growth Rate) * k / (n + 1). Defaults to 0, no transition phase.
 
     Returns:
         pd.DataFrame: A DataFrame containing the final high-growth dividend, the present
-        value of the high-growth phase, the Terminal Value (and its present value), and the
-        resulting Intrinsic Value.
+        value of the high-growth phase, the present value of the transition phase (only with
+        transition periods), the Terminal Value (and its present value), and the resulting
+        Intrinsic Value.
 
     Notes:
     - The Rate of Return must be greater than the Stable Growth Rate, otherwise the Terminal
@@ -428,20 +435,48 @@ def get_two_stage_dividend_discount_model(
         for period, dividend in enumerate(dividend_projection[1:], start=1)
     )
 
+    final_high_growth_dividend = dividend_projection[-1]
+
+    # The growth rate steps down in equal parts from the high to the stable rate, reaching the stable rate in the first period after the transition.  # noqa: E501
+    transition_growth_rates = [
+        high_growth_rate
+        - (high_growth_rate - stable_growth_rate) * period / (transition_periods + 1)
+        for period in range(1, transition_periods + 1)
+    ]
+    for growth_rate in transition_growth_rates:
+        dividend_projection.append(dividend_projection[-1] * (1 + growth_rate))
+
+    transition_present_value = fsum(
+        dividend / (1 + rate_of_return) ** period
+        for period, dividend in enumerate(
+            dividend_projection[high_growth_periods + 1 :],
+            start=high_growth_periods + 1,
+        )
+    )
+
+    explicit_periods = high_growth_periods + transition_periods
     terminal_value = (
         dividend_projection[-1]
         * (1 + stable_growth_rate)
         / (rate_of_return - stable_growth_rate)
     )
     terminal_value_present_value = (
-        terminal_value / (1 + rate_of_return) ** high_growth_periods
+        terminal_value / (1 + rate_of_return) ** explicit_periods
     )
 
-    intrinsic_value = high_growth_present_value + terminal_value_present_value
+    intrinsic_value = (
+        high_growth_present_value
+        + transition_present_value
+        + terminal_value_present_value
+    )
 
     components = {
-        "Final High-Growth Dividend": dividend_projection[-1],
+        "Final High-Growth Dividend": final_high_growth_dividend,
         "High-Growth Phase Present Value": high_growth_present_value,
+    }
+    if transition_periods:
+        components["Transition Phase Present Value"] = transition_present_value
+    components |= {
         "Terminal Value": terminal_value,
         "Terminal Value Present Value": terminal_value_present_value,
         "Intrinsic Value": intrinsic_value,
@@ -450,8 +485,140 @@ def get_two_stage_dividend_discount_model(
     return pd.DataFrame.from_dict(
         components,
         orient="index",
-        columns=[f"High-Growth Periods = {high_growth_periods}"],
+        columns=[
+            f"High-Growth Periods = {high_growth_periods}"
+            + (
+                f", Transition Periods = {transition_periods}"
+                if transition_periods
+                else ""
+            )
+        ],
     )
+
+
+def get_h_model(
+    dividends_per_share: float | pd.Series | pd.DataFrame,
+    rate_of_return: float,
+    high_growth_rate: float,
+    stable_growth_rate: float,
+    high_growth_periods: int = 10,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    The H-Model of Fuller and Hsia (1984) values a stock whose dividend growth starts at a high
+    rate and declines linearly to a stable rate over a number of periods, after which it grows
+    at the stable rate forever. It approximates the three-stage dividend discount model in one
+    closed-form expression: the Gordon Growth Model at the stable rate, plus the value of the
+    extra growth during the decline.
+
+    The formula is as follows:
+
+        - H = High Growth Periods / 2 (the half-life of the high-growth period)
+        - Intrinsic Value = Dividends Per Share * (1 + Stable Growth Rate) / (Rate of Return -
+        Stable Growth Rate) + Dividends Per Share * H * (High Growth Rate - Stable Growth Rate)
+        / (Rate of Return - Stable Growth Rate)
+
+    Also known as: H-Model, Fuller-Hsia model.
+
+    Args:
+        dividends_per_share (float | pd.Series | pd.DataFrame): The current (annual) dividends
+        per share.
+        rate_of_return (float): The required rate of return.
+        high_growth_rate (float): The growth rate at the start of the decline.
+        stable_growth_rate (float): The growth rate the decline ends at and that holds forever
+        after it.
+        high_growth_periods (int, optional): The number of years over which the growth rate
+        declines from the high to the stable rate. Defaults to 10.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The intrinsic value per share.
+
+    Notes:
+    - The Rate of Return must be greater than the Stable Growth Rate; a ValueError is raised
+    when it is not.
+    - The H-Model is an approximation: it is close to the exact value of a linearly declining
+    growth rate when the high-growth period is short or the gap between the two growth rates
+    is small, and overstates it as either grows.
+    - Fuller, R. J. and C.-C. Hsia, "A Simplified Common Stock Valuation Model," Financial
+    Analysts Journal 40(5), 1984, pp. 49-56.
+    """
+    if rate_of_return <= stable_growth_rate:
+        raise ValueError(
+            f"The Rate of Return ({rate_of_return}) must be greater than the Stable Growth Rate "
+            f"({stable_growth_rate}): dividends growing at or above the discount rate forever "
+            "have an infinite value."
+        )
+
+    half_life = high_growth_periods / 2
+    spread = rate_of_return - stable_growth_rate
+
+    return (
+        dividends_per_share * (1 + stable_growth_rate) / spread
+        + dividends_per_share
+        * half_life
+        * (high_growth_rate - stable_growth_rate)
+        / spread
+    )
+
+
+def get_justified_price_to_earnings(
+    payout_ratio: pd.Series | pd.DataFrame,
+    rate_of_return: float,
+    growth_rate: pd.Series | pd.DataFrame,
+    leading: bool = False,
+) -> pd.Series | pd.DataFrame:
+    """
+    The justified Price-to-Earnings ratio is the P/E the Gordon Growth Model implies for a
+    company that pays out a constant share of its earnings, which grow at a constant rate.
+
+    The formula is as follows:
+
+        - Justified Trailing P/E = Payout Ratio * (1 + Growth Rate) / (Rate of Return - Growth
+        Rate)
+        - Justified Leading P/E = Payout Ratio / (Rate of Return - Growth Rate)
+
+    Args:
+        payout_ratio (pd.Series | pd.DataFrame): The dividends as a share of the earnings.
+        rate_of_return (float): The required rate of return.
+        growth_rate (pd.Series | pd.DataFrame): The constant growth rate of the earnings and
+        dividends.
+        leading (bool, optional): Whether to return the leading P/E (on next year's earnings)
+        instead of the trailing P/E (on the last year's earnings). Defaults to False.
+
+    Returns:
+        pd.Series | pd.DataFrame: The justified P/E. NaN where the growth rate is at or above
+        the rate of return, where the model has no finite value.
+    """
+    spread = (rate_of_return - growth_rate).where(rate_of_return > growth_rate)
+    if leading:
+        return payout_ratio / spread
+    return payout_ratio * (1 + growth_rate) / spread
+
+
+def get_justified_price_to_book(
+    return_on_equity: pd.Series | pd.DataFrame,
+    rate_of_return: float,
+    growth_rate: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    The justified Price-to-Book ratio is the P/B the residual income model implies for a
+    company with a constant Return on Equity whose book value grows at a constant rate.
+
+    The formula is as follows:
+
+        - Justified P/B = (Return on Equity - Growth Rate) / (Rate of Return - Growth Rate)
+
+    Args:
+        return_on_equity (pd.Series | pd.DataFrame): The Return on Equity, on the equity at the
+        beginning of the period.
+        rate_of_return (float): The required rate of return.
+        growth_rate (pd.Series | pd.DataFrame): The constant growth rate of the book value.
+
+    Returns:
+        pd.Series | pd.DataFrame: The justified P/B. NaN where the growth rate is at or above
+        the rate of return, where the model has no finite value.
+    """
+    spread = (rate_of_return - growth_rate).where(rate_of_return > growth_rate)
+    return (return_on_equity - growth_rate) / spread
 
 
 def get_residual_income(

@@ -600,3 +600,69 @@ def test_official_country_names_resolve_to_the_global_macro_database_names():
         normalize_country_name("São Tomé and Príncipe", known)
         == "Sao Tome and Principe"
     )
+
+
+def test_compound_growth_is_the_yearly_rate_over_the_lag():
+    dataset = pd.DataFrame(
+        [[100.0, 110.0, 121.0, 133.1], [100.0, -5.0, 50.0, 200.0]],
+        index=["A", "B"],
+        columns=pd.period_range("2020", periods=4, freq="Y"),
+    )
+
+    growth = statistics_model.calculate_growth(
+        dataset, lag=2, compound=True, rounding=None
+    )
+
+    # 10% a year, and (50 / 100) ^ (1 / 2) - 1 for B: a loss in between does not matter.
+    assert growth.loc["A", pd.Period("2023", "Y")] == pytest.approx(0.1)
+    assert growth.loc["B", pd.Period("2022", "Y")] == pytest.approx(0.5**0.5 - 1)
+    # From a loss there is no compound rate (the total change convention would give 41).
+    assert np.isnan(growth.loc["B", pd.Period("2023", "Y")])
+
+
+def test_compound_growth_of_quarterly_data_counts_the_lag_in_quarters():
+    dataset = pd.DataFrame(
+        [np.arange(1.0, 10.0)],
+        index=["A"],
+        columns=pd.period_range("2020Q1", periods=9, freq="Q"),
+    )
+
+    growth = statistics_model.calculate_growth(
+        dataset, lag=[4, 8], compound=True, rounding=None
+    )
+
+    # Eight quarters are two years: (9 / 1) ^ (1 / 2) - 1.
+    assert growth.loc[("A", "Lag 8"), pd.Period("2022Q1", "Q")] == pytest.approx(2.0)
+    assert growth.loc[("A", "Lag 4"), pd.Period("2022Q1", "Q")] == pytest.approx(
+        9 / 5 - 1
+    )
+
+
+def test_compound_growth_over_monthly_rows_through_finalize_dataset():
+    monthly = pd.DataFrame(
+        {"A": [100.0] + [None] * 11 + [121.0]},
+        index=pd.period_range("2020-01", periods=13, freq="M"),
+    )
+
+    growth = statistics_model.finalize_dataset(
+        monthly,
+        start_date=None,
+        end_date=None,
+        default_rounding=None,
+        growth=True,
+        lag=12,
+        compound=True,
+        axis="rows",
+        row_slice=True,
+    )
+
+    assert growth.loc[pd.Period("2021-01", "M"), "A"] == pytest.approx(0.21)
+
+
+def test_compound_growth_needs_periods_with_a_yearly_count():
+    daily = pd.DataFrame(
+        {"A": [1.0, 2.0, 3.0]}, index=pd.period_range("2020-01-01", periods=3, freq="D")
+    )
+
+    with pytest.raises(ValueError, match="yearly, quarterly, monthly or weekly"):
+        statistics_model.calculate_growth(daily, lag=1, compound=True, axis="rows")

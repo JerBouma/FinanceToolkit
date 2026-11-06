@@ -199,7 +199,8 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "limit": (
         "The rows to return, like head and tail: 5 for the first five, -5 for the last five "
         "(the most recent of a time series). A table with its periods as columns (financial "
-        "statements, ratios) keeps its first or last periods instead. For ETF holdings the "
+        "statements, ratios) keeps its first or last periods instead, and rows per ticker (an "
+        "earnings calendar) are selected per ticker. For ETF holdings the "
         "largest (or, negative, the smallest) by weight, and for a list (e.g. news or a "
         "screener) its length. 0 returns every row."
     ),

@@ -469,3 +469,111 @@ def get_signals(
             "New High/Low": new_high_low,
         }
     )
+
+
+def get_indicator_summary(
+    values: pd.Series,
+    prices: pd.Series,
+    below: float | None = None,
+    above: float | None = None,
+    forward_periods: list[int] | None = None,
+) -> tuple[pd.Series, pd.DataFrame]:
+    """
+    Summarise the history of an indicator: where its latest value ranks, its extremes, the
+    periods spent beyond a threshold, the crossings into that zone and the return of the price
+    after each crossing.
+
+    Each value is ranked against its own history up to that date, never against later values:
+
+    - Percentile(t) = share of the values up to and including t that are at most Value(t)
+    - Rank(t) = number of values up to and including t that are at most Value(t), so 1 is the
+      lowest value so far and the number of observations the highest
+    - Forward Return(t, n) = Price(t + n) / Price(t) - 1, with t + n the n-th price after t
+
+    A crossing below `below` is the period the indicator reaches the other side of the line
+    (see get_crossover): a value exactly on the line keeps the side it came from.
+
+    Args:
+        values (pd.Series): The indicator per date.
+        prices (pd.Series): The prices the forward returns are measured on, per date.
+        below (float | None, optional): The line the indicator falls below, e.g. 30 for an
+            oversold RSI. Defaults to None.
+        above (float | None, optional): The line the indicator rises above, e.g. 70 for an
+            overbought RSI. Defaults to None.
+        forward_periods (list[int] | None, optional): The numbers of periods after each
+            crossing to measure the return over. Defaults to None.
+
+    Returns:
+        tuple[pd.Series, pd.DataFrame]: The summary, and a row per crossing with its zone, the
+        indicator value, its percentile and the forward returns.
+    """
+    values = values.dropna()
+    forward_periods = forward_periods or []
+    if values.empty:
+        return pd.Series(dtype=object), pd.DataFrame()
+
+    labels = values.index.astype(str)
+    rank = values.expanding().rank(method="max")
+    observations = np.arange(1, len(values) + 1)
+    percentile = rank / observations
+
+    summary = {
+        "Latest": values.iloc[-1],
+        "Latest Date": labels[-1],
+        "Percentile": percentile.iloc[-1],
+        "Rank": int(rank.iloc[-1]),
+        "Observations": len(values),
+        "Mean": values.mean(),
+        "Minimum": values.min(),
+        "Minimum Date": labels[np.argmin(values.to_numpy())],
+        "Maximum": values.max(),
+        "Maximum Date": labels[np.argmax(values.to_numpy())],
+    }
+
+    # Returns on the ticker's own trading days, measured from each date the indicator has a
+    # value; the last n dates have no return over n periods yet and are left out of averages.
+    prices = prices.dropna()
+    forward_returns = {
+        periods: (prices.shift(-periods) / prices - 1).reindex(values.index)
+        for periods in forward_periods
+    }
+    for periods, returns in forward_returns.items():
+        summary[f"Average {periods}-Period Return"] = returns.mean()
+
+    crossings = []
+    for zone, line, direction in (("Below", below, -1), ("Above", above, 1)):
+        if line is None:
+            continue
+
+        beyond = values < line if zone == "Below" else values > line
+        entries = get_crossover(values, line).eq(direction)
+        dates = values.index[entries.to_numpy()]
+
+        summary[f"Periods {zone}"] = int(beyond.sum())
+        summary[f"Crossings {zone}"] = len(dates)
+        summary[f"Last Crossing {zone}"] = (
+            labels[entries.to_numpy()][-1] if len(dates) else np.nan
+        )
+        for periods, returns in forward_returns.items():
+            summary[f"Average {periods}-Period Return After Crossing {zone}"] = (
+                returns.loc[dates].mean()
+            )
+
+        crossings.append(
+            pd.DataFrame(
+                {
+                    "Zone": zone,
+                    "Value": values.loc[dates],
+                    "Percentile": percentile.loc[dates],
+                    **{
+                        f"{periods}-Period Return": returns.loc[dates]
+                        for periods, returns in forward_returns.items()
+                    },
+                },
+                index=dates,
+            )
+        )
+
+    crossing_table = pd.concat(crossings).sort_index() if crossings else pd.DataFrame()
+
+    return pd.Series(summary, dtype=object), crossing_table

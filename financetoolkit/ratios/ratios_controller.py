@@ -7839,7 +7839,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares for market capitalization. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -9021,6 +9022,63 @@ class Ratios:
             :, self._start_date : self._end_date
         ]
 
+    def _get_earnings_per_share(
+        self, include_dividends: bool, diluted: bool, trailing: int | None
+    ) -> pd.DataFrame:
+        """
+        Returns the earnings per share of every period, including those before the start date
+        that the daily ratios carry over to the first days.
+
+        Args:
+            include_dividends (bool): Whether to deduct preferred dividends from net income.
+            diluted (bool): Whether to use the diluted weighted average shares.
+            trailing (int | None): The number of periods to sum the earnings over, or None.
+
+        Returns:
+            pd.DataFrame: The earnings per share with the tickers as index and the periods as
+            columns.
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        if trailing:
+            # Preferred Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
+            dividends = (
+                self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
+                .T.rolling(trailing)
+                .sum()
+                .T.abs()
+                if include_dividends
+                else 0
+            )
+
+            earnings_per_share = valuation_model.get_earnings_per_share(
+                self._income_statement.loc[:, "Net Income", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                dividends,
+                average_shares,
+            )
+        else:
+            # Preferred Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
+            dividends = (
+                self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :].abs()
+                if include_dividends
+                else 0
+            )
+
+            earnings_per_share = valuation_model.get_earnings_per_share(
+                self._income_statement.loc[:, "Net Income", :],
+                dividends,
+                average_shares,
+            )
+
+        return earnings_per_share
+
     @handle_portfolio
     @handle_errors
     def get_earnings_per_share(
@@ -9102,44 +9160,9 @@ class Ratios:
         | MA  |  8.7571 | 10.2266 | 11.834  | 13.8878 | 16.6682 |
         | V   |  5.6266 |  7.0023 |  8.2844 |  9.7304 | 10.0982 |
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        earnings_per_share = self._get_earnings_per_share(
+            include_dividends, diluted, trailing
         )
-
-        if trailing:
-            # Preferred Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
-            dividends = (
-                self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :]
-                .T.rolling(trailing)
-                .sum()
-                .T.abs()
-                if include_dividends
-                else 0
-            )
-
-            earnings_per_share = valuation_model.get_earnings_per_share(
-                self._income_statement.loc[:, "Net Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                dividends,
-                average_shares,
-            )
-        else:
-            # Preferred Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
-            dividends = (
-                self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :].abs()
-                if include_dividends
-                else 0
-            )
-
-            earnings_per_share = valuation_model.get_earnings_per_share(
-                self._income_statement.loc[:, "Net Income", :],
-                dividends,
-                average_shares,
-            )
 
         return finalize_dataset(
             dataset=earnings_per_share,
@@ -9295,7 +9318,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -9339,18 +9363,16 @@ class Ratios:
 
         Which returns:
 
-        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
-        |:-----|--------:|--------:|--------:|--------:|--------:|
-        | COST | 50.3807 | 34.7418 | 46.6264 | 55.317  | 47.3602 |
-        | TGT  | 16.4167 | 24.9131 | 15.9285 | 15.2594 | 12.0203 |
-        | WMT  | 29.6837 | 33.1905 | 27.4728 | 37.566  | 40.823  |
+        |      |    2021 |    2022 |    2023 |    2024 |     2025 |
+        |:-----|--------:|--------:|--------:|--------:|---------:|
+        | COST | 50.3805 | 34.7419 | 46.6265 | 55.3169 |  47.3603 |
+        | TGT  | 16.4167 | 24.9133 | 15.9285 | 15.2594 | nan      |
+        | WMT  | 29.683  | 33.1872 | 27.4726 | 37.5653 | nan      |
         """
         # Prices are compared with a year of earnings, so quarterly data defaults to the trailing
         # twelve months. The earnings are summed over the periods before they are spread over days.
-        eps = self.get_earnings_per_share(
-            include_dividends,
-            diluted,
-            trailing=self._get_valuation_trailing(trailing),
+        eps = self._get_earnings_per_share(
+            include_dividends, diluted, self._get_valuation_trailing(trailing)
         )
 
         years = eps.columns
@@ -9892,6 +9914,48 @@ class Ratios:
             standardize=standardize,
         )
 
+    def _get_book_value_per_share(
+        self, diluted: bool, trailing: int | None
+    ) -> pd.DataFrame:
+        """
+        Returns the book value per share of every period, including those before the start
+        date that the daily ratios carry over to the first days.
+
+        Args:
+            diluted (bool): Whether to use the diluted weighted average shares.
+            trailing (int | None): The number of period ends to average over, or None.
+
+        Returns:
+            pd.DataFrame: The book value per share with the tickers as index and the periods as
+            columns.
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        if trailing:
+            book_value_per_share = valuation_model.get_book_value_per_share(
+                self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                self._balance_sheet_statement.loc[:, "Preferred Stock", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                average_shares.T.rolling(trailing).mean().T,
+            )
+        else:
+            book_value_per_share = valuation_model.get_book_value_per_share(
+                self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
+                self._balance_sheet_statement.loc[:, "Preferred Stock", :],
+                average_shares,
+            )
+
+        return book_value_per_share
+
     @handle_portfolio
     @handle_errors
     def get_book_value_per_share(
@@ -9966,30 +10030,7 @@ class Ratios:
         | CB  | 134.734  | 119.282  | 143.666  | 155.426  | 186.02  |
         | TRV | 115.179  |  89.9458 | 107.326  | 120.571  | 144.525 |
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
-
-        if trailing:
-            book_value_per_share = valuation_model.get_book_value_per_share(
-                self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Preferred Stock", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                average_shares.T.rolling(trailing).mean().T,
-            )
-        else:
-            book_value_per_share = valuation_model.get_book_value_per_share(
-                self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
-                self._balance_sheet_statement.loc[:, "Preferred Stock", :],
-                average_shares,
-            )
+        book_value_per_share = self._get_book_value_per_share(diluted, trailing)
 
         return finalize_dataset(
             dataset=book_value_per_share,
@@ -10041,7 +10082,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -10091,8 +10133,8 @@ class Ratios:
         | JPM | 1.8484 | 1.5033 | 1.6661 | 2.1254 | 2.6176 |
         | WFC | 1.173  | 0.9854 | 1.1012 | 1.5174 | 1.8228 |
         """
-        book_value_per_share = self.get_book_value_per_share(
-            diluted, trailing=trailing if trailing else None
+        book_value_per_share = self._get_book_value_per_share(
+            diluted, trailing if trailing else None
         )
 
         years = book_value_per_share.columns
@@ -10388,8 +10430,9 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the dividends paid in the 365 calendar days up to that day (or the
-                `trailing` periods in days). Days less than one window after the first price are
-                NaN. Defaults to False.
+                `trailing` periods in days). The prices start a year before the start date, so
+                a window of up to a year is complete on the start date; days less than one window
+                after a ticker's first price are NaN. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -10524,7 +10567,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -10660,7 +10704,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -10776,7 +10821,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -10899,7 +10945,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -11025,7 +11072,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -11138,7 +11186,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -11265,7 +11314,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -11385,7 +11435,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -11508,7 +11559,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -11626,7 +11678,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
                 Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
@@ -11666,18 +11719,16 @@ class Ratios:
 
         Which returns:
 
-        |    |   2021 |    2022 |   2023 |   2024 |    2025 |
-        |:---|-------:|--------:|-------:|-------:|--------:|
-        | F  | 0.2141 | -0.0424 | 0.0882 | 0.1477 | -0.1567 |
-        | GM | 0.1143 |  0.1823 | 0.2038 | 0.1195 |  0.0402 |
-        | TM | 0.0986 |  0.0971 | 0.1382 | 0.1225 |  0.0961 |
+        |    |   2021 |    2022 |   2023 |   2024 |     2025 |
+        |:---|-------:|--------:|-------:|-------:|---------:|
+        | F  | 0.2141 | -0.0424 | 0.0882 | 0.1477 |  -0.1567 |
+        | GM | 0.1143 |  0.1823 | 0.2038 | 0.1195 |   0.0402 |
+        | TM | 0.0986 |  0.0971 | 0.1382 | 0.1225 | nan      |
         """
         # The earnings yield is the inverse of the P/E, so it uses the same earnings: the trailing
         # twelve months by default on quarterly data.
-        eps = self.get_earnings_per_share(
-            include_dividends,
-            diluted=diluted,
-            trailing=self._get_valuation_trailing(trailing),
+        eps = self._get_earnings_per_share(
+            include_dividends, diluted, self._get_valuation_trailing(trailing)
         )
 
         years = eps.columns
@@ -12128,7 +12179,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -12240,7 +12292,8 @@ class Ratios:
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
                 against the statement figures of the latest period that has ended on or before
-                that day, so no figures are used before their period closes. Defaults to False.
+                that day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).

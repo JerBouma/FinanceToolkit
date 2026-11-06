@@ -171,6 +171,27 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "'get_price_to_earnings_ratio', a comma-separated list, or a collection of the tool "
         "(see the tool description), e.g. 'profitability'."
     ),
+    "metric": (
+        "get_indicator_summary only: the indicator to summarise, e.g. "
+        "'get_relative_strength_index' (default) or 'get_stochastic_oscillator'."
+    ),
+    "below": (
+        "get_indicator_summary only: the line the indicator falls below, e.g. 30 for an "
+        "oversold RSI; adds the periods below it, the crossings into that zone and the "
+        "returns after them."
+    ),
+    "above": (
+        "get_indicator_summary only: the line the indicator rises above, e.g. 70 for an "
+        "overbought RSI."
+    ),
+    "forward_periods": (
+        "get_indicator_summary only: the trading periods after each crossing to measure the "
+        "return over, e.g. [5, 21, 63] for about a week, a month and a quarter."
+    ),
+    "show_crossings": (
+        "get_indicator_summary only: set to true for a row per crossing (date, value, its "
+        "percentile at the time and the forward returns) instead of the summary."
+    ),
     "detail": (
         "get_factor_analysis only: 'information_coefficient', 'quantile_returns', "
         "'quantile_turnover' or 'rank_autocorrelation' returns that part for a single metric "

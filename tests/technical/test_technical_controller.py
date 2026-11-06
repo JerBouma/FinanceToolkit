@@ -2,6 +2,7 @@
 # pylint: disable=missing-function-docstring
 
 import pandas as pd
+import pytest
 
 from financetoolkit.technicals import pattern_model
 
@@ -602,3 +603,43 @@ def test_signals_match_the_indicators_they_come_from(technical_module):
         observed.dropna(), expected.loc[observed.dropna().index], check_names=False
     )
     assert observed.abs().sum() > 0
+
+
+def test_indicator_summary_matches_the_indicator(technical_module):
+    rsi = technical_module.get_relative_strength_index(rounding=15)
+    summary = technical_module.get_indicator_summary(
+        below=30, forward_periods=[5, 21], rounding=15
+    )
+
+    for ticker in summary.index:
+        values = rsi[ticker].dropna()
+        assert summary.loc[ticker, "Latest"] == pytest.approx(values.iloc[-1])
+        assert summary.loc[ticker, "Minimum"] == pytest.approx(values.min())
+        assert summary.loc[ticker, "Observations"] == len(values)
+        assert summary.loc[ticker, "Percentile"] == pytest.approx(
+            (values <= values.iloc[-1]).mean()
+        )
+        assert summary.loc[ticker, "Periods Below"] == (values < 30).sum()
+        assert summary.loc[ticker, "Average 21-Period Return"] > -1
+
+
+def test_indicator_summary_crossings_are_the_rsi_signals(technical_module):
+    crossings = technical_module.get_indicator_summary(
+        below=30, forward_periods=5, show_crossings=True
+    )
+    signals = technical_module.get_signals()["RSI Oversold"]
+
+    for ticker in crossings.index.get_level_values("Ticker").unique():
+        entered = signals.index[signals[ticker].eq(-1)].to_timestamp()
+        assert list(crossings.loc[ticker].index) == list(entered)
+        assert crossings.loc[ticker, "5-Period Return"].notna().any()
+
+
+def test_indicator_summary_needs_a_single_indicator_and_a_line(
+    technical_module, monkeypatch
+):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="single indicator"):
+        technical_module.get_indicator_summary("momentum")
+    with pytest.raises(ValueError, match="below or above"):
+        technical_module.get_indicator_summary(forward_periods=[5])

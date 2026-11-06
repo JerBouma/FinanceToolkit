@@ -144,3 +144,68 @@ def test_moving_through_a_line_over_two_periods_is_one_crossover():
     crossover = pattern_model.get_crossover(pd.Series([1.0, 2.5, 3.0, 2.5, 3.0]), 2.5)
 
     assert crossover.iloc[1:].tolist() == [0.0, 1.0, 0.0, 0.0]
+
+
+def indicator_with_three_dips():
+    """An RSI-like series that falls below 30 three times; the price rises by 1 a day."""
+    dates = pd.bdate_range("2024-01-01", periods=10)
+    values = pd.Series([50, 40, 25, 20, 35, 28, 30, 45, 29, 60.0], index=dates)
+    prices = pd.Series(np.arange(100.0, 110.0), index=dates)
+    return values, prices
+
+
+def test_indicator_summary_ranks_the_latest_value_in_its_history():
+    values, prices = indicator_with_three_dips()
+    summary, _ = pattern_model.get_indicator_summary(values, prices)
+
+    assert summary["Latest"] == 60
+    assert summary["Latest Date"] == "2024-01-12"
+    assert summary["Percentile"] == 1
+    assert summary["Rank"] == 10
+    assert summary["Observations"] == 10
+    assert summary["Minimum"] == 20
+    assert summary["Minimum Date"] == "2024-01-04"
+    assert summary["Maximum Date"] == "2024-01-12"
+    assert summary["Mean"] == pytest.approx(36.2)
+    assert "Periods Below" not in summary
+
+
+def test_indicator_summary_counts_the_crossings_and_their_forward_returns():
+    values, prices = indicator_with_three_dips()
+    summary, crossings = pattern_model.get_indicator_summary(
+        values, prices, below=30, forward_periods=[2]
+    )
+
+    # 25, 20, 28 and 29 are below 30; 30 itself is not.
+    assert summary["Periods Below"] == 4
+    # Exactly 30 after 28 keeps the side it came from, so 45 -> 29 is the third crossing.
+    assert list(crossings.index.strftime("%Y-%m-%d")) == [
+        "2024-01-03",
+        "2024-01-08",
+        "2024-01-11",
+    ]
+    assert summary["Crossings Below"] == 3
+    assert summary["Last Crossing Below"] == "2024-01-11"
+
+    # Without look-ahead: 28 on 2024-01-08 is ranked among the six values up to then.
+    assert crossings["Percentile"].tolist() == pytest.approx([1 / 3, 3 / 6, 4 / 9])
+
+    returns = crossings["2-Period Return"]
+    assert returns.iloc[0] == pytest.approx(104 / 102 - 1)
+    assert returns.iloc[1] == pytest.approx(107 / 105 - 1)
+    # Two periods after the last crossing lie beyond the data.
+    assert np.isnan(returns.iloc[2])
+    assert summary["Average 2-Period Return After Crossing Below"] == pytest.approx(
+        returns.iloc[:2].mean()
+    )
+    every_day = (prices.shift(-2) / prices - 1).mean()
+    assert summary["Average 2-Period Return"] == pytest.approx(every_day)
+
+
+def test_indicator_summary_of_the_zone_above():
+    values, prices = indicator_with_three_dips()
+    summary, crossings = pattern_model.get_indicator_summary(values, prices, above=40)
+
+    assert summary["Periods Above"] == 3
+    assert summary["Crossings Above"] == 2
+    assert crossings["Zone"].eq("Above").all()

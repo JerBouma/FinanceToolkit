@@ -910,7 +910,8 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._historical_data[period].loc[self._start_date :]
 
         on_balance_volume = breadth_model.get_on_balance_volume(
             historical_data[close_column],
@@ -1024,7 +1025,10 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._get_historical_data(period, close_column)
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._get_historical_data(period, close_column).loc[
+            self._start_date :
+        ]
 
         accumulation_distribution_line = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1540,7 +1544,8 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._historical_data[period].loc[self._start_date :]
 
         negative_volume_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1667,7 +1672,8 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._historical_data[period].loc[self._start_date :]
 
         positive_volume_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -7704,7 +7710,10 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # The cone describes the volatility between the start and end date.
+        historical_data = self._historical_data[period].loc[
+            self._start_date : self._end_date
+        ]
 
         volatility_cone = {}
 
@@ -8121,7 +8130,8 @@ class Technicals:
         | 2025-12-30 |           9 |          21 |           0 |            -12 |                    954 |                  0.4286 |                -3.642  |                    -745.019 |                               0.7    |                                   0.8 |           0 |          0 |
         | 2025-12-31 |           3 |          27 |           0 |            -24 |                    930 |                  0.1111 |               -46.2902 |                    -791.309 |                               0.5667 |                                   0.8 |           0 |          0 |
         """
-        prices = self._close_prices(period, close_column)
+        # The Advance-Decline Line and McClellan Summation Index start at the start date.
+        prices = self._close_prices(period, close_column).loc[self._start_date :]
         constituents = [
             ticker
             for ticker in prices.columns
@@ -8819,3 +8829,184 @@ class Technicals:
         return pd.concat(signal_dict, axis=1).swaplevel(0, 1, axis=1)[
             list(signal_dict[prices.columns[0]].columns)
         ]
+
+    @handle_errors
+    def get_indicator_summary(
+        self,
+        metric: str = "get_relative_strength_index",
+        below: float | None = None,
+        above: float | None = None,
+        forward_periods: list[int] | int | None = None,
+        show_crossings: bool = False,
+        column: str | None = None,
+        rounding: int | None = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """
+        Summarise the history of a technical indicator per ticker in a single row instead of
+        the series itself: where the latest value ranks in its own history, the lowest and
+        highest value with their dates, how many periods the indicator spent below or above a
+        threshold, when it last crossed into that zone and how the price did afterwards. This
+        answers questions such as "how oversold is the RSI compared with the last five years,
+        and what happened after the previous times it fell below 30?" without the thousands of
+        daily values behind it.
+
+        Each value is ranked against its own history up to that date, so the percentile of a
+        crossing in the past only uses the values known at that time:
+
+        - Percentile = share of the values up to and including the date that are at most the
+          value on that date
+        - Rank = number of values up to and including the date that are at most the value on
+          that date: 1 is the lowest value so far, the number of observations the highest
+        - Forward Return (n periods) = Price(t + n) / Price(t) - 1, from the close of the
+          crossing to the close n trading periods later, on the dividend and split adjusted
+          close
+
+        A crossing below `below` is the period the indicator falls below the line, entering the
+        zone, and a crossing above `above` the period it rises above the line (the same
+        crossings as `get_signals`). The average forward return after the crossings is shown
+        next to the average forward return over every period, so the effect of the signal can
+        be read against the drift of the share itself.
+
+        For more information, see the following books:
+
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute
+          of Finance.
+
+        Also known as: indicator statistics, indicator percentile, oversold history, event
+        study, forward returns after a signal, RSI below 30.
+
+        Args:
+            metric (str, optional): The indicator method name, e.g. "get_stochastic_oscillator"
+                or "get_rate_of_change". Defaults to "get_relative_strength_index".
+            below (float | None, optional): The line the indicator falls below, e.g. 30 for an
+                oversold RSI. Defaults to None.
+            above (float | None, optional): The line the indicator rises above, e.g. 70 for an
+                overbought RSI. Defaults to None.
+            forward_periods (list[int] | int | None, optional): The numbers of trading periods
+                after each date to measure the return over, e.g. [5, 21, 63] for about a week,
+                a month and a quarter of daily data. Defaults to None, which measures no
+                returns.
+            show_crossings (bool, optional): Whether to return a row per crossing (ticker and
+                date) with its zone, the indicator value, its percentile at the time and the
+                forward returns instead of the summary. Defaults to False.
+            column (str | None, optional): The output to use of an indicator with several,
+                e.g. "Signal Line" of the MACD. Defaults to None, which uses the first output
+                other than a price, e.g. "MACD Line".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            **kwargs: Parameters passed to the indicator, e.g. window=14 or period="weekly".
+
+        Returns:
+            pd.DataFrame: The summary per ticker: Latest, Latest Date, Percentile, Rank,
+            Observations, Mean, Minimum, Minimum Date, Maximum and Maximum Date; with
+            forward_periods the Average n-Period Return; with below (or above) the Periods
+            Below, Crossings Below, Last Crossing Below and the Average n-Period Return After
+            Crossing Below. With show_crossings a row per ticker and crossing date.
+
+        Notes:
+            - The history is the Toolkit's date range, after the warm-up the indicator needs
+              (e.g. 14 periods for the RSI), so start early enough for the comparison you are
+              after.
+            - The forward returns of the last n periods are not known yet: those crossings are
+              listed without a return and left out of the averages.
+            - Crossings close together overlap in their forward returns, so a handful of
+              crossings says little about the signal in general.
+            - The returns are measured over the periods of the indicator: trading days by
+              default, weeks with period="weekly".
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-11-01",
+            end_date="2026-11-05",
+        )
+
+        toolkit.technicals.get_indicator_summary(
+            "get_relative_strength_index", below=30, forward_periods=[5, 21, 63]
+        ).T
+        ```
+
+        Which returns:
+
+        |                                               | NVDA       |
+        |:----------------------------------------------|:-----------|
+        | Latest                                        | 25.3948    |
+        | Latest Date                                   | 2026-11-05 |
+        | Percentile                                    | 0.0008     |
+        | Rank                                          | 1          |
+        | Observations                                  | 1245       |
+        | Mean                                          | 54.5091    |
+        | Minimum                                       | 25.3948    |
+        | Minimum Date                                  | 2026-11-05 |
+        | Maximum                                       | 85.2808    |
+        | Maximum Date                                  | 2024-02-05 |
+        | Average 5-Period Return                       | 0.0098     |
+        | Average 21-Period Return                      | 0.0442     |
+        | Average 63-Period Return                      | 0.153      |
+        | Periods Below                                 | 12         |
+        | Crossings Below                               | 6          |
+        | Last Crossing Below                           | 2026-11-05 |
+        | Average 5-Period Return After Crossing Below  | 0.0625     |
+        | Average 21-Period Return After Crossing Below | 0.0313     |
+        | Average 63-Period Return After Crossing Below | 0.1968     |
+        """
+        names = factor_model.select_metrics(metric, FACTOR_COLLECTIONS)
+        if len(names) != 1:
+            raise ValueError(
+                "Please name a single indicator, e.g. 'get_relative_strength_index'."
+            )
+        if isinstance(forward_periods, int):
+            forward_periods = [forward_periods]
+        if forward_periods and below is None and above is None:
+            raise ValueError(
+                "Please set below or above: the forward returns are measured after the "
+                "crossings of that line."
+            )
+
+        factors = factor_model.get_daily_factors(
+            self, names, kwargs, {}, self._tickers, column
+        )
+        if not factors:
+            raise ValueError(f"{names[0]} returned no data.")
+        values = factors[names[0]]
+
+        period = kwargs.get("period", "daily")
+        prices = factor_model.to_daily_factor(
+            self._historical_data[period][
+                "Close" if period == "intraday" else "Adj Close"
+            ],
+            self._tickers,
+        )
+
+        summaries, crossings = {}, {}
+        for ticker in values.columns:
+            summaries[ticker], crossings[ticker] = pattern_model.get_indicator_summary(
+                values[ticker],
+                prices[ticker] if ticker in prices else pd.Series(dtype=float),
+                below,
+                above,
+                forward_periods,
+            )
+
+        if show_crossings:
+            crossings = {
+                ticker: table for ticker, table in crossings.items() if not table.empty
+            }
+            result = (
+                pd.concat(crossings, names=["Ticker", "Date"])
+                if crossings
+                else pd.DataFrame()
+            )
+        else:
+            result = pd.DataFrame(summaries).T.infer_objects()
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )

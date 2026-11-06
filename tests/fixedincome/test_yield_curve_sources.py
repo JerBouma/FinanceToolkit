@@ -473,3 +473,35 @@ def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
 
     assert "SECRETKEY123" not in str(error.value)
     assert error.value.__cause__ is None
+
+
+def test_the_term_premium_keeps_the_requested_maturities_at_month_end(monkeypatch):
+    from financetoolkit import FixedIncome
+    from financetoolkit.fixedincome import fixedincome_controller
+
+    days = pd.period_range("2026-09-29", "2026-10-01", freq="D")
+    columns = pd.MultiIndex.from_tuples(
+        [
+            (component, maturity)
+            for component in ("Term Premium", "Expected Short Rate", "Fitted Yield")
+            for maturity in ("1Y", "2Y", "10Y")
+        ]
+    )
+    term_premium = pd.DataFrame(
+        np.arange(27, dtype=float).reshape(3, 9) / 1000, index=days, columns=columns
+    )
+    monkeypatch.setattr(
+        fixedincome_controller.nyfed_model, "get_term_premium", lambda: term_premium
+    )
+
+    fixedincome = FixedIncome(start_date="2026-09-01", end_date="2026-10-31")
+    monthly = fixedincome.get_term_premium(period="monthly", maturity_years="2,10")
+
+    assert list(monthly.columns.get_level_values(1).unique()) == ["2Y", "10Y"]
+    # The last day of September (the 30th) is the month-end value.
+    assert monthly.loc[pd.Period("2026-09", "M"), ("Term Premium", "10Y")] == (
+        pytest.approx(
+            term_premium.loc[pd.Period("2026-09-30", "D"), ("Term Premium", "10Y")]
+        )
+    )
+    assert list(monthly.index) == [pd.Period("2026-09", "M"), pd.Period("2026-10", "M")]

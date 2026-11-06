@@ -1048,3 +1048,89 @@ def test_an_unpublished_bis_period_is_no_data(monkeypatch):
     monkeypatch.setattr(bis_model, "get_request", unavailable)
     with pytest.raises(requests.HTTPError):
         bis_model.request_csv("https://stats.bis.org/x", timeout=1)
+
+
+class WorkbookResponse:
+    """A response carrying an Excel workbook, as the New York Fed serves its data."""
+
+    def __init__(self, sheets: dict[str, pd.DataFrame]):
+        import io
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            for name, sheet in sheets.items():
+                sheet.to_excel(writer, sheet_name=name, index=False)
+        self.content = buffer.getvalue()
+
+
+def test_the_term_premium_splits_each_yield_into_decimals(monkeypatch):
+    from financetoolkit.economics import nyfed_model
+
+    sheet = pd.DataFrame({"DATE": ["02-Nov-2026", "03-Nov-2026"]})
+    for maturity in range(1, 11):
+        # In percent, as the workbook publishes them: the yield is the sum of the parts.
+        sheet[f"ACMY{maturity:02d}"] = [4.0 + maturity / 10, 4.1]
+        sheet[f"ACMTP{maturity:02d}"] = [maturity / 10, 0.1]
+        sheet[f"ACMRNY{maturity:02d}"] = [4.0, 4.0]
+
+    monkeypatch.setattr(
+        nyfed_model,
+        "get_request",
+        lambda url, timeout: WorkbookResponse({"ACM Daily": sheet}),
+    )
+
+    term_premium = nyfed_model.get_term_premium()
+
+    assert list(term_premium.columns.get_level_values(0).unique()) == [
+        "Term Premium",
+        "Expected Short Rate",
+        "Fitted Yield",
+    ]
+    assert term_premium.index.tolist() == [
+        pd.Period("2026-11-02", freq="D"),
+        pd.Period("2026-11-03", freq="D"),
+    ]
+    first = term_premium.iloc[0]
+    assert first[("Term Premium", "10Y")] == pytest.approx(0.01)
+    assert first[("Fitted Yield", "10Y")] == pytest.approx(
+        first[("Term Premium", "10Y")] + first[("Expected Short Rate", "10Y")]
+    )
+
+
+def test_a_term_premium_workbook_without_its_columns_is_reported(monkeypatch):
+    from financetoolkit.economics import nyfed_model
+
+    sheet = pd.DataFrame({"DATE": ["03-Nov-2026"], "ACMY01": [4.0]})
+    monkeypatch.setattr(
+        nyfed_model,
+        "get_request",
+        lambda url, timeout: WorkbookResponse({"ACM Daily": sheet}),
+    )
+
+    with pytest.raises(ValueError, match="changed its format"):
+        nyfed_model.get_term_premium()
+
+
+def test_the_supply_chain_pressure_index_skips_the_empty_rows(monkeypatch):
+    from financetoolkit.economics import nyfed_model
+
+    # The workbook leaves empty rows between the header and the first month.
+    sheet = pd.DataFrame(
+        {
+            "Date": [None, None, "31-Jan-1998", "28-Feb-1998"],
+            "GSCPI": [None, None, -1.18, -0.49],
+        }
+    )
+    monkeypatch.setattr(
+        nyfed_model,
+        "get_request",
+        lambda url, timeout: WorkbookResponse({"GSCPI Monthly Data": sheet}),
+    )
+
+    index = nyfed_model.get_supply_chain_pressure_index()
+
+    assert index.index.tolist() == [
+        pd.Period("1998-01", freq="M"),
+        pd.Period("1998-02", freq="M"),
+    ]
+    assert index["World"].tolist() == [-1.18, -0.49]

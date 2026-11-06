@@ -167,6 +167,7 @@ POLICIES: dict[str, CachePolicy] = {
     f"{FINANCIAL_MODELING_PREP}.stock_splits": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.shares_float": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.insider_trade_statistics": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.institutional_ownership": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.stock_grades": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.price_targets": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.price_target_history": CachePolicy(ttl_seconds=DAY),

@@ -1067,6 +1067,86 @@ def test_free_plan_dividends_when_yahoo_fails(monkeypatch, ticker):
     assert warning.call_args[0][0].startswith("No dividend data is available for")
 
 
+def test_institutional_ownership_is_quarterly_in_decimals_and_skips_open_quarters(
+    monkeypatch,
+):
+    requested: list[str] = []
+
+    def fake_get_financial_data(
+        url, sleep_timer=True, raw=False, user_subscription="Free"
+    ):  # noqa: ARG001
+        requested.append(url)
+        quarter = int(url.split("quarter=")[1].split("&")[0])
+        if "symbol-positions-summary" in url:
+            return pd.DataFrame(
+                [
+                    {
+                        "investorsHolding": 100 * quarter,
+                        "investorsHoldingChange": 10,
+                        "numberOf13Fshares": 1_000,
+                        "numberOf13FsharesChange": 5,
+                        "totalInvested": 2_000,
+                        "ownershipPercent": 60.0 + quarter,
+                        "ownershipPercentChange": 1.0,
+                        "newPositions": 3,
+                        "increasedPositions": 4,
+                        "reducedPositions": 5,
+                        "closedPositions": 6,
+                        "putCallRatio": 0.9,
+                    }
+                ]
+            )
+        # The ten largest holders of the shares; an option position must not count.
+        holders = [{"ownership": 2.0, "putCallShare": "Share"} for _ in range(12)]
+        holders.insert(1, {"ownership": 5.0, "putCallShare": "Call"})
+        return pd.DataFrame(holders)
+
+    monkeypatch.setattr(fmp_model, "get_financial_data", fake_get_financial_data)
+
+    # On 2026-11-05 the third quarter is still within its 45-day filing window.
+    class FrozenDatetime(fmp_model.datetime):
+        @classmethod
+        def today(cls):
+            return cls(2026, 11, 5)
+
+    monkeypatch.setattr(fmp_model, "datetime", FrozenDatetime)
+
+    ownership, no_data = fmp_model.get_institutional_ownership(
+        ["AAPL"], "key", start_date="2026-01-01", end_date="2026-12-31"
+    )
+
+    assert no_data == []
+    assert ownership.loc["AAPL"].index.tolist() == [
+        pd.Period("2026Q1"),
+        pd.Period("2026Q2"),
+    ]
+    assert ownership.loc[("AAPL", pd.Period("2026Q2")), "Ownership"] == pytest.approx(
+        0.62
+    )
+    assert ownership.loc[
+        ("AAPL", pd.Period("2026Q2")), "Ownership Change"
+    ] == pytest.approx(0.01)
+    assert ownership.loc[
+        ("AAPL", pd.Period("2026Q2")), "Top 10 Ownership"
+    ] == pytest.approx(0.2)
+    assert all("quarter=3" not in url for url in requested)
+
+
+def test_institutional_ownership_reports_a_ticker_without_filings(monkeypatch):
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda url, sleep_timer=True, raw=False, user_subscription="Free": pd.DataFrame(),  # noqa: ARG005
+    )
+
+    ownership, no_data = fmp_model.get_institutional_ownership(
+        ["ASML.AS"], "key", start_date="2025-01-01", end_date="2025-06-30"
+    )
+
+    assert ownership.empty
+    assert no_data == ["ASML.AS"]
+
+
 def test_price_targets_leave_the_average_of_an_empty_window_out(responses):
     canned, _ = responses
     canned["price-target-consensus"] = [

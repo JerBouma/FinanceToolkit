@@ -4791,6 +4791,12 @@ class Performance:
         The compounding starts at 1 at the beginning of the date range, so the first value
         is 1 plus the return of the first period.
 
+        The first daily return in the range is that of the second trading day: the prices start
+        at the start_date, so the move from the previous close into the first day is not part
+        of it. For a year-to-date or calendar-year return, set start_date to the last trading
+        day of the previous year (e.g. start_date="2025-12-31" for the return of 2026 so far),
+        so the first period starts from that close.
+
         A period without any daily return for a ticker (before it listed, or a gap in its
         history) is NaN rather than 0, and the cumulative return carries the previous value
         past such a period.

@@ -585,3 +585,39 @@ def test_garch_parameters_fit_each_ticker_on_its_own_history(risk_module):
     garch = risk.get_garch(rounding=10)
     assert garch[tickers[0]].iloc[:99].isna().all()
     assert garch[tickers[1]].notna().all()
+
+
+def test_move_significance_keeps_each_measure_per_ticker(risk_module):
+    significance = risk_module.get_move_significance(window=20)
+
+    measures = significance.columns.get_level_values(0).unique().tolist()
+    assert measures == ["Return", "Volatility Multiple", "Percentile", "Largest Since"]
+
+    returns = risk_module._historical_data["daily"]["Return"]
+    ticker = returns.columns[0]
+    expected = risk_model.get_move_significance(returns[ticker], 20)
+    expected = expected.loc[significance.index]
+
+    pd.testing.assert_series_equal(
+        significance[("Volatility Multiple", ticker)],
+        expected["Volatility Multiple"],
+        check_names=False,
+        check_dtype=False,
+        atol=1e-4,
+    )
+    assert (significance[("Largest Since", ticker)].dropna() < "9999").all()
+
+
+def test_move_significance_needs_a_window_of_two_returns(risk_module, caplog):
+    assert risk_module.get_move_significance(window=1).empty
+    assert "at least 2 returns" in caplog.text
+
+
+def test_a_single_return_over_the_whole_range_is_reported(risk_module, caplog):
+    module = copy.copy(risk_module)
+    yearly = risk_module._historical_data["yearly"]["Return"].dropna(how="all")
+    module._data_cache = {("yearly", False): yearly.iloc[-1:]}
+
+    module._get_returns("yearly", False)
+
+    assert "Fewer than two yearly returns" in caplog.text

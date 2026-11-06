@@ -25,11 +25,15 @@ from financetoolkit.risk import (
 )
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import (
+    PERIODS_PER_YEAR,
     apply_rounding,
     convert_annualized_rate_to_period,
     finalize_dataset,
 )
+
+logger = get_logger()
 
 # Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -248,7 +252,25 @@ class Risk:
                 else self._historical_data[period]["Return"].dropna(how="all")
             )
 
-        return self._data_cache[key]
+        returns = self._data_cache[key]
+
+        if not within_period:
+            # A measure over the whole range compares returns with each other, so a single
+            # return (e.g. one yearly return in a range within one year) gives a drawdown of
+            # 0 and an undefined volatility, which reads as "no risk" without this note.
+            short_history = returns.columns[returns.count() < 2]  # noqa: PLR2004
+
+            if len(short_history):
+                logger.warning(
+                    "Fewer than two %s returns between %s and %s for %s, so measures over the whole range "  # noqa: E501
+                    "are 0 or NaN. Use a higher frequency period, or within_period=True for a value per period.",  # noqa: E501
+                    period,
+                    self._start_date,
+                    self._end_date,
+                    ", ".join(map(str, short_history)),
+                )
+
+        return returns
 
     @handle_errors
     def collect_all_metrics(
@@ -6035,6 +6057,135 @@ class Risk:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_move_significance(
+        self,
+        period: str = "daily",
+        window: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how unusual each move of an investment portfolio or asset is: the return in
+        units of its trailing volatility, its percentile among the earlier moves and the date of
+        the last move at least as large in the same direction.
+
+        A return only says how far a price moved, not whether that is a lot for the asset: a 3%
+        day is ordinary for a volatile growth stock and exceptional for a utility or an index.
+        Dividing the return by the volatility of the returns before it (the "sigma" of a move)
+        makes moves comparable across assets and calm or turbulent markets, the percentile says
+        how many earlier moves were smaller, and "largest since" gives the familiar headline
+        ("the biggest one-day fall since March 2020").
+
+        The formula is as follows:
+
+        - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1)), with ddof=1
+        - Percentile(t) = share of the returns before t with |Return(s)| < |Return(t)|
+        - Largest Since(t) = the last date s < t with Return(s) <= Return(t) for a fall, or
+          Return(s) >= Return(t) for a rise
+
+        Each measure only uses the returns before the period itself, so a move is never part of
+        the volatility or the history it is measured against (no look-ahead). Largest Since
+        compares falls with falls and rises with rises, as a headline does: a 6% fall is the
+        largest fall since the last fall of 6% or more, whatever the rises in between.
+
+        Also known as: sigma move, standardized return, biggest move since, return z-score.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly,
+                quarterly, or yearly). Defaults to "daily".
+            window (int | None, optional): The number of earlier returns the volatility is
+                measured over, which the percentile also needs at least. Defaults to None, which
+                uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20
+                monthly, quarterly or yearly returns).
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: Return, Volatility Multiple, Percentile and Largest Since (the date as
+            text) per asset, with time as the index and the measures and tickers as the column
+            levels.
+
+        Notes:
+        - The returns are total returns (Adj Close), compounded within each period for a period
+          other than daily.
+        - The history a move is compared with starts at the Toolkit's start_date: the volatility
+          and the percentile are NaN until `window` returns are available, and Largest Since is
+          NaN when no earlier move in the data was as large, which makes the move the largest
+          since the start_date. Choose an early start_date for a long history.
+        - Each ticker uses its own history, so a ticker that listed later starts later.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2015-01-01",
+            end_date="2025-12-31",
+        )
+
+        significance = toolkit.risk.get_move_significance()
+
+        significance.loc["2025-01-27"].unstack(level=0)
+        ```
+
+        Which returns:
+
+        |           |   Return |   Volatility Multiple |   Percentile | Largest Since   |
+        |:----------|---------:|----------------------:|-------------:|:----------------|
+        | NVDA      |  -0.1696 |               -5.0657 |       0.9976 | 2020-03-16      |
+        | KO        |   0.0319 |                3.9007 |       0.9818 | 2022-11-10      |
+        | Benchmark |  -0.0141 |               -1.7544 |       0.8613 | 2025-01-10      |
+        """
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        window = window if window else max(PERIODS_PER_YEAR[period], 20)
+
+        if window < 2:  # noqa: PLR2004
+            raise ValueError(
+                "The window needs at least 2 returns to measure a volatility."
+            )
+
+        returns = self._historical_data[period]["Return"]
+
+        move_significance = pd.concat(
+            {
+                ticker: risk_model.get_move_significance(returns[ticker], window)
+                for ticker in returns.columns
+            },
+            axis=1,
+        ).swaplevel(1, 0, axis=1)
+
+        # The measures in reading order, each with the tickers in the Toolkit's order.
+        move_significance = move_significance[
+            pd.MultiIndex.from_product(
+                [
+                    ["Return", "Volatility Multiple", "Percentile", "Largest Since"],
+                    returns.columns,
+                ]
+            )
+        ]
+
+        move_significance = move_significance.loc[
+            self._start_date : self._end_date
+        ].dropna(how="all", axis=0)
+
+        return finalize_dataset(
+            dataset=move_significance,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rounding=rounding,
             axis="rows",
             apply_slice=False,
         )

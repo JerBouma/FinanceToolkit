@@ -1604,3 +1604,77 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     poly = np.polyfit(np.log(lags[usable]), np.log(standard_deviations[usable]), 1)
 
     return poly[0]
+
+
+def get_move_significance(returns: pd.Series, window: int = 252) -> pd.DataFrame:
+    """
+    Calculate how unusual each return is compared with the returns before it: in units
+    of the trailing volatility, as a percentile of the earlier moves, and the date of the
+    last move at least as large in the same direction.
+
+    The formula is as follows:
+
+    - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1)), with ddof=1
+    - Percentile(t) = share of the returns before t with |Return(s)| < |Return(t)|
+    - Largest Since(t) = the last date s < t with Return(s) <= Return(t) for a fall, or
+      Return(s) >= Return(t) for a rise
+
+    Every measure only uses the returns before the day itself, so a day is never compared
+    with the move it is measuring. The volatility and the percentile need `window` earlier
+    returns and are NaN before that. Largest Since is NaN when no earlier return in the
+    series was as large, i.e. the move is the largest of the history available.
+
+    Args:
+        returns (pd.Series): The returns of a single asset.
+        window (int, optional): The number of earlier returns the volatility and the
+            percentile need at least. The volatility uses exactly the last `window`
+            returns; the percentile uses all earlier returns. Defaults to 252.
+
+    Returns:
+        pd.DataFrame: Return, Volatility Multiple, Percentile and Largest Since (the date as
+        text, YYYY-MM-DD for daily data) per date.
+    """
+    observed = returns.dropna()
+    values = observed.to_numpy(dtype=float)
+    labels = observed.index.astype(str)
+    count = len(values)
+
+    # Shifted by one so the volatility on a day only covers the returns before it.
+    trailing_volatility = (
+        observed.rolling(window, min_periods=window).std(ddof=1).shift(1)
+    )
+
+    percentile = np.full(count, np.nan)
+    largest_since = np.full(count, None, dtype=object)
+    absolute = np.abs(values)
+
+    for position in range(1, count):
+        earlier = values[:position]
+
+        if position >= window:
+            percentile[position] = np.mean(absolute[:position] < absolute[position])
+
+        # The same direction, so a fall is compared with falls ("the largest drop since")
+        # and a rise with rises; a flat day has no direction and gets no date.
+        if values[position] < 0:
+            as_large = np.flatnonzero(earlier <= values[position])
+        elif values[position] > 0:
+            as_large = np.flatnonzero(earlier >= values[position])
+        else:
+            continue
+
+        if as_large.size:
+            largest_since[position] = labels[as_large[-1]]
+
+    significance = pd.DataFrame(
+        {
+            "Return": values,
+            "Volatility Multiple": values / trailing_volatility.to_numpy(),
+            "Percentile": percentile,
+            "Largest Since": largest_since,
+        },
+        index=observed.index,
+    ).replace([np.inf, -np.inf], np.nan)
+
+    # Back on the full index, so a gap in the history stays a NaN row instead of vanishing.
+    return significance.reindex(returns.index)

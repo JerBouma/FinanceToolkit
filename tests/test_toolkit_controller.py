@@ -806,3 +806,99 @@ def test_compound_growth_of_a_statement_is_the_cagr_of_its_values(test_toolkit):
     pd.testing.assert_series_equal(
         cagr.xs("Revenue", level=1)[periods[-1]], expected, check_names=False, atol=1e-4
     )
+
+
+def _lookback_toolkit(monkeypatch, start_date, requests=None):
+    """
+    A Toolkit whose price retrieval returns the test prices of the requested range, so a
+    test can see which range the Technicals and daily ratios ask for.
+    """
+    from financetoolkit import toolkit_controller
+
+    def fake_historical_data(**kwargs):
+        if requests is not None:
+            requests.append(kwargs["start"])
+        tickers = kwargs["tickers"]
+        frame = historical_dataset.loc[kwargs["start"] : kwargs["end"]].copy()
+        frame = frame.rename(columns={"Benchmark": tickers[-1]}, level=1)
+        return frame, []
+
+    monkeypatch.setattr(
+        toolkit_controller, "_get_historical_data", fake_historical_data
+    )
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        api_key="",
+        benchmark_ticker="SPY",
+        balance=balance_dataset,
+        income=income_dataset,
+        cash=cash_dataset,
+        convert_currency=False,
+        start_date=start_date,
+        end_date="2022-12-30",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
+
+    return toolkit
+
+
+def test_technicals_use_prices_from_before_the_start_date(monkeypatch):
+    requests = []
+    # Both share the last fake retrieval, which records every requested start.
+    late = _lookback_toolkit(monkeypatch, "2021-06-01")
+    early = _lookback_toolkit(monkeypatch, "2021-01-04", requests)
+
+    late_rsi = late.technicals.get_relative_strength_index()
+    early_rsi = early.technicals.get_relative_strength_index()
+
+    # The indicators are calculated from a year before the start date onwards.
+    assert "2020-05-31" in requests
+    assert str(late_rsi.index[0]) == "2021-06-01"
+    assert late_rsi.iloc[0].notna().all()
+    # So the RSI of a day no longer depends on the start date: without the earlier prices
+    # the late start's RSI differs by several points two weeks in.
+    pd.testing.assert_series_equal(
+        late_rsi.loc["2021-06-15"], early_rsi.loc["2021-06-15"], atol=0.01
+    )
+    pd.testing.assert_series_equal(
+        late.technicals.get_moving_average(window=200).loc["2021-06-15"],
+        early.technicals.get_moving_average(window=200).loc["2021-06-15"],
+    )
+
+    # Running totals and the other modules still start at the start date.
+    assert (late.technicals.get_on_balance_volume().iloc[0] == 0).all()
+    assert str(late.get_historical_data().index[0]) == "2021-06-01"
+
+
+def test_daily_ratios_use_periods_that_ended_before_the_start_date(monkeypatch):
+    toolkit = _lookback_toolkit(monkeypatch, "2022-06-01")
+    # Downloaded statements reach back before the start date (supplied ones are cut to it).
+    toolkit._balance_sheet_statement = balance_dataset
+    toolkit._income_statement = income_dataset
+    toolkit._cash_flow_statement = cash_dataset
+
+    price_to_earnings = toolkit.ratios.get_price_to_earnings_ratio(show_daily=True)
+
+    # The days before the first period end in the window use the latest earlier period,
+    # which ends on 31 December 2021 without fiscal period end dates.
+    previous = pd.Period("2021", "Y")
+    period_end = toolkit._get_period_end_dates(toolkit._income_statement)
+    day = pd.Period("2022-06-01", "D")
+    assert str(price_to_earnings.index[0]) == "2022-06-01"
+    for ticker in ["AAPL", "MSFT"]:
+        assert period_end.loc[ticker, previous] < pd.Timestamp("2022-06-01")
+        eps = (
+            income_dataset.loc[(ticker, "Net Income"), previous]
+            / income_dataset.loc[(ticker, "Weighted Average Shares Diluted"), previous]
+        )
+        close = historical_dataset.loc[day, ("Close", ticker)]
+        assert price_to_earnings.loc[day, ticker] == pytest.approx(
+            close / eps, abs=1e-4
+        )
+
+    # The daily dividend yield has its full year of dividends on the start date.
+    dividend_yield = toolkit.ratios.get_dividend_yield(show_daily=True)
+    assert dividend_yield.loc["2022-06-01", ["AAPL", "MSFT"]].notna().all()

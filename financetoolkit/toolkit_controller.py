@@ -102,6 +102,13 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 TICKER_LIMIT = 20
 
+# The calendar days of prices before the start date that the technical indicators and daily
+# ratios are calculated from: about 250 trading days, ten times the window of a 25-day Wilder
+# or exponential average (RSI, ATR and ADX use 14), after which the starting value no longer
+# moves the indicator by more than 0.04 points, enough for a 200-day moving average to exist
+# on the start date and a full year of dividends for the daily dividend yield.
+PRICE_LOOKBACK_DAYS = 366
+
 # Profile country codes (ISO 3166-1 alpha-2) whose name in Damodaran's equity risk premium
 # table (get_market_risk_premium) differs from economics.helpers.COUNTRY_CODES or is not
 # in it. Many US-listed companies are domiciled in these offshore jurisdictions. Puerto
@@ -512,6 +519,11 @@ class Toolkit:
         self._daily_historical_data_params: tuple | None = None
         # Per period, the daily data and the settings its conversion was made with.
         self._period_historical_data_sources: dict[str, tuple] = {}
+        # The prices from PRICE_LOOKBACK_DAYS before the start date that the technical
+        # indicators and daily ratios are calculated from, per period, with the settings they
+        # were retrieved with.
+        self._lookback_historical_data: dict[str, pd.DataFrame] = {}
+        self._lookback_historical_data_params: tuple | None = None
 
         # Initialize other periods as empty DataFrames. They will be populated on demand.
         self._weekly_historical_data: pd.DataFrame = pd.DataFrame()
@@ -675,9 +687,12 @@ class Toolkit:
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
+            # The daily ratios use the prices from before the start date as well.
             historical=LazyDict(
-                lambda key: self._get_module_historical_data(
-                    period if key == "period" else key
+                lambda key: (
+                    self._get_module_historical_data(period)
+                    if key == "period"
+                    else self._get_lookback_historical_data(key)
                 )
             ),
             balance=lambda: self._get_module_statement(
@@ -945,7 +960,11 @@ class Toolkit:
         This gives access to the Technicals module. The Technicals Module contains
         nearly 50 Technical Indicators that can be used to analyse companies. These indicators are
         divided into 3 categories: breadth, overlap and volatility. Each indicator is calculated using
-        the data from the Toolkit module.
+        the data from the Toolkit module, from a year of prices before the start date onwards, so that
+        averages smoothed over a window (RSI, ATR, ADX, MACD and moving averages) have their full history
+        on the start date and an indicator's value on a day doesn't depend on the start date. Running
+        totals (On-Balance Volume, Accumulation/Distribution Line, Negative and Positive Volume Index and
+        the market breadth totals) start at the start date.
 
         Some examples of technical indicators are the Average Directional Index (ADX), the
         Accumulation/Distribution Line (ADL), the Average True Range (ATR), the Bollinger Bands (BBANDS),
@@ -989,7 +1008,7 @@ class Toolkit:
         # The prices of a period are retrieved when an indicator first asks for that period.
         technicals = Technicals(
             tickers=lambda: self._get_historical_tickers(include_benchmark=True),
-            historical_data=LazyDict(self._get_module_historical_data),
+            historical_data=LazyDict(self._get_lookback_historical_data),
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
@@ -6393,6 +6412,97 @@ class Toolkit:
         self.get_historical_data(period=period)
 
         return getattr(self, f"_{period}_historical_data")
+
+    def _get_lookback_historical_data(self, period: str) -> pd.DataFrame:
+        """
+        Returns the historical data of a period for the Technicals module and the daily
+        ratios: the prices of the other modules preceded by the PRICE_LOOKBACK_DAYS before the
+        start date. An indicator smoothed with Wilder's method or an exponential moving
+        average (RSI, ATR, ADX, MACD and others) depends on every earlier price and a moving
+        average needs its window of prices before it exists, so an indicator calculated from
+        the start date alone would differ, for months, from the same indicator on the same day
+        with an earlier start date; the daily dividend yield likewise sums the dividends of the
+        year before each day. The values are calculated from these earlier prices and returned
+        from the start date. Pre-supplied historical data and intraday data are used as they
+        are.
+
+        Args:
+            period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
+
+        Returns:
+            pd.DataFrame: The historical data of the period, from before the start date.
+
+        Raises:
+            KeyError: For any other period, as a dictionary of the periods would.
+        """
+        if period == "intraday" or not self._historical.empty:
+            return self._get_module_historical_data(period)
+
+        if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+            raise KeyError(period)
+
+        daily_historical_data = self._get_module_historical_data("daily")
+        settings = self._daily_historical_data_params
+
+        if daily_historical_data.empty or settings is None:
+            return daily_historical_data
+
+        enforce_source, return_column, include_dividends, fill_nan, rounding = settings
+        params = (settings, self._start_date, self._end_date)
+
+        if self._lookback_historical_data_params != params:
+            warmup_start = (
+                datetime.strptime(self._start_date, "%Y-%m-%d")
+                - timedelta(days=PRICE_LOOKBACK_DAYS)
+            ).strftime("%Y-%m-%d")
+
+            # With the cache, only the prices before the start date are downloaded.
+            warmup_historical_data, _ = _get_historical_data(
+                tickers=(
+                    self._tickers + [self._benchmark_ticker]
+                    if self._benchmark_ticker
+                    else self._tickers
+                ),
+                api_key=self._api_key,
+                enforce_source=enforce_source,
+                start=warmup_start,
+                end=self._end_date,
+                interval="1d",
+                return_column=return_column,
+                include_dividends=include_dividends,
+                fill_nan=fill_nan,
+                rounding=rounding,
+                sleep_timer=self._sleep_timer,
+                show_ticker_seperation=True,
+                show_errors=False,
+                user_subscription=self._fmp_plan,
+                cache=self._cache,
+            )
+
+            # The same tickers as the other modules; without earlier prices, their prices.
+            warmup_historical_data = (
+                warmup_historical_data.rename(
+                    columns={self._benchmark_ticker: "Benchmark"}, level=1
+                )
+                .rename_axis("Date")
+                .reindex(columns=daily_historical_data.columns)
+                if not warmup_historical_data.empty
+                else daily_historical_data
+            )
+
+            self._lookback_historical_data = {"daily": warmup_historical_data}
+            self._lookback_historical_data_params = params
+
+        if period not in self._lookback_historical_data:
+            self._lookback_historical_data[period] = _convert_daily_to_other_period(
+                period=period,
+                daily_historical_data=self._lookback_historical_data["daily"],
+                end=self._end_date,
+                rounding=rounding,
+                return_column=return_column,
+            )
+
+        return self._lookback_historical_data[period]
 
     def _get_module_risk_free_rate(self, period: str) -> pd.DataFrame:
         """

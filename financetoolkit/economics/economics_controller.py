@@ -36,6 +36,7 @@ from financetoolkit.economics import (
     mof_model,
     nber_model,
     ngfs_model,
+    nyfed_model,
     oecd_model,
     ons_model,
     sbj_model,
@@ -7902,6 +7903,323 @@ class Economics:
             dropna=True,
         )
 
+    @handle_errors
+    def get_credit_to_gdp_gap(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the credit-to-GDP gap: how far the ratio of credit to the private non-financial
+        sector to GDP lies above or below its long-term trend, in percentage points of GDP.
+        The trend is a one-sided Hodrick-Prescott filter with a smoothing parameter of
+        400,000, which only uses the quarters up to each point, so the gap is what was
+        known at the time.
+
+        A gap that stays above two percentage points of GDP has preceded most banking
+        crises of the past decades, often by several years, which is why Basel III uses
+        it as the guide for the countercyclical capital buffer: banks hold extra capital
+        when the gap is wide (Drehmann and Tsatsaronis, 2014). A negative gap means credit
+        grew slower than its trend, as it did in most advanced economies after the 2008
+        crisis.
+
+        The credit is all credit to households and non-financial corporations from all
+        lenders, banks and non-banks, at market value, as compiled by the Bank for
+        International Settlements for around 45 economies, quarterly and back to the
+        1950s for some. No API key is needed.
+
+        See definition: https://data.bis.org/topics/CREDIT_GAPS and
+        https://www.bis.org/publ/qtrpdf/r_qt1403g.htm
+
+        Also known as: credit gap, Basel gap, credit-to-GDP deviation from trend.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+                moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+                trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The quarterly credit-to-GDP gap as a decimal fraction of GDP
+            (-0.05 for five percentage points below the trend), with a column per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-01-01', end_date="2025-12-31")
+
+        economics.get_credit_to_gdp_gap(countries=['United States', 'Euro Area', 'China', 'Japan'])
+        ```
+
+        Which returns:
+
+        |        |   United States |   Euro Area |   China |   Japan |
+        |:-------|----------------:|------------:|--------:|--------:|
+        | 2025Q1 |         -0.126  |     -0.1909 | -0.0443 |  0.0461 |
+        | 2025Q2 |         -0.1236 |     -0.1894 | -0.053  |  0.0335 |
+        | 2025Q3 |         -0.12   |     -0.1873 | -0.0639 |  0.0418 |
+        | 2025Q4 |         -0.1159 |     -0.1815 | -0.0769 |  0.0587 |
+        TABLE
+        """
+        gap = bis_model.get_credit_statistics(
+            "WS_CREDIT_GAP",
+            # Credit to the private non-financial sector from all lenders, the gap (C)
+            # rather than the ratio (A) or its trend (B).
+            "Q..P.A.C",
+            buffered_start_date(self._start_date, "monthly"),
+            self._end_date,
+        )
+
+        return finalize_dataset(
+            dataset=gap,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            countries=countries,
+            dropna=True,
+        )
+
+    # The borrowing sectors of the BIS debt service ratios.
+    DEBT_SERVICE_BORROWERS = {"private": "P", "households": "H", "corporations": "N"}
+
+    @handle_errors
+    def get_debt_service_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        borrowers: str = "private",
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the debt service ratio: the share of income that goes to interest payments and
+        repayments of debt. It captures both how much is borrowed and at what rate, so it
+        rises when rates go up even if the debt itself does not, and it is a leading
+        indicator of financial stress: a high debt service ratio held back spending and
+        preceded the downturns after several credit booms (Drehmann and Juselius, 2012).
+
+        The ratio is computed by the Bank for International Settlements for the private
+        non-financial sector of around 30 economies, and for households and non-financial
+        corporations separately for about half of them, quarterly from 1999.
+        It is the debt service (interest plus amortisation, assuming the average remaining
+        maturity of the debt) divided by income: disposable income plus interest paid for
+        households, and gross operating surplus plus interest paid for corporations. No API
+        key is needed.
+
+        See definition: https://data.bis.org/topics/DSR and
+        https://www.bis.org/publ/qtrpdf/r_qt1509h.htm
+
+        Also known as: DSR, debt service burden, debt service-to-income ratio.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            borrowers (str, optional): The borrowing sector: "private" (households and
+                non-financial corporations together), "households" or "corporations"
+                (non-financial corporations). Defaults to "private", the sector with the
+                widest coverage.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+                moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+                trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The quarterly debt service ratio as a decimal fraction of income,
+            with a column per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-01-01', end_date="2025-12-31")
+
+        economics.get_debt_service_ratio(countries=['United States', 'Germany', 'China', 'Japan'])
+        ```
+
+        Which returns:
+
+        |        |   United States |   Germany |   China |   Japan |
+        |:-------|----------------:|----------:|--------:|--------:|
+        | 2025Q1 |           0.14  |     0.123 |   0.189 |   0.15  |
+        | 2025Q2 |           0.14  |     0.123 |   0.189 |   0.15  |
+        | 2025Q3 |           0.139 |     0.123 |   0.188 |   0.152 |
+        | 2025Q4 |           0.139 |     0.122 |   0.188 |   0.154 |
+        TABLE
+        """
+        if borrowers not in self.DEBT_SERVICE_BORROWERS:
+            raise ValueError(
+                f"The borrowers must be one of {', '.join(map(repr, self.DEBT_SERVICE_BORROWERS))}, not {borrowers!r}."  # noqa: E501
+            )
+
+        debt_service_ratio = bis_model.get_credit_statistics(
+            "WS_DSR",
+            f"Q..{self.DEBT_SERVICE_BORROWERS[borrowers]}",
+            buffered_start_date(self._start_date, "monthly"),
+            self._end_date,
+        )
+
+        return finalize_dataset(
+            dataset=debt_service_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            countries=countries,
+            dropna=True,
+        )
+
+    # The series keys of the BIS total credit statistics per borrowing sector, all from all
+    # lenders and as a percentage of GDP. Government debt is taken at nominal value, the
+    # valuation the BIS publishes for the most countries; the other sectors at market value.
+    CREDIT_BORROWERS = {
+        "non_financial": "Q..C.A.M.770.A",
+        "private": "Q..P.A.M.770.A",
+        "households": "Q..H.A.M.770.A",
+        "corporations": "Q..N.A.M.770.A",
+        "government": "Q..G.A.N.770.A",
+    }
+
+    @handle_errors
+    def get_credit_to_gdp_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        borrowers: str = "private",
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the total credit to a non-financial sector as a share of GDP: all loans and
+        debt securities owed by households, non-financial corporations or the government,
+        whoever the lender is (banks, other financial institutions, foreign lenders or
+        bond holders). It measures how leveraged an economy is and where the debt sits,
+        such as the high corporate debt in China or the high household debt in Australia
+        and Canada.
+
+        Unlike bank lending alone, it also counts market and cross-border funding, so it
+        is comparable across countries where companies borrow from banks (the euro area,
+        Japan) and where they issue bonds (the United States). The data is compiled by the
+        Bank for International Settlements for around 45 economies, quarterly and back to
+        the 1940s for some, from national financial accounts. No API key is needed.
+
+        See definition: https://data.bis.org/topics/TOTAL_CREDIT and
+        https://www.bis.org/publ/qtrpdf/r_qt1303h.htm
+
+        Also known as: total credit to GDP, debt to GDP by sector, private debt to GDP,
+        leverage ratio of the economy.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            borrowers (str, optional): The borrowing sector: "private" (households and
+                non-financial corporations), "households", "corporations" (non-financial
+                corporations), "government" (at nominal value) or "non_financial" (all
+                three together). Defaults to "private", the measure behind the
+                credit-to-GDP gap.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+                moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+                trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The quarterly credit as a decimal fraction of GDP (1.5 for 150% of
+            GDP), with a column per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-01-01', end_date="2025-12-31")
+
+        economics.get_credit_to_gdp_ratio(countries=['United States', 'Euro Area', 'China', 'Japan'])
+        ```
+
+        Which returns:
+
+        |        |   United States |   Euro Area |   China |   Japan |
+        |:-------|----------------:|------------:|--------:|--------:|
+        | 2025Q1 |           1.416 |       1.553 |   2.019 |   1.71  |
+        | 2025Q2 |           1.41  |       1.545 |   2.018 |   1.701 |
+        | 2025Q3 |           1.406 |       1.537 |   2.015 |   1.713 |
+        | 2025Q4 |           1.402 |       1.533 |   2.008 |   1.734 |
+        TABLE
+        """
+        if borrowers not in self.CREDIT_BORROWERS:
+            raise ValueError(
+                f"The borrowers must be one of {', '.join(map(repr, self.CREDIT_BORROWERS))}, not {borrowers!r}."  # noqa: E501
+            )
+
+        credit = bis_model.get_credit_statistics(
+            "WS_TC",
+            self.CREDIT_BORROWERS[borrowers],
+            buffered_start_date(self._start_date, "monthly"),
+            self._end_date,
+        )
+
+        return finalize_dataset(
+            dataset=credit,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            countries=countries,
+            dropna=True,
+        )
+
     def _collect_country_curves(
         self,
         sources: dict,
@@ -8766,6 +9084,94 @@ class Economics:
             axis="rows",
             row_slice=historic,
             apply_slice=historic,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_supply_chain_pressure_index(
+        self,
+        rolling: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the Global Supply Chain Pressure Index (GSCPI) of the Federal Reserve Bank of New
+        York, monthly from 1998: one measure of the pressure on global supply chains,
+        combining 27 series. Shipping costs come from the Baltic Dry Index, the Harpex index
+        of container ship charter rates and the US Bureau of Labor Statistics air freight
+        price indices; the rest are the delivery times, backlogs and purchased stocks of the
+        manufacturing purchasing managers' surveys of the euro area, China, Japan, South
+        Korea, Taiwan, the United Kingdom and the United States. The index peaked in December
+        2021 at more than four standard deviations, when the reopening after COVID-19 met
+        congested ports, and is a common leading indicator of goods inflation.
+
+        Benigno, G., di Giovanni, J., Groen, J. J. J., & Noble, A. I. (2022). The GSCPI: A New
+        Barometer of Global Supply Chain Pressures. Federal Reserve Bank of New York Staff
+        Reports, 1017. https://www.newyorkfed.org/research/staff_reports/sr1017
+
+        The index is the first principal component of the series after removing the part
+        explained by demand, measured in standard deviations from its average: zero is the
+        average pressure and 1 is one standard deviation above it. It is not a rate, so it is
+        not a decimal fraction. No API key is needed. The New York Fed re-estimates the whole
+        history with every release, so past months can change slightly.
+
+        See definition: https://www.newyorkfed.org/research/policy/gscpi
+
+        Also known as: GSCPI, supply chain pressure, supply chain index, shipping and delivery
+        pressure.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The index in standard deviations from its average, indexed by month
+            with a "World" column.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-05-01', end_date='2026-10-31')
+
+        economics.get_supply_chain_pressure_index()
+        ```
+
+        Which returns:
+
+        |         |   World |
+        |:--------|--------:|
+        | 2026-05 |  1.8017 |
+        | 2026-06 |  1.2026 |
+        | 2026-07 |  0.9511 |
+        | 2026-08 |  1.271  |
+        | 2026-09 |  1.3612 |
+        | 2026-10 |  1.2619 |
+        """
+        supply_chain_pressure = nyfed_model.get_supply_chain_pressure_index()
+
+        return finalize_dataset(
+            dataset=supply_chain_pressure,
+            indicator_name="Supply Chain Pressure Index",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
             dropna=True,
         )
 

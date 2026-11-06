@@ -612,13 +612,14 @@ def _labels(result: pd.DataFrame | pd.Series) -> set[str]:
 
 
 def _mentions_benchmark(result: object) -> bool:
-    """Whether a result has a 'Benchmark' row or column, as a benchmark-based metric does.
+    """Whether a result has a benchmark row or column, as a benchmark-based metric does:
+    a 'Benchmark' row, or a column such as 'Benchmark Return'.
 
     Args:
         result (object): The value returned by the indicator.
 
     Returns:
-        bool: True when one of the index or column labels is 'Benchmark'.
+        bool: True when one of the index or column labels contains 'Benchmark'.
     """
     if not isinstance(result, pd.DataFrame | pd.Series):
         return False
@@ -628,9 +629,10 @@ def _mentions_benchmark(result: object) -> bool:
     )
 
     return any(
-        "Benchmark" in axis.get_level_values(level).astype(str)
+        "Benchmark" in str(label)
         for axis in axes
         for level in range(axis.nlevels)
+        for label in axis.get_level_values(level).unique()
     )
 
 
@@ -1874,19 +1876,37 @@ class ToolRegistry:
                             **method_kwargs,
                         )
                     else:
+                        call_arguments = {
+                            "module_name": dispatch_module,
+                            "method_name": method_name,
+                            "category": dispatch_category,
+                            "tickers": tickers,
+                            "countries": countries,
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "quarterly": quarterly,
+                            "portfolio": portfolio_inputs,
+                        }
                         result = provider.call_method(
-                            module_name=dispatch_module,
-                            method_name=method_name,
-                            category=dispatch_category,
-                            tickers=tickers,
-                            countries=countries,
-                            start_date=start_date,
-                            end_date=end_date,
-                            quarterly=quarterly,
+                            **call_arguments,
                             benchmark_ticker=benchmark_ticker,
-                            portfolio=portfolio_inputs,
                             **method_kwargs,
                         )
+                        upper_tickers = {ticker.upper() for ticker in tickers or []}
+                        # The Toolkit leaves out a ticker that is also the benchmark and reports it as "Benchmark"; a Toolkit method without a benchmark (a quote, a profile) would lose that ticker altogether, so it is asked again without one. Sub-module methods (a beta) need the benchmark and keep it.  # noqa: E501
+                        if (
+                            dispatch_category == "toolkit"
+                            and benchmark_ticker
+                            and benchmark_ticker.upper() in upper_tickers
+                            and len(upper_tickers) > 1
+                            and not _mentions_benchmark(result)
+                        ):
+                            benchmark_ticker = None
+                            result = provider.call_method(
+                                **call_arguments,
+                                benchmark_ticker=None,
+                                **method_kwargs,
+                            )
                     input_info = call_input_info()
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
@@ -2130,6 +2150,19 @@ class ToolRegistry:
                 # no benchmark in it, such as an ETF's holdings.
                 if not _mentions_benchmark(result):
                     notes = [note for note in notes if "the benchmark" not in note]
+                    requested = {ticker.upper() for ticker in tickers or []}
+                    # A requested ticker that is the benchmark is then simply absent, which needs saying; as the only ticker it is kept (with another benchmark).  # noqa: E501
+                    if (
+                        benchmark_ticker
+                        and benchmark_ticker.upper() in requested
+                        and len(requested) > 1
+                        and isinstance(result, pd.DataFrame | pd.Series)
+                        and benchmark_ticker not in _labels(result)
+                    ):
+                        notes.append(
+                            f"{benchmark_ticker} is the benchmark, so it is left out as a "
+                            "ticker; set benchmark_ticker to another ticker to include it."
+                        )
                 formatted = format_result(
                     result,
                     notes=notes or None,

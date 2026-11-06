@@ -179,3 +179,86 @@ def test_project_configs_leave_out_keys_the_global_env_holds(monkeypatch, tmp_pa
 
     assert setup_model.keys_outside_global_env("FMPKEY", "FREDKEY") == ("", "FREDKEY")
     assert setup_model.keys_outside_global_env("OTHER", "") == ("OTHER", "")
+
+
+def test_claude_desktop_on_linux_reads_its_capitalised_config_folder(
+    monkeypatch, tmp_path
+):
+    from financetoolkit.mcp_server import setup_model
+
+    monkeypatch.setattr(setup_model.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(setup_model.pathlib.Path, "home", lambda: tmp_path)
+
+    assert setup_model.get_claude_config_path() == (
+        tmp_path / ".config" / "Claude" / "claude_desktop_config.json"
+    )
+
+
+def test_devin_desktop_uses_the_windsurf_folder_only_where_it_exists(
+    monkeypatch, tmp_path
+):
+    from financetoolkit.mcp_server import setup_model
+
+    monkeypatch.setattr(setup_model.pathlib.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(setup_model.platform, "system", lambda: "Linux")
+
+    assert setup_model.get_devin_config_path() == (
+        tmp_path / ".config" / "devin" / "mcp_config.json"
+    )
+
+    monkeypatch.setattr(setup_model.platform, "system", lambda: "Windows")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData"))
+    assert setup_model.get_devin_config_path() == (
+        tmp_path / "AppData" / "devin" / "mcp_config.json"
+    )
+
+    (tmp_path / ".codeium" / "windsurf").mkdir(parents=True)
+    assert setup_model.get_devin_config_path() == (
+        tmp_path / ".codeium" / "windsurf" / "mcp_config.json"
+    )
+
+
+def test_the_global_copilot_config_follows_copilot_home(monkeypatch, tmp_path):
+    import json
+
+    from financetoolkit.mcp_server import setup_model
+
+    monkeypatch.setattr(setup_model.pathlib.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(
+        setup_model, "get_global_env_path", lambda: tmp_path / "config" / ".env"
+    )
+    monkeypatch.delenv("COPILOT_HOME", raising=False)
+    assert (
+        setup_model.get_copilot_config_path()
+        == tmp_path / ".copilot" / "mcp-config.json"
+    )
+
+    monkeypatch.setenv("COPILOT_HOME", str(tmp_path / "copilot"))
+    setup_model.write_copilot_config("KEY")
+    written = json.loads((tmp_path / "copilot" / "mcp-config.json").read_text())
+
+    assert written["mcpServers"]["finance-toolkit"]["command"] == "uvx"
+
+    setup_model.remove_copilot_config()
+    written = json.loads((tmp_path / "copilot" / "mcp-config.json").read_text())
+    assert "finance-toolkit" not in written["mcpServers"]
+
+
+def test_vscode_entries_name_their_stdio_transport(monkeypatch, tmp_path):
+    import json
+
+    from financetoolkit.mcp_server import setup_model
+
+    monkeypatch.setattr(
+        setup_model, "get_global_env_path", lambda: tmp_path / "config" / ".env"
+    )
+
+    setup_model.write_vscode_config("KEY", tmp_path)
+    interactive = json.loads((tmp_path / ".vscode" / "mcp.json").read_text())
+    assert interactive["servers"]["finance-toolkit"]["type"] == "stdio"
+
+    setup_model.write_client_config_uvx("vscode", tmp_path / "cli", api_key="KEY")
+    non_interactive = json.loads(
+        (tmp_path / "cli" / ".vscode" / "mcp.json").read_text()
+    )
+    assert non_interactive["servers"]["finance-toolkit"]["type"] == "stdio"

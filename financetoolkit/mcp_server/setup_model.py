@@ -49,8 +49,10 @@ def print_menu() -> None:
     text.append("  5  ", style="bold cyan")
     text.append("Gemini\n")
     text.append("  6  ", style="bold cyan")
-    text.append("Windsurf\n\n")
-    text.append("  7  ", style="yellow")
+    text.append("Devin Desktop (Windsurf)\n")
+    text.append("  7  ", style="bold cyan")
+    text.append("GitHub Copilot (global)\n\n")
+    text.append("  8  ", style="yellow")
     text.append("Remove configuration\n")
     text.append("  0  ", style="dim")
     text.append("Exit", style="dim")
@@ -107,7 +109,7 @@ def get_claude_config_path() -> pathlib.Path:
             pathlib.Path.home() / "AppData" / "Roaming"
         )
         return pathlib.Path(appdata) / "Claude" / "claude_desktop_config.json"
-    return pathlib.Path.home() / ".config" / "claude" / "claude_desktop_config.json"
+    return pathlib.Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
 
 def get_claude_code_config_path() -> pathlib.Path:
@@ -136,17 +138,46 @@ def get_gemini_config_path() -> pathlib.Path:
     return pathlib.Path.home() / ".gemini" / "settings.json"
 
 
-def get_windsurf_config_path() -> pathlib.Path:
+def get_devin_config_path() -> pathlib.Path:
     """
-    Return the path to the Windsurf MCP configuration file.
+    Return the path to the Devin Desktop (Windsurf) user MCP configuration file.
 
-    Windsurf stores its MCP server registry at
-    ``~/.codeium/windsurf/mcp_config.json`` on all platforms.
+    Devin Desktop reads its user-scoped MCP servers from
+    ``~/.config/devin/mcp_config.json`` (``%APPDATA%\\devin\\mcp_config.json`` on
+    Windows). Installs that still have the ``~/.codeium/windsurf`` folder keep their
+    servers in ``~/.codeium/windsurf/mcp_config.json``, so that file is used when the
+    folder exists.
 
     Returns:
-        pathlib.Path: Absolute path to ``~/.codeium/windsurf/mcp_config.json``.
+        pathlib.Path: Absolute path to the MCP configuration file Devin Desktop reads.
     """
-    return pathlib.Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
+    windsurf_path = pathlib.Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
+    if windsurf_path.parent.exists():
+        return windsurf_path
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA") or str(
+            pathlib.Path.home() / "AppData" / "Roaming"
+        )
+        return pathlib.Path(appdata) / "devin" / "mcp_config.json"
+    return pathlib.Path.home() / ".config" / "devin" / "mcp_config.json"
+
+
+def get_copilot_config_path() -> pathlib.Path:
+    """
+    Return the path to the global GitHub Copilot MCP configuration file.
+
+    GitHub Copilot (in VS Code and the Copilot CLI) reads servers that apply to every
+    workspace from ``$COPILOT_HOME/mcp-config.json``, or ``~/.copilot/mcp-config.json``
+    when ``COPILOT_HOME`` is not set. The file uses a top-level ``mcpServers`` key.
+
+    Returns:
+        pathlib.Path: Absolute path to the global Copilot MCP configuration file.
+    """
+    copilot_home = os.environ.get("COPILOT_HOME")
+    base = (
+        pathlib.Path(copilot_home) if copilot_home else pathlib.Path.home() / ".copilot"
+    )
+    return base / "mcp-config.json"
 
 
 def _uvx_server_entry(
@@ -196,7 +227,8 @@ _CLIENT_CONFIG: dict[str, tuple] = {
     "claude-desktop": (get_claude_config_path, "mcpServers", "Claude Desktop"),
     "claude-code": (get_claude_code_config_path, "mcpServers", "Claude Code"),
     "gemini": (get_gemini_config_path, "mcpServers", "Gemini"),
-    "windsurf": (get_windsurf_config_path, "mcpServers", "Windsurf"),
+    "devin": (get_devin_config_path, "mcpServers", "Devin Desktop (Windsurf)"),
+    "copilot": (get_copilot_config_path, "mcpServers", "GitHub Copilot (global)"),
     # VS Code and Cursor are workspace-local, so paths resolve at call time.
     "vscode": (None, "servers", "VS Code"),
     "cursor": (None, "mcpServers", "Cursor"),
@@ -559,7 +591,8 @@ def remove_all_configs(target_dir: pathlib.Path) -> None:
         ("VS Code", target_dir / ".vscode" / "mcp.json", "servers"),
         ("Cursor", target_dir / ".cursor" / "mcp.json", "mcpServers"),
         ("Gemini", get_gemini_config_path(), "mcpServers"),
-        ("Windsurf", get_windsurf_config_path(), "mcpServers"),
+        ("Devin Desktop (Windsurf)", get_devin_config_path(), "mcpServers"),
+        ("GitHub Copilot (global)", get_copilot_config_path(), "mcpServers"),
     ]
 
     found: list[tuple[str, pathlib.Path, str]] = []
@@ -616,24 +649,27 @@ def remove_all_configs(target_dir: pathlib.Path) -> None:
     console.print()
 
 
-def write_gemini_config(api_key: str, fred_api_key: str = "") -> None:
+def _write_global_client_config(
+    config_path: pathlib.Path, display_name: str, api_key: str, fred_api_key: str
+) -> None:
     """
-    Patch the Gemini CLI configuration file (``~/.gemini/settings.json``) to
-    add the Finance Toolkit MCP server entry.
+    Add the Finance Toolkit MCP server entry to a client's global ``mcpServers`` file.
 
+    The file and its folder are created when missing. An existing ``finance-toolkit``
+    entry is shown and only replaced after confirmation; all other entries are kept.
     When *api_key* is provided it is embedded directly as
     ``FINANCIAL_MODELING_PREP_API_KEY``; otherwise the entry uses
     ``FINANCETOOLKIT_ENV_FILE`` pointing at the global ``.env`` file.
 
     Args:
-        api_key (str): FinancialModelingPrep API key.  When non-empty the key
-            is embedded directly in the config (takes priority over the env
-            file).
+        config_path (pathlib.Path): The client's configuration file.
+        display_name (str): The client's name in messages.
+        api_key (str): FinancialModelingPrep API key. When non-empty the key is
+            embedded directly in the config (takes priority over the env file).
         fred_api_key (str): Optional FRED API key. When non-empty the key is
             embedded directly in the config; unlocks a handful of US-only
             economic indicators and is free to obtain.
     """
-    config_path = get_gemini_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     existing = _read_json_config(config_path)
@@ -649,7 +685,7 @@ def write_gemini_config(api_key: str, fred_api_key: str = "") -> None:
         console.print(f"  [dim]{json.dumps(current_entry, indent=4)}[/]")
         console.print()
         if not Confirm.ask("  Overwrite this entry?", default=False):
-            info("Skipped — existing Gemini config left unchanged.")
+            info(f"Skipped — existing {display_name} config left unchanged.")
             return
 
     existing.setdefault("mcpServers", {})
@@ -658,69 +694,65 @@ def write_gemini_config(api_key: str, fred_api_key: str = "") -> None:
     )
 
     config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
-    ok(f"Gemini config written to [dim cyan]{config_path}[/]")
+    ok(f"{display_name} config written to [dim cyan]{config_path}[/]")
+
+
+def write_gemini_config(api_key: str, fred_api_key: str = "") -> None:
+    """
+    Add the Finance Toolkit MCP server entry to the Gemini CLI configuration file
+    (``~/.gemini/settings.json``).
+
+    Args:
+        api_key (str): FinancialModelingPrep API key, embedded when non-empty.
+        fred_api_key (str): Optional FRED API key, embedded when non-empty.
+    """
+    _write_global_client_config(
+        get_gemini_config_path(), "Gemini", api_key, fred_api_key
+    )
 
 
 def remove_gemini_config() -> None:
     """Remove the ``finance-toolkit`` entry from the Gemini CLI config file."""
-    _remove_entry_from_config(
-        get_gemini_config_path(),
-        outer_key="mcpServers",
-    )
+    _remove_entry_from_config(get_gemini_config_path(), outer_key="mcpServers")
 
 
-def write_windsurf_config(api_key: str, fred_api_key: str = "") -> None:
+def write_devin_config(api_key: str, fred_api_key: str = "") -> None:
     """
-    Patch the Windsurf configuration file
-    (``~/.codeium/windsurf/mcp_config.json``) to add the Finance Toolkit MCP
-    server entry.
-
-    When *api_key* is provided it is embedded directly as
-    ``FINANCIAL_MODELING_PREP_API_KEY``; otherwise the entry uses
-    ``FINANCETOOLKIT_ENV_FILE`` pointing at the global ``.env`` file.
+    Add the Finance Toolkit MCP server entry to the Devin Desktop (Windsurf) user
+    configuration file (see ``get_devin_config_path``).
 
     Args:
-        api_key (str): FinancialModelingPrep API key.  When non-empty the key
-            is embedded directly in the config (takes priority over the env
-            file).
-        fred_api_key (str): Optional FRED API key. When non-empty the key is
-            embedded directly in the config; unlocks a handful of US-only
-            economic indicators and is free to obtain.
+        api_key (str): FinancialModelingPrep API key, embedded when non-empty.
+        fred_api_key (str): Optional FRED API key, embedded when non-empty.
     """
-    config_path = get_windsurf_config_path()
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    existing = _read_json_config(config_path)
-    if existing is None:
-        return
-
-    current_entry = existing.get("mcpServers", {}).get("finance-toolkit")
-    if current_entry is not None:
-        console.print()
-        warn(
-            f"Existing [bold]'finance-toolkit'[/] entry found in [dim cyan]{config_path}[/]"
-        )
-        console.print(f"  [dim]{json.dumps(current_entry, indent=4)}[/]")
-        console.print()
-        if not Confirm.ask("  Overwrite this entry?", default=False):
-            info("Skipped — existing Windsurf config left unchanged.")
-            return
-
-    existing.setdefault("mcpServers", {})
-    existing["mcpServers"]["finance-toolkit"] = _uvx_server_entry(
-        api_key or None, fred_api_key or None
+    _write_global_client_config(
+        get_devin_config_path(), "Devin Desktop (Windsurf)", api_key, fred_api_key
     )
 
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
-    ok(f"Windsurf config written to [dim cyan]{config_path}[/]")
+
+def remove_devin_config() -> None:
+    """Remove the ``finance-toolkit`` entry from the Devin Desktop (Windsurf) config file."""
+    _remove_entry_from_config(get_devin_config_path(), outer_key="mcpServers")
 
 
-def remove_windsurf_config() -> None:
-    """Remove the ``finance-toolkit`` entry from the Windsurf config file."""
-    _remove_entry_from_config(
-        get_windsurf_config_path(),
-        outer_key="mcpServers",
+def write_copilot_config(api_key: str, fred_api_key: str = "") -> None:
+    """
+    Add the Finance Toolkit MCP server entry to the global GitHub Copilot configuration
+    file (``~/.copilot/mcp-config.json``, see ``get_copilot_config_path``), which applies
+    to every workspace.
+
+    Args:
+        api_key (str): FinancialModelingPrep API key, embedded when non-empty.
+        fred_api_key (str): Optional FRED API key, embedded when non-empty.
+    """
+    _write_global_client_config(
+        get_copilot_config_path(), "GitHub Copilot (global)", api_key, fred_api_key
     )
+
+
+def remove_copilot_config() -> None:
+    """Remove the ``finance-toolkit`` entry from the global GitHub Copilot config file."""
+    _remove_entry_from_config(get_copilot_config_path(), outer_key="mcpServers")
 
 
 def write_client_config_uvx(
@@ -740,7 +772,7 @@ def write_client_config_uvx(
     missing parent directories).  When *overwrite* is ``False`` and an
     existing ``finance-toolkit`` entry is found, the function exits with a
     warning without modifying anything.  If the config directory for a global
-    client (e.g. Gemini, Windsurf) cannot be determined, the raw JSON block is
+    client (e.g. Gemini, Devin Desktop) cannot be determined, the raw JSON block is
     printed to the terminal as a fallback.
 
     When *api_key* is supplied it is embedded directly in the config as
@@ -750,7 +782,7 @@ def write_client_config_uvx(
     Args:
         client: Canonical client name — one of ``"claude-desktop"``,
             ``"claude-code"``, ``"vscode"``, ``"cursor"``, ``"gemini"``,
-            ``"windsurf"``.
+            ``"devin"``, ``"copilot"``.
         target_dir: Workspace root / cwd used to resolve workspace-local paths
             (``.vscode/mcp.json``, ``.cursor/mcp.json``).
         overwrite: When ``True``, silently replace an existing entry.
@@ -766,6 +798,7 @@ def write_client_config_uvx(
         if client == "vscode":
             config_path = target_dir / ".vscode" / "mcp.json"
             outer_key = "servers"
+            entry = {"type": "stdio", **entry}
         else:
             config_path = target_dir / ".cursor" / "mcp.json"
             outer_key = "mcpServers"
@@ -910,9 +943,11 @@ def write_vscode_config(
             return
 
     existing.setdefault("servers", {})
-    existing["servers"]["finance-toolkit"] = _uvx_server_entry(
-        api_key or None, fred_api_key or None
-    )
+    # VS Code's mcp.json names the transport of each server.
+    existing["servers"]["finance-toolkit"] = {
+        "type": "stdio",
+        **_uvx_server_entry(api_key or None, fred_api_key or None),
+    }
 
     config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
     ok(f"VS Code config written to [dim cyan]{config_path}[/]")

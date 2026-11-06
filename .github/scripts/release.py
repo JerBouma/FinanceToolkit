@@ -129,7 +129,12 @@ def prepare() -> None:
         return
 
     version = branch.group(1)
-    sha = pull_request["merge_commit_sha"]
+    # A merged PR releases its commit on main; an open PR is checked on its test merge with main.
+    sha = (
+        pull_request["merge_commit_sha"]
+        if pull_request.get("merged")
+        else os.environ["GITHUB_SHA"]
+    )
     problems = [
         f"{name} has {found}"
         for name, found in file_versions().items()
@@ -167,7 +172,7 @@ def prepare() -> None:
             f"Release v{version} is not ready: {len(problems)} problem(s), see above."
         )
 
-    print(f"Releasing v{version} from {sha}.")
+    print(f"v{version} is ready to release from {sha}.")
     output(release="true", version=version, sha=sha)
 
 

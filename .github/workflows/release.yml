@@ -1,10 +1,12 @@
 name: Release
 
 # Releases a version when its release PR is merged into main. A release PR has the head branch
-# feature/vX.Y.Z; any other merged PR is ignored. The release has three stages:
+# feature/vX.Y.Z; any other PR is ignored. The release has three stages:
 #
-# 1. Prepare: checks the release (versions, notes, tag) and builds the package and financetoolkit.mcpb
-#    from the merge commit. Nothing is published yet.
+# 1. Prepare: checks the release (versions, notes, tag, approval) and builds the package and
+#    financetoolkit.mcpb from the merge commit. Nothing is published yet. Prepare also runs on an open
+#    release PR as a dry run, so a release that isn't ready shows before the merge; the built files
+#    are kept with the run.
 # 2. Publish: waits for an approval on the "release" environment, then publishes the package to PyPI,
 #    creates the tag vX.Y.Z and the release "FinanceToolkit vX.Y.Z" with the PR description as its text
 #    and attaches financetoolkit.mcpb.
@@ -14,22 +16,23 @@ name: Release
 # release) and replaces the attached bundle, so re-running a failed run continues where it stopped.
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened, edited, closed]
     branches: [main]
 
 permissions:
   contents: read
 
+# One run per PR at a time; a newer dry run replaces an older one, a release is never cancelled.
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: release-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event.action != 'closed' }}
 
 jobs:
   prepare:
     name: Prepare
-    # Only merged PRs from a branch of this repository; the exact branch name is checked below.
+    # Open or merged PRs from a branch of this repository; the exact branch name is checked below.
     if: >-
-      github.event.pull_request.merged == true &&
+      (github.event.action != 'closed' || github.event.pull_request.merged == true) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'feature/v')
     runs-on: ubuntu-latest
@@ -42,10 +45,11 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       sha: ${{ steps.release.outputs.sha }}
     steps:
+      # The commit on main once merged; for an open PR, its test merge with main.
       - name: Checkout the merge commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.event.pull_request.merged && github.event.pull_request.merge_commit_sha || github.sha }}
           fetch-depth: 0
 
       - name: Check the release
@@ -90,7 +94,7 @@ jobs:
   publish:
     name: Publish
     needs: prepare
-    if: needs.prepare.outputs.release == 'true'
+    if: github.event.action == 'closed' && needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The environment requires an approval before this job starts.

@@ -338,14 +338,28 @@ def get_historical_data(
         # auto_adjust=False matches FMP (True made Close disagree by the dividend history, 1.8% median, AAPL 2022-2023); repair is disabled for synthetic instruments since yfinance's split-repair misfires on them (^IRX 100x, CL=F 10,000x after oil went negative).  # noqa: E501
         repair_splits = not (ticker.startswith("^") or "=" in ticker)
 
-        historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
-            start=start_date_string,
-            end=end_date_string,
-            interval=interval,
-            actions=True,
-            auto_adjust=False,
-            repair=repair_splits,
-        )
+        history_parameters = {
+            "start": start_date_string,
+            "end": end_date_string,
+            "interval": interval,
+            "actions": True,
+            "auto_adjust": False,
+        }
+
+        try:
+            historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
+                **history_parameters, repair=repair_splits
+            )
+        except ModuleNotFoundError:
+            # The repair needs yfinance's optional "repair" extra (scikit-learn in recent versions), which a plain install lacks; the prices are then taken unrepaired rather than lost.  # noqa: E501
+            logger.info(
+                "yfinance's price repair needs its 'repair' extra (pip install 'yfinance[repair]'), "
+                "so the prices of %s are not repaired.",
+                ticker,
+            )
+            historical_data = yf.Ticker(to_yahoo_finance_symbol(ticker)).history(
+                **history_parameters, repair=False
+            )
 
         # Columns can occasionally be duplicated, so they are checked and dropped.
         historical_data = historical_data.loc[:, ~historical_data.columns.duplicated()]

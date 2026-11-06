@@ -891,3 +891,26 @@ def test_collect_all_ratios_groups_the_rows_per_ticker(ratios_module):
     tickers = ratios_module.collect_all_ratios().index.get_level_values(0)
 
     assert (tickers[1:] != tickers[:-1]).sum() == 1
+
+
+def test_compound_growth_of_a_ratio_is_the_cagr_of_its_values(ratios_module):
+    values = ratios_module.get_revenue_per_share(rounding=None)
+    cagr = ratios_module.get_revenue_per_share(
+        growth=True, lag=2, compound=True, rounding=None
+    )
+    collected = ratios_module.collect_valuation_ratios(
+        growth=True, lag=2, compound=True, rounding=None
+    )
+
+    periods = values.columns
+    expected = (values[periods[-1]] / values[periods[-3]]) ** (1 / 2) - 1
+    expected = expected.where((values[periods[-1]] > 0) & (values[periods[-3]] > 0))
+
+    # The growth is rounded to the Toolkit's four decimals.
+    pd.testing.assert_series_equal(
+        cagr[periods[-1]], expected, check_names=False, atol=1e-4
+    )
+    for ticker in values.index:
+        assert collected.loc[
+            (ticker, "Revenue per Share"), periods[-1]
+        ] == pytest.approx(expected[ticker], nan_ok=True, abs=1e-4)

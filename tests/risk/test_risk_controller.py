@@ -591,7 +591,13 @@ def test_move_significance_keeps_each_measure_per_ticker(risk_module):
     significance = risk_module.get_move_significance(window=20)
 
     measures = significance.columns.get_level_values(0).unique().tolist()
-    assert measures == ["Return", "Volatility Multiple", "Percentile", "Largest Since"]
+    assert measures == [
+        "Return",
+        "Volatility Multiple",
+        "VaR Multiple",
+        "Percentile",
+        "Largest Since",
+    ]
 
     returns = risk_module._historical_data["daily"]["Return"]
     ticker = returns.columns[0]
@@ -611,6 +617,24 @@ def test_move_significance_keeps_each_measure_per_ticker(risk_module):
 def test_move_significance_needs_a_window_of_two_returns(risk_module, caplog):
     assert risk_module.get_move_significance(window=1).empty
     assert "at least 2 returns" in caplog.text
+
+
+def test_move_significance_needs_an_alpha_between_zero_and_one(risk_module, caplog):
+    assert risk_module.get_move_significance(alpha=1.5).empty
+    assert "alpha must be between 0 and 1" in caplog.text
+
+
+def test_the_recovery_needed_is_the_gain_back_to_the_running_peak(risk_module):
+    drawdowns = risk_module.get_drawdown_series(rounding=10)
+    recovery = risk_module.get_drawdown_series(recovery=True, rounding=10)
+
+    pd.testing.assert_frame_equal(recovery, -drawdowns / (1 + drawdowns), atol=1e-8)
+
+    table = risk_module.get_drawdown_table(top=3, rounding=10)
+    expected = -table["Drawdown"] / (1 + table["Drawdown"])
+    pd.testing.assert_series_equal(
+        table["Recovery Needed"], expected, check_names=False, atol=1e-8
+    )
 
 
 def test_a_single_return_over_the_whole_range_is_reported(risk_module, caplog):

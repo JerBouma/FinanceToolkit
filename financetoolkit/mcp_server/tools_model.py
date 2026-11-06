@@ -50,6 +50,8 @@ def join_initials(text: str) -> str:
 SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
     "predictive": ("get_factor_analysis",),
     "predict": ("get_factor_analysis",),
+    "oversold": ("get_indicator_summary", "get_relative_strength_index"),
+    "overbought": ("get_indicator_summary", "get_relative_strength_index"),
     "expensive": (
         "get_price_to_earnings_ratio",
         "get_ev_to_ebitda_ratio",

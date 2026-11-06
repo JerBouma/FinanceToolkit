@@ -80,3 +80,22 @@ def test_a_fund_without_weights_has_no_concentration_or_overlap():
     overlap = etf_model.get_overlap(weights)
     assert overlap.loc["VOO", "VOO"] == pytest.approx(1.0)
     assert overlap["NEW"].isna().all() and overlap.loc["NEW"].isna().all()
+
+
+def test_contribution_rolls_the_weights_back_to_the_start():
+    # At the start the fund held X and Y at 0.3 each and 0.4 cash. X then doubled and Y
+    # stayed flat, so the fund grew by 30%: X weighs 0.6 / 1.3 and Y 0.3 / 1.3 on the date
+    # of the holdings.
+    weights = pd.Series({"X": 0.6 / 1.3, "Y": 0.3 / 1.3, "Bond": 0.1})
+    start = pd.Series({"X": 100.0, "Y": 100.0})
+    end = pd.Series({"X": 110.0, "Y": 95.0})
+    weight_date = pd.Series({"X": 200.0, "Y": 100.0})
+
+    contribution = etf_model.get_contribution(weights, start, end, weight_date, 1.3)
+
+    # The bond has no price, so it has no contribution of its own.
+    assert list(contribution.index) == ["X", "Y"]
+    assert contribution.loc["X", "Start Weight"] == pytest.approx(0.3)
+    assert contribution.loc["Y", "Start Weight"] == pytest.approx(0.3)
+    assert contribution.loc["Y", "Return"] == pytest.approx(-0.05)
+    assert contribution["Contribution"].sum() == pytest.approx(0.3 * 0.1 + 0.3 * -0.05)

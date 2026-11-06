@@ -69,6 +69,8 @@ class ETF:
         end_date: str | None = None,
         rounding: int | None = 4,
         currency_function: Callable[[], pd.Series] | None = None,
+        prices_function: Callable[[list[str], str, str], pd.DataFrame] | None = None,
+        sector_function: Callable[[list[str]], pd.Series] | None = None,
     ):
         """
         Initializes the ETF Controller Class, which the Toolkit creates as `toolkit.etf`.
@@ -90,6 +92,12 @@ class ETF:
                 currency every ticker is listed (and its prices are quoted) in, to compare the
                 close with a NAV of the same currency. Defaults to None, which leaves the
                 listing currency unknown.
+            prices_function (Callable[[list[str], str, str], pd.DataFrame] | None, optional):
+                Retrieves the daily closing prices of other tickers (the holdings) between two
+                dates, for the contribution of the holdings. Defaults to None.
+            sector_function (Callable[[list[str]], pd.Series] | None, optional): Retrieves
+                the sector of other tickers (the holdings), for the contribution per sector.
+                Defaults to None.
 
         As an example:
 
@@ -110,6 +118,8 @@ class ETF:
         self._end_date = end_date
         self._rounding = rounding
         self._currency_function = currency_function
+        self._prices_function = prices_function
+        self._sector_function = sector_function
 
     def _listing_currencies(self) -> pd.Series:
         """The currency every ticker is listed in, empty when it cannot be retrieved."""
@@ -1024,3 +1034,376 @@ class ETF:
                 "Price Impact per $100 Million"
             ]
         return rounded
+
+    def _contributions(
+        self, holdings: int | None, index: str | None
+    ) -> dict[str, tuple[pd.DataFrame, float, float]]:
+        """
+        The contribution of the holdings of every fund over the period, with the fund's own
+        return and the level that converts a contribution into points.
+        """
+        if self._prices_function is None:
+            raise ValueError(
+                "Prices of the holdings are not available for this Toolkit."
+            )
+
+        weights = {
+            fund: fund_weights.sort_values(ascending=False).iloc[:holdings]
+            for fund, fund_weights in self._weights().items()
+        }
+        # Only holdings with a symbol (not bonds identified by their ISIN) have prices.
+        symbols = {
+            fund: [
+                asset
+                for asset in fund_weights.index
+                if asset and len(asset) <= MAXIMUM_SYMBOL_LENGTH and " " not in asset
+            ]
+            for fund, fund_weights in weights.items()
+        }
+
+        start = pd.Timestamp(self._start_date)
+        end = pd.Timestamp(self._end_date)
+        today = pd.Timestamp.today().normalize()
+        # The holdings are the positions at a close, published (in UTC) like the NAV: the
+        # weights are of the last close 16 hours or more before the update in New York.
+        published = self._fund_data_function("holdings")
+        if published is None:
+            published = pd.DataFrame()
+        weight_dates = {}
+        for fund in weights:
+            raw = (
+                str(published.loc[fund, "Updated At"].astype(str).max()).strip()
+                if "Updated At" in published and fund in published.index
+                else ""
+            )
+            updated = pd.to_datetime(raw, utc=True, errors="coerce")
+            if pd.isna(updated):
+                weight_dates[fund] = today
+            elif len(raw) <= 10:  # noqa: PLR2004
+                # A date without a time is the date of the positions itself.
+                weight_dates[fund] = updated.tz_localize(None).normalize()
+            else:
+                weight_dates[fund] = (
+                    updated.tz_convert("America/New_York").tz_localize(None)
+                    - pd.Timedelta(hours=NAV_CLOSE_HOURS)
+                ).normalize()
+
+        tickers = list(
+            dict.fromkeys(
+                [
+                    *self._funds(),
+                    *([index] if index else []),
+                    *(
+                        symbol
+                        for fund_symbols in symbols.values()
+                        for symbol in fund_symbols
+                    ),
+                ]
+            )
+        )
+        # The start price is the close before the start date, so the period includes the
+        # move of its first day; a week back covers weekends and holidays.
+        prices = self._prices_function(
+            tickers,
+            (start - pd.Timedelta(days=10)).strftime("%Y-%m-%d"),
+            max([end, today, *weight_dates.values()]).strftime("%Y-%m-%d"),
+        )
+        if isinstance(prices.index, pd.PeriodIndex):
+            prices.index = prices.index.to_timestamp()
+        prices = prices.reindex(columns=tickers)
+
+        def close(before: pd.Timestamp, inclusive: bool = True) -> pd.Series:
+            # The last close up to a date, per ticker: a holding that did not trade on the
+            # date (a holiday on its exchange) keeps its last close.
+            rows = prices.loc[
+                prices.index <= before if inclusive else prices.index < before
+            ]
+            if rows.empty:
+                return pd.Series(float("nan"), index=prices.columns)
+            return rows.ffill().iloc[-1]
+
+        start_prices, end_prices = close(start, inclusive=False), close(end)
+        if start_prices.isna().all():
+            raise ValueError(
+                "There are no prices before the start date to measure the period from."
+            )
+
+        contributions = {}
+        for fund, fund_weights in weights.items():
+            weight_date_prices = close(weight_dates[fund])
+            table = etf_model.get_contribution(
+                fund_weights[symbols[fund]],
+                start_prices,
+                end_prices,
+                weight_date_prices,
+                float(weight_date_prices[fund] / start_prices[fund]),
+            )
+            fund_return = float(end_prices[fund] / start_prices[fund] - 1)
+            level = float(start_prices[index] if index else start_prices[fund])
+            contributions[fund] = (table, fund_return, level)
+        return contributions
+
+    @staticmethod
+    def _contribution_table(
+        table: pd.DataFrame, fund_return: float, level: float
+    ) -> pd.DataFrame:
+        """The contributions largest first, then the remainder and the fund's total."""
+        table = table.sort_values("Contribution", ascending=False)
+        # Cash, holdings without a price and the drift of the rolled back weights.
+        rows = pd.DataFrame(
+            {
+                "Start Weight": [1 - table["Start Weight"].sum(), 1.0],
+                "Return": [float("nan"), fund_return],
+                "Contribution": [
+                    fund_return - table["Contribution"].sum(),
+                    fund_return,
+                ],
+            },
+            index=["Remainder", "Total"],
+        )
+        table = pd.concat([table, rows])
+        table["Points"] = table["Contribution"] * level
+        return table
+
+    @handle_errors
+    def get_contribution(
+        self,
+        group_by: str = "holding",
+        holdings: int | None = None,
+        index: str | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how much every holding (or sector) of a fund added to or took off its return
+        over the period: the holding's weight at the start of the period times its return over
+        the period, in decimals and in points of the fund's price (or of an index, e.g. the
+        S&P 500 for SPY). It answers questions such as "how many points did technology take
+        off the S&P 500 this month?" and shows when a few large holdings carry an index while
+        most of its stocks fall, or the other way around.
+
+        The period runs from the close before the Toolkit's start date to the close on its
+        end date, so a start date of January 1 gives the return so far this year. Returns are
+        price returns of the split-adjusted close, as an index level such as the S&P 500 is a
+        price index; dividends are not included.
+
+        A fund publishes only its current holdings, so the weights are those of the close the
+        holdings were last published for (the last close 16 hours or more before the update,
+        as for the NAV), rolled back to the start of the period with every holding's
+        own price change relative to the fund's: w_start = w × (P_start / P_holdings_date) ×
+        (F_holdings_date / F_start), with F the fund's price. That is exact for a market
+        capitalization weighted index between rebalancings and drifts with every rebalancing,
+        share issuance, buyback and index change in between, so the longer (or the further
+        back) the period, the less precise the split. The Remainder row holds what the priced
+        holdings do not explain: cash, holdings without a symbol or price (bonds, futures) and
+        that drift. The Total row is the fund's own price return, so the rows add up to it.
+
+        Also known as: contribution to return, index contribution, attribution of an index
+        move, points contribution, sector contribution.
+
+        Args:
+            group_by (str, optional): "holding" for every holding or "sector" for every sector
+                (from the holdings' company profiles). Defaults to "holding".
+            holdings (int | None, optional): The number of largest holdings (by weight) to
+                price, one request each; the rest counts towards the Remainder. Defaults to
+                None, which prices every holding with a symbol.
+            index (str | None, optional): The ticker of an index whose level at the start of
+                the period converts the contributions into index points, e.g. "^GSPC" for SPY.
+                Defaults to None, which gives points of the fund's own price.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The Start Weight, Return, Contribution and Points of every holding
+            or sector, largest contribution first, followed by the Remainder and the Total;
+            indexed by fund and holding (only by holding for a single fund).
+
+        Notes:
+        - The sectors are those of the companies' profiles, which can differ a little from the
+          index provider's classification (and from get_sector_weightings).
+        - A broad fund holds hundreds of stocks, each a request for its prices; holdings=
+          limits that to the largest.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SPY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2026-10-01",
+            end_date="2026-10-31",
+            benchmark_ticker=None,
+        )
+
+        toolkit.etf.get_contribution(group_by="sector", index="^GSPC")
+        ```
+
+        Which returns:
+
+        |                        |   Start Weight |   Return |   Contribution |    Points |
+        |:-----------------------|---------------:|---------:|---------------:|----------:|
+        | Healthcare             |         0.0918 |   0.0974 |         0.0089 |   68.4349 |
+        | Financial Services     |         0.1122 |   0.0574 |         0.0064 |   49.3077 |
+        | Consumer Defensive     |         0.0432 |   0.1157 |         0.005  |   38.2649 |
+        | Energy                 |         0.0342 |   0.1384 |         0.0047 |   36.2639 |
+        | Consumer Cyclical      |         0.0859 |   0.0418 |         0.0036 |   27.4788 |
+        | Utilities              |         0.0188 |   0.1011 |         0.0019 |   14.5331 |
+        | Basic Materials        |         0.0167 |   0.0555 |         0.0009 |    7.0788 |
+        | Real Estate            |         0.017  |   0.0498 |         0.0008 |    6.4553 |
+        | Industrials            |         0.0738 |  -0.0021 |        -0.0002 |   -1.1988 |
+        | Communication Services |         0.0975 |  -0.1502 |        -0.0147 | -112.129  |
+        | Technology             |         0.4082 |  -0.0662 |        -0.027  | -206.655  |
+        | Remainder              |         0.0006 | nan      |         0.0004 |    2.8372 |
+        | Total                  |         1      |  -0.0091 |        -0.0091 |  -69.3287 |
+        """
+        if group_by not in ("holding", "sector"):
+            raise ValueError("group_by must be 'holding' or 'sector'.")
+
+        if group_by == "sector" and self._sector_function is None:
+            raise ValueError(
+                "The sectors of the holdings are not available for this Toolkit."
+            )
+
+        tables = {}
+        for fund, (table, fund_return, level) in self._contributions(
+            holdings, index
+        ).items():
+            if group_by == "sector" and self._sector_function is not None:
+                sectors = self._sector_function(list(table.index)).reindex(table.index)
+                grouped = (
+                    table[["Start Weight", "Contribution"]]
+                    .groupby(sectors.fillna("Unknown").replace("", "Unknown"))
+                    .sum()
+                )
+                grouped.index.name = None
+                grouped.insert(
+                    1, "Return", grouped["Contribution"] / grouped["Start Weight"]
+                )
+                tables[fund] = self._contribution_table(grouped, fund_return, level)
+            else:
+                tables[fund] = self._contribution_table(table, fund_return, level)
+
+        result = self._round(pd.concat(tables), rounding)
+        if len(tables) == 1:
+            return result.loc[next(iter(tables))]
+        return result
+
+    @handle_errors
+    def get_return_excluding(
+        self,
+        exclude: str | list[str],
+        holdings: int | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the return a fund would have had without some of its holdings or sectors:
+        the contribution of the other holdings over their weight, Σ contribution / Σ start
+        weight over the holdings that remain, so the rest of the fund reweighted to a whole.
+        It answers "what did the S&P 500 do without technology?" or "without Nvidia?", showing
+        how much of an index move comes from a few stocks.
+
+        The contributions come from get_contribution: weights rolled back from the fund's
+        current holdings to the start of the period, price returns from the close before the
+        start date to the close on the end date. The same caveats apply: the longer the period,
+        the more the rolled back weights drift from the fund's actual weights. Only the priced
+        holdings count: what get_contribution puts in the Remainder (cash, holdings without a
+        price and that drift) would otherwise all fall on the holdings that remain and, once
+        most of the fund is excluded, dominate their return. The Priced Holdings Return,
+        the same calculation without excluding anything, is therefore the like-for-like
+        comparison; for a stock index fund it is close to the fund's own Return.
+
+        Also known as: index ex technology, equal footing return, return without the largest
+        holdings, ex-sector return.
+
+        Args:
+            exclude (str | list[str]): The holdings (tickers, e.g. "NVDA") and sectors (e.g.
+                "Technology", as the companies' profiles name them) to leave out.
+            holdings (int | None, optional): The number of largest holdings (by weight) to
+                price, one request each; the rest counts towards the rest of the fund.
+                Defaults to None, which prices every holding with a symbol.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The fund's Return, the Priced Holdings Return, the Excluded Weight
+            (at the start of the period), the Excluded Contribution and the Return Excluding
+            them (rows) per fund (columns).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SPY", "QQQ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2026-10-01",
+            end_date="2026-10-31",
+            benchmark_ticker=None,
+        )
+
+        toolkit.etf.get_return_excluding(["NVDA", "MSFT"])
+        ```
+
+        Which returns:
+
+        |                        |     SPY |     QQQ |
+        |:-----------------------|--------:|--------:|
+        | Return                 | -0.0091 | -0.0666 |
+        | Priced Holdings Return | -0.0094 | -0.0665 |
+        | Excluded Weight        |  0.1415 |  0.141  |
+        | Excluded Contribution  | -0.0077 | -0.0077 |
+        | Return Excluding       | -0.002  | -0.0685 |
+        """
+        names = [exclude] if isinstance(exclude, str) else list(exclude)
+        wanted = {name.strip().upper() for name in names if name and name.strip()}
+        if not wanted:
+            raise ValueError("Name at least one holding or sector to exclude.")
+
+        contributions = self._contributions(holdings, index=None)
+        priced = sorted(
+            {asset for table, _, _ in contributions.values() for asset in table.index}
+        )
+        sectors = pd.Series(dtype=object)
+        if wanted - {asset.upper() for asset in priced}:
+            # Not every name is a holding, so the others are matched against the sectors.
+            if self._sector_function is None:
+                raise ValueError(
+                    "The sectors of the holdings are not available for this Toolkit."
+                )
+            sectors = self._sector_function(priced)
+        known = {asset.upper() for asset in priced} | set(
+            sectors.dropna().astype(str).str.upper()
+        )
+        if wanted - known:
+            logger.warning(
+                "%s is not a priced holding or a sector of these funds and is not excluded.",
+                ", ".join(sorted(wanted - known)),
+            )
+
+        result = {}
+        for fund, (table, fund_return, _) in contributions.items():
+            sector = sectors.reindex(table.index).fillna("").astype(str).str.upper()
+            excluded = table.index.str.upper().isin(wanted) | sector.isin(wanted)
+            rest = table.loc[~excluded]
+            result[fund] = {
+                "Return": fund_return,
+                # The like-for-like comparison for the Return Excluding.
+                "Priced Holdings Return": float(
+                    table["Contribution"].sum() / table["Start Weight"].sum()
+                ),
+                "Excluded Weight": float(table.loc[excluded, "Start Weight"].sum()),
+                "Excluded Contribution": float(
+                    table.loc[excluded, "Contribution"].sum()
+                ),
+                # The rest of the priced holdings: the fund's remainder (cash, holdings
+                # without a price and the drift of the rolled back weights) would otherwise
+                # all fall on the rest, which dominates once most of the fund is excluded.
+                "Return Excluding": (
+                    float(rest["Contribution"].sum() / rest["Start Weight"].sum())
+                    if rest["Start Weight"].sum() > 0
+                    else float("nan")
+                ),
+            }
+        return self._round(pd.DataFrame(result), rounding)

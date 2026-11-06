@@ -484,3 +484,108 @@ def test_hill_estimator_of_a_constant_tail_is_nan():
     estimate = risk_model.get_hill_estimator(pd.Series([-0.01] * 50), tail="left")
 
     assert np.isnan(estimate["Hill Tail Index"])
+
+
+def test_move_significance_only_compares_a_move_with_the_moves_before_it():
+    dates = pd.period_range("2024-01-01", periods=8, freq="D")
+    returns = pd.Series(
+        [0.01, -0.02, 0.005, -0.01, 0.03, np.nan, -0.025, 0.002], index=dates
+    )
+
+    significance = risk_model.get_move_significance(returns, window=3)
+
+    # The volatility of the three returns before the day, not including the day itself.
+    expected = -0.01 / np.std([0.01, -0.02, 0.005], ddof=1)
+    assert significance.loc["2024-01-04", "Volatility Multiple"] == pytest.approx(
+        expected
+    )
+    # The gap is skipped: the window before 2024-01-07 is the three returns before the gap.
+    expected = -0.025 / np.std([0.005, -0.01, 0.03], ddof=1)
+    assert significance.loc["2024-01-07", "Volatility Multiple"] == pytest.approx(
+        expected
+    )
+    assert significance.loc["2024-01-06"].isna().all()
+
+    # Smaller in absolute value than four of the five earlier moves.
+    assert significance.loc["2024-01-07", "Percentile"] == pytest.approx(0.8)
+    assert significance.loc[:"2024-01-03", "Percentile"].isna().all()
+
+
+def test_largest_since_compares_falls_with_falls_and_rises_with_rises():
+    dates = pd.period_range("2024-01-01", periods=6, freq="D")
+    returns = pd.Series([-0.05, 0.04, -0.01, 0.02, -0.03, 0.05], index=dates)
+
+    largest_since = risk_model.get_move_significance(returns, window=2)["Largest Since"]
+
+    # A 3% fall: the last fall at least as deep was the 5% fall, the rises don't count.
+    assert largest_since["2024-01-05"] == "2024-01-01"
+    # A 2% rise: the 4% rise was larger.
+    assert largest_since["2024-01-04"] == "2024-01-02"
+    # The largest rise of the history has no earlier date.
+    assert pd.isna(largest_since["2024-01-06"])
+    assert pd.isna(largest_since["2024-01-01"])
+
+
+def drawdown_returns():
+    """A first close (no return), then A falls, recovers, peaks and falls; B lists later."""
+    return pd.DataFrame(
+        {
+            "A": [np.nan, -0.1, 0.05, 0.06, 0.1, -0.2, 0.1, np.nan, 0.01, 0.02],
+            "B": [np.nan, np.nan, np.nan, 0.1, -0.5, 0.2, 0.0, 0.0, 0.0, 0.1],
+        },
+        index=pd.period_range("2024-01-01", periods=10, freq="D"),
+    )
+
+
+def test_the_drawdown_series_starts_at_each_tickers_first_close():
+    drawdowns = risk_model.get_drawdown_series(drawdown_returns())
+
+    # B's first close is on the third row, the close its first return is measured from.
+    assert drawdowns["B"].iloc[:2].isna().all()
+    assert drawdowns["B"].iloc[2] == 0
+    assert drawdowns["A"].iloc[0] == 0
+    assert np.isclose(drawdowns["A"].iloc[1], -0.1)
+    # 0.9 * 1.05 * 1.06 is back above the starting wealth: a new high.
+    assert drawdowns["A"].iloc[3] == 0
+    assert np.isclose(drawdowns["A"].iloc[5], -0.2)
+
+
+def test_the_drawdown_table_lists_each_drawdown_deepest_first():
+    returns = drawdown_returns()
+    table = risk_model.get_drawdown_table(returns, top=5)
+
+    first, second = table.loc["A"].iloc[0], table.loc["A"].iloc[1]
+    assert np.isclose(first["Drawdown"], -0.2)
+    assert first["Peak"] == pd.Period("2024-01-05", freq="D")
+    assert first["Trough"] == pd.Period("2024-01-06", freq="D")
+    # Not recovered by the end of the window.
+    assert pd.isna(first["Recovery"]) and np.isnan(first["Length"])
+
+    assert np.isclose(second["Drawdown"], -0.1)
+    assert second["Peak"] == pd.Period("2024-01-01", freq="D")
+    assert second["Recovery"] == pd.Period("2024-01-04", freq="D")
+    assert (second["To Trough"], second["To Recovery"], second["Length"]) == (1, 2, 3)
+
+    # The deepest drawdown is the one the maximum drawdown measures.
+    measured = returns.iloc[1:]
+    assert np.allclose(
+        table.xs(1, level="Rank")["Drawdown"], risk_model.get_max_drawdown(measured)
+    )
+    assert (
+        table.xs(1, level="Rank")["To Trough"]
+        == risk_model.get_max_drawdown_duration(measured)
+    ).all()
+
+
+def test_the_drawdown_table_keeps_the_requested_number_of_drawdowns():
+    table = risk_model.get_drawdown_table(drawdown_returns(), top=1)
+
+    assert table.index.get_level_values("Rank").unique().tolist() == [1]
+    assert table.index.get_level_values("Ticker").tolist() == ["A", "B"]
+
+
+def test_a_ticker_without_returns_has_no_drawdowns():
+    returns = drawdown_returns().assign(C=np.nan)
+
+    assert risk_model.get_drawdown_series(returns)["C"].isna().all()
+    assert "C" not in risk_model.get_drawdown_table(returns).index.get_level_values(0)

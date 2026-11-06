@@ -48,6 +48,7 @@ MACROHISTORY = "Macrohistory"
 DE_NEDERLANDSCHE_BANK = "DeNederlandscheBank"
 EUROPEAN_SYSTEMIC_RISK_BOARD = "ESRB"
 DAMODARAN = "Damodaran"
+FINRA = "FINRA"
 
 # The market risk premium is published per country, so it is one cache entry. The name
 # marks the premiums as decimals, so an entry holding percentages under another name is
@@ -292,6 +293,9 @@ POLICIES: dict[str, CachePolicy] = {
     # The industry datasets are updated every January.
     f"{DAMODARAN}.industry_statistics": CachePolicy(ttl_seconds=30 * DAY),
     f"{FEDERAL_RESERVE_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
+    # A published day of short sale volume does not change, but FINRA publishes the file of
+    # a day in the evening, so once a day has passed the last week is asked for again.
+    f"{FINRA}.short_volume": CachePolicy(ttl_seconds=DAY, revision_days=7),
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),

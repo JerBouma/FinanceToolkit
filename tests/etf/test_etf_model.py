@@ -82,6 +82,26 @@ def test_a_fund_without_weights_has_no_concentration_or_overlap():
     assert overlap["NEW"].isna().all() and overlap.loc["NEW"].isna().all()
 
 
+def test_active_share_is_half_the_absolute_weight_difference():
+    active_share = etf_model.get_active_share(
+        {
+            "X": pd.Series({"A": 0.5, "B": 0.5}),
+            "Y": pd.Series({"A": 0.2, "C": 0.8}),
+            "Z": pd.Series({"D": 0.3}),
+            "W": pd.Series(dtype=float),
+        }
+    )
+
+    # |0.5 - 0.2| + |0.5 - 0| + |0 - 0.8| = 1.6, halved.
+    assert active_share.loc["X", "Y"] == pytest.approx(0.8)
+    assert active_share.loc["Y", "X"] == pytest.approx(0.8)
+    assert active_share.loc["X", "X"] == pytest.approx(0)
+    # Without a holding in common the funds differ fully; an incomplete list is scaled.
+    assert active_share.loc["X", "Z"] == pytest.approx(1)
+    # A fund without holdings data has no active share.
+    assert np.isnan(active_share.loc["X", "W"])
+
+
 def test_contribution_rolls_the_weights_back_to_the_start():
     # At the start the fund held X and Y at 0.3 each and 0.4 cash. X then doubled and Y
     # stayed flat, so the fund grew by 30%: X weighs 0.6 / 1.3 and Y 0.3 / 1.3 on the date

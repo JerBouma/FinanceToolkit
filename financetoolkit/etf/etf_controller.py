@@ -870,6 +870,65 @@ class ETF:
         return self._round(etf_model.get_overlap(self._weights()), rounding)
 
     @handle_errors
+    def get_active_share(self, rounding: int | None = None) -> pd.DataFrame:
+        """
+        Measure how much each fund's holdings differ from every other fund's: half the sum, over
+        all holdings of either fund, of the absolute difference between their weights. Against
+        an index fund it shows how far a fund departs from the index: an active share of 0.2
+        means 20% of the portfolio differs and 80% is the index. Cremers and Petajisto (2009)
+        call funds below about 0.6 closet indexers.
+
+        Also known as: active share, portfolio difference, deviation from the benchmark.
+
+        The formula is as follows:
+
+        - Active Share = 1/2 * SUM(|Weight Fund i - Weight Other Fund i|)
+
+        For more information, see the following paper:
+
+        - Cremers, K.J.M., & Petajisto, A. (2009). "How Active Is Your Fund Manager? A New
+          Measure That Predicts Performance." Review of Financial Studies, 22(9), 3329-3365.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit.
+
+        Returns:
+            pd.DataFrame: The active share of every fund (rows) against every other fund
+            (columns), as decimals.
+
+        Notes:
+        - The holdings are today's holdings from Financial Modeling Prep. Each fund's weights
+          are scaled to add up to one, so a fund whose list stops at its largest holdings is
+          compared by the proportions of those holdings.
+        - Holdings are matched by symbol, or by ISIN or name when they have none. A company
+          that two funds hold through different share classes or listings counts as two
+          holdings.
+        - For two funds that each hold all of their weight, the active share equals one minus
+          their overlap (see get_overlap).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["VOO", "QQQ", "SCHD", "MGK"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.etf.get_active_share()
+        ```
+
+        Which returns:
+
+        |      |    VOO |    QQQ |   SCHD |    MGK |
+        |:-----|-------:|-------:|-------:|-------:|
+        | VOO  | 0      | 0.4508 | 0.9238 | 0.4784 |
+        | QQQ  | 0.4508 | 0      | 0.945  | 0.3822 |
+        | SCHD | 0.9238 | 0.945  | 0      | 1      |
+        | MGK  | 0.4784 | 0.3822 | 1      | 0      |
+        """
+        return self._round(etf_model.get_active_share(self._weights()), rounding)
+
+    @handle_errors
     def get_look_through_valuation(
         self, holdings: int = 25, rounding: int | None = None
     ) -> pd.DataFrame:

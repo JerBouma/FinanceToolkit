@@ -3894,6 +3894,276 @@ class Performance:
             apply_slice=bool(rolling) or within_period,
         )
 
+    def _get_morningstar_risk_adjusted_return(
+        self,
+        gamma: float,
+        period: str,
+        within_period: bool,
+        rolling: int | None,
+    ) -> pd.DataFrame | pd.Series:
+        """
+        The Morningstar Risk-Adjusted Return of every ticker from its monthly geometric excess
+        returns, per period, over the whole range or over a rolling window of months.
+        """
+        if period not in ("yearly", "quarterly"):
+            raise ValueError(
+                "The Morningstar Risk-Adjusted Return groups monthly returns, so the period "
+                "must be yearly or quarterly."
+            )
+
+        excess_returns = performance_model.get_geometric_excess_return(
+            self._get_column("monthly", "Return", within_period=False),
+            self._risk_free_rate_data["monthly"],
+        )
+
+        if rolling:
+            return performance_model.get_rolling_morningstar_risk_adjusted_return(
+                excess_returns, rolling, gamma
+            )
+
+        if within_period:
+            groups = excess_returns.index.asfreq("Y" if period == "yearly" else "Q")
+            return excess_returns.groupby(groups).apply(
+                lambda group: performance_model.get_morningstar_risk_adjusted_return(
+                    group, gamma
+                )
+            )
+
+        return performance_model.get_morningstar_risk_adjusted_return(
+            excess_returns, gamma
+        )
+
+    @handle_errors
+    def get_morningstar_risk_adjusted_return(
+        self,
+        gamma: float = 2.0,
+        period: str = "yearly",
+        within_period: bool = True,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate the Morningstar Risk-Adjusted Return (MRAR), the measure Morningstar ranks funds
+        on within their category for its star rating.
+
+        MRAR is the annualized certainty equivalent of the monthly geometric excess returns for
+        an investor with risk aversion gamma: the return such an investor would accept with
+        certainty instead of the uncertain returns. It equals the annualized geometric mean
+        excess return when every month returns the same and falls further below it the more
+        the returns vary, penalizing downside variation most. Morningstar uses a gamma of 2 and
+        rates funds on 36, 60 and 120 months (three, five and ten years), which rolling=36,
+        rolling=60 and rolling=120 give, weighting them 20%, 30% and 50% in the overall rating.
+        For US dollar funds its risk-free rate is the three-month Treasury bill (auction
+        average), which risk_free_rate="13w" follows. Morningstar also adjusts for
+        tax-advantaged dividends where appropriate, which these total returns don't.
+
+        The formula is as follows:
+
+        - Geometric Excess Return = (1 + Monthly Total Return) / (1 + Monthly Risk Free Rate) - 1
+        - MRAR(gamma) = [1/T * SUM((1 + Geometric Excess Return t)^-gamma)]^(-12/gamma) - 1
+
+        with T the number of months. With a gamma of 0 it is the annualized geometric mean of
+        the excess returns, Morningstar Return.
+
+        For more information, see the following:
+
+        - Morningstar (2023). "The Morningstar Rating for Funds." Morningstar Methodology, April 2023.
+          https://s25.q4cdn.com/634000362/files/doc_downloads/1/1157231.pdf
+        - Morningstar (2009). "MRAR Illustrated."
+          https://www.morningstar.com/content/dam/marketing/apac/au/pdfs/Legal/MRARIllustrated_Factsheet.pdf
+
+        Args:
+            gamma (float, optional): The risk aversion, 0 or higher. Defaults to 2.0, which
+                Morningstar uses for its ratings.
+            period (str, optional): The period to group the monthly returns by, "yearly" or
+                "quarterly". Defaults to "yearly".
+            within_period (bool, optional): Whether to calculate the MRAR of the months within
+                each period or of all months in the range. Defaults to True.
+            rolling (int, optional): The number of months in a rolling window, e.g. 36 for the
+                three year MRAR at every month end. Overrides period and within_period.
+                Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set
+                otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to
+                False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The MRAR per period (rows) and ticker (columns) as decimals, or one
+            value per ticker over the whole range with within_period=False.
+
+        Notes:
+        - The returns are monthly total returns from the adjusted close, so dividends count.
+          Morningstar also deducts sales loads, which an exchange-traded fund does not have.
+        - Morningstar uses a three-month Treasury bill as the risk-free rate for US funds,
+          which `Toolkit(..., risk_free_rate="13w")` matches; the Toolkit's default is the
+          10-year Treasury yield, each converted to a monthly return.
+        - A month's risk-free return is the month's average yield, compounded to a month.
+        - A period is annualized from the months it has: the first month of the range has no
+          return (it has no earlier close), so the first year counts eleven months, which is
+          why 2021 in the example is above the funds' calendar-year return.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VOO", "QQQ", "SCHD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+            risk_free_rate="13w",
+        )
+
+        toolkit.performance.get_morningstar_risk_adjusted_return()
+        ```
+
+        Which returns:
+
+        | Date   |     VOO |     QQQ |    SCHD |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.3178 |  0.278  |  0.32   |
+        | 2022   | -0.2349 | -0.3837 | -0.0851 |
+        | 2023   |  0.1797 |  0.4298 | -0.0232 |
+        | 2024   |  0.1795 |  0.1826 |  0.0484 |
+        | 2025   |  0.1199 |  0.135  | -0.0101 |
+        """
+        mrar = self._get_morningstar_risk_adjusted_return(
+            gamma, period, within_period, rolling
+        )
+
+        return finalize_dataset(
+            dataset=mrar,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Over the whole range the measure is one number per ticker, with no dates to slice.
+            apply_slice=bool(rolling) or within_period,
+        )
+
+    @handle_errors
+    def get_morningstar_risk(
+        self,
+        gamma: float = 2.0,
+        period: str = "yearly",
+        within_period: bool = True,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+    ):
+        """
+        Calculate Morningstar Risk, the return a risk-averse investor would give up to remove
+        the variation of the returns: Morningstar Return (the annualized geometric mean excess
+        return) minus the Morningstar Risk-Adjusted Return. It is zero for returns that never
+        vary and grows with their variation, most with variation on the downside. Morningstar
+        rates funds Low to High on it within their category, over 36, 60 and 120 months
+        (rolling=36, 60 and 120).
+
+        The formula is as follows:
+
+        - Morningstar Risk = MRAR(0) - MRAR(gamma)
+
+        with MRAR the Morningstar Risk-Adjusted Return (see get_morningstar_risk_adjusted_return)
+        and MRAR(0) Morningstar Return.
+
+        For more information, see the following:
+
+        - Morningstar (2023). "The Morningstar Rating for Funds." Morningstar Methodology, April 2023.
+          https://s25.q4cdn.com/634000362/files/doc_downloads/1/1157231.pdf
+
+        Args:
+            gamma (float, optional): The risk aversion, 0 or higher. Defaults to 2.0, which
+                Morningstar uses for its ratings.
+            period (str, optional): The period to group the monthly returns by, "yearly" or
+                "quarterly". Defaults to "yearly".
+            within_period (bool, optional): Whether to calculate the risk of the months within
+                each period or of all months in the range. Defaults to True.
+            rolling (int, optional): The number of months in a rolling window, e.g. 36 for the
+                three year figure at every month end. Overrides period and within_period.
+                Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set
+                otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to
+                False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Morningstar Risk per period (rows) and ticker (columns) as decimals,
+            or one value per ticker over the whole range with within_period=False.
+
+        Notes:
+        - The returns and the risk-free rate are those of get_morningstar_risk_adjusted_return;
+          `Toolkit(..., risk_free_rate="13w")` matches Morningstar's three-month Treasury bill.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VOO", "QQQ", "SCHD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+            risk_free_rate="13w",
+        )
+
+        toolkit.performance.get_morningstar_risk()
+        ```
+
+        Which returns:
+
+        | Date   |    VOO |    QQQ |   SCHD |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 0.0148 | 0.0205 | 0.0214 |
+        | 2022   | 0.0375 | 0.0449 | 0.0339 |
+        | 2023   | 0.023  | 0.0445 | 0.0183 |
+        | 2024   | 0.0121 | 0.0145 | 0.016  |
+        | 2025   | 0.0125 | 0.0257 | 0.0126 |
+        """
+        morningstar_return = self._get_morningstar_risk_adjusted_return(
+            0, period, within_period, rolling
+        )
+        mrar = self._get_morningstar_risk_adjusted_return(
+            gamma, period, within_period, rolling
+        )
+
+        return finalize_dataset(
+            dataset=morningstar_return - mrar,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            apply_slice=bool(rolling) or within_period,
+        )
+
     @handle_portfolio
     @handle_errors
     def get_gain_to_pain_ratio(

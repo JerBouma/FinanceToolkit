@@ -193,6 +193,7 @@ def finalize_dataset(
     standardize: bool = False,
     axis: str = "columns",
     row_slice: bool = False,
+    compound: bool = False,
     apply_slice: bool = True,
     rolling: int | None = None,
     trailing: int | None = None,
@@ -222,6 +223,8 @@ def finalize_dataset(
             the actual values. Defaults to False.
         lag (int | list[int], optional): The number of periods to lag the growth data.
             Defaults to 1.
+        compound (bool, optional): Whether the growth is the compound annual growth rate
+            over the lag instead of the total change. Defaults to False.
         rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None, which falls back to default_rounding.
         standardize (bool, optional): Whether to standardize (Z-Score) the result. When
@@ -265,7 +268,7 @@ def finalize_dataset(
 
     if growth:
         dataset = calculate_growth(
-            dataset=dataset, lag=lag, rounding=rounding, axis=axis
+            dataset=dataset, lag=lag, rounding=rounding, axis=axis, compound=compound
         )
 
     unsliced = dataset
@@ -559,6 +562,7 @@ def calculate_growth(
     lag: int | list[int] = 1,
     rounding: int | None = 4,
     axis: str = "columns",
+    compound: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates growth for a given dataset. Defaults to a lag of 1 (i.e. 1 year or 1 quarter).
@@ -577,6 +581,16 @@ def calculate_growth(
     is missing, and comparing with an older value would report a change over several periods
     as the change of one.
 
+    With compound=True the growth is the compound annual growth rate (CAGR) over the lag:
+
+        CAGR = (Value / Previous Value) ^ (1 / Years) - 1
+
+    where Years is the lag divided by the number of periods in a year (1 for yearly, 4 for
+    quarterly data), so a lag of 5 on yearly data or 20 on quarterly data gives the five-year
+    CAGR. A compound rate is only defined when both values are positive: from or to a loss
+    (or zero) it is reported as missing, as there is no constant yearly rate that turns one
+    into the other.
+
     Args:
         dataset (pd.Series | pd.DataFrame): the dataset to calculate the growth values for.
         lag (int | list[int]): the lag or lags to use for the calculation. A list returns one row or
@@ -585,13 +599,16 @@ def calculate_growth(
             Defaults to 4.
         axis (str): the axis to compute the change over. Use "columns" when each row is an entity
             observed over time and "rows" when each column is. Defaults to "columns".
+        compound (bool): whether to return the compound annual growth rate over the lag instead of
+            the total change. Defaults to False.
 
     Returns:
         pd.Series | pd.DataFrame: the period over period growth of the dataset.
 
     Raises:
         ValueError: When a lag is not a positive whole number: a lag of 0 compares a period
-            with itself and a negative lag with a later period.
+            with itself and a negative lag with a later period. Also when compound=True and the
+            periods are not yearly, quarterly, monthly or weekly.
     """
     lags = lag if isinstance(lag, list) else [lag]
     if not lags or any(
@@ -601,6 +618,15 @@ def calculate_growth(
         raise ValueError(
             f"The lag must be a positive whole number or a list of them, not {lag}."
         )
+
+    years_per_period = 1 / periods_per_year(dataset, axis) if compound else 1.0
+
+    def change(data, periods, axis):
+        if compound:
+            return calculate_compound_growth(
+                data, periods, axis, years=periods * years_per_period
+            )
+        return calculate_change_over_absolute_base(data, periods, axis)
 
     if isinstance(lag, list):
         # Each row (axis="columns") or column (axis="rows") is an entity, and every lag
@@ -617,7 +643,7 @@ def calculate_growth(
 
         growth_per_lag = pd.concat(
             {
-                lag_key: calculate_change_over_absolute_base(dataset, lag_value, axis)
+                lag_key: change(dataset, lag_value, axis)
                 for lag_key, lag_value in lag_dict.items()
             },
             axis=0 if axis == "columns" else 1,
@@ -646,7 +672,7 @@ def calculate_growth(
         )
 
     return apply_rounding(
-        drop_infinite_growth(calculate_change_over_absolute_base(dataset, lag, axis)),
+        drop_infinite_growth(change(dataset, lag, axis)),
         rounding,
     )
 
@@ -675,6 +701,73 @@ def calculate_change_over_absolute_base(
         previous = dataset.shift(periods)
 
     return (dataset - previous) / previous.abs()
+
+
+def periods_per_year(dataset: pd.Series | pd.DataFrame, axis: str = "columns") -> int:
+    """
+    Returns the number of periods in a year of a dataset's periods, from the frequency of
+    its PeriodIndex.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset whose periods to count.
+        axis (str): the axis that holds the periods ("columns" or "rows"); a Series always
+            has them in its index. Defaults to "columns".
+
+    Returns:
+        int: 1 for yearly, 4 for quarterly, 12 for monthly and 52 for weekly periods.
+
+    Raises:
+        ValueError: When the periods are not yearly, quarterly, monthly or weekly.
+    """
+    dates = (
+        dataset.columns
+        if isinstance(dataset, pd.DataFrame) and axis == "columns"
+        else dataset.index
+    )
+    frequency = getattr(dates, "freqstr", None)
+
+    # The frequency's first letter names its unit, e.g. "Y-DEC", "A", "Q-DEC", "QE", "M" or "W-SUN".
+    for prefix, count in (("Y", 1), ("A", 1), ("Q", 4), ("M", 12), ("W", 52)):
+        if frequency and frequency.upper().startswith(prefix):
+            return count
+
+    raise ValueError(
+        "The compound annual growth rate needs yearly, quarterly, monthly or weekly periods, "
+        f"not {frequency or 'periods without a frequency'}."
+    )
+
+
+def calculate_compound_growth(
+    dataset: pd.Series | pd.DataFrame,
+    periods: int = 1,
+    axis: str = "columns",
+    years: float = 1.0,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the compound annual growth rate over a number of periods,
+    (Value / Previous Value) ^ (1 / Years) - 1, where both values are positive.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset to calculate the growth for.
+        periods (int): the number of periods to compare against. Defaults to 1.
+        axis (str): the axis to compute the growth over for a DataFrame ("columns" or
+            "rows"). Defaults to "columns".
+        years (float): the number of years the periods span. Defaults to 1.0.
+
+    Returns:
+        pd.Series | pd.DataFrame: the compound annual growth rate, missing where either value
+            is zero or negative.
+    """
+    if isinstance(dataset, pd.DataFrame):
+        axis_number = 0 if axis in ("rows", "index") else 1
+        previous = dataset.shift(periods, axis=axis_number)
+    else:
+        previous = dataset.shift(periods)
+
+    # A compound rate between a loss and a profit (or from zero) does not exist.
+    ratio = (dataset / previous).where((dataset > 0) & (previous > 0))
+
+    return ratio ** (1 / years) - 1
 
 
 def drop_infinite_growth(growth: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:

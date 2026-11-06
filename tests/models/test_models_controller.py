@@ -1465,3 +1465,8 @@ def test_historical_intrinsic_valuation_ends_at_the_single_valuation(models_modu
         last_period = historical.loc[ticker].dropna().index[-1]
         if last_period == historical.columns[-1]:
             assert historical.loc[ticker, last_period] == single.loc[ticker].iloc[0]
+
+
+def test_get_return_decomposition(recorder, models_module):
+    recorder.capture(models_module.get_return_decomposition())
+    recorder.capture(models_module.get_return_decomposition(logarithmic=True))

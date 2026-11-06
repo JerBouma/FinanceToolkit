@@ -5186,6 +5186,157 @@ class Models:
         return pvgo.loc[self._start_date :]
 
     @handle_errors
+    def get_return_decomposition(
+        self,
+        lag: int | None = None,
+        diluted: bool = True,
+        trailing: int | None = None,
+        logarithmic: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Return Decomposition splits the share price return over a window into the growth of
+        the Earnings per Share and the change of the Price-to-Earnings ratio (the multiple), and
+        adds the dividends paid over the window for the total return. It shows whether a share
+        rose because the company earned more or because investors paid more for the same
+        earnings, e.g. a share whose earnings beat expectations but whose price fell because its
+        multiple contracted.
+
+        Since the share price equals the Earnings per Share times the P/E ratio, the price
+        relative over a window is the product of the earnings relative and the multiple
+        relative, which is the earnings and valuation split of equity returns used in return
+        attribution (e.g. Bogle, "Common Sense on Mutual Funds", and the building blocks of
+        Grinold and Kroner, "The Equity Risk Premium", 2002).
+
+        The formula is as follows:
+
+            - 1 + Price Return = (1 + EPS Growth) * (1 + P/E Change)
+            - EPS Growth = EPS_t / EPS_t-lag - 1
+            - P/E Change = (Price_t / EPS_t) / (Price_t-lag / EPS_t-lag) - 1
+            - Dividend Return = Dividends per Share paid over the window / Price_t-lag
+            - Total Return = Price Return + Dividend Return
+
+        With logarithmic=True the parts are log returns that add up:
+        ln(1 + Total Return) = ln(1 + EPS Growth) + ln(1 + P/E Change) + ln(1 + Dividends / Price_t).
+
+        Also known as: earnings and multiple decomposition, P/E expansion and contraction,
+        multiple expansion, return attribution by earnings growth and re-rating.
+
+        Args:
+            lag (int | None, optional): The number of periods the window spans. Defaults to None,
+                which compares each period with the same period a year earlier: 1 with annual
+                data and 4 with quarterly data.
+            diluted (bool, optional): Whether to use the diluted Earnings per Share. Defaults to
+                True.
+            trailing (int | None, optional): The number of periods to sum the Net Income over
+                (and average the shares over). Defaults to None, which uses the trailing twelve
+                months (4 quarters) with quarterly data and single years with annual data, as
+                the P/E ratio does.
+            logarithmic (bool, optional): Whether to return log returns, which add up, instead of
+                simple returns, which multiply. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: The Price Return, EPS Growth, P/E Change, Dividend Return and Total
+            Return per ticker (rows) and period (columns), as decimals.
+
+        Notes:
+        - The share price is the traded Close (adjusted for splits, not for dividends) at the end
+        of each period, the same price the P/E ratio uses, and the Earnings per Share is the Net
+        Income over the weighted average (diluted) shares, as in `ratios.get_earnings_per_share`.
+        - The P/E ratio has no meaning when the earnings are zero or negative, so the EPS Growth
+        and P/E Change are NaN when the Earnings per Share at either end of the window is not
+        positive. The Price Return, Dividend Return and Total Return remain; the growth of the
+        earnings themselves is `ratios.get_earnings_per_share(growth=True)`.
+        - Dividends are added as paid, without reinvestment, so the Total Return differs slightly
+        from a return on the dividend-adjusted price.
+        - Each period is a calendar period that holds the fiscal period reported in it (see the
+        Toolkit), so the price at the end of the calendar period is compared with the earnings
+        reported for it, as in the P/E ratio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AMD", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_return_decomposition()
+        ```
+
+        Which returns:
+
+        |                             |    2022 |    2023 |    2024 |    2025 |
+        |:----------------------------|--------:|--------:|--------:|--------:|
+        | ('AMD', 'Price Return')     | -0.5499 |  1.2759 | -0.1806 |  0.773  |
+        | ('AMD', 'EPS Growth')       | -0.6734 | -0.3745 |  0.9075 |  1.6433 |
+        | ('AMD', 'P/E Change')       |  0.3782 |  2.6387 | -0.5704 | -0.3292 |
+        | ('AMD', 'Dividend Return')  |  0      |  0      |  0      |  0      |
+        | ('AMD', 'Total Return')     | -0.5499 |  1.2759 | -0.1806 |  0.773  |
+        | ('MSFT', 'Price Return')    | -0.2869 |  0.568  |  0.1209 |  0.1474 |
+        | ('MSFT', 'EPS Growth')      |  0.1979 |  0.0039 |  0.2185 |  0.156  |
+        | ('MSFT', 'P/E Change')      | -0.4047 |  0.562  | -0.0801 | -0.0075 |
+        | ('MSFT', 'Dividend Return') |  0.0076 |  0.0116 |  0.0082 |  0.0081 |
+        | ('MSFT', 'Total Return')    | -0.2794 |  0.5796 |  0.1291 |  0.1554 |
+        """
+        trailing = (
+            trailing if trailing is not None else (4 if self._quarterly else None)
+        )
+        lag = lag if lag is not None else (4 if self._quarterly else 1)
+
+        if not isinstance(lag, int) or lag < 1:
+            raise ValueError(
+                "The lag is the number of periods of the window: 1 or more."
+            )
+
+        shares = self._rows(
+            self._income_statement,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+        )
+        net_income = self._rows(self._income_statement, "Net Income")
+
+        if trailing:
+            net_income = net_income.T.rolling(trailing).sum().T
+            shares = shares.T.rolling(trailing).mean().T
+
+        earnings_per_share = valuation_model.get_earnings_per_share(
+            net_income=net_income,
+            preferred_dividends=0,
+            average_outstanding_shares=shares,
+        )
+
+        columns = self._income_statement.columns
+        dividends = self._historical_data["quarterly" if self._quarterly else "yearly"][
+            "Dividends"
+        ].reindex(columns=self._tickers)
+        dividends.index = dividends.index.asfreq(columns.freq)
+        dividends = dividends.reindex(columns).T
+
+        decomposition = growth_model.get_return_decomposition(
+            close_prices=self._period_prices(),
+            earnings_per_share=earnings_per_share,
+            dividends_per_share=dividends,
+            lag=lag,
+            logarithmic=logarithmic,
+        )
+
+        decomposition = apply_rounding(
+            decomposition.loc[:, self._start_date : self._end_date],
+            rounding if rounding is not None else self._rounding,
+        ).dropna(how="all", axis=1)
+
+        if len(self._tickers) == 1:
+            return decomposition.droplevel(level=0)
+
+        return decomposition
+
+    @handle_errors
     def get_sustainable_growth_rate(
         self,
         rounding: int | None = None,

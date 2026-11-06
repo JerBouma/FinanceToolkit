@@ -1202,20 +1202,27 @@ INDEX_CONSTITUENTS = {
 
 
 def get_index_constituents(
-    api_key: str, index: str = "S&P 500", user_subscription: str = "Free"
+    api_key: str,
+    index: str = "S&P 500",
+    date: str | None = None,
+    user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the current constituents of an index. Past figures computed from today's members
-    leave out the companies removed from the index since (survivorship bias).
+    Get the constituents of an index, today's or those on a past date. Past figures computed
+    from today's members leave out the companies removed from the index since (survivorship
+    bias); the members on a date are today's members with every later change undone.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to "S&P 500".
+        date (str | None, optional): The date (YYYY-MM-DD) to list the members of. Defaults to
+            None, today's members.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: The constituents, indexed by symbol, with their name, sector, sub-sector,
-        headquarters, the date they were added, CIK and founding year.
+        headquarters, the date they were added, CIK and founding year. On a past date, also
+        the date each member left the index (empty while it is still a member).
     """
     if index not in INDEX_CONSTITUENTS:
         raise ValueError(
@@ -1246,8 +1253,165 @@ def get_index_constituents(
             "founded": "Founded",
         }
     )
+    constituents = constituents.set_index("Symbol").sort_index()
 
-    return constituents.set_index("Symbol").sort_index()
+    if date is None:
+        return constituents
+
+    changes = get_index_constituent_changes(
+        api_key=api_key, index=index, user_subscription=user_subscription
+    )
+
+    return reconstruct_index_constituents(constituents, changes, date)
+
+
+def reconstruct_index_constituents(
+    constituents: pd.DataFrame, changes: pd.DataFrame, date: str
+) -> pd.DataFrame:
+    """
+    Reconstruct the members of an index on a date by undoing, from the newest back, every
+    change after it: a company added since is taken out and a company removed since is put
+    back. A change takes effect on its own date, so the members on a change's date include
+    it.
+
+    Args:
+        constituents (pd.DataFrame): Today's constituents, indexed by symbol.
+        changes (pd.DataFrame): The dated changes from get_index_constituent_changes.
+        date (str): The date (YYYY-MM-DD) to list the members of.
+
+    Returns:
+        pd.DataFrame: The members on the date, indexed by symbol, with today's details for the
+        companies still in the index, the name at removal for the others, the date each was
+        last added up to the date and the date it left the index after it.
+
+    Raises:
+        ValueError: When the date is before the first change the source records, so the
+            members cannot be reconstructed.
+    """
+    if changes.empty:
+        raise ValueError("No changes to the index are available to reconstruct it.")
+
+    first_change = changes.index.min()
+    if date < first_change:
+        raise ValueError(
+            f"The changes to this index are recorded from {first_change} onwards, so its "
+            f"members on {date} cannot be reconstructed."
+        )
+
+    members = set(constituents.index)
+    names: dict[str, str] = {}
+    removal_dates: dict[str, str] = {}
+
+    later_changes = changes.loc[changes.index > date].sort_index(
+        ascending=False, kind="stable"
+    )
+    for change_date, added, removed, removed_name in zip(
+        later_changes.index,
+        later_changes["Added Ticker"],
+        later_changes["Removed Ticker"],
+        later_changes["Removed Security"],
+        strict=True,
+    ):
+        if isinstance(added, str):
+            members.discard(added)
+        if isinstance(removed, str):
+            members.add(removed)
+            names[removed] = removed_name
+            # Walking back in time, the last date written is the first removal after the date.
+            removal_dates[removed] = change_date
+
+    reconstructed = constituents.reindex(sorted(members))
+    reconstructed["Name"] = reconstructed["Name"].fillna(pd.Series(names, dtype=object))
+
+    # The date each member was last added up to the date, from the changes where they record
+    # it (a company that left and returned has more than one), otherwise today's list.
+    earlier_additions = changes.loc[changes.index <= date, "Added Ticker"].dropna()
+    last_added = (
+        pd.Series(earlier_additions.index, index=earlier_additions.to_numpy())
+        .groupby(level=0)
+        .max()
+    )
+    reconstructed["Date Added"] = last_added.reindex(reconstructed.index).fillna(
+        reconstructed["Date Added"]
+    )
+    reconstructed["Date Removed"] = pd.Series(removal_dates, dtype=object).reindex(
+        reconstructed.index
+    )
+
+    return reconstructed
+
+
+def get_index_constituent_changes(
+    api_key: str,
+    index: str = "S&P 500",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> pd.DataFrame:
+    """
+    Get the dated changes to the members of an index: the companies added and removed, the
+    kind of change and its reason.
+
+    Args:
+        api_key (str): the API key from Financial Modeling Prep.
+        index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to "S&P 500".
+        start_date (str | None, optional): The first date (YYYY-MM-DD) to include. Defaults to
+            None, the first change recorded.
+        end_date (str | None, optional): The last date (YYYY-MM-DD) to include. Defaults to
+            None, the latest change.
+        user_subscription (str, optional): The user subscription level. Defaults to "Free".
+
+    Returns:
+        pd.DataFrame: The changes in date order, indexed by date, with the added and removed
+        ticker and company, the kind of change and its reason.
+    """
+    if index not in INDEX_CONSTITUENTS:
+        raise ValueError(
+            f"The constituent changes of {index!r} are not available. Choose from "
+            f"{', '.join(INDEX_CONSTITUENTS)}."
+        )
+
+    # The endpoint answers with the full history whatever the range; from and to are passed
+    # all the same, as other endpoints fall back to old data without them.
+    url = (
+        f"https://financialmodelingprep.com/stable/historical-{INDEX_CONSTITUENTS[index]}"
+        f"?from={start_date or '1900-01-01'}&to={end_date or pd.Timestamp.today().strftime('%Y-%m-%d')}"
+        f"&apikey={api_key}"
+    )
+    changes = get_cached_financial_data(url=url, user_subscription=user_subscription)
+
+    if changes.empty:
+        return changes
+
+    columns = {
+        "addedTicker": "Added Ticker",
+        "addedSecurity": "Added Security",
+        "removedTicker": "Removed Ticker",
+        "removedSecurity": "Removed Security",
+        "changeType": "Change Type",
+        "reason": "Reason",
+    }
+    changes = (
+        changes.rename(columns={"date": "Date", **columns})
+        .reindex(columns=["Date", *columns.values()])
+        .set_index("Date")
+    )
+    # Some names carry stray spaces, and an empty ticker means there is no added or removed side.
+    changes = (
+        changes.replace(r"^\s+|\s+$", "", regex=True)
+        .replace("", np.nan)
+        .sort_index(kind="stable")
+    )
+    # Dates written as YYYY-MM-DD, like the dates members were added in the list of today's.
+    changes.index = pd.to_datetime(changes.index).strftime("%Y-%m-%d")
+    changes["Change Type"] = changes["Change Type"].str.capitalize()
+
+    if start_date:
+        changes = changes.loc[changes.index >= start_date]
+    if end_date:
+        changes = changes.loc[changes.index <= end_date]
+
+    return changes
 
 
 def get_index_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:

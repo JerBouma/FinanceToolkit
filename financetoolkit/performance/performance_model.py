@@ -3430,3 +3430,134 @@ def get_rolling_style_analysis(
     )
 
     return result
+
+
+def get_geometric_excess_return(
+    returns: pd.Series | pd.DataFrame, risk_free_rate: pd.Series
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the geometric excess return, the return relative to the risk-free return of the
+    same period instead of minus it, as Morningstar defines it for its risk-adjusted return.
+
+    The formula is as follows:
+
+        - Geometric Excess Return = (1 + Return) / (1 + Risk Free Rate) - 1
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns per period, as decimals.
+        risk_free_rate (pd.Series): The risk-free return of the same periods, as decimals
+            per period (not annualized).
+
+    Returns:
+        pd.Series | pd.DataFrame: The geometric excess returns, with the index of the returns.
+    """
+    return (1 + returns).div(1 + risk_free_rate, axis=0) - 1
+
+
+def _morningstar_risk_adjusted_return(
+    excess_returns: np.ndarray, gamma: float, periods_per_year: int
+) -> float:
+    """
+    The Morningstar Risk-Adjusted Return of one series of geometric excess returns, without
+    its missing values; NaN without any return.
+    """
+    excess_returns = excess_returns[~np.isnan(excess_returns)]
+    if excess_returns.size == 0:
+        return np.nan
+
+    if gamma == 0:
+        # The limit of the formula for a gamma of zero: the annualized geometric mean.
+        return float(
+            np.prod(1 + excess_returns) ** (periods_per_year / excess_returns.size) - 1
+        )
+
+    return float(
+        np.mean((1 + excess_returns) ** -gamma) ** (-periods_per_year / gamma) - 1
+    )
+
+
+def get_morningstar_risk_adjusted_return(
+    excess_returns: pd.Series | pd.DataFrame,
+    gamma: float = 2.0,
+    periods_per_year: int = 12,
+) -> float | pd.Series:
+    """
+    Calculate the Morningstar Risk-Adjusted Return (MRAR), the annualized certainty
+    equivalent of a series of geometric excess returns for an investor with risk aversion
+    gamma. It is the return a risk-averse investor would accept with certainty instead of the
+    uncertain returns: the more the returns vary, the further it falls below their geometric
+    mean. Morningstar ranks funds within their category on it, with a gamma of 2, for its
+    star rating.
+
+    The formula is as follows:
+
+        - MRAR(gamma) = [1/T * SUM((1 + Geometric Excess Return t)^-gamma)]^(-12/gamma) - 1
+        - MRAR(0) = [PRODUCT(1 + Geometric Excess Return t)]^(12/T) - 1
+
+    with T the number of months. MRAR(0), the annualized geometric mean excess return, is
+    Morningstar Return.
+
+    For more information, see the following:
+
+    - Morningstar (2023). "The Morningstar Rating for Funds." Morningstar Methodology, April 2023.
+      https://s25.q4cdn.com/634000362/files/doc_downloads/1/1157231.pdf
+    - Morningstar (2009). "MRAR Illustrated."
+      https://www.morningstar.com/content/dam/marketing/apac/au/pdfs/Legal/MRARIllustrated_Factsheet.pdf
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The geometric excess returns per month (see
+            get_geometric_excess_return), as decimals.
+        gamma (float, optional): The risk aversion. Defaults to 2.0, Morningstar's choice.
+        periods_per_year (int, optional): The number of periods in a year, to annualize.
+            Defaults to 12 for monthly returns.
+
+    Returns:
+        float | pd.Series: The MRAR as a decimal, a float for a Series and one value per
+        column for a DataFrame. Each column uses its own returns, without its missing values.
+    """
+    if gamma < 0:
+        raise ValueError("The risk aversion gamma cannot be negative.")
+
+    if isinstance(excess_returns, pd.Series):
+        return _morningstar_risk_adjusted_return(
+            excess_returns.to_numpy(dtype=float), gamma, periods_per_year
+        )
+
+    return excess_returns.apply(
+        lambda column: _morningstar_risk_adjusted_return(
+            column.to_numpy(dtype=float), gamma, periods_per_year
+        )
+    )
+
+
+def get_rolling_morningstar_risk_adjusted_return(
+    excess_returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    gamma: float = 2.0,
+    periods_per_year: int = 12,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Morningstar Risk-Adjusted Return over a rolling window, e.g. 36, 60 or 120
+    months for the three, five and ten year figures Morningstar rates funds on.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The geometric excess returns per month, as
+            decimals.
+        window_size (int): The number of periods in each window.
+        gamma (float, optional): The risk aversion. Defaults to 2.0.
+        periods_per_year (int, optional): The number of periods in a year. Defaults to 12.
+
+    Returns:
+        pd.Series | pd.DataFrame: The MRAR at the end of every window, NaN until a window is
+        full of returns.
+    """
+    if gamma < 0:
+        raise ValueError("The risk aversion gamma cannot be negative.")
+
+    # A window with a missing return is not a full window of the fund's history.
+    return excess_returns.rolling(window_size, min_periods=window_size).apply(
+        lambda window: _morningstar_risk_adjusted_return(
+            window, gamma, periods_per_year
+        ),
+        raw=True,
+    )

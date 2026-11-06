@@ -387,3 +387,23 @@ def test_get_mergers_acquisitions_latest(recorder):
         result = discovery.get_mergers_acquisitions_latest(limit=5)
 
         recorder.capture(len(result))
+
+
+def test_get_industry_statistics_reads_the_dataset_of_the_region():
+    with patch(
+        "financetoolkit.models.damodaran_model.get_industry_statistics"
+    ) as mock_statistics:
+        mock_statistics.return_value = pd.DataFrame(
+            {"Number of Firms": [66], "Cost of Capital": [0.0983]},
+            index=pd.Index(["Semiconductor"], name="Industry"),
+        )
+
+        discovery = discovery_controller.Discovery(api_key="test_key")
+        result = discovery.get_industry_statistics(
+            dataset="cost_of_capital", region="Europe"
+        )
+
+        mock_statistics.assert_called_once_with(
+            dataset="cost_of_capital", region="Europe"
+        )
+        assert result.loc["Semiconductor", "Cost of Capital"] == 0.0983

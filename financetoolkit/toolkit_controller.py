@@ -73,7 +73,6 @@ if TYPE_CHECKING:
     from financetoolkit.econometrics.econometrics_controller import Econometrics
     from financetoolkit.economics.economics_controller import Economics
     from financetoolkit.etf.etf_controller import ETF
-    from financetoolkit.factors.factors_controller import Factors
     from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
@@ -831,6 +830,9 @@ class Toolkit:
             end_date=self._end_date,
             peer_function=compare_with_peers,
             country_risk_premiums=self._get_country_risk_premiums,
+            period_end_dates=lambda: self._get_daily_start_dates(
+                self._get_module_statement("balance_sheet_statement", "Models")
+            ),
         )
 
     @property
@@ -1129,62 +1131,6 @@ class Toolkit:
             risk._portfolio_weights = self._portfolio_weights
 
         return risk
-
-    @property
-    def factors(self) -> "Factors":
-        """
-        Gives access to the Factors module. The Factors module tests a metric as a
-        cross-sectional signal across the tickers of the Toolkit: whether the tickers that
-        score high on it go on to return more than those that score low. Any ratio or
-        technical indicator, named by its method, or a DataFrame of your own can serve as the
-        factor. It gives the information coefficient, the forward return per factor quantile
-        and the top minus bottom spread, the turnover of the quantiles and the rank
-        autocorrelation of the factor. Use ten or more tickers, and preferably twenty or more.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ", "XOM", "PG", "KO", "WMT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2016-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.factors.get_information_coefficient("get_price_to_earnings_ratio", summary=True)
-        ```
-
-        Which returns:
-        |                       |   1 Month |   3 Months |   12 Months |
-        |:----------------------|----------:|-----------:|------------:|
-        | Mean IC               |    0.0109 |     0.0129 |      0.0107 |
-        | IC Standard Deviation |    0.3955 |     0.3738 |      0.3327 |
-        | IC Information Ratio  |    0.0276 |     0.0345 |      0.0322 |
-        | t-Statistic           |    0.2903 |     0.3602 |      0.3215 |
-        | p-Value               |    0.7721 |     0.7194 |      0.7485 |
-        | Positive Share        |    0.5315 |     0.5138 |      0.53   |
-        | Observations          |  111      |   109      |    100      |
-        """
-        # Imported when first used, so the Finance Toolkit loads only what is needed.
-        from financetoolkit.factors.factors_controller import Factors  # noqa: PLC0415
-
-        return Factors(
-            tickers=lambda: self._get_historical_tickers(include_benchmark=False),
-            historical_data=LazyDict(self._get_module_historical_data),
-            factor_modules=lambda: {
-                "ratios": self.ratios,
-                "technicals": self.technicals,
-            },
-            period_end_dates=lambda: self._get_daily_start_dates(
-                self._get_module_statement("balance_sheet_statement", "Ratios")
-            ),
-            quarterly=self._quarterly,
-            rounding=self._rounding,
-            start_date=self._start_date,
-            end_date=self._end_date,
-        )
 
     @property
     def econometrics(self) -> "Econometrics":

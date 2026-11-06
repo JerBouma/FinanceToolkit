@@ -22,7 +22,7 @@ from financetoolkit.ratios import (
     valuation_model,
 )
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import factor_model, logger_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -32,6 +32,104 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 logger = logger_model.get_logger()
+
+# The ratios per collection that get_factor_analysis compares across tickers. Per-share figures
+# and currency amounts (earnings per share, enterprise value, working capital) are left out:
+# their level reflects the share count or the size of the company, not its valuation or
+# quality, so they only rank tickers meaningfully as a size factor, which the market cap is.
+FACTOR_COLLECTIONS = {
+    "valuation": [
+        "get_price_to_earnings_ratio",
+        "get_price_to_earnings_growth_ratio",
+        "get_price_to_book_ratio",
+        "get_price_to_sales_ratio",
+        "get_price_to_cash_flow_ratio",
+        "get_price_to_free_cash_flow_ratio",
+        "get_earnings_yield",
+        "get_dividend_yield",
+        "get_dividend_payout_ratio",
+        "get_buyback_yield",
+        "get_shareholder_yield",
+        "get_ev_to_sales_ratio",
+        "get_ev_to_ebit",
+        "get_ev_to_ebitda_ratio",
+        "get_ev_to_operating_cashflow_ratio",
+        "get_ev_to_free_cash_flow_ratio",
+        "get_market_cap",
+    ],
+    "profitability": [
+        "get_gross_margin",
+        "get_operating_margin",
+        "get_net_profit_margin",
+        "get_ebitda_margin",
+        "get_free_cash_flow_margin",
+        "get_interest_coverage_ratio",
+        "get_income_before_tax_profit_margin",
+        "get_effective_tax_rate",
+        "get_return_on_assets",
+        "get_cash_return_on_assets",
+        "get_return_on_equity",
+        "get_return_on_invested_capital",
+        "get_return_on_capital_employed",
+        "get_return_on_tangible_assets",
+        "get_income_quality_ratio",
+        "get_net_income_per_ebt",
+        "get_free_cash_flow_operating_cash_flow_ratio",
+        "get_EBT_to_EBIT",
+        "get_EBIT_to_revenue",
+        "get_cash_tax_rate",
+        "get_tax_rate_divergence",
+    ],
+    "solvency": [
+        "get_debt_to_assets_ratio",
+        "get_asset_coverage_ratio",
+        "get_debt_to_equity_ratio",
+        "get_debt_service_coverage_ratio",
+        "get_equity_multiplier",
+        "get_free_cash_flow_yield",
+        "get_net_debt_to_ebitda_ratio",
+        "get_gross_debt_to_ebitda_ratio",
+        "get_cash_flow_coverage_ratio",
+        "get_capex_coverage_ratio",
+        "get_capex_dividend_coverage_ratio",
+        "get_debt_to_capital_ratio",
+        "get_preferred_dividend_coverage_ratio",
+        "get_interest_paid_to_expense_ratio",
+    ],
+    "liquidity": [
+        "get_current_ratio",
+        "get_quick_ratio",
+        "get_cash_ratio",
+        "get_operating_cash_flow_ratio",
+        "get_operating_cash_flow_sales_ratio",
+        "get_short_term_coverage_ratio",
+        "get_defensive_interval_ratio",
+    ],
+    "efficiency": [
+        "get_days_of_inventory_outstanding",
+        "get_days_of_sales_outstanding",
+        "get_operating_cycle",
+        "get_days_of_accounts_payable_outstanding",
+        "get_cash_conversion_cycle",
+        "get_cash_conversion_efficiency",
+        "get_receivables_turnover",
+        "get_inventory_turnover_ratio",
+        "get_accounts_payables_turnover_ratio",
+        "get_sga_to_revenue_ratio",
+        "get_fixed_asset_turnover",
+        "get_asset_turnover_ratio",
+        "get_operating_ratio",
+        "get_research_and_development_ratio",
+        "get_selling_and_marketing_ratio",
+        "get_general_and_administrative_ratio",
+        "get_stock_based_compensation_ratio",
+        "get_deferred_revenue_ratio",
+        "get_working_capital_turnover_ratio",
+    ],
+}
+FACTOR_COLLECTIONS["all"] = [
+    metric for metrics in FACTOR_COLLECTIONS.values() for metric in metrics
+]
 
 # Division by zero is normal in these calculations, not a bug.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -12141,4 +12239,142 @@ class Ratios:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
+        )
+
+    @handle_errors
+    def get_factor_analysis(
+        self,
+        metrics: str | list[str] = "valuation",
+        period: str = "monthly",
+        horizons: list[int] | int | None = None,
+        quantiles: int = 5,
+        periods_apart: int = 1,
+        detail: str | None = None,
+        column: str | None = None,
+        rounding: int | None = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """
+        Factor analysis (predictive power) of the ratios: whether the tickers that score high
+        on a ratio go on to return more than those that score low. Per period, the information
+        coefficient (IC) is the Spearman rank correlation between the ratio of the tickers at
+        the end of the period and their return over the following horizon: 1 means the ratio
+        ranks the later returns perfectly, -1 in reverse and 0 that it says nothing about them.
+        The IC measures skill in Grinold and Kahn's fundamental law of active management,
+        IR ≈ IC × √breadth: a small but consistent IC across many tickers and periods gives a
+        high information ratio.
+
+        The summary has a row per ratio and horizon with the mean IC, its standard deviation,
+        the IC information ratio (mean divided by standard deviation), the t-statistic of the
+        mean with its p-value, the share of periods with a positive IC, the number of periods,
+        the top minus bottom spread (the mean forward return of the highest quantile minus
+        that of the lowest), the mean turnover of the top and bottom quantiles and the mean
+        rank autocorrelation of the ratio from one period to the next. With detail, it returns
+        one of those parts per period (or per quantile) for a single ratio.
+
+        The ratios are calculated daily from the closing price where they can be (show_daily)
+        and otherwise per statement period. Statement figures apply from the end of each fiscal
+        period, or with point_in_time from the day they were filed, never earlier, so no day
+        uses figures that were not known yet. The returns use the dividend and split adjusted
+        close and start at the close of the period the ratio belongs to. Each ticker keeps its
+        own history: a ticker without a ratio or a return in a period is left out of that
+        period only.
+
+        Args:
+            metrics (str | list[str], optional): A ratio method name, e.g.
+                "get_price_to_earnings_ratio", a list of them, or a collection: "valuation",
+                "profitability", "solvency", "liquidity", "efficiency" or "all". Defaults to
+                "valuation", the price and enterprise value multiples, yields and the market
+                cap. Per-share figures and currency amounts are not in the collections, as
+                their level depends on the share count or company size.
+            period (str, optional): The frequency at which the ratios are evaluated: daily,
+                weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            horizons (list[int] | int | None, optional): The number of periods the forward
+                returns cover. Defaults to None, which uses about a period, a quarter and a
+                year ahead (1, 3 and 12 months for monthly).
+            quantiles (int, optional): The number of quantiles the tickers are sorted into per
+                period. Defaults to 5.
+            periods_apart (int, optional): The number of periods between the dates the
+                quantile turnover and the rank autocorrelation compare. Defaults to 1.
+            detail (str | None, optional): Returns one part of the analysis of a single ratio
+                instead of the summary: "information_coefficient" (per period and horizon),
+                "quantile_returns" (the mean forward return per quantile and horizon),
+                "quantile_turnover" (per period and quantile) or "rank_autocorrelation" (per
+                period). Defaults to None.
+            column (str | None, optional): Not used by the ratios, which have one value per
+                ticker; it exists for the modules whose metrics have several outputs. Defaults
+                to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            **kwargs: Parameters passed to the ratios that take them, e.g. trailing=4 or
+                diluted=False.
+
+        Returns:
+            pd.DataFrame: The summary per ratio and horizon, or with detail that part of the
+            analysis of the ratio.
+
+        Notes:
+            - The IC is reported as measured: a low P/E that goes on to outperform gives a
+              negative IC for the P/E. Read the sign as the direction of the relationship.
+            - The cross-section is the tickers of the Toolkit, so use at least ten and
+              preferably twenty or more for a meaningful rank correlation and quantiles.
+            - A horizon longer than one period makes consecutive returns overlap, which
+              inflates the t-statistic; judge those horizons by their mean IC and IC
+              information ratio.
+            - A ratio that returns no data (e.g. one missing a statement line item) is left
+              out of a collection with a warning.
+            - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
+              Management.
+
+        Also known as: predictive power, information coefficient, factor testing, alpha signal
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ",
+             "XOM", "PG", "KO", "WMT", "V", "UNH", "HD", "CVX"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_factor_analysis(
+            ["get_price_to_earnings_ratio", "get_price_to_book_ratio", "get_return_on_equity"],
+            horizons=12,
+        )
+        ```
+
+        Which returns:
+        |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
+        |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
+        | ('get_price_to_earnings_ratio', '12 Months') |    0.0265 |                  0.3242 |                 0.0817 |        0.8174 |    0.4157 |             0.55 |            100 |             0.0757 |              0.0931 |                 0.9504 |
+        | ('get_price_to_book_ratio', '12 Months')     |    0.1122 |                  0.2952 |                 0.38   |        3.8004 |    0.0002 |             0.68 |            100 |             0.1655 |              0.0506 |                 0.9776 |
+        | ('get_return_on_equity', '12 Months')        |    0.0423 |                  0.3551 |                 0.1191 |        1.1915 |    0.2363 |             0.5  |            100 |             0.065  |              0.0517 |                 0.9671 |
+        """
+        factors = factor_model.get_daily_factors(
+            self,
+            factor_model.select_metrics(metrics, FACTOR_COLLECTIONS),
+            kwargs,
+            {"show_daily": True},
+            self._tickers,
+            column,
+            self._period_end_dates,
+        )
+        result = factor_model.get_factor_analysis(
+            factors,
+            self._daily_historical_data["Adj Close"],
+            period,
+            horizons,
+            quantiles,
+            periods_apart,
+            detail,
+            self._start_date,
+            self._end_date,
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
         )

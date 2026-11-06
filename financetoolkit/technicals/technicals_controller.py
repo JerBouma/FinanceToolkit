@@ -15,6 +15,7 @@ from financetoolkit.technicals import (
     seasonality_model,
     volatility_model,
 )
+from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
@@ -26,6 +27,96 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
+
+# The indicators per collection that get_factor_analysis compares across tickers. Left out are
+# the market-wide breadth measures (one value for all tickers), the volume-scaled ones (on
+# balance volume, accumulation/distribution, Chaikin oscillator, force index, ease of
+# movement), whose level reflects how many shares trade, and the pivot points and Fibonacci
+# levels, which only restate the latest high, low and close.
+FACTOR_COLLECTIONS = {
+    "momentum": [
+        "get_money_flow_index",
+        "get_williams_percent_r",
+        "get_aroon_indicator",
+        "get_commodity_channel_index",
+        "get_relative_vigor_index",
+        "get_ultimate_oscillator",
+        "get_percentage_price_oscillator",
+        "get_detrended_price_oscillator",
+        "get_average_directional_index",
+        "get_chande_momentum_oscillator",
+        "get_ichimoku_cloud",
+        "get_stochastic_oscillator",
+        "get_moving_average_convergence_divergence",
+        "get_relative_strength_index",
+        "get_balance_of_power",
+        "get_awesome_oscillator",
+        "get_vortex_indicator",
+        "get_elder_ray_index",
+        "get_rate_of_change",
+        "get_choppiness_index",
+        "get_know_sure_thing",
+    ],
+    "overlap": [
+        "get_moving_average",
+        "get_exponential_moving_average",
+        "get_double_exponential_moving_average",
+        "get_trix",
+        "get_triangular_moving_average",
+        "get_weighted_moving_average",
+        "get_hull_moving_average",
+        "get_kaufman_adaptive_moving_average",
+        "get_volume_weighted_average_price",
+        "get_parabolic_sar",
+    ],
+    "volatility": [
+        "get_bollinger_bands",
+        "get_true_range",
+        "get_average_true_range",
+        "get_supertrend",
+        "get_keltner_channels",
+        "get_donchian_channels",
+    ],
+    "breadth": [
+        "get_chaikin_money_flow",
+        "get_negative_volume_index",
+        "get_positive_volume_index",
+    ],
+}
+FACTOR_COLLECTIONS["all"] = [
+    metric for metrics in FACTOR_COLLECTIONS.values() for metric in metrics
+]
+
+# Indicators in price units, which get_factor_analysis makes comparable across tickers: a
+# price line (an average, band or stop) as the distance of the close from it, close / line - 1,
+# and a price difference (a range or an oscillator of two averages) as a share of the close.
+FACTOR_PRICE_LINES = (
+    "get_moving_average",
+    "get_exponential_moving_average",
+    "get_double_exponential_moving_average",
+    "get_triangular_moving_average",
+    "get_weighted_moving_average",
+    "get_hull_moving_average",
+    "get_kaufman_adaptive_moving_average",
+    "get_volume_weighted_average_price",
+    "get_parabolic_sar",
+    "get_ichimoku_cloud",
+    "get_bollinger_bands",
+    "get_supertrend",
+    "get_keltner_channels",
+    "get_donchian_channels",
+    "get_pivot_points",
+    "get_fibonacci_retracement_levels",
+)
+FACTOR_PRICE_DIFFERENCES = (
+    "get_true_range",
+    "get_average_true_range",
+    "get_moving_average_convergence_divergence",
+    "get_awesome_oscillator",
+    "get_elder_ray_index",
+    "get_detrended_price_oscillator",
+    "get_force_index",
+)
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # pylint: disable=too-many-boolean-expressions
@@ -8266,4 +8357,156 @@ class Technicals:
 
         return apply_rounding(
             relative_strength, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_factor_analysis(
+        self,
+        metrics: str | list[str] = "momentum",
+        period: str = "monthly",
+        horizons: list[int] | int | None = None,
+        quantiles: int = 5,
+        periods_apart: int = 1,
+        detail: str | None = None,
+        column: str | None = None,
+        rounding: int | None = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """
+        Factor analysis (predictive power) of the technical indicators: whether the tickers
+        that score high on an indicator go on to return more than those that score low. Per
+        period, the information coefficient (IC) is the Spearman rank correlation between the
+        indicator of the tickers at the end of the period and their return over the following
+        horizon: 1 means the indicator ranks the later returns perfectly, -1 in reverse and 0
+        that it says nothing about them. The IC measures skill in Grinold and Kahn's
+        fundamental law of active management, IR ≈ IC × √breadth: a small but consistent IC
+        across many tickers and periods gives a high information ratio.
+
+        The summary has a row per indicator and horizon with the mean IC, its standard
+        deviation, the IC information ratio (mean divided by standard deviation), the
+        t-statistic of the mean with its p-value, the share of periods with a positive IC, the
+        number of periods, the top minus bottom spread (the mean forward return of the highest
+        quantile minus that of the lowest), the mean turnover of the top and bottom quantiles
+        and the mean rank autocorrelation of the indicator from one period to the next. With
+        detail, it returns one of those parts per period (or per quantile) for a single
+        indicator.
+
+        The indicators are calculated daily and the value on the last trading day of each
+        period is compared with the returns from that day's close onwards, using the dividend
+        and split adjusted close. An indicator in price units does not compare across tickers
+        with different share prices, so a price line (a moving average, band, channel, stop or
+        cloud line) is used as the distance of the close from it, close / line - 1, and a price
+        difference (the true range, ATR, MACD, awesome oscillator, elder ray and detrended
+        price oscillator) as a share of the close. Each ticker keeps its own history: a ticker
+        without a value or a return in a period is left out of that period only.
+
+        Args:
+            metrics (str | list[str], optional): An indicator method name, e.g.
+                "get_relative_strength_index", a list of them, or a collection: "momentum",
+                "overlap", "volatility", "breadth" or "all". Defaults to "momentum", the
+                oscillators and momentum indicators. The collections leave out the market-wide
+                breadth measures, the volume-scaled indicators and the pivot points and
+                Fibonacci levels.
+            period (str, optional): The frequency at which the indicators are evaluated:
+                daily, weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            horizons (list[int] | int | None, optional): The number of periods the forward
+                returns cover. Defaults to None, which uses about a period, a quarter and a
+                year ahead (1, 3 and 12 months for monthly).
+            quantiles (int, optional): The number of quantiles the tickers are sorted into per
+                period. Defaults to 5.
+            periods_apart (int, optional): The number of periods between the dates the
+                quantile turnover and the rank autocorrelation compare. Defaults to 1.
+            detail (str | None, optional): Returns one part of the analysis of a single
+                indicator instead of the summary: "information_coefficient" (per period and
+                horizon), "quantile_returns" (the mean forward return per quantile and
+                horizon), "quantile_turnover" (per period and quantile) or
+                "rank_autocorrelation" (per period). Defaults to None.
+            column (str | None, optional): The output to use of an indicator with several,
+                e.g. "Signal Line" of the MACD or "Upper Band" of the Bollinger Bands.
+                Defaults to None, which uses the first output in alphabetical order other
+                than a price, e.g. "MACD Line" or "Lower Band".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            **kwargs: Parameters passed to the indicators that take them, e.g. window=14 or
+                close_column="Close".
+
+        Returns:
+            pd.DataFrame: The summary per indicator and horizon, or with detail that part of
+            the analysis of the indicator.
+
+        Notes:
+            - The IC is reported as measured: an overbought RSI that goes on to underperform
+              gives a negative IC. Read the sign as the direction of the relationship.
+            - The cross-section is the tickers of the Toolkit, so use at least ten and
+              preferably twenty or more for a meaningful rank correlation and quantiles.
+            - A horizon longer than one period makes consecutive returns overlap, which
+              inflates the t-statistic; judge those horizons by their mean IC and IC
+              information ratio.
+            - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
+              Management.
+
+        Also known as: predictive power, information coefficient, factor testing, alpha signal
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ",
+             "XOM", "PG", "KO", "WMT", "V", "UNH", "HD", "CVX"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        # The 200-day rate of change and the distance of the close from its 200-day average.
+        toolkit.technicals.get_factor_analysis(
+            ["get_rate_of_change", "get_moving_average"], horizons=[1, 12], window=200
+        )
+        ```
+
+        Which returns:
+        |                                     |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
+        |:------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
+        | ('get_rate_of_change', '1 Month')   |    0.053  |                  0.3536 |                 0.1499 |        1.5718 |    0.1189 |           0.6    |            110 |             0.0097 |              0.2652 |                 0.8603 |
+        | ('get_rate_of_change', '12 Months') |    0.1272 |                  0.4137 |                 0.3074 |        3.0587 |    0.0029 |           0.6364 |             99 |             0.0614 |              0.2652 |                 0.8603 |
+        | ('get_moving_average', '1 Month')   |    0.0432 |                  0.3494 |                 0.1236 |        1.2968 |    0.1974 |           0.5818 |            110 |             0.0128 |              0.3068 |                 0.8064 |
+        | ('get_moving_average', '12 Months') |    0.1073 |                  0.3924 |                 0.2735 |        2.7212 |    0.0077 |           0.596  |             99 |             0.0574 |              0.3068 |                 0.8064 |
+        """
+        tickers = self._tickers
+        factors = factor_model.get_daily_factors(
+            self,
+            factor_model.select_metrics(metrics, FACTOR_COLLECTIONS),
+            kwargs,
+            {},
+            tickers,
+            column,
+        )
+
+        close = factor_model.to_daily_factor(
+            self._historical_data["daily"][kwargs.get("close_column", "Adj Close")],
+            tickers,
+        )
+        for name, factor in factors.items():
+            # The Supertrend's direction is +1 or -1 and stays as it is.
+            if name in FACTOR_PRICE_LINES and column != "Trend Direction":
+                factors[name] = close.reindex_like(factor) / factor - 1
+            elif name in FACTOR_PRICE_DIFFERENCES:
+                factors[name] = factor / close.reindex_like(factor)
+
+        result = factor_model.get_factor_analysis(
+            factors,
+            self._historical_data["daily"]["Adj Close"],
+            period,
+            horizons,
+            quantiles,
+            periods_apart,
+            detail,
+            self._start_date,
+            self._end_date,
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
         )

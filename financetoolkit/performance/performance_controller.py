@@ -3955,7 +3955,10 @@ class Performance:
         excess return when every month returns the same and falls further below it the more
         the returns vary, penalizing downside variation most. Morningstar uses a gamma of 2 and
         rates funds on 36, 60 and 120 months (three, five and ten years), which rolling=36,
-        rolling=60 and rolling=120 give.
+        rolling=60 and rolling=120 give, weighting them 20%, 30% and 50% in the overall rating.
+        For US dollar funds its risk-free rate is the three-month Treasury bill (auction
+        average), which risk_free_rate="13w" follows. Morningstar also adjusts for
+        tax-advantaged dividends where appropriate, which these total returns don't.
 
         The formula is as follows:
 
@@ -3967,7 +3970,8 @@ class Performance:
 
         For more information, see the following:
 
-        - Morningstar (2007). "The Morningstar Rating Methodology."
+        - Morningstar (2023). "The Morningstar Rating for Funds." Morningstar Methodology, April 2023.
+          https://s25.q4cdn.com/634000362/files/doc_downloads/1/1157231.pdf
         - Morningstar (2009). "MRAR Illustrated."
           https://www.morningstar.com/content/dam/marketing/apac/au/pdfs/Legal/MRARIllustrated_Factsheet.pdf
 
@@ -4081,7 +4085,8 @@ class Performance:
 
         For more information, see the following:
 
-        - Morningstar (2007). "The Morningstar Rating Methodology."
+        - Morningstar (2023). "The Morningstar Rating for Funds." Morningstar Methodology, April 2023.
+          https://s25.q4cdn.com/634000362/files/doc_downloads/1/1157231.pdf
 
         Args:
             gamma (float, optional): The risk aversion, 0 or higher. Defaults to 2.0, which

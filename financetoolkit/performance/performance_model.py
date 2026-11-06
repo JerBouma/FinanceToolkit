@@ -3287,7 +3287,8 @@ def get_morningstar_risk_adjusted_return(
 
     For more information, see the following:
 
-    - Morningstar (2007). "The Morningstar Rating Methodology."
+    - Morningstar (2023). "The Morningstar Rating for Funds." Morningstar Methodology, April 2023.
+      https://s25.q4cdn.com/634000362/files/doc_downloads/1/1157231.pdf
     - Morningstar (2009). "MRAR Illustrated."
       https://www.morningstar.com/content/dam/marketing/apac/au/pdfs/Legal/MRARIllustrated_Factsheet.pdf
 

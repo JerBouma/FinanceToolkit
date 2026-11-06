@@ -7,6 +7,12 @@ import pandas as pd
 from scipy import stats
 
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
+
+# The fewest tickers a period needs for its values to be ranked against each other.
+MINIMUM_TICKERS = 3
 
 # The labels of the forward return horizons, per period frequency.
 HORIZON_UNITS = {
@@ -560,10 +566,11 @@ def analyse_factor(
     horizons: list[int],
     quantiles: int,
     periods_apart: int,
-) -> dict[str, pd.DataFrame | pd.Series]:
+) -> dict[str, pd.DataFrame | pd.Series] | None:
     """
     Analyses one factor: the information coefficient per period and horizon, the mean
     forward return per quantile, the quantile turnover and the rank autocorrelation.
+    A factor that no period has for at least three tickers can't be ranked and gives None.
 
     Args:
         factor (pd.DataFrame): The daily factor with the dates as index and tickers as columns.
@@ -575,7 +582,8 @@ def analyse_factor(
             autocorrelation compare.
 
     Returns:
-        dict[str, pd.DataFrame | pd.Series]: The four parts, keyed as in DETAILS.
+        dict[str, pd.DataFrame | pd.Series] | None: The four parts, keyed as in DETAILS, or
+            None when too few tickers have a value.
     """
     prices = prices.loc[:, prices.columns.isin(factor.columns)]
     sampled_prices = sample_by_period(prices, period)
@@ -585,11 +593,8 @@ def analyse_factor(
     # Periods without any factor (before the start date) only serve as prices.
     sampled_factor = sampled_factor.loc[sampled_factor.notna().any(axis=1)]
 
-    if sampled_factor.notna().sum(axis=1).max() < 3:  # noqa: PLR2004
-        raise ValueError(
-            "A factor needs at least three tickers with a value to compare; twenty or more "
-            "give meaningful quantiles."
-        )
+    if sampled_factor.notna().sum(axis=1).max() < MINIMUM_TICKERS:
+        return None
 
     information_coefficient = pd.DataFrame(
         {
@@ -690,6 +695,25 @@ def get_factor_analysis(
         )
         for name, factor in factors.items()
     }
+
+    # A metric most tickers lack (e.g. inventory turnover for companies without inventory)
+    # can't be ranked; it is left out of a collection rather than failing the others.
+    thin = [name for name, analysis in analyses.items() if analysis is None]
+    analyses = {name: analysis for name, analysis in analyses.items() if analysis is not None}
+
+    if not analyses:
+        raise ValueError(
+            f"{', '.join(thin)} {'has' if len(thin) == 1 else 'have'} a value for fewer than "
+            f"{MINIMUM_TICKERS} tickers in every period, so there is nothing to rank; twenty "
+            "or more tickers give meaningful quantiles."
+        )
+    if thin:
+        logger.warning(
+            "%s left out of the factor analysis: fewer than %s tickers have a value in any "
+            "period.",
+            ", ".join(thin),
+            MINIMUM_TICKERS,
+        )
 
     if detail is not None:
         result = next(iter(analyses.values()))[detail]

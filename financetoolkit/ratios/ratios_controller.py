@@ -12725,8 +12725,9 @@ class Ratios:
             - A horizon longer than one period makes consecutive returns overlap, which
               inflates the t-statistic; judge those horizons by their mean IC and IC
               information ratio.
-            - A ratio that returns no data (e.g. one missing a statement line item) is left
-              out of a collection with a warning.
+            - A ratio that returns no data (e.g. one missing a statement line item), or that
+              fewer than three tickers have in every period (e.g. the preferred dividend
+              coverage ratio), is left out of a collection with a warning.
             - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
               Management.
 

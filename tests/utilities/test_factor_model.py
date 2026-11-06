@@ -158,3 +158,27 @@ def test_the_summary_follows_the_ic_per_date():
 def test_horizon_labels():
     assert factor_model.get_horizon_label(1, "monthly") == "1 Month"
     assert factor_model.get_horizon_label(21, "daily") == "21 Days"
+
+
+def test_a_metric_too_few_tickers_have_is_left_out_of_a_collection(caplog):
+    prices = random_prices()
+    momentum = prices.pct_change(21)
+    # Only two tickers have a value, as with preferred dividends most companies don't pay.
+    thin = momentum.copy()
+    thin.iloc[:, 2:] = np.nan
+
+    result = factor_model.get_factor_analysis(
+        {"get_momentum": momentum, "get_thin_ratio": thin}, prices
+    )
+
+    assert result.index.get_level_values("Metric").unique().tolist() == ["get_momentum"]
+    assert "get_thin_ratio left out of the factor analysis" in caplog.text
+
+
+def test_only_metrics_too_few_tickers_have_give_an_error_naming_them():
+    prices = random_prices()
+    thin = prices.pct_change(21)
+    thin.iloc[:, 2:] = np.nan
+
+    with pytest.raises(ValueError, match="get_thin_ratio has a value for fewer than 3"):
+        factor_model.get_factor_analysis({"get_thin_ratio": thin}, prices)

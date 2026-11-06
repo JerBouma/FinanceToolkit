@@ -30,12 +30,22 @@ def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "mcp", mcp_module)
     monkeypatch.setitem(sys.modules, "mcp.server", server_module)
     monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", fastmcp_module)
+    # The modules are imported again against the stub. Through monkeypatch, the real modules
+    # (and the package attributes pointing at them) come back afterwards; otherwise later tests in
+    # the same worker would import a server built on the stub, which has no call_tool.
+    import financetoolkit.mcp_server as mcp_server_package  # noqa: PLC0415
+
     for mod in [
         "financetoolkit.mcp_server.mcp_controller",
         "financetoolkit.mcp_server.registry_controller",
         "financetoolkit.mcp_server.tools_model",
     ]:
-        sys.modules.pop(mod, None)
+        name = mod.rsplit(".", 1)[1]
+        if hasattr(mcp_server_package, name):
+            monkeypatch.setattr(
+                mcp_server_package, name, getattr(mcp_server_package, name)
+            )
+        monkeypatch.delitem(sys.modules, mod, raising=False)
 
     mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
 

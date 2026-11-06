@@ -12808,9 +12808,9 @@ class Ratios:
         Which returns:
         |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_price_to_earnings_ratio', '12 Months') |    0.0265 |                  0.3242 |                 0.0817 |        0.8174 |    0.4157 |             0.55 |            100 |             0.0757 |              0.0931 |                 0.9504 |
-        | ('get_price_to_book_ratio', '12 Months')     |    0.1122 |                  0.2952 |                 0.38   |        3.8004 |    0.0002 |             0.68 |            100 |             0.1655 |              0.0506 |                 0.9776 |
-        | ('get_return_on_equity', '12 Months')        |    0.0423 |                  0.3551 |                 0.1191 |        1.1915 |    0.2363 |             0.5  |            100 |             0.065  |              0.0517 |                 0.9671 |
+        | ('get_price_to_earnings_ratio', '12 Months') |    0.0495 |                  0.2919 |                 0.1697 |        1.7636 |    0.0807 |           0.5648 |            108 |             0.0842 |              0.0896 |                 0.95   |
+        | ('get_price_to_book_ratio', '12 Months')     |    0.1156 |                  0.2966 |                 0.3898 |        4.0507 |    0.0001 |           0.6759 |            108 |             0.1691 |              0.0501 |                 0.978  |
+        | ('get_return_on_equity', '12 Months')        |    0.0425 |                  0.355  |                 0.1198 |        1.1976 |    0.2339 |           0.5    |            100 |             0.065  |              0.0517 |                 0.9671 |
         """
         factors = factor_model.get_daily_factors(
             self,

@@ -55,6 +55,7 @@ from financetoolkit.mcp_server.formatting_model import (
     is_time_index_of,
     is_yearly,
     select_rows,
+    signal_rows,
 )
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
@@ -187,6 +188,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "forward_periods": (
         "get_indicator_summary only: the trading periods after each crossing to measure the "
         "return over, e.g. [5, 21, 63] for about a week, a month and a quarter."
+    ),
+    "signals_only": (
+        "get_signals and get_candlestick_patterns only: set to true to return only the periods "
+        "with a signal or pattern, e.g. with limit=-5 for the last five."
     ),
     "show_crossings": (
         "get_indicator_summary only: set to true for a row per crossing (date, value, its "
@@ -2093,6 +2098,26 @@ class ToolRegistry:
                             f"No data is available for {', '.join(absent)}, so "
                             f"{'it is' if len(absent) == 1 else 'they are'} left out. "
                             "Please check the symbol (e.g. ASML.AS for Amsterdam)."
+                        )
+                # A signal is rare, so with signals_only each ticker keeps only its own
+                # periods with a signal, and a limit gives every ticker its last ones.
+                if (
+                    method_kwargs.get("signals_only") is True
+                    and isinstance(result, pd.DataFrame)
+                    and result.columns.nlevels == 2  # noqa: PLR2004
+                ):
+                    answered = list(dict.fromkeys(result.columns.get_level_values(1)))
+                    result = signal_rows(result)
+                    quiet = [
+                        ticker
+                        for ticker in answered
+                        if ticker not in set(result.index.get_level_values(0))
+                    ]
+                    if quiet:
+                        notes.append(
+                            f"{', '.join(quiet)} {'has' if len(quiet) == 1 else 'have'} no "
+                            "signal in the period, so "
+                            f"{'it is' if len(quiet) == 1 else 'they are'} left out."
                         )
                 # After the check for missing tickers, which needs every row of a column.
                 if row_selection and isinstance(result, dict):

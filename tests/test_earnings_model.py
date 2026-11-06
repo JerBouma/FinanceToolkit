@@ -128,6 +128,9 @@ def test_the_toolkit_scales_the_sue_with_reports_before_its_start_date(monkeypat
         convert_currency=False,
         sleep_timer=False,
     )
+    # A risk-free rate up front keeps the test offline: otherwise the Toolkit downloads the
+    # Treasury rates, whose parallel yfinance requests can lock yfinance's SQLite cache.
+    toolkit._daily_risk_free_rate = pd.Series(0.0, index=historical.index)
 
     result = toolkit.get_earnings_surprise(sue_window=4)
 

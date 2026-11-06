@@ -1817,12 +1817,15 @@ class Risk:
 
         The formula is as follows:
 
-        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1 (see `get_drawdown_series`)
-        - A drawdown runs from the Peak (the last period at a high) to the Recovery (the first period back at
-          that high), with its Trough at the lowest Drawdown in between
-        - To Trough = t(trough) - t(peak), To Recovery = t(recovery) - t(trough) and
-          Length = t(recovery) - t(peak), in periods
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - To Trough = t(trough) - t(peak)
+        - To Recovery = t(recovery) - t(trough)
+        - Length = t(recovery) - t(peak)
         - Recovery Needed = -Drawdown / (1 + Drawdown)
+
+        The Drawdown is the drawdown series of `get_drawdown_series`. A drawdown runs from the Peak (the last
+        period at a high) to the Recovery (the first period back at that high), with its Trough at the lowest
+        Drawdown in between; To Trough, To Recovery and Length count periods.
 
         The dates follow pyfolio's drawdown table (peak, valley and recovery dates). QuantStats and ffn
         instead start a drawdown at the first period below the peak and count calendar days. The deepest
@@ -6130,12 +6133,14 @@ class Risk:
 
         The formula is as follows:
 
-        - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1)), with ddof=1
-        - VaR Multiple(t) = Return(t) / |VaR(t)|, with VaR(t) the historic VaR: the alpha quantile of
-          Return(t - window), ..., Return(t - 1), interpolated linearly as in `get_value_at_risk`
-        - Percentile(t) = share of the returns before t with |Return(s)| < |Return(t)|
-        - Largest Since(t) = the last date s < t with Return(s) <= Return(t) for a fall, or
-          Return(s) >= Return(t) for a rise
+        - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1))
+        - VaR Multiple(t) = Return(t) / |Quantile(Return(t - window), ..., Return(t - 1); alpha)|
+        - Percentile(t) = Count(|Return(s)| < |Return(t)|, s < t) / Count(s < t)
+        - Largest Since(t) = max(s < t : Return(s) <= Return(t)) if Return(t) < 0
+        - Largest Since(t) = max(s < t : Return(s) >= Return(t)) if Return(t) > 0
+
+        The volatility σ uses ddof=1 and the quantile is the historic Value at Risk, interpolated linearly as
+        in `get_value_at_risk`.
 
         Each measure only uses the returns before the period itself, so a move is never part of
         the volatility or the history it is measured against (no look-ahead). Largest Since
@@ -6509,14 +6514,14 @@ class Risk:
         Which returns:
         |                                         |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:----------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_volatility', '1 Month')           |    0.096  |                  0.3681 |                 0.2607 |        2.8438 |    0.0053 |           0.6218 |            119 |             0.0184 |              0.4702 |                 0.5869 |
-        | ('get_volatility', '12 Months')         |    0.2759 |                  0.3699 |                 0.7458 |        7.7505 |    0      |           0.7685 |            108 |             0.316  |              0.4702 |                 0.5869 |
-        | ('get_maximum_drawdown', '1 Month')     |   -0.0251 |                  0.331  |                -0.0758 |       -0.8268 |    0.41   |           0.4538 |            119 |            -0.0038 |              0.6275 |                 0.2713 |
-        | ('get_maximum_drawdown', '12 Months')   |   -0.1743 |                  0.3545 |                -0.4916 |       -5.1093 |    0      |           0.3241 |            108 |            -0.2068 |              0.6275 |                 0.2713 |
-        | ('get_skewness', '1 Month')             |    0.0136 |                  0.295  |                 0.0462 |        0.5035 |    0.6155 |           0.5378 |            119 |            -0.0005 |              0.7535 |                 0.0582 |
-        | ('get_skewness', '12 Months')           |    0.0106 |                  0.2989 |                 0.0354 |        0.3674 |    0.714  |           0.5185 |            108 |             0.0136 |              0.7535 |                 0.0582 |
-        | ('get_amihud_illiquidity', '1 Month')   |   -0.0285 |                  0.3896 |                -0.0733 |       -0.7992 |    0.4258 |           0.479  |            119 |            -0.0059 |              0.1852 |                 0.9    |
-        | ('get_amihud_illiquidity', '12 Months') |   -0.1154 |                  0.379  |                -0.3045 |       -3.1645 |    0.002  |           0.3611 |            108 |            -0.08   |              0.1852 |                 0.9    |
+        | ('get_volatility', '1 Month')           |    0.0967 |                  0.368  |                 0.2628 |        2.8673 |    0.0049 |           0.6218 |            119 |             0.0184 |              0.4702 |                 0.586  |
+        | ('get_volatility', '12 Months')         |    0.2766 |                  0.3693 |                 0.7489 |        7.7824 |    0      |           0.7685 |            108 |             0.3166 |              0.4702 |                 0.586  |
+        | ('get_maximum_drawdown', '1 Month')     |   -0.0257 |                  0.3311 |                -0.0775 |       -0.8451 |    0.3997 |           0.4538 |            119 |            -0.0038 |              0.6275 |                 0.2711 |
+        | ('get_maximum_drawdown', '12 Months')   |   -0.1745 |                  0.3544 |                -0.4923 |       -5.1158 |    0      |           0.3241 |            108 |            -0.2068 |              0.6275 |                 0.2711 |
+        | ('get_skewness', '1 Month')             |    0.0137 |                  0.2949 |                 0.0464 |        0.5066 |    0.6134 |           0.5378 |            119 |            -0.0005 |              0.7521 |                 0.0583 |
+        | ('get_skewness', '12 Months')           |    0.0107 |                  0.2985 |                 0.0358 |        0.3717 |    0.7109 |           0.5185 |            108 |             0.0142 |              0.7521 |                 0.0583 |
+        | ('get_amihud_illiquidity', '1 Month')   |   -0.0285 |                  0.3897 |                -0.0732 |       -0.7985 |    0.4262 |           0.479  |            119 |            -0.0059 |              0.1852 |                 0.9003 |
+        | ('get_amihud_illiquidity', '12 Months') |   -0.1158 |                  0.3791 |                -0.3054 |       -3.1735 |    0.002  |           0.3611 |            108 |            -0.08   |              0.1852 |                 0.9003 |
         """
         factors = factor_model.get_daily_factors(
             self,

@@ -643,3 +643,18 @@ def test_indicator_summary_needs_a_single_indicator_and_a_line(
         technical_module.get_indicator_summary("momentum")
     with pytest.raises(ValueError, match="below or above"):
         technical_module.get_indicator_summary(forward_periods=[5])
+
+
+def test_signals_only_keeps_the_periods_with_a_signal(technical_module):
+    for method, kwargs in (
+        (technical_module.get_signals, {"short_window": 5, "long_window": 20}),
+        (technical_module.get_candlestick_patterns, {"patterns": "Engulfing"}),
+    ):
+        everything = method(**kwargs)
+        active = method(signals_only=True, **kwargs)
+
+        # Exactly the periods with a non-zero value, and none of the all-zero or empty ones.
+        expected = everything[everything.abs().gt(0).any(axis=1)]
+        pd.testing.assert_frame_equal(active, expected)
+        assert 0 < len(active) < len(everything)
+        assert active.abs().gt(0).any(axis=1).all()

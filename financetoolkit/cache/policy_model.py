@@ -221,6 +221,11 @@ POLICIES: dict[str, CachePolicy] = {
     f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.commercial_property": CachePolicy(
         ttl_seconds=7 * DAY, revision_days=731
     ),
+    # Quarterly credit statistics, published about three months after the quarter and
+    # revised back years when GDP or the credit series are revised.
+    f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.credit": CachePolicy(
+        ttl_seconds=7 * DAY, revision_days=731
+    ),
     f"{BANK_OF_ENGLAND}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
     # A workbook of a closed span of years no longer changes; the one running to the
     # present is republished monthly and the current month daily.

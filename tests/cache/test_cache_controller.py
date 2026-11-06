@@ -3,12 +3,15 @@
 import contextlib
 import sqlite3
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import pytest
 
 from financetoolkit.cache import cache_controller, policy_model, sqlite_model
+
+# Imported before the autouse fixture of conftest.py replaces it for every test.
+from financetoolkit.cache.policy_model import get_last_closed_session
 
 
 @pytest.fixture(name="cache")
@@ -562,3 +565,49 @@ def test_coverage_and_payload_are_read_in_one_transaction(tmp_path, monkeypatch)
 
     queries = [statement.split()[0] for statement in statements]
     assert queries == ["BEGIN", "SELECT", "SELECT", "COMMIT"]
+
+
+@pytest.mark.parametrize(
+    ("moment", "last_closed"),
+    [
+        # 18:00 in Amsterdam, during the New York session.
+        ("2026-11-05T18:00:00+01:00", date(2026, 11, 4)),
+        # 22:50 in Amsterdam, after the New York close.
+        ("2026-11-05T22:50:00+01:00", date(2026, 11, 5)),
+        # Just after midnight in Tokyo, still the evening before in New York.
+        ("2026-11-06T08:00:00+09:00", date(2026, 11, 5)),
+    ],
+)
+def test_a_session_counts_as_closed_from_half_past_four_new_york_time(
+    moment, last_closed
+):
+    assert get_last_closed_session(datetime.fromisoformat(moment)) == last_closed
+
+
+def test_a_bar_of_an_unclosed_session_is_requested_again(cache, monkeypatch):
+    """A price fetched during today's session is a snapshot, not the close."""
+    today = date.today()
+    start = today - timedelta(days=30)
+    monkeypatch.setattr(
+        policy_model, "get_last_closed_session", lambda now=None: today - timedelta(1)
+    )
+
+    cache.store(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entity="AAPL",
+        data=create_frame(start.isoformat(), today.isoformat()),
+        start=start.isoformat(),
+        end=today.isoformat(),
+    )
+
+    plan = cache.plan(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entities=["AAPL"],
+        start=start.isoformat(),
+        end=today.isoformat(),
+    )
+
+    # Only today is asked for again; the closed sessions before it stay cached.
+    assert plan.missing == {"AAPL": [(today, today)]}

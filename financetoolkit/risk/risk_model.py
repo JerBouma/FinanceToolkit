@@ -951,6 +951,115 @@ def get_max_drawdown_recovery_time(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+def get_drawdown_series(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate the drawdown of every period: the decline of the wealth path from its
+    running peak, also known as the underwater curve.
+
+    Each column starts from a wealth of 1 at the row before its first return (the first
+    close a return is measured from) or, when its first return is on the first row, before
+    the data (see `get_wealth_and_peak`). Rows before that start are NaN, so a ticker that
+    listed later keeps its own history; missing returns after it count as 0.
+
+    Args:
+        returns (pd.DataFrame): The returns, one column per asset.
+
+    Returns:
+        pd.DataFrame: The drawdown per period as a negative decimal (0 at a new high), NaN
+            before each column's start.
+    """
+    values = returns.to_numpy(dtype=float)
+    has_return = ~np.isnan(values)
+    # The row before the first return holds the close that return is measured from.
+    start = np.maximum(has_return.argmax(axis=0) - 1, 0).astype(float)
+    start[~has_return.any(axis=0)] = np.inf
+
+    wealth, peak = get_wealth_and_peak(returns)
+    drawdowns = wealth / peak - 1
+
+    before_start = np.arange(len(returns))[:, None] < start[None, :]
+
+    return drawdowns.mask(before_start)
+
+
+def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
+    """
+    List the largest drawdowns of every column with their peak, trough and recovery.
+
+    A drawdown runs from the last row at a high (the peak) until wealth is back at that
+    high (the recovery). Its depth is the lowest drawdown in between (the trough), and its
+    lengths count periods (rows), so the deepest drawdown matches `get_max_drawdown`,
+    `get_max_drawdown_duration` (To Trough) and `get_max_drawdown_recovery_time`
+    (To Recovery). The dates follow pyfolio's `gen_drawdown_table` (peak, valley and
+    recovery dates); QuantStats' `drawdown_details` and ffn instead start at the first
+    day below the peak and count calendar days.
+
+    Args:
+        returns (pd.DataFrame): The returns, one column per asset.
+        top (int, optional): The number of drawdowns per column, deepest first. Defaults
+            to 5.
+
+    Returns:
+        pd.DataFrame: One row per drawdown, indexed by column and rank, with the dates of
+            the Peak, Trough and Recovery (NaN when not yet recovered), the Drawdown as a
+            negative decimal and, in periods, the time from peak to trough (To Trough),
+            from trough to recovery (To Recovery) and from peak to recovery (Length). The
+            Peak is NaN when it is the starting wealth before the first row.
+    """
+    drawdown_series = get_drawdown_series(returns)
+    dates = drawdown_series.index
+    rows = []
+
+    for column in drawdown_series.columns:
+        drawdowns = drawdown_series[column].to_numpy()
+        below_peak = np.nan_to_num(drawdowns, nan=0.0) < 0
+        # Edges of each run of rows below the peak.
+        changes = np.diff(np.concatenate([[0], below_peak.astype(int), [0]]))
+        run_starts = np.flatnonzero(changes == 1)
+        run_ends = np.flatnonzero(changes == -1) - 1
+
+        episodes = []
+
+        for run_start, run_end in zip(run_starts, run_ends, strict=True):
+            trough = run_start + int(np.argmin(drawdowns[run_start : run_end + 1]))
+            peak = run_start - 1
+            recovery = run_end + 1 if run_end + 1 < len(drawdowns) else None
+            episodes.append(
+                {
+                    "Peak": dates[peak] if peak >= 0 else np.nan,
+                    "Trough": dates[trough],
+                    "Recovery": dates[recovery] if recovery is not None else np.nan,
+                    "Drawdown": drawdowns[trough],
+                    "To Trough": float(trough - peak),
+                    "To Recovery": (
+                        float(recovery - trough) if recovery is not None else np.nan
+                    ),
+                    "Length": (
+                        float(recovery - peak) if recovery is not None else np.nan
+                    ),
+                }
+            )
+
+        episodes = sorted(episodes, key=lambda episode: episode["Drawdown"])[:top]
+
+        for rank, episode in enumerate(episodes, start=1):
+            rows.append({"Ticker": column, "Rank": rank, **episode})
+
+    columns = [
+        "Ticker",
+        "Rank",
+        "Peak",
+        "Trough",
+        "Recovery",
+        "Drawdown",
+        "To Trough",
+        "To Recovery",
+        "Length",
+    ]
+
+    return pd.DataFrame(rows, columns=columns).set_index(["Ticker", "Rank"])
+
+
 def get_rolling_skewness(
     returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:

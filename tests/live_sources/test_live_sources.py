@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pytest
 
-from financetoolkit import historical_model, yfinance_model
+from financetoolkit import finra_model, historical_model, yfinance_model
 from financetoolkit.economics import (
     bis_model,
     bls_model,
@@ -972,3 +972,23 @@ def test_treasury_auctions(name):
     assert (
         (bid_to_cover > 1) & (bid_to_cover < 10)
     ).all(), f"{name} has an implausible bid-to-cover ratio"
+
+
+@pytest.mark.parametrize("name", ["FINRA short sale volume"])
+def test_finra_short_sale_volume(name):
+    # FINRA publishes a file every trading day, so the last two weeks hold several.
+    volumes = finra_model.collect_short_volume(
+        ["AAPL"],
+        (TODAY - timedelta(days=14)).strftime("%Y-%m-%d"),
+        TODAY.strftime("%Y-%m-%d"),
+    )["AAPL"]
+
+    assert not volumes.empty, f"{name} returned no days for AAPL"
+
+    latest = volumes.index[-1].to_timestamp()
+    assert latest >= pd.Timestamp(
+        TODAY - timedelta(days=DAILY_MAX_AGE_DAYS)
+    ), f"{name} is not current: the latest day is {volumes.index[-1]}"
+
+    ratio = volumes["Short Volume"] / volumes["Total Volume"]
+    assert ratio.between(0.05, 0.95).all(), f"{name} has an implausible short ratio"

@@ -130,6 +130,11 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark.",
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
+    "compound": (
+        "With growth=true, return the compound annual growth rate (CAGR) over the lag "
+        "instead of the total change, e.g. lag=5 for the five-year CAGR (lag=20 with "
+        "quarterly=true). Missing when either value is zero or negative."
+    ),
     "standardize": (
         "Return the Z-Score (standard score) instead of the raw values, i.e. how many "
         "standard deviations each value is from the mean of its own series. When "

@@ -10,8 +10,9 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import requests
 
-from financetoolkit import currencies_model
+from financetoolkit import currencies_model, sec_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
 from financetoolkit.discovery.discovery_model import (
     search_crypto_news as _search_crypto_news,
@@ -448,6 +449,9 @@ class Toolkit:
         )
 
         self._progress_bar = progress_bar
+
+        # The SEC needs no API key, so its figures are available without one.
+        self._first_reported_figures: pd.DataFrame = pd.DataFrame()
 
         if self._api_key or self._use_cached_data:
             # Initialize attributes to empty DataFrames
@@ -3517,6 +3521,148 @@ class Toolkit:
         self._remove_invalid()
 
         return self._employee_count
+
+    def get_first_reported_figures(
+        self, overwrite: bool = False, rounding: int | None = None
+    ) -> pd.DataFrame:
+        """
+        Retrieve the key figures of each company as they were first reported to the SEC, next
+        to the figures as reported today, so restatements become visible.
+
+        The financial statements hold the figures as the source reports them today: when a
+        company restates a period, the originally filed figures are replaced, so a backtest
+        that uses them sees numbers nobody could have known at the time. The SEC keeps every
+        figure of every filing in its XBRL company facts, each with the date it was filed.
+        This method takes, per fiscal period, the value from the earliest filing that
+        reported it (the 10-K or 10-Q of that period; later filings repeat it as a
+        comparative) and the value from the latest filing, and measures the restatement
+        between them.
+
+        The items are Revenue, Net Income, EPS, EPS Diluted, Total Assets, Total Liabilities,
+        Total Equity, Operating Cash Flow and Capital Expenditure, each from the US-GAAP
+        concept the company used for that period (revenue moved from SalesRevenueNet to
+        RevenueFromContractWithCustomerExcludingAssessedTax with ASC 606 in 2018).
+
+        A 10-Q reports cash flows year to date and a 10-K reports the fourth quarter only within
+        the fiscal year, so a quarter without a figure of its own is the year-to-date figure less
+        the one a quarter earlier (Q4 = FY − 9M). Its first reported value is that difference on
+        the day the later figure was filed. EPS of such a quarter is left empty, as per share
+        figures cannot be subtracted.
+
+        With point_in_time=True, only filings made on or before end_date are used, so "Latest"
+        is the figure as it stood on end_date and periods filed later are left out.
+
+        The SEC asks every automated request to name who makes it, so set the
+        FINANCETOOLKIT_SEC_USER_AGENT environment variable to your name and email address,
+        such as "Jane Doe jane.doe@example.com". Requests stay below the SEC's limit of ten a
+        second, and the company facts are cached for a day.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int | None): The number of decimals to round the restatement to.
+                Defaults to the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per ticker, item and period (labelled by the calendar year or quarter
+                in which it ends, as the financial statements are): the First Reported value and
+                its First Filed date, the Latest value and its Latest Filed date, and the
+                Restatement, the change from the first to the latest value as a decimal (0 when
+                the figure was never restated; growth from a negative figure is measured against
+                its absolute value).
+
+        Notes:
+            - Only companies that file with the SEC in US dollars under US-GAAP are covered;
+              foreign listings (ASML.AS) and IFRS filers are reported as without data.
+            - The first filing of a period can itself be an amendment when the original was
+              filed without XBRL (before 2009-2011, when XBRL became mandatory by company size).
+
+        As an example:
+
+        ```python
+        import os
+
+        from financetoolkit import Toolkit
+
+        os.environ["FINANCETOOLKIT_SEC_USER_AGENT"] = "Jane Doe jane.doe@example.com"
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2019-01-01",
+            end_date="2024-12-31",
+        )
+
+        figures = toolkit.get_first_reported_figures()
+
+        # The periods whose figures were restated after they were first reported
+        figures[figures["Restatement"] != 0]
+        ```
+        """
+        if self._first_reported_figures.empty or overwrite:
+            try:
+                cik_numbers = sec_model.get_cik_numbers()
+            except (ValueError, requests.exceptions.RequestException) as error:
+                logger.error("The SEC company facts could not be retrieved: %s", error)
+                return pd.DataFrame(columns=sec_model.COLUMNS)
+
+            figures = {}
+            no_data = []
+
+            for ticker in self._tickers:
+                cik = cik_numbers.get(ticker.upper())
+
+                if cik is None:
+                    no_data.append(ticker)
+                    continue
+
+                try:
+                    facts = sec_model.get_company_facts(cik)
+                except requests.exceptions.RequestException as error:
+                    logger.error(
+                        "The SEC company facts of %s could not be retrieved: %s",
+                        ticker,
+                        error,
+                    )
+                    no_data.append(ticker)
+                    continue
+
+                ticker_figures = sec_model.get_first_reported_figures(
+                    facts,
+                    quarterly=self._quarterly,
+                    as_of=self._end_date if self._point_in_time else None,
+                )
+
+                if ticker_figures.empty:
+                    no_data.append(ticker)
+                else:
+                    figures[ticker] = ticker_figures
+
+            if no_data:
+                logger.warning(
+                    "No SEC figures found for the following tickers (not an SEC filer, or not "
+                    "reporting in US dollars under US-GAAP): %s",
+                    ", ".join(no_data),
+                )
+
+            if not figures:
+                return pd.DataFrame(columns=sec_model.COLUMNS)
+
+            combined = pd.concat(figures, names=["Ticker"])
+            periods = combined.index.get_level_values("Period")
+            frequency = "Q" if self._quarterly else "Y"
+            in_range = (periods >= pd.Period(self._start_date, freq=frequency)) & (
+                periods <= pd.Period(self._end_date, freq=frequency)
+            )
+
+            self._first_reported_figures = combined[in_range]
+
+        rounding = rounding if rounding is not None else self._rounding
+        figures = self._first_reported_figures.copy()
+
+        if rounding is not None:
+            figures["Restatement"] = figures["Restatement"].round(rounding)
+
+        return figures
 
     def get_shares_float(self, overwrite: bool = False):
         """

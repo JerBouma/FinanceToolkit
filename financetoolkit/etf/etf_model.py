@@ -94,6 +94,48 @@ def get_overlap(weights: dict[str, pd.Series]) -> pd.DataFrame:
     return overlap
 
 
+def get_active_share(weights: dict[str, pd.Series]) -> pd.DataFrame:
+    """
+    Calculate the active share between every pair of funds: half the sum, over all holdings
+    of either fund, of the absolute difference between their weights. It is the share of a
+    fund's portfolio that differs from the other's, 0 for identical holdings and 1 for funds
+    without a holding in common.
+
+    The formula is as follows:
+
+        - Active Share = 1/2 * SUM(|Weight Fund i - Weight Benchmark i|)
+
+    For more information, see the following paper:
+
+    - Cremers, K.J.M., & Petajisto, A. (2009). "How Active Is Your Fund Manager? A New
+      Measure That Predicts Performance." Review of Financial Studies, 22(9), 3329-3365.
+
+    Args:
+        weights (dict[str, pd.Series]): The weights of every fund's holdings, as decimals.
+
+    Returns:
+        pd.DataFrame: The active share of every fund (rows) against every other fund
+        (columns), as decimals. The weights of each fund are scaled to add up to one, so an
+        incomplete list of holdings is compared by its proportions.
+    """
+    funds = list(weights)
+    active_share = pd.DataFrame(np.nan, index=funds, columns=funds)
+    for first in funds:
+        for second in funds:
+            first_total = weights[first].sum()
+            second_total = weights[second].sum()
+            # A fund without holdings data has an unknown active share, not none.
+            if first_total <= 0 or second_total <= 0:
+                continue
+            first_weights, second_weights = (weights[first] / first_total).align(
+                weights[second] / second_total, fill_value=0
+            )
+            active_share.loc[first, second] = float(
+                (first_weights - second_weights).abs().sum() / 2
+            )
+    return active_share
+
+
 def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.Series:
     """
     Calculate the valuation of a fund from the valuation of its holdings, weighted by their

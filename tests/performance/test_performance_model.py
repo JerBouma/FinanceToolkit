@@ -843,3 +843,73 @@ def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
 
     assert measure["A"] > 0
     assert np.isnan(measure["B"])
+
+
+def test_morningstar_risk_adjusted_return_matches_morningstar_illustration():
+    # Morningstar's "MRAR Illustrated" factsheet: two funds with the same compounded excess
+    # return of 9.38%, of which the steadier earns an MRAR of 9.37% and the other 9.10%.
+    excess_returns = (
+        pd.DataFrame(
+            {
+                "A": [0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1],
+                "B": [0.1, 2, -0.9, 0.5, 3.82, 0.6, 0.7, 0, -0.2, -1.5, 1, 3],
+            }
+        )
+        / 100
+    )
+
+    mrar = performance_model.get_morningstar_risk_adjusted_return(excess_returns)
+    morningstar_return = performance_model.get_morningstar_risk_adjusted_return(
+        excess_returns, gamma=0
+    )
+
+    assert mrar["A"] == pytest.approx(0.0937, abs=5e-5)
+    assert mrar["B"] == pytest.approx(0.0910, abs=5e-5)
+    assert morningstar_return["A"] == pytest.approx(0.0938, abs=5e-5)
+    # Morningstar Risk, the return given up for the variation, is never negative.
+    assert (morningstar_return - mrar).ge(0).all()
+
+
+def test_morningstar_risk_adjusted_return_of_steady_returns_is_their_annual_return():
+    excess_returns = pd.Series([0.01] * 24)
+
+    assert performance_model.get_morningstar_risk_adjusted_return(
+        excess_returns
+    ) == pytest.approx(1.01**12 - 1)
+
+
+def test_geometric_excess_return_divides_by_the_risk_free_return():
+    returns = pd.DataFrame({"A": [0.02, -0.01]})
+    risk_free_rate = pd.Series([0.01, 0.01])
+
+    excess_returns = performance_model.get_geometric_excess_return(
+        returns, risk_free_rate
+    )
+
+    np.testing.assert_allclose(excess_returns["A"], [1.02 / 1.01 - 1, 0.99 / 1.01 - 1])
+
+
+def test_rolling_morningstar_risk_adjusted_return_matches_every_full_window():
+    rng = np.random.default_rng(3)
+    excess_returns = pd.DataFrame({"A": rng.normal(0.005, 0.04, 40)})
+    excess_returns.iloc[5, 0] = np.nan
+
+    rolling = performance_model.get_rolling_morningstar_risk_adjusted_return(
+        excess_returns, 12
+    )
+
+    # A window holding the missing month is not full, so it has no value.
+    assert rolling["A"].iloc[:17].isna().all()
+    for end in range(17, 40):
+        assert rolling["A"].iloc[end] == pytest.approx(
+            performance_model.get_morningstar_risk_adjusted_return(
+                excess_returns["A"].iloc[end - 11 : end + 1]
+            )
+        )
+
+
+def test_morningstar_risk_adjusted_return_refuses_a_negative_gamma():
+    with pytest.raises(ValueError, match="cannot be negative"):
+        performance_model.get_morningstar_risk_adjusted_return(
+            pd.Series([0.01, 0.02]), gamma=-1
+        )

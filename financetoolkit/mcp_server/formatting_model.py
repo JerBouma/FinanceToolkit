@@ -311,7 +311,8 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
     The first (positive limit) or last (negative limit) rows, like head and tail. A table
     with its periods as columns, such as a ratio per ticker and year, is a time series read
     sideways, so its first or last periods are selected instead; the last periods leave
-    out trailing ones that most rows have no value for yet.
+    out trailing ones that most rows have no value for yet. Rows of a ticker and a date
+    are selected per ticker.
 
     Args:
         data (pd.DataFrame | pd.Series): The result.
@@ -350,6 +351,15 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
         first, last = data.first_valid_index(), data.last_valid_index()
         if first is not None and last is not None:
             data = data.loc[first:last]
+
+    # Rows of a ticker and a date (an earnings calendar of several tickers) are selected
+    # per ticker: a plain tail would return the last ticker's rows only.
+    elif isinstance(data.index, pd.MultiIndex) and any(
+        isinstance(level, pd.DatetimeIndex | pd.PeriodIndex)
+        for level in data.index.levels[1:]
+    ):
+        rows = data.groupby(level=0, sort=False)
+        return rows.head(limit) if limit > 0 else rows.tail(-limit)
 
     return data.head(limit) if limit > 0 else data.tail(-limit)
 

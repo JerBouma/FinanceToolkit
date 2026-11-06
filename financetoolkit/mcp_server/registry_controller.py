@@ -30,6 +30,7 @@ from pydantic import (
     Field as PydanticField,
 )
 
+from financetoolkit.cache import policy_model
 from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.mcp_server import series_model
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
@@ -610,6 +611,45 @@ def _labels(result: pd.DataFrame | pd.Series) -> set[str]:
         for level in range(axis.nlevels)
         for label in axis.get_level_values(level).unique()
     }
+
+
+def _unclosed_session_note(result: object) -> str | None:
+    """
+    A note when the last row of a daily series is a session that has not closed yet,
+    whose prices are then the latest ones rather than the close.
+
+    Args:
+        result (object): The value returned by the indicator.
+
+    Returns:
+        str | None: The note, or None when the last row is a closed session (or the
+            rows are no daily dates).
+    """
+    if (
+        not isinstance(result, pd.DataFrame | pd.Series)
+        or result.empty
+        or not is_time_index_of(result)
+    ):
+        return None
+
+    dates = result.index.get_level_values(0)
+
+    # A year or a month is not one session.
+    if isinstance(dates, pd.PeriodIndex):
+        if dates.freqstr != "D":
+            return None
+        dates = dates.to_timestamp()
+
+    last_date = dates.max().date()
+
+    if last_date <= policy_model.get_last_closed_session():
+        return None
+
+    return (
+        f"The last row ({last_date}) is a session that has not closed yet, so its prices "
+        "are the latest ones rather than the close; ask again after the close for the "
+        "final figures."
+    )
 
 
 def _mentions_benchmark(result: object) -> bool:
@@ -2147,6 +2187,10 @@ class ToolRegistry:
                         + ", ".join(available_columns[:40])
                         + "."
                     )
+                if dispatch_category in ("ticker", "toolkit"):
+                    session_note = _unclosed_session_note(result)
+                    if session_note:
+                        notes.append(session_note)
                 # A note on how the benchmark was chosen only confuses an answer that has
                 # no benchmark in it, such as an ETF's holdings.
                 if not _mentions_benchmark(result):
